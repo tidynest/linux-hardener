@@ -1,0 +1,79 @@
+//! Macros for reducing plugin boilerplate.
+//!
+//! Provides the `define_plugin!` macro to generate standard plugin structure.
+
+/// Defines a hardening plugin with standard boilerplate.
+#[macro_export]
+macro_rules! define_plugin {
+    (
+        $plugin_name:ident {
+            id: $id:expr,
+            name: $name:expr,
+            version: $version:expr,
+            description: $description:expr,
+            category: $category:ident,
+            dependencies: [$($dep:expr),*],
+        }
+    ) => {
+        // Generate the plugin struct
+        pub struct $plugin_name;
+
+        // Implement helper methods
+        impl $plugin_name {
+            fn metadata_impl() -> $crate::hardener_core::plugin::PluginMetadata {
+                use $crate::hardener_common::types::{FindingCategory, PluginId};
+                use $crate::hardener_core::plugin::PluginMetadata;
+
+                PluginMetadata {
+                    id: PluginId::from($id),
+                    name: $name.to_string(),
+                    version: $version.to_string(),
+                    description: $description.to_string(),
+                    category: FindingCategory::$category,
+                }
+            }
+        }
+
+        // Implement the HardeningPlugin trait
+        impl $crate::hardener_core::plugin::HardeningPlugin for $plugin_name {
+            fn metadata(&self) -> $crate::hardener_core::plugin::PluginMetadata {
+                Self::metadata_impl()
+            }
+
+            fn dependencies(&self) -> Vec<$crate::hardener_common::types::PluginId> {
+
+                vec![$(PluginId::from($dep)),*]
+            }
+
+            fn scan(
+                &self,
+                _ctx: &$crate::hardener_core::Context,
+            ) -> $crate::hardener_common::error::Result<$crate::hardener_core::plugin::ScanResult> {
+                todo!("Implement scan() for {}", stringify!($plugin_name))
+            }
+
+            fn apply(
+                &self,
+                _ctx: &mut $crate::hardener_core::Context,
+                _config: &$crate::hardener_core::plugin::Config,
+            ) -> $crate::hardener_common::error::Result<$crate::hardener_core::plugin::ApplyResult> {
+                todo!("Implement apply() for {}", stringify!($plugin_name))
+            }
+
+            fn rollback(
+                &self,
+                _ctx: &mut $crate::hardener_core::Context,
+                _checkpoint: &$crate::hardener_core::plugin::Checkpoint,
+            ) -> $crate::hardener_common::error::Result<()> {
+                todo!("Implement rollback() for {}", stringify!($plugin_name))
+            }
+
+            fn validate(
+                &self,
+                _config: &$crate::hardener_core::plugin::Config,
+            ) -> $crate::hardener_common::error::Result<$crate::hardener_core::plugin::ValidationReport> {
+                todo!("Implement validate() for {}", stringify!($plugin_name))
+            }
+        }
+    };
+}

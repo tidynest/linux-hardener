@@ -1,0 +1,8 @@
+[package]
+name = "hardener-distro"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+hardener-common = { workspace = true }
+serde = { workspace = true }

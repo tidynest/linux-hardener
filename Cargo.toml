@@ -1,0 +1,67 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/hardener-common",
+    "crates/hardener-compliance",
+    "crates/hardener-core",
+    "crates/hardener-distro",
+    "crates/hardener-plugins",
+    "crates/hardener-state",
+    "crates/hardener-ui",
+]
+
+[workspace.package]
+version = "0.1.0"
+authors = ["Eric Jingryd"]
+edition = "2021"
+license = "MIT/Apache-2.0"
+repository = "https://github.com/tidynest/linux-security-automation"
+
+[workspace.dependencies]
+
+# Async & Error handling
+anyhow = "1.0"
+thiserror = "2.0.17"
+tokio = { version = "1.40.0", features = ["full"] }
+
+# Configuration
+config = "0.15.18"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+toml = "0.9.8"
+
+# Internal workspace crates
+hardener-common = { path = "crates/hardener-common" }
+hardener-compliance = { path = "crates/hardener-compliance" }
+hardener-core = { path = "crates/hardener-core" }
+hardener-distro = { path = "crates/hardener-distro" }
+hardener-plugins = { path = "crates/hardener-plugins" }
+hardener-state = { path = "crates/hardener-state" }
+hardener-ui = { path = "crates/hardener-ui" }
+
+# Logging
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt"] }
+
+# Plugin system
+petgraph = "0.8.3"  # Graph data structures for plugin dependency resolution
+
+# Security
+argon2 = "0.5.3"
+ed25519-dalek = "2.2.0"
+ring = "0.17.14"
+
+# State management
+sqlx = { version = "0.8.6", features = ["migrate", "runtime-tokio-native-tls", "sqlite"] }
+
+# System interaction
+hostname = "0.4.1"
+nix = { version = "0.30.1", features = ["process", "user"] }
+procfs = "0.18.0"
+sysinfo = "0.37.2"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+strip = true

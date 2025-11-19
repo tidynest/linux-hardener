@@ -1,0 +1,8 @@
+[package]
+name = "hardener-plugins"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+hardener-common = { path = "../hardener-common" }
+hardener-core   = { path = "../hardener-core" }
