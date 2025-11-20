@@ -1,14 +1,8 @@
 //! DNF package manager implementation for Fedora/RHEL systems.
 
-use hardener_common::error::{
-    HardeningError,
-    Result,
-};
+use super::{Package, PackageManager};
+use hardener_common::error::{HardeningError, Result};
 use std::process::Command;
-use super::{
-    Package,
-    PackageManager
-};
 
 /// DNF package manager implementation.
 pub struct DnfPackageManager;
@@ -31,14 +25,13 @@ impl DnfPackageManager {
         let output = Command::new("dnf")
             .args(args)
             .output()
-            .map_err(|e| HardeningError::PackageManager(format!(
-                "Failed to execute dnf: {}", e
-            )))?;
+            .map_err(|e| HardeningError::PackageManager(format!("Failed to execute dnf: {}", e)))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(HardeningError::PackageManager(format!(
-                "DNF command failed: {}", stderr
+                "DNF command failed: {}",
+                stderr
             )));
         }
 
@@ -62,10 +55,9 @@ impl DnfPackageManager {
         }
 
         // RPM package naming rules: alphanumeric, +, -, ., _
-        let valid = package_name.chars().all(|c| {
-            c.is_ascii_alphanumeric()
-                || c == '+' || c == '-' || c == '.' || c == '_'
-        });
+        let valid = package_name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.' || c == '_');
 
         if !valid {
             return Err(HardeningError::Validation(format!(
@@ -85,9 +77,7 @@ impl PackageManager for DnfPackageManager {
         let _ = Command::new("dnf")
             .args(&["-y", "check-update"])
             .output()
-            .map_err(|e| HardeningError::PackageManager(format!(
-                "Failed to execute dnf: {}", e
-            )))?;
+            .map_err(|e| HardeningError::PackageManager(format!("Failed to execute dnf: {}", e)))?;
 
         Ok(())
     }
@@ -127,20 +117,20 @@ impl PackageManager for DnfPackageManager {
     }
 
     fn list_installed(&self) -> Result<Vec<Package>> {
-        let output = Command::new("rpm").args(&[
-            "-qa", 
-            "--queryformat", 
-            "%{NAME}\t%{VERSION}-%{RELEASE}\t%{ARCH}\n"
-        ])
+        let output = Command::new("rpm")
+            .args(&[
+                "-qa",
+                "--queryformat",
+                "%{NAME}\t%{VERSION}-%{RELEASE}\t%{ARCH}\n",
+            ])
             .output()
-            .map_err(|e| HardeningError::PackageManager(format!(
-                "Failed to execute rpm: {}", e
-            )))?;
+            .map_err(|e| HardeningError::PackageManager(format!("Failed to execute rpm: {}", e)))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(HardeningError::PackageManager(format!(
-                "rpm command failed: {}", stderr
+                "rpm command failed: {}",
+                stderr
             )));
         }
 
@@ -149,11 +139,11 @@ impl PackageManager for DnfPackageManager {
             .lines()
             .filter_map(|line| {
                 let parts: Vec<&str> = line.split('\t').collect();
-                if parts.len() >=3 {
+                if parts.len() >= 3 {
                     Some(Package {
-                        package_name:           parts[0].to_string(),
-                        package_version:        parts[1].to_string(),
-                        package_architecture:   parts[2].to_string(),
+                        package_name: parts[0].to_string(),
+                        package_version: parts[1].to_string(),
+                        package_architecture: parts[2].to_string(),
                         package_is_security_update: false,
                     })
                 } else {
@@ -163,15 +153,15 @@ impl PackageManager for DnfPackageManager {
             .collect();
 
         Ok(packages)
-        }
+    }
 
     fn is_installed(&self, package: &str) -> Result<bool> {
         let result = Command::new("rpm")
             .args(&["-q", package])
             .output()
-            .map_err(|e| HardeningError::PackageManager(format!(
-                "Failed to query package: {}", e
-            )))?;
+            .map_err(|e| {
+                HardeningError::PackageManager(format!("Failed to query package: {}", e))
+            })?;
 
         Ok(result.status.success())
     }
@@ -184,9 +174,10 @@ impl PackageManager for DnfPackageManager {
 
         for line in output.lines() {
             // Skip empty lines and header lines
-            if line.trim().is_empty() || 
-                line.starts_with("Last metadata") || 
-                line.starts_with("Updates Information") {
+            if line.trim().is_empty()
+                || line.starts_with("Last metadata")
+                || line.starts_with("Updates Information")
+            {
                 continue;
             }
 
@@ -216,8 +207,8 @@ impl PackageManager for DnfPackageManager {
 
                         packages.push(Package {
                             package_name,
-                            package_version:        version,
-                            package_architecture:   arch,
+                            package_version: version,
+                            package_architecture: arch,
                             package_is_security_update: true,
                         });
                     }

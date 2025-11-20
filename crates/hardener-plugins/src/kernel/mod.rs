@@ -12,31 +12,14 @@
 
 use hardener_common::{
     error::Result,
-    types::{
-        FindingCategory,
-        PluginId,
-        Severity,
-    }
+    types::{FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
-    context::Context, plugin::{
-        ApplyResult,
-        Finding,
-        HardeningPlugin,
-        PluginMetadata,
-        ScanResult,
-    },
-    Change,
-    ChangeType,
-    Checkpoint,
-    Config,
-    ValidationIssue,
-    ValidationReport
+    Change, ChangeType, Checkpoint, Config, ValidationIssue, ValidationReport,
+    context::Context,
+    plugin::{ApplyResult, Finding, HardeningPlugin, PluginMetadata, ScanResult},
 };
-use std::{
-    fs,
-    time::Instant,
-};
+use std::{fs, time::Instant};
 
 /// Kernel hardening plugin implementing sysctl parameter management.
 pub struct KernelHardeningPlugin;
@@ -54,10 +37,7 @@ impl KernelHardeningPlugin {
     ///
     /// # Returns
     /// The parameter values as a string, or an error if reading fails.
-    fn read_sysctl(
-        &self,
-        param: &str,
-    ) -> Result<String> {
+    fn read_sysctl(&self, param: &str) -> Result<String> {
         let path = format!("/proc/sys/{}", param.replace('.', "/"));
         let content = fs::read_to_string(&path)?;
         Ok(content.trim().to_string())
@@ -140,11 +120,11 @@ impl HardeningPlugin for KernelHardeningPlugin {
     /// information used for logging, UI display, and dependency management.
     fn metadata(&self) -> PluginMetadata {
         PluginMetadata {
-            id:          PluginId::new("kernel"),
-            name:        "Kernel Hardening".to_string(),
+            id: PluginId::new("kernel"),
+            name: "Kernel Hardening".to_string(),
             description: "Manages kernel security parameters via sysctl".to_string(),
-            version:     env!("CARGO_PKG_VERSION").to_string(),
-            category:    FindingCategory::Kernel,
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            category: FindingCategory::Kernel,
         }
     }
 
@@ -156,10 +136,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
         Vec::new()
     }
 
-    fn scan(
-        &self,
-        _ctx: &Context
-    ) -> Result<ScanResult> {
+    fn scan(&self, _ctx: &Context) -> Result<ScanResult> {
         let start_time = Instant::now();
         let mut findings = Vec::new();
 
@@ -168,20 +145,14 @@ impl HardeningPlugin for KernelHardeningPlugin {
                 Ok(actual_value) => {
                     if actual_value != *expected_value {
                         findings.push(Finding {
-                            id: format!(
-                                "kernel_{}",
-                                param_name.replace('.', "_")
-                            ),
-                            severity:          Severity::Medium,
-                            category:          FindingCategory::Kernel,
-                            title:             format!(
-                                "Insecure value for {}",
-                                param_name
-                            ),
-                            description:       param_description.to_string(),
-                            current_value:     actual_value.clone(),
+                            id: format!("kernel_{}", param_name.replace('.', "_")),
+                            severity: Severity::Medium,
+                            category: FindingCategory::Kernel,
+                            title: format!("Insecure value for {}", param_name),
+                            description: param_description.to_string(),
+                            current_value: actual_value.clone(),
                             recommended_value: expected_value.to_string(),
-                            explanation:       format!(
+                            explanation: format!(
                                 "This parameter should be set to '{}' for security hardening",
                                 expected_value
                             ),
@@ -219,18 +190,11 @@ impl HardeningPlugin for KernelHardeningPlugin {
     /// # Arguments
     /// * `ctx`    - Execution context (unused for now, but required by trait)
     /// * `config` - Configuration (unused for now, applies all hardening)
-    fn apply(
-        &self,
-        _ctx: &mut Context,
-        _config: &Config
-    ) -> Result<ApplyResult> {
+    fn apply(&self, _ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
         let mut changes = Vec::new();
 
         for (param_name, expected_value, param_description) in KERNEL_PARAMS {
-            let path = format!(
-                "/proc/sys/{}",
-                param_name.replace('.', "/")
-            );
+            let path = format!("/proc/sys/{}", param_name.replace('.', "/"));
 
             match fs::write(&path, expected_value) {
                 Ok(_) => {
@@ -246,8 +210,8 @@ impl HardeningPlugin for KernelHardeningPlugin {
                     changes.push(Change {
                         description: format!("{}: failed to set", param_name),
                         change_type: ChangeType::KernelParameter,
-                        success:     false,
-                        error:       Some(e.to_string()),
+                        success: false,
+                        error: Some(e.to_string()),
                     });
                     tracing::warn!("Failed to apply {}: {}", param_name, e);
                 }
@@ -257,11 +221,11 @@ impl HardeningPlugin for KernelHardeningPlugin {
         let success = changes.iter().all(|c| c.success);
 
         Ok(ApplyResult {
-            plugin_id:     self.metadata().id,
+            plugin_id: self.metadata().id,
             success,
             changes,
-            checkpoint_id: None,  //Checkpoint not implemented yet
-            error:         None,
+            checkpoint_id: None, //Checkpoint not implemented yet
+            error: None,
         })
     }
 
@@ -275,17 +239,12 @@ impl HardeningPlugin for KernelHardeningPlugin {
     /// # Arguments
     /// * `ctx` - Execution context containing checkpoint data
     /// * `checkpoint` - The checkpoint to restore to
-    fn rollback(
-        &self,
-        _ctx: &mut Context,
-        _checkpoint: &Checkpoint
-    ) -> Result<()> {
+    fn rollback(&self, _ctx: &mut Context, _checkpoint: &Checkpoint) -> Result<()> {
         // TODO: Implement checkpoint-based rollback
         // Placeholder:
         tracing::warn!("Rollback not yet implemented for kernel plugin");
         Ok(())
     }
-
 
     /// Validates that kernel parameters can be applied (dry-run).
     ///
@@ -294,10 +253,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
     ///
     /// # Arguments
     /// * `config` - Configuration to validate (unused for now)
-    fn validate(
-        &self,
-        _config: &Config
-    ) -> Result<ValidationReport> {
+    fn validate(&self, _config: &Config) -> Result<ValidationReport> {
         let mut issues = Vec::new();
         let mut estimated_changes = Vec::new();
 
@@ -309,22 +265,19 @@ impl HardeningPlugin for KernelHardeningPlugin {
                 Ok(metadata) => {
                     if metadata.permissions().readonly() {
                         issues.push(ValidationIssue {
-                            severity:   Severity::High,
-                            message:    format!("{} is read-only", param_name),
+                            severity: Severity::High,
+                            message: format!("{} is read-only", param_name),
                             config_key: Some(param_name.to_string()),
                         });
                     } else {
-                        estimated_changes.push(format!(
-                            "{} will be set to {}",
-                            param_name,
-                            expected_value
-                        ));
+                        estimated_changes
+                            .push(format!("{} will be set to {}", param_name, expected_value));
                     }
                 }
                 Err(_) => {
                     issues.push(ValidationIssue {
                         severity: Severity::Low,
-                        message:  format!("{} does not exist on this kernel", param_name),
+                        message: format!("{} does not exist on this kernel", param_name),
                         config_key: Some(param_name.to_string()),
                     });
                 }
@@ -333,7 +286,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
 
         Ok(ValidationReport {
             plugin_id: self.metadata().id,
-            valid:     issues.iter().all(|i| i.severity != Severity::High),
+            valid: issues.iter().all(|i| i.severity != Severity::High),
             issues,
             estimated_changes,
         })

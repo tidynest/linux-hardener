@@ -2,10 +2,7 @@
 //!
 //! Defines core types for plugins, findings, severity levels, and compliance frameworks.
 
-use serde::{
-    Deserialize,
-    Serialize
-};
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Unique identifier for a hardening plugin.
@@ -100,14 +97,14 @@ pub enum FindingCategory {
 impl fmt::Display for FindingCategory {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            FindingCategory::Audit                  => write!(f, "Audit"),
-            FindingCategory::Authentication         => write!(f, "Authentication"),
-            FindingCategory::Cryptography           => write!(f, "Cryptography"),
-            FindingCategory::FileSystem             => write!(f, "File System"),
-            FindingCategory::Kernel                 => write!(f, "Kernel"),
+            FindingCategory::Audit => write!(f, "Audit"),
+            FindingCategory::Authentication => write!(f, "Authentication"),
+            FindingCategory::Cryptography => write!(f, "Cryptography"),
+            FindingCategory::FileSystem => write!(f, "File System"),
+            FindingCategory::Kernel => write!(f, "Kernel"),
             FindingCategory::MandatoryAccessControl => write!(f, "MAC"),
-            FindingCategory::Network                => write!(f, "Network"),
-            FindingCategory::Services               => write!(f, "Services"),
+            FindingCategory::Network => write!(f, "Network"),
+            FindingCategory::Services => write!(f, "Services"),
         }
     }
 }
@@ -132,12 +129,12 @@ pub enum ComplianceFramework {
 impl fmt::Display for ComplianceFramework {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ComplianceFramework::CIS      => write!(f, "CIS"),
-            ComplianceFramework::HIPAA    => write!(f, "HIPAA"),
+            ComplianceFramework::CIS => write!(f, "CIS"),
+            ComplianceFramework::HIPAA => write!(f, "HIPAA"),
             ComplianceFramework::ISO27001 => write!(f, "ISO27001"),
-            ComplianceFramework::NIST     => write!(f, "NIST"),
-            ComplianceFramework::PCIDSS   => write!(f, "PCIDSS"),
-            ComplianceFramework::STIG     => write!(f, "STIG"),
+            ComplianceFramework::NIST => write!(f, "NIST"),
+            ComplianceFramework::PCIDSS => write!(f, "PCIDSS"),
+            ComplianceFramework::STIG => write!(f, "STIG"),
         }
     }
 }

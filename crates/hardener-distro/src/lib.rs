@@ -49,11 +49,11 @@ impl Distribution {
     pub fn detect() -> hardener_common::error::Result<Self> {
         let os_release_data = Self::read_os_release()?;
 
-        let distro_name     = Self::extract_field(&os_release_data, "ID")?;
-        let distro_version  = Self::extract_field(&os_release_data, "VERSION_ID")
+        let distro_name = Self::extract_field(&os_release_data, "ID")?;
+        let distro_version = Self::extract_field(&os_release_data, "VERSION_ID")
             .unwrap_or_else(|_| "rolling".to_string());
         let distro_codename = Self::extract_field(&os_release_data, "VERSION_CODENAME").ok();
-        let distro_family   = Self::map_to_family(&distro_name)?;
+        let distro_family = Self::map_to_family(&distro_name)?;
 
         Ok(Self {
             distro_family,
@@ -64,7 +64,8 @@ impl Distribution {
     }
 
     /// Reads and parses the `/etc/os-release` file.
-    fn read_os_release() -> hardener_common::error::Result<std::collections::HashMap<String, String>> {
+    fn read_os_release() -> hardener_common::error::Result<std::collections::HashMap<String, String>>
+    {
         use std::fs;
 
         let content = fs::read_to_string("/etc/os-release")
@@ -87,35 +88,32 @@ impl Distribution {
         data: &std::collections::HashMap<String, String>,
         field_name: &str,
     ) -> hardener_common::error::Result<String> {
-        data.get(field_name)
-            .cloned()
-            .ok_or_else(|| hardener_common::error::HardeningError::Config(format!(
-                "Missing config field '{}'", field_name)
+        data.get(field_name).cloned().ok_or_else(|| {
+            hardener_common::error::HardeningError::Config(format!(
+                "Missing config field '{}'",
+                field_name
             ))
+        })
     }
 
     /// Maps a distribution ID to its family.
     fn map_to_family(distro_id: &str) -> hardener_common::error::Result<DistroFamily> {
         match distro_id {
             // Debian family
-            "debian" | "ubuntu" | "linuxmint" | "pop" | "elementary"
-            => Ok(DistroFamily::Debian),
+            "debian" | "ubuntu" | "linuxmint" | "pop" | "elementary" => Ok(DistroFamily::Debian),
 
             // Red Hat family
-            "rhel" | "fedora" | "centos" | "rocky" | "almalinux" | "ol"
-            => Ok(DistroFamily::RedHat),
+            "rhel" | "fedora" | "centos" | "rocky" | "almalinux" | "ol" => Ok(DistroFamily::RedHat),
 
             // Arch family
-            "arch" | "manjaro" | "endeavouros" | "garuda"
-            => Ok(DistroFamily::Arch),
+            "arch" | "manjaro" | "endeavouros" | "garuda" => Ok(DistroFamily::Arch),
 
             // SUSE family
-            "opensuse" | "opensuse-leap" | "opensuse-tumbleweed" | "sles"
-            => Ok(DistroFamily::Suse),
+            "opensuse" | "opensuse-leap" | "opensuse-tumbleweed" | "sles" => Ok(DistroFamily::Suse),
 
             // Unknown distribution
-            _ => Err(hardener_common::error::HardeningError::UnsupportedDistro(format!(
-                "Distribution '{}' is not supported", distro_id)
+            _ => Err(hardener_common::error::HardeningError::UnsupportedDistro(
+                format!("Distribution '{}' is not supported", distro_id),
             )),
         }
     }
@@ -131,15 +129,17 @@ mod tests {
         assert!(result.is_ok());
 
         let distro = result.unwrap();
-        println!("Detected: {} {} ({})",
-                 distro.distro_name,
-                 distro.distro_version,
-                 match distro.distro_family {
-                     DistroFamily::Debian => "Debian family",
-                     DistroFamily::RedHat => "Red Hat family",
-                     DistroFamily::Arch   => "Arch family",
-                     DistroFamily::Suse   => "SUSE family",
-                 });
+        println!(
+            "Detected: {} {} ({})",
+            distro.distro_name,
+            distro.distro_version,
+            match distro.distro_family {
+                DistroFamily::Debian => "Debian family",
+                DistroFamily::RedHat => "Red Hat family",
+                DistroFamily::Arch => "Arch family",
+                DistroFamily::Suse => "SUSE family",
+            }
+        );
 
         assert!(!distro.distro_name.is_empty());
         assert!(!distro.distro_version.is_empty());

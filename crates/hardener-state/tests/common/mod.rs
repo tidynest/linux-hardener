@@ -1,16 +1,9 @@
 //! Shared test utilities for checkpoint system tests.
 
-use std::fs::Permissions;
-use hardener_state::{
-    CheckpointManager,
-    CheckpointSigner,
-    init_db,
-};
+use hardener_state::{init_db, CheckpointManager, CheckpointSigner};
 use sqlx::SqlitePool;
-use std::path::{
-    Path,
-    PathBuf,
-};
+use std::fs::Permissions;
+use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 /// Test fixture containing temporary directories and database.
@@ -38,10 +31,8 @@ impl TestFixture {
             .expect("Failed to create signer");
 
         // Manually create CheckpointManager with test signer
-        let checkpoint_manager = CheckpointManager::new_with_signer(
-            db_pool.clone(),
-            signer,
-        ).expect("Failed to create checkpoint manager");
+        let checkpoint_manager = CheckpointManager::new_with_signer(db_pool.clone(), signer)
+            .expect("Failed to create checkpoint manager");
 
         TestFixture {
             checkpoint_manager,
@@ -51,11 +42,7 @@ impl TestFixture {
     }
 
     /// Creates a test file with specified content.
-    pub fn create_test_file(
-        &self,
-        name: &str,
-        content: &str,
-    ) -> PathBuf {
+    pub fn create_test_file(&self, name: &str, content: &str) -> PathBuf {
         let file_path = self.temp_dir.path().join(name);
         std::fs::write(&file_path, content).expect("Failed to write file");
         file_path
@@ -78,10 +65,7 @@ impl TestFixture {
     }
 
     /// Reads the content of a file as a string.
-    pub fn read_file(
-        &self,
-        path: &Path,
-    ) -> String {
+    pub fn read_file(&self, path: &Path) -> String {
         std::fs::read_to_string(path).expect("Failed to read file")
     }
 }

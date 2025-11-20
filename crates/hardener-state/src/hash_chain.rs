@@ -1,11 +1,5 @@
-use ring::digest::{
-    digest,
-    SHA256,
-};
-use serde::{
-    Deserialize,
-    Serialize,
-};
+use ring::digest::{digest, SHA256};
+use serde::{Deserialize, Serialize};
 
 /// Maintains a cryptographic hash chain for tamper-proof audit logging.
 ///
@@ -24,7 +18,7 @@ impl HashChain {
     /// The genesis entry has no predecessor, so we initialise with 32 zero bytes.
     pub fn new() -> HashChain {
         Self {
-            previous_hash: vec![0u8; 32],  // SHA-256 produces 32 bytes
+            previous_hash: vec![0u8; 32], // SHA-256 produces 32 bytes
         }
     }
 
@@ -36,10 +30,7 @@ impl HashChain {
     /// # Returns
     /// The SHA-256 hash that should be stored with this entry and used as the
     /// previous_hash for the next entry,
-    pub fn next_hash(
-        &self,
-        data: &[u8]
-    ) -> Vec<u8> {
+    pub fn next_hash(&self, data: &[u8]) -> Vec<u8> {
         // Concatenate: previous_hash || data
         let mut combined = self.previous_hash.clone();
         combined.extend_from_slice(data);
@@ -56,10 +47,7 @@ impl HashChain {
     ///
     /// # Arguments
     /// * `new_hash` - The hash that was computed for the entry just written
-    pub fn update(
-        &mut self,
-        new_hash: Vec<u8>,
-    ) {
+    pub fn update(&mut self, new_hash: Vec<u8>) {
         self.previous_hash = new_hash;
     }
 
@@ -72,11 +60,7 @@ impl HashChain {
     ///
     /// # Returns
     /// `true` if the claimed_hash matches what we compute, `false` if tampered
-    pub fn verify_entry(
-        previous_hash: &[u8],
-        data: &[u8],
-        claimed_hash: &[u8],
-    ) -> bool {
+    pub fn verify_entry(previous_hash: &[u8], data: &[u8], claimed_hash: &[u8]) -> bool {
         // Recompute what the hash should be
         let mut combined = previous_hash.to_vec();
         combined.extend_from_slice(data);

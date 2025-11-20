@@ -1,11 +1,8 @@
 //! APT package manager implementation for Debian/Ubuntu systems.
 
-use std::process::Command;
 use super::{Package, PackageManager};
-use hardener_common::error::{
-    HardeningError,
-    Result,
-};
+use hardener_common::error::{HardeningError, Result};
+use std::process::Command;
 
 /// APT package manager implementation.
 pub struct AptPackageManager;
@@ -33,10 +30,9 @@ impl AptPackageManager {
         }
 
         // Debian package naming rules: alphanumeric, +, -, .
-        let valid = package_name.chars().all(|c| {
-            c.is_ascii_alphanumeric()
-                || c == '+' || c == '-' || c == '.'
-        });
+        let valid = package_name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.');
 
         if !valid {
             return Err(HardeningError::Validation(format!(
@@ -57,17 +53,15 @@ impl AptPackageManager {
     /// This method runs apt-get with elevated privileges. Ensures arguments
     /// are validated before passing them to this function.
     fn execute_apt(&self, args: &[&str]) -> Result<String> {
-        let output = Command::new("apt-get")
-            .args(args)
-            .output()
-            .map_err(|e| HardeningError::PackageManager(format!(
-                "Failed to execute apt-get: {}", e
-            )))?;
+        let output = Command::new("apt-get").args(args).output().map_err(|e| {
+            HardeningError::PackageManager(format!("Failed to execute apt-get: {}", e))
+        })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(HardeningError::PackageManager(format!(
-                "APT command failed: {}", stderr
+                "APT command failed: {}",
+                stderr
             )));
         }
 
@@ -79,14 +73,15 @@ impl AptPackageManager {
         let output = Command::new("dpkg-query")
             .args(args)
             .output()
-            .map_err(|e| HardeningError::PackageManager(format!(
-                "Failed to execute dpkg-query: {}", e
-            )))?;
+            .map_err(|e| {
+                HardeningError::PackageManager(format!("Failed to execute dpkg-query: {}", e))
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(HardeningError::PackageManager(format!(
-                "dpkg-query failed: {}", stderr
+                "dpkg-query failed: {}",
+                stderr
             )));
         }
 
@@ -100,10 +95,7 @@ impl PackageManager for AptPackageManager {
         Ok(())
     }
 
-    fn install(
-        &self,
-        packages: &[&str]
-    ) -> Result<()> {
+    fn install(&self, packages: &[&str]) -> Result<()> {
         if packages.is_empty() {
             return Ok(());
         }
@@ -134,7 +126,8 @@ impl PackageManager for AptPackageManager {
 
     fn list_installed(&self) -> Result<Vec<Package>> {
         let output = self.execute_dpkg_query(&[
-            "-W", "--showformat=${Package}\t${Version}\t${Architecture}\n"
+            "-W",
+            "--showformat=${Package}\t${Version}\t${Architecture}\n",
         ])?;
 
         let packages = output
@@ -161,9 +154,9 @@ impl PackageManager for AptPackageManager {
         let result = Command::new("dpkg-query")
             .args(&["-W", "-f=${Status}", package])
             .output()
-            .map_err(|e| HardeningError::PackageManager(format!(
-                "Failed to query package: {}", e
-            )))?;
+            .map_err(|e| {
+                HardeningError::PackageManager(format!("Failed to query package: {}", e))
+            })?;
 
         if !result.status.success() {
             return Ok(false);
@@ -181,7 +174,7 @@ impl PackageManager for AptPackageManager {
         let output = self.execute_apt(&[
             "upgrade",
             "--dry-run",
-            "-V"  // Verbose to show versions
+            "-V", // Verbose to show versions
         ])?;
 
         let mut packages = Vec::new();
@@ -201,7 +194,8 @@ impl PackageManager for AptPackageManager {
                         // Extract version - it's in parentheses
                         if let Some(version_start) = line.find('(') {
                             if let Some(version_end) = line[version_start..].find(' ') {
-                                let version = line[version_start + 1..version_start + version_end].to_string();
+                                let version = line[version_start + 1..version_start + version_end]
+                                    .to_string();
 
                                 // Extract architecture if present
                                 let arch = if let Some(arch_start) = line.rfind('[') {

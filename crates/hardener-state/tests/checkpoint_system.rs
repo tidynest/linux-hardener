@@ -48,11 +48,7 @@ async fn test_file_state_capture() {
     let fixture = TestFixture::new().await;
 
     // Create file with specific permissions
-    let file_path = fixture.create_test_file_with_permissions(
-        "test.conf",
-        "test content",
-        0o644,
-    );
+    let file_path = fixture.create_test_file_with_permissions("test.conf", "test content", 0o644);
 
     // Create checkpoint
     let checkpoint_id = fixture
@@ -71,13 +67,8 @@ async fn test_file_state_capture() {
     assert_eq!(file_states.len(), 1);
 
     let file_state = &file_states[0];
-    assert_eq!(
-        file_state.file_path,
-        file_path.to_string_lossy());
-    assert_eq!(
-        file_state.file_content.as_ref().unwrap(),
-        b"test content"
-    );
+    assert_eq!(file_state.file_path, file_path.to_string_lossy());
+    assert_eq!(file_state.file_content.as_ref().unwrap(), b"test content");
     assert_eq!(file_state.file_permissions & 0o777, 0o644);
 }
 
@@ -96,11 +87,7 @@ async fn test_rollback_restores_files() {
 
     // Create original file
     let file_path =
-        fixture.create_test_file_with_permissions(
-            "important.conf",
-            "original content",
-            0o644,
-        );
+        fixture.create_test_file_with_permissions("important.conf", "original content", 0o644);
 
     // Create checkpoint
     let checkpoint_id = fixture
@@ -110,8 +97,7 @@ async fn test_rollback_restores_files() {
         .expect("Failed to create checkpoint");
 
     // Modify the file (simulating hardening changes)
-    std::fs::write(&file_path, "modified content")
-        .expect("Failed to modify file");
+    std::fs::write(&file_path, "modified content").expect("Failed to modify file");
     std::fs::set_permissions(&file_path, std::fs::Permissions::from_mode(0o600))
         .expect("Failed to change permissions");
 
@@ -228,5 +214,8 @@ async fn test_delete_checkpoint() {
         .checkpoint_manager
         .get_checkpoint(&checkpoint_id)
         .await;
-    assert!(result.is_err(), "Expected error when retrieving deleted checkpoint");
+    assert!(
+        result.is_err(),
+        "Expected error when retrieving deleted checkpoint"
+    );
 }

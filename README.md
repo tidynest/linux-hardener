@@ -445,7 +445,7 @@ Everything is ready. The path is clear.
 **Author**: Eric Jingryd
 **Project**: Linux System Hardening Automation Tool
 **Status**: Phase 1 Complete ✅ | Phase 2 In Progress ⏳
-**Current Phase**: Week 9 - Plugin Framework (Task 2.1.2)
+**Current Phase**: Week 12 - SSH Hardening Plugin (COMPLETE)
 
 ---
 
@@ -454,7 +454,7 @@ Everything is ready. The path is clear.
 ### ✅ Completed Phases
 
 **Phase 0: Foundation Setup (Weeks 1-2)** - COMPLETE
-- Cargo workspace initialized
+- Cargo workspace initialised
 - All crate dependencies configured
 - Core type definitions complete
 - Logging infrastructure ready
@@ -467,13 +467,37 @@ Everything is ready. The path is clear.
 - Checkpoint system with SQLite ✅
 - Cryptographic signatures (Ed25519) ✅
 - Hash chain audit logging ✅
-- **Tests**: 53 tests passing across workspace
+- PluginManager with dependency resolution ✅
+- **Tests**: 42 tests passing
 
 ### ⏳ In Progress
 
-**Phase 2: Security Plugins (Weeks 9-14)** - IN PROGRESS
-- **Week 9: Plugin Framework**
-  - ✅ Task 2.1.1: Plugin template macro (`define_plugin!`)
-  - 🔄 Task 2.1.2: PluginManager (NEXT)
+**Phase 2: Security Plugins (Weeks 9-14)** - IN PROGRESS (80% Complete)
+
+- **Week 9: Plugin Framework** ✅ COMPLETE
+  - Plugin template macro (`define_plugin!`)
+  - PluginManager with dependency graph
+  - Topological sorting for execution order
+  - Comprehensive test suite (6 integration tests)
+
+- **Week 10: Kernel Hardening Plugin** ✅ COMPLETE
+  - 12 sysctl security parameters
+  - Scan/Apply/Validate implementations
+  - Service restart functionality
+  - 5 integration tests (4 passing, 1 root-only)
+
+- **Week 11-12: SSH Hardening Plugin** ✅ COMPLETE
+  - 8 SSH security directives
+  - Config file parsing and manipulation
+  - Timestamped backups
+  - Service restart (systemctl with fallback)
+  - 5 integration tests (4 passing, 1 root-only)
+
+- **Next: Firewall Plugin** 🔄
+  - Firewall backend detection (nftables/iptables/ufw/firewalld)
+  - Basic security rules
+  - Distribution-specific implementation
+
+**Total Tests**: 73 passing across entire workspace (61 unit/integration + 8 doc tests + 2 root tests + 2 ignored)
 
 Good luck building! 🚀

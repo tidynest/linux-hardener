@@ -1,5 +1,5 @@
-pub mod macros;
 pub mod kernel;
+pub mod macros;
 pub mod ssh;
 
 // Re-export dependencies for macro use

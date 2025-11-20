@@ -46,44 +46,53 @@ fn test_severity_ordering() {
     ];
     severities.sort();
 
-    assert_eq!(severities, vec![
-        Severity::Info,
-        Severity::Low,
-        Severity::Medium,
-        Severity::High,
-        Severity::Critical,
-    ]);
+    assert_eq!(
+        severities,
+        vec![
+            Severity::Info,
+            Severity::Low,
+            Severity::Medium,
+            Severity::High,
+            Severity::Critical,
+        ]
+    );
 }
 
 #[test]
 fn test_severity_display() {
-    assert_eq!(format!("{}", Severity::Info),     "INFO");
-    assert_eq!(format!("{}", Severity::Low),      "LOW");
-    assert_eq!(format!("{}", Severity::Medium),   "MEDIUM");
-    assert_eq!(format!("{}", Severity::High),     "HIGH");
+    assert_eq!(format!("{}", Severity::Info), "INFO");
+    assert_eq!(format!("{}", Severity::Low), "LOW");
+    assert_eq!(format!("{}", Severity::Medium), "MEDIUM");
+    assert_eq!(format!("{}", Severity::High), "HIGH");
     assert_eq!(format!("{}", Severity::Critical), "CRITICAL");
 }
 
 #[test]
 fn test_finding_category_display() {
-    assert_eq!(format!("{}", FindingCategory::Audit),                  "Audit");
-    assert_eq!(format!("{}", FindingCategory::Authentication),         "Authentication");
-    assert_eq!(format!("{}", FindingCategory::Cryptography),           "Cryptography");
-    assert_eq!(format!("{}", FindingCategory::FileSystem),             "File System");
-    assert_eq!(format!("{}", FindingCategory::Kernel),                 "Kernel");
-    assert_eq!(format!("{}", FindingCategory::MandatoryAccessControl), "MAC");
-    assert_eq!(format!("{}", FindingCategory::Network),                "Network");
-    assert_eq!(format!("{}", FindingCategory::Services),               "Services");
+    assert_eq!(format!("{}", FindingCategory::Audit), "Audit");
+    assert_eq!(
+        format!("{}", FindingCategory::Authentication),
+        "Authentication"
+    );
+    assert_eq!(format!("{}", FindingCategory::Cryptography), "Cryptography");
+    assert_eq!(format!("{}", FindingCategory::FileSystem), "File System");
+    assert_eq!(format!("{}", FindingCategory::Kernel), "Kernel");
+    assert_eq!(
+        format!("{}", FindingCategory::MandatoryAccessControl),
+        "MAC"
+    );
+    assert_eq!(format!("{}", FindingCategory::Network), "Network");
+    assert_eq!(format!("{}", FindingCategory::Services), "Services");
 }
 
 #[test]
 fn test_compliance_framework_display() {
-    assert_eq!(format!("{}", ComplianceFramework::CIS),      "CIS");
-    assert_eq!(format!("{}", ComplianceFramework::HIPAA),    "HIPAA");
+    assert_eq!(format!("{}", ComplianceFramework::CIS), "CIS");
+    assert_eq!(format!("{}", ComplianceFramework::HIPAA), "HIPAA");
     assert_eq!(format!("{}", ComplianceFramework::ISO27001), "ISO27001");
-    assert_eq!(format!("{}", ComplianceFramework::NIST),     "NIST");
-    assert_eq!(format!("{}", ComplianceFramework::STIG),     "STIG");
-    assert_eq!(format!("{}", ComplianceFramework::PCIDSS),   "PCIDSS");
+    assert_eq!(format!("{}", ComplianceFramework::NIST), "NIST");
+    assert_eq!(format!("{}", ComplianceFramework::STIG), "STIG");
+    assert_eq!(format!("{}", ComplianceFramework::PCIDSS), "PCIDSS");
 }
 
 #[test]

@@ -1,0 +1,154 @@
+use hardener_common::types::{
+    FindingCategory,
+    PluginId,
+};
+use hardener_core::{
+    Config,
+    context::Context,
+    plugin::HardeningPlugin,
+};
+use hardener_plugins::ssh::SshHardeningPlugin;
+
+#[test]
+fn test_ssh_plugin_metadata() {
+    let plugin = SshHardeningPlugin::new();
+    let metadata = plugin.metadata();
+
+    assert_eq!(metadata.id, PluginId::new("ssh-hardening"));
+    assert_eq!(metadata.name, "SSH Hardening");
+    assert_eq!(metadata.version, "0.1.0");
+    assert_eq!(metadata.category, FindingCategory::Network);
+
+    assert!(!metadata.description.is_empty());
+}
+
+#[test]
+fn test_ssh_plugin_has_no_dependencies() {
+    let plugin = SshHardeningPlugin::new();
+    let deps = plugin.dependencies();
+
+    assert!(deps.is_empty(), "SSH plugin should have no dependencies");
+}
+
+#[test]
+fn test_ssh_scan_reads_configuration() {
+    let plugin = SshHardeningPlugin::new();
+    let ctx = Context::new();
+
+    let result = plugin.scan(&ctx);
+
+    match result {
+        Ok(scan_result) => {
+            assert_eq!(scan_result.plugin_id, PluginId::new("ssh-hardening"));
+            assert!(scan_result.duration_us > 0, "Scan should take measurable time");
+
+            // The scan should succeed even if it finds insecure settings
+            assert!(scan_result.success, "Scan operation should succeed");
+
+            assert!(scan_result.error.is_none(), "Should not have errors");
+
+            // Print findings for manual verification
+            println!("SSH scan found {} findings:", scan_result.findings.len());
+            for finding in &scan_result.findings {
+                println!(
+                    "  - {}: {} → {}",
+                     finding.title,
+                     finding.current_value,
+                     finding.recommended_value
+                );
+            }
+        }
+        Err(e) => {
+            // If /etc/ssh/sshd_config doesn't exist, that's acceptable for test environments.
+            eprintln!("SSH scan failed (could be expected in test environment): {}", e);
+        }
+    }
+}
+
+#[test]
+fn test_ssh_validate_checks_config_file() {
+    let plugin = SshHardeningPlugin::new();
+    let config = Config::default();
+
+    let result = plugin.validate(&config);
+
+    match result {
+        Ok(validation_report) => {
+
+            assert_eq!(validation_report.plugin_id, PluginId::new("ssh-hardening"));
+
+            println!("SSH validation result: valid={}", validation_report.valid);
+
+            if !validation_report.issues.is_empty() {
+                println!("Validation issues found:");
+                for issue in &validation_report.issues {
+                    println!("  - [{}] {}", issue.severity, issue.message);
+                }
+            }
+
+            // If config file exists and is readable, validation should pass
+            if validation_report.valid {
+                assert!(validation_report.issues.is_empty());
+            }
+        }
+        Err(e) => {
+            eprintln!("Validation failed: {}", e);
+        }
+    }
+}
+
+#[test]
+#[ignore] // Requires root privileges - run with: cargo test --test ssh_tests -- --ignored
+fn test_ssh_apply_requires_root() {
+    let plugin = SshHardeningPlugin::new();
+    let mut ctx = Context::new();
+    let config = Config::default();
+
+    println!("\n=== Testing SSH Apply (requires root) ===");
+    println!("This test will:");
+    println!("1. Create a backup of /etc/ssh/sshd_config");
+    println!("2. Apply 8 secure SSH directives");
+    println!("3. Write the modified configuration");
+    println!("4. Restart the SSH service");
+    println!("\nIMPORTANT: Ensure you have SSH key access before running!\n");
+
+    let result = plugin.apply(&mut ctx, &config);
+
+    match result {
+        Ok(apply_result) => {
+
+            assert_eq!(apply_result.plugin_id, PluginId::new("ssh-hardening"));
+
+            println!("\nApply result: success={}", apply_result.success);
+            println!("Changes made ({}):", apply_result.changes.len());
+
+            for change in &apply_result.changes {
+                let status = if change.success { "✓" } else { "✗" };
+                println!("  {} [{}] {}", status, change.change_type, change.description);
+                if let Some(ref error) = change.error {
+                    println!("      Error: {}", error);
+                }
+            }
+
+            // Verify all changes succeeded
+            assert!(apply_result.success, "All changes should succeed with root privileges");
+
+            assert!(apply_result.error.is_none(), "Should not have overall error");
+
+            // Should have at least: backup + config write + service restart
+
+            assert!(apply_result.changes.len() >= 3, "Should have multiple changes recorded");
+
+            // Verify service restart was attempted
+            let has_service_restart =
+                apply_result.changes.iter()
+                    .any(|c|
+                        c.description.contains("SSH service") ||
+                        c.description.contains("Restart"));
+            assert!(has_service_restart, "Should include SSH service restart");
+        }
+        Err(e) => {
+            panic!("Apply failed: {}", e);
+        }
+    }
+}

@@ -7,17 +7,8 @@ pub mod hash_chain;
 pub mod manager;
 pub mod signing;
 
-pub use audit::{
-    ActionResult,
-    ActionType,
-    AuditEntry,
-    AuditLogger,
-};
-pub use checkpoint::{
-    Checkpoint,
-    CheckpointId,
-    FileState,
-};
+pub use audit::{ActionResult, ActionType, AuditEntry, AuditLogger};
+pub use checkpoint::{Checkpoint, CheckpointId, FileState};
 pub use db::init_db;
 pub use hash_chain::HashChain;
 pub use manager::CheckpointManager;

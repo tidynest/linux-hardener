@@ -3,10 +3,7 @@
 //! Provides distribution-specific behaviours for package management,
 //! init systems, and other OS-level operations.
 
-use crate::{
-    Distribution,
-    DistroFamily
-};
+use crate::{Distribution, DistroFamily};
 
 /// Distribution-specific adapter trait.
 ///
@@ -21,5 +18,3 @@ pub trait DistributionAdapter: Send + Sync {
         self.distribution().distro_family
     }
 }
-
-

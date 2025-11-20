@@ -3,10 +3,7 @@
 //! Provides initialisation and configuration for the tracing-based
 //! logging system used throughout the application
 
-use tracing_subscriber::{
-    EnvFilter,
-    fmt
-};
+use tracing_subscriber::{fmt, EnvFilter};
 
 /// Initialises the logging system with sensible defaults.
 ///
@@ -27,10 +24,7 @@ use tracing_subscriber::{
 /// # Panics
 /// Panics if the global default subscriber cannot be set (only if called multiple times).
 pub fn init_logger() {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_|
-            EnvFilter::new("info")
-        );
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     fmt()
         .with_env_filter(filter)
         .with_target(true)

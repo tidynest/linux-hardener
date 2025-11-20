@@ -1,16 +1,10 @@
 //! Checkpoint manager for creating and managing system state snapshots.
 
-use crate::checkpoint::{
-    CheckpointId,
-    FileState,
-};
-use hardener_common::error::Result;
-use sqlx::{
-    Row,
-    SqlitePool,
-};
-use std::path::Path;
+use crate::checkpoint::{CheckpointId, FileState};
 use crate::{Checkpoint, CheckpointSigner};
+use hardener_common::error::Result;
+use sqlx::{Row, SqlitePool};
+use std::path::Path;
 
 /// Manages checkpoint creation, storage, and retrieval.
 ///
@@ -26,10 +20,7 @@ pub struct CheckpointManager {
 impl CheckpointManager {
     pub fn new(db_pool: SqlitePool) -> Result<CheckpointManager> {
         let signer = CheckpointSigner::new()?;
-        Ok(Self {
-            db_pool,
-            signer,
-        })
+        Ok(Self { db_pool, signer })
     }
 
     /// Creates a new CheckpointManager with a custom signer.
@@ -39,20 +30,14 @@ impl CheckpointManager {
         db_pool: SqlitePool,
         signer: CheckpointSigner,
     ) -> Result<CheckpointManager> {
-        Ok(Self {
-            db_pool,
-            signer,
-        })
+        Ok(Self { db_pool, signer })
     }
 
     /// Generates a unique checkpoint ID.
     ///
     /// Uses a timestamp-based approach for sortable IDs.
     fn generate_checkpoint_id() -> CheckpointId {
-        use std::time::{
-            SystemTime,
-            UNIX_EPOCH,
-        };
+        use std::time::{SystemTime, UNIX_EPOCH};
 
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -61,11 +46,7 @@ impl CheckpointManager {
 
         // Format: checkpoint_<timestamp>_<random>
         let random_suffix: u32 = rand::random();
-        CheckpointId::new(format!(
-            "cp_{}_{:08x}",
-            timestamp,
-            random_suffix
-        ))
+        CheckpointId::new(format!("cp_{}_{:08x}", timestamp, random_suffix))
     }
 
     /// Captures the current state of a file.
@@ -79,20 +60,17 @@ impl CheckpointManager {
     /// Returns an error if the file cannot be read or metadata cannot be accessed.
     fn capture_file_state(&self, file_path: &Path) -> Result<FileState> {
         use std::fs;
-        use std::os::unix::fs::{
-            MetadataExt,
-            PermissionsExt,
-        };
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
         // Check if file exists
         if !file_path.exists() {
             // File doesn't exist - record that fact
             return Ok(FileState {
-                file_path:        file_path.to_string_lossy().to_string(),
-                file_content:     None,
+                file_path: file_path.to_string_lossy().to_string(),
+                file_content: None,
                 file_permissions: 0,
-                file_owner_uid:   0,
-                file_owner_gid:   0,
+                file_owner_uid: 0,
+                file_owner_gid: 0,
             });
         }
 
@@ -101,8 +79,8 @@ impl CheckpointManager {
             .map_err(|e| hardener_common::error::HardeningError::System(e))?;
 
         // Read file content
-        let file_content = fs::read(file_path)
-            .map_err(|e| hardener_common::error::HardeningError::System(e))?;
+        let file_content =
+            fs::read(file_path).map_err(|e| hardener_common::error::HardeningError::System(e))?;
 
         // Extract permissions and ownership
         let file_permissions = file_metadata.permissions().mode();
@@ -110,8 +88,8 @@ impl CheckpointManager {
         let file_owner_gid = file_metadata.gid();
 
         Ok(FileState {
-            file_path:        file_path.to_string_lossy().to_string(),
-            file_content:     Some(file_content),
+            file_path: file_path.to_string_lossy().to_string(),
+            file_content: Some(file_content),
             file_permissions,
             file_owner_uid,
             file_owner_gid,
@@ -133,10 +111,7 @@ impl CheckpointManager {
         checkpoint_username: &str,
         file_states: &[FileState],
     ) -> Result<Vec<u8>> {
-        use ring::digest::{
-            Context as DigestContext,
-            SHA256,
-        };
+        use ring::digest::{Context as DigestContext, SHA256};
 
         // Create a hash context
         let mut hash_context = DigestContext::new(&SHA256);
@@ -178,10 +153,7 @@ impl CheckpointManager {
         checkpoint_name: &str,
         file_paths: &[&Path],
     ) -> Result<CheckpointId> {
-        use std::time::{
-            SystemTime,
-            UNIX_EPOCH,
-        };
+        use std::time::{SystemTime, UNIX_EPOCH};
 
         // Generate unique ID
         let checkpoint_id = Self::generate_checkpoint_id();
@@ -193,8 +165,7 @@ impl CheckpointManager {
             .as_secs() as i64;
 
         // Get current username
-        let checkpoint_username = std::env::var("USER")
-            .unwrap_or_else(|_| "unknown".to_string());
+        let checkpoint_username = std::env::var("USER").unwrap_or_else(|_| "unknown".to_string());
 
         // Capture file states
         let mut file_states = Vec::new();
@@ -220,7 +191,8 @@ impl CheckpointManager {
             &checkpoint_username,
             &checkpoint_signature,
             &file_states,
-        ).await?;
+        )
+        .await?;
 
         Ok(checkpoint_id)
     }
@@ -245,7 +217,7 @@ impl CheckpointManager {
                 signature,
                 created_at
                 )
-            VALUES (?, ?, ?, ?, ?, ?)"
+            VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(checkpoint_id.as_str())
         .bind(checkpoint_name)
@@ -268,7 +240,7 @@ impl CheckpointManager {
                 owner_uid,
                 owner_gid
                 )
-                VALUES (?, ?, ?, ?, ?, ?)"
+                VALUES (?, ?, ?, ?, ?, ?)",
             )
             .bind(checkpoint_id.as_str())
             .bind(&file_state.file_path)
@@ -293,7 +265,7 @@ impl CheckpointManager {
     /// Returns an error if checkpoint doesn't exist or database operation fails.
     pub async fn get_checkpoint(
         &self,
-        checkpoint_id: &CheckpointId
+        checkpoint_id: &CheckpointId,
     ) -> Result<(Checkpoint, Vec<FileState>)> {
         // Retrieve checkpoint metadata
         let checkpoint_row = sqlx::query(
@@ -303,7 +275,7 @@ impl CheckpointManager {
                 timestamp,
                 username,
                 signature
-            FROM checkpoints WHERE id =?"
+            FROM checkpoints WHERE id =?",
         )
         .bind(checkpoint_id.as_str())
         .fetch_one(&self.db_pool)
@@ -311,11 +283,11 @@ impl CheckpointManager {
         .map_err(|e| hardener_common::error::HardeningError::Database(e.to_string()))?;
 
         let checkpoint = Checkpoint {
-            checkpoint_id:          CheckpointId::new(checkpoint_row.get::<String, _>("id")),
-            checkpoint_name:        checkpoint_row.get("name"),
-            checkpoint_timestamp:   checkpoint_row.get("timestamp"),
-            checkpoint_username:    checkpoint_row.get("username"),
-            checkpoint_signature:   checkpoint_row.get("signature"),
+            checkpoint_id: CheckpointId::new(checkpoint_row.get::<String, _>("id")),
+            checkpoint_name: checkpoint_row.get("name"),
+            checkpoint_timestamp: checkpoint_row.get("timestamp"),
+            checkpoint_username: checkpoint_row.get("username"),
+            checkpoint_signature: checkpoint_row.get("signature"),
         };
 
         // Retrieve file states
@@ -327,7 +299,7 @@ impl CheckpointManager {
                 owner_uid,
                 owner_gid
             FROM
-                file_states WHERE checkpoint_id = ?"
+                file_states WHERE checkpoint_id = ?",
         )
         .bind(checkpoint_id.as_str())
         .fetch_all(&self.db_pool)
@@ -337,11 +309,11 @@ impl CheckpointManager {
         let mut file_states = Vec::new();
         for row in file_rows {
             file_states.push(FileState {
-                file_path:          row.get("file_path"),
-                file_content:       row.get("content"),
-                file_permissions:   row.get::<i64, _>("permissions") as u32,
-                file_owner_uid:     row.get::<i64, _>("owner_uid") as u32,
-                file_owner_gid:     row.get::<i64, _>("owner_gid") as u32,
+                file_path: row.get("file_path"),
+                file_content: row.get("content"),
+                file_permissions: row.get::<i64, _>("permissions") as u32,
+                file_owner_uid: row.get::<i64, _>("owner_uid") as u32,
+                file_owner_gid: row.get::<i64, _>("owner_gid") as u32,
             });
         }
 
@@ -363,20 +335,20 @@ impl CheckpointManager {
                 username,
                 signature
              FROM checkpoints
-             ORDER BY timestamp DESC"
+             ORDER BY timestamp DESC",
         )
         .fetch_all(&self.db_pool)
         .await
-            .map_err(|e| hardener_common::error::HardeningError::Database(e.to_string()))?;
+        .map_err(|e| hardener_common::error::HardeningError::Database(e.to_string()))?;
 
         let mut checkpoints = Vec::new();
         for row in rows {
             checkpoints.push(Checkpoint {
-                checkpoint_id:          CheckpointId::new(row.get::<String, _>("id")),
-                checkpoint_name:        row.get("name"),
-                checkpoint_timestamp:   row.get("timestamp"),
-                checkpoint_username:    row.get("username"),
-                checkpoint_signature:   row.get("signature"),
+                checkpoint_id: CheckpointId::new(row.get::<String, _>("id")),
+                checkpoint_name: row.get("name"),
+                checkpoint_timestamp: row.get("timestamp"),
+                checkpoint_username: row.get("username"),
+                checkpoint_signature: row.get("signature"),
             });
         }
 
@@ -390,10 +362,7 @@ impl CheckpointManager {
     ///
     /// # Errors
     /// Returns an error if checkpoint doesn't exist or database operation fails.
-    pub async fn delete_checkpoint(
-        &self,
-        checkpoint_id: &CheckpointId
-    ) -> Result<()> {
+    pub async fn delete_checkpoint(&self, checkpoint_id: &CheckpointId) -> Result<()> {
         // Delete file states first (foreign key constraint)
         sqlx::query("DELETE FROM file_states WHERE checkpoint_id = ?")
             .bind(checkpoint_id.as_str())
@@ -425,15 +394,8 @@ impl CheckpointManager {
     ///
     /// # Errors
     /// Returns an error if file operations fail or insufficient privileges.
-    fn restore_file_state(
-        &self,
-        file_state: &FileState
-    ) -> Result<()> {
-        use std::{
-            fs,
-            os::unix::fs::PermissionsExt,
-            path::Path,
-        };
+    fn restore_file_state(&self, file_state: &FileState) -> Result<()> {
+        use std::{fs, os::unix::fs::PermissionsExt, path::Path};
 
         let path = Path::new(&file_state.file_path);
 
@@ -460,16 +422,18 @@ impl CheckpointManager {
         fs::set_permissions(path, permissions)
             .map_err(|e| hardener_common::error::HardeningError::System(e))?;
 
-
         // Restore ownership (requires root privileges)
         nix::unistd::chown(
             path,
             Some(nix::unistd::Uid::from_raw(file_state.file_owner_uid)),
             Some(nix::unistd::Gid::from_raw(file_state.file_owner_gid)),
         )
-        .map_err(|e| hardener_common::error::HardeningError::Privilege(format!(
-            "Failed to restore ownership: {}", e
-        )))?;
+        .map_err(|e| {
+            hardener_common::error::HardeningError::Privilege(format!(
+                "Failed to restore ownership: {}",
+                e
+            ))
+        })?;
 
         Ok(())
     }
@@ -491,10 +455,7 @@ impl CheckpointManager {
     /// - Checkpoint doesn't exist
     /// - File restoration fails
     /// - Insufficient privileges
-    pub async fn rollback(
-        &self,
-        checkpoint_id: &CheckpointId
-    ) -> Result<()> {
+    pub async fn rollback(&self, checkpoint_id: &CheckpointId) -> Result<()> {
         // Retrieve checkpoint and all file states
         let (_checkpoint, file_states) = self.get_checkpoint(checkpoint_id).await?;
 
@@ -506,5 +467,3 @@ impl CheckpointManager {
         Ok(())
     }
 }
-
-

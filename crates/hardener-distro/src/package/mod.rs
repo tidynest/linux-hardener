@@ -4,17 +4,14 @@
 //! package managers across Linux distributions (APT, DNF, Pacman, Zypper).
 
 use hardener_common::error::Result;
-use serde::{
-    Deserialize,
-    Serialize
-};
+use serde::{Deserialize, Serialize};
 
 /// Represents a software package in the system.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Package {
-    pub package_name:               String,
-    pub package_version:            String,
-    pub package_architecture:       String,
+    pub package_name: String,
+    pub package_version: String,
+    pub package_architecture: String,
     pub package_is_security_update: bool,
 }
 

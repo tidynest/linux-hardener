@@ -1,9 +1,5 @@
 use hardener_common::types::FindingCategory;
-use hardener_core::{
-    Config,
-    Context,
-    plugin::HardeningPlugin,
-};
+use hardener_core::{Config, Context, plugin::HardeningPlugin};
 use hardener_plugins::KernelHardeningPlugin;
 
 #[test]
@@ -37,14 +33,21 @@ fn test_kernel_scan_reads_parameters() {
     let scan_result = result.unwrap();
     assert!(scan_result.success, "Scan should be successful");
     assert_eq!(scan_result.plugin_id.as_str(), "kernel");
-    assert!(scan_result.duration_us > 0, "Should record scan duration in microseconds");
+    assert!(
+        scan_result.duration_us > 0,
+        "Should record scan duration in microseconds"
+    );
     println!(
         "Scan completed in {}µs ({}ms)",
-        scan_result.duration_us, scan_result.duration_us / 1000
+        scan_result.duration_us,
+        scan_result.duration_us / 1000
     );
 
     // Findings may or may not exist depending on current system state
-    println!("Found {} insecure kernel parameters", scan_result.findings.len());
+    println!(
+        "Found {} insecure kernel parameters",
+        scan_result.findings.len()
+    );
 
     // Verify finding structure if any exist
     if let Some(finding) = scan_result.findings.first() {
@@ -53,8 +56,7 @@ fn test_kernel_scan_reads_parameters() {
         assert!(!finding.explanation.is_empty());
         println!(
             "Example finding: {} (current: {}, recommended: {})",
-                 finding.title, finding.current_value,
-                 finding.recommended_value
+            finding.title, finding.current_value, finding.recommended_value
         );
     }
 }
@@ -71,9 +73,15 @@ fn test_kernel_validate_checks_parameters() {
     assert_eq!(validation.plugin_id.as_str(), "kernel");
 
     // Should have estimated changes for parameters that can be modified
-    assert!(!validation.estimated_changes.is_empty(), "Should estimate at least some changes");
+    assert!(
+        !validation.estimated_changes.is_empty(),
+        "Should estimate at least some changes"
+    );
 
-    println!("Validation found {} potential issues", validation.issues.len());
+    println!(
+        "Validation found {} potential issues",
+        validation.issues.len()
+    );
     println!("Would make {} changes", validation.estimated_changes.len());
 
     // Show a few estimated changes
@@ -108,8 +116,8 @@ fn test_kernel_apply_requires_root() {
             for change in &apply_result.changes {
                 println!(
                     "  {} {}",
-                     if change.success { "✓" } else { "✗" },
-                     change.description
+                    if change.success { "✓" } else { "✗" },
+                    change.description
                 );
             }
         }

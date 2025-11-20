@@ -3,15 +3,8 @@
 //! Use SQLite to store checkpoint metadata and file states.
 
 use hardener_common::error::{HardeningError, Result};
-use sqlx::sqlite::{
-    SqliteConnectOptions,
-    SqlitePool,
-    SqlitePoolOptions,
-};
-use std::path::{
-    Path,
-    PathBuf,
-};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
+use std::path::{Path, PathBuf};
 
 /// Default location for the checkpoint database.
 const DEFAULT_DB_PATH: &str = "/var/lib/linux-hardener/checkpoints.db";
@@ -81,4 +74,3 @@ pub async fn init_db(db_path: Option<&Path>) -> Result<SqlitePool> {
 
     Ok(pool)
 }
-

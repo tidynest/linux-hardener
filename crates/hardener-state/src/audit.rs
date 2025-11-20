@@ -1,23 +1,13 @@
 //! Audit logging with tamper-proof hash chain.
 
-use chrono::{
-    DateTime,
-    Utc,
-};
-use serde::{
-    Deserialize,
-    Serialize,
-};
-use std::collections::HashMap;
 use crate::HashChain;
+use chrono::{DateTime, Utc};
 use hardener_common::error::Result;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tokio::{
     fs::OpenOptions,
-    io::{
-        AsyncBufReadExt,
-        AsyncWriteExt,
-        BufReader,
-    }
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
 };
 
 /// Type of action being audited.
@@ -73,20 +63,15 @@ impl AuditEntry {
     /// * `user`        - Username performing the action
     /// * `target`      - Target of the action
     /// * `hash`        - Hash chain value for this entry
-    pub fn new(
-        action_type: ActionType,
-        user: String,
-        target: String,
-        hash: Vec<u8>,
-    ) -> AuditEntry {
+    pub fn new(action_type: ActionType, user: String, target: String, hash: Vec<u8>) -> AuditEntry {
         Self {
-            entry_timestamp:    Utc::now(),
-            entry_action_type:  action_type,
-            entry_user:         user,
-            entry_target:       target,
-            entry_result:       ActionResult::Success,
-            entry_details:      HashMap::new(),
-            entry_hash:         hash,
+            entry_timestamp: Utc::now(),
+            entry_action_type: action_type,
+            entry_user: user,
+            entry_target: target,
+            entry_result: ActionResult::Success,
+            entry_details: HashMap::new(),
+            entry_hash: hash,
         }
     }
 
@@ -109,13 +94,13 @@ impl AuditEntry {
         details.insert("error".to_string(), error_message);
 
         AuditEntry {
-            entry_timestamp:    Utc::now(),
-            entry_action_type:  action_type,
-            entry_user:         user,
-            entry_target:       target,
-            entry_result:       ActionResult::Failure,
-            entry_details:      details,
-            entry_hash:         hash,
+            entry_timestamp: Utc::now(),
+            entry_action_type: action_type,
+            entry_user: user,
+            entry_target: target,
+            entry_result: ActionResult::Failure,
+            entry_details: details,
+            entry_hash: hash,
         }
     }
 
@@ -124,11 +109,7 @@ impl AuditEntry {
     /// # Arguments
     /// * `key`   - Detail key
     /// * `value` - Detail value
-    pub fn add_detail(
-        &mut self,
-        key: String,
-        value: String
-    ) {
+    pub fn add_detail(&mut self, key: String, value: String) {
         self.entry_details.insert(key, value);
     }
 
@@ -172,55 +153,37 @@ impl QueryFilter {
     }
 
     /// Filters by action type.
-    pub fn with_action_type(
-        mut self,
-        action_type: ActionType,
-    ) -> QueryFilter {
+    pub fn with_action_type(mut self, action_type: ActionType) -> QueryFilter {
         self.action_type = Some(action_type);
         self
     }
 
     /// Filters by user.
-    pub fn with_user(
-        mut self,
-        user: String,
-    ) -> QueryFilter {
+    pub fn with_user(mut self, user: String) -> QueryFilter {
         self.user = Some(user);
         self
     }
 
     /// Filters by time range (start).
-    pub fn with_start_time(
-        mut self,
-        start_time: DateTime<Utc>,
-    ) -> QueryFilter {
+    pub fn with_start_time(mut self, start_time: DateTime<Utc>) -> QueryFilter {
         self.start_time = Some(start_time);
         self
     }
 
     /// Filters by time range (end).
-    pub fn with_end_time(
-        mut self,
-        end_time: DateTime<Utc>,
-    ) -> QueryFilter {
+    pub fn with_end_time(mut self, end_time: DateTime<Utc>) -> QueryFilter {
         self.end_time = Some(end_time);
         self
     }
 
     /// Filters by action result.
-    pub fn with_result(
-        mut self,
-        result: ActionResult,
-    ) -> QueryFilter {
+    pub fn with_result(mut self, result: ActionResult) -> QueryFilter {
         self.result = Some(result);
         self
     }
 
     /// Checks if an entry matches this filter.
-    fn matches(
-        &self,
-        entry: &AuditEntry,
-    ) -> bool {
+    fn matches(&self, entry: &AuditEntry) -> bool {
         // Check action type filter
         if let Some(action_type) = self.action_type {
             if entry.entry_action_type != action_type {
@@ -303,37 +266,26 @@ impl AuditLogger {
     pub async fn log_action(
         &self,
         action_type: ActionType,
-        user:        String,
-        target:      String,
-        result:      ActionResult,
+        user: String,
+        target: String,
+        result: ActionResult,
     ) -> Result<()> {
         // Lock the hash chain
         let mut chain = self.hash_chain.lock().await;
 
         // Serialise entry data for hashing (without the hash itself)
-        let entry_data = (
-            Utc::now().timestamp(),
-            action_type,
-            &user,
-            &target,
-            result,
-        );
+        let entry_data = (Utc::now().timestamp(), action_type, &user, &target, result);
         let serialised_data = serde_json::to_vec(&entry_data)?;
 
         // Compute hash for this entry
         let hash = chain.next_hash(&serialised_data);
 
         // Create the full entry with the hash
-        let entry = AuditEntry::new(
-            action_type,
-            user,
-            target,
-            hash.clone()
-        );
+        let entry = AuditEntry::new(action_type, user, target, hash.clone());
 
         // Serialise the complete entry for writing
         let mut entry_json = serde_json::to_vec(&entry)?;
-        entry_json.push(b'\n');  // Add newline for line-based format
+        entry_json.push(b'\n'); // Add newline for line-based format
 
         // Write to file
         let mut file = self.file.lock().await;
@@ -358,10 +310,10 @@ impl AuditLogger {
     /// * `error_message` - Description of the failure
     pub async fn log_failure(
         &self,
-        action_type:    ActionType,
-        user:           String,
-        target:         String,
-        error_message:  String,
+        action_type: ActionType,
+        user: String,
+        target: String,
+        error_message: String,
     ) -> Result<()> {
         // Lock the hash chain
         let mut chain = self.hash_chain.lock().await;
@@ -381,13 +333,7 @@ impl AuditLogger {
         let hash = chain.next_hash(&serialised_data);
 
         // Create failure entry with error message
-        let entry = AuditEntry::new_failure(
-            action_type,
-            user,
-            target,
-            error_message,
-            hash.clone(),
-        );
+        let entry = AuditEntry::new_failure(action_type, user, target, error_message, hash.clone());
 
         // Serialise and write
         let mut entry_json = serde_json::to_vec(&entry)?;
@@ -430,7 +376,9 @@ impl AuditLogger {
             // Must match the serialisation used when creating the hash
             let serialised_data = if entry.entry_result == ActionResult::Failure {
                 // For failures, include the error message (matches log_failure)
-                let error_msg = entry.entry_details.get("error")
+                let error_msg = entry
+                    .entry_details
+                    .get("error")
                     .map(|s| s.as_str())
                     .unwrap_or("");
 
@@ -454,19 +402,15 @@ impl AuditLogger {
             };
 
             // Verify this entry's hash
-            if !HashChain::verify_entry(
-                &previous_hash,
-                &serialised_data,
-                &entry.entry_hash
-            ) {
-                return Ok(false);  // Tampering detected!
+            if !HashChain::verify_entry(&previous_hash, &serialised_data, &entry.entry_hash) {
+                return Ok(false); // Tampering detected!
             }
 
             // Move to next entry
             previous_hash = entry.entry_hash;
         }
 
-        Ok(true)  // All entries verified successfully
+        Ok(true) // All entries verified successfully
     }
 
     /// Queries the audit log with optional filters.
@@ -495,10 +439,7 @@ impl AuditLogger {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn query(
-        log_path: &str,
-        filter: QueryFilter,
-    ) -> Result<Vec<AuditEntry>> {
+    pub async fn query(log_path: &str, filter: QueryFilter) -> Result<Vec<AuditEntry>> {
         // Open file for reading
         let file = tokio::fs::File::open(log_path).await?;
         let reader = BufReader::new(file);
@@ -534,12 +475,15 @@ mod tests {
         let logger = AuditLogger::new(log_path).await.unwrap();
 
         // Log a successful action
-        logger.log_action(
-            ActionType::Scan,
-            "testuser".to_string(),
-            "/etc/ssh/sshd_config".to_string(),
-            ActionResult::Success,
-        ).await.unwrap();
+        logger
+            .log_action(
+                ActionType::Scan,
+                "testuser".to_string(),
+                "/etc/ssh/sshd_config".to_string(),
+                ActionResult::Success,
+            )
+            .await
+            .unwrap();
 
         // Verify integrity
         let is_valid = AuditLogger::verify_integrity(log_path).await.unwrap();
@@ -554,32 +498,40 @@ mod tests {
         let logger = AuditLogger::new(log_path).await.unwrap();
 
         // Log multiple different actions
-        logger.log_action(
-            ActionType::Scan,
-            "alice".to_string(),
-            "/etc/ssh/sshd_config".to_string(),
-            ActionResult::Success,
-        ).await.unwrap();
+        logger
+            .log_action(
+                ActionType::Scan,
+                "alice".to_string(),
+                "/etc/ssh/sshd_config".to_string(),
+                ActionResult::Success,
+            )
+            .await
+            .unwrap();
 
-        logger.log_action(
-            ActionType::Apply,
-            "bob".to_string(),
-            "kernel_hardening".to_string(),
-            ActionResult::Success,
-        ).await.unwrap();
+        logger
+            .log_action(
+                ActionType::Apply,
+                "bob".to_string(),
+                "kernel_hardening".to_string(),
+                ActionResult::Success,
+            )
+            .await
+            .unwrap();
 
-        logger.log_failure(
-            ActionType::Rollback,
-            "alice".to_string(),
-            "checkpoint_123".to_string(),
-            "Checkpoint not found".to_string(),
-        ).await.unwrap();
+        logger
+            .log_failure(
+                ActionType::Rollback,
+                "alice".to_string(),
+                "checkpoint_123".to_string(),
+                "Checkpoint not found".to_string(),
+            )
+            .await
+            .unwrap();
 
         // Query all entries
-        let all_entries = AuditLogger::query(
-            log_path,
-            QueryFilter::new(),
-        ).await.unwrap();
+        let all_entries = AuditLogger::query(log_path, QueryFilter::new())
+            .await
+            .unwrap();
 
         // Should have exactly 3 entries
         assert_eq!(all_entries.len(), 3);
@@ -594,7 +546,10 @@ mod tests {
 
         assert_eq!(all_entries[2].entry_action_type, ActionType::Rollback);
         assert_eq!(all_entries[2].entry_result, ActionResult::Failure);
-        assert_eq!(all_entries[2].entry_details.get("error").unwrap(), "Checkpoint not found");
+        assert_eq!(
+            all_entries[2].entry_details.get("error").unwrap(),
+            "Checkpoint not found"
+        );
 
         // Verify integrity is still valid
         let is_valid = AuditLogger::verify_integrity(log_path).await.unwrap();
@@ -609,33 +564,45 @@ mod tests {
         let logger = AuditLogger::new(log_path).await.unwrap();
 
         // Log various action types
-        logger.log_action(
-            ActionType::Scan,
-            "user1".to_string(),
-            "target1".to_string(),
-            ActionResult::Success,
-        ).await.unwrap();
+        logger
+            .log_action(
+                ActionType::Scan,
+                "user1".to_string(),
+                "target1".to_string(),
+                ActionResult::Success,
+            )
+            .await
+            .unwrap();
 
-        logger.log_action(
-            ActionType::Apply,
-            "user2".to_string(),
-            "target2".to_string(),
-            ActionResult::Success,
-        ).await.unwrap();
+        logger
+            .log_action(
+                ActionType::Apply,
+                "user2".to_string(),
+                "target2".to_string(),
+                ActionResult::Success,
+            )
+            .await
+            .unwrap();
 
-        logger.log_action(
-            ActionType::Scan,
-            "user3".to_string(),
-            "target3".to_string(),
-            ActionResult::Success,
-        ).await.unwrap();
+        logger
+            .log_action(
+                ActionType::Scan,
+                "user3".to_string(),
+                "target3".to_string(),
+                ActionResult::Success,
+            )
+            .await
+            .unwrap();
 
-        logger.log_action(
-            ActionType::CheckpointCreate,
-            "user1".to_string(),
-            "cp_001".to_string(),
-            ActionResult::Success,
-        ).await.unwrap();
+        logger
+            .log_action(
+                ActionType::CheckpointCreate,
+                "user1".to_string(),
+                "cp_001".to_string(),
+                ActionResult::Success,
+            )
+            .await
+            .unwrap();
 
         // Query only Scan actions
         let scan_filter = QueryFilter::new().with_action_type(ActionType::Scan);
@@ -643,7 +610,9 @@ mod tests {
 
         // Should have exactly 2 Scan entries
         assert_eq!(scan_entries.len(), 2);
-        assert!(scan_entries.iter().all(|e| e.entry_action_type == ActionType::Scan));
+        assert!(scan_entries
+            .iter()
+            .all(|e| e.entry_action_type == ActionType::Scan));
 
         // Query only Apply actions
         let apply_filter = QueryFilter::new().with_action_type(ActionType::Apply);
@@ -663,33 +632,45 @@ mod tests {
         let logger = AuditLogger::new(log_path).await.unwrap();
 
         // Log actions by different users
-        logger.log_action(
-            ActionType::Scan,
-            "alice".to_string(),
-            "target1".to_string(),
-            ActionResult::Success,
-        ).await.unwrap();
+        logger
+            .log_action(
+                ActionType::Scan,
+                "alice".to_string(),
+                "target1".to_string(),
+                ActionResult::Success,
+            )
+            .await
+            .unwrap();
 
-        logger.log_action(
-            ActionType::Apply,
-            "bob".to_string(),
-            "target2".to_string(),
-            ActionResult::Success,
-        ).await.unwrap();
+        logger
+            .log_action(
+                ActionType::Apply,
+                "bob".to_string(),
+                "target2".to_string(),
+                ActionResult::Success,
+            )
+            .await
+            .unwrap();
 
-        logger.log_action(
-            ActionType::Rollback,
-            "alice".to_string(),
-            "target3".to_string(),
-            ActionResult::Success,
-        ).await.unwrap();
+        logger
+            .log_action(
+                ActionType::Rollback,
+                "alice".to_string(),
+                "target3".to_string(),
+                ActionResult::Success,
+            )
+            .await
+            .unwrap();
 
-        logger.log_action(
-            ActionType::CheckpointCreate,
-            "charlie".to_string(),
-            "cp_001".to_string(),
-            ActionResult::Success,
-        ).await.unwrap();
+        logger
+            .log_action(
+                ActionType::CheckpointCreate,
+                "charlie".to_string(),
+                "cp_001".to_string(),
+                ActionResult::Success,
+            )
+            .await
+            .unwrap();
 
         // Query actions by alice
         let alice_filter = QueryFilter::new().with_user("alice".to_string());
@@ -717,33 +698,45 @@ mod tests {
         let logger = AuditLogger::new(log_path).await.unwrap();
 
         // Log mix of successful and failed actions
-        logger.log_action(
-            ActionType::Scan,
-            "user1".to_string(),
-            "target1".to_string(),
-            ActionResult::Success,
-        ).await.unwrap();
+        logger
+            .log_action(
+                ActionType::Scan,
+                "user1".to_string(),
+                "target1".to_string(),
+                ActionResult::Success,
+            )
+            .await
+            .unwrap();
 
-        logger.log_failure(
-            ActionType::Apply,
-            "user2".to_string(),
-            "target2".to_string(),
-            "Permission denied".to_string(),
-        ).await.unwrap();
+        logger
+            .log_failure(
+                ActionType::Apply,
+                "user2".to_string(),
+                "target2".to_string(),
+                "Permission denied".to_string(),
+            )
+            .await
+            .unwrap();
 
-        logger.log_action(
-            ActionType::Rollback,
-            "user3".to_string(),
-            "target3".to_string(),
-            ActionResult::Success,
-        ).await.unwrap();
+        logger
+            .log_action(
+                ActionType::Rollback,
+                "user3".to_string(),
+                "target3".to_string(),
+                ActionResult::Success,
+            )
+            .await
+            .unwrap();
 
-        logger.log_failure(
-            ActionType::CheckpointCreate,
-            "user4".to_string(),
-            "cp_001".to_string(),
-            "Disk full".to_string(),
-        ).await.unwrap();
+        logger
+            .log_failure(
+                ActionType::CheckpointCreate,
+                "user4".to_string(),
+                "cp_001".to_string(),
+                "Disk full".to_string(),
+            )
+            .await
+            .unwrap();
 
         // Query only successful actions
         let success_filter = QueryFilter::new().with_result(ActionResult::Success);
@@ -751,7 +744,9 @@ mod tests {
 
         // Should have exactly 2 successful entries
         assert_eq!(success_entries.len(), 2);
-        assert!(success_entries.iter().all(|e| e.entry_result == ActionResult::Success));
+        assert!(success_entries
+            .iter()
+            .all(|e| e.entry_result == ActionResult::Success));
 
         // Query only failed actions
         let failure_filter = QueryFilter::new().with_result(ActionResult::Failure);
@@ -759,7 +754,9 @@ mod tests {
 
         // Should have exactly 2 failed entries
         assert_eq!(failure_entries.len(), 2);
-        assert!(failure_entries.iter().all(|e| e.entry_result == ActionResult::Failure));
+        assert!(failure_entries
+            .iter()
+            .all(|e| e.entry_result == ActionResult::Failure));
 
         // Verify error messages are present in failures
         assert!(failure_entries[0].entry_details.contains_key("error"));
@@ -774,33 +771,45 @@ mod tests {
         let logger = AuditLogger::new(log_path).await.unwrap();
 
         // Log various combinations
-        logger.log_action(
-            ActionType::Scan,
-            "alice".to_string(),
-            "target1".to_string(),
-            ActionResult::Success,
-        ).await.unwrap();
+        logger
+            .log_action(
+                ActionType::Scan,
+                "alice".to_string(),
+                "target1".to_string(),
+                ActionResult::Success,
+            )
+            .await
+            .unwrap();
 
-        logger.log_failure(
-            ActionType::Scan,
-            "alice".to_string(),
-            "target2".to_string(),
-            "Error occurred".to_string(),
-        ).await.unwrap();
+        logger
+            .log_failure(
+                ActionType::Scan,
+                "alice".to_string(),
+                "target2".to_string(),
+                "Error occurred".to_string(),
+            )
+            .await
+            .unwrap();
 
-        logger.log_action(
-            ActionType::Scan,
-            "bob".to_string(),
-            "target3".to_string(),
-            ActionResult::Success,
-        ).await.unwrap();
+        logger
+            .log_action(
+                ActionType::Scan,
+                "bob".to_string(),
+                "target3".to_string(),
+                ActionResult::Success,
+            )
+            .await
+            .unwrap();
 
-        logger.log_action(
-            ActionType::Apply,
-            "alice".to_string(),
-            "target4".to_string(),
-            ActionResult::Success,
-        ).await.unwrap();
+        logger
+            .log_action(
+                ActionType::Apply,
+                "alice".to_string(),
+                "target4".to_string(),
+                ActionResult::Success,
+            )
+            .await
+            .unwrap();
 
         // Query: Scan actions by alice that were successful
         let combined_filter = QueryFilter::new()
@@ -826,19 +835,25 @@ mod tests {
         let logger = AuditLogger::new(log_path).await.unwrap();
 
         // Log some entries
-        logger.log_action(
-            ActionType::Scan,
-            "alice".to_string(),
-            "target1".to_string(),
-            ActionResult::Success,
-        ).await.unwrap();
+        logger
+            .log_action(
+                ActionType::Scan,
+                "alice".to_string(),
+                "target1".to_string(),
+                ActionResult::Success,
+            )
+            .await
+            .unwrap();
 
-        logger.log_action(
-            ActionType::Apply,
-            "bob".to_string(),
-            "target2".to_string(),
-            ActionResult::Success,
-        ).await.unwrap();
+        logger
+            .log_action(
+                ActionType::Apply,
+                "bob".to_string(),
+                "target2".to_string(),
+                ActionResult::Success,
+            )
+            .await
+            .unwrap();
 
         // Verify integrity before tampering
         let is_valid = AuditLogger::verify_integrity(log_path).await.unwrap();
@@ -875,12 +890,15 @@ mod tests {
         let logger = AuditLogger::new(log_path).await.unwrap();
 
         // Log first entry
-        logger.log_action(
-            ActionType::Scan,
-            "user1".to_string(),
-            "target1".to_string(),
-            ActionResult::Success,
-        ).await.unwrap();
+        logger
+            .log_action(
+                ActionType::Scan,
+                "user1".to_string(),
+                "target1".to_string(),
+                ActionResult::Success,
+            )
+            .await
+            .unwrap();
 
         // Wait a bit to create time separation
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
@@ -888,22 +906,28 @@ mod tests {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
         // Log second entry (after middle_time)
-        logger.log_action(
-            ActionType::Apply,
-            "user2".to_string(),
-            "target2".to_string(),
-            ActionResult::Success,
-        ).await.unwrap();
+        logger
+            .log_action(
+                ActionType::Apply,
+                "user2".to_string(),
+                "target2".to_string(),
+                ActionResult::Success,
+            )
+            .await
+            .unwrap();
 
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
         // Log third entry (even later)
-        logger.log_action(
-            ActionType::Rollback,
-            "user3".to_string(),
-            "target3".to_string(),
-            ActionResult::Success,
-        ).await.unwrap();
+        logger
+            .log_action(
+                ActionType::Rollback,
+                "user3".to_string(),
+                "target3".to_string(),
+                ActionResult::Success,
+            )
+            .await
+            .unwrap();
 
         // Query entries after middle_time
         let filter = QueryFilter::new().with_start_time(middle_time);
@@ -931,46 +955,60 @@ mod tests {
         let logger = AuditLogger::new(log_path).await.unwrap();
 
         // Log 5 different entries
-        logger.log_action(
-            ActionType::Scan,
-            "user1".to_string(),
-            "target1".to_string(),
-            ActionResult::Success,
-        ).await.unwrap();
+        logger
+            .log_action(
+                ActionType::Scan,
+                "user1".to_string(),
+                "target1".to_string(),
+                ActionResult::Success,
+            )
+            .await
+            .unwrap();
 
-        logger.log_failure(
-            ActionType::Apply,
-            "user2".to_string(),
-            "target2".to_string(),
-            "Error".to_string(),
-        ).await.unwrap();
+        logger
+            .log_failure(
+                ActionType::Apply,
+                "user2".to_string(),
+                "target2".to_string(),
+                "Error".to_string(),
+            )
+            .await
+            .unwrap();
 
-        logger.log_action(
-            ActionType::Rollback,
-            "user3".to_string(),
-            "target3".to_string(),
-            ActionResult::Success,
-        ).await.unwrap();
+        logger
+            .log_action(
+                ActionType::Rollback,
+                "user3".to_string(),
+                "target3".to_string(),
+                ActionResult::Success,
+            )
+            .await
+            .unwrap();
 
-        logger.log_action(
-            ActionType::CheckpointCreate,
-            "user4".to_string(),
-            "cp_001".to_string(),
-            ActionResult::Success,
-        ).await.unwrap();
+        logger
+            .log_action(
+                ActionType::CheckpointCreate,
+                "user4".to_string(),
+                "cp_001".to_string(),
+                ActionResult::Success,
+            )
+            .await
+            .unwrap();
 
-        logger.log_action(
-            ActionType::ConfigChange,
-            "user5".to_string(),
-            "config.toml".to_string(),
-            ActionResult::Success,
-        ).await.unwrap();
+        logger
+            .log_action(
+                ActionType::ConfigChange,
+                "user5".to_string(),
+                "config.toml".to_string(),
+                ActionResult::Success,
+            )
+            .await
+            .unwrap();
 
         // Query with empty filter (should return all)
-        let all_entries = AuditLogger::query(
-            log_path,
-            QueryFilter::new(),
-        ).await.unwrap();
+        let all_entries = AuditLogger::query(log_path, QueryFilter::new())
+            .await
+            .unwrap();
 
         // Should have all 5 entries
         assert_eq!(all_entries.len(), 5);

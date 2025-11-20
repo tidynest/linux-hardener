@@ -2,20 +2,9 @@
 //!
 //! Use Ed25519 signatures to ensure checkpoints cannot be tampered with.
 
-use ed25519_dalek::{
-    Signature,
-    Signer,
-    SigningKey,
-    Verifier,
-};
-use hardener_common::error::{
-    HardeningError,
-    Result,
-};
-use std::{
-    fs,
-    path::Path,
-};
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier};
+use hardener_common::error::{HardeningError, Result};
+use std::{fs, path::Path};
 
 /// Manages Ed25519 signing keys for checkpoint signatures.
 pub struct CheckpointSigner {
@@ -66,12 +55,11 @@ impl CheckpointSigner {
 
     /// Loads a signing key from disk.
     fn load_key(key_path: &Path) -> Result<SigningKey> {
-        let key_bytes = fs::read(key_path)
-            .map_err(|e| HardeningError::System(e))?;
+        let key_bytes = fs::read(key_path).map_err(|e| HardeningError::System(e))?;
 
         if key_bytes.len() != 32 {
             return Err(HardeningError::Config(
-                "Invalid signing key: must be 32 bytes".to_string()
+                "Invalid signing key: must be 32 bytes".to_string(),
             ));
         }
 
@@ -86,27 +74,21 @@ impl CheckpointSigner {
     ///
     /// # Security Implications
     /// Sets file permissions to 0600 (owner read/write only).
-    fn save_key(
-        key_path: &Path,
-        signing_key: &SigningKey,
-    ) -> Result<()> {
+    fn save_key(key_path: &Path, signing_key: &SigningKey) -> Result<()> {
         use std::os::unix::fs::PermissionsExt;
 
         // Ensure parent directory exists
         if let Some(parent) = key_path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| HardeningError::System(e))?;
+            fs::create_dir_all(parent).map_err(|e| HardeningError::System(e))?;
         }
 
         // Write key bytes to file
         let key_bytes = signing_key.to_bytes();
-        fs::write(key_path, key_bytes)
-            .map_err(|e| HardeningError::System(e))?;
+        fs::write(key_path, key_bytes).map_err(|e| HardeningError::System(e))?;
 
         // Set restrictive permissions (0600 - owner read/write only)
         let permissions = fs::Permissions::from_mode(0o600);
-        fs::set_permissions(key_path, permissions)
-            .map_err(|e| HardeningError::System(e))?;
+        fs::set_permissions(key_path, permissions).map_err(|e| HardeningError::System(e))?;
 
         Ok(())
     }
@@ -117,10 +99,7 @@ impl CheckpointSigner {
     ///
     /// # Arguments
     /// * `data` - The data to sign (typically serialised checkpoint metadata)
-    pub fn sign(
-        &self,
-        data: &[u8]
-    ) -> Vec<u8> {
+    pub fn sign(&self, data: &[u8]) -> Vec<u8> {
         let signature: Signature = self.signing_key.sign(data);
         signature.to_bytes().to_vec()
     }
@@ -133,24 +112,22 @@ impl CheckpointSigner {
     ///
     /// # Returns
     /// `Ok(())` if signature is valid, `Err` otherwise.
-    pub fn verify(
-        &self,
-        data: &[u8],
-        signature_bytes: &[u8]
-    ) -> Result<()> {
+    pub fn verify(&self, data: &[u8], signature_bytes: &[u8]) -> Result<()> {
         if signature_bytes.len() != 64 {
             return Err(HardeningError::Config(
-                "Invalid signature: must be 64 bytes".to_string()
+                "Invalid signature: must be 64 bytes".to_string(),
             ));
         }
 
-        let signature_array: [u8; 64] = signature_bytes.try_into()
+        let signature_array: [u8; 64] = signature_bytes
+            .try_into()
             .map_err(|_| HardeningError::Config("Invalid signature format".to_string()))?;
 
         let signature = Signature::from_bytes(&signature_array);
         let verifying_key = self.signing_key.verifying_key();
 
-        verifying_key.verify(data, &signature)
+        verifying_key
+            .verify(data, &signature)
             .map_err(|_| HardeningError::Config("Signature verification failed".to_string()))?;
 
         Ok(())

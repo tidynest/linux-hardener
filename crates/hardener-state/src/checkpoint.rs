@@ -3,10 +3,7 @@
 //! Checkpoints capture the state of files before modifications,
 //! allowing safe rollback of hardening changes.
 
-use serde::{
-    Deserialize,
-    Serialize,
-};
+use serde::{Deserialize, Serialize};
 
 /// Unique identifier for a checkpoint.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]

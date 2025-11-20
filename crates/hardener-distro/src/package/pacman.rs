@@ -1,13 +1,7 @@
 //! Pacman package manager implementation for Arch Linux systems.
 
-use super::{
-    Package,
-    PackageManager
-};
-use hardener_common::error::{
-    HardeningError,
-    Result,
-};
+use super::{Package, PackageManager};
+use hardener_common::error::{HardeningError, Result};
 use std::process::Command;
 
 /// Pacman package manager implementation.
@@ -37,14 +31,13 @@ impl PacmanPackageManager {
 
         // Arch package naming rules: alphanumeric, @, ., _, +, -
         let valid = package_name.chars().all(|c| {
-            c.is_ascii_alphanumeric()
-            || c == '@' || c == '.' || c == '_' || c == '+' || c == '-'
+            c.is_ascii_alphanumeric() || c == '@' || c == '.' || c == '_' || c == '+' || c == '-'
         });
 
-            if !valid {
+        if !valid {
             return Err(HardeningError::Validation(format!(
-            "Invalid package name '{}': contains forbidden characters",
-            package_name
+                "Invalid package name '{}': contains forbidden characters",
+                package_name
             )));
         }
 
@@ -60,17 +53,15 @@ impl PacmanPackageManager {
     /// This method runs pacman with elevated privileges. Ensures arguments
     /// are validated before passing them to this function.
     fn execute_pacman(&self, args: &[&str]) -> Result<String> {
-        let output = Command::new("pacman")
-            .args(args)
-            .output()
-            .map_err(|e| HardeningError::PackageManager(format!(
-                "Failed to execute pacman: {}", e
-            )))?;
+        let output = Command::new("pacman").args(args).output().map_err(|e| {
+            HardeningError::PackageManager(format!("Failed to execute pacman: {}", e))
+        })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(HardeningError::PackageManager(format!(
-                "Pacman command failed: {}", stderr
+                "Pacman command failed: {}",
+                stderr
             )));
         }
 
@@ -127,9 +118,9 @@ impl PackageManager for PacmanPackageManager {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if parts.len() >= 2 {
                     Some(Package {
-                        package_name:               parts[0].to_string(),
-                        package_version:            parts[1].to_string(),
-                        package_architecture:       std::env::consts::ARCH.to_string(),
+                        package_name: parts[0].to_string(),
+                        package_version: parts[1].to_string(),
+                        package_architecture: std::env::consts::ARCH.to_string(),
                         package_is_security_update: false,
                     })
                 } else {
@@ -145,9 +136,9 @@ impl PackageManager for PacmanPackageManager {
         let result = Command::new("pacman")
             .args(&["-Q", package])
             .output()
-            .map_err(|e| HardeningError::PackageManager(format!(
-                    "Failed to query package: {}", e
-                )))?;
+            .map_err(|e| {
+                HardeningError::PackageManager(format!("Failed to query package: {}", e))
+            })?;
 
         Ok(result.status.success())
     }
