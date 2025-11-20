@@ -1,5 +1,6 @@
 pub mod macros;
-mod kernel;
+pub mod kernel;
+pub mod ssh;
 
 // Re-export dependencies for macro use
 #[doc(hidden)]
@@ -7,6 +8,8 @@ pub use hardener_common;
 
 #[doc(hidden)]
 pub use hardener_core;
+pub use kernel::KernelHardeningPlugin;
+pub use ssh::SshHardeningPlugin;
 
 pub fn add(left: u64, right: u64) -> u64 {
     left + right

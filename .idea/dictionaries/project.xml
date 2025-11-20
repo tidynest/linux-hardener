@@ -6,12 +6,14 @@
       <w>dmesg</w>
       <w>dnf's</w>
       <w>endeavouros</w>
+      <w>kptr</w>
       <w>linuxmint</w>
       <w>noconfirm</w>
       <w>pcidss</w>
       <w>queryformat</w>
       <w>rhsa</w>
       <w>showformat</w>
+      <w>syncookies</w>
       <w>testuser</w>
       <w>updateinfo</w>
       <w>whoami</w>

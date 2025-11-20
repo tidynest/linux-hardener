@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 hardener-common = { path = "../hardener-common" }
 hardener-core   = { path = "../hardener-core" }
+tracing = "0.1.41"
