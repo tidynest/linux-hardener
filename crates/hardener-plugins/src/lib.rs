@@ -1,3 +1,4 @@
+pub mod firewall;
 pub mod kernel;
 pub mod macros;
 pub mod ssh;
@@ -7,6 +8,7 @@ pub mod ssh;
 pub use hardener_common;
 
 #[doc(hidden)]
+pub use firewall::FirewallPlugin;
 pub use hardener_core;
 pub use kernel::KernelHardeningPlugin;
 pub use ssh::SshHardeningPlugin;
