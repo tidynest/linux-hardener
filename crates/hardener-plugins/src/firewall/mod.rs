@@ -6,7 +6,9 @@
 //! The plugin automatically detects which firewall backend is available on
 //! the system and uses the appropriate implementation.
 
-mod ufw;
+pub mod firewalld;
+pub mod nftables;
+pub mod ufw;
 
 use hardener_common::{
     error::Result,
@@ -163,16 +165,30 @@ impl FirewallPlugin {
     /// # Returns
     /// A boxed backend implementation, or an error if no backend is available.
     fn detect_backend(&self) -> Result<Box<dyn FirewallBackend>> {
-        // Try UFW first (Ubuntu/Debian).
+        // Try firewalld first (RHEL/Fedora/CentOS).
+        let firewalld = firewalld::FirewalldBackend::new();
+        if firewalld.detect()? {
+            tracing::info!("Detected firewalld firewall backend");
+            return Ok(Box::new(firewalld));
+        }
+
+        // Try UFW second (Ubuntu/Debian).
         let ufw = ufw::UfwBackend::new();
         if ufw.detect()? {
             tracing::info!("Detected UFW firewall backend");
             return Ok(Box::new(ufw));
         }
 
+        // Try nftables third (modern systems, Arch, Debian 10+, Ubuntu 20.04+).
+        let nftables = nftables::NftablesBackend::new();
+        if nftables.detect()? {
+            tracing::info!("Detected nftables firewall backend");
+            return Ok(Box::new(nftables));
+        }
+
         // No backend found.
         Err(hardener_common::error::HardeningError::Plugin(
-            "No supported firewall backend found (checked: ufw)".to_string(),
+            "No supported firewall backend found (checked: ufw, nftables)".to_string(),
         ))
     }
 }
