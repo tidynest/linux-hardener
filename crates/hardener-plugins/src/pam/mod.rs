@@ -6,7 +6,11 @@
 //! - Password ageing policies (expiry, reuse prevention)
 
 use hardener_common::{
-    error::Result,
+    error::{
+        HardeningError,
+        Result,
+    },
+    file_utils::update_file_atomically,
     types::{
         FindingCategory,
         PluginId,
@@ -28,7 +32,10 @@ use hardener_core::{
     Config,
     Checkpoint,
 };
-use std::time::Instant;
+use std::{
+    path::Path,
+    time::Instant,
+};
 use tracing::{
     debug,
     info,
@@ -274,11 +281,14 @@ impl HardeningPlugin for PamHardeningPlugin {
             }
         }
 
-        // Step 4: Write modified configuration files back to disk
+        // Step 4: Write modified configuration files back to disk atomically
         if pwquality_backup.is_some() {
-            match std::fs::write("/etc/security/pwquality.conf", &pwquality_content) {
+            match update_file_atomically(
+                Path::new("/etc/security/pwquality.conf"),
+                &pwquality_content
+            ) {
                 Ok(_) => {
-                    info!("Successfully wrote /etc/security/pwquality.conf");
+                    info!("Successfully wrote /etc/security/pwquality.conf (atomic write)");
                     changes.push(Change {
                         change_type: ChangeType::ConfigFile,
                         description: "Wrote modified pwquality.conf".to_string(),
@@ -300,9 +310,12 @@ impl HardeningPlugin for PamHardeningPlugin {
         }
 
         if login_defs_backup.is_some() {
-            match std::fs::write("/etc/login.defs", &login_defs_content) {
+            match update_file_atomically(
+                Path::new("/etc/login.defs"),
+                &login_defs_content
+            ) {
                 Ok(_) => {
-                    info!("Successfully wrote /etc/login.defs");
+                    info!("Successfully wrote /etc/login.defs (atomic write)");
                     changes.push(Change {
                         change_type: ChangeType::ConfigFile,
                         description: "Wrote modified login.defs".to_string(),
@@ -544,8 +557,10 @@ fn parse_config_directive(
             }
 
             // Handle "key value" format (space-separated)
-            if !remainder.is_empty() && remainder.chars().next().unwrap().is_whitespace() {
-                return Some(remainder.trim().to_string());
+            if let Some(ch) = remainder.chars().next() {
+                if ch.is_whitespace() {
+                    return Some(remainder.trim().to_string());
+                }
             }
         }
     }
@@ -562,7 +577,7 @@ fn create_config_backup(file_path: &str) -> Result<String> {
 
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .map_err(|e| HardeningError::Plugin(format!("Failed to get system time: {}", e)))?
         .as_secs();
 
     let backup_path = format!("{}.backup-{}", file_path, timestamp);
@@ -600,8 +615,13 @@ fn apply_directive_to_content(
             let remainder = stripped.trim();
 
             // Check if it is followed by = or whitespace (actual directive, not just prefix match).
-            if remainder.starts_with('=') ||
-                (!remainder.is_empty() && remainder.chars().next().unwrap().is_whitespace()) {
+            let is_whitespace_separated = if let Some(ch) = remainder.chars().next() {
+                ch.is_whitespace()
+            } else {
+                false
+            };
+
+            if remainder.starts_with('=') || is_whitespace_separated {
                 // Update the line with new value.
                 *line = format!("{} = {}", directive_name, secure_value);
                 found = true;

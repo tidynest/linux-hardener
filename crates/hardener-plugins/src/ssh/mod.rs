@@ -12,6 +12,7 @@
 
 use hardener_common::{
     error::Result,
+    file_utils::update_file_atomically,
     types::{
         FindingCategory,
         PluginId,
@@ -36,6 +37,7 @@ use hardener_core::{
 };
 use std::{
     fs,
+    path::Path,
     process::Command,
     time::Instant
 };
@@ -437,8 +439,8 @@ impl HardeningPlugin for SshHardeningPlugin {
             }
         }
 
-        // Step 4: Write modified configuration.
-        match fs::write(config_path, &config_content) {
+        // Step 4: Write modified configuration atomically.
+        match update_file_atomically(Path::new(config_path), &config_content) {
             Ok(_) => {
                 changes.push(Change {
                     description: format!("Updated {}", config_path),
@@ -446,7 +448,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                     success: true,
                     error: None,
                 });
-                tracing::info!("SSH configuration updated successfully");
+                tracing::info!("SSH configuration updated successfully (atomic write)");
             }
             Err(e) => {
                 changes.push(Change {
