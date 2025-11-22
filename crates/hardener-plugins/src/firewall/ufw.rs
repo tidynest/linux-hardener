@@ -147,6 +147,12 @@ impl UfwBackend {
     }
 }
 
+impl Default for UfwBackend {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FirewallBackend for UfwBackend {
     fn backend_name(&self) -> &str {
         "ufw"

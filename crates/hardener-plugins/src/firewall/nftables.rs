@@ -176,6 +176,12 @@ impl NftablesBackend {
     }
 }
 
+impl Default for NftablesBackend {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FirewallBackend for NftablesBackend {
     fn backend_name(&self) -> &str {
         "nftables"

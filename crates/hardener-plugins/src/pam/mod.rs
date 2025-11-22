@@ -527,7 +527,7 @@ fn read_pwquality_config() -> Result<String> {
 
 /// Reads the login.defs configuration file.
 fn read_login_defs() -> Result<String> {
-    Ok(std::fs::read_to_string("/etc/security/login.defs")?)
+    Ok(std::fs::read_to_string("/etc/login.defs")?)
 }
 
 /// Parses a configuration directive from file content.
@@ -557,10 +557,8 @@ fn parse_config_directive(
             }
 
             // Handle "key value" format (space-separated)
-            if let Some(ch) = remainder.chars().next() {
-                if ch.is_whitespace() {
-                    return Some(remainder.trim().to_string());
-                }
+            if let Some(ch) = remainder.chars().next() && ch.is_whitespace() {
+                return Some(remainder.trim().to_string());
             }
         }
     }

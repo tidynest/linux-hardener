@@ -63,6 +63,12 @@ impl FirewalldBackend {
     }
 }
 
+impl Default for FirewalldBackend {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FirewallBackend for FirewalldBackend {
     fn backend_name(&self) -> &str {
         "firewalld"
@@ -94,7 +100,7 @@ impl FirewallBackend for FirewalldBackend {
 
         // Start firewalld service
         let start_output = Command::new("systemctl")
-            .args(&["start", "firewalld"])
+            .args(["start", "firewalld"])
             .output()
             .map_err(|e| {
                 HardeningError::Plugin(format!(
@@ -111,7 +117,7 @@ impl FirewallBackend for FirewalldBackend {
 
         // Enable firewalld to start on boot
         let enable_output = Command::new("systemctl")
-            .args(&["enable", "firewalld"])
+            .args(["enable", "firewalld"])
             .output()
             .map_err(|e| {
                 HardeningError::Plugin(format!(

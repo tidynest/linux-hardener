@@ -1,1 +1,33 @@
+# Rust build artifacts
 /target
+**/*.rs.bk
+
+# Editor swap files
+*.swp
+*.swo
+*~
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# SQLite databases (may contain sensitive checkpoint data)
+*.db
+*.db-shm
+*.db-wal
+
+# Environment files (may contain credentials)
+.env
+.env.*
+
+# Backup files created by hardener tool
+*.backup-*
+*_backup_*
+
+# IDE-specific
+.idea/dictionaries/
+.vscode/settings.json
+
+# Project-specific development files (keep local only)
+/.claude/
+/CLAUDE.md
