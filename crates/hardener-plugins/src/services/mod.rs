@@ -71,22 +71,12 @@ const UNNECESSARY_SERVICES: &[ServiceDirective] = &[
     },
 ];
 
-/// Executes a systemctl command and returns the output.
-fn execute_systemctl(args: &[&str]) -> Result<String> {
-    let output = Command::new("systemctl")
-        .args(args)
-        .output()
-        .map_err(|e| hardener_common::error::HardeningError::System(e))?;
-
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
-}
-
 /// Checks if a systemd service unit exists on the system.
 fn is_service_exists(service_name: &str) -> Result<bool> {
     let output = Command::new("systemctl")
-        .args(&["list-unit-files", service_name])
+        .args(["list-unit-files", service_name])
         .output()
-        .map_err(|e| hardener_common::error::HardeningError::System(e))?;
+        .map_err(hardener_common::error::HardeningError::System)?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     Ok(stdout.contains(service_name))
@@ -95,9 +85,9 @@ fn is_service_exists(service_name: &str) -> Result<bool> {
 /// Checks if a service is enabled to start at boot.
 fn is_service_enabled(service_name: &str) -> Result<bool> {
     let output = Command::new("systemctl")
-        .args(&["is-enabled", service_name])
+        .args(["is-enabled", service_name])
         .output()
-        .map_err(|e| hardener_common::error::HardeningError::System(e))?;
+        .map_err(hardener_common::error::HardeningError::System)?;
 
     Ok(output.status.success())
 }
@@ -105,9 +95,9 @@ fn is_service_enabled(service_name: &str) -> Result<bool> {
 /// Checks if a service is currently active (running).
 fn is_service_active(service_name: &str) -> Result<bool> {
     let output = Command::new("systemctl")
-        .args(&["is-active", service_name])
+        .args(["is-active", service_name])
         .output()
-        .map_err(|e| hardener_common::error::HardeningError::System(e))?;
+        .map_err(hardener_common::error::HardeningError::System)?;
 
     Ok(output.status.success())
 }
@@ -115,9 +105,9 @@ fn is_service_active(service_name: &str) -> Result<bool> {
 /// Stops a running service.
 fn stop_service(service_name: &str) -> Result<()> {
     Command::new("systemctl")
-        .args(&["stop", service_name])
+        .args(["stop", service_name])
         .output()
-        .map_err(|e| hardener_common::error::HardeningError::System(e))?;
+        .map_err(hardener_common::error::HardeningError::System)?;
 
     Ok(())
 }
@@ -125,9 +115,9 @@ fn stop_service(service_name: &str) -> Result<()> {
 /// Disable a service from starting at boot.
 fn disable_service(service_name: &str) -> Result<()> {
     Command::new("systemctl")
-        .args(&["disable", service_name])
+        .args(["disable", service_name])
         .output()
-        .map_err(|e| hardener_common::error::HardeningError::System(e))?;
+        .map_err(hardener_common::error::HardeningError::System)?;
 
     Ok(())
 }
@@ -135,9 +125,9 @@ fn disable_service(service_name: &str) -> Result<()> {
 /// Masks a service to prevent it from being started.
 fn mask_service(service_name: &str) -> Result<()> {
     Command::new("systemctl")
-        .args(&["mask", service_name])
+        .args(["mask", service_name])
         .output()
-        .map_err(|e| hardener_common::error::HardeningError::System(e))?;
+        .map_err(hardener_common::error::HardeningError::System)?;
 
     Ok(())
 }
