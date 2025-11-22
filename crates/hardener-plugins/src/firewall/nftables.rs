@@ -4,19 +4,9 @@
 //! Nftables is the modern replacement for iptables and is used on Fedora, Debian 10+,
 //! Ubuntu 20.04+, Arch Linux, and other distributions.
 
-use crate::firewall::{
-    FirewallBackend,
-    get_baseline_rules,
-    Rule,
-};
-use hardener_common::error::{
-    HardeningError,
-    Result,
-};
-use hardener_core::{
-    Change,
-    ChangeType,
-};
+use crate::firewall::{FirewallBackend, Rule, get_baseline_rules};
+use hardener_common::error::{HardeningError, Result};
+use hardener_core::{Change, ChangeType};
 use std::process::Command;
 
 /// Nftables firewall backend for modern Linux systems.
@@ -40,18 +30,11 @@ impl NftablesBackend {
     ///
     /// # Returns
     /// The command output as a string, or an error if execution fails.
-    fn execute_nft(
-        &self,
-        args: &[&str],
-    ) -> Result<String> {
+    fn execute_nft(&self, args: &[&str]) -> Result<String> {
         let output = Command::new("nft")
             .args(args)
             .output()
-            .map_err(|e| {
-                HardeningError::Plugin(format!(
-                    "Failed to execute nft command: {}", e
-                ))
-            })?;
+            .map_err(|e| HardeningError::Plugin(format!("Failed to execute nft command: {}", e)))?;
 
         if !output.status.success() {
             return Err(HardeningError::Plugin(format!(
@@ -69,10 +52,7 @@ impl NftablesBackend {
     /// - "tcp dport 22 accept"
     /// - "ip addr 192.168.1.0/24 tcp dport 80 accept"
     /// - "ct state established,related accept"
-    fn parse_nft_rule_line(
-        &self,
-        line: &str,
-    ) -> Option<Rule> {
+    fn parse_nft_rule_line(&self, line: &str) -> Option<Rule> {
         let parts: Vec<&str> = line.split_whitespace().collect();
 
         if parts.is_empty() {
@@ -80,17 +60,17 @@ impl NftablesBackend {
         }
 
         let mut protocol = "all".to_string();
-        let mut port     = "any".to_string();
-        let mut source   = "any".to_string();
-        let mut action   = "drop".to_string();
+        let mut port = "any".to_string();
+        let mut source = "any".to_string();
+        let mut action = "drop".to_string();
 
         // Parse action (last element is usually accept/drop/reject)
         if let Some(last) = parts.last() {
             action = match *last {
                 "accept" => "accept".to_string(),
-                "drop"   => "drop".to_string(),
+                "drop" => "drop".to_string(),
                 "reject" => "reject".to_string(),
-                _        => action,
+                _ => action,
             };
         }
 
@@ -110,11 +90,11 @@ impl NftablesBackend {
         }
 
         Some(Rule {
-            rule_description:   format!("{} {} from {}", action, port, source),
-            rule_protocol:      protocol,
-            rule_port:          port,
-            rule_source:        source,
-            rule_action:        action,
+            rule_description: format!("{} {} from {}", action, port, source),
+            rule_protocol: protocol,
+            rule_port: port,
+            rule_source: source,
+            rule_action: action,
         })
     }
 
@@ -122,10 +102,7 @@ impl NftablesBackend {
     ///
     /// Converts backend-agnostic Rule into nft command syntax:
     /// e.g., `nft add rule inet filter input tcp dport 22 accept`
-    fn build_nft_rule_args(
-        &self,
-        rule: &Rule,
-    ) -> Vec<String> {
+    fn build_nft_rule_args(&self, rule: &Rule) -> Vec<String> {
         let mut args = vec![
             "add".to_string(),
             "rule".to_string(),
@@ -160,7 +137,7 @@ impl NftablesBackend {
         }
 
         // Protocol and port
-        if rule.rule_protocol != "all" && rule.rule_protocol != "any"{
+        if rule.rule_protocol != "all" && rule.rule_protocol != "any" {
             args.push(rule.rule_protocol.clone());
 
             if rule.rule_port != "any" {
@@ -191,7 +168,7 @@ impl FirewallBackend for NftablesBackend {
         // Check if nft command exists by trying to run it.
         match Command::new("which").arg("nft").output() {
             Ok(output) => Ok(output.status.success()),
-            Err(_)     => Ok(false),
+            Err(_) => Ok(false),
         }
     }
 
@@ -221,23 +198,20 @@ impl FirewallBackend for NftablesBackend {
 
         // Step 2: Create input chain (with drop policy for security
         self.execute_nft(&[
-            "add", "chain", "inet", "filter", "input",
-            "{", "type", "filter", "hook", "input", "priority", "0",
-            ";", "policy", "drop", ";", "}"
+            "add", "chain", "inet", "filter", "input", "{", "type", "filter", "hook", "input",
+            "priority", "0", ";", "policy", "drop", ";", "}",
         ])?;
 
         // Step 3: Create forward chain
         self.execute_nft(&[
-            "add", "chain", "inet", "filter", "forward",
-            "{", "type", "filter", "hook", "forward", "priority",
-            "0", ";", "policy", "drop", ";", "}"
+            "add", "chain", "inet", "filter", "forward", "{", "type", "filter", "hook", "forward",
+            "priority", "0", ";", "policy", "drop", ";", "}",
         ])?;
 
         // Step 4: Create output chain (allow all outbound by default)
         self.execute_nft(&[
-            "add", "chain", "inet", "filter", "output",
-            "{", "type", "filter", "hook", "output", "priority", "0",
-            ";", "policy", "accept", ";", "}"
+            "add", "chain", "inet", "filter", "output", "{", "type", "filter", "hook", "output",
+            "priority", "0", ";", "policy", "accept", ";", "}",
         ])?;
 
         tracing::info!("Nftables firewall enabled successfully");
@@ -264,7 +238,8 @@ impl FirewallBackend for NftablesBackend {
                 || trimmed.starts_with("table")
                 || trimmed.starts_with("chain")
                 || trimmed.starts_with('{')
-                || trimmed.starts_with('}') {
+                || trimmed.starts_with('}')
+            {
                 continue;
             }
 
@@ -277,10 +252,7 @@ impl FirewallBackend for NftablesBackend {
         Ok(rules)
     }
 
-    fn apply_rules(
-        &self,
-        rules: &[Rule]
-    ) -> Result<Vec<Change>> {
+    fn apply_rules(&self, rules: &[Rule]) -> Result<Vec<Change>> {
         let mut changes = Vec::new();
 
         for rule in rules {
@@ -293,17 +265,20 @@ impl FirewallBackend for NftablesBackend {
                     changes.push(Change {
                         description: format!("Added firewall rule: {}", rule.rule_description),
                         change_type: ChangeType::FirewallRule,
-                        success:     true,
-                        error:       None,
+                        success: true,
+                        error: None,
                     });
                 }
                 Err(e) => {
                     tracing::warn!("Failed to apply rule '{}': {}", rule.rule_description, e);
                     changes.push(Change {
-                        description: format!("Failed to add firewall rule: {}", rule.rule_description),
+                        description: format!(
+                            "Failed to add firewall rule: {}",
+                            rule.rule_description
+                        ),
                         change_type: ChangeType::FirewallRule,
-                        success:     false,
-                        error:       Some(e.to_string()),
+                        success: false,
+                        error: Some(e.to_string()),
                     });
                 }
             }

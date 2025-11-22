@@ -4,19 +4,9 @@
 //! Firewalld uses a zone-based configuration model and distinguishes between runtime
 //! and permanent configurations.
 
-use crate::firewall::{
-    FirewallBackend,
-    get_baseline_rules,
-    Rule,
-};
-use hardener_common::error::{
-    HardeningError,
-    Result,
-};
-use hardener_core::{
-    Change,
-    ChangeType,
-};
+use crate::firewall::{FirewallBackend, Rule, get_baseline_rules};
+use hardener_common::error::{HardeningError, Result};
+use hardener_core::{Change, ChangeType};
 use std::process::Command;
 
 /// Firewalld backend for RHEL/Fedora/CentOS systems.
@@ -31,17 +21,12 @@ impl FirewalldBackend {
         FirewalldBackend
     }
 
-    fn execute_firewall_cmd(
-        &self,
-        args: &[&str],
-    ) -> Result<String> {
+    fn execute_firewall_cmd(&self, args: &[&str]) -> Result<String> {
         let output = Command::new("firewall-cmd")
             .args(args)
             .output()
             .map_err(|e| {
-                HardeningError::Plugin(format!(
-                    "Failed to execute firewall-cmd: {}", e
-                ))
+                HardeningError::Plugin(format!("Failed to execute firewall-cmd: {}", e))
             })?;
 
         if !output.status.success() {
@@ -78,7 +63,7 @@ impl FirewallBackend for FirewalldBackend {
         // Check if firewall-cmd command exists
         match Command::new("firewall-cmd").arg("--version").output() {
             Ok(output) => Ok(output.status.success()),
-            Err(_)     => Ok(false),
+            Err(_) => Ok(false),
         }
     }
 
@@ -102,11 +87,7 @@ impl FirewallBackend for FirewalldBackend {
         let start_output = Command::new("systemctl")
             .args(["start", "firewalld"])
             .output()
-            .map_err(|e| {
-                HardeningError::Plugin(format!(
-                    "Failed to start firewalld: {}", e
-                ))
-            })?;
+            .map_err(|e| HardeningError::Plugin(format!("Failed to start firewalld: {}", e)))?;
 
         if !start_output.status.success() {
             return Err(HardeningError::Plugin(format!(
@@ -119,11 +100,7 @@ impl FirewallBackend for FirewalldBackend {
         let enable_output = Command::new("systemctl")
             .args(["enable", "firewalld"])
             .output()
-            .map_err(|e| {
-                HardeningError::Plugin(format!(
-                    "Failed to enable firewalld: {}", e
-                ))
-            })?;
+            .map_err(|e| HardeningError::Plugin(format!("Failed to enable firewalld: {}", e)))?;
 
         if !enable_output.status.success() {
             return Err(HardeningError::Plugin(format!(
@@ -145,44 +122,30 @@ impl FirewallBackend for FirewalldBackend {
         let mut rules = Vec::new();
 
         // List services allowed in the zone
-        let service_output = self.execute_firewall_cmd(&[
-            "--zone",
-            &zone,
-            "--list-services",
-        ])?;
+        let service_output = self.execute_firewall_cmd(&["--zone", &zone, "--list-services"])?;
 
         for service in service_output.split_whitespace() {
             rules.push(Rule {
-                rule_description: format!(
-                    "Allow {} service",
-                    service
-                ),
-                rule_protocol:    "tcp".to_string(),  // Services typically use TCP
-                rule_port:        service.to_string(),
-                rule_source:      "any".to_string(),
-                rule_action:      "accept".to_string(),
+                rule_description: format!("Allow {} service", service),
+                rule_protocol: "tcp".to_string(), // Services typically use TCP
+                rule_port: service.to_string(),
+                rule_source: "any".to_string(),
+                rule_action: "accept".to_string(),
             });
         }
 
         // List ports allowed in the zone
-        let ports_output = self.execute_firewall_cmd(&[
-            "--zone",
-            &zone,
-            "--list-ports",
-        ])?;
+        let ports_output = self.execute_firewall_cmd(&["--zone", &zone, "--list-ports"])?;
 
         for port in ports_output.split_whitespace() {
             let parts: Vec<&str> = port.split('/').collect();
             if parts.len() == 2 {
                 rules.push(Rule {
-                    rule_description: format!(
-                        "Allow port {}",
-                        port,
-                    ),
-                    rule_protocol:    parts[1].to_string(),
-                    rule_port:        parts[0].to_string(),
-                    rule_source:      "any".to_string(),
-                    rule_action:      "accept".to_string(),
+                    rule_description: format!("Allow port {}", port,),
+                    rule_protocol: parts[1].to_string(),
+                    rule_port: parts[0].to_string(),
+                    rule_source: "any".to_string(),
+                    rule_action: "accept".to_string(),
                 });
             }
         }
@@ -190,18 +153,11 @@ impl FirewallBackend for FirewalldBackend {
         Ok(rules)
     }
 
-    fn apply_rules(
-        &self,
-        rules: &[Rule]
-    ) -> Result<Vec<Change>> {
+    fn apply_rules(&self, rules: &[Rule]) -> Result<Vec<Change>> {
         let zone = self.get_default_zone()?;
         let mut changes = Vec::new();
 
-        tracing::info!(
-            "Applying {} firewalld rules to zone {}",
-            rules.len(),
-            zone
-        );
+        tracing::info!("Applying {} firewalld rules to zone {}", rules.len(), zone);
 
         for rule in rules {
             if rule.rule_description.contains("loopback") {
@@ -210,38 +166,34 @@ impl FirewallBackend for FirewalldBackend {
             }
 
             if rule.rule_description.contains("established") {
-                tracing::debug!("Skipping established/related rule (handled by firewalld automatically)");
+                tracing::debug!(
+                    "Skipping established/related rule (handled by firewalld automatically)"
+                );
                 continue;
             }
 
             // Handle drop/default deny rules (set zone target)
-            if rule.rule_action == "drop" && rule.rule_port == "any"
-            {
+            if rule.rule_action == "drop" && rule.rule_port == "any" {
                 match self.execute_firewall_cmd(&[
                     "--permanent",
-                    "--zone", &zone,
+                    "--zone",
+                    &zone,
                     "--set-target=DROP",
                 ]) {
                     Ok(_) => {
                         changes.push(Change {
                             change_type: ChangeType::FirewallRule,
-                            description: format!(
-                                "Set zone '{}' default target to DROP",
-                                zone,
-                            ),
-                            success:     true,
-                            error:       None,
+                            description: format!("Set zone '{}' default target to DROP", zone,),
+                            success: true,
+                            error: None,
                         });
                     }
                     Err(e) => {
                         changes.push(Change {
                             change_type: ChangeType::FirewallRule,
-                            description: format!(
-                                "Set zone '{}' default target to DROP",
-                                zone,
-                            ),
-                            success:     false,
-                            error:       Some(e.to_string()),
+                            description: format!("Set zone '{}' default target to DROP", zone,),
+                            success: false,
+                            error: Some(e.to_string()),
                         });
                     }
                 }
@@ -250,37 +202,30 @@ impl FirewallBackend for FirewalldBackend {
 
             // For accept rules, add port or service
             if rule.rule_action == "accept" {
-                let port_spec = format!("{}/{}", rule.rule_port,
-                                        rule.rule_protocol);
+                let port_spec = format!("{}/{}", rule.rule_port, rule.rule_protocol);
 
                 match self.execute_firewall_cmd(&[
                     "--permanent",
-                    "--zone", &zone,
-                    "--add-port", &port_spec,
+                    "--zone",
+                    &zone,
+                    "--add-port",
+                    &port_spec,
                 ]) {
                     Ok(_) => {
                         changes.push(Change {
                             change_type: ChangeType::FirewallRule,
-                            description: format!(
-                                "Added port {} to zone '{}'",
-                                port_spec,
-                                zone
-                            ),
-                            success:     true,
-                            error:       None,
+                            description: format!("Added port {} to zone '{}'", port_spec, zone),
+                            success: true,
+                            error: None,
                         });
                     }
                     Err(e) => {
                         tracing::warn!("Failed to add port {}: {}", port_spec, e);
                         changes.push(Change {
                             change_type: ChangeType::FirewallRule,
-                            description: format!(
-                                "Added port {} to zone '{}'",
-                                port_spec,
-                                zone
-                            ),
-                            success:     false,
-                            error:       Some(e.to_string()),
+                            description: format!("Added port {} to zone '{}'", port_spec, zone),
+                            success: false,
+                            error: Some(e.to_string()),
                         });
                     }
                 }
@@ -294,8 +239,8 @@ impl FirewallBackend for FirewalldBackend {
                 changes.push(Change {
                     change_type: ChangeType::FirewallRule,
                     description: "Reloaded firewalld to activate changes".to_string(),
-                    success:     true,
-                    error:       None,
+                    success: true,
+                    error: None,
                 });
             }
             Err(e) => {
@@ -303,8 +248,8 @@ impl FirewallBackend for FirewalldBackend {
                 changes.push(Change {
                     change_type: ChangeType::FirewallRule,
                     description: "Reloaded firewalld to activate changes".to_string(),
-                    success:     false,
-                    error:       Some(e.to_string()),
+                    success: false,
+                    error: Some(e.to_string()),
                 });
             }
         }
@@ -312,5 +257,3 @@ impl FirewallBackend for FirewalldBackend {
         Ok(changes)
     }
 }
-
-

@@ -2,19 +2,9 @@
 //!
 //! This backend manages firewall rules on Ubuntu/Debian systems using ufw.
 
-use crate::firewall::{
-    FirewallBackend,
-    get_baseline_rules,
-    Rule,
-};
-use hardener_common::error::{
-    HardeningError,
-    Result,
-};
-use hardener_core::{
-    Change,
-    ChangeType,
-};
+use crate::firewall::{FirewallBackend, Rule, get_baseline_rules};
+use hardener_common::error::{HardeningError, Result};
+use hardener_core::{Change, ChangeType};
 use std::process::Command;
 
 /// UFW firewall backend for Ubuntu/Debian systems.
@@ -33,18 +23,11 @@ impl UfwBackend {
     ///
     /// # Returns
     /// The command output as a string, or an error if execution fails.
-    fn execute_ufw(
-        &self,
-        args: &[&str],
-    ) -> Result<String> {
+    fn execute_ufw(&self, args: &[&str]) -> Result<String> {
         let output = Command::new("ufw")
             .args(args)
             .output()
-            .map_err(|e| {
-                HardeningError::Plugin(format!(
-                    "Failed to execute ufw command: {}", e
-                ))
-            })?;
+            .map_err(|e| HardeningError::Plugin(format!("Failed to execute ufw command: {}", e)))?;
 
         if !output.status.success() {
             return Err(HardeningError::Plugin(format!(
@@ -58,10 +41,7 @@ impl UfwBackend {
     /// Parses a single UFW status line into a Rule.
     ///
     /// UFW format: "22/tcp     Allow     Anywhere"
-    fn parse_ufw_rule_line(
-        &self,
-        line: &str
-    ) -> Option<Rule> {
+    fn parse_ufw_rule_line(&self, line: &str) -> Option<Rule> {
         let parts: Vec<&str> = line.split_whitespace().collect();
 
         if parts.len() < 3 {
@@ -78,11 +58,12 @@ impl UfwBackend {
 
         // Second part is action (ALLOW, DENY, REJECT).
         let action = match parts[1].to_uppercase().as_str() {
-            "ALLOW"  => "accept",
-            "DENY"   => "drop",
+            "ALLOW" => "accept",
+            "DENY" => "drop",
             "REJECT" => "reject",
-            _        => "drop",
-        }.to_string();
+            _ => "drop",
+        }
+        .to_string();
 
         // Third part is source (Anywhere = any).
         let source = if parts[2] == "Anywhere" {
@@ -92,16 +73,11 @@ impl UfwBackend {
         };
 
         Some(Rule {
-            rule_description: format!(
-                "{} {} from {}",
-                action,
-                port,
-                source,
-            ),
-            rule_protocol:     protocol,
-            rule_port:         port,
-            rule_source:       source,
-            rule_action:       action,
+            rule_description: format!("{} {} from {}", action, port, source,),
+            rule_protocol: protocol,
+            rule_port: port,
+            rule_source: source,
+            rule_action: action,
         })
     }
 
@@ -109,18 +85,15 @@ impl UfwBackend {
     ///
     /// Converts backend-agnostic Rule into UFW command syntax:
     /// e.g., `ufw allow from 192.168.1.0/24 to any port 22 proto tcp`
-    fn build_ufw_rule_args(
-        &self,
-        rule: &Rule
-    ) -> Vec<String> {
+    fn build_ufw_rule_args(&self, rule: &Rule) -> Vec<String> {
         let mut args = Vec::new();
 
         // Action: allow, deny, reject.
         let ufw_action = match rule.rule_description.as_str() {
             "accept" => "allow",
-            "drop"   => "deny",
+            "drop" => "deny",
             "reject" => "reject",
-            _        => "deny",
+            _ => "deny",
         };
         args.push(ufw_action.to_string());
 
@@ -162,7 +135,7 @@ impl FirewallBackend for UfwBackend {
         // Check if ufw command exists by trying to run it.
         match Command::new("which").arg("ufw").output() {
             Ok(output) => Ok(output.status.success()),
-            Err(_)     => Ok(false),
+            Err(_) => Ok(false),
         }
     }
 
@@ -220,10 +193,7 @@ impl FirewallBackend for UfwBackend {
         Ok(rules)
     }
 
-    fn apply_rules(
-        &self,
-        rules: &[Rule]
-    ) -> Result<Vec<Change>> {
+    fn apply_rules(&self, rules: &[Rule]) -> Result<Vec<Change>> {
         let mut changes = Vec::new();
 
         for rule in rules {
@@ -236,8 +206,8 @@ impl FirewallBackend for UfwBackend {
                     changes.push(Change {
                         description: format!("Added firewall rule: {}", rule.rule_description),
                         change_type: ChangeType::FirewallRule,
-                        success:     true,
-                        error:       None,
+                        success: true,
+                        error: None,
                     });
                 }
                 Err(e) => {

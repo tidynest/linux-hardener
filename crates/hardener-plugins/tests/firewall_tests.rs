@@ -96,7 +96,11 @@ fn test_firewall_apply_requires_root() {
         println!("Changes made: {}", apply_result.changes.len());
 
         for change in &apply_result.changes {
-            println!("  - {}: {}", change.description, if change.success { "[OK]" } else { "[FAILED]" });
+            println!(
+                "  - {}: {}",
+                change.description,
+                if change.success { "[OK]" } else { "[FAILED]" }
+            );
             if let Some(ref error) = change.error {
                 println!("    Error: {}", error);
             }
@@ -107,7 +111,9 @@ fn test_firewall_apply_requires_root() {
         assert!(scan_result.success, "Scan should succeed after apply");
 
         // Should have no findings if firewall is now enabled
-        let disabled_findings: Vec<_> = scan_result.findings.iter()
+        let disabled_findings: Vec<_> = scan_result
+            .findings
+            .iter()
             .filter(|f| f.title.contains("disabled"))
             .collect();
 
@@ -142,7 +148,10 @@ fn test_backend_detection_order() {
     let ctx = Context::new();
 
     let result = plugin.scan(&ctx);
-    assert!(result.is_ok(), "Scan should return Ok even if no backend found");
+    assert!(
+        result.is_ok(),
+        "Scan should return Ok even if no backend found"
+    );
 
     let scan_result = result.unwrap();
 
@@ -156,13 +165,16 @@ fn test_backend_detection_order() {
     } else {
         // No backend found - this is acceptable on systems without firewall tools
         println!("No firewall backend detected (this is OK for test systems)");
-        assert!(scan_result.error.is_some(), "Should have error message when no backend found");
+        assert!(
+            scan_result.error.is_some(),
+            "Should have error message when no backend found"
+        );
 
         let error_msg = scan_result.error.unwrap();
         assert!(
-            error_msg.contains("firewalld") &&
-            error_msg.contains("ufw") &&
-            error_msg.contains("nftables"),
+            error_msg.contains("firewalld")
+                && error_msg.contains("ufw")
+                && error_msg.contains("nftables"),
             "Error message should mention all three backends: firewalld, ufw, nftables"
         );
     }
@@ -176,31 +188,36 @@ fn test_firewall_default_rules_structure() {
     let rules = get_baseline_rules();
 
     assert!(!rules.is_empty(), "Default rules should not be empty");
-    assert!(rules.len() >= 3, "Should have at least: loopback, established, SSH, drop default");
+    assert!(
+        rules.len() >= 3,
+        "Should have at least: loopback, established, SSH, drop default"
+    );
 
     // Verify loopback rule exists
-    let has_loopback = rules.iter().any(|r| r.rule_description.contains("loopback"));
+    let has_loopback = rules
+        .iter()
+        .any(|r| r.rule_description.contains("loopback"));
     assert!(has_loopback, "Should have loopback rule");
 
     // Verify established/related rule exists
-    let has_established = rules.iter().any(|r|
-        r.rule_description.contains("established") ||
-        r.rule_description.contains("related")
+    let has_established = rules.iter().any(|r| {
+        r.rule_description.contains("established") || r.rule_description.contains("related")
+    });
+    assert!(
+        has_established,
+        "Should have established/related connections rule"
     );
-    assert!(has_established, "Should have established/related connections rule");
 
     // Verify SSH rule exists (prevent lockout)
-    let has_ssh = rules.iter().any(|r|
-        r.rule_description.contains("SSH") &&
-        r.rule_port == "22"
-    );
+    let has_ssh = rules
+        .iter()
+        .any(|r| r.rule_description.contains("SSH") && r.rule_port == "22");
     assert!(has_ssh, "Should have SSH rule to prevent lockout");
 
     // Verify drop default rule exists
-    let has_drop = rules.iter().any(|r|
-        r.rule_action == "drop" &&
-        r.rule_port == "any"
-    );
+    let has_drop = rules
+        .iter()
+        .any(|r| r.rule_action == "drop" && r.rule_port == "any");
     assert!(has_drop, "Should have default drop rule");
 }
 
@@ -211,10 +228,10 @@ fn test_rule_structure_fields() {
 
     let test_rule = Rule {
         rule_description: "Test rule".to_string(),
-        rule_protocol:    "tcp".to_string(),
-        rule_port:        "22".to_string(),
-        rule_source:      "any".to_string(),
-        rule_action:      "accept".to_string(),
+        rule_protocol: "tcp".to_string(),
+        rule_port: "22".to_string(),
+        rule_source: "any".to_string(),
+        rule_action: "accept".to_string(),
     };
 
     assert_eq!(test_rule.rule_description, "Test rule");
@@ -234,8 +251,8 @@ fn test_firewalld_backend_detection() {
     // Test firewalld-specific detection
     // Run with: cargo test --package hardener-plugins test_firewalld_backend_detection -- --ignored --nocapture
 
-    use hardener_plugins::firewall::firewalld::FirewalldBackend;
     use hardener_plugins::firewall::FirewallBackend;
+    use hardener_plugins::firewall::firewalld::FirewalldBackend;
 
     let backend = FirewalldBackend::new();
     let detected = backend.detect();
@@ -271,8 +288,8 @@ fn test_ufw_backend_detection() {
     // Test UFW-specific detection
     // Run with: cargo test --package hardener-plugins test_ufw_backend_detection -- --ignored --nocapture
 
-    use hardener_plugins::firewall::ufw::UfwBackend;
     use hardener_plugins::firewall::FirewallBackend;
+    use hardener_plugins::firewall::ufw::UfwBackend;
 
     let backend = UfwBackend::new();
     let detected = backend.detect();
@@ -308,8 +325,8 @@ fn test_nftables_backend_detection() {
     // Test nftables-specific detection
     // Run with: cargo test --package hardener-plugins test_nftables_backend_detection -- --ignored --nocapture
 
-    use hardener_plugins::firewall::nftables::NftablesBackend;
     use hardener_plugins::firewall::FirewallBackend;
+    use hardener_plugins::firewall::nftables::NftablesBackend;
 
     let backend = NftablesBackend::new();
     let detected = backend.detect();

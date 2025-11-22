@@ -2,6 +2,7 @@ pub mod firewall;
 pub mod kernel;
 pub mod macros;
 pub mod pam;
+pub mod services;
 pub mod ssh;
 
 // Re-export dependencies for macro use
@@ -47,7 +48,10 @@ mod tests {
         assert_eq!(meta.plugin_id.to_string(), "test-plugin");
         assert_eq!(meta.plugin_name, "Test Plugin");
         assert_eq!(meta.plugin_version, "0.1.0");
-        assert_eq!(meta.plugin_description, "A test plugin for macro validation");
+        assert_eq!(
+            meta.plugin_description,
+            "A test plugin for macro validation"
+        );
 
         // Test dependencies
         let deps = plugin.dependencies();

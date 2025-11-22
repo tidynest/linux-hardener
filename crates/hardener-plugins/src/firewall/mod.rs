@@ -12,25 +12,12 @@ pub mod ufw;
 
 use hardener_common::{
     error::Result,
-    types::{
-        FindingCategory,
-        PluginId,
-        Severity,
-    },
+    types::{FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
+    ApplyResult, Change, Checkpoint, Config, ValidationReport,
     context::Context,
-    plugin::{
-        Finding,
-        HardeningPlugin,
-        PluginMetadata,
-        ScanResult,
-    },
-    ApplyResult,
-    Change,
-    Checkpoint,
-    Config,
-    ValidationReport,
+    plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult},
 };
 use std::time::Instant;
 
@@ -80,10 +67,7 @@ pub trait FirewallBackend: Send + Sync {
     ///
     /// # Returns
     /// A list of changes made, or an error if application fails.
-    fn apply_rules(
-        &self,
-        rules: &[Rule]
-    ) -> Result<Vec<Change>>;
+    fn apply_rules(&self, rules: &[Rule]) -> Result<Vec<Change>>;
 
     /// Returns the recommended baseline firewall rules.
     ///
@@ -106,31 +90,31 @@ pub fn get_baseline_rules() -> Vec<Rule> {
     vec![
         Rule {
             rule_description: "Allow loopback traffic".to_string(),
-            rule_protocol:    "all".to_string(),
-            rule_port:        "any".to_string(),
-            rule_source:      "127.0.0.1/8".to_string(),
-            rule_action:      "accept".to_string(),
+            rule_protocol: "all".to_string(),
+            rule_port: "any".to_string(),
+            rule_source: "127.0.0.1/8".to_string(),
+            rule_action: "accept".to_string(),
         },
         Rule {
             rule_description: "Allow established and related connections".to_string(),
-            rule_protocol:    "all".to_string(),
-            rule_port:        "any".to_string(),
-            rule_source:      "any".to_string(),
-            rule_action:      "accept".to_string(),
+            rule_protocol: "all".to_string(),
+            rule_port: "any".to_string(),
+            rule_source: "any".to_string(),
+            rule_action: "accept".to_string(),
         },
         Rule {
             rule_description: "Allow SSH to prevent lockout".to_string(),
-            rule_protocol:    "tcp".to_string(),
-            rule_port:        "22".to_string(),
-            rule_source:      "any".to_string(),
-            rule_action:      "accept".to_string(),
+            rule_protocol: "tcp".to_string(),
+            rule_port: "22".to_string(),
+            rule_source: "any".to_string(),
+            rule_action: "accept".to_string(),
         },
         Rule {
             rule_description: "Drop all other inbound traffic by default".to_string(),
-            rule_protocol:    "all".to_string(),
-            rule_port:        "any".to_string(),
-            rule_source:      "any".to_string(),
-            rule_action:      "drop".to_string(),
+            rule_protocol: "all".to_string(),
+            rule_port: "any".to_string(),
+            rule_source: "any".to_string(),
+            rule_action: "drop".to_string(),
         },
     ]
 }
@@ -196,11 +180,12 @@ impl FirewallPlugin {
 impl HardeningPlugin for FirewallPlugin {
     fn metadata(&self) -> PluginMetadata {
         PluginMetadata {
-            plugin_category:    FindingCategory::Network,
-            plugin_description: "Manages firewall configuration across nftables, firewalld, and ufw".to_string(),
-            plugin_id:          PluginId::new("firewall-hardening"),
-            plugin_name:        "Firewall Hardening".to_string(),
-            plugin_version:     "0.1.0".to_string(),
+            plugin_category: FindingCategory::Network,
+            plugin_description:
+                "Manages firewall configuration across nftables, firewalld, and ufw".to_string(),
+            plugin_id: PluginId::new("firewall-hardening"),
+            plugin_name: "Firewall Hardening".to_string(),
+            plugin_version: "0.1.0".to_string(),
         }
     }
 
@@ -209,12 +194,9 @@ impl HardeningPlugin for FirewallPlugin {
         vec![]
     }
 
-    fn scan(
-        &self,
-        _ctx: &Context
-    ) -> Result<ScanResult> {
+    fn scan(&self, _ctx: &Context) -> Result<ScanResult> {
         let start_time = Instant::now();
-        let plugin_id  = PluginId::new("firewall-hardening");
+        let plugin_id = PluginId::new("firewall-hardening");
 
         let mut findings = Vec::new();
 
@@ -224,10 +206,10 @@ impl HardeningPlugin for FirewallPlugin {
             Err(e) => {
                 return Ok(ScanResult {
                     plugin_id,
-                    success:     false,
-                    findings:    vec![],
+                    success: false,
+                    findings: vec![],
                     duration_us: start_time.elapsed().as_micros() as u64,
-                    error:       Some(format!("No firewall backend: {}", e)),
+                    error: Some(format!("No firewall backend: {}", e)),
                 });
             }
         };
@@ -235,46 +217,42 @@ impl HardeningPlugin for FirewallPlugin {
         // Check if firewall is enabled.
         if backend.is_enabled().is_err() {
             findings.push(Finding {
-                category:          FindingCategory::Network,
-                current_value:     "disabled".to_string(),
-                description:       format!("{} firewall is not enabled", backend.backend_name()),
-                explanation:       "A firewall provides essential network protection".to_string(),
-                finding_id:        format!("{}-disabled", backend.backend_name()),
-                impact:            "System exposed to network attacks".to_string(),
+                category: FindingCategory::Network,
+                current_value: "disabled".to_string(),
+                description: format!("{} firewall is not enabled", backend.backend_name()),
+                explanation: "A firewall provides essential network protection".to_string(),
+                finding_id: format!("{}-disabled", backend.backend_name()),
+                impact: "System exposed to network attacks".to_string(),
                 recommended_value: "enabled".to_string(),
                 remediation_steps: vec![format!("Enable {} firewall", backend.backend_name())],
-                severity:          Severity::High,
-                title:             "Firewall disabled".to_string(),
+                severity: Severity::High,
+                title: "Firewall disabled".to_string(),
             });
         }
 
         let duration_us = start_time.elapsed().as_micros() as u64;
-            Ok(ScanResult {
-                plugin_id,
-                success: true,
-                findings,
-                duration_us,
-                error: None,
+        Ok(ScanResult {
+            plugin_id,
+            success: true,
+            findings,
+            duration_us,
+            error: None,
         })
     }
 
-    fn apply(
-        &self,
-        _ctx: &mut Context,
-        _config: &Config
-    ) -> Result<ApplyResult> {
-        let plugin_id  = PluginId::new("firewall-hardening");
+    fn apply(&self, _ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
+        let plugin_id = PluginId::new("firewall-hardening");
 
         // Detect backend.
         let backend = match self.detect_backend() {
-            Ok(b)  => b,
+            Ok(b) => b,
             Err(e) => {
                 return Ok(ApplyResult {
                     plugin_id,
-                    success:       false,
-                    changes:       vec![],
+                    success: false,
+                    changes: vec![],
                     checkpoint_id: None,
-                    error:         Some(format!("No firewall backend: {}", e)),
+                    error: Some(format!("No firewall backend: {}", e)),
                 });
             }
         };
@@ -285,32 +263,25 @@ impl HardeningPlugin for FirewallPlugin {
         }
 
         // Apply default rules.
-        let rules   = backend.get_default_rules();
+        let rules = backend.get_default_rules();
         let changes = backend.apply_rules(&rules)?;
 
         Ok(ApplyResult {
             plugin_id,
-            success:       true,
+            success: true,
             changes,
             checkpoint_id: None,
-            error:         None,
+            error: None,
         })
     }
 
-    fn rollback(
-        &self,
-        _ctx: &mut Context,
-        _checkpoint: &Checkpoint
-    ) -> Result<()> {
+    fn rollback(&self, _ctx: &mut Context, _checkpoint: &Checkpoint) -> Result<()> {
         // Stub implementation - will be completed during checkpoint integration
         tracing::warn!("Firewall rollback() method not yet fully implemented");
         Ok(())
     }
 
-    fn validate(
-        &self,
-        _config: &Config
-    ) -> Result<ValidationReport> {
+    fn validate(&self, _config: &Config) -> Result<ValidationReport> {
         let plugin_id = PluginId::new("firewall-hardening");
 
         // Stub implementation - will be completed after backends are implemented

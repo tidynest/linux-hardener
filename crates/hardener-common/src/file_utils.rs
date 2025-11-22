@@ -29,34 +29,35 @@ use tempfile::NamedTempFile;
 /// ```
 pub fn update_file_atomically(path: &Path, content: &str) -> Result<()> {
     let dir = path.parent().ok_or_else(|| {
-        crate::error::HardeningError::Plugin(
-            format!("No parent directory for path: {}", path.display())
-        )
+        crate::error::HardeningError::Plugin(format!(
+            "No parent directory for path: {}",
+            path.display()
+        ))
     })?;
 
     // Create temp file in same directory (same filesystem) for atomic rename
-    let mut temp = NamedTempFile::new_in(dir)
-        .map_err(|e| crate::error::HardeningError::Plugin(
-            format!("Failed to create temporary file: {}", e)
-        ))?;
+    let mut temp = NamedTempFile::new_in(dir).map_err(|e| {
+        crate::error::HardeningError::Plugin(format!("Failed to create temporary file: {}", e))
+    })?;
 
     // Write content
-    temp.write_all(content.as_bytes())
-        .map_err(|e| crate::error::HardeningError::Plugin(
-            format!("Failed to write to temporary file: {}", e)
-        ))?;
+    temp.write_all(content.as_bytes()).map_err(|e| {
+        crate::error::HardeningError::Plugin(format!("Failed to write to temporary file: {}", e))
+    })?;
 
     // Sync to disk before making visible
-    temp.as_file().sync_all()
-        .map_err(|e| crate::error::HardeningError::Plugin(
-            format!("Failed to sync temporary file: {}", e)
-        ))?;
+    temp.as_file().sync_all().map_err(|e| {
+        crate::error::HardeningError::Plugin(format!("Failed to sync temporary file: {}", e))
+    })?;
 
     // Atomic rename
-    temp.persist(path)
-        .map_err(|e| crate::error::HardeningError::Plugin(
-            format!("Failed to persist temporary file to {}: {}", path.display(), e)
-        ))?;
+    temp.persist(path).map_err(|e| {
+        crate::error::HardeningError::Plugin(format!(
+            "Failed to persist temporary file to {}: {}",
+            path.display(),
+            e
+        ))
+    })?;
 
     Ok(())
 }
@@ -77,10 +78,13 @@ pub fn update_file_atomically(path: &Path, content: &str) -> Result<()> {
 /// ```
 pub fn backup_file(path: &Path) -> Result<std::path::PathBuf> {
     let backup_path = path.with_extension("backup");
-    std::fs::copy(path, &backup_path)
-        .map_err(|e| crate::error::HardeningError::Plugin(
-            format!("Failed to create backup of {}: {}", path.display(), e)
-        ))?;
+    std::fs::copy(path, &backup_path).map_err(|e| {
+        crate::error::HardeningError::Plugin(format!(
+            "Failed to create backup of {}: {}",
+            path.display(),
+            e
+        ))
+    })?;
     Ok(backup_path)
 }
 
@@ -114,10 +118,9 @@ where
     let backup = backup_file(path)?;
 
     // Read current content
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| crate::error::HardeningError::Plugin(
-            format!("Failed to read {}: {}", path.display(), e)
-        ))?;
+    let content = std::fs::read_to_string(path).map_err(|e| {
+        crate::error::HardeningError::Plugin(format!("Failed to read {}: {}", path.display(), e))
+    })?;
 
     // Modify
     let new_content = modifier(&content);
@@ -126,21 +129,19 @@ where
     match update_file_atomically(path, &new_content) {
         Ok(_) => {
             // Success, remove backup
-            std::fs::remove_file(backup)
-                .map_err(|e| crate::error::HardeningError::Plugin(
-                    format!("Failed to remove backup file: {}", e)
-                ))?;
+            std::fs::remove_file(backup).map_err(|e| {
+                crate::error::HardeningError::Plugin(format!("Failed to remove backup file: {}", e))
+            })?;
             Ok(())
         }
         Err(e) => {
             // Failure, restore backup
-            std::fs::rename(&backup, path)
-                .map_err(|restore_err| crate::error::HardeningError::Plugin(
-                    format!(
-                        "Failed to update file: {}. Also failed to restore backup: {}",
-                        e, restore_err
-                    )
-                ))?;
+            std::fs::rename(&backup, path).map_err(|restore_err| {
+                crate::error::HardeningError::Plugin(format!(
+                    "Failed to update file: {}. Also failed to restore backup: {}",
+                    e, restore_err
+                ))
+            })?;
             Err(e)
         }
     }

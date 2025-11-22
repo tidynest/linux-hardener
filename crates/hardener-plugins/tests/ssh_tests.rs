@@ -1,12 +1,5 @@
-use hardener_common::types::{
-    FindingCategory,
-    PluginId,
-};
-use hardener_core::{
-    Config,
-    context::Context,
-    plugin::HardeningPlugin,
-};
+use hardener_common::types::{FindingCategory, PluginId};
+use hardener_core::{Config, context::Context, plugin::HardeningPlugin};
 use hardener_plugins::ssh::SshHardeningPlugin;
 
 #[test]
@@ -40,7 +33,10 @@ fn test_ssh_scan_reads_configuration() {
     match result {
         Ok(scan_result) => {
             assert_eq!(scan_result.plugin_id, PluginId::new("ssh-hardening"));
-            assert!(scan_result.duration_us > 0, "Scan should take measurable time");
+            assert!(
+                scan_result.duration_us > 0,
+                "Scan should take measurable time"
+            );
 
             // The scan should succeed even if it finds insecure settings
             assert!(scan_result.success, "Scan operation should succeed");
@@ -52,15 +48,16 @@ fn test_ssh_scan_reads_configuration() {
             for finding in &scan_result.findings {
                 println!(
                     "  - {}: {} → {}",
-                     finding.title,
-                     finding.current_value,
-                     finding.recommended_value
+                    finding.title, finding.current_value, finding.recommended_value
                 );
             }
         }
         Err(e) => {
             // If /etc/ssh/sshd_config doesn't exist, that's acceptable for test environments.
-            eprintln!("SSH scan failed (could be expected in test environment): {}", e);
+            eprintln!(
+                "SSH scan failed (could be expected in test environment): {}",
+                e
+            );
         }
     }
 }
@@ -74,10 +71,12 @@ fn test_ssh_validate_checks_config_file() {
 
     match result {
         Ok(validation_report) => {
-
             assert_eq!(validation_report.plugin_id, PluginId::new("ssh-hardening"));
 
-            println!("SSH validation result: valid={}", validation_report.is_valid);
+            println!(
+                "SSH validation result: valid={}",
+                validation_report.is_valid
+            );
 
             if !validation_report.issues.is_empty() {
                 println!("Validation issues found:");
@@ -116,7 +115,6 @@ fn test_ssh_apply_requires_root() {
 
     match result {
         Ok(apply_result) => {
-
             assert_eq!(apply_result.plugin_id, PluginId::new("ssh-hardening"));
 
             println!("\nApply result: success={}", apply_result.success);
@@ -124,27 +122,37 @@ fn test_ssh_apply_requires_root() {
 
             for change in &apply_result.changes {
                 let status = if change.success { "✓" } else { "✗" };
-                println!("  {} [{}] {}", status, change.change_type, change.description);
+                println!(
+                    "  {} [{}] {}",
+                    status, change.change_type, change.description
+                );
                 if let Some(ref error) = change.error {
                     println!("      Error: {}", error);
                 }
             }
 
             // Verify all changes succeeded
-            assert!(apply_result.success, "All changes should succeed with root privileges");
+            assert!(
+                apply_result.success,
+                "All changes should succeed with root privileges"
+            );
 
-            assert!(apply_result.error.is_none(), "Should not have overall error");
+            assert!(
+                apply_result.error.is_none(),
+                "Should not have overall error"
+            );
 
             // Should have at least: backup + config write + service restart
 
-            assert!(apply_result.changes.len() >= 3, "Should have multiple changes recorded");
+            assert!(
+                apply_result.changes.len() >= 3,
+                "Should have multiple changes recorded"
+            );
 
             // Verify service restart was attempted
-            let has_service_restart =
-                apply_result.changes.iter()
-                    .any(|c|
-                        c.description.contains("SSH service") ||
-                        c.description.contains("Restart"));
+            let has_service_restart = apply_result.changes.iter().any(|c| {
+                c.description.contains("SSH service") || c.description.contains("Restart")
+            });
             assert!(has_service_restart, "Should include SSH service restart");
         }
         Err(e) => {

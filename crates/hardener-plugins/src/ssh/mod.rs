@@ -13,34 +13,14 @@
 use hardener_common::{
     error::Result,
     file_utils::update_file_atomically,
-    types::{
-        FindingCategory,
-        PluginId,
-        Severity
-    },
+    types::{FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
-    ApplyResult,
-    Checkpoint,
-    Config,
-    ValidationIssue,
-    ValidationReport,
+    ApplyResult, Change, ChangeType, Checkpoint, Config, ValidationIssue, ValidationReport,
     context::Context,
-    plugin::{
-        Finding,
-        HardeningPlugin,
-        PluginMetadata,
-        ScanResult
-    },
-    Change,
-    ChangeType
+    plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult},
 };
-use std::{
-    fs,
-    path::Path,
-    process::Command,
-    time::Instant
-};
+use std::{fs, path::Path, process::Command, time::Instant};
 
 /// Represents a single SSH configuration directive to be hardened.
 #[derive(Clone, Debug)]
@@ -203,10 +183,7 @@ impl SshHardeningPlugin {
     ///
     /// # Returns
     /// Modified configuration content with the directive set to the secure value.
-    fn apply_ssh_directive(
-        config_content: &str,
-        directive: &SshConfigDirective,
-    ) -> String {
+    fn apply_ssh_directive(config_content: &str, directive: &SshConfigDirective) -> String {
         let mut lines: Vec<String> = config_content.lines().map(String::from).collect();
         let mut directive_found = false;
 
@@ -223,7 +200,10 @@ impl SshHardeningPlugin {
             let parts: Vec<&str> = trimmed.trim_start_matches('#').split_whitespace().collect();
             if !parts.is_empty() && parts[0].eq_ignore_ascii_case(directive.ssh_directive_name) {
                 // Replace the line with secure setting.
-                *line = format!("{} {}", directive.ssh_directive_name, directive.ssh_secure_value);
+                *line = format!(
+                    "{} {}",
+                    directive.ssh_directive_name, directive.ssh_secure_value
+                );
                 directive_found = true;
                 break;
             }
@@ -231,7 +211,10 @@ impl SshHardeningPlugin {
 
         // Second pass: add directive if not found.
         if !directive_found {
-            lines.push(format!("{} {}", directive.ssh_directive_name, directive.ssh_secure_value));
+            lines.push(format!(
+                "{} {}",
+                directive.ssh_directive_name, directive.ssh_secure_value
+            ));
         }
 
         lines.join("\n")
@@ -265,27 +248,21 @@ impl SshHardeningPlugin {
         }
 
         // Fallback to service command.
-        let service_result = Command::new("service")
-            .arg("ssh")
-            .arg("restart")
-            .output();
+        let service_result = Command::new("service").arg("ssh").arg("restart").output();
 
         match service_result {
             Ok(output) if output.status.success() => {
                 tracing::info!("SSH service restarted successfully via service command");
                 Ok(())
             }
-            Ok(output) => {
-                Err(hardener_common::error::HardeningError::Plugin(format!(
-                    "Failed to restart SSH service: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                )))
-            }
-            Err(e) => {
-                Err(hardener_common::error::HardeningError::Plugin(format!(
-                    "Failed to execute service restart command: {}", e
-                )))
-            }
+            Ok(output) => Err(hardener_common::error::HardeningError::Plugin(format!(
+                "Failed to restart SSH service: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ))),
+            Err(e) => Err(hardener_common::error::HardeningError::Plugin(format!(
+                "Failed to execute service restart command: {}",
+                e
+            ))),
         }
     }
 }
@@ -372,11 +349,7 @@ impl HardeningPlugin for SshHardeningPlugin {
         })
     }
 
-    fn apply(
-        &self,
-        _ctx: &mut Context,
-        _config: &Config
-    ) -> Result<ApplyResult> {
+    fn apply(&self, _ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
         let plugin_id = PluginId::new("ssh-hardening");
         let mut changes = Vec::new();
         let config_path = "/etc/ssh/sshd_config";
@@ -387,7 +360,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                 changes.push(Change {
                     description: format!("Created backup: {}", backup_path),
                     change_type: ChangeType::ConfigFile,
-                    success:     true,
+                    success: true,
                     error: None,
                 });
                 tracing::info!("SSH config backup created: {}", backup_path);
@@ -408,7 +381,8 @@ impl HardeningPlugin for SshHardeningPlugin {
 
         // Step 3: Apply each directive.
         for directive in SSH_DIRECTIVES {
-            let original_value = Self::parse_ssh_directive(&config_content, directive.ssh_directive_name);
+            let original_value =
+                Self::parse_ssh_directive(&config_content, directive.ssh_directive_name);
 
             // Check if change is needed.
             let needs_change = match &original_value {
@@ -427,8 +401,8 @@ impl HardeningPlugin for SshHardeningPlugin {
                         directive.ssh_secure_value
                     ),
                     change_type: ChangeType::ConfigFile,
-                    success:     true,
-                    error:       None,
+                    success: true,
+                    error: None,
                 });
 
                 tracing::info!(
@@ -467,17 +441,17 @@ impl HardeningPlugin for SshHardeningPlugin {
                 changes.push(Change {
                     description: "Restarted SSH service".to_string(),
                     change_type: ChangeType::Service,
-                    success:     true,
-                    error:       None,
+                    success: true,
+                    error: None,
                 });
                 tracing::info!("SSH service restarted successfully");
-            },
+            }
             Err(e) => {
                 changes.push(Change {
                     description: "Failed to restart SSH service".to_string(),
                     change_type: ChangeType::Service,
-                    success:     false,
-                    error:       Some(e.to_string()),
+                    success: false,
+                    error: Some(e.to_string()),
                 });
                 tracing::error!("Failed to restart SSH service: {}", e);
             }
@@ -489,7 +463,7 @@ impl HardeningPlugin for SshHardeningPlugin {
             success,
             changes,
             checkpoint_id: None,
-            error:         None,
+            error: None,
         })
     }
 

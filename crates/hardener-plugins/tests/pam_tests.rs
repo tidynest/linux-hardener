@@ -19,7 +19,11 @@ fn test_pam_plugin_has_no_dependencies() {
     let plugin = PamHardeningPlugin::new();
     let dependencies = plugin.dependencies();
 
-    assert_eq!(dependencies.len(), 0, "PAM plugin should have no dependencies");
+    assert_eq!(
+        dependencies.len(),
+        0,
+        "PAM plugin should have no dependencies"
+    );
 }
 
 #[test]
@@ -42,7 +46,10 @@ fn test_pam_scan_reads_configuration() {
     println!("PAM scan found {} findings", scan_result.findings.len());
 
     // Verify timing is captured
-    assert!(scan_result.duration_us > 0, "Scan duration should be captured");
+    assert!(
+        scan_result.duration_us > 0,
+        "Scan duration should be captured"
+    );
 }
 
 #[test]
@@ -53,7 +60,11 @@ fn test_pam_validate_checks_config_files() {
     // Run validation
     let result = plugin.validate(&config);
 
-    assert!(result.is_ok(), "Validation should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Validation should succeed: {:?}",
+        result.err()
+    );
 
     let validation_report = result.unwrap();
     assert_eq!(validation_report.plugin_id.to_string(), "pam-hardening");
@@ -66,7 +77,10 @@ fn test_pam_validate_checks_config_files() {
 
     println!("Validation valid: {}", validation_report.is_valid);
     println!("Issues found: {}", validation_report.issues.len());
-    println!("Estimated changes: {}", validation_report.estimated_changes.len());
+    println!(
+        "Estimated changes: {}",
+        validation_report.estimated_changes.len()
+    );
 }
 
 #[test]

@@ -562,6 +562,7 @@ dependencies = [
 name = "hardener-plugins"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "hardener-common",
  "hardener-core",
  "log",

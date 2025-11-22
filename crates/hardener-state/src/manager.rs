@@ -75,8 +75,8 @@ impl CheckpointManager {
         }
 
         // Get metadata first
-        let file_metadata = fs::metadata(file_path)
-            .map_err(hardener_common::error::HardeningError::System)?;
+        let file_metadata =
+            fs::metadata(file_path).map_err(hardener_common::error::HardeningError::System)?;
 
         // Read file content
         let file_content =
@@ -403,8 +403,7 @@ impl CheckpointManager {
         match &file_state.file_content {
             Some(content) => {
                 // File existed - restore content
-                fs::write(path, content)
-                    .map_err(hardener_common::error::HardeningError::System)?;
+                fs::write(path, content).map_err(hardener_common::error::HardeningError::System)?;
             }
             None => {
                 // File didn't exist - delete it if it exists now

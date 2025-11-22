@@ -6,41 +6,19 @@
 //! - Password ageing policies (expiry, reuse prevention)
 
 use hardener_common::{
-    error::{
-        HardeningError,
-        Result,
-    },
+    error::{HardeningError, Result},
     file_utils::update_file_atomically,
-    types::{
-        FindingCategory,
-        PluginId,
-        Severity,
-    },
+    types::{FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
-    Context, plugin::{
-        ApplyResult,
-        Finding,
-        HardeningPlugin,
-        PluginMetadata,
-        ScanResult,
-        ValidationIssue,
+    Change, ChangeType, Checkpoint, Config, Context,
+    plugin::{
+        ApplyResult, Finding, HardeningPlugin, PluginMetadata, ScanResult, ValidationIssue,
         ValidationReport,
     },
-    Change,
-    ChangeType,
-    Config,
-    Checkpoint,
 };
-use std::{
-    path::Path,
-    time::Instant,
-};
-use tracing::{
-    debug,
-    info,
-    warn,
-};
+use std::{path::Path, time::Instant};
+use tracing::{debug, info, warn};
 
 /// PAM hardening plugin.
 pub struct PamHardeningPlugin {}
@@ -62,7 +40,9 @@ impl HardeningPlugin for PamHardeningPlugin {
     fn metadata(&self) -> PluginMetadata {
         PluginMetadata {
             plugin_category: FindingCategory::Authentication,
-            plugin_description: "Hardens PAM authentication (password policies, account lockout, ageing)".to_string(),
+            plugin_description:
+                "Hardens PAM authentication (password policies, account lockout, ageing)"
+                    .to_string(),
             plugin_id: PluginId::from("pam-hardening"),
             plugin_name: "PAM Authentication Hardening".to_string(),
             plugin_version: "1.0.0".to_string(),
@@ -73,10 +53,7 @@ impl HardeningPlugin for PamHardeningPlugin {
         vec![]
     }
 
-    fn scan(
-        &self,
-        _context: &Context,
-    ) -> Result<ScanResult> {
+    fn scan(&self, _context: &Context) -> Result<ScanResult> {
         let start = Instant::now();
         info!("Starting PAM authentication hardening scan");
 
@@ -85,7 +62,7 @@ impl HardeningPlugin for PamHardeningPlugin {
         // Read configuration files.
         let pwquality_content = read_pwquality_config().unwrap_or_else(|e| {
             warn!("Failed to read pwquality.conf: {}", e);
-            String::new()  // Empty content means all directives will be flagged as missing.
+            String::new() // Empty content means all directives will be flagged as missing.
         });
 
         let login_defs_content: String = read_login_defs().unwrap_or_else(|e| {
@@ -96,18 +73,20 @@ impl HardeningPlugin for PamHardeningPlugin {
         // Check each PAM directive.
         for directive in PAM_DIRECTIVES {
             let current_value = match directive.pam_config_file {
-                PamConfigFile::PwQuality => parse_config_directive(
-                    &pwquality_content, directive.pam_directive_name
-                ),
-                PamConfigFile::LoginDefs => parse_config_directive(
-                    &login_defs_content,
-                    directive.pam_directive_name
-                ),
+                PamConfigFile::PwQuality => {
+                    parse_config_directive(&pwquality_content, directive.pam_directive_name)
+                }
+                PamConfigFile::LoginDefs => {
+                    parse_config_directive(&login_defs_content, directive.pam_directive_name)
+                }
                 PamConfigFile::PamAuth => {
                     // PAM module configuration - skip for now, implement during phase 2.
-                    debug!("Skipping PAM module directive: {}", directive.pam_directive_name);
+                    debug!(
+                        "Skipping PAM module directive: {}",
+                        directive.pam_directive_name
+                    );
                     continue;
-                },
+                }
             };
 
             // Check if current value matches secure value.
@@ -165,11 +144,7 @@ impl HardeningPlugin for PamHardeningPlugin {
         })
     }
 
-    fn apply(
-        &self,
-        _context: &mut Context,
-        _config: &Config
-    ) -> Result<ApplyResult> {
+    fn apply(&self, _context: &mut Context, _config: &Config) -> Result<ApplyResult> {
         let start = Instant::now();
         info!("Starting PAM authentication hardening apply");
 
@@ -248,11 +223,10 @@ impl HardeningPlugin for PamHardeningPlugin {
                         change_type: ChangeType::ConfigFile,
                         description: format!(
                             "Set {} = {} in pwquality.conf",
-                            directive.pam_directive_name,
-                            directive.pam_secure_value,
+                            directive.pam_directive_name, directive.pam_secure_value,
                         ),
                         success: true,
-                        error:   None,
+                        error: None,
                     });
                 }
                 PamConfigFile::LoginDefs => {
@@ -266,16 +240,18 @@ impl HardeningPlugin for PamHardeningPlugin {
                         change_type: ChangeType::ConfigFile,
                         description: format!(
                             "Set {} = {} in login.defs",
-                            directive.pam_directive_name,
-                            directive.pam_secure_value,
+                            directive.pam_directive_name, directive.pam_secure_value,
                         ),
                         success: true,
-                        error:   None,
+                        error: None,
                     });
                 }
                 PamConfigFile::PamAuth => {
                     // Skip PAM module for now
-                    debug!("Skipping PAM module directive: {}", directive.pam_directive_name);
+                    debug!(
+                        "Skipping PAM module directive: {}",
+                        directive.pam_directive_name
+                    );
                     continue;
                 }
             }
@@ -285,15 +261,15 @@ impl HardeningPlugin for PamHardeningPlugin {
         if pwquality_backup.is_some() {
             match update_file_atomically(
                 Path::new("/etc/security/pwquality.conf"),
-                &pwquality_content
+                &pwquality_content,
             ) {
                 Ok(_) => {
                     info!("Successfully wrote /etc/security/pwquality.conf (atomic write)");
                     changes.push(Change {
                         change_type: ChangeType::ConfigFile,
                         description: "Wrote modified pwquality.conf".to_string(),
-                        success:     true,
-                        error:       None,
+                        success: true,
+                        error: None,
                     });
                 }
                 Err(e) => {
@@ -310,10 +286,7 @@ impl HardeningPlugin for PamHardeningPlugin {
         }
 
         if login_defs_backup.is_some() {
-            match update_file_atomically(
-                Path::new("/etc/login.defs"),
-                &login_defs_content
-            ) {
+            match update_file_atomically(Path::new("/etc/login.defs"), &login_defs_content) {
                 Ok(_) => {
                     info!("Successfully wrote /etc/login.defs (atomic write)");
                     changes.push(Change {
@@ -346,28 +319,20 @@ impl HardeningPlugin for PamHardeningPlugin {
         );
 
         Ok(ApplyResult {
-            plugin_id:     self.metadata().plugin_id,
-            success:       all_success,
+            plugin_id: self.metadata().plugin_id,
+            success: all_success,
             changes,
             checkpoint_id: None,
-            error:         None,
+            error: None,
         })
     }
 
-    fn rollback(
-        &self,
-        _context: &mut Context,
-        _checkpoint: &Checkpoint,
-    ) -> Result<()> {
+    fn rollback(&self, _context: &mut Context, _checkpoint: &Checkpoint) -> Result<()> {
         warn!("Pam Hardening rollback not yet implemented - will be handled by checkpoint system.");
         Ok(())
     }
 
-
-    fn validate(
-        &self,
-        _config: &Config,
-    ) -> Result<ValidationReport> {
+    fn validate(&self, _config: &Config) -> Result<ValidationReport> {
         info!("Validating PAM configuration files");
 
         let mut issues = Vec::new();
@@ -378,7 +343,8 @@ impl HardeningPlugin for PamHardeningPlugin {
                 if !metadata.is_file() {
                     issues.push(ValidationIssue {
                         config_key: None,
-                        message: "/etc/security/pwquality.conf exists but is not a regular file".to_string(),
+                        message: "/etc/security/pwquality.conf exists but is not a regular file"
+                            .to_string(),
                         severity: Severity::High,
                     });
                 }
@@ -386,7 +352,8 @@ impl HardeningPlugin for PamHardeningPlugin {
             Err(_) => {
                 issues.push(ValidationIssue {
                     config_key: None,
-                    message: "/etc/security/pwquality.conf does not exist or is not readable".to_string(),
+                    message: "/etc/security/pwquality.conf does not exist or is not readable"
+                        .to_string(),
                     severity: Severity::Medium,
                 });
             }
@@ -412,15 +379,14 @@ impl HardeningPlugin for PamHardeningPlugin {
             }
         }
 
-    // Estimate changes based on number of directives
-    let estimated_changes = PAM_DIRECTIVES
-        .iter()
-        .filter(|d| d.pam_config_file != PamConfigFile::PamAuth)
-        .map(|d| format!("Set {} = {}", d.pam_directive_name,
-                         d.pam_secure_value))
-        .collect();
+        // Estimate changes based on number of directives
+        let estimated_changes = PAM_DIRECTIVES
+            .iter()
+            .filter(|d| d.pam_config_file != PamConfigFile::PamAuth)
+            .map(|d| format!("Set {} = {}", d.pam_directive_name, d.pam_secure_value))
+            .collect();
 
-    let is_valid = issues.is_empty();
+        let is_valid = issues.is_empty();
 
         Ok(ValidationReport {
             plugin_id: self.metadata().plugin_id,
@@ -435,10 +401,10 @@ impl HardeningPlugin for PamHardeningPlugin {
 #[derive(Clone, Debug)]
 struct PamDirective {
     pam_directive_name: &'static str,
-    pam_secure_value:   &'static str,
-    pam_description:    &'static str,
-    pam_severity:       Severity,
-    pam_config_file:    PamConfigFile,
+    pam_secure_value: &'static str,
+    pam_description: &'static str,
+    pam_severity: Severity,
+    pam_config_file: PamConfigFile,
 }
 
 /// Represents which PAM configuration file contains the directive.
@@ -457,66 +423,66 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
     // Password Quality (pwquality.conf)
     PamDirective {
         pam_directive_name: "minlen",
-        pam_secure_value:   "14",
-        pam_description:    "Minimum password length of 14 characters",
-        pam_severity:       Severity::High,
-        pam_config_file:    PamConfigFile::PwQuality,
+        pam_secure_value: "14",
+        pam_description: "Minimum password length of 14 characters",
+        pam_severity: Severity::High,
+        pam_config_file: PamConfigFile::PwQuality,
     },
     PamDirective {
         pam_directive_name: "dcredit",
-        pam_secure_value:   "-1",
-        pam_description:    "Require at least one digit in password",
-        pam_severity:       Severity::Medium,
-        pam_config_file:    PamConfigFile::PwQuality,
+        pam_secure_value: "-1",
+        pam_description: "Require at least one digit in password",
+        pam_severity: Severity::Medium,
+        pam_config_file: PamConfigFile::PwQuality,
     },
     PamDirective {
         pam_directive_name: "ucredit",
-        pam_secure_value:   "-1",
-        pam_description:    "Require at least one uppercase character in password",
-        pam_severity:       Severity::Medium,
-        pam_config_file:    PamConfigFile::PwQuality,
+        pam_secure_value: "-1",
+        pam_description: "Require at least one uppercase character in password",
+        pam_severity: Severity::Medium,
+        pam_config_file: PamConfigFile::PwQuality,
     },
     PamDirective {
         pam_directive_name: "lcredit",
-        pam_secure_value:   "-1",
-        pam_description:    "Require at least one lowercase character in password",
-        pam_severity:       Severity::Medium,
-        pam_config_file:    PamConfigFile::PwQuality,
+        pam_secure_value: "-1",
+        pam_description: "Require at least one lowercase character in password",
+        pam_severity: Severity::Medium,
+        pam_config_file: PamConfigFile::PwQuality,
     },
     PamDirective {
         pam_directive_name: "ocredit",
-        pam_secure_value:   "-1",
-        pam_description:    "Require at least one special character in password",
-        pam_severity:       Severity::Medium,
-        pam_config_file:    PamConfigFile::PwQuality,
+        pam_secure_value: "-1",
+        pam_description: "Require at least one special character in password",
+        pam_severity: Severity::Medium,
+        pam_config_file: PamConfigFile::PwQuality,
     },
     PamDirective {
         pam_directive_name: "maxrepeat",
-        pam_secure_value:   "3",
-        pam_description:    "Maximum consecutive identical characters in password",
-        pam_severity:       Severity::Low,
-        pam_config_file:    PamConfigFile::PwQuality,
+        pam_secure_value: "3",
+        pam_description: "Maximum consecutive identical characters in password",
+        pam_severity: Severity::Low,
+        pam_config_file: PamConfigFile::PwQuality,
     },
     PamDirective {
         pam_directive_name: "PASS_MAX_DAYS",
-        pam_secure_value:   "90",
-        pam_description:    "Maximum password age of 90 days",
-        pam_severity:       Severity::Medium,
-        pam_config_file:    PamConfigFile::LoginDefs,
+        pam_secure_value: "90",
+        pam_description: "Maximum password age of 90 days",
+        pam_severity: Severity::Medium,
+        pam_config_file: PamConfigFile::LoginDefs,
     },
     PamDirective {
         pam_directive_name: "PASS_MIN_DAYS",
-        pam_secure_value:   "1",
-        pam_description:    "Minimum password age of 1 day (prevents rapid changes)",
-        pam_severity:       Severity::Low,
-        pam_config_file:    PamConfigFile::LoginDefs,
+        pam_secure_value: "1",
+        pam_description: "Minimum password age of 1 day (prevents rapid changes)",
+        pam_severity: Severity::Low,
+        pam_config_file: PamConfigFile::LoginDefs,
     },
     PamDirective {
         pam_directive_name: "PASS_WARN_AGE",
-        pam_secure_value:   "7",
-        pam_description:    "Warn users 7 days before password expiry",
-        pam_severity:       Severity::Low,
-        pam_config_file:    PamConfigFile::LoginDefs,
+        pam_secure_value: "7",
+        pam_description: "Warn users 7 days before password expiry",
+        pam_severity: Severity::Low,
+        pam_config_file: PamConfigFile::LoginDefs,
     },
 ];
 
@@ -535,10 +501,7 @@ fn read_login_defs() -> Result<String> {
 /// Looks for matching "directive_name = value" or "directive_name value".
 /// Ignores comments (lines starting with #).
 /// Returns None if directive not found.
-fn parse_config_directive(
-    content: &str,
-    directive_name: &str,
-) -> Option<String> {
+fn parse_config_directive(content: &str, directive_name: &str) -> Option<String> {
     for line in content.lines() {
         let trimmed = line.trim();
 
@@ -557,7 +520,9 @@ fn parse_config_directive(
             }
 
             // Handle "key value" format (space-separated)
-            if let Some(ch) = remainder.chars().next() && ch.is_whitespace() {
+            if let Some(ch) = remainder.chars().next()
+                && ch.is_whitespace()
+            {
                 return Some(remainder.trim().to_string());
             }
         }
@@ -568,10 +533,7 @@ fn parse_config_directive(
 
 /// Creates a timestamped backup of a configuration file.
 fn create_config_backup(file_path: &str) -> Result<String> {
-    use std::time::{
-        SystemTime,
-        UNIX_EPOCH,
-    };
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -589,14 +551,8 @@ fn create_config_backup(file_path: &str) -> Result<String> {
 ///
 /// If the directive exists, updates its value.
 /// If the directive doesn't exist, appends it to the end.
-fn apply_directive_to_content(
-    content: &str,
-    directive_name: &str,
-    secure_value: &str,
-) -> String {
-    let mut lines: Vec<String> = content.lines()
-        .map(|s| s.to_string())
-        .collect();
+fn apply_directive_to_content(content: &str, directive_name: &str, secure_value: &str) -> String {
+    let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
     let mut found = false;
 
     // Try to update existing directive.
@@ -635,4 +591,3 @@ fn apply_directive_to_content(
 
     lines.join("\n")
 }
-
