@@ -1,6 +1,7 @@
 pub mod firewall;
 pub mod kernel;
 pub mod macros;
+pub mod pam;
 pub mod ssh;
 
 // Re-export dependencies for macro use
@@ -11,6 +12,7 @@ pub use hardener_common;
 pub use firewall::FirewallPlugin;
 pub use hardener_core;
 pub use kernel::KernelHardeningPlugin;
+pub use pam::PamHardeningPlugin;
 pub use ssh::SshHardeningPlugin;
 
 pub fn add(left: u64, right: u64) -> u64 {
@@ -42,10 +44,10 @@ mod tests {
 
         // Test metadata
         let meta = plugin.metadata();
-        assert_eq!(meta.id.to_string(), "test-plugin");
-        assert_eq!(meta.name, "Test Plugin");
-        assert_eq!(meta.version, "0.1.0");
-        assert_eq!(meta.description, "A test plugin for macro validation");
+        assert_eq!(meta.plugin_id.to_string(), "test-plugin");
+        assert_eq!(meta.plugin_name, "Test Plugin");
+        assert_eq!(meta.plugin_version, "0.1.0");
+        assert_eq!(meta.plugin_description, "A test plugin for macro validation");
 
         // Test dependencies
         let deps = plugin.dependencies();

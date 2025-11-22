@@ -14,12 +14,12 @@ fn test_ssh_plugin_metadata() {
     let plugin = SshHardeningPlugin::new();
     let metadata = plugin.metadata();
 
-    assert_eq!(metadata.id, PluginId::new("ssh-hardening"));
-    assert_eq!(metadata.name, "SSH Hardening");
-    assert_eq!(metadata.version, "0.1.0");
-    assert_eq!(metadata.category, FindingCategory::Network);
+    assert_eq!(metadata.plugin_id, PluginId::new("ssh-hardening"));
+    assert_eq!(metadata.plugin_name, "SSH Hardening");
+    assert_eq!(metadata.plugin_version, "0.1.0");
+    assert_eq!(metadata.plugin_category, FindingCategory::Network);
 
-    assert!(!metadata.description.is_empty());
+    assert!(!metadata.plugin_description.is_empty());
 }
 
 #[test]
@@ -77,7 +77,7 @@ fn test_ssh_validate_checks_config_file() {
 
             assert_eq!(validation_report.plugin_id, PluginId::new("ssh-hardening"));
 
-            println!("SSH validation result: valid={}", validation_report.valid);
+            println!("SSH validation result: valid={}", validation_report.is_valid);
 
             if !validation_report.issues.is_empty() {
                 println!("Validation issues found:");
@@ -87,7 +87,7 @@ fn test_ssh_validate_checks_config_file() {
             }
 
             // If config file exists and is readable, validation should pass
-            if validation_report.valid {
+            if validation_report.is_valid {
                 assert!(validation_report.issues.is_empty());
             }
         }

@@ -55,7 +55,7 @@ impl CheckpointSigner {
 
     /// Loads a signing key from disk.
     fn load_key(key_path: &Path) -> Result<SigningKey> {
-        let key_bytes = fs::read(key_path).map_err(|e| HardeningError::System(e))?;
+        let key_bytes = fs::read(key_path).map_err(HardeningError::System)?;
 
         if key_bytes.len() != 32 {
             return Err(HardeningError::Config(
@@ -79,16 +79,16 @@ impl CheckpointSigner {
 
         // Ensure parent directory exists
         if let Some(parent) = key_path.parent() {
-            fs::create_dir_all(parent).map_err(|e| HardeningError::System(e))?;
+            fs::create_dir_all(parent).map_err(HardeningError::System)?;
         }
 
         // Write key bytes to file
         let key_bytes = signing_key.to_bytes();
-        fs::write(key_path, key_bytes).map_err(|e| HardeningError::System(e))?;
+        fs::write(key_path, key_bytes).map_err(HardeningError::System)?;
 
         // Set restrictive permissions (0600 - owner read/write only)
         let permissions = fs::Permissions::from_mode(0o600);
-        fs::set_permissions(key_path, permissions).map_err(|e| HardeningError::System(e))?;
+        fs::set_permissions(key_path, permissions).map_err(HardeningError::System)?;
 
         Ok(())
     }

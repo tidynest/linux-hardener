@@ -76,11 +76,11 @@ impl CheckpointManager {
 
         // Get metadata first
         let file_metadata = fs::metadata(file_path)
-            .map_err(|e| hardener_common::error::HardeningError::System(e))?;
+            .map_err(hardener_common::error::HardeningError::System)?;
 
         // Read file content
         let file_content =
-            fs::read(file_path).map_err(|e| hardener_common::error::HardeningError::System(e))?;
+            fs::read(file_path).map_err(hardener_common::error::HardeningError::System)?;
 
         // Extract permissions and ownership
         let file_permissions = file_metadata.permissions().mode();
@@ -404,13 +404,13 @@ impl CheckpointManager {
             Some(content) => {
                 // File existed - restore content
                 fs::write(path, content)
-                    .map_err(|e| hardener_common::error::HardeningError::System(e))?;
+                    .map_err(hardener_common::error::HardeningError::System)?;
             }
             None => {
                 // File didn't exist - delete it if it exists now
                 if path.exists() {
                     fs::remove_file(path)
-                        .map_err(|e| hardener_common::error::HardeningError::System(e))?;
+                        .map_err(hardener_common::error::HardeningError::System)?;
                 }
                 // If file doesn't exist, nothing to do
                 return Ok(());
@@ -420,7 +420,7 @@ impl CheckpointManager {
         // Restore permissions
         let permissions = fs::Permissions::from_mode(file_state.file_permissions);
         fs::set_permissions(path, permissions)
-            .map_err(|e| hardener_common::error::HardeningError::System(e))?;
+            .map_err(hardener_common::error::HardeningError::System)?;
 
         // Restore ownership (requires root privileges)
         nix::unistd::chown(

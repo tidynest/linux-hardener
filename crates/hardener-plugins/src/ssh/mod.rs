@@ -43,14 +43,14 @@ use std::{
 /// Represents a single SSH configuration directive to be hardened.
 #[derive(Clone, Debug)]
 struct SshConfigDirective {
+    /// Human-readable description of this directive's security purpose.
+    ssh_description: &'static str,
     /// The directive name as it appears in sshd_config (e.g., "PermitRootLogin").
     ssh_directive_name: &'static str,
     /// The secure value for this directive (e.g., "no").
     ssh_secure_value: &'static str,
-    /// Human-readable description of this directive's security purpose.
-    ssh_description: &'static str,
     /// Severity level if this directive is not set securely.
-    severity: Severity,
+    ssh_severity: Severity,
 }
 
 /// Critical SSH config directives for security hardening.
@@ -61,54 +61,60 @@ const SSH_DIRECTIVES: &[SshConfigDirective] = &[
         ssh_directive_name: "PermitRootLogin",
         ssh_secure_value: "no",
         ssh_description: "Disable direct root login via SSH",
-        severity: Severity::Critical,
+        ssh_severity: Severity::Critical,
     },
     SshConfigDirective {
         ssh_directive_name: "PasswordAuthentication",
         ssh_secure_value: "no",
         ssh_description: "Require key-based authentication only",
-        severity: Severity::Critical,
+        ssh_severity: Severity::Critical,
     },
     SshConfigDirective {
         ssh_directive_name: "PermitEmptyPasswords",
         ssh_secure_value: "no",
         ssh_description: "Disallow empty passwords",
-        severity: Severity::Critical,
+        ssh_severity: Severity::Critical,
     },
     SshConfigDirective {
         ssh_directive_name: "Protocol",
         ssh_secure_value: "2",
         ssh_description: "Use only SSH protocol version 2",
-        severity: Severity::Critical,
+        ssh_severity: Severity::Critical,
     },
     SshConfigDirective {
         ssh_directive_name: "MaxAuthTries",
         ssh_secure_value: "3",
         ssh_description: "Limit authentication attempts to prevent brute force",
-        severity: Severity::Medium,
+        ssh_severity: Severity::Medium,
     },
     SshConfigDirective {
         ssh_directive_name: "X11Forwarding",
         ssh_secure_value: "no",
         ssh_description: "Disable X11 forwarding to reduce attack surface",
-        severity: Severity::Medium,
+        ssh_severity: Severity::Medium,
     },
     SshConfigDirective {
         ssh_directive_name: "ClientAliveInterval",
         ssh_secure_value: "300",
         ssh_description: "Disconnect idle SSH sessions after 5 minutes",
-        severity: Severity::Low,
+        ssh_severity: Severity::Low,
     },
     SshConfigDirective {
         ssh_directive_name: "ClientAliveCountMax",
         ssh_secure_value: "2",
         ssh_description: "Maximum idle connection checks before disconnect",
-        severity: Severity::Low,
+        ssh_severity: Severity::Low,
     },
 ];
 
 /// SSH hardening plugin implementing OpenSSH configuration management.
 pub struct SshHardeningPlugin;
+
+impl Default for SshHardeningPlugin {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl SshHardeningPlugin {
     /// Creates a new instance of the SSH hardening plugin.
@@ -285,11 +291,11 @@ impl SshHardeningPlugin {
 impl HardeningPlugin for SshHardeningPlugin {
     fn metadata(&self) -> PluginMetadata {
         PluginMetadata {
-            id: PluginId::new("ssh-hardening"),
-            name: "SSH Hardening".to_string(),
-            version: "0.1.0".to_string(),
-            description: "Hardens OpenSSH server configuration".to_string(),
-            category: FindingCategory::Network,
+            plugin_category: FindingCategory::Network,
+            plugin_description: "Hardens OpenSSH server configuration".to_string(),
+            plugin_id: PluginId::new("ssh-hardening"),
+            plugin_name: "SSH Hardening".to_string(),
+            plugin_version: "0.1.0".to_string(),
         }
     }
 
@@ -331,18 +337,16 @@ impl HardeningPlugin for SshHardeningPlugin {
 
             if is_insecure {
                 findings.push(Finding {
-                    id: format!("ssh-{}", directive.ssh_directive_name.to_lowercase()),
-                    severity: directive.severity.clone(),
                     category: FindingCategory::Network,
-                    title: format!("Insecure SSH setting: {}", directive.ssh_directive_name,),
-                    description: directive.ssh_description.to_string(),
                     current_value: current_value.unwrap_or_else(|| "not set".to_string()),
-                    recommended_value: directive.ssh_secure_value.to_string(),
+                    description: directive.ssh_description.to_string(),
                     explanation: format!(
                         "The SSH directive '{}' is not configured securely. {}",
                         directive.ssh_directive_name, directive.ssh_description,
                     ),
+                    finding_id: format!("ssh-{}", directive.ssh_directive_name.to_lowercase()),
                     impact: "May allow unauthorised access or weaken SSH security".to_string(),
+                    recommended_value: directive.ssh_secure_value.to_string(),
                     remediation_steps: vec![
                         format!(
                             "Edit /etc/ssh/sshd_config and set: {} {}",
@@ -350,6 +354,8 @@ impl HardeningPlugin for SshHardeningPlugin {
                         ),
                         "Restart SSH service: systemctl restart sshd".to_string(),
                     ],
+                    severity: directive.ssh_severity,
+                    title: format!("Insecure SSH setting: {}", directive.ssh_directive_name,),
                 });
             }
         }
@@ -530,7 +536,7 @@ impl HardeningPlugin for SshHardeningPlugin {
         let valid = issues.is_empty();
         Ok(ValidationReport {
             plugin_id,
-            valid,
+            is_valid: valid,
             issues,
             estimated_changes: vec![],
         })

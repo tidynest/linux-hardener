@@ -7,6 +7,12 @@ use std::process::Command;
 /// Pacman package manager implementation.
 pub struct PacmanPackageManager;
 
+impl Default for PacmanPackageManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PacmanPackageManager {
     /// Creates a new Pacman package manager instance.
     pub fn new() -> PacmanPackageManager {
@@ -134,7 +140,7 @@ impl PackageManager for PacmanPackageManager {
 
     fn is_installed(&self, package: &str) -> Result<bool> {
         let result = Command::new("pacman")
-            .args(&["-Q", package])
+            .args(["-Q", package])
             .output()
             .map_err(|e| {
                 HardeningError::PackageManager(format!("Failed to query package: {}", e))

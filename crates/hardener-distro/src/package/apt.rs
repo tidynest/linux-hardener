@@ -7,6 +7,12 @@ use std::process::Command;
 /// APT package manager implementation.
 pub struct AptPackageManager;
 
+impl Default for AptPackageManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AptPackageManager {
     /// Creates a new APT package manager instance.
     pub fn new() -> AptPackageManager {
@@ -152,7 +158,7 @@ impl PackageManager for AptPackageManager {
 
     fn is_installed(&self, package: &str) -> Result<bool> {
         let result = Command::new("dpkg-query")
-            .args(&["-W", "-f=${Status}", package])
+            .args(["-W", "-f=${Status}", package])
             .output()
             .map_err(|e| {
                 HardeningError::PackageManager(format!("Failed to query package: {}", e))
@@ -191,7 +197,7 @@ impl PackageManager for AptPackageManager {
                     let is_security = line.contains("-security") || line.contains("security");
 
                     if is_security {
-                        // Extract version - it's in parentheses
+                        // Extract version - it is in parentheses
                         if let Some(version_start) = line.find('(') {
                             if let Some(version_end) = line[version_start..].find(' ') {
                                 let version = line[version_start + 1..version_start + version_end]

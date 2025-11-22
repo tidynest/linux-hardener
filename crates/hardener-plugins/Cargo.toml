@@ -7,3 +7,4 @@ edition = "2024"
 hardener-common = { path = "../hardener-common" }
 hardener-core   = { path = "../hardener-core" }
 tracing = "0.1.41"
+log = "0.4.28"

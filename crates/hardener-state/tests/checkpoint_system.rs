@@ -19,14 +19,14 @@ async fn test_checkpoint_creation() {
 
     // Create checkpoint
     let checkpoint_id = fixture
-        .checkpoint_manager
+        .fixture_checkpoint_manager
         .create_checkpoint("test checkpoint", &[&file1, &file2])
         .await
         .expect("Failed to create checkpoint");
 
     // Verify checkpoint was created
     let (checkpoint, file_states) = fixture
-        .checkpoint_manager
+        .fixture_checkpoint_manager
         .get_checkpoint(&checkpoint_id)
         .await
         .expect("Failed to retrieve checkpoint");
@@ -52,14 +52,14 @@ async fn test_file_state_capture() {
 
     // Create checkpoint
     let checkpoint_id = fixture
-        .checkpoint_manager
+        .fixture_checkpoint_manager
         .create_checkpoint("state capture test", &[&file_path])
         .await
         .expect("Failed to create checkpoint");
 
     // Retrieve and verify file state
     let (_checkpoint, file_states) = fixture
-        .checkpoint_manager
+        .fixture_checkpoint_manager
         .get_checkpoint(&checkpoint_id)
         .await
         .expect("Failed to retrieve checkpoint");
@@ -91,7 +91,7 @@ async fn test_rollback_restores_files() {
 
     // Create checkpoint
     let checkpoint_id = fixture
-        .checkpoint_manager
+        .fixture_checkpoint_manager
         .create_checkpoint("before modification", &[&file_path])
         .await
         .expect("Failed to create checkpoint");
@@ -106,7 +106,7 @@ async fn test_rollback_restores_files() {
 
     // Rollback to checkpoint
     fixture
-        .checkpoint_manager
+        .fixture_checkpoint_manager
         .rollback(&checkpoint_id)
         .await
         .expect("Failed to rollback");
@@ -133,7 +133,7 @@ async fn test_list_checkpoints() {
 
     // Create multiple checkpoints
     let checkpoint1 = fixture
-        .checkpoint_manager
+        .fixture_checkpoint_manager
         .create_checkpoint("first checkpoint", &[&file_path])
         .await
         .expect("Failed to create checkpoint 1");
@@ -142,14 +142,14 @@ async fn test_list_checkpoints() {
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
     let checkpoint2 = fixture
-        .checkpoint_manager
+        .fixture_checkpoint_manager
         .create_checkpoint("second checkpoint", &[&file_path])
         .await
         .expect("Failed to create checkpoint 2");
 
     // List all checkpoints
     let checkpoints = fixture
-        .checkpoint_manager
+        .fixture_checkpoint_manager
         .list_checkpoints()
         .await
         .expect("Failed to list checkpoints");
@@ -181,14 +181,14 @@ async fn test_delete_checkpoint() {
 
     // Create checkpoint
     let checkpoint_id = fixture
-        .checkpoint_manager
+        .fixture_checkpoint_manager
         .create_checkpoint("to be deleted", &[&file1, &file2])
         .await
         .expect("Failed to create checkpoint");
 
     // Verify checkpoint exists
     let checkpoints_before = fixture
-        .checkpoint_manager
+        .fixture_checkpoint_manager
         .list_checkpoints()
         .await
         .expect("Failed to list checkpoints");
@@ -196,14 +196,14 @@ async fn test_delete_checkpoint() {
 
     // Delete checkpoint
     fixture
-        .checkpoint_manager
+        .fixture_checkpoint_manager
         .delete_checkpoint(&checkpoint_id)
         .await
         .expect("Failed to delete checkpoint");
 
     // Verify checkpoint is gone
     let checkpoints_after = fixture
-        .checkpoint_manager
+        .fixture_checkpoint_manager
         .list_checkpoints()
         .await
         .expect("Failed to list checkpoints");
@@ -211,7 +211,7 @@ async fn test_delete_checkpoint() {
 
     // Verify get_checkpoint fails
     let result = fixture
-        .checkpoint_manager
+        .fixture_checkpoint_manager
         .get_checkpoint(&checkpoint_id)
         .await;
     assert!(

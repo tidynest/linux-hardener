@@ -24,6 +24,12 @@ use std::{fs, time::Instant};
 /// Kernel hardening plugin implementing sysctl parameter management.
 pub struct KernelHardeningPlugin;
 
+impl Default for KernelHardeningPlugin {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl KernelHardeningPlugin {
     /// Creates a new instance of the kernel hardening plugin.
     pub fn new() -> KernelHardeningPlugin {
@@ -120,11 +126,11 @@ impl HardeningPlugin for KernelHardeningPlugin {
     /// information used for logging, UI display, and dependency management.
     fn metadata(&self) -> PluginMetadata {
         PluginMetadata {
-            id: PluginId::new("kernel"),
-            name: "Kernel Hardening".to_string(),
-            description: "Manages kernel security parameters via sysctl".to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            category: FindingCategory::Kernel,
+            plugin_category: FindingCategory::Kernel,
+            plugin_description: "Manages kernel security parameters via sysctl".to_string(),
+            plugin_id: PluginId::new("kernel"),
+            plugin_name: "Kernel Hardening".to_string(),
+            plugin_version: env!("CARGO_PKG_VERSION").to_string(),
         }
     }
 
@@ -145,22 +151,22 @@ impl HardeningPlugin for KernelHardeningPlugin {
                 Ok(actual_value) => {
                     if actual_value != *expected_value {
                         findings.push(Finding {
-                            id: format!("kernel_{}", param_name.replace('.', "_")),
-                            severity: Severity::Medium,
                             category: FindingCategory::Kernel,
-                            title: format!("Insecure value for {}", param_name),
-                            description: param_description.to_string(),
                             current_value: actual_value.clone(),
-                            recommended_value: expected_value.to_string(),
+                            description: param_description.to_string(),
                             explanation: format!(
                                 "This parameter should be set to '{}' for security hardening",
                                 expected_value
                             ),
+                            finding_id: format!("kernel_{}", param_name.replace('.', "_")),
                             impact: "Low impact - requires reboot or sysctl reload".to_string(),
+                            recommended_value: expected_value.to_string(),
                             remediation_steps: vec![format!(
                                 "Set {} = {}",
                                 param_name, expected_value
                             )],
+                            severity: Severity::Medium,
+                            title: format!("Insecure value for {}", param_name),
                         });
                     }
                 }
@@ -172,7 +178,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
         }
 
         Ok(ScanResult {
-            plugin_id: self.metadata().id,
+            plugin_id: self.metadata().plugin_id,
             success: true,
             findings,
             duration_us: start_time.elapsed().as_micros() as u64,
@@ -221,7 +227,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
         let success = changes.iter().all(|c| c.success);
 
         Ok(ApplyResult {
-            plugin_id: self.metadata().id,
+            plugin_id: self.metadata().plugin_id,
             success,
             changes,
             checkpoint_id: None, //Checkpoint not implemented yet
@@ -285,8 +291,8 @@ impl HardeningPlugin for KernelHardeningPlugin {
         }
 
         Ok(ValidationReport {
-            plugin_id: self.metadata().id,
-            valid: issues.iter().all(|i| i.severity != Severity::High),
+            plugin_id: self.metadata().plugin_id,
+            is_valid: issues.iter().all(|i| i.severity != Severity::High),
             issues,
             estimated_changes,
         })

@@ -7,6 +7,12 @@ use std::process::Command;
 /// DNF package manager implementation.
 pub struct DnfPackageManager;
 
+impl Default for DnfPackageManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DnfPackageManager {
     /// Creates a new DNF package manager instance.
     pub fn new() -> DnfPackageManager {
@@ -75,7 +81,7 @@ impl PackageManager for DnfPackageManager {
         // DNF's check-update returns exit code 100 if updates are available
         // We ignore the exit code and just refresh the metadata
         let _ = Command::new("dnf")
-            .args(&["-y", "check-update"])
+            .args(["-y", "check-update"])
             .output()
             .map_err(|e| HardeningError::PackageManager(format!("Failed to execute dnf: {}", e)))?;
 
@@ -118,7 +124,7 @@ impl PackageManager for DnfPackageManager {
 
     fn list_installed(&self) -> Result<Vec<Package>> {
         let output = Command::new("rpm")
-            .args(&[
+            .args([
                 "-qa",
                 "--queryformat",
                 "%{NAME}\t%{VERSION}-%{RELEASE}\t%{ARCH}\n",
@@ -157,7 +163,7 @@ impl PackageManager for DnfPackageManager {
 
     fn is_installed(&self, package: &str) -> Result<bool> {
         let result = Command::new("rpm")
-            .args(&["-q", package])
+            .args(["-q", package])
             .output()
             .map_err(|e| {
                 HardeningError::PackageManager(format!("Failed to query package: {}", e))

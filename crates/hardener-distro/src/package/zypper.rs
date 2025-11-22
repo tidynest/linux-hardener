@@ -7,6 +7,12 @@ use std::process::Command;
 /// Zypper package manager implementation.
 pub struct ZypperPackageManager;
 
+impl Default for ZypperPackageManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ZypperPackageManager {
     /// Creates a new Zypper package manager instance.
     pub fn new() -> ZypperPackageManager {
@@ -111,7 +117,7 @@ impl PackageManager for ZypperPackageManager {
 
     fn list_installed(&self) -> Result<Vec<Package>> {
         let output = Command::new("rpm")
-            .args(&[
+            .args([
                 "-qa",
                 "--queryformat",
                 "%{NAME}\t%{VERSION}-%{RELEASE}\t%{ARCH}\n",
@@ -150,7 +156,7 @@ impl PackageManager for ZypperPackageManager {
 
     fn is_installed(&self, package: &str) -> Result<bool> {
         let result = Command::new("rpm")
-            .args(&["-q", package])
+            .args(["-q", package])
             .output()
             .map_err(|e| {
                 HardeningError::PackageManager(format!("Failed to query package {}", e))

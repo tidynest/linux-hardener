@@ -7,11 +7,11 @@ fn test_kernel_plugin_metadata() {
     let plugin = KernelHardeningPlugin::new();
     let metadata = plugin.metadata();
 
-    assert_eq!(metadata.id.as_str(), "kernel");
-    assert_eq!(metadata.name, "Kernel Hardening");
-    assert_eq!(metadata.category, FindingCategory::Kernel);
-    assert!(metadata.description.contains("sysctl"));
-    assert!(!metadata.version.is_empty());
+    assert_eq!(metadata.plugin_id.as_str(), "kernel");
+    assert_eq!(metadata.plugin_name, "Kernel Hardening");
+    assert_eq!(metadata.plugin_category, FindingCategory::Kernel);
+    assert!(metadata.plugin_description.contains("sysctl"));
+    assert!(!metadata.plugin_version.is_empty());
 }
 
 #[test]

@@ -69,7 +69,7 @@ impl Distribution {
         use std::fs;
 
         let content = fs::read_to_string("/etc/os-release")
-            .map_err(|e| hardener_common::error::HardeningError::System(e))?;
+            .map_err(hardener_common::error::HardeningError::System)?;
 
         let mut map = std::collections::HashMap::new();
         for line in content.lines() {

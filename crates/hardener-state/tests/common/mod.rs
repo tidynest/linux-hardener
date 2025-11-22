@@ -1,6 +1,6 @@
 //! Shared test utilities for checkpoint system tests.
 
-use hardener_state::{init_db, CheckpointManager, CheckpointSigner};
+use hardener_state::{init_db, CheckpointManager};
 use sqlx::SqlitePool;
 use std::fs::Permissions;
 use std::path::{Path, PathBuf};
@@ -8,9 +8,10 @@ use tempfile::TempDir;
 
 /// Test fixture containing temporary directories and database.
 pub struct TestFixture {
-    pub checkpoint_manager: CheckpointManager,
-    pub db_pool: SqlitePool,
-    pub temp_dir: TempDir,
+    pub fixture_checkpoint_manager: CheckpointManager,
+    #[allow(dead_code)]
+    pub fixture_db_pool: SqlitePool,
+    pub fixture_temp_dir: TempDir,
 }
 
 impl TestFixture {
@@ -35,15 +36,15 @@ impl TestFixture {
             .expect("Failed to create checkpoint manager");
 
         TestFixture {
-            checkpoint_manager,
-            db_pool,
-            temp_dir,
+            fixture_checkpoint_manager: checkpoint_manager,
+            fixture_db_pool: db_pool,
+            fixture_temp_dir: temp_dir,
         }
     }
 
     /// Creates a test file with specified content.
     pub fn create_test_file(&self, name: &str, content: &str) -> PathBuf {
-        let file_path = self.temp_dir.path().join(name);
+        let file_path = self.fixture_temp_dir.path().join(name);
         std::fs::write(&file_path, content).expect("Failed to write file");
         file_path
     }

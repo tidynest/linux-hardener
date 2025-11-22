@@ -51,7 +51,7 @@ pub async fn init_db(db_path: Option<&Path>) -> Result<SqlitePool> {
 
     // Create parent directory if it doesn't exist
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| HardeningError::System(e))?;
+        std::fs::create_dir_all(parent).map_err(HardeningError::System)?;
     }
 
     // Configure SQLite connection

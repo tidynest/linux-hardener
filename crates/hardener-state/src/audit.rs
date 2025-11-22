@@ -135,15 +135,15 @@ impl AuditEntry {
 #[derive(Clone, Debug, Default)]
 pub struct QueryFilter {
     /// Filter by action type (None means no filter)
-    pub action_type: Option<ActionType>,
-    /// Filter by user (None means no filter)
-    pub user: Option<String>,
+    pub filter_action_type: Option<ActionType>,
     /// Filter by minimum timestamp (inclusive)
-    pub start_time: Option<DateTime<Utc>>,
-    /// Filter by minimum timestamp (inclusive)
-    pub end_time: Option<DateTime<Utc>>,
+    pub filter_end_time: Option<DateTime<Utc>>,
     /// Filter by action result (None means no filter)
-    pub result: Option<ActionResult>,
+    pub filter_result: Option<ActionResult>,
+    /// Filter by minimum timestamp (inclusive)
+    pub filter_start_time: Option<DateTime<Utc>>,
+    /// Filter by user (None means no filter)
+    pub filter_user: Option<String>,
 }
 
 impl QueryFilter {
@@ -154,66 +154,66 @@ impl QueryFilter {
 
     /// Filters by action type.
     pub fn with_action_type(mut self, action_type: ActionType) -> QueryFilter {
-        self.action_type = Some(action_type);
+        self.filter_action_type = Some(action_type);
         self
     }
 
     /// Filters by user.
     pub fn with_user(mut self, user: String) -> QueryFilter {
-        self.user = Some(user);
+        self.filter_user = Some(user);
         self
     }
 
     /// Filters by time range (start).
     pub fn with_start_time(mut self, start_time: DateTime<Utc>) -> QueryFilter {
-        self.start_time = Some(start_time);
+        self.filter_start_time = Some(start_time);
         self
     }
 
     /// Filters by time range (end).
     pub fn with_end_time(mut self, end_time: DateTime<Utc>) -> QueryFilter {
-        self.end_time = Some(end_time);
+        self.filter_end_time = Some(end_time);
         self
     }
 
     /// Filters by action result.
     pub fn with_result(mut self, result: ActionResult) -> QueryFilter {
-        self.result = Some(result);
+        self.filter_result = Some(result);
         self
     }
 
     /// Checks if an entry matches this filter.
     fn matches(&self, entry: &AuditEntry) -> bool {
         // Check action type filter
-        if let Some(action_type) = self.action_type {
+        if let Some(action_type) = self.filter_action_type {
             if entry.entry_action_type != action_type {
                 return false;
             }
         }
 
         // Check user filter
-        if let Some(ref user) = self.user {
+        if let Some(ref user) = self.filter_user {
             if &entry.entry_user != user {
                 return false;
             }
         }
 
         // Check start time filter
-        if let Some(start) = self.start_time {
+        if let Some(start) = self.filter_start_time {
             if entry.entry_timestamp < start {
                 return false;
             }
         }
 
         // Check end time filter
-        if let Some(end) = self.end_time {
+        if let Some(end) = self.filter_end_time {
             if entry.entry_timestamp > end {
                 return false;
             }
         }
 
         // Check result filter
-        if let Some(result) = self.result {
+        if let Some(result) = self.filter_result {
             if entry.entry_result != result {
                 return false;
             }
@@ -289,7 +289,7 @@ impl AuditLogger {
 
         // Write to file
         let mut file = self.file.lock().await;
-        file.write(&entry_json).await?;
+        file.write_all(&entry_json).await?;
         file.flush().await?;
 
         // Update chain state
@@ -340,7 +340,7 @@ impl AuditLogger {
         entry_json.push(b'\n');
 
         let mut file = self.file.lock().await;
-        file.write(&entry_json).await?;
+        file.write_all(&entry_json).await?;
         file.flush().await?;
 
         // Update chain state

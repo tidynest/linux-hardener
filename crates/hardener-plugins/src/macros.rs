@@ -25,11 +25,11 @@ macro_rules! define_plugin {
                 use $crate::hardener_core::plugin::PluginMetadata;
 
                 PluginMetadata {
-                    id: PluginId::from($id),
-                    name: $name.to_string(),
-                    version: $version.to_string(),
-                    description: $description.to_string(),
-                    category: FindingCategory::$category,
+                    plugin_category: FindingCategory::$category,
+                    plugin_description: $description.to_string(),
+                    plugin_id: PluginId::from($id),
+                    plugin_name: $name.to_string(),
+                    plugin_version: $version.to_string(),
                 }
             }
         }
