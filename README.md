@@ -10,69 +10,6 @@
 
 This is a complete, professional-grade documentation package for building a Linux system hardening automation tool in Rust. Everything has been prepared for use with Claude Code in RustRover (or any development environment).
 
-### Zero AI Attribution
-
-As requested, there is **absolutely no AI attribution** anywhere in these documents. All work is attributed solely to Eric Jingryd.
-
----
-
-## Files Included
-
-### Root Files
-
-**CLAUDE.md** - Main instructions file for Claude Code
-- Read this first before starting any development
-- Contains core philosophy, rules, and workflow
-- References all other documentation
-- **Place this in your project root directory**
-
-### .claude/ Directory
-
-**.claude/README.md** - Guide to the documentation system
-- Explains what each document is for
-- How to use them together
-- Priority reading order
-
-**.claude/ARCHITECTURE.md** - Complete system architecture
-- All components and relationships visible from the start
-- Trait definitions with exact signatures
-- Data structures and flow diagrams
-- ~6,500 lines of detailed architecture
-
-**.claude/IMPLEMENTATION_PHASES.md** - Granular task breakdown
-- Phase 0-5 with weekly milestones
-- Every task broken into small, manageable pieces
-- Checkboxes for tracking progress
-- Specific file locations and function signatures
-- ~1,600 tasks total
-
-**.claude/CODE_PATTERNS.md** - Rust implementation patterns
-- Small, incremental examples (10-30 lines each)
-- Error handling, logging, file operations
-- Privilege management, plugin patterns
-- Testing examples
-- Common pitfalls to avoid
-
-**.claude/DISTRO_MATRIX.md** - Distribution-specific reference
-- Quick lookup tables for all commands
-- Ubuntu, Fedora, Arch, openSUSE specifics
-- Package managers, init systems, MAC systems
-- Critical paths and permissions
-
-**.claude/SECURITY_CONTROLS.md** - Hardening parameters catalogue
-- All kernel parameters with secure values
-- Network hardening settings
-- SSH, PAM, audit rules
-- Compliance framework mappings
-- Ready-to-use constants
-
-**.claude/API_CONTRACTS.md** - Exact interfaces and formats
-- TOML configuration formats
-- JSON API structures
-- Rust type definitions
-- Database schema
-- REST API endpoints
-
 ---
 
 ## How This Documentation Works
@@ -427,7 +364,7 @@ Now it's time to **build** this professional Linux hardening tool.
 
 ## Let's Build Something Great
 
-This documentation represents hundreds of hours of research, design, and specification work. It's built on:
+This documentation represents hundreds of hours of research, design, and specification work. It is built on:
 
 - Analysis of existing tools (Lynis, OpenSCAP, AIDE, etc.)
 - Study of Linux security best practices

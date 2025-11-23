@@ -41,7 +41,7 @@ impl ServicesPlugin {
 struct ServiceDirective {
     service_description: &'static str,
     service_name: &'static str,
-    service_severity: Severity,
+    service_issue_severity: Severity,
 }
 
 /// List of unnecessary services that should be disabled.
@@ -52,22 +52,22 @@ const UNNECESSARY_SERVICES: &[ServiceDirective] = &[
     ServiceDirective {
         service_description: "Bluetooth service - rarely needed on servers",
         service_name: "bluetooth",
-        service_severity: Severity::High,
+        service_issue_severity: Severity::High,
     },
     ServiceDirective {
         service_description: "Printing service - not needed on most servers",
         service_name: "cups",
-        service_severity: Severity::Medium,
+        service_issue_severity: Severity::Medium,
     },
     ServiceDirective {
         service_description: "Network discovery service - potential information disclosure",
         service_name: "avahi-daemon",
-        service_severity: Severity::Medium,
+        service_issue_severity: Severity::Medium,
     },
     ServiceDirective {
         service_description: "Modem management - not needed without mobile broadband",
         service_name: "ModemManager",
-        service_severity: Severity::Low,
+        service_issue_severity: Severity::Low,
     },
 ];
 
@@ -173,19 +173,19 @@ impl HardeningPlugin for ServicesPlugin {
             }
             _ => {
                 issues.push(ValidationIssue {
-                    config_key: None,
-                    message: "systemctl command not found - this plugin requires systemd"
+                    validation_issue_config_key: None,
+                    validation_issue_message: "systemctl command not found - this plugin requires systemd"
                         .to_string(),
-                    severity: Severity::Critical,
+                    validation_issue_severity: Severity::Critical,
                 });
             }
         }
 
         Ok(ValidationReport {
-            estimated_changes,
-            is_valid: issues.is_empty(),
-            issues,
-            plugin_id: self.metadata().plugin_id,
+            validation_report_estimated_changes: estimated_changes,
+            validation_report_is_valid: issues.is_empty(),
+            validation_report_issues: issues,
+            validation_report_plugin_id: self.metadata().plugin_id,
         })
     }
 
@@ -203,7 +203,7 @@ impl HardeningPlugin for ServicesPlugin {
             let is_enabled = is_service_enabled(directive.service_name).unwrap_or(false);
             let is_active = is_service_active(directive.service_name).unwrap_or(false);
 
-            // Only create findning if service is enabled or active
+            // Only create finding if service is enabled or active
             if is_enabled || is_active {
                 let current_state = if is_enabled && is_active {
                     "enabled and active"
@@ -214,33 +214,33 @@ impl HardeningPlugin for ServicesPlugin {
                 };
 
                 findings.push(Finding {
-                    category: FindingCategory::Services,
-                    current_value: current_state.to_string(),
-                    description: directive.service_description.to_string(),
-                    explanation: format!(
+                    finding_category: FindingCategory::Services,
+                    finding_current_value: current_state.to_string(),
+                    finding_description: directive.service_description.to_string(),
+                    finding_explanation: format!(
                         "Service {} is currently {}. {}",
                         directive.service_name, current_state, directive.service_description
                     ),
                     finding_id: format!("service_{}", directive.service_name.replace("-", "_")),
-                    impact: "Reduces attack surface by disabling unnecessary service".to_string(),
-                    recommended_value: "disabled and masked".to_string(),
-                    remediation_steps: vec![
+                    finding_impact: "Reduces attack surface by disabling unnecessary service".to_string(),
+                    finding_recommended_value: "disabled and masked".to_string(),
+                    finding_remediation_steps: vec![
                         format!("systemctl stop {}", directive.service_name),
                         format!("systemctl disable {}", directive.service_name),
                         format!("systemctl mask {}", directive.service_name),
                     ],
-                    severity: directive.service_severity,
-                    title: format!("Unnecessary service {} is running", directive.service_name),
+                    finding_severity: directive.service_issue_severity,
+                    finding_title: format!("Unnecessary service {} is running", directive.service_name),
                 });
             }
         }
 
         Ok(ScanResult {
-            duration_us: start.elapsed().as_micros() as u64,
-            error: None,
-            findings,
-            plugin_id: self.metadata().plugin_id,
-            success: true,
+            scan_duration_us: start.elapsed().as_micros() as u64,
+            scan_error: None,
+            scan_findings: findings,
+            scan_plugin_id: self.metadata().plugin_id,
+            scan_success: true,
         })
     }
 
@@ -269,20 +269,20 @@ impl HardeningPlugin for ServicesPlugin {
                     Ok(_) => {
                         changes.push(Change {
                             change_type: ChangeType::Service,
-                            description: format!("Stopped service {}", directive.service_name),
-                            error: None,
-                            success: true,
+                            change_description: format!("Stopped service {}", directive.service_name),
+                            change_error: None,
+                            change_success: true,
                         });
                     }
                     Err(e) => {
                         changes.push(Change {
                             change_type: ChangeType::Service,
-                            description: format!(
+                            change_description: format!(
                                 "Failed to stop service {}",
                                 directive.service_name
                             ),
-                            error: Some(e.to_string()),
-                            success: false,
+                            change_error: Some(e.to_string()),
+                            change_success: false,
                         });
                         continue; // Skip disable/mask if stop failed
                     }
@@ -295,20 +295,20 @@ impl HardeningPlugin for ServicesPlugin {
                     Ok(_) => {
                         changes.push(Change {
                             change_type: ChangeType::Service,
-                            description: format!("Disabled service {}", directive.service_name),
-                            error: None,
-                            success: true,
+                            change_description: format!("Disabled service {}", directive.service_name),
+                            change_error: None,
+                            change_success: true,
                         });
                     }
                     Err(e) => {
                         changes.push(Change {
                             change_type: ChangeType::Service,
-                            description: format!(
+                            change_description: format!(
                                 "Failed to disable service {}",
                                 directive.service_name
                             ),
-                            error: Some(e.to_string()),
-                            success: false,
+                            change_error: Some(e.to_string()),
+                            change_success: false,
                         });
                     }
                 }
@@ -319,30 +319,30 @@ impl HardeningPlugin for ServicesPlugin {
                 Ok(_) => {
                     changes.push(Change {
                         change_type: ChangeType::Service,
-                        description: format!("Masked service {}", directive.service_name),
-                        error: None,
-                        success: true,
+                        change_description: format!("Masked service {}", directive.service_name),
+                        change_error: None,
+                        change_success: true,
                     });
                 }
                 Err(e) => {
                     changes.push(Change {
                         change_type: ChangeType::Service,
-                        description: format!("Failed to mask service {}", directive.service_name),
-                        error: Some(e.to_string()),
-                        success: false,
+                        change_description: format!("Failed to mask service {}", directive.service_name),
+                        change_error: Some(e.to_string()),
+                        change_success: false,
                     });
                 }
             }
         }
 
-        let all_successful = changes.iter().all(|c| c.success);
+        let all_successful = changes.iter().all(|c| c.change_success);
 
         Ok(ApplyResult {
-            changes,
-            checkpoint_id: None,
-            error: None,
-            plugin_id: self.metadata().plugin_id,
-            success: all_successful,
+            apply_changes: changes,
+            apply_checkpoint_id: None,
+            apply_error: None,
+            apply_plugin_id: self.metadata().plugin_id,
+            apply_success: all_successful,
         })
     }
 

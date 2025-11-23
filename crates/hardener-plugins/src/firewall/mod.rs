@@ -24,7 +24,7 @@ use std::time::Instant;
 /// Represents a single firewall rule in a backend-agnostic format.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Rule {
-    /// Rule description for logging and display.
+    /// Rule finding_description for logging and display.
     pub rule_description: String,
     /// Protocol (tcp, udp, icmp, all).
     pub rule_protocol: String,
@@ -205,11 +205,11 @@ impl HardeningPlugin for FirewallPlugin {
             Ok(backend) => backend,
             Err(e) => {
                 return Ok(ScanResult {
-                    plugin_id,
-                    success: false,
-                    findings: vec![],
-                    duration_us: start_time.elapsed().as_micros() as u64,
-                    error: Some(format!("No firewall backend: {}", e)),
+                    scan_plugin_id: plugin_id,
+                    scan_success: false,
+                    scan_findings: vec![],
+                    scan_duration_us: start_time.elapsed().as_micros() as u64,
+                    scan_error: Some(format!("No firewall backend: {}", e)),
                 });
             }
         };
@@ -217,42 +217,42 @@ impl HardeningPlugin for FirewallPlugin {
         // Check if firewall is enabled.
         if backend.is_enabled().is_err() {
             findings.push(Finding {
-                category: FindingCategory::Network,
-                current_value: "disabled".to_string(),
-                description: format!("{} firewall is not enabled", backend.backend_name()),
-                explanation: "A firewall provides essential network protection".to_string(),
+                finding_category: FindingCategory::Network,
+                finding_current_value: "disabled".to_string(),
+                finding_description: format!("{} firewall is not enabled", backend.backend_name()),
+                finding_explanation: "A firewall provides essential network protection".to_string(),
                 finding_id: format!("{}-disabled", backend.backend_name()),
-                impact: "System exposed to network attacks".to_string(),
-                recommended_value: "enabled".to_string(),
-                remediation_steps: vec![format!("Enable {} firewall", backend.backend_name())],
-                severity: Severity::High,
-                title: "Firewall disabled".to_string(),
+                finding_impact: "System exposed to network attacks".to_string(),
+                finding_recommended_value: "enabled".to_string(),
+                finding_remediation_steps: vec![format!("Enable {} firewall", backend.backend_name())],
+                finding_severity: Severity::High,
+                finding_title: "Firewall disabled".to_string(),
             });
         }
 
         let duration_us = start_time.elapsed().as_micros() as u64;
         Ok(ScanResult {
-            plugin_id,
-            success: true,
-            findings,
-            duration_us,
-            error: None,
+            scan_plugin_id: plugin_id,
+            scan_success: true,
+            scan_findings: findings,
+            scan_duration_us: duration_us,
+            scan_error: None,
         })
     }
 
     fn apply(&self, _ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
-        let plugin_id = PluginId::new("firewall-hardening");
+        let apply_plugin_id = PluginId::new("firewall-hardening");
 
         // Detect backend.
         let backend = match self.detect_backend() {
             Ok(b) => b,
             Err(e) => {
                 return Ok(ApplyResult {
-                    plugin_id,
-                    success: false,
-                    changes: vec![],
-                    checkpoint_id: None,
-                    error: Some(format!("No firewall backend: {}", e)),
+                    apply_plugin_id,
+                    apply_success: false,
+                    apply_changes: vec![],
+                    apply_checkpoint_id: None,
+                    apply_error: Some(format!("No firewall backend: {}", e)),
                 });
             }
         };
@@ -264,14 +264,14 @@ impl HardeningPlugin for FirewallPlugin {
 
         // Apply default rules.
         let rules = backend.get_default_rules();
-        let changes = backend.apply_rules(&rules)?;
+        let apply_changes = backend.apply_rules(&rules)?;
 
         Ok(ApplyResult {
-            plugin_id,
-            success: true,
-            changes,
-            checkpoint_id: None,
-            error: None,
+            apply_plugin_id,
+            apply_success: true,
+            apply_changes,
+            apply_checkpoint_id: None,
+            apply_error: None,
         })
     }
 
@@ -282,16 +282,16 @@ impl HardeningPlugin for FirewallPlugin {
     }
 
     fn validate(&self, _config: &Config) -> Result<ValidationReport> {
-        let plugin_id = PluginId::new("firewall-hardening");
+        let validation_plugin_id = PluginId::new("firewall-hardening");
 
         // Stub implementation - will be completed after backends are implemented
         tracing::warn!("Firewall validate() method not yet fully implemented");
 
         Ok(ValidationReport {
-            plugin_id,
-            is_valid: true,
-            issues: vec![],
-            estimated_changes: vec![],
+            validation_report_plugin_id: validation_plugin_id,
+            validation_report_is_valid: true,
+            validation_report_issues: vec![],
+            validation_report_estimated_changes: vec![],
         })
     }
 }

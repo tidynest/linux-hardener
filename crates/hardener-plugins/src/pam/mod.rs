@@ -100,26 +100,26 @@ impl HardeningPlugin for PamHardeningPlugin {
                         "pam-{}",
                         directive.pam_directive_name
                     ),
-                    category: FindingCategory::Authentication,
-                    current_value: current_display.clone(),
-                    description: format!(
+                    finding_category: FindingCategory::Authentication,
+                    finding_current_value: current_display.clone(),
+                    finding_description: format!(
                         "PAM directive '{}' is currently '{}' but should be '{}'",
                         directive.pam_directive_name,
                         current_display,
                         directive.pam_secure_value,
                     ),
-                    explanation: directive.pam_description.to_string(),
-                    impact: "Weak authentication settings can allow easier password guessing and brute-force attacks".to_string(),
-                    recommended_value: directive.pam_secure_value.to_string(),
-                    remediation_steps: vec![
+                    finding_explanation: directive.pam_description.to_string(),
+                    finding_impact: "Weak authentication settings can allow easier password guessing and brute-force attacks".to_string(),
+                    finding_recommended_value: directive.pam_secure_value.to_string(),
+                    finding_remediation_steps: vec![
                         format!(
                             "Set {} = {} in the appropriate configuration file",
                             directive.pam_directive_name,
                             directive.pam_secure_value,
                         ),
                     ],
-                    severity: directive.pam_severity,
-                    title: format!(
+                    finding_severity: directive.pam_severity,
+                    finding_title: format!(
                         "Insecure PAM setting: {}",
                         directive.pam_directive_name
                     ),
@@ -136,11 +136,11 @@ impl HardeningPlugin for PamHardeningPlugin {
         );
 
         Ok(ScanResult {
-            plugin_id: self.metadata().plugin_id,
-            success: true,
-            findings,
-            duration_us,
-            error: None,
+            scan_plugin_id: self.metadata().plugin_id,
+            scan_success: true,
+            scan_findings: findings,
+            scan_duration_us: duration_us,
+            scan_error: None,
         })
     }
 
@@ -156,9 +156,9 @@ impl HardeningPlugin for PamHardeningPlugin {
             Ok(path) => {
                 changes.push(Change {
                     change_type: ChangeType::ConfigFile,
-                    description: format!("Created backup: {}", path),
-                    success: true,
-                    error: None,
+                    change_description: format!("Created backup: {}", path),
+                    change_success: true,
+                    change_error: None,
                 });
                 Some(path)
             }
@@ -166,9 +166,9 @@ impl HardeningPlugin for PamHardeningPlugin {
                 warn!("Failed to backup pwquality.conf: {}", e);
                 changes.push(Change {
                     change_type: ChangeType::ConfigFile,
-                    description: "Failed to create pwquality.conf backup".to_string(),
-                    success: false,
-                    error: Some(e.to_string()),
+                    change_description: "Failed to create pwquality.conf backup".to_string(),
+                    change_success: false,
+                    change_error: Some(e.to_string()),
                 });
                 all_success = false;
                 None
@@ -179,9 +179,9 @@ impl HardeningPlugin for PamHardeningPlugin {
             Ok(path) => {
                 changes.push(Change {
                     change_type: ChangeType::ConfigFile,
-                    description: format!("Created backup: {}", path),
-                    success: true,
-                    error: None,
+                    change_description: format!("Created backup: {}", path),
+                    change_success: true,
+                    change_error: None,
                 });
                 Some(path)
             }
@@ -189,9 +189,9 @@ impl HardeningPlugin for PamHardeningPlugin {
                 warn!("Failed to backup login.defs: {}", e);
                 changes.push(Change {
                     change_type: ChangeType::ConfigFile,
-                    description: "Failed to create login.defs".to_string(),
-                    success: false,
-                    error: Some(e.to_string()),
+                    change_description: "Failed to create login.defs".to_string(),
+                    change_success: false,
+                    change_error: Some(e.to_string()),
                 });
                 all_success = false;
                 None
@@ -221,12 +221,12 @@ impl HardeningPlugin for PamHardeningPlugin {
 
                     changes.push(Change {
                         change_type: ChangeType::ConfigFile,
-                        description: format!(
+                        change_description: format!(
                             "Set {} = {} in pwquality.conf",
                             directive.pam_directive_name, directive.pam_secure_value,
                         ),
-                        success: true,
-                        error: None,
+                        change_success: true,
+                        change_error: None,
                     });
                 }
                 PamConfigFile::LoginDefs => {
@@ -238,12 +238,12 @@ impl HardeningPlugin for PamHardeningPlugin {
 
                     changes.push(Change {
                         change_type: ChangeType::ConfigFile,
-                        description: format!(
+                        change_description: format!(
                             "Set {} = {} in login.defs",
                             directive.pam_directive_name, directive.pam_secure_value,
                         ),
-                        success: true,
-                        error: None,
+                        change_success: true,
+                        change_error: None,
                     });
                 }
                 PamConfigFile::PamAuth => {
@@ -267,18 +267,18 @@ impl HardeningPlugin for PamHardeningPlugin {
                     info!("Successfully wrote /etc/security/pwquality.conf (atomic write)");
                     changes.push(Change {
                         change_type: ChangeType::ConfigFile,
-                        description: "Wrote modified pwquality.conf".to_string(),
-                        success: true,
-                        error: None,
+                        change_description: "Wrote modified pwquality.conf".to_string(),
+                        change_success: true,
+                        change_error: None,
                     });
                 }
                 Err(e) => {
                     warn!("Failed to write pwquality.conf: {}", e);
                     changes.push(Change {
                         change_type: ChangeType::ConfigFile,
-                        description: "Failed to write pwquality.conf".to_string(),
-                        success: false,
-                        error: Some(e.to_string()),
+                        change_description: "Failed to write pwquality.conf".to_string(),
+                        change_success: false,
+                        change_error: Some(e.to_string()),
                     });
                     all_success = false;
                 }
@@ -291,18 +291,18 @@ impl HardeningPlugin for PamHardeningPlugin {
                     info!("Successfully wrote /etc/login.defs (atomic write)");
                     changes.push(Change {
                         change_type: ChangeType::ConfigFile,
-                        description: "Wrote modified login.defs".to_string(),
-                        success: true,
-                        error: None,
+                        change_description: "Wrote modified login.defs".to_string(),
+                        change_success: true,
+                        change_error: None,
                     });
                 }
                 Err(e) => {
                     warn!("Failed to write login.defs: {}", e);
                     changes.push(Change {
                         change_type: ChangeType::ConfigFile,
-                        description: "Failed to write login.defs".to_string(),
-                        success: false,
-                        error: Some(e.to_string()),
+                        change_description: "Failed to write login.defs".to_string(),
+                        change_success: false,
+                        change_error: Some(e.to_string()),
                     });
                     all_success = false;
                 }
@@ -319,11 +319,11 @@ impl HardeningPlugin for PamHardeningPlugin {
         );
 
         Ok(ApplyResult {
-            plugin_id: self.metadata().plugin_id,
-            success: all_success,
-            changes,
-            checkpoint_id: None,
-            error: None,
+            apply_plugin_id: self.metadata().plugin_id,
+            apply_success: all_success,
+            apply_changes: changes,
+            apply_checkpoint_id: None,
+            apply_error: None,
         })
     }
 
@@ -342,19 +342,19 @@ impl HardeningPlugin for PamHardeningPlugin {
             Ok(metadata) => {
                 if !metadata.is_file() {
                     issues.push(ValidationIssue {
-                        config_key: None,
-                        message: "/etc/security/pwquality.conf exists but is not a regular file"
+                        validation_issue_config_key: None,
+                        validation_issue_message: "/etc/security/pwquality.conf exists but is not a regular file"
                             .to_string(),
-                        severity: Severity::High,
+                        validation_issue_severity: Severity::High,
                     });
                 }
             }
             Err(_) => {
                 issues.push(ValidationIssue {
-                    config_key: None,
-                    message: "/etc/security/pwquality.conf does not exist or is not readable"
+                    validation_issue_config_key: None,
+                    validation_issue_message: "/etc/security/pwquality.conf does not exist or is not readable"
                         .to_string(),
-                    severity: Severity::Medium,
+                    validation_issue_severity: Severity::Medium,
                 });
             }
         }
@@ -364,17 +364,17 @@ impl HardeningPlugin for PamHardeningPlugin {
             Ok(metadata) => {
                 if !metadata.is_file() {
                     issues.push(ValidationIssue {
-                        config_key: None,
-                        message: "/etc/login.defs exists but is not a regular file".to_string(),
-                        severity: Severity::High,
+                        validation_issue_config_key: None,
+                        validation_issue_message: "/etc/login.defs exists but is not a regular file".to_string(),
+                        validation_issue_severity: Severity::High,
                     });
                 }
             }
             Err(_) => {
                 issues.push(ValidationIssue {
-                    config_key: None,
-                    message: "/etc/login.defs does not exist or is not readable".to_string(),
-                    severity: Severity::High,
+                    validation_issue_config_key: None,
+                    validation_issue_message: "/etc/login.defs does not exist or is not readable".to_string(),
+                    validation_issue_severity: Severity::High,
                 });
             }
         }
@@ -389,10 +389,10 @@ impl HardeningPlugin for PamHardeningPlugin {
         let is_valid = issues.is_empty();
 
         Ok(ValidationReport {
-            plugin_id: self.metadata().plugin_id,
-            is_valid,
-            issues,
-            estimated_changes,
+            validation_report_plugin_id: self.metadata().plugin_id,
+            validation_report_is_valid: is_valid,
+            validation_report_issues: issues,
+            validation_report_estimated_changes: estimated_changes,
         })
     }
 }

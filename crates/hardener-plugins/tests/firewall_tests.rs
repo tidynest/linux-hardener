@@ -46,16 +46,16 @@ fn test_firewall_scan_detects_backend() {
     assert!(result.is_ok(), "Scan should return Ok result");
 
     let scan_result = result.unwrap();
-    assert_eq!(scan_result.plugin_id.as_str(), "firewall-hardening");
+    assert_eq!(scan_result.scan_plugin_id.as_str(), "firewall-hardening");
 
     // If UFW is available, scan should succeed
     // If not available, scan should fail gracefully.
-    if scan_result.success {
+    if scan_result.scan_success {
         println!("Firewall backend detected successfully");
-        println!("Findings: {}", scan_result.findings.len());
+        println!("Findings: {}", scan_result.scan_findings.len());
     } else {
         println!("No firewall backend found (expected on some systems)");
-        assert!(scan_result.error.is_some());
+        assert!(scan_result.scan_error.is_some());
     }
 }
 
@@ -70,8 +70,8 @@ fn test_firewall_validate_checks_backend() {
     assert!(result.is_ok(), "Validate should return Ok result");
 
     let validation_report = result.unwrap();
-    assert_eq!(validation_report.plugin_id.as_str(), "firewall-hardening");
-    assert_eq!(validation_report.is_valid, true);
+    assert_eq!(validation_report.validation_report_plugin_id.as_str(), "firewall-hardening");
+    assert_eq!(validation_report.validation_report_is_valid, true);
 }
 
 #[test]
@@ -89,32 +89,32 @@ fn test_firewall_apply_requires_root() {
     assert!(result.is_ok(), "Apply should return Ok result");
 
     let apply_result = result.unwrap();
-    assert_eq!(apply_result.plugin_id.as_str(), "firewall-hardening");
+    assert_eq!(apply_result.apply_plugin_id.as_str(), "firewall-hardening");
 
-    if apply_result.success {
+    if apply_result.apply_success {
         println!("[SUCCESS] Firewall apply succeeded");
-        println!("Changes made: {}", apply_result.changes.len());
+        println!("Changes made: {}", apply_result.apply_changes.len());
 
-        for change in &apply_result.changes {
+        for change in &apply_result.apply_changes {
             println!(
                 "  - {}: {}",
-                change.description,
-                if change.success { "[OK]" } else { "[FAILED]" }
+                change.change_description,
+                if change.change_success { "[OK]" } else { "[FAILED]" }
             );
-            if let Some(ref error) = change.error {
+            if let Some(ref error) = change.change_error {
                 println!("    Error: {}", error);
             }
         }
 
         // Verify scan now shows firewall as enabled
         let scan_result = plugin.scan(&ctx).unwrap();
-        assert!(scan_result.success, "Scan should succeed after apply");
+        assert!(scan_result.scan_success, "Scan should succeed after apply");
 
         // Should have no findings if firewall is now enabled
         let disabled_findings: Vec<_> = scan_result
-            .findings
+            .scan_findings
             .iter()
-            .filter(|f| f.title.contains("disabled"))
+            .filter(|f| f.finding_title.contains("disabled"))
             .collect();
 
         if disabled_findings.is_empty() {
@@ -122,12 +122,12 @@ fn test_firewall_apply_requires_root() {
         } else {
             println!("[WARNING] Firewall still shows as disabled:");
             for finding in disabled_findings {
-                println!("  - {}: {}", finding.title, finding.description);
+                println!("  - {}: {}", finding.finding_title, finding.finding_description);
             }
         }
     } else {
         println!("[FAILED] Firewall apply failed");
-        if let Some(ref error) = apply_result.error {
+        if let Some(ref error) = apply_result.apply_error {
             println!("Error: {}", error);
         }
     }
@@ -155,22 +155,22 @@ fn test_backend_detection_order() {
 
     let scan_result = result.unwrap();
 
-    if scan_result.success {
+    if scan_result.scan_success {
         println!("Detected firewall backend successfully");
 
         // Check which backend was detected by looking at findings
-        if scan_result.error.is_none() {
+        if scan_result.scan_error.is_none() {
             println!("Backend detection successful");
         }
     } else {
         // No backend found - this is acceptable on systems without firewall tools
         println!("No firewall backend detected (this is OK for test systems)");
         assert!(
-            scan_result.error.is_some(),
+            scan_result.scan_error.is_some(),
             "Should have error message when no backend found"
         );
 
-        let error_msg = scan_result.error.unwrap();
+        let error_msg = scan_result.scan_error.unwrap();
         assert!(
             error_msg.contains("firewalld")
                 && error_msg.contains("ufw")

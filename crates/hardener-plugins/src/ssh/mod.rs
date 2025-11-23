@@ -25,7 +25,7 @@ use std::{fs, path::Path, process::Command, time::Instant};
 /// Represents a single SSH configuration directive to be hardened.
 #[derive(Clone, Debug)]
 struct SshConfigDirective {
-    /// Human-readable description of this directive's security purpose.
+    /// Human-readable finding_description of this directive's security purpose.
     ssh_description: &'static str,
     /// The directive name as it appears in sshd_config (e.g., "PermitRootLogin").
     ssh_directive_name: &'static str,
@@ -295,11 +295,11 @@ impl HardeningPlugin for SshHardeningPlugin {
                 // If we can't read the config, create a critical finding.
                 let duration_us = start_time.elapsed().as_micros() as u64;
                 return Ok(ScanResult {
-                    plugin_id,
-                    success: false,
-                    findings: vec![],
-                    duration_us,
-                    error: Some(format!("Failed to read /etc/ssh/sshd_config: {}", e)),
+                    scan_plugin_id: plugin_id,
+                    scan_success: false,
+                    scan_findings: vec![],
+                    scan_duration_us: duration_us,
+                    scan_error: Some(format!("Failed to read /etc/ssh/sshd_config: {}", e)),
                 });
             }
         };
@@ -316,36 +316,36 @@ impl HardeningPlugin for SshHardeningPlugin {
 
             if is_insecure {
                 findings.push(Finding {
-                    category: FindingCategory::Network,
-                    current_value: current_value.unwrap_or_else(|| "not set".to_string()),
-                    description: directive.ssh_description.to_string(),
-                    explanation: format!(
+                    finding_category: FindingCategory::Network,
+                    finding_current_value: current_value.unwrap_or_else(|| "not set".to_string()),
+                    finding_description: directive.ssh_description.to_string(),
+                    finding_explanation: format!(
                         "The SSH directive '{}' is not configured securely. {}",
                         directive.ssh_directive_name, directive.ssh_description,
                     ),
                     finding_id: format!("ssh-{}", directive.ssh_directive_name.to_lowercase()),
-                    impact: "May allow unauthorised access or weaken SSH security".to_string(),
-                    recommended_value: directive.ssh_secure_value.to_string(),
-                    remediation_steps: vec![
+                    finding_impact: "May allow unauthorised access or weaken SSH security".to_string(),
+                    finding_recommended_value: directive.ssh_secure_value.to_string(),
+                    finding_remediation_steps: vec![
                         format!(
                             "Edit /etc/ssh/sshd_config and set: {} {}",
                             directive.ssh_directive_name, directive.ssh_secure_value,
                         ),
                         "Restart SSH service: systemctl restart sshd".to_string(),
                     ],
-                    severity: directive.ssh_severity,
-                    title: format!("Insecure SSH setting: {}", directive.ssh_directive_name,),
+                    finding_severity: directive.ssh_severity,
+                    finding_title: format!("Insecure SSH setting: {}", directive.ssh_directive_name,),
                 });
             }
         }
 
         let duration_us = start_time.elapsed().as_micros() as u64;
         Ok(ScanResult {
-            plugin_id,
-            success: true,
-            findings,
-            duration_us,
-            error: None,
+            scan_plugin_id: plugin_id,
+            scan_success: true,
+            scan_findings: findings,
+            scan_duration_us: duration_us,
+            scan_error: None,
         })
     }
 
@@ -358,20 +358,20 @@ impl HardeningPlugin for SshHardeningPlugin {
         match Self::create_ssh_backup() {
             Ok(backup_path) => {
                 changes.push(Change {
-                    description: format!("Created backup: {}", backup_path),
+                    change_description: format!("Created backup: {}", backup_path),
                     change_type: ChangeType::ConfigFile,
-                    success: true,
-                    error: None,
+                    change_success: true,
+                    change_error: None,
                 });
                 tracing::info!("SSH config backup created: {}", backup_path);
             }
             Err(e) => {
                 return Ok(ApplyResult {
-                    plugin_id,
-                    success: false,
-                    changes,
-                    checkpoint_id: None,
-                    error: Some(format!("Failed to create backup: {}", e)),
+                    apply_plugin_id: plugin_id,
+                    apply_success: false,
+                    apply_changes: changes,
+                    apply_checkpoint_id: None,
+                    apply_error: Some(format!("Failed to create backup: {}", e)),
                 });
             }
         }
@@ -394,15 +394,15 @@ impl HardeningPlugin for SshHardeningPlugin {
                 config_content = Self::apply_ssh_directive(&config_content, directive);
 
                 changes.push(Change {
-                    description: format!(
+                    change_description: format!(
                         "{}: {} → {}",
                         directive.ssh_directive_name,
                         original_value.unwrap_or_else(|| "not set".to_string()),
                         directive.ssh_secure_value
                     ),
                     change_type: ChangeType::ConfigFile,
-                    success: true,
-                    error: None,
+                    change_success: true,
+                    change_error: None,
                 });
 
                 tracing::info!(
@@ -417,19 +417,19 @@ impl HardeningPlugin for SshHardeningPlugin {
         match update_file_atomically(Path::new(config_path), &config_content) {
             Ok(_) => {
                 changes.push(Change {
-                    description: format!("Updated {}", config_path),
+                    change_description: format!("Updated {}", config_path),
                     change_type: ChangeType::ConfigFile,
-                    success: true,
-                    error: None,
+                    change_success: true,
+                    change_error: None,
                 });
                 tracing::info!("SSH configuration updated successfully (atomic write)");
             }
             Err(e) => {
                 changes.push(Change {
-                    description: format!("Failed to write {}", config_path),
+                    change_description: format!("Failed to write {}", config_path),
                     change_type: ChangeType::ConfigFile,
-                    success: false,
-                    error: Some(e.to_string()),
+                    change_success: false,
+                    change_error: Some(e.to_string()),
                 });
                 tracing::error!("Failed to write SSH config: {}", e);
             }
@@ -439,31 +439,31 @@ impl HardeningPlugin for SshHardeningPlugin {
         match Self::restart_ssh_service() {
             Ok(_) => {
                 changes.push(Change {
-                    description: "Restarted SSH service".to_string(),
+                    change_description: "Restarted SSH service".to_string(),
                     change_type: ChangeType::Service,
-                    success: true,
-                    error: None,
+                    change_success: true,
+                    change_error: None,
                 });
                 tracing::info!("SSH service restarted successfully");
             }
             Err(e) => {
                 changes.push(Change {
-                    description: "Failed to restart SSH service".to_string(),
+                    change_description: "Failed to restart SSH service".to_string(),
                     change_type: ChangeType::Service,
-                    success: false,
-                    error: Some(e.to_string()),
+                    change_success: false,
+                    change_error: Some(e.to_string()),
                 });
                 tracing::error!("Failed to restart SSH service: {}", e);
             }
         }
 
-        let success = changes.iter().all(|c| c.success);
+        let success = changes.iter().all(|c| c.change_success);
         Ok(ApplyResult {
-            plugin_id,
-            success,
-            changes,
-            checkpoint_id: None,
-            error: None,
+            apply_plugin_id: plugin_id,
+            apply_success: success,
+            apply_changes: changes,
+            apply_checkpoint_id: None,
+            apply_error: None,
         })
     }
 
@@ -484,17 +484,17 @@ impl HardeningPlugin for SshHardeningPlugin {
                 // Check if it is a regular file.
                 if !metadata.is_file() {
                     issues.push(ValidationIssue {
-                        severity: Severity::Critical,
-                        message: format!("{} is not a regular file", config_path),
-                        config_key: None,
+                        validation_issue_severity: Severity::Critical,
+                        validation_issue_message: format!("{} is not a regular file", config_path),
+                        validation_issue_config_key: None,
                     });
                 }
             }
             Err(e) => {
                 issues.push(ValidationIssue {
-                    severity: Severity::Critical,
-                    message: format!("Cannot access {}: {}", config_path, e),
-                    config_key: None,
+                    validation_issue_severity: Severity::Critical,
+                    validation_issue_message: format!("Cannot access {}: {}", config_path, e),
+                    validation_issue_config_key: None,
                 });
             }
         }
@@ -502,19 +502,19 @@ impl HardeningPlugin for SshHardeningPlugin {
         // Try to read the configuration.
         if let Err(e) = Self::read_ssh_config() {
             issues.push(ValidationIssue {
-                severity: Severity::Critical,
-                message: format!("Cannot access {}: {}", config_path, e),
-                config_key: None,
+                validation_issue_severity: Severity::Critical,
+                validation_issue_message: format!("Cannot access {}: {}", config_path, e),
+                validation_issue_config_key: None,
             });
         }
 
         // Test.
         let valid = issues.is_empty();
         Ok(ValidationReport {
-            plugin_id,
-            is_valid: valid,
-            issues,
-            estimated_changes: vec![],
+            validation_report_plugin_id: plugin_id,
+            validation_report_is_valid: valid,
+            validation_report_issues: issues,
+            validation_report_estimated_changes: vec![],
         })
     }
 }

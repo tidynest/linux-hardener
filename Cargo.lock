@@ -546,7 +546,6 @@ dependencies = [
  "nix",
  "petgraph",
  "serde",
- "thiserror",
  "tracing",
 ]
 
@@ -563,6 +562,7 @@ name = "hardener-plugins"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "hardener-common",
  "hardener-core",
  "log",

@@ -183,17 +183,17 @@ impl FirewallBackend for FirewalldBackend {
                     Ok(_) => {
                         changes.push(Change {
                             change_type: ChangeType::FirewallRule,
-                            description: format!("Set zone '{}' default target to DROP", zone,),
-                            success: true,
-                            error: None,
+                            change_description: format!("Set zone '{}' default target to DROP", zone,),
+                            change_success: true,
+                            change_error: None,
                         });
                     }
                     Err(e) => {
                         changes.push(Change {
                             change_type: ChangeType::FirewallRule,
-                            description: format!("Set zone '{}' default target to DROP", zone,),
-                            success: false,
-                            error: Some(e.to_string()),
+                            change_description: format!("Set zone '{}' default target to DROP", zone,),
+                            change_success: false,
+                            change_error: Some(e.to_string()),
                         });
                     }
                 }
@@ -214,18 +214,18 @@ impl FirewallBackend for FirewalldBackend {
                     Ok(_) => {
                         changes.push(Change {
                             change_type: ChangeType::FirewallRule,
-                            description: format!("Added port {} to zone '{}'", port_spec, zone),
-                            success: true,
-                            error: None,
+                            change_description: format!("Added port {} to zone '{}'", port_spec, zone),
+                            change_success: true,
+                            change_error: None,
                         });
                     }
                     Err(e) => {
                         tracing::warn!("Failed to add port {}: {}", port_spec, e);
                         changes.push(Change {
                             change_type: ChangeType::FirewallRule,
-                            description: format!("Added port {} to zone '{}'", port_spec, zone),
-                            success: false,
-                            error: Some(e.to_string()),
+                            change_description: format!("Added port {} to zone '{}'", port_spec, zone),
+                            change_success: false,
+                            change_error: Some(e.to_string()),
                         });
                     }
                 }
@@ -238,18 +238,18 @@ impl FirewallBackend for FirewalldBackend {
                 tracing::info!("Reloaded firewalld configuration");
                 changes.push(Change {
                     change_type: ChangeType::FirewallRule,
-                    description: "Reloaded firewalld to activate changes".to_string(),
-                    success: true,
-                    error: None,
+                    change_description: "Reloaded firewalld to activate changes".to_string(),
+                    change_success: true,
+                    change_error: None,
                 });
             }
             Err(e) => {
                 tracing::error!("Failed to reload firewalld: {}", e);
                 changes.push(Change {
                     change_type: ChangeType::FirewallRule,
-                    description: "Reloaded firewalld to activate changes".to_string(),
-                    success: false,
-                    error: Some(e.to_string()),
+                    change_description: "Reloaded firewalld to activate changes".to_string(),
+                    change_success: false,
+                    change_error: Some(e.to_string()),
                 });
             }
         }

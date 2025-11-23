@@ -38,16 +38,16 @@ fn test_pam_scan_reads_configuration() {
     assert!(result.is_ok(), "Scan should succeed: {:?}", result.err());
 
     let scan_result = result.unwrap();
-    assert!(scan_result.success, "Scan should be marked as successful");
-    assert_eq!(scan_result.plugin_id.to_string(), "pam-hardening");
+    assert!(scan_result.scan_success, "Scan should be marked as successful");
+    assert_eq!(scan_result.scan_plugin_id.to_string(), "pam-hardening");
 
     // Should have findings if system isn't hardened
     // (Most systems won't have all secure settings by default)
-    println!("PAM scan found {} findings", scan_result.findings.len());
+    println!("PAM scan found {} findings", scan_result.scan_findings.len());
 
     // Verify timing is captured
     assert!(
-        scan_result.duration_us > 0,
+        scan_result.scan_duration_us > 0,
         "Scan duration should be captured"
     );
 }
@@ -67,19 +67,19 @@ fn test_pam_validate_checks_config_files() {
     );
 
     let validation_report = result.unwrap();
-    assert_eq!(validation_report.plugin_id.to_string(), "pam-hardening");
+    assert_eq!(validation_report.validation_report_plugin_id.to_string(), "pam-hardening");
 
     // Check if estimated changes are provided
     assert!(
-        !validation_report.estimated_changes.is_empty(),
+        !validation_report.validation_report_estimated_changes.is_empty(),
         "Should estimate changes to be made"
     );
 
-    println!("Validation valid: {}", validation_report.is_valid);
-    println!("Issues found: {}", validation_report.issues.len());
+    println!("Validation valid: {}", validation_report.validation_report_is_valid);
+    println!("Issues found: {}", validation_report.validation_report_issues.len());
     println!(
         "Estimated changes: {}",
-        validation_report.estimated_changes.len()
+        validation_report.validation_report_estimated_changes.len()
     );
 }
 
@@ -96,17 +96,17 @@ fn test_pam_apply_requires_root() {
     match result {
         Ok(apply_result) => {
             println!("PAM apply succeeded (running as root)");
-            println!("Changes made: {}", apply_result.changes.len());
+            println!("Changes made: {}", apply_result.apply_changes.len());
 
-            assert_eq!(apply_result.plugin_id.to_string(), "pam-hardening");
-            assert!(!apply_result.changes.is_empty(), "Should have made changes");
+            assert_eq!(apply_result.apply_plugin_id.to_string(), "pam-hardening");
+            assert!(!apply_result.apply_changes.is_empty(), "Should have made changes");
 
             // Print all changes for manual verification
-            for change in &apply_result.changes {
+            for change in &apply_result.apply_changes {
                 println!(
                     "  - [{}] {}",
-                    if change.success { "✓" } else { "✗" },
-                    change.description
+                    if change.change_success { "✓" } else { "✗" },
+                    change.change_description
                 );
             }
         }

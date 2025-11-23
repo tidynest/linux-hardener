@@ -2,29 +2,49 @@
   <dictionary name="project">
     <words>
       <w>aarch</w>
+      <w>adjtimex</w>
       <w>almalinux</w>
+      <w>auditctl</w>
+      <w>auditd</w>
       <w>dcredit</w>
       <w>dmesg</w>
       <w>dnf's</w>
       <w>dport</w>
       <w>endeavouros</w>
+      <w>fchmodat</w>
+      <w>fchownat</w>
+      <w>gshadow</w>
+      <w>jingryd</w>
       <w>kptr</w>
       <w>lcredit</w>
+      <w>leptos</w>
       <w>linuxmint</w>
+      <w>lynis</w>
       <w>maxrepeat</w>
       <w>minlen</w>
       <w>nftables</w>
       <w>noconfirm</w>
       <w>ocredit</w>
+      <w>opasswd</w>
       <w>pcidss</w>
       <w>pwquality</w>
       <w>queryformat</w>
+      <w>renameat</w>
       <w>rhsa</w>
+      <w>rmmod</w>
+      <w>rustfmt</w>
+      <w>rwxrwxrwx</w>
       <w>saddr</w>
+      <w>setdomainname</w>
+      <w>sethostname</w>
+      <w>settime</w>
+      <w>settimeofday</w>
+      <w>sgid</w>
       <w>showformat</w>
       <w>syncookies</w>
       <w>testuser</w>
       <w>ucredit</w>
+      <w>unlinkat</w>
       <w>updateinfo</w>
       <w>whoami</w>
     </words>

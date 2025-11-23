@@ -1,0 +1,44 @@
+1. You should read all of the following documents:
+
+=> In root directory:
+
+    CLAUDE.md
+    README.md
+
+=> In "./claude"
+    API_CONTRACTS.md
+    CODE_PATTERNS.md
+    NAMING_CONVENTIONS.md
+    NEXT_STEPS.md
+    QUICK_REFERENCE.md
+    README(_dot_claude).md
+    SECURITY_CONTROLS.md
+    SESSION_NOTES.md
+
+2.  Anytime you suggest code it is CRITICAL that
+    A: You control the names of any elements which you are about to use.
+       This means checking what they are called in the scripts in which they are defined.
+    B: Avoid any insecure and buggy coding practices. These should all be mentioned in the docs
+       mentioned in "1". If they're not, then read all other docs in "/.claude".
+    C: Keep in mind the context of the functionalities and operations that are being implemented.
+    D: Choose the possible approach that is the most optimised.
+    E: Stick to British English only (where other isn't forced).
+
+3.  F: When creating/modifying documents you should NEVER EVER add any mention of AI.
+    G: COMMIT MESSAGES SHOULD NEVER MENTION:
+        1: AI,
+        2: The existence of the directory "/.claude", or its contents
+    H: COMMITS SHOULD NEVER PUSH THE CONTENTS of "./claude", nor CLAUDE.md file in the root directory
+       => CRITICAL: YOU SHOULD ALWAYS PRIORITISE MAKING SURE THAT AI ATTRIBUTION:
+           A: DOESN'T SEEP THROUGH ANYWHERE IN THE PROJECT AT THIS POINT IN TIME THAT YOU ARE READING THIS.
+           B: IS NOT ADDED AND THAT THE RULES ABOUT AI ATTRIBUTION ARE NEVER IGNORED.
+    I: .gitignore SHOULD NEVER BE PUSHED IN COMMITS OR VISIBLE IN ONLINE REPOSITORIES.
+    J: IF YOU FIND AI MENTIONS ANYWHERE, EVEN IF IT'S JUST THE NAME OR CONTENT OF A FILE, THEN REMOVE THE MENTION
+       IN THE DOCUMENTS IN "/.claude" and also "CLAUDE.md" and "README,md" IN THE ROOT DIR.
+    K: THERE ARE NOT EXCUSES IF AI ATTRIBUTION ISN'T 100% ABSENT WITHIN THIS PROJECT. YOU CANNOT COME BACK TO ME
+       FAKE CRYING THAT "WHOOPSIEEEEE, I JUST SO HAPPENED TO FORGET ABOUT CACHED VALUES AND HOW LONG GITHUB CACHES
+       CONTRIBUTORS".
+
+    ALL OF THE THINGS IN POINT 3 MEANS ABSOLUTELY ZERO AI ATTRIBUTION THROUGHOUT THE WHOLE PROJECT, AND ALSO ZERO
+    TRACEABILITY TO AI IN REPOSITORIES ON SITES LIKE GITHUB, GITLAB, AND REALLY ANYWHERE AT
+    ALL.

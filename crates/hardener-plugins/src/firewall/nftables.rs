@@ -263,22 +263,22 @@ impl FirewallBackend for NftablesBackend {
                 Ok(_) => {
                     tracing::info!("Applied nftables rule: {}", rule.rule_description);
                     changes.push(Change {
-                        description: format!("Added firewall rule: {}", rule.rule_description),
+                        change_description: format!("Added firewall rule: {}", rule.rule_description),
                         change_type: ChangeType::FirewallRule,
-                        success: true,
-                        error: None,
+                        change_success: true,
+                        change_error: None,
                     });
                 }
                 Err(e) => {
                     tracing::warn!("Failed to apply rule '{}': {}", rule.rule_description, e);
                     changes.push(Change {
-                        description: format!(
+                        change_description: format!(
                             "Failed to add firewall rule: {}",
                             rule.rule_description
                         ),
                         change_type: ChangeType::FirewallRule,
-                        success: false,
-                        error: Some(e.to_string()),
+                        change_success: false,
+                        change_error: Some(e.to_string()),
                     });
                 }
             }

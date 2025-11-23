@@ -151,22 +151,22 @@ impl HardeningPlugin for KernelHardeningPlugin {
                 Ok(actual_value) => {
                     if actual_value != *expected_value {
                         findings.push(Finding {
-                            category: FindingCategory::Kernel,
-                            current_value: actual_value.clone(),
-                            description: param_description.to_string(),
-                            explanation: format!(
+                            finding_category: FindingCategory::Kernel,
+                            finding_current_value: actual_value.clone(),
+                            finding_description: param_description.to_string(),
+                            finding_explanation: format!(
                                 "This parameter should be set to '{}' for security hardening",
                                 expected_value
                             ),
                             finding_id: format!("kernel_{}", param_name.replace('.', "_")),
-                            impact: "Low impact - requires reboot or sysctl reload".to_string(),
-                            recommended_value: expected_value.to_string(),
-                            remediation_steps: vec![format!(
+                            finding_impact: "Low impact - requires reboot or sysctl reload".to_string(),
+                            finding_recommended_value: expected_value.to_string(),
+                            finding_remediation_steps: vec![format!(
                                 "Set {} = {}",
                                 param_name, expected_value
                             )],
-                            severity: Severity::Medium,
-                            title: format!("Insecure value for {}", param_name),
+                            finding_severity: Severity::Medium,
+                            finding_title: format!("Insecure value for {}", param_name),
                         });
                     }
                 }
@@ -178,11 +178,11 @@ impl HardeningPlugin for KernelHardeningPlugin {
         }
 
         Ok(ScanResult {
-            plugin_id: self.metadata().plugin_id,
-            success: true,
-            findings,
-            duration_us: start_time.elapsed().as_micros() as u64,
-            error: None,
+            scan_plugin_id: self.metadata().plugin_id,
+            scan_success: true,
+            scan_findings: findings,
+            scan_duration_us: start_time.elapsed().as_micros() as u64,
+            scan_error: None,
         })
     }
 
@@ -197,41 +197,41 @@ impl HardeningPlugin for KernelHardeningPlugin {
     /// * `ctx`    - Execution context (unused for now, but required by trait)
     /// * `config` - Configuration (unused for now, applies all hardening)
     fn apply(&self, _ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
-        let mut changes = Vec::new();
+        let mut apply_changes = Vec::new();
 
         for (param_name, expected_value, param_description) in KERNEL_PARAMS {
             let path = format!("/proc/sys/{}", param_name.replace('.', "/"));
 
             match fs::write(&path, expected_value) {
                 Ok(_) => {
-                    changes.push(Change {
-                        description: format!("{}: set to {}", param_description, expected_value),
+                    apply_changes.push(Change {
+                        change_description: format!("{}: set to {}", param_description, expected_value),
                         change_type: ChangeType::KernelParameter,
-                        success: true,
-                        error: None,
+                        change_success: true,
+                        change_error: None,
                     });
                     tracing::info!("Applied {}: {}", param_name, expected_value);
                 }
                 Err(e) => {
-                    changes.push(Change {
-                        description: format!("{}: failed to set", param_name),
+                    apply_changes.push(Change {
+                        change_description: format!("{}: failed to set", param_name),
                         change_type: ChangeType::KernelParameter,
-                        success: false,
-                        error: Some(e.to_string()),
+                        change_success: false,
+                        change_error: Some(e.to_string()),
                     });
                     tracing::warn!("Failed to apply {}: {}", param_name, e);
                 }
             }
         }
 
-        let success = changes.iter().all(|c| c.success);
+        let apply_success = apply_changes.iter().all(|c| c.change_success);
 
         Ok(ApplyResult {
-            plugin_id: self.metadata().plugin_id,
-            success,
-            changes,
-            checkpoint_id: None, //Checkpoint not implemented yet
-            error: None,
+            apply_plugin_id: self.metadata().plugin_id,
+            apply_success,
+            apply_changes,
+            apply_checkpoint_id: None, //Checkpoint not implemented yet
+            apply_error: None,
         })
     }
 
@@ -271,9 +271,9 @@ impl HardeningPlugin for KernelHardeningPlugin {
                 Ok(metadata) => {
                     if metadata.permissions().readonly() {
                         issues.push(ValidationIssue {
-                            severity: Severity::High,
-                            message: format!("{} is read-only", param_name),
-                            config_key: Some(param_name.to_string()),
+                            validation_issue_severity: Severity::High,
+                            validation_issue_message: format!("{} is read-only", param_name),
+                            validation_issue_config_key: Some(param_name.to_string()),
                         });
                     } else {
                         estimated_changes
@@ -282,19 +282,19 @@ impl HardeningPlugin for KernelHardeningPlugin {
                 }
                 Err(_) => {
                     issues.push(ValidationIssue {
-                        severity: Severity::Low,
-                        message: format!("{} does not exist on this kernel", param_name),
-                        config_key: Some(param_name.to_string()),
+                        validation_issue_severity: Severity::Low,
+                        validation_issue_message: format!("{} does not exist on this kernel", param_name),
+                        validation_issue_config_key: Some(param_name.to_string()),
                     });
                 }
             }
         }
 
         Ok(ValidationReport {
-            plugin_id: self.metadata().plugin_id,
-            is_valid: issues.iter().all(|i| i.severity != Severity::High),
-            issues,
-            estimated_changes,
+            validation_report_plugin_id: self.metadata().plugin_id,
+            validation_report_is_valid: issues.iter().all(|i| i.validation_issue_severity != Severity::High),
+            validation_report_issues: issues,
+            validation_report_estimated_changes: estimated_changes,
         })
     }
 }

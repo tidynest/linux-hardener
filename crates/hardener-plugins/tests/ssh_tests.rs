@@ -32,23 +32,23 @@ fn test_ssh_scan_reads_configuration() {
 
     match result {
         Ok(scan_result) => {
-            assert_eq!(scan_result.plugin_id, PluginId::new("ssh-hardening"));
+            assert_eq!(scan_result.scan_plugin_id, PluginId::new("ssh-hardening"));
             assert!(
-                scan_result.duration_us > 0,
+                scan_result.scan_duration_us > 0,
                 "Scan should take measurable time"
             );
 
             // The scan should succeed even if it finds insecure settings
-            assert!(scan_result.success, "Scan operation should succeed");
+            assert!(scan_result.scan_success, "Scan operation should succeed");
 
-            assert!(scan_result.error.is_none(), "Should not have errors");
+            assert!(scan_result.scan_error.is_none(), "Should not have errors");
 
             // Print findings for manual verification
-            println!("SSH scan found {} findings:", scan_result.findings.len());
-            for finding in &scan_result.findings {
+            println!("SSH scan found {} findings:", scan_result.scan_findings.len());
+            for finding in &scan_result.scan_findings {
                 println!(
                     "  - {}: {} → {}",
-                    finding.title, finding.current_value, finding.recommended_value
+                    finding.finding_title, finding.finding_current_value, finding.finding_recommended_value
                 );
             }
         }
@@ -71,23 +71,23 @@ fn test_ssh_validate_checks_config_file() {
 
     match result {
         Ok(validation_report) => {
-            assert_eq!(validation_report.plugin_id, PluginId::new("ssh-hardening"));
+            assert_eq!(validation_report.validation_report_plugin_id, PluginId::new("ssh-hardening"));
 
             println!(
                 "SSH validation result: valid={}",
-                validation_report.is_valid
+                validation_report.validation_report_is_valid
             );
 
-            if !validation_report.issues.is_empty() {
+            if !validation_report.validation_report_issues.is_empty() {
                 println!("Validation issues found:");
-                for issue in &validation_report.issues {
-                    println!("  - [{}] {}", issue.severity, issue.message);
+                for issue in &validation_report.validation_report_issues {
+                    println!("  - [{}] {}", issue.validation_issue_severity, issue.validation_issue_message);
                 }
             }
 
             // If config file exists and is readable, validation should pass
-            if validation_report.is_valid {
-                assert!(validation_report.issues.is_empty());
+            if validation_report.validation_report_is_valid {
+                assert!(validation_report.validation_report_issues.is_empty());
             }
         }
         Err(e) => {
@@ -115,43 +115,43 @@ fn test_ssh_apply_requires_root() {
 
     match result {
         Ok(apply_result) => {
-            assert_eq!(apply_result.plugin_id, PluginId::new("ssh-hardening"));
+            assert_eq!(apply_result.apply_plugin_id, PluginId::new("ssh-hardening"));
 
-            println!("\nApply result: success={}", apply_result.success);
-            println!("Changes made ({}):", apply_result.changes.len());
+            println!("\nApply result: success={}", apply_result.apply_success);
+            println!("Changes made ({}):", apply_result.apply_changes.len());
 
-            for change in &apply_result.changes {
-                let status = if change.success { "✓" } else { "✗" };
+            for change in &apply_result.apply_changes {
+                let status = if change.change_success { "✓" } else { "✗" };
                 println!(
                     "  {} [{}] {}",
-                    status, change.change_type, change.description
+                    status, change.change_type, change.change_description
                 );
-                if let Some(ref error) = change.error {
+                if let Some(ref error) = change.change_error {
                     println!("      Error: {}", error);
                 }
             }
 
             // Verify all changes succeeded
             assert!(
-                apply_result.success,
+                apply_result.apply_success,
                 "All changes should succeed with root privileges"
             );
 
             assert!(
-                apply_result.error.is_none(),
+                apply_result.apply_error.is_none(),
                 "Should not have overall error"
             );
 
             // Should have at least: backup + config write + service restart
 
             assert!(
-                apply_result.changes.len() >= 3,
+                apply_result.apply_changes.len() >= 3,
                 "Should have multiple changes recorded"
             );
 
             // Verify service restart was attempted
-            let has_service_restart = apply_result.changes.iter().any(|c| {
-                c.description.contains("SSH service") || c.description.contains("Restart")
+            let has_service_restart = apply_result.apply_changes.iter().any(|c| {
+                c.change_description.contains("SSH service") || c.change_description.contains("Restart")
             });
             assert!(has_service_restart, "Should include SSH service restart");
         }

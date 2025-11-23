@@ -31,32 +31,32 @@ fn test_kernel_scan_reads_parameters() {
     assert!(result.is_ok(), "Scan should succeed");
 
     let scan_result = result.unwrap();
-    assert!(scan_result.success, "Scan should be successful");
-    assert_eq!(scan_result.plugin_id.as_str(), "kernel");
+    assert!(scan_result.scan_success, "Scan should be successful");
+    assert_eq!(scan_result.scan_plugin_id.as_str(), "kernel");
     assert!(
-        scan_result.duration_us > 0,
+        scan_result.scan_duration_us > 0,
         "Should record scan duration in microseconds"
     );
     println!(
         "Scan completed in {}µs ({}ms)",
-        scan_result.duration_us,
-        scan_result.duration_us / 1000
+        scan_result.scan_duration_us,
+        scan_result.scan_duration_us / 1000
     );
 
     // Findings may or may not exist depending on current system state
     println!(
         "Found {} insecure kernel parameters",
-        scan_result.findings.len()
+        scan_result.scan_findings.len()
     );
 
     // Verify finding structure if any exist
-    if let Some(finding) = scan_result.findings.first() {
-        assert!(!finding.current_value.is_empty());
-        assert!(!finding.recommended_value.is_empty());
-        assert!(!finding.explanation.is_empty());
+    if let Some(finding) = scan_result.scan_findings.first() {
+        assert!(!finding.finding_current_value.is_empty());
+        assert!(!finding.finding_recommended_value.is_empty());
+        assert!(!finding.finding_explanation.is_empty());
         println!(
             "Example finding: {} (current: {}, recommended: {})",
-            finding.title, finding.current_value, finding.recommended_value
+            finding.finding_title, finding.finding_current_value, finding.finding_recommended_value
         );
     }
 }
@@ -70,22 +70,22 @@ fn test_kernel_validate_checks_parameters() {
     assert!(result.is_ok(), "Validation should succeed");
 
     let validation = result.unwrap();
-    assert_eq!(validation.plugin_id.as_str(), "kernel");
+    assert_eq!(validation.validation_report_plugin_id.as_str(), "kernel");
 
     // Should have estimated changes for parameters that can be modified
     assert!(
-        !validation.estimated_changes.is_empty(),
+        !validation.validation_report_estimated_changes.is_empty(),
         "Should estimate at least some changes"
     );
 
     println!(
         "Validation found {} potential issues",
-        validation.issues.len()
+        validation.validation_report_issues.len()
     );
-    println!("Would make {} changes", validation.estimated_changes.len());
+    println!("Would make {} changes", validation.validation_report_estimated_changes.len());
 
     // Show a few estimated changes
-    for change in validation.estimated_changes.iter().take(3) {
+    for change in validation.validation_report_estimated_changes.iter().take(3) {
         println!("  - {}", change);
     }
 }
@@ -103,21 +103,21 @@ fn test_kernel_apply_requires_root() {
     match result {
         Ok(apply_result) => {
             println!("Apply succeeded!");
-            println!("Plugin ID: {}", apply_result.plugin_id.as_str());
-            println!("Overall success: {}", apply_result.success);
-            println!("Changes made: {}", apply_result.changes.len());
+            println!("Plugin ID: {}", apply_result.apply_plugin_id.as_str());
+            println!("Overall success: {}", apply_result.apply_success);
+            println!("Changes made: {}", apply_result.apply_changes.len());
 
-            let successful = apply_result.changes.iter().filter(|c| c.success).count();
-            let failed = apply_result.changes.iter().filter(|c| !c.success).count();
+            let successful = apply_result.apply_changes.iter().filter(|c| c.change_success).count();
+            let failed = apply_result.apply_changes.iter().filter(|c| !c.change_success).count();
 
             println!("  Successful: {}", successful);
             println!("  Failed: {}", failed);
 
-            for change in &apply_result.changes {
+            for change in &apply_result.apply_changes {
                 println!(
                     "  {} {}",
-                    if change.success { "✓" } else { "✗" },
-                    change.description
+                    if change.change_success { "✓" } else { "✗" },
+                    change.change_description
                 );
             }
         }

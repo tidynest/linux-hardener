@@ -204,10 +204,10 @@ impl FirewallBackend for UfwBackend {
                 Ok(_) => {
                     tracing::info!("Applied UFW rule: {}", rule.rule_description);
                     changes.push(Change {
-                        description: format!("Added firewall rule: {}", rule.rule_description),
+                        change_description: format!("Added firewall rule: {}", rule.rule_description),
                         change_type: ChangeType::FirewallRule,
-                        success: true,
-                        error: None,
+                        change_success: true,
+                        change_error: None,
                     });
                 }
                 Err(e) => {
