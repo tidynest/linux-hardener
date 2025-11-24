@@ -2,6 +2,7 @@ use crate::state::AppState;
 use crate::tauri_bindings::invoke_apply;
 
 use leptos::prelude::*;
+use tracing::error;
 
 /// Configuration page for selecting security profiles and enabling/disabling plugins.
 ///
@@ -88,7 +89,7 @@ pub fn ConfigurationPage() -> impl IntoView {
                     app_state.apply_results.set(results);
                 }
                 Err(e) => {
-                    tracing::error!("Apply failed: {}", e);
+                    error!("Apply failed: {}", e);
                 }
             }
             app_state.is_applying.set(false);

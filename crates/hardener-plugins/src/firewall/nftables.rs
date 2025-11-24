@@ -8,6 +8,7 @@ use crate::firewall::{FirewallBackend, Rule, get_baseline_rules};
 use hardener_common::error::{HardeningError, Result};
 use hardener_core::{Change, ChangeType};
 use std::process::Command;
+use tracing::{info, warn};
 
 /// Nftables firewall backend for modern Linux systems.
 ///
@@ -188,7 +189,7 @@ impl FirewallBackend for NftablesBackend {
     }
 
     fn enable(&self) -> Result<()> {
-        tracing::info!("Enabling nftables firewall");
+        info!("Enabling nftables firewall");
 
         // Create a basic inet filter table with input/output/forward chains
         // This is the foundation for the firewall rules
@@ -214,7 +215,7 @@ impl FirewallBackend for NftablesBackend {
             "priority", "0", ";", "policy", "accept", ";", "}",
         ])?;
 
-        tracing::info!("Nftables firewall enabled successfully");
+        info!("Nftables firewall enabled successfully");
         Ok(())
     }
 
@@ -261,7 +262,7 @@ impl FirewallBackend for NftablesBackend {
             let args_refs: Vec<&str> = nft_args.iter().map(|s| s.as_str()).collect();
             match self.execute_nft(&args_refs) {
                 Ok(_) => {
-                    tracing::info!("Applied nftables rule: {}", rule.rule_description);
+                    info!("Applied nftables rule: {}", rule.rule_description);
                     changes.push(Change {
                         change_description: format!("Added firewall rule: {}", rule.rule_description),
                         change_type: ChangeType::FirewallRule,
@@ -270,7 +271,7 @@ impl FirewallBackend for NftablesBackend {
                     });
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to apply rule '{}': {}", rule.rule_description, e);
+                    warn!("Failed to apply rule '{}': {}", rule.rule_description, e);
                     changes.push(Change {
                         change_description: format!(
                             "Failed to add firewall rule: {}",

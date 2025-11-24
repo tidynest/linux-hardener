@@ -20,6 +20,7 @@ use hardener_core::{
     plugin::{ApplyResult, Finding, HardeningPlugin, PluginMetadata, ScanResult},
 };
 use std::{fs, time::Instant};
+use tracing::{info, warn};
 
 /// Kernel hardening plugin implementing sysctl parameter management.
 pub struct KernelHardeningPlugin;
@@ -172,7 +173,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
                 }
                 Err(e) => {
                     // Parameter doesn't exist on this kernel - log but don't fail
-                    tracing::warn!("Cannot read {}: {}", param_name, e);
+                    warn!("Cannot read {}: {}", param_name, e);
                 }
             }
         }
@@ -210,7 +211,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
                         change_success: true,
                         change_error: None,
                     });
-                    tracing::info!("Applied {}: {}", param_name, expected_value);
+                    info!("Applied {}: {}", param_name, expected_value);
                 }
                 Err(e) => {
                     apply_changes.push(Change {
@@ -219,7 +220,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
                         change_success: false,
                         change_error: Some(e.to_string()),
                     });
-                    tracing::warn!("Failed to apply {}: {}", param_name, e);
+                    warn!("Failed to apply {}: {}", param_name, e);
                 }
             }
         }
@@ -248,7 +249,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
     fn rollback(&self, _ctx: &mut Context, _checkpoint: &Checkpoint) -> Result<()> {
         // TODO: Implement checkpoint-based rollback
         // Placeholder:
-        tracing::warn!("Rollback not yet implemented for kernel plugin");
+        warn!("Rollback not yet implemented for kernel plugin");
         Ok(())
     }
 

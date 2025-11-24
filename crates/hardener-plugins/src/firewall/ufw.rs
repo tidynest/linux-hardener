@@ -6,6 +6,7 @@ use crate::firewall::{FirewallBackend, Rule, get_baseline_rules};
 use hardener_common::error::{HardeningError, Result};
 use hardener_core::{Change, ChangeType};
 use std::process::Command;
+use tracing::{info, warn};
 
 /// UFW firewall backend for Ubuntu/Debian systems.
 pub struct UfwBackend;
@@ -152,12 +153,12 @@ impl FirewallBackend for UfwBackend {
 
     fn enable(&self) -> Result<()> {
         // Enable UFW firewall
-        tracing::info!("Enabling UFW firewall");
+        info!("Enabling UFW firewall");
 
         let output = self.execute_ufw(&["--force", "enable"])?;
 
         if output.contains("Firewall is active") || output.contains("enabled") {
-            tracing::info!("UFW firewall enabled successfully");
+            info!("UFW firewall enabled successfully");
             Ok(())
         } else {
             Err(HardeningError::Plugin(
@@ -202,7 +203,7 @@ impl FirewallBackend for UfwBackend {
             let args_refs: Vec<&str> = ufw_args.iter().map(|s| s.as_str()).collect();
             match self.execute_ufw(&args_refs) {
                 Ok(_) => {
-                    tracing::info!("Applied UFW rule: {}", rule.rule_description);
+                    info!("Applied UFW rule: {}", rule.rule_description);
                     changes.push(Change {
                         change_description: format!("Added firewall rule: {}", rule.rule_description),
                         change_type: ChangeType::FirewallRule,
@@ -211,7 +212,7 @@ impl FirewallBackend for UfwBackend {
                     });
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to apply rule '{}': {}", rule.rule_description, e);
+                    warn!("Failed to apply rule '{}': {}", rule.rule_description, e);
                 }
             }
         }

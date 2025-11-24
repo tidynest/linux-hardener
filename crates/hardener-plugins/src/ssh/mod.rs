@@ -21,6 +21,7 @@ use hardener_core::{
     plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult},
 };
 use std::{fs, path::Path, process::Command, time::Instant};
+use tracing::{error, info, warn};
 
 /// Represents a single SSH configuration directive to be hardened.
 #[derive(Clone, Debug)]
@@ -169,7 +170,7 @@ impl SshHardeningPlugin {
             ))
         })?;
 
-        tracing::info!("Created SSH config backup: {}", backup_path);
+        info!("Created SSH config backup: {}", backup_path);
         Ok(backup_path)
     }
 
@@ -236,14 +237,14 @@ impl SshHardeningPlugin {
 
         match systemctl_result {
             Ok(output) if output.status.success() => {
-                tracing::info!("SSH service restarted successfully via systemctl");
+                info!("SSH service restarted successfully via systemctl");
                 return Ok(());
             }
             Ok(output) => {
-                tracing::warn!("systemctl restart sshd failed: {:?}", output.stderr);
+                warn!("systemctl restart sshd failed: {:?}", output.stderr);
             }
             Err(e) => {
-                tracing::warn!("systemctl command failed: {}", e);
+                warn!("systemctl command failed: {}", e);
             }
         }
 
@@ -252,7 +253,7 @@ impl SshHardeningPlugin {
 
         match service_result {
             Ok(output) if output.status.success() => {
-                tracing::info!("SSH service restarted successfully via service command");
+                info!("SSH service restarted successfully via service command");
                 Ok(())
             }
             Ok(output) => Err(hardener_common::error::HardeningError::Plugin(format!(
@@ -363,7 +364,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                     change_success: true,
                     change_error: None,
                 });
-                tracing::info!("SSH config backup created: {}", backup_path);
+                info!("SSH config backup created: {}", backup_path);
             }
             Err(e) => {
                 return Ok(ApplyResult {
@@ -405,7 +406,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                     change_error: None,
                 });
 
-                tracing::info!(
+                info!(
                     "Applied SSH directive: {} = {}",
                     directive.ssh_directive_name,
                     directive.ssh_secure_value
@@ -422,7 +423,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                     change_success: true,
                     change_error: None,
                 });
-                tracing::info!("SSH configuration updated successfully (atomic write)");
+                info!("SSH configuration updated successfully (atomic write)");
             }
             Err(e) => {
                 changes.push(Change {
@@ -431,7 +432,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                     change_success: false,
                     change_error: Some(e.to_string()),
                 });
-                tracing::error!("Failed to write SSH config: {}", e);
+                error!("Failed to write SSH config: {}", e);
             }
         }
 
@@ -444,7 +445,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                     change_success: true,
                     change_error: None,
                 });
-                tracing::info!("SSH service restarted successfully");
+                info!("SSH service restarted successfully");
             }
             Err(e) => {
                 changes.push(Change {
@@ -453,7 +454,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                     change_success: false,
                     change_error: Some(e.to_string()),
                 });
-                tracing::error!("Failed to restart SSH service: {}", e);
+                error!("Failed to restart SSH service: {}", e);
             }
         }
 
@@ -469,7 +470,7 @@ impl HardeningPlugin for SshHardeningPlugin {
 
     fn rollback(&self, _ctx: &mut Context, _checkpoint: &Checkpoint) -> Result<()> {
         // Stub implementation - will be completed during checkpoint integration
-        tracing::warn!("SSH rollback() method is not yet fully implemented - stub only");
+        warn!("SSH rollback() method is not yet fully implemented - stub only");
         Ok(())
     }
 

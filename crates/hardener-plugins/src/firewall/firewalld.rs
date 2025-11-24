@@ -8,6 +8,7 @@ use crate::firewall::{FirewallBackend, Rule, get_baseline_rules};
 use hardener_common::error::{HardeningError, Result};
 use hardener_core::{Change, ChangeType};
 use std::process::Command;
+use tracing::{debug, error, info, warn};
 
 /// Firewalld backend for RHEL/Fedora/CentOS systems.
 ///
@@ -81,7 +82,7 @@ impl FirewallBackend for FirewalldBackend {
     }
 
     fn enable(&self) -> Result<()> {
-        tracing::info!("Enabling firewalld service");
+        info!("Enabling firewalld service");
 
         // Start firewalld service
         let start_output = Command::new("systemctl")
@@ -109,7 +110,7 @@ impl FirewallBackend for FirewalldBackend {
             )));
         }
 
-        tracing::info!("Firewalld enabled successfully");
+        info!("Firewalld enabled successfully");
         Ok(())
     }
 
@@ -157,16 +158,16 @@ impl FirewallBackend for FirewalldBackend {
         let zone = self.get_default_zone()?;
         let mut changes = Vec::new();
 
-        tracing::info!("Applying {} firewalld rules to zone {}", rules.len(), zone);
+        info!("Applying {} firewalld rules to zone {}", rules.len(), zone);
 
         for rule in rules {
             if rule.rule_description.contains("loopback") {
-                tracing::debug!("Skipping loopback rule (handled by firewalld automatically)");
+                debug!("Skipping loopback rule (handled by firewalld automatically)");
                 continue;
             }
 
             if rule.rule_description.contains("established") {
-                tracing::debug!(
+                debug!(
                     "Skipping established/related rule (handled by firewalld automatically)"
                 );
                 continue;
@@ -220,7 +221,7 @@ impl FirewallBackend for FirewalldBackend {
                         });
                     }
                     Err(e) => {
-                        tracing::warn!("Failed to add port {}: {}", port_spec, e);
+                        warn!("Failed to add port {}: {}", port_spec, e);
                         changes.push(Change {
                             change_type: ChangeType::FirewallRule,
                             change_description: format!("Added port {} to zone '{}'", port_spec, zone),
@@ -235,7 +236,7 @@ impl FirewallBackend for FirewalldBackend {
         // Reload firewalld to activate permanent changes
         match self.execute_firewall_cmd(&["--reload"]) {
             Ok(_) => {
-                tracing::info!("Reloaded firewalld configuration");
+                info!("Reloaded firewalld configuration");
                 changes.push(Change {
                     change_type: ChangeType::FirewallRule,
                     change_description: "Reloaded firewalld to activate changes".to_string(),
@@ -244,7 +245,7 @@ impl FirewallBackend for FirewalldBackend {
                 });
             }
             Err(e) => {
-                tracing::error!("Failed to reload firewalld: {}", e);
+                error!("Failed to reload firewalld: {}", e);
                 changes.push(Change {
                     change_type: ChangeType::FirewallRule,
                     change_description: "Reloaded firewalld to activate changes".to_string(),

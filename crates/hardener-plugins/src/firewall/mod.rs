@@ -20,6 +20,7 @@ use hardener_core::{
     plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult},
 };
 use std::time::Instant;
+use tracing::{info, warn};
 
 /// Represents a single firewall rule in a backend-agnostic format.
 #[derive(Clone, Debug, PartialEq)]
@@ -152,21 +153,21 @@ impl FirewallHardeningPlugin {
         // Try firewalld first (RHEL/Fedora/CentOS).
         let firewalld = firewalld::FirewalldBackend::new();
         if firewalld.detect()? {
-            tracing::info!("Detected firewalld firewall backend");
+            info!("Detected firewalld firewall backend");
             return Ok(Box::new(firewalld));
         }
 
         // Try UFW second (Ubuntu/Debian).
         let ufw = ufw::UfwBackend::new();
         if ufw.detect()? {
-            tracing::info!("Detected UFW firewall backend");
+            info!("Detected UFW firewall backend");
             return Ok(Box::new(ufw));
         }
 
         // Try nftables third (modern systems, Arch, Debian 10+, Ubuntu 20.04+).
         let nftables = nftables::NftablesBackend::new();
         if nftables.detect()? {
-            tracing::info!("Detected nftables firewall backend");
+            info!("Detected nftables firewall backend");
             return Ok(Box::new(nftables));
         }
 
@@ -277,7 +278,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
 
     fn rollback(&self, _ctx: &mut Context, _checkpoint: &Checkpoint) -> Result<()> {
         // Stub implementation - will be completed during checkpoint integration
-        tracing::warn!("Firewall rollback() method not yet fully implemented");
+        warn!("Firewall rollback() method not yet fully implemented");
         Ok(())
     }
 
@@ -285,7 +286,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         let validation_plugin_id = PluginId::new("firewall-hardening");
 
         // Stub implementation - will be completed after backends are implemented
-        tracing::warn!("Firewall validate() method not yet fully implemented");
+        warn!("Firewall validate() method not yet fully implemented");
 
         Ok(ValidationReport {
             validation_report_plugin_id: validation_plugin_id,

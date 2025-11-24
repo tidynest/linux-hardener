@@ -1,4 +1,5 @@
 use leptos::prelude::*;
+use tracing::error;
 
 use crate::components::{FindingDetail, FindingsGrid};
 use crate::state::AppState;
@@ -29,7 +30,7 @@ pub fn ScannerPage() -> impl IntoView {
                 }
                 Err(e) => {
                     // Log error - could add error state to AppState later
-                    tracing::error!("Scan failed: {}", e);
+                    error!("Scan failed: {}", e);
                 }
             }
             // Clear scanning state

@@ -18,6 +18,7 @@ use hardener_core::{
 };
 use std::process::Command;
 use std::time::Instant;
+use tracing::{info, warn};
 
 /// Represents the type of MAC system detected on the host.
 #[derive(Clone, Debug, PartialEq)]
@@ -54,17 +55,17 @@ impl MacHardeningPlugin {
     fn detect_mac_system(&self) -> Option<MacSystem> {
         // Check for SELinux first
         if std::path::Path::new("/sys/ds/selinux").exists() {
-            tracing::info!("Detected SELinux MAC system");
+            info!("Detected SELinux MAC system");
             return Some(MacSystem::SELinux);
         }
 
         // Check for AppArmor second
         if std::path::Path::new("/sys/kernel/security/apparmor").exists() {
-            tracing::info!("Detected AppArmor MAC system");
+            info!("Detected AppArmor MAC system");
             return Some(MacSystem::AppArmor);
         }
 
-        tracing::info!("No MAC system detected (checked SELinux and AppArmor)");
+        info!("No MAC system detected (checked SELinux and AppArmor)");
         None
     }
 
@@ -220,7 +221,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                         }
                     }
                     Err(e) => {
-                        tracing::warn!("Failed to check SELinux mode: {}", e);
+                        warn!("Failed to check SELinux mode: {}", e);
                     }
                 }
             }
@@ -265,7 +266,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                         }
                     }
                     Err(e) => {
-                        tracing::warn!("Failed to check AppArmor status: {}", e);
+                        warn!("Failed to check AppArmor status: {}", e);
                     }
                 }
             }
@@ -418,7 +419,7 @@ impl HardeningPlugin for MacHardeningPlugin {
         _checkpoint: &Checkpoint
     ) -> Result<()> {
         // Stub implementation - will be completed during checkpoint integration
-        tracing::warn!("MAC rollback() method not yet fully implemented");
+        warn!("MAC rollback() method not yet fully implemented");
         Ok(())
     }
 }
