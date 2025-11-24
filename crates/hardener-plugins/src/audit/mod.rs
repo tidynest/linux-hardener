@@ -242,12 +242,6 @@ const AUDIT_RULES: &[AuditRuleDirective] = &[
 /// Path to custom audit rules file for hardening.
 const AUDIT_RULES_PATH: &str = "/etc/audit/rules.d/hardening.rules";
 
-/// Path to audit rules directory.
-const AUDIT_RULES_DIR: &str = "/etc/audit/rules.d";
-
-/// Path to auditd configuration file.
-const AUDITD_CONFIG_PATH: &str = "/etc/audit/auditd.conf";
-
 /// ============================================================================
 /// AUDITD HELPER FUNCTIONS
 /// ============================================================================

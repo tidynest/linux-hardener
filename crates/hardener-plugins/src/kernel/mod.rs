@@ -128,7 +128,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
         PluginMetadata {
             plugin_category: FindingCategory::Kernel,
             plugin_description: "Manages kernel security parameters via sysctl".to_string(),
-            plugin_id: PluginId::new("kernel"),
+            plugin_id: PluginId::new("kernel-hardening"),
             plugin_name: "Kernel Hardening".to_string(),
             plugin_version: env!("CARGO_PKG_VERSION").to_string(),
         }

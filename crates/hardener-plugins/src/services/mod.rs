@@ -22,18 +22,18 @@ use tracing::warn;
 /// Service Minimisation Plugin
 ///
 /// Identifies and disables unnecessary systemd services to reduce attack surface.
-pub struct ServicesPlugin {}
+pub struct ServicesHardeningPlugin {}
 
-impl Default for ServicesPlugin {
+impl Default for ServicesHardeningPlugin {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl ServicesPlugin {
+impl ServicesHardeningPlugin {
     /// Creates a new instance of the Services Plugin.
-    pub fn new() -> ServicesPlugin {
-        ServicesPlugin {}
+    pub fn new() -> ServicesHardeningPlugin {
+        ServicesHardeningPlugin {}
     }
 }
 
@@ -132,7 +132,7 @@ fn mask_service(service_name: &str) -> Result<()> {
     Ok(())
 }
 
-impl HardeningPlugin for ServicesPlugin {
+impl HardeningPlugin for ServicesHardeningPlugin {
     fn metadata(&self) -> PluginMetadata {
         PluginMetadata {
             plugin_category: FindingCategory::Services,

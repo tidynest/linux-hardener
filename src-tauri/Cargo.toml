@@ -1,0 +1,21 @@
+[package]
+name = "linux-hardener-desktop"
+version = "0.1.0"
+description = "Linux System Hardening Desktop Application"
+authors = ["Eric Jingryd"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+hardener-common = { path = "../crates/hardener-common" }
+hardener-core = { path = "../crates/hardener-core" }
+hardener-plugins = { path = "../crates/hardener-plugins" }
+hardener-state = { path = "../crates/hardener-state" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1.41"
+dirs = "6.0.0"

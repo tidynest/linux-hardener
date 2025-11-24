@@ -108,13 +108,28 @@ class NamingValidator:
             content = file_path.read_text(encoding='utf-8')
             lines = content.split('\n')
 
+            # Track if next function is a Leptos component
+            next_is_component = False
+
             for line_num, line in enumerate(lines, start=1):
-                self.validate_line(file_path, line_num, line)
+                stripped = line.strip()
+
+                # Check if this line is a #[component] attribute
+                if stripped == '#[component]':
+                    next_is_component = True
+                    continue
+
+                # Validate the line, passing component flag
+                self.validate_line(file_path, line_num, stripped, next_is_component)
+
+                # Reset component flag after processing function definition
+                if stripped.startswith('fn ') or stripped.startswith('pub fn '):
+                    next_is_component = False
 
         except Exception as e:
             print(f"⚠️  Error reading {file_path}: {e}")
 
-    def validate_line(self, file_path: Path, line_num: int, line: str):
+    def validate_line(self, file_path: Path, line_num: int, line: str, is_component: bool = False):
         """Validate naming conventions in a single line"""
         line = line.strip()
 
@@ -140,7 +155,7 @@ class NamingValidator:
         # Check function definitions
         if match := re.match(r'(?:pub )?(?:async )?fn (\w+)', line):
             fn_name = match.group(1)
-            self.validate_function_name(file_path, line_num, fn_name)
+            self.validate_function_name(file_path, line_num, fn_name, is_component)
 
         # Check const definitions
         if match := re.match(r'const (\w+):', line):
@@ -200,9 +215,21 @@ class NamingValidator:
                 suggestion=name[:-5]  # Remove 'Trait' suffix
             ))
 
-    def validate_function_name(self, file_path: Path, line_num: int, name: str):
-        """Validate function name follows snake_case"""
-        if not self.patterns['snake_case'].match(name):
+    def validate_function_name(self, file_path: Path, line_num: int, name: str, is_component: bool = False):
+        """Validate function name follows snake_case (or PascalCase for Leptos components)"""
+        # Leptos components must use PascalCase
+        if is_component:
+            if not self.patterns['PascalCase'].match(name):
+                self.issues.append(ValidationIssue(
+                    file_path=file_path,
+                    line_number=line_num,
+                    severity=Severity.ERROR,
+                    category="Leptos Component Name",
+                    issue=f"Leptos component '{name}' should use PascalCase",
+                    suggestion=self.to_pascal_case(name)
+                ))
+        # Regular functions use snake_case
+        elif not self.patterns['snake_case'].match(name):
             self.issues.append(ValidationIssue(
                 file_path=file_path,
                 line_number=line_num,

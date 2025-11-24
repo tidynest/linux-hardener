@@ -7,7 +7,7 @@ fn test_kernel_plugin_metadata() {
     let plugin = KernelHardeningPlugin::new();
     let metadata = plugin.metadata();
 
-    assert_eq!(metadata.plugin_id.as_str(), "kernel");
+    assert_eq!(metadata.plugin_id.as_str(), "kernel-hardening");
     assert_eq!(metadata.plugin_name, "Kernel Hardening");
     assert_eq!(metadata.plugin_category, FindingCategory::Kernel);
     assert!(metadata.plugin_description.contains("sysctl"));
@@ -32,7 +32,7 @@ fn test_kernel_scan_reads_parameters() {
 
     let scan_result = result.unwrap();
     assert!(scan_result.scan_success, "Scan should be successful");
-    assert_eq!(scan_result.scan_plugin_id.as_str(), "kernel");
+    assert_eq!(scan_result.scan_plugin_id.as_str(), "kernel-hardening");
     assert!(
         scan_result.scan_duration_us > 0,
         "Should record scan duration in microseconds"
@@ -70,7 +70,7 @@ fn test_kernel_validate_checks_parameters() {
     assert!(result.is_ok(), "Validation should succeed");
 
     let validation = result.unwrap();
-    assert_eq!(validation.validation_report_plugin_id.as_str(), "kernel");
+    assert_eq!(validation.validation_report_plugin_id.as_str(), "kernel-hardening");
 
     // Should have estimated changes for parameters that can be modified
     assert!(

@@ -11,14 +11,14 @@ pub mod ssh;
 // Re-export dependencies for macro use
 #[doc(hidden)]
 pub use audit::AuditHardeningPlugin;
-pub use firewall::FirewallPlugin;
+pub use firewall::FirewallHardeningPlugin;
 pub use hardener_common;
 pub use hardener_core;
 pub use kernel::KernelHardeningPlugin;
-pub use mac::MacPlugin;
+pub use mac::MacHardeningPlugin;
 pub use pam::PamHardeningPlugin;
 pub use permissions::PermissionsHardeningPlugin;
-pub use services::ServicesPlugin;
+pub use services::ServicesHardeningPlugin;
 pub use ssh::SshHardeningPlugin;
 
 pub fn add(left: u64, right: u64) -> u64 {

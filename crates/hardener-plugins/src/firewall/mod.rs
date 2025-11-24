@@ -123,20 +123,20 @@ pub fn get_baseline_rules() -> Vec<Rule> {
 ///
 /// This plugin automatically detects and uses the appropriate firewall
 /// backend for the system (nftables, firewalld, or ufw).
-pub struct FirewallPlugin {}
+pub struct FirewallHardeningPlugin {}
 
-impl Default for FirewallPlugin {
+impl Default for FirewallHardeningPlugin {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl FirewallPlugin {
+impl FirewallHardeningPlugin {
     /// Create a new firewall plugin instance.
     ///
     /// The backend is detected lazily during the first operation.
-    pub fn new() -> FirewallPlugin {
-        FirewallPlugin {}
+    pub fn new() -> FirewallHardeningPlugin {
+        FirewallHardeningPlugin {}
     }
 
     /// Detects and returns the appropriate firewall backend for this system.
@@ -177,7 +177,7 @@ impl FirewallPlugin {
     }
 }
 
-impl HardeningPlugin for FirewallPlugin {
+impl HardeningPlugin for FirewallHardeningPlugin {
     fn metadata(&self) -> PluginMetadata {
         PluginMetadata {
             plugin_category: FindingCategory::Network,

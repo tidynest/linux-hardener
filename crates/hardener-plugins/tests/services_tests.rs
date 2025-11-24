@@ -1,11 +1,11 @@
 //! Integration tests for Service Minimisation plugin
 
 use hardener_core::{Config, Context, plugin::HardeningPlugin};
-use hardener_plugins::ServicesPlugin;
+use hardener_plugins::ServicesHardeningPlugin;
 
 #[test]
 fn test_services_plugin_metadata() {
-    let plugin = ServicesPlugin::new();
+    let plugin = ServicesHardeningPlugin::new();
     let metadata = plugin.metadata();
 
     assert_eq!(metadata.plugin_id.to_string(), "service-minimisation");
@@ -16,7 +16,7 @@ fn test_services_plugin_metadata() {
 
 #[test]
 fn test_services_plugin_has_no_dependencies() {
-    let plugin = ServicesPlugin::new();
+    let plugin = ServicesHardeningPlugin::new();
     let dependencies = plugin.dependencies();
 
     assert_eq!(
@@ -28,7 +28,7 @@ fn test_services_plugin_has_no_dependencies() {
 
 #[test]
 fn test_services_scan_detects_services() {
-    let plugin = ServicesPlugin::new();
+    let plugin = ServicesHardeningPlugin::new();
     let context = Context::new();
 
     // Run scan
@@ -63,7 +63,7 @@ fn test_services_scan_detects_services() {
 
 #[test]
 fn test_services_validate_checks_systemctl() {
-    let plugin = ServicesPlugin::new();
+    let plugin = ServicesHardeningPlugin::new();
     let config = Config::default();
 
     // Run validation
@@ -109,7 +109,7 @@ fn test_services_validate_checks_systemctl() {
 #[test]
 #[ignore = "Requires root privileges and modifies system services"]
 fn test_services_apply_requires_root() {
-    let plugin = ServicesPlugin::new();
+    let plugin = ServicesHardeningPlugin::new();
     let mut context = Context::new();
     let config = Config::default();
 

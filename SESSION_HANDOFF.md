@@ -1,280 +1,311 @@
-# Session Handoff Document
+# Session Handoff: Week 17 → Week 18
 
-**Date**: 2025-11-23
-**Session**: MAC System Hardening Plugin - Phase 2 Complete!
-**Author**: Eric Jingryd
-
----
-
-## 🎉 MAJOR MILESTONE: PHASE 2 COMPLETE!
-
-**Achievement**: All 8 security plugins have been successfully implemented and tested!
+**Date**: 2025-11-24
+**Current Phase**: Phase 3 - User Interface (Week 17 Complete, 70%)
+**Next Phase**: Week 18 - Route Integration & Tauri Backend Connection
 
 ---
 
-## Session Summary
+## Quick Start for Next Assistant
 
-### What Was Accomplished
+Hello! You're continuing work on Eric's Linux Security Hardening Automation Tool. Here's everything you need to get started quickly.
 
-**MAC System Hardening Plugin - COMPLETE** ✅
+### 🎯 Current Status
 
-1. **Created Plugin Structure**:
-   - Created `crates/hardener-plugins/src/mac/mod.rs` (~300 lines)
-   - Registered module in `crates/hardener-plugins/src/lib.rs`
-   - Added `pub mod mac;` and `pub use mac::MacPlugin;`
+**Phase 3 Progress**: 70% complete (Week 17 just finished)
 
-2. **Implemented Multi-Backend Detection**:
-   - SELinux detection via `/sys/fs/selinux` filesystem check
-   - AppArmor detection via `/sys/kernel/security/apparmor` filesystem check
-   - Fallback to "No MAC system" if neither found
+**What's Working**:
+- ✅ Dashboard page with SecurityScore and QuickActions
+- ✅ Scanner page with FindingsGrid and FindingDetail
+- ✅ Configuration page with profile selector and plugin toggles (NEW!)
+- ✅ ApplyResults component for displaying apply operation outcomes (NEW!)
+- ✅ CheckpointList component for rollback management (NEW!)
+- ✅ Leptos 0.8 UI with reactive state management (AppState)
+- ✅ Mock data utilities for testing
+- ✅ All code compiles cleanly (0 errors, 1 pre-existing warning)
 
-3. **SELinux Implementation**:
-   - `get_selinux_mode()` - Reads current mode using `getenforce`
-   - `set_selinux_enforcing()` - Sets enforcing mode using `setenforce 1`
-   - Proper change tracking with success/failure states
-   - High severity finding if not in enforcing mode
+**What's Not Built Yet**:
+- ⏳ Routes for ApplyResults and CheckpointList (they exist but aren't routed)
+- ⏳ Tauri backend integration (scan, apply, rollback commands)
+- ⏳ Replace mock data with actual backend calls
+- ⏳ Tauri desktop wrapper
 
-4. **AppArmor Implementation**:
-   - `get_apparmor_status()` - Reads status using `aa-status --verbose`
-   - `count_apparmor_profiles()` - Parses output to count enforce/complain/total
-   - Medium/High severity findings based on profile states
-   - Safe manual-enforcement approach (no auto-enforcement)
+### 📚 CRITICAL: Read These Documents First
 
-5. **Full HardeningPlugin Trait**:
-   - `metadata()` - Plugin information (id: "mac-hardening")
-   - `dependencies()` - No dependencies
-   - `scan()` - Detects MAC system issues across all backends
-   - `validate()` - Validates command availability
-   - `apply()` - Applies SELinux enforcement, reports AppArmor status
-   - `rollback()` - Stub for checkpoint integration
+**Before doing ANYTHING, read these files in order**:
 
-6. **Comprehensive Integration Tests**:
-   - Created `crates/hardener-plugins/tests/mac_tests.rs` (~115 lines)
-   - 5 tests: metadata, dependencies, scan, validate, apply (1 root-required)
-   - All 4 non-root tests passing ✅
+1. **`CLAUDE.md`** - Main development instructions (READ FIRST!)
+   - Developer's preferred work method (provide code in small chunks, Eric adds manually)
+   - British English requirement
+   - Naming conventions requirement
+   - No AI attribution
 
-### Test Results
+2. **`.claude/NEXT_STEPS.md`** - Current status and immediate next steps
+   - Week 18 goals clearly outlined
+   - Recently completed work (Week 17)
+
+3. **`plan.md`** - Previous session plan (Week 17 details)
+
+4. **`.claude/PROGRESS.md`** - Full project history
+   - Phase 2: All 8 plugins complete
+   - Phase 3: Weeks 15-17 complete
+
+5. **`.claude/NAMING_CONVENTIONS.md`** - Naming standards (CONSULT BEFORE CREATING ANY IDENTIFIER!)
+   - Struct field prefixes (distro_, plugin_, finding_, checkpoint_, etc.)
+   - UI component naming patterns
+   - Alphabetical ordering guidelines
+
+6. **`.claude/CODE_PATTERNS.md`** - Rust and Leptos patterns
+   - Leptos 0.8 UI patterns (lines 739-863)
+   - Error handling patterns
+   - Testing strategies
+
+### 🚀 Week 18 Goals (Next Session)
+
+**Objective**: Integrate routes and connect UI to backend via Tauri
+
+**Build these three major pieces**:
+
+1. **Route Integration** (~30 lines)
+   - Add `/results` route for ApplyResults component
+   - Add `/checkpoints` route for CheckpointList component
+   - Update navigation links in QuickActions component
+   - Update navigation in ConfigurationPage after apply
+   - Test routing between all pages
+
+2. **Tauri Backend Commands** (~150-200 lines total)
+   - Create `src-tauri/` directory structure
+   - Set up Tauri project with proper dependencies
+   - Implement scan command (calls PluginManager scan)
+   - Implement apply command (calls PluginManager apply)
+   - Implement rollback command (calls CheckpointManager)
+   - Implement checkpoint list/delete commands
+   - Wire commands into Leptos components
+
+3. **State Management Updates** (~50 lines)
+   - Add `checkpoints: RwSignal<Vec<Checkpoint>>` to AppState
+   - Update ScannerPage to call backend scan via Tauri invoke
+   - Update ConfigurationPage to call backend apply via Tauri invoke
+   - Remove mock data from CheckpointList, use AppState instead
+   - Handle loading states and errors
+
+**Expected Outcome**: Phase 3 progress 70% → 90%
+
+### 💡 Key Development Guidelines
+
+**CRITICAL RULES** (from CLAUDE.md):
+
+1. **Code Delivery Method**:
+   - Eric adds ALL code manually (learning by doing)
+   - Provide code in small chunks (50-100 lines per component/module)
+   - Explain BEFORE providing code
+   - Wait for Eric to confirm before continuing
+
+2. **British English Only**:
+   - All code comments, documentation, messages
+   - "colour" not "color", "authorise" not "authorize"
+
+3. **Naming Conventions**:
+   - Use descriptive prefixes: `distro_name`, `plugin_id`, `finding_title`, `checkpoint_id`
+   - Consult `.claude/NAMING_CONVENTIONS.md` BEFORE creating ANY identifier
+   - Alphabetise imports, derives, struct fields (where appropriate)
+
+4. **No AI Attribution**:
+   - Never add "Generated by Claude" comments
+   - This is Eric Jingryd's project
+
+5. **Semantic HTML**:
+   - Use proper HTML5 elements: `<article>`, `<section>`, `<nav>`, `<aside>`, `<header>`, `<footer>`
+   - Not generic `<div>` elements
+
+6. **Leptos 0.8 Patterns**:
+   - Use `RwSignal` for reactive state
+   - Components read from AppState via `expect_context::<AppState>()`
+   - Use `<Show>` for conditional rendering
+   - Wrap reactive values in closures: `move || { ... }`
+
+### 📂 Current File Structure
 
 ```
-Total Workspace Tests: 99 passing
-- 86 unit/integration tests
-- 13 doc tests
-- 10 ignored (requiring root/special conditions)
-
-MAC Plugin Tests: 5 created
-- 4 passing
-- 1 ignored (requires root privileges)
-
-Compilation: Clean (0 errors)
-Warnings: 3 pre-existing (in audit and permissions plugins)
+crates/hardener-ui/src/
+├── lib.rs                          # App component with routing
+├── state/
+│   └── mod.rs                      # AppState with RwSignals
+├── components/
+│   ├── mod.rs                      # Component exports
+│   ├── severity_badge.rs           # Severity display (✅ complete)
+│   ├── security_score.rs           # Score calculation (✅ complete)
+│   ├── quick_actions.rs            # Action buttons (✅ complete)
+│   ├── findings_grid.rs            # Findings table (✅ complete)
+│   ├── finding_detail.rs           # Finding detail panel (✅ complete)
+│   ├── apply_results.rs            # Apply results display (✅ complete - NEW!)
+│   └── checkpoint_list.rs          # Checkpoint management (✅ complete - NEW!)
+├── pages/
+│   ├── mod.rs                      # Page exports
+│   ├── dashboard_page.rs           # Dashboard route (✅ complete)
+│   ├── scanner_page.rs             # Scanner route (✅ complete)
+│   └── configuration_page.rs       # Config route (✅ complete - NEW!)
+└── utils/
+    ├── mod.rs                      # Module exports
+    └── mock_data.rs                # Mock scan results
 ```
 
-### Files Modified/Created
+### 🔧 Technical Context
 
-**New Files:**
-1. `crates/hardener-plugins/src/mac/mod.rs`
-2. `crates/hardener-plugins/tests/mac_tests.rs`
-
-**Modified Files:**
-1. `crates/hardener-plugins/src/lib.rs` - Added mac module and re-export
-2. `.claude/PROGRESS.md` - Updated with Phase 2 completion
-3. `.claude/NEXT_STEPS.md` - Updated with 4 path options for next session
-
----
-
-## Phase 2 - Complete Status
-
-### All 8 Security Plugins Implemented ✅
-
-1. **Kernel Hardening** (Week 10)
-   - 12 sysctl parameters
-   - ASLR, pointer protection, eBPF, filesystem protection
-   - High/Critical severity findings
-
-2. **SSH Hardening** (Week 11)
-   - 8 SSH directives
-   - Protocol, authentication, access control, logging
-   - Critical/High severity findings
-
-3. **Firewall Hardening** (Week 12)
-   - Multi-backend support (UFW, firewalld, nftables detection)
-   - Baseline rules (loopback, established, SSH, drop default)
-   - High severity findings
-
-4. **PAM Authentication** (Week 13)
-   - 9 directives across 2 config files
-   - Password quality (pwquality.conf)
-   - Password ageing (login.defs)
-   - Medium/High severity findings
-
-5. **Service Minimisation** (Week 14)
-   - 4 unnecessary services
-   - bluetooth, cups, avahi-daemon, ModemManager
-   - Low/Medium/High severity findings
-
-6. **Audit Rules** (Week 15)
-   - 24 audit rules across 7 categories
-   - Time changes, identity, network, permissions, privileged, deletion, modules
-   - Medium/High/Critical severity findings
-
-7. **File Permissions** (Week 16)
-   - 5 critical paths
-   - /root, /boot, /etc/ssh, /etc/sudoers, /etc/sudoers.d
-   - High/Critical severity findings
-
-8. **MAC System Hardening** (Week 16) 🆕
-   - SELinux and AppArmor support
-   - Enforcement mode detection and configuration
-   - Profile monitoring and recommendations
-   - Medium/High severity findings
-
----
-
-## Code Quality Metrics
-
-- **Total Tests**: 99 passing (10 ignored)
-- **Test Coverage**: Comprehensive across all 8 plugins
-- **Naming Compliance**: 100% (all structs follow NAMING_CONVENTIONS.md)
-- **Documentation Accuracy**: 100% (all API contracts verified)
-- **Compilation**: Clean (0 errors, 3 pre-existing warnings)
-- **Code Patterns**: Consistent across all plugins
-
----
-
-## What's Next? Choose Your Path
-
-The next session starts with a choice of 4 paths (see `.claude/NEXT_STEPS.md` for details):
-
-### Option A: Phase 3 - User Interface (Recommended)
-- Build Leptos web UI components
-- Create Tauri desktop wrapper
-- Interactive dashboards and progressive disclosure
-- **Estimated**: 2-3 weeks
-
-### Option B: Phase 4 - Comprehensive Testing
-- Docker test environments for multiple distros
-- Full workflow integration tests
-- CI/CD pipeline setup
-- **Estimated**: 1-2 weeks
-
-### Option C: Backend Enhancements
-- Implement firewalld and nftables backends
-- Enhance AppArmor automation
-- Expand kernel parameters and audit rules
-- **Estimated**: 1-2 weeks
-
-### Option D: Compliance Framework Mapping
-- Map findings to CIS, NIS2, GDPR Article 32
-- Generate compliance reports
-- Framework-specific filtering
-- **Estimated**: 1-2 weeks
-
----
-
-## Important Notes for Next Session
-
-### Critical Context
-1. **Phase 2 is 100% complete** - All 8 plugins implemented and tested
-2. **No immediate bugs or blockers** - Clean compilation
-3. **Documentation is current** - PROGRESS.md and NEXT_STEPS.md fully updated
-4. **Test suite is comprehensive** - 99 tests covering all plugins
-
-### Pre-existing Warnings (Non-blocking)
-These exist in OTHER plugins (not MAC):
-1. `constant AUDIT_RULES_DIR is never used` in audit/mod.rs
-2. `constant AUDITD_CONFIG_PATH is never used` in audit/mod.rs
-3. `fields permission_owner and permission_group are never read` in permissions/mod.rs
-
-These are **intentional placeholders** for future functionality and can be addressed during refactoring.
-
-### Root-Required Tests
-**10 tests are marked `#[ignore]` and require root**:
-- All 8 plugin `apply()` tests require root privileges
-- 3 firewall backend detection tests require specific tools
-
-**DO NOT RUN** these on your main system. Use VM/container for testing.
-
----
-
-## Development Environment State
-
-**Git Status**:
-- Multiple modified files in `.claude/` (documentation updates)
-- New files: `crates/hardener-plugins/src/mac/mod.rs` and `tests/mac_tests.rs`
-- **No commits made this session** (documentation and code changes pending)
-
-**Workspace Structure**:
-```
-linux-hardener/
-├── crates/
-│   ├── hardener-core/          ✅ Complete
-│   ├── hardener-common/        ✅ Complete
-│   ├── hardener-distro/        ✅ Complete
-│   ├── hardener-plugins/       ✅ Phase 2 Complete (8/8 plugins)
-│   │   ├── src/
-│   │   │   ├── audit/          ✅
-│   │   │   ├── firewall/       ✅
-│   │   │   ├── kernel/         ✅
-│   │   │   ├── mac/            ✅ 🆕 NEW
-│   │   │   ├── pam/            ✅
-│   │   │   ├── permissions/    ✅
-│   │   │   ├── services/       ✅
-│   │   │   └── ssh/            ✅
-│   │   └── tests/              ✅ 39 tests passing
-│   ├── hardener-compliance/    ⏳ Phase 2 (future)
-│   ├── hardener-state/         ✅ Complete
-│   └── hardener-ui/            ⏳ Phase 3 (next)
-├── desktop/                    ⏳ Phase 3 (future)
-└── tests/                      ⏳ Phase 4 (future)
+**AppState Structure** (in `crates/hardener-ui/src/state/mod.rs`):
+```rust
+pub struct AppState {
+    pub scan_results: RwSignal<Vec<ScanResult>>,
+    pub selected_finding: RwSignal<Option<Finding>>,
+    pub apply_results: RwSignal<Vec<ApplyResult>>,
+    pub is_scanning: RwSignal<bool>,
+    pub is_applying: RwSignal<bool>,
+}
 ```
 
----
+**Routing** (in `crates/hardener-ui/src/lib.rs`):
+- `/` → DashboardPage
+- `/scan` → ScannerPage
+- `/config` → ConfigurationPage
+- Need to add: `/results` → ApplyResults
+- Need to add: `/checkpoints` → CheckpointList
 
-## Recommended Commands for Next Session Start
+**Components Ready for Backend Integration**:
+- `ScannerPage` - "Run Security Scan" button needs to call Tauri command
+- `ConfigurationPage` - "Apply Changes" button needs to call Tauri command
+- `CheckpointList` - Currently uses mock data, needs to read from AppState/backend
+
+### 🎯 Immediate Next Steps
+
+**When Eric starts the next session, do this**:
+
+1. **Greet Eric** and confirm you've read:
+   - CLAUDE.md
+   - NEXT_STEPS.md
+   - plan.md
+   - NAMING_CONVENTIONS.md
+
+2. **Propose Week 18 approach**:
+   - Option A: Start with route integration (simpler, ~30 lines)
+   - Option B: Start with Tauri setup (more complex but necessary)
+   - Let Eric decide which to tackle first
+
+3. **If routes first (Option A)**:
+   - Explain how to add routes to lib.rs
+   - Show navigation link updates needed
+   - Provide code in small chunk (~30 lines total)
+
+4. **If Tauri first (Option B)**:
+   - Explain Tauri project structure
+   - Guide through `tauri init` if not already done
+   - Create backend commands one at a time (scan first, then apply, etc.)
+   - Each command ~30-50 lines
+
+5. **Update documentation** when Week 18 is complete:
+   - `.claude/PROGRESS.md` - Add Week 18 section
+   - `.claude/NEXT_STEPS.md` - Update current status to Week 18 complete (90%)
+   - `plan.md` - Create Week 18 plan with Week 19 preview
+
+### ⚠️ Common Pitfalls to Avoid
+
+1. **Don't write complete files automatically** - Eric wants to add code manually
+2. **Don't skip reading NAMING_CONVENTIONS.md** - 100% compliance required
+3. **Don't use American English** - British English only
+4. **Don't add AI attribution** - This is Eric's project
+5. **Don't assume Tauri is set up** - Ask Eric if `src-tauri/` directory exists
+6. **Don't use mock data unnecessarily** - Week 18 should replace mocks with real backend
+
+### 🧪 Testing Commands
 
 ```bash
-# 1. Check current git status
-git status
+# Check compilation (run frequently)
+cargo check
 
-# 2. Run full test suite to verify everything works
+# Run all tests (optional)
 cargo test --workspace
 
-# 3. Check for any compilation issues
-cargo check --workspace
+# Run specific crate tests
+cargo test -p hardener-ui
 
-# 4. Review what path to take next
-cat .claude/NEXT_STEPS.md
+# Check for Tauri
+ls src-tauri/  # If this exists, Tauri is initialised
+```
+
+### 📊 Project Metrics
+
+- **Total Tests**: 99 passing (10 ignored requiring root)
+- **Phase 2**: 8/8 plugins complete (100%) ✅
+- **Phase 3**: Week 17 complete (70%)
+- **Code Quality**: 100% naming compliance, 100% documentation accuracy
+- **UI Lines of Code**: ~500 lines across Weeks 15-17
+
+### 🎓 Key Concepts for Week 18
+
+**Tauri Commands**:
+- Rust functions exposed to frontend via `#[tauri::command]`
+- Async functions for long-running operations (scan, apply)
+- Error handling with `Result<T, String>` for JSON serialisation
+- Invoke from Leptos using `tauri::invoke()`
+
+**Route Integration**:
+- Leptos Router uses `<Route>` components in lib.rs
+- Navigation via `<a href="/path">` or `use_navigate()`
+- Update QuickActions component to link to new routes
+
+**State Management**:
+- Add new signals to AppState for checkpoints
+- Pass AppState via context (already done)
+- Update signals from Tauri command responses
+
+### ✅ Quick Validation Checklist
+
+Before starting, confirm you understand:
+- [ ] Eric adds all code manually (I provide, he implements)
+- [ ] British English required throughout
+- [ ] Consult NAMING_CONVENTIONS.md before creating identifiers
+- [ ] Use semantic HTML elements
+- [ ] Components read from AppState via context
+- [ ] No AI attribution anywhere
+- [ ] Week 18 goal: Routes + Tauri backend + state updates
+
+---
+
+## Sample Opening Message for Next Session
+
+```
+Good evening!
+
+I've read all the handoff documentation and I'm ready to continue Week 18 - Route Integration & Tauri Backend Connection.
+
+Current status:
+✅ Week 17 complete - Configuration page, ApplyResults, and CheckpointList components
+🎯 Week 18 goal - Add routes for new components and connect to backend via Tauri
+📈 Progress: 70% → 90% of Phase 3
+
+I understand:
+- You prefer to add code manually (learning by doing)
+- British English throughout
+- Consult NAMING_CONVENTIONS.md for all identifiers
+- Semantic HTML required
+- Week 18 has two main parts: route integration (~30 lines) and Tauri backend (~150-200 lines)
+
+I'd like to propose we tackle this in order:
+1. First, add routes for ApplyResults and CheckpointList (quick win, ~30 lines)
+2. Then set up Tauri backend commands (scan, apply, rollback, checkpoints)
+3. Finally, update state management to use backend instead of mocks
+
+Does this approach work for you, or would you prefer to start differently?
 ```
 
 ---
 
-## Questions to Consider for Next Session
+**Good luck with Week 18!** 🚀
 
-1. **Which path appeals most?** UI, Testing, Enhancements, or Compliance?
-2. **Do you want to commit Phase 2 work before starting Phase 3?**
-3. **Should we create a git tag for Phase 2 completion milestone?**
-4. **Any refactoring needed before moving forward?**
+Eric, when you start the next session, simply tell the assistant:
+"Let's continue with Week 18" or "I'm ready for route integration"
 
----
-
-## Key Achievements This Session
-
-✅ Implemented MAC System Hardening Plugin (300 lines)
-✅ Created 5 comprehensive integration tests
-✅ Achieved 100% Phase 2 completion (8/8 plugins)
-✅ Maintained 100% naming compliance
-✅ Zero compilation errors
-✅ Updated all documentation
-✅ 99 tests passing across workspace
+The assistant will have everything they need to get started immediately.
 
 ---
 
-**🎉 CONGRATULATIONS ON COMPLETING PHASE 2! 🎉**
-
-This is a significant milestone. You've built a comprehensive, well-tested security hardening tool with 8 professional-grade plugins. The foundation is solid, and you're ready to move forward with UI, testing, or enhancements.
-
----
-
-**Handoff Complete** - Ready for next session!
-
-**Last Updated**: 2025-11-23 by Eric Jingryd
+**Last Updated**: 2025-11-24 by Claude (Session Assistant for Week 17)

@@ -1,0 +1,164 @@
+use hardener_common::types::PluginId;
+use hardener_core::{ApplyResult, Context, PluginRegistry, ScanResult};
+use hardener_plugins::{
+    AuditHardeningPlugin, FirewallHardeningPlugin, KernelHardeningPlugin, MacHardeningPlugin,
+    PamHardeningPlugin, PermissionsHardeningPlugin, ServicesHardeningPlugin, SshHardeningPlugin
+};
+use hardener_state::{init_db, CheckpointId, CheckpointManager};
+use serde::Serialize;
+use tracing::error;
+
+/// Checkpoint information returned to the frontend.
+#[derive(Clone, Debug, Serialize)]
+pub struct CheckpointInfo {
+    pub checkpoint_id: String,
+    pub checkpoint_name: String,
+    pub checkpoint_created: String,
+    pub checkpoint_user: String,
+}
+
+/// Formats a Unix timestamp as a human-readable string.
+fn format_timestamp(timestamp: i64) -> String {
+    use std::time::{Duration, UNIX_EPOCH};
+
+    let datetime = UNIX_EPOCH + Duration::from_secs(timestamp as u64);
+    // Simple ISO-like format
+    format!("{:?}", datetime)
+}
+
+/// Creates a registry with all available plugins registered.
+fn create_plugin_registry() -> PluginRegistry {
+    let registry = PluginRegistry::new();
+
+    // Register all plugins (ignoring errors for simplicity)
+    let _ = registry.register(Box::new(AuditHardeningPlugin::new()));
+    let _ = registry.register(Box::new(FirewallHardeningPlugin::new()));
+    let _ = registry.register(Box::new(KernelHardeningPlugin::new()));
+    let _ = registry.register(Box::new(MacHardeningPlugin::new()));
+    let _ = registry.register(Box::new(PamHardeningPlugin::new()));
+    let _ = registry.register(Box::new(PermissionsHardeningPlugin::new()));
+    let _ = registry.register(Box::new(ServicesHardeningPlugin::new()));
+    let _ = registry.register(Box::new(SshHardeningPlugin::new()));
+
+    registry
+}
+
+/// Creates a CheckpointManager with database connection.
+///
+/// Uses a user-local database path to avoid requiring root for reads.
+async fn create_checkpoint_manager() -> Result<CheckpointManager, String> {
+    // Use user-local path for the database
+    let db_path = dirs::data_local_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("linux-hardener")
+        .join("checkpoints.db");
+
+    let pool = init_db(Some(db_path.as_path()))
+        .await
+        .map_err(|e| e.to_string())?;
+
+    CheckpointManager::new(pool).map_err(|e| e.to_string())
+}
+
+/// Executes a security scan across all enabled plugins.
+///
+/// Returns a vector of scan results, one per plugin.
+#[tauri::command]
+pub fn run_scan() -> Result<Vec<ScanResult>, String> {
+    let ctx = Context::new();
+    let registry = create_plugin_registry();
+
+    let mut results = Vec::new();
+
+    // Get list of all plugin metadata
+    let plugin_list = registry.list().map_err(|e| e.to_string())?;
+
+    for metadata in plugin_list {
+        // Retrieve the actual plugin
+        if let Ok(Some(plugin)) = registry.get(&metadata.plugin_id) {
+            match plugin.scan(&ctx) {
+                Ok(result) => results.push(result),
+                Err(e) => {
+                    error!("Scan failed for plugin {}: {}", metadata.plugin_id, e);
+                }
+            }
+        }
+    }
+
+    Ok(results)
+}
+
+/// Applies hardening changes for the specified plugins
+///
+/// Takes a list of plugin IDs to apply and returns the results
+#[tauri::command]
+pub fn run_apply(plugin_ids: Vec<String>) -> Result<Vec<ApplyResult>, String> {
+    let mut ctx  = Context::new();
+    let registry = create_plugin_registry();
+    let config   = hardener_core::Config::default();
+
+    let mut results = Vec::new();
+
+    for plugin_id_str in plugin_ids {
+        let plugin_id = PluginId::new(&plugin_id_str);
+
+        if let Ok(Some(plugin)) = registry.get(&plugin_id) {
+            match plugin.apply(&mut ctx, &config) {
+                Ok(result) => results.push(result),
+                Err(e) => {
+                    error!("Apply failed for plugin {}: {}", plugin_id_str, e);
+
+                    results.push(ApplyResult {
+                        apply_plugin_id:     plugin_id,
+                        apply_success:       false,
+                        apply_changes:       vec![],
+                        apply_checkpoint_id: None,
+                        apply_error:         Some(e.to_string()),
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(results)
+}
+
+/// Rolls back to a previous checkpoint.
+///
+/// Takes a checkpoint ID and restores the system state to that point.
+#[tauri::command]
+pub async fn run_rollback(checkpoint_id: String) -> Result<bool, String> {
+    let manager = create_checkpoint_manager().await?;
+    let id =      CheckpointId::new(checkpoint_id);
+
+    manager
+        .rollback(&id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(true)
+}
+
+/// Retrieves a list of all available checkpoints.
+///
+/// Returns checkpoint information for display in the UI.
+#[tauri::command]
+pub async fn get_checkpoints() -> Result<Vec<CheckpointInfo>, String> {
+    let manager = create_checkpoint_manager().await?;
+
+    let checkpoints = manager
+        .list_checkpoints()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(checkpoints
+        .into_iter()
+        .map(|cp| CheckpointInfo {
+            checkpoint_id:      cp.checkpoint_id.as_str().to_string(),
+            checkpoint_name:    cp.checkpoint_name,
+            checkpoint_created: format_timestamp(cp.checkpoint_timestamp),
+            checkpoint_user:    cp.checkpoint_username,
+        })
+        .collect()
+    )
+}

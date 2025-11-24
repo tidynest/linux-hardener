@@ -1,11 +1,11 @@
 //! Integration tests for MAC (Mandatory Access Control) Hardening plugin
 
 use hardener_core::{Config, Context, plugin::HardeningPlugin};
-use hardener_plugins::MacPlugin;
+use hardener_plugins::MacHardeningPlugin;
 
 #[test]
 fn test_mac_plugin_metadata() {
-    let plugin = MacPlugin::new();
+    let plugin = MacHardeningPlugin::new();
     let metadata = plugin.metadata();
 
     assert_eq!(metadata.plugin_id.to_string(), "mac-hardening");
@@ -17,7 +17,7 @@ fn test_mac_plugin_metadata() {
 
 #[test]
 fn test_mac_plugin_has_no_dependencies() {
-    let plugin = MacPlugin::new();
+    let plugin = MacHardeningPlugin::new();
     let dependencies = plugin.dependencies();
 
     assert_eq!(dependencies.len(), 0, "MAC plugin should have no dependencies");
@@ -25,7 +25,7 @@ fn test_mac_plugin_has_no_dependencies() {
 
 #[test]
 fn test_mac_scan_detects_system() {
-    let plugin = MacPlugin::new();
+    let plugin = MacHardeningPlugin::new();
     let context = Context::new();
 
     // Run scan
@@ -59,7 +59,7 @@ fn test_mac_scan_detects_system() {
 
 #[test]
 fn test_mac_validate() {
-    let plugin = MacPlugin::new();
+    let plugin = MacHardeningPlugin::new();
     let config = Config::default();
 
     // Run validation
@@ -88,7 +88,7 @@ fn test_mac_validate() {
 #[test]
 #[ignore = "Requires root privileges and modifies MAC system configuration"]
 fn test_mac_apply_requires_root() {
-    let plugin = MacPlugin::new();
+    let plugin = MacHardeningPlugin::new();
     let mut context = Context::new();
     let config = Config::default();
 

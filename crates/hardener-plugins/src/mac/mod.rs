@@ -32,24 +32,24 @@ pub enum MacSystem {
 ///
 /// Automatically detects whether the system uses AppArmor or SELinux
 /// and applies appropriate hardening configurations.
-pub struct MacPlugin {}
+pub struct MacHardeningPlugin {}
 
-impl Default for MacPlugin {
+impl Default for MacHardeningPlugin {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl MacPlugin {
-    pub fn new() -> MacPlugin {
-        MacPlugin {}
+impl MacHardeningPlugin {
+    pub fn new() -> MacHardeningPlugin {
+        MacHardeningPlugin {}
     }
 
     /// Detects which MAC system is available on this system.
     ///
     /// Detection Logic:
     /// 1. Check for SELinux (/sys/fs/selinux directory exists)
-    /// 2. Check for AppArmor (/sys/kernel/security/apparmor directory exists
+    /// 2. Check for AppArmor (/sys/kernel/security/apparmor directory exists)
     /// 3. Return None if neither is found
     fn detect_mac_system(&self) -> Option<MacSystem> {
         // Check for SELinux first
@@ -171,7 +171,7 @@ impl MacPlugin {
     }
 }
 
-impl HardeningPlugin for MacPlugin {
+impl HardeningPlugin for MacHardeningPlugin {
     fn metadata(&self) -> PluginMetadata {
         PluginMetadata {
             plugin_category:    FindingCategory::Kernel,

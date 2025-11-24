@@ -13,11 +13,11 @@ use hardener_core::{
     context::Context,
     plugin::{Config, HardeningPlugin},
 };
-use hardener_plugins::FirewallPlugin;
+use hardener_plugins::FirewallHardeningPlugin;
 
 #[test]
 fn test_firewall_plugin_metadata() {
-    let plugin = FirewallPlugin::new();
+    let plugin = FirewallHardeningPlugin::new();
     let metadata = plugin.metadata();
 
     assert_eq!(metadata.plugin_id.as_str(), "firewall-hardening");
@@ -29,7 +29,7 @@ fn test_firewall_plugin_metadata() {
 
 #[test]
 fn test_firewall_plugin_has_no_dependencies() {
-    let plugin = FirewallPlugin::new();
+    let plugin = FirewallHardeningPlugin::new();
     let deps = plugin.dependencies();
 
     assert_eq!(deps.len(), 0, "Firewall plugin should have no dependencies");
@@ -37,7 +37,7 @@ fn test_firewall_plugin_has_no_dependencies() {
 
 #[test]
 fn test_firewall_scan_detects_backend() {
-    let plugin = FirewallPlugin::new();
+    let plugin = FirewallHardeningPlugin::new();
     let ctx = Context::new();
 
     let result = plugin.scan(&ctx);
@@ -61,7 +61,7 @@ fn test_firewall_scan_detects_backend() {
 
 #[test]
 fn test_firewall_validate_checks_backend() {
-    let plugin = FirewallPlugin::new();
+    let plugin = FirewallHardeningPlugin::new();
     let config = Config::default();
 
     let result = plugin.validate(&config);
@@ -77,7 +77,7 @@ fn test_firewall_validate_checks_backend() {
 #[test]
 #[ignore] // Requires root privileges to enable firewall and apply rules
 fn test_firewall_apply_requires_root() {
-    let plugin = FirewallPlugin::new();
+    let plugin = FirewallHardeningPlugin::new();
     let mut ctx = Context::new();
     let config = Config::default();
 
@@ -144,7 +144,7 @@ fn test_backend_detection_order() {
     // 2. UFW (Ubuntu/Debian)
     // 3. Nftables (modern systems)
 
-    let plugin = FirewallPlugin::new();
+    let plugin = FirewallHardeningPlugin::new();
     let ctx = Context::new();
 
     let result = plugin.scan(&ctx);
