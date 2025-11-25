@@ -134,4 +134,4 @@ This tool maps findings to:
 
 For security concerns: **tidynest@proton.me**
 
-For general issues: [GitHub Issues](https://github.com/tidynest/linux-security-automation/issues)
+For general issues: [GitHub Issues](https://github.com/tidynest/linux-system-hardener/issues)

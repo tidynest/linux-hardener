@@ -18,8 +18,8 @@ This project adheres to a code of conduct that all contributors are expected to 
 
 ```bash
 # Clone the repository
-git clone https://github.com/tidynest/linux-security-automation.git
-cd linux-security-automation
+git clone https://github.com/tidynest/linux-system-hardener.git
+cd linux-system-hardener
 
 # Build the project
 cargo build
@@ -180,7 +180,7 @@ sudo cargo test -- --ignored
 ## Project Structure
 
 ```
-linux-security-automation/
+linux-system-hardener/
 ├── crates/
 │   ├── hardener-core/        # Core plugin infrastructure
 │   ├── hardener-common/      # Shared types
@@ -208,6 +208,6 @@ By contributing, you agree that your contributions will be licensed under the Ap
 ## Contact
 
 - **Email**: tidynest@proton.me
-- **Issues**: [GitHub Issues](https://github.com/tidynest/linux-security-automation/issues)
+- **Issues**: [GitHub Issues](https://github.com/tidynest/linux-system-hardener/issues)
 
 Thank you for contributing to Linux System Hardener!

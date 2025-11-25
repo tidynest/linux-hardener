@@ -15,8 +15,8 @@ members = [
 version = "0.1.0"
 authors = ["Eric Jingryd"]
 edition = "2021"
-license = "MIT/Apache-2.0"
-repository = "https://github.com/tidynest/linux-security-automation"
+license = "Apache-2.0"
+repository = "https://github.com/tidynest/linux-system-hardener"
 
 [workspace.dependencies]
 

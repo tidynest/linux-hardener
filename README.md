@@ -86,7 +86,7 @@ Total Tests: 73 passing
 ## Architecture
 
 ```
-linux-security-automation/
+linux-system-hardener/
 ├── crates/
 │   ├── hardener-core/        # Plugin trait, context, checkpoint system
 │   ├── hardener-common/      # Shared types (Severity, Finding, etc.)
@@ -121,8 +121,8 @@ linux-security-automation/
 
 ```bash
 # Clone repository
-git clone https://github.com/tidynest/linux-security-automation.git
-cd linux-security-automation
+git clone https://github.com/tidynest/linux-system-hardener.git
+cd linux-system-hardener
 
 # Build all crates
 cargo build --release
@@ -274,4 +274,4 @@ This project draws inspiration from established security tools including:
 
 **Author**: Eric Jingryd
 **Contact**: tidynest@proton.me
-**Repository**: https://github.com/tidynest/linux-security-automation
+**Repository**: https://github.com/tidynest/linux-system-hardener
