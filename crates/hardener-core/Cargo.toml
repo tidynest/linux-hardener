@@ -1,0 +1,19 @@
+[package]
+name = "hardener-core"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+hardener-common = { workspace = true }
+hostname = { workspace = true, optional = true }
+nix = { workspace = true, optional = true }
+petgraph = { workspace = true, optional = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+
+[features]
+default = ["system"]
+system = ["hostname", "nix", "petgraph"]

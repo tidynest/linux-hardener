@@ -1,0 +1,9 @@
+[build]
+dist = "dist"
+public_url = "/"
+
+[serve]
+port = 1420
+addresses = ["127.0.0.1"]
+open = false
+ws_protocol = "ws"

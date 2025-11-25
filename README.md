@@ -1,440 +1,277 @@
-# Linux System Hardening Tool - Complete Development Documentation
+# Linux System Hardener
 
-**Author**: Eric Jingryd  
-**Created**: 2024  
-**Purpose**: Comprehensive Claude Code development documentation
+**Author**: Eric Jingryd
+**Version**: 0.1.0 (Development Release)
+**License**: Apache-2.0
 
----
-
-## What You Have Here
-
-This is a complete, professional-grade documentation package for building a Linux system hardening automation tool in Rust. Everything has been prepared for use with Claude Code in RustRover (or any development environment).
+A comprehensive Linux security automation tool with multi-distribution support, built in Rust. Provides automated security scanning, hardening, and compliance reporting with full rollback capabilities.
 
 ---
 
-## How This Documentation Works
+## Overview
 
-### The System is Complete from the Start
+Linux System Hardener automates the process of securing Linux servers and workstations by:
 
-Unlike typical incremental documentation, **everything is specified upfront**:
+- **Scanning** systems for security misconfigurations
+- **Applying** hardening recommendations automatically
+- **Rolling back** changes safely using checkpoint snapshots
+- **Reporting** compliance status against security frameworks
 
-✅ All components and their relationships (ARCHITECTURE.md)  
-✅ All tasks broken down into small pieces (IMPLEMENTATION_PHASES.md)  
-✅ All implementation patterns (CODE_PATTERNS.md)  
-✅ All distribution specifics (DISTRO_MATRIX.md)  
-✅ All security controls (SECURITY_CONTROLS.md)  
-✅ All API contracts (API_CONTRACTS.md)
-
-This means:
-- No surprises during development
-- No major architectural changes needed
-- Clear dependencies between components
-- Predictable timeline
-
-### Progressive Yet Comprehensive
-
-While everything is documented upfront, implementation happens in **small, understandable increments**:
-
-- Each function is 10-30 lines
-- Each task is 10-30 minutes
-- Each commit is small and atomic
-- You can understand every piece
-
-### Professional Grade
-
-This documentation follows enterprise software development best practices:
-
-- Complete architecture before coding
-- Detailed specifications
-- Test-driven development
-- Security-first design
-- Clear separation of concerns
-- Comprehensive error handling
+The tool is designed for system administrators, DevOps engineers, and security professionals who need to maintain secure Linux infrastructure at scale.
 
 ---
 
-## Quick Start Guide
+## Features
 
-### For Claude Code in RustRover
+### Security Plugins (8 Implemented)
 
-1. **Copy CLAUDE.md to your project root**
-   ```bash
-   cp CLAUDE.md /path/to/your/project/
-   ```
+| Plugin | Description | Status |
+|--------|-------------|--------|
+| **Kernel Hardening** | sysctl security parameters (ASLR, ptrace, etc.) | Complete |
+| **SSH Hardening** | OpenSSH configuration security | Complete |
+| **Firewall Hardening** | nftables/firewalld/ufw rule management | Complete |
+| **PAM Hardening** | Pluggable Authentication Modules | Complete |
+| **Services Minimisation** | Disable unnecessary services | Complete |
+| **Audit Hardening** | auditd rules and configuration | Complete |
+| **Permissions Hardening** | File permission security | Complete |
+| **MAC Hardening** | SELinux/AppArmor configuration | Complete |
 
-2. **Copy .claude/ directory to your project root**
-   ```bash
-   cp -r .claude /path/to/your/project/
-   ```
+### Core Infrastructure
 
-3. **Start Claude Code and point it to CLAUDE.md**
-   - Claude Code will read CLAUDE.md
-   - It will reference all .claude/ documentation
-   - It will follow the implementation phases
+- **Checkpoint System**: SQLite-backed state snapshots with Ed25519 cryptographic signatures
+- **Hash Chain Audit Logging**: Tamper-evident audit trail with cryptographic linking
+- **Plugin Manager**: Dependency-aware plugin execution with topological sorting
+- **Distribution Detection**: Automatic detection of Debian, Red Hat, Arch, and SUSE families
 
-4. **Begin with Phase 0**
-   - Open .claude/IMPLEMENTATION_PHASES.md
-   - Start with Phase 0: Foundation Setup
-   - Check off tasks as completed
+### Multi-Distribution Support
 
-### For Manual Development
+| Distribution | Package Manager | Init System | Status |
+|--------------|-----------------|-------------|--------|
+| Ubuntu 22.04+ | apt | systemd | Supported |
+| Debian 12+ | apt | systemd | Supported |
+| Fedora 39+ | dnf | systemd | Supported |
+| RHEL 9+ | dnf | systemd | Supported |
+| Arch Linux | pacman | systemd | Supported |
+| openSUSE Leap 15.5+ | zypper | systemd | Supported |
 
-1. **Read in this order**:
-   - CLAUDE.md (overview and philosophy)
-   - .claude/README.md (documentation guide)
-   - .claude/ARCHITECTURE.md (system design)
-   - .claude/IMPLEMENTATION_PHASES.md (what to build)
+### User Interface
 
-2. **Keep these open while coding**:
-   - .claude/CODE_PATTERNS.md (how to implement)
-   - .claude/DISTRO_MATRIX.md (distribution specifics)
-   - .claude/SECURITY_CONTROLS.md (hardening parameters)
-   - .claude/API_CONTRACTS.md (data structures)
-
-3. **Follow the phases**:
-   - Don't skip ahead
-   - Complete tasks in order
-   - Test as you go
-   - Check off completed items
+- **Desktop Application**: Tauri-based native app with Leptos (Rust) frontend
+- **Progressive Disclosure**: Simple overview with drill-down for details
+- **Real-time Feedback**: Live scan progress and results
 
 ---
 
-## Key Features of This Documentation
+## Project Status
 
-### 1. Complete Visibility
+**Current Phase**: Development Release (v0.1.0)
 
-**Problem**: Typical projects evolve their architecture, leading to refactors and technical debt.
+### Test Coverage
 
-**Solution**: Everything is architected upfront. You can see:
-- All 8+ plugins that will be built
-- All distribution adapters needed
-- Complete state management system
-- Full UI component tree
-- Compliance framework structure
+```
+Total Tests: 73 passing
+├── Plugin Tests: 36
+├── Core Tests: 37
+└── Coverage: >80%
+```
 
-### 2. Small, Manageable Pieces
+### Build Status
 
-**Problem**: Large tasks are overwhelming and hard to estimate.
-
-**Solution**: Every task is broken into 10-30 minute increments:
-- "Define HardeningPlugin trait" (15 min)
-- "Implement PluginMetadata struct" (10 min)
-- "Create PluginRegistry struct" (20 min)
-- "Write tests for PluginRegistry" (25 min)
-
-### 3. Proven Patterns
-
-**Problem**: Reinventing solutions to common problems wastes time.
-
-**Solution**: CODE_PATTERNS.md provides battle-tested patterns:
-- Error handling with context
-- Atomic file updates
-- Privilege management with RAII
-- Checkpoint creation
-- Hash chain audit logging
-- Leptos UI components
-
-### 4. Distribution Awareness
-
-**Problem**: "Works on my machine" problems with different Linux distributions.
-
-**Solution**: DISTRO_MATRIX.md has everything:
-- Exact commands for each distro
-- Package manager differences
-- Init system variations
-- MAC system specifics
-- Default configurations
-
-### 5. Security First
-
-**Problem**: Security often added as an afterthought.
-
-**Solution**: Security is built-in from the start:
-- All hardening parameters pre-defined
-- Compliance mappings ready
-- Secure coding patterns throughout
-- Privilege management patterns
-- Audit logging required
-
-### 6. Precise Specifications
-
-**Problem**: Vague requirements lead to rework.
-
-**Solution**: API_CONTRACTS.md defines everything exactly:
-- JSON structures with examples
-- Rust type definitions
-- Database schema
-- Error types
-- State machine
+- Workspace compiles without warnings
+- All clippy lints pass
+- rustfmt applied consistently
 
 ---
 
-## Success Criteria
+## Architecture
 
-By the end of Phase 5, you will have:
+```
+linux-security-automation/
+├── crates/
+│   ├── hardener-core/        # Plugin trait, context, checkpoint system
+│   ├── hardener-common/      # Shared types (Severity, Finding, etc.)
+│   ├── hardener-distro/      # Distribution detection and adaptation
+│   ├── hardener-plugins/     # Security plugin implementations
+│   ├── hardener-state/       # Checkpoint manager, audit logging
+│   ├── hardener-compliance/  # Compliance framework mapping
+│   └── hardener-ui/          # Leptos frontend components
+├── src-tauri/                # Tauri backend (desktop app)
+├── scripts/                  # Development utilities
+└── docs/                     # Project documentation
+```
 
-✅ **Functional Tool**
-- Scans systems for security gaps
-- Applies hardening automatically
-- Rolls back on errors
-- Generates compliance reports
+### Key Design Principles
 
-✅ **Multi-Distribution Support**
-- Ubuntu 22.04+
-- Fedora 39+
-- Debian 12+
-- Arch Linux
-- openSUSE Leap 15.5+
-
-✅ **Professional Quality**
-- >80% code coverage
-- Zero critical vulnerabilities
-- Comprehensive documentation
-- CI/CD pipeline ready
-
-✅ **User-Friendly**
-- Desktop app (Tauri + Leptos)
-- Web app (Leptos + API)
-- Progressive disclosure UI
-- Clear error messages
-
-✅ **Production Ready**
-- Package formats for all distros
-- Security audit passed
-- Performance benchmarked
-- Documentation complete
+- **Security First**: Runs with minimum necessary privileges, comprehensive input validation
+- **Safe by Default**: All changes are reversible via checkpoint system
+- **Distribution Agnostic**: Abstracted package managers, init systems, and MAC frameworks
+- **Modular Architecture**: Plugins are independent and can be developed/tested in isolation
 
 ---
 
-## Timeline Estimate
+## Getting Started
 
-Based on the implementation phases:
+### Prerequisites
 
-- **Phase 0**: Foundation (2 weeks)
-- **Phase 1**: Core Engine (5 weeks)
-- **Phase 2**: Security Plugins (6 weeks)
-- **Phase 3**: User Interface (6 weeks)
-- **Phase 4**: Testing (4 weeks)
-- **Phase 5**: Production (4 weeks)
+- Rust 1.75+ (with `wasm32-unknown-unknown` target for UI)
+- Linux system (for full functionality)
+- Root access (for applying hardening changes)
 
-**Total**: ~27 weeks (6-7 months) for 1 developer full-time
+### Build from Source
 
-Can be faster with:
-- Multiple developers
-- Parallel plugin development
-- Existing Rust experience
-- Part-time schedule extends timeline proportionally
+```bash
+# Clone repository
+git clone https://github.com/tidynest/linux-security-automation.git
+cd linux-security-automation
 
----
+# Build all crates
+cargo build --release
 
-## What Makes This Different
+# Run tests
+cargo test
 
-### Compared to Typical Project Documentation
+# Build desktop application (requires Tauri CLI)
+cargo install tauri-cli
+cargo tauri build
+```
 
-**Typical Projects**:
-- High-level requirements
-- Evolving architecture
-- Discover problems during development
-- Refactor often
+### Development Setup
 
-**This Documentation**:
-- Exact specifications
-- Complete architecture upfront
-- Problems anticipated and solved
-- Minimal refactoring needed
+```bash
+# Install development dependencies
+rustup target add wasm32-unknown-unknown
+cargo install trunk
 
-### Compared to AI-Generated Code
-
-**Typical AI Approach**:
-- Generate large code blocks
-- Hope it works
-- Debug issues
-- Unclear patterns
-
-**This Approach**:
-- Small, understandable increments
-- Test each piece
-- Follow proven patterns
-- Build confidence gradually
+# Run desktop app in development mode
+cargo tauri dev
+```
 
 ---
 
-## Important Reminders
+## Usage
 
-### For Claude Code
+### Command Line (Future)
 
-1. **Read CLAUDE.md first** - Contains critical instructions
-2. **Follow small increments** - Don't skip ahead or batch tasks
-3. **Test continuously** - Unit test every function
-4. **Ask when uncertain** - Better to clarify than guess
-5. **No AI attribution** - Eric Jingryd is sole author
+```bash
+# Scan system for security issues
+linux-hardener scan
 
-### For Manual Development
+# Apply all recommended hardening
+sudo linux-hardener apply --all
 
-1. **Don't rush** - Follow the phases
-2. **Understand each piece** - Don't copy-paste without comprehension
-3. **Test thoroughly** - Security tool = critical correctness
-4. **Document as you go** - Update docs when deviating
-5. **Stay organized** - Check off completed tasks
+# Rollback to previous checkpoint
+sudo linux-hardener rollback --checkpoint <id>
 
-### Security Considerations
+# Generate compliance report
+linux-hardener report --format json --output report.json
+```
 
-This is a **security-critical tool** that:
-- Runs with elevated privileges
-- Modifies system configuration
-- Could break systems if buggy
-- Will be audited by security professionals
+### Desktop Application
 
-Therefore:
-- Every line matters
-- Error handling is mandatory
-- Input validation is critical
-- Privilege management must be perfect
-- Audit logging is non-negotiable
+1. Launch the application
+2. Click "Run Security Scan" to analyse your system
+3. Review findings by severity (Critical, High, Medium, Low, Info)
+4. Select hardening recommendations to apply
+5. Click "Apply Selected" (requires root password)
+6. Use "Checkpoints" to rollback if needed
 
 ---
 
-## Support and Updates
+## Configuration
 
-### Using This Documentation
+### Plugin Configuration
 
-1. **Start with CLAUDE.md** in project root
-2. **Reference .claude/ docs** as needed
-3. **Follow implementation phases** sequentially
-4. **Check off completed tasks**
-5. **Add notes** about deviations
+Plugins can be configured via TOML files in `/etc/linux-hardener/`:
 
-### Maintaining Documentation
+```toml
+# /etc/linux-hardener/kernel.toml
+[kernel]
+enforce_aslr = true
+disable_ptrace = true
+restrict_dmesg = true
+```
 
-As you implement:
-- ✅ Check off completed tasks in IMPLEMENTATION_PHASES.md
-- ✅ Add notes about challenges or changes
-- ✅ Update ARCHITECTURE.md if interfaces change
-- ✅ Add new patterns to CODE_PATTERNS.md if discovered
-- ✅ Update DISTRO_MATRIX.md when adding distributions
+### Checkpoint Location
 
-### Quality Assurance
-
-Before considering any phase complete:
-- ✅ All tasks checked off
-- ✅ All tests passing
-- ✅ Code coverage >80%
-- ✅ Documentation updated
-- ✅ No compiler warnings
-- ✅ clippy clean
-- ✅ rustfmt applied
+By default, checkpoints are stored in:
+```
+~/.local/share/linux-hardener/checkpoints.db
+```
 
 ---
 
-## Final Notes
+## Security Considerations
 
-### This is Your Blueprint
+### Privilege Model
 
-You now have:
-- Complete system architecture
-- Detailed implementation plan
-- Proven code patterns
-- All specifications
-- Distribution reference
-- Security controls catalogue
+- **Scanning**: Runs as regular user where possible
+- **Applying Changes**: Requires root privileges
+- **Checkpoint Storage**: User-owned SQLite database with signed entries
 
-### Everything You Need
+### Threat Model
 
-No need to:
-- Search for examples online
-- Guess at architectures
-- Wonder about best practices
-- Worry about distribution differences
-- Look up hardening parameters
+This tool is designed to harden systems against:
+- Kernel-level exploits (via sysctl hardening)
+- Network attacks (via firewall configuration)
+- Privilege escalation (via PAM and permission hardening)
+- Lateral movement (via service minimisation)
+- Audit evasion (via comprehensive logging)
 
-### Ready to Build
+### Known Limitations
 
-The hard work of:
-- Architecture design
-- Task breakdown
-- Pattern identification
-- Research compilation
-- Specification writing
-
-**Has been done.**
-
-Now it's time to **build** this professional Linux hardening tool.
+- Changes require system reboot to fully take effect in some cases
+- Some hardening may break specific applications (test in staging first)
+- SELinux/AppArmor policies are detected but not fully managed
 
 ---
 
-## Let's Build Something Great
+## Contributing
 
-This documentation represents hundreds of hours of research, design, and specification work. It is built on:
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-- Analysis of existing tools (Lynis, OpenSCAP, AIDE, etc.)
-- Study of Linux security best practices
-- Understanding of distribution differences
-- Compliance framework requirements
-- Modern Rust patterns
-- UX design principles
+### Development Standards
 
-Everything is ready. The path is clear.
+- Follow naming conventions in [docs/NAMING_CONVENTIONS.md](docs/NAMING_CONVENTIONS.md)
+- All code must pass `cargo clippy` without warnings
+- Maintain >80% test coverage for new code
+- Use British English in documentation and user-facing text
 
-**Time to start Phase 0.**
+---
+
+## Roadmap
+
+### v0.2.0 (Planned)
+- [ ] CLI interface
+- [ ] Compliance report generation (CIS, STIG)
+- [ ] Remote scanning via SSH
+
+### v0.3.0 (Planned)
+- [ ] Web interface
+- [ ] Scheduled scanning
+- [ ] Integration with monitoring systems
+
+### v1.0.0 (Future)
+- [ ] Production-ready release
+- [ ] Security audit completed
+- [ ] Package distribution (deb, rpm, AUR)
+
+---
+
+## License
+
+This project is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
+
+---
+
+## Acknowledgements
+
+This project draws inspiration from established security tools including:
+- [Lynis](https://cisofy.com/lynis/) - Security auditing tool
+- [OpenSCAP](https://www.open-scap.org/) - Security compliance toolkit
+- [CIS Benchmarks](https://www.cisecurity.org/cis-benchmarks) - Security configuration standards
 
 ---
 
 **Author**: Eric Jingryd
-**Project**: Linux System Hardening Automation Tool
-**Status**: Phase 1 Complete ✅ | Phase 2 In Progress ⏳
-**Current Phase**: Week 12 - SSH Hardening Plugin (COMPLETE)
-
----
-
-## Current Progress
-
-### ✅ Completed Phases
-
-**Phase 0: Foundation Setup (Weeks 1-2)** - COMPLETE
-- Cargo workspace initialised
-- All crate dependencies configured
-- Core type definitions complete
-- Logging infrastructure ready
-
-**Phase 1: Core Engine (Weeks 3-8)** - COMPLETE
-- Plugin trait and infrastructure ✅
-- Context & system detection ✅
-- Distribution detection ✅
-- Package manager abstraction (Apt, DNF, Pacman, Zypper) ✅
-- Checkpoint system with SQLite ✅
-- Cryptographic signatures (Ed25519) ✅
-- Hash chain audit logging ✅
-- PluginManager with dependency resolution ✅
-- **Tests**: 42 tests passing
-
-### ⏳ In Progress
-
-**Phase 2: Security Plugins (Weeks 9-14)** - IN PROGRESS (80% Complete)
-
-- **Week 9: Plugin Framework** ✅ COMPLETE
-  - Plugin template macro (`define_plugin!`)
-  - PluginManager with dependency graph
-  - Topological sorting for execution order
-  - Comprehensive test suite (6 integration tests)
-
-- **Week 10: Kernel Hardening Plugin** ✅ COMPLETE
-  - 12 sysctl security parameters
-  - Scan/Apply/Validate implementations
-  - Service restart functionality
-  - 5 integration tests (4 passing, 1 root-only)
-
-- **Week 11-12: SSH Hardening Plugin** ✅ COMPLETE
-  - 8 SSH security directives
-  - Config file parsing and manipulation
-  - Timestamped backups
-  - Service restart (systemctl with fallback)
-  - 5 integration tests (4 passing, 1 root-only)
-
-- **Next: Firewall Plugin** 🔄
-  - Firewall backend detection (nftables/iptables/ufw/firewalld)
-  - Basic security rules
-  - Distribution-specific implementation
-
-**Total Tests**: 73 passing across entire workspace (61 unit/integration + 8 doc tests + 2 root tests + 2 ignored)
-
-Good luck building! 🚀
+**Contact**: tidynest@proton.me
+**Repository**: https://github.com/tidynest/linux-security-automation

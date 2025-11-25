@@ -3,7 +3,7 @@
 Naming Convention Validator for Linux Hardening Tool
 
 This script scans the Rust codebase and validates that identifiers follow
-the naming conventions defined in .claude/NAMING_CONVENTIONS.md
+the naming conventions defined in docs/NAMING_CONVENTIONS.md
 
 Author: Eric Jingryd
 """
@@ -323,7 +323,7 @@ class NamingValidator:
 
         # Summary
         print(f"Summary: {len(errors)} errors, {len(warnings)} warnings")
-        print(f"\nRefer to .claude/NAMING_CONVENTIONS.md for complete naming standards.\n")
+        print(f"\nRefer to docs/NAMING_CONVENTIONS.md for complete naming standards.\n")
 
     @staticmethod
     def to_snake_case(name: str) -> str:

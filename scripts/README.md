@@ -8,7 +8,7 @@ This directory contains utility scripts for the Linux Hardening Tool project.
 
 **Script**: `validate_naming.py`
 
-**Purpose**: Validates that all Rust code follows the naming conventions defined in `.claude/NAMING_CONVENTIONS.md`
+**Purpose**: Validates that all Rust code follows the naming conventions defined in `docs/NAMING_CONVENTIONS.md`
 
 **Usage**:
 ```bash
@@ -54,14 +54,12 @@ python3 scripts/validate_naming.py
 
 Summary: 2 errors, 1 warnings
 
-Refer to .claude/NAMING_CONVENTIONS.md for complete naming standards.
+Refer to docs/NAMING_CONVENTIONS.md for complete naming standards.
 ```
 
 **Integration with CI/CD**:
 
 This script can be added to CI/CD pipeline to enforce naming conventions.
-
-**Note**: CI/CD integration will be implemented in Phase 5, Week 27 (Task 5.3.2). See `.claude/IMPLEMENTATION_PHASES.md` for details.
 
 Example GitHub Actions workflow:
 ```yaml
@@ -128,7 +126,7 @@ $ git commit -m "Add PAM plugin"
 Naming convention errors found.
 Please fix the issues above before committing.
 
-Refer to .claude/NAMING_CONVENTIONS.md for naming standards.
+Refer to docs/NAMING_CONVENTIONS.md for naming standards.
 
 To commit anyway (not recommended), use: git commit --no-verify
 ```

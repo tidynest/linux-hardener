@@ -28,6 +28,7 @@ Thumbs.db
 .idea/dictionaries/
 .vscode/settings.json
 
-# Project-specific development files (keep local only)
-/.claude/
-/CLAUDE.md
+# WASM build artifacts
+crates/hardener-ui/dist/*.js
+crates/hardener-ui/dist/*.wasm
+

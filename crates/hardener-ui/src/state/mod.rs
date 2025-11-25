@@ -1,6 +1,7 @@
-use hardener_core::{
+use crate::types::{
     ApplyResult,
-    plugin::{Finding, ScanResult},
+    Finding,
+    ScanResult
 };
 use leptos::prelude::*;
 

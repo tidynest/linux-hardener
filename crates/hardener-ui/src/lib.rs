@@ -9,7 +9,9 @@ mod pages;
 pub mod state;
 mod utils;
 mod tauri_bindings;
+mod types;
 
+pub use types::*;
 use components::{ApplyResults, CheckpointList};
 use pages::{ConfigurationPage, DashboardPage, ScannerPage};
 use state::AppState;
