@@ -55,7 +55,7 @@ ed25519-dalek = "2.2.0"
 ring = "0.17.14"
 
 # State management
-sqlx = { version = "0.8.6", features = ["migrate", "runtime-tokio-native-tls", "sqlite"] }
+sqlx = { version = "0.8.6", default-features = false, features = ["migrate", "runtime-tokio-native-tls", "sqlite"] }
 
 # System interaction
 hostname = "0.4.1"
