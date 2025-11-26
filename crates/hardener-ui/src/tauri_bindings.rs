@@ -2,7 +2,6 @@
 //!
 //! These bindings use wasm-bindgen to call Tauri's JavaScript invoke API.
 
-#[allow(unused_macros)]
 use crate::types::{ApplyResult, ScanResult};
 
 use wasm_bindgen::prelude::*;

@@ -161,7 +161,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                         "Insecure PAM setting: {}",
                         directive.pam_directive_name
                     ),
-                    finding_compliance: get_pam_compliance_mappings(&format!("{}", directive.pam_directive_name)),
+                    finding_compliance: get_pam_compliance_mappings(directive.pam_directive_name),
                 });
             }
         }

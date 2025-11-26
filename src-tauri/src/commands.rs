@@ -95,7 +95,7 @@ pub fn run_scan() -> Result<Vec<ScanResult>, String> {
 pub fn run_apply(plugin_ids: Vec<String>) -> Result<Vec<ApplyResult>, String> {
     let mut ctx  = Context::new();
     let registry = create_plugin_registry();
-    let config   = hardener_core::Config::default();
+    let config   = hardener_core::Config;
 
     let mut results = Vec::new();
 

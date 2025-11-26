@@ -23,13 +23,13 @@ pub async fn run(
 
     let registry = create_plugin_registry();
     let mut ctx = Context::new();
-    let config = Config::default();
+    let config = Config;
 
     let plugins = registry.list()?;
     let plugin_ids: Vec<PluginId> = if all {
         plugins.iter().map(|m| m.plugin_id.clone()).collect()
     } else {
-        plugin_filter.iter().map(|s| PluginId::new(s)).collect()
+        plugin_filter.iter().map(PluginId::new).collect()
     };
 
     if dry_run {

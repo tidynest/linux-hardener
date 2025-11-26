@@ -158,13 +158,13 @@ impl MacHardeningPlugin {
         for line in status.lines() {
             if line.contains("profiles are in enforce mode") {
                 // Extract number from line like "   37 profiles are in enforce mode."
-                if let Some(num_str) = line.trim().split_whitespace().next() {
+                if let Some(num_str) = line.split_whitespace().next() {
                     enforce_count = num_str.parse().unwrap_or(0);
                 }
-            } else if line.contains("profiles are in complain mode") {
-                if let Some(num_str) = line.trim().split_whitespace().next() {
-                    complain_count = num_str.parse().unwrap_or(0);
-                }
+            } else if line.contains("profiles are in complain mode")
+                && let Some(num_str) = line.split_whitespace().next()
+            {
+                complain_count = num_str.parse().unwrap_or(0);
             }
         }
 

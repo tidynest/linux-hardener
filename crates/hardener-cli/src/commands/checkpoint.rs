@@ -16,7 +16,7 @@ async fn get_checkpoint_manager() -> Result<CheckpointManager> {
     let db_path = data_dir.join("checkpoints.db");
     let key_path = data_dir.join("signing.key");
 
-    let pool = init_db(Some(&db_path.as_path())).await?;
+    let pool = init_db(Some(db_path.as_path())).await?;
     let signer = CheckpointSigner::new_with_path(&key_path)?;
     Ok(CheckpointManager::new_with_signer(pool, signer)?)
 }

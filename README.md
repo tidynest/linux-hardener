@@ -266,9 +266,10 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 
 See [PLAN.md](PLAN.md) for detailed implementation plans for upcoming features.
 
-### v0.2.0 (Planned)
+### v0.2.0 (Current)
 - [x] CLI interface
-- [ ] Compliance report generation (CIS, STIG)
+- [x] Compliance report generation (CIS, STIG, NIST, PCI-DSS, HIPAA, GDPR)
+- [x] Multiple output formats (Text, JSON, CSV, HTML)
 - [ ] Remote scanning via SSH
 
 ### v0.3.0 (Planned)
