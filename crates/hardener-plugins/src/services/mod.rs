@@ -17,7 +17,7 @@ use hardener_core::{
     plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult},
 };
 use std::{process::Command, time::Instant};
-use tracing::warn;
+use tracing::{info, warn};
 
 /// Service Minimisation Plugin
 ///
@@ -277,9 +277,31 @@ impl HardeningPlugin for ServicesHardeningPlugin {
         })
     }
 
-    fn apply(&self, _ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
+    fn apply(&self, ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
+        use std::path::Path;
+
         let _start = Instant::now();
         let mut changes = Vec::new();
+
+        // Create checkpoint for systemd unit files
+        let service_paths: Vec<&Path> = vec![
+            Path::new("/etc/systemd/system"),
+            Path::new("/usr/lib/systemd/system"),
+        ];
+        let checkpoint_id = crate::create_checkpoint_for_apply(
+            ctx,
+            "services-hardening-pre-apply",
+            &service_paths,
+        )?;
+
+        if checkpoint_id.is_some() {
+            changes.push(Change {
+                change_type: ChangeType::Service,
+                change_description: "Created checkpoint for rollback".to_string(),
+                change_success: true,
+                change_error: None,
+            });
+        }
 
         // Process each service
         for directive in UNNECESSARY_SERVICES {
@@ -372,16 +394,44 @@ impl HardeningPlugin for ServicesHardeningPlugin {
 
         Ok(ApplyResult {
             apply_changes: changes,
-            apply_checkpoint_id: None,
+            apply_checkpoint_id: checkpoint_id,
             apply_error: None,
             apply_plugin_id: self.metadata().plugin_id,
             apply_success: all_successful,
         })
     }
 
-    fn rollback(&self, _ctx: &mut Context, _checkpoint: &Checkpoint) -> Result<()> {
-        // Rollback not yet implemented - will be handled by checkpoint system
-        warn!("Service rollback not yet implemented");
+    fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> {
+        info!(
+            "Rolling back service configuration to checkpoint: {}",
+            checkpoint.checkpoint_id.as_str()
+        );
+
+        // Restore configuration files from checkpoint
+        crate::rollback_files_from_checkpoint(ctx, checkpoint)?;
+
+        info!("Service configuration files restored from checkpoint");
+
+        // Reload systemd to pick up any restored unit files
+        let reload_result = std::process::Command::new("systemctl")
+            .arg("daemon-reload")
+            .output();
+
+        match reload_result {
+            Ok(output) if output.status.success() => {
+                info!("Systemd daemon reloaded successfully");
+            }
+            Ok(output) => {
+                warn!(
+                    "systemctl daemon-reload returned non-zero: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+            Err(e) => {
+                warn!("Failed to reload systemd daemon: {}", e);
+            }
+        }
+
         Ok(())
     }
 }

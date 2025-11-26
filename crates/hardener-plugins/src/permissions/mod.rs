@@ -21,7 +21,7 @@ use hardener_core::{
     plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult},
 };
 use std::{fs, os::unix::fs::PermissionsExt, path::Path, time::Instant};
-use tracing::warn;
+use tracing::info;
 
 /// File Permissions Hardening Plugin
 ///
@@ -269,8 +269,29 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
         vec![]
     }
 
-    fn apply(&self, _ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
+    fn apply(&self, ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
         let mut changes = Vec::new();
+
+        // Collect paths to checkpoint
+        let permission_paths: Vec<&Path> = CRITICAL_PERMISSIONS
+            .iter()
+            .map(|d| Path::new(d.permission_path))
+            .collect();
+
+        let checkpoint_id = crate::create_checkpoint_for_apply(
+            ctx,
+            "permissions-hardening-pre-apply",
+            &permission_paths,
+        )?;
+
+        if checkpoint_id.is_some() {
+            changes.push(Change {
+                change_description: "Created checkpoint for rollback".to_string(),
+                change_type: ChangeType::Permissions,
+                change_success: true,
+                change_error: None,
+            });
+        }
 
         // Apply permissions to all critical paths
         for directive in CRITICAL_PERMISSIONS {
@@ -285,13 +306,25 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
             apply_plugin_id: self.metadata().plugin_id,
             apply_success: all_successful,
             apply_changes: changes,
-            apply_checkpoint_id: None,
+            apply_checkpoint_id: checkpoint_id,
             apply_error: None,
         })
     }
 
-    fn rollback(&self, _ctx: &mut Context, _checkpoint: &Checkpoint) -> Result<()> {
-        warn!("Permissions rollback not yet implemented");
+    fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> {
+        info!(
+            "Rolling back file permissions to checkpoint: {}",
+            checkpoint.checkpoint_id.as_str()
+        );
+
+        // Restore file permissions from checkpoint
+        // The checkpoint system stores file content, permissions, and ownership
+        crate::rollback_files_from_checkpoint(ctx, checkpoint)?;
+
+        info!("File permissions restored from checkpoint");
+
+        // No service restart needed - permission changes are immediate
+
         Ok(())
     }
 

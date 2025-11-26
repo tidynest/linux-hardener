@@ -1821,6 +1821,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "hardener-common",
+ "hardener-state",
  "hostname",
  "nix",
  "petgraph",
@@ -1846,6 +1847,7 @@ dependencies = [
  "hardener-core",
  "log",
  "tempfile",
+ "tokio",
  "tracing",
 ]
 

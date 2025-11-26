@@ -14,6 +14,7 @@ This document tracks the development progress and planned features for Linux Sys
 - [x] Hash chain audit logging
 - [x] Distribution detection (Debian, Red Hat, Arch, SUSE)
 - [x] Desktop application (Tauri + Leptos)
+- [x] Full plugin rollback integration with checkpoint system
 
 ### Security Plugins (8/8 Complete) ✅
 - [x] Kernel Hardening (sysctl parameters)
@@ -91,8 +92,6 @@ This document tracks the development progress and planned features for Linux Sys
 | Item | Description | Priority |
 |------|-------------|----------|
 | Increase test coverage | Target 90%+ coverage | Medium |
-| Remove unused imports | Clean up warnings | Low |
-| Plugin rollback implementation | Complete rollback for all plugins | Medium |
 | SELinux/AppArmor policy management | Full policy editing, not just detection | Low |
 | ISO 27001 framework | Add ISO 27001 compliance controls | Low |
 

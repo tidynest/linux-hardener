@@ -4,6 +4,7 @@
 //! that plugins use during their lifecycle.
 
 use hardener_common::{error::Result, types::PluginId};
+use hardener_state::CheckpointManager;
 use hostname;
 use nix;
 use serde::{Deserialize, Serialize};
@@ -19,6 +20,8 @@ use std::{
 pub struct Context {
     /// Audit log for tracking all operations.
     audit_log: Arc<RwLock<Vec<PluginAuditEntry>>>,
+    /// Checkpoint manager for creating and restoring system state snapshots.
+    checkpoint_manager: Option<Arc<CheckpointManager>>,
     /// Shared data that plugins can use to communicate
     #[allow(dead_code)]
     shared_data: Arc<RwLock<HashMap<String, String>>>,
@@ -219,6 +222,7 @@ impl Context {
     pub fn new() -> Context {
         Self {
             audit_log: Arc::new(RwLock::new(Vec::new())),
+            checkpoint_manager: None,
             shared_data: Arc::new(RwLock::new(HashMap::new())),
             system_info: SystemInfo::detect().unwrap_or_else(|_| SystemInfo {
                 system_architecture: "Unknown".to_string(),
@@ -228,6 +232,34 @@ impl Context {
                 system_kernel_version: "Unknown".to_string(),
             }),
         }
+    }
+
+    /// Creates a new Context with a checkpoint manager.
+    ///
+    /// Use this when you need checkpoint/rollback functionality.
+    pub fn with_checkpoint_manager(checkpoint_manager: CheckpointManager) -> Context {
+        Self {
+            audit_log: Arc::new(RwLock::new(Vec::new())),
+            checkpoint_manager: Some(Arc::new(checkpoint_manager)),
+            shared_data: Arc::new(RwLock::new(HashMap::new())),
+            system_info: SystemInfo::detect().unwrap_or_else(|_| SystemInfo {
+                system_architecture: "Unknown".to_string(),
+                system_distribution: "Unknown".to_string(),
+                system_distribution_version: "Unknown".to_string(),
+                system_hostname: "Unknown".to_string(),
+                system_kernel_version: "Unknown".to_string(),
+            }),
+        }
+    }
+
+    /// Sets the checkpoint manager for this context.
+    pub fn set_checkpoint_manager(&mut self, checkpoint_manager: CheckpointManager) {
+        self.checkpoint_manager = Some(Arc::new(checkpoint_manager));
+    }
+
+    /// Returns a reference to the checkpoint manager, if available.
+    pub fn checkpoint_manager(&self) -> Option<&Arc<CheckpointManager>> {
+        self.checkpoint_manager.as_ref()
     }
 
     /// Logs an audit entry for tracking operations.

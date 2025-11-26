@@ -17,7 +17,7 @@ use hardener_core::{
         ValidationReport,
     },
 };
-use std::{path::Path, time::Instant};
+use std::time::Instant;
 use tracing::{debug, info, warn};
 
 /// PAM hardening plugin.
@@ -183,14 +183,37 @@ impl HardeningPlugin for PamHardeningPlugin {
         })
     }
 
-    fn apply(&self, _context: &mut Context, _config: &Config) -> Result<ApplyResult> {
+    fn apply(&self, ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
+        use std::path::Path;
+
         let start = Instant::now();
         info!("Starting PAM authentication hardening apply");
 
         let mut changes = Vec::new();
         let mut all_success = true;
 
-        // Step 1: Create backups
+        // Create checkpoint before changes
+        let pam_paths: Vec<&Path> = vec![
+            Path::new("/etc/security/pwquality.conf"),
+            Path::new("/etc/login.defs"),
+            Path::new("/etc/pam.d"),
+        ];
+        let checkpoint_id = crate::create_checkpoint_for_apply(
+            ctx,
+            "pam-hardening-pre-apply",
+            &pam_paths,
+        )?;
+
+        if checkpoint_id.is_some() {
+            changes.push(Change {
+                change_type: ChangeType::ConfigFile,
+                change_description: "Created checkpoint for rollback".to_string(),
+                change_success: true,
+                change_error: None,
+            });
+        }
+
+        // Step 1: Create backups (legacy, in addition to checkpoint)
         let pwquality_backup = match create_config_backup("/etc/security/pwquality.conf") {
             Ok(path) => {
                 changes.push(Change {
@@ -361,13 +384,25 @@ impl HardeningPlugin for PamHardeningPlugin {
             apply_plugin_id: self.metadata().plugin_id,
             apply_success: all_success,
             apply_changes: changes,
-            apply_checkpoint_id: None,
+            apply_checkpoint_id: checkpoint_id,
             apply_error: None,
         })
     }
 
-    fn rollback(&self, _context: &mut Context, _checkpoint: &Checkpoint) -> Result<()> {
-        warn!("Pam Hardening rollback not yet implemented - will be handled by checkpoint system.");
+    fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> {
+        info!(
+            "Rolling back PAM configuration to checkpoint: {}",
+            checkpoint.checkpoint_id.as_str()
+        );
+
+        // Restore configuration files from checkpoint
+        crate::rollback_files_from_checkpoint(ctx, checkpoint)?;
+
+        info!("PAM configuration files restored from checkpoint");
+
+        // PAM doesn't require a service restart - changes take effect immediately
+        // for new authentication attempts
+
         Ok(())
     }
 

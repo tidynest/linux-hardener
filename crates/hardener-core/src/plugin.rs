@@ -13,9 +13,9 @@ use std::fmt;
 #[cfg(feature = "system")]
 pub(crate) use crate::context::Context;
 
-/// Placeholder types - will be implemented in other modules
+// Re-export checkpoint types from hardener-state
 #[cfg(feature = "system")]
-pub struct Checkpoint;
+pub use hardener_state::{Checkpoint, CheckpointId, CheckpointManager};
 
 #[cfg(feature = "system")]
 #[derive(Default)]

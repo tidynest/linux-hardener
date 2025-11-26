@@ -391,11 +391,34 @@ impl HardeningPlugin for MacHardeningPlugin {
 
     fn apply(
         &self,
-        _ctx: &mut Context,
+        ctx: &mut Context,
         _config: &Config
     ) -> Result<ApplyResult> {
+        use std::path::Path;
+
         let apply_plugin_id = PluginId::new("mac-hardening");
         let mut apply_changes = Vec::new();
+
+        // Create checkpoint for MAC config files
+        let mac_paths: Vec<&Path> = vec![
+            Path::new("/etc/selinux/config"),
+            Path::new("/etc/apparmor"),
+            Path::new("/etc/apparmor.d"),
+        ];
+        let checkpoint_id = crate::create_checkpoint_for_apply(
+            ctx,
+            "mac-hardening-pre-apply",
+            &mac_paths,
+        )?;
+
+        if checkpoint_id.is_some() {
+            apply_changes.push(Change {
+                change_description: "Created checkpoint for rollback".to_string(),
+                change_type: ChangeType::ConfigFile,
+                change_success: true,
+                change_error: None,
+            });
+        }
 
         // Detect which MAC system is present
         match self.detect_mac_system() {
@@ -410,7 +433,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                             apply_plugin_id,
                             apply_success: false,
                             apply_changes,
-                            apply_checkpoint_id: None,
+                            apply_checkpoint_id: checkpoint_id,
                             apply_error: Some(format!("Failed to set SELinux enforcing: {}", e)),
                         });
                     }
@@ -432,7 +455,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                     apply_plugin_id,
                     apply_success: false,
                     apply_changes: vec![],
-                    apply_checkpoint_id: None,
+                    apply_checkpoint_id: checkpoint_id,
                     apply_error: Some("No MAC system detected - cannot apply hardening".to_string()),
                 });
             }
@@ -444,18 +467,51 @@ impl HardeningPlugin for MacHardeningPlugin {
             apply_plugin_id,
             apply_success,
             apply_changes,
-            apply_checkpoint_id: None,
+            apply_checkpoint_id: checkpoint_id,
             apply_error: None,
         })
     }
 
     fn rollback(
         &self,
-        _ctx: &mut Context,
-        _checkpoint: &Checkpoint
+        ctx: &mut Context,
+        checkpoint: &Checkpoint
     ) -> Result<()> {
-        // Stub implementation - will be completed during checkpoint integration
-        warn!("MAC rollback() method not yet fully implemented");
+        info!(
+            "Rolling back MAC configuration to checkpoint: {}",
+            checkpoint.checkpoint_id.as_str()
+        );
+
+        // Restore configuration files from checkpoint
+        crate::rollback_files_from_checkpoint(ctx, checkpoint)?;
+
+        info!("MAC configuration files restored from checkpoint");
+
+        // Reload SELinux/AppArmor based on what's available
+        // Try SELinux first
+        let selinux_result = std::process::Command::new("setenforce")
+            .arg("1")
+            .output();
+
+        if selinux_result.is_ok() {
+            info!("SELinux policy reloaded");
+        } else {
+            // Try AppArmor
+            let apparmor_result = std::process::Command::new("systemctl")
+                .arg("reload")
+                .arg("apparmor")
+                .output();
+
+            match apparmor_result {
+                Ok(output) if output.status.success() => {
+                    info!("AppArmor profiles reloaded");
+                }
+                _ => {
+                    warn!("Could not reload MAC system (SELinux/AppArmor)");
+                }
+            }
+        }
+
         Ok(())
     }
 }

@@ -22,7 +22,7 @@ use hardener_core::{
     plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult},
 };
 use std::{fs, path::Path, process::Command, time::Instant};
-use tracing::warn;
+use tracing::{info, warn};
 
 /// Audit Hardening Plugin
 ///
@@ -571,11 +571,33 @@ impl HardeningPlugin for AuditHardeningPlugin {
 
     fn apply(
         &self,
-        _ctx: &mut Context,
+        ctx: &mut Context,
         _config: &Config
     ) -> Result<ApplyResult> {
+        use std::path::Path;
+
         let mut changes = Vec::new();
         let _start      = Instant::now();
+
+        // Create checkpoint before changes
+        let audit_paths: Vec<&Path> = vec![
+            Path::new("/etc/audit/auditd.conf"),
+            Path::new("/etc/audit/rules.d"),
+        ];
+        let checkpoint_id = crate::create_checkpoint_for_apply(
+            ctx,
+            "audit-hardening-pre-apply",
+            &audit_paths,
+        )?;
+
+        if checkpoint_id.is_some() {
+            changes.push(Change {
+                change_type: ChangeType::ConfigFile,
+                change_description: "Created checkpoint for rollback".to_string(),
+                change_success: true,
+                change_error: None,
+            });
+        }
 
         // Check if auditd is installed
         if !is_auditd_installed().unwrap_or(false) {
@@ -586,7 +608,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
                     change_error: Some("auditd package not found".to_string()),
                     change_success: false,
                 }],
-                apply_checkpoint_id: None,
+                apply_checkpoint_id: checkpoint_id,
                 apply_error: Some("Auditd is not installed".to_string()),
                 apply_plugin_id: self.metadata().plugin_id,
                 apply_success: false,
@@ -696,7 +718,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
 
         Ok(ApplyResult {
             apply_changes:       changes,
-            apply_checkpoint_id: None,
+            apply_checkpoint_id: checkpoint_id,
             apply_error:         if all_successful { None } else { Some("Some changes failed".to_string()) },
             apply_plugin_id:     self.metadata().plugin_id,
             apply_success:       all_successful,
@@ -705,11 +727,40 @@ impl HardeningPlugin for AuditHardeningPlugin {
 
     fn rollback(
         &self,
-        _ctx: &mut Context,
-        _checkpoint: &Checkpoint
+        ctx: &mut Context,
+        checkpoint: &Checkpoint
     ) -> Result<()> {
-        // Rollback not yet implemented - will be handled by checkpoint system
-        warn!("Audit rules rollback not yet implemented");
+        info!(
+            "Rolling back audit configuration to checkpoint: {}",
+            checkpoint.checkpoint_id.as_str()
+        );
+
+        // Restore configuration files from checkpoint
+        crate::rollback_files_from_checkpoint(ctx, checkpoint)?;
+
+        info!("Audit configuration files restored from checkpoint");
+
+        // Restart auditd to apply restored rules
+        let restart_result = std::process::Command::new("systemctl")
+            .arg("restart")
+            .arg("auditd")
+            .output();
+
+        match restart_result {
+            Ok(output) if output.status.success() => {
+                info!("Audit daemon restarted successfully");
+            }
+            Ok(output) => {
+                warn!(
+                    "Failed to restart auditd: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+            Err(e) => {
+                warn!("Failed to restart audit daemon: {}", e);
+            }
+        }
+
         Ok(())
     }
 }

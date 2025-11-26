@@ -8,6 +8,7 @@ version.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 hardener-common = { workspace = true }
+hardener-state = { path = "../hardener-state", optional = true }
 hostname = { workspace = true, optional = true }
 nix = { workspace = true, optional = true }
 petgraph = { workspace = true, optional = true }
@@ -16,4 +17,4 @@ tracing = { workspace = true }
 
 [features]
 default = ["system"]
-system = ["hostname", "nix", "petgraph"]
+system = ["hostname", "nix", "petgraph", "hardener-state"]

@@ -39,6 +39,7 @@ The tool is designed for system administrators, DevOps engineers, and security p
 ### Core Infrastructure
 
 - **Checkpoint System**: SQLite-backed state snapshots with Ed25519 cryptographic signatures
+- **Full Rollback Support**: All plugins integrate with checkpoint system for safe rollback
 - **Hash Chain Audit Logging**: Tamper-evident audit trail with cryptographic linking
 - **Plugin Manager**: Dependency-aware plugin execution with topological sorting
 - **Distribution Detection**: Automatic detection of Debian, Red Hat, Arch, and SUSE families
@@ -69,9 +70,9 @@ The tool is designed for system administrators, DevOps engineers, and security p
 ### Test Coverage
 
 ```
-Total Tests: 73 passing
-├── Plugin Tests: 36
-├── Core Tests: 37
+Total Tests: 107 passing
+├── Plugin Tests: 48
+├── Core Tests: 59
 └── Coverage: >80%
 ```
 
@@ -266,16 +267,16 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 
 See [PLAN.md](PLAN.md) for detailed implementation plans for upcoming features.
 
-### v0.2.0 (Current)
-- [x] CLI interface
-- [x] Compliance report generation (CIS, STIG, NIST, PCI-DSS, HIPAA, GDPR)
-- [x] Multiple output formats (Text, JSON, CSV, HTML)
-- [ ] Remote scanning via SSH
+### v0.2.0 (Planned)
+- [ ] Interactive report wizard
+- [ ] PDF report formatter
+- [ ] Config file support (`~/.config/linux-hardener/`)
+- [ ] GUI compliance report page
 
 ### v0.3.0 (Planned)
-- [ ] Web interface
+- [ ] Remote scanning via SSH
 - [ ] Scheduled scanning
-- [ ] Integration with monitoring systems
+- [ ] CI/CD integration
 
 ### v1.0.0 (Future)
 - [ ] Production-ready release

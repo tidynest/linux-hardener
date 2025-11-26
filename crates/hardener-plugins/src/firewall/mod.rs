@@ -15,7 +15,7 @@ use hardener_common::{
     types::{ComplianceMapping, ComplianceFramework, FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
-    ApplyResult, Change, Checkpoint, Config, ValidationReport,
+    ApplyResult, Change, ChangeType, Checkpoint, Config, ValidationReport,
     context::Context,
     plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult},
 };
@@ -255,8 +255,22 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         })
     }
 
-    fn apply(&self, _ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
+    fn apply(&self, ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
+        use std::path::Path;
+
         let apply_plugin_id = PluginId::new("firewall-hardening");
+
+        // Create checkpoint for firewall config files
+        let firewall_paths: Vec<&Path> = vec![
+            Path::new("/etc/nftables.conf"),
+            Path::new("/etc/firewalld"),
+            Path::new("/etc/ufw"),
+        ];
+        let checkpoint_id = crate::create_checkpoint_for_apply(
+            ctx,
+            "firewall-hardening-pre-apply",
+            &firewall_paths,
+        )?;
 
         // Detect backend.
         let backend = match self.detect_backend() {
@@ -266,7 +280,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
                     apply_plugin_id,
                     apply_success: false,
                     apply_changes: vec![],
-                    apply_checkpoint_id: None,
+                    apply_checkpoint_id: checkpoint_id,
                     apply_error: Some(format!("No firewall backend: {}", e)),
                 });
             }
@@ -279,20 +293,50 @@ impl HardeningPlugin for FirewallHardeningPlugin {
 
         // Apply default rules.
         let rules = backend.get_default_rules();
-        let apply_changes = backend.apply_rules(&rules)?;
+        let mut apply_changes = backend.apply_rules(&rules)?;
+
+        if checkpoint_id.is_some() {
+            apply_changes.insert(0, Change {
+                change_description: "Created checkpoint for rollback".to_string(),
+                change_type: ChangeType::FirewallRule,
+                change_success: true,
+                change_error: None,
+            });
+        }
 
         Ok(ApplyResult {
             apply_plugin_id,
             apply_success: true,
             apply_changes,
-            apply_checkpoint_id: None,
+            apply_checkpoint_id: checkpoint_id,
             apply_error: None,
         })
     }
 
-    fn rollback(&self, _ctx: &mut Context, _checkpoint: &Checkpoint) -> Result<()> {
-        // Stub implementation - will be completed during checkpoint integration
-        warn!("Firewall rollback() method not yet fully implemented");
+    fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> {
+        info!(
+            "Rolling back firewall configuration to checkpoint: {}",
+            checkpoint.checkpoint_id.as_str()
+        );
+
+        // Restore configuration files from checkpoint
+        crate::rollback_files_from_checkpoint(ctx, checkpoint)?;
+
+        info!("Firewall configuration files restored from checkpoint");
+
+        // Re-enable firewall to reload rules based on detected backend
+        match self.detect_backend() {
+            Ok(backend) => {
+                match backend.enable() {
+                    Ok(_) => info!("Firewall re-enabled successfully"),
+                    Err(e) => warn!("Failed to re-enable firewall: {}", e),
+                }
+            }
+            Err(e) => {
+                warn!("Could not detect firewall backend for reload: {}", e);
+            }
+        }
+
         Ok(())
     }
 

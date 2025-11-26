@@ -415,12 +415,28 @@ impl HardeningPlugin for SshHardeningPlugin {
         })
     }
 
-    fn apply(&self, _ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
+    fn apply(&self, ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
         let plugin_id = PluginId::new("ssh-hardening");
         let mut changes = Vec::new();
         let config_path = "/etc/ssh/sshd_config";
 
-        // Step 1: Create backup.
+        // Step 1: Create checkpoint to capture current state before changes.
+        let checkpoint_id = crate::create_checkpoint_for_apply(
+            ctx,
+            "ssh-hardening-pre-apply",
+            &[Path::new(config_path)],
+        )?;
+
+        if checkpoint_id.is_some() {
+            changes.push(Change {
+                change_description: "Created checkpoint for rollback".to_string(),
+                change_type: ChangeType::ConfigFile,
+                change_success: true,
+                change_error: None,
+            });
+        }
+
+        // Step 2: Create backup (legacy backup in addition to checkpoint).
         match Self::create_ssh_backup() {
             Ok(backup_path) => {
                 changes.push(Change {
@@ -436,13 +452,13 @@ impl HardeningPlugin for SshHardeningPlugin {
                     apply_plugin_id: plugin_id,
                     apply_success: false,
                     apply_changes: changes,
-                    apply_checkpoint_id: None,
+                    apply_checkpoint_id: checkpoint_id,
                     apply_error: Some(format!("Failed to create backup: {}", e)),
                 });
             }
         }
 
-        // Step 2: Read current configuration.
+        // Step 3: Read current configuration.
         let mut config_content = Self::read_ssh_config()?;
 
         // Step 3: Apply each directive.
@@ -528,14 +544,51 @@ impl HardeningPlugin for SshHardeningPlugin {
             apply_plugin_id: plugin_id,
             apply_success: success,
             apply_changes: changes,
-            apply_checkpoint_id: None,
+            apply_checkpoint_id: checkpoint_id,
             apply_error: None,
         })
     }
 
-    fn rollback(&self, _ctx: &mut Context, _checkpoint: &Checkpoint) -> Result<()> {
-        // Stub implementation - will be completed during checkpoint integration
-        warn!("SSH rollback() method is not yet fully implemented - stub only");
+    fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> {
+        info!(
+            "Rolling back SSH configuration to checkpoint: {}",
+            checkpoint.checkpoint_id.as_str()
+        );
+
+        // Get the checkpoint manager from context
+        let manager = ctx.checkpoint_manager().ok_or_else(|| {
+            hardener_common::error::HardeningError::State(
+                "CheckpointManager not available in context".to_string(),
+            )
+        })?;
+
+        // Use tokio runtime to run async rollback
+        let checkpoint_id = checkpoint.checkpoint_id.clone();
+        let manager = manager.clone();
+
+        // Run the async rollback operation
+        let rt = tokio::runtime::Runtime::new().map_err(|e| {
+            hardener_common::error::HardeningError::State(format!(
+                "Failed to create tokio runtime: {}",
+                e
+            ))
+        })?;
+
+        rt.block_on(async { manager.rollback(&checkpoint_id).await })?;
+
+        info!("SSH configuration files restored from checkpoint");
+
+        // Restart SSH service to apply the restored configuration
+        match Self::restart_ssh_service() {
+            Ok(_) => {
+                info!("SSH service restarted after rollback");
+            }
+            Err(e) => {
+                error!("Failed to restart SSH service after rollback: {}", e);
+                return Err(e);
+            }
+        }
+
         Ok(())
     }
 

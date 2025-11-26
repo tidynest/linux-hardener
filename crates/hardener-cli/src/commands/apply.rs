@@ -1,9 +1,26 @@
 use anyhow::{bail, Result};
 use hardener_common::types::PluginId;
 use hardener_core::{Config, Context, PluginRegistry};
+use hardener_state::{init_db, CheckpointManager, CheckpointSigner};
+use std::path::PathBuf;
 
 use crate::cli::OutputFormat;
 use crate::output;
+
+async fn get_checkpoint_manager() -> Result<CheckpointManager> {
+    let data_dir = dirs::data_local_dir()
+        .map(|p| p.join("linux-hardener"))
+        .unwrap_or_else(|| PathBuf::from(".linux-hardener"));
+
+    std::fs::create_dir_all(&data_dir)?;
+
+    let db_path = data_dir.join("checkpoints.db");
+    let key_path = data_dir.join("signing.key");
+
+    let pool = init_db(Some(db_path.as_path())).await?;
+    let signer = CheckpointSigner::new_with_path(&key_path)?;
+    Ok(CheckpointManager::new_with_signer(pool, signer)?)
+}
 
 pub async fn run(
     plugin_filter: &[String],
@@ -22,7 +39,15 @@ pub async fn run(
     }
 
     let registry = create_plugin_registry();
-    let mut ctx = Context::new();
+
+    // Create context with checkpoint manager for automatic rollback support
+    let mut ctx = if !dry_run {
+        let manager = get_checkpoint_manager().await?;
+        Context::with_checkpoint_manager(manager)
+    } else {
+        Context::new()
+    };
+
     let config = Config;
 
     let plugins = registry.list()?;

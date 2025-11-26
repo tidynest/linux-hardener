@@ -277,10 +277,32 @@ impl HardeningPlugin for KernelHardeningPlugin {
     /// unless also written to /etc/sysctl.conf or /etc/sysctl.d/
     ///
     /// # Arguments
-    /// * `ctx`    - Execution context (unused for now, but required by trait)
+    /// * `ctx`    - Execution context with checkpoint manager
     /// * `config` - Configuration (unused for now, applies all hardening)
-    fn apply(&self, _ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
+    fn apply(&self, ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
+        use std::path::Path;
+
         let mut apply_changes = Vec::new();
+
+        // Create checkpoint to capture sysctl config files before changes
+        let sysctl_paths: Vec<&Path> = vec![
+            Path::new("/etc/sysctl.conf"),
+            Path::new("/etc/sysctl.d"),
+        ];
+        let checkpoint_id = crate::create_checkpoint_for_apply(
+            ctx,
+            "kernel-hardening-pre-apply",
+            &sysctl_paths,
+        )?;
+
+        if checkpoint_id.is_some() {
+            apply_changes.push(Change {
+                change_description: "Created checkpoint for rollback".to_string(),
+                change_type: ChangeType::KernelParameter,
+                change_success: true,
+                change_error: None,
+            });
+        }
 
         for (param_name, expected_value, param_description) in KERNEL_PARAMS {
             let path = format!("/proc/sys/{}", param_name.replace('.', "/"));
@@ -313,25 +335,67 @@ impl HardeningPlugin for KernelHardeningPlugin {
             apply_plugin_id: self.metadata().plugin_id,
             apply_success,
             apply_changes,
-            apply_checkpoint_id: None, //Checkpoint not implemented yet
+            apply_checkpoint_id: checkpoint_id,
             apply_error: None,
         })
     }
 
     /// Rolls back kernel parameters to a previous checkpoint.
     ///
-    /// # Implementation Status
-    /// This is currently a stub. Full rollback implementation requires:
-    /// - Checkpoint system to store previous sysctl values
-    /// - Ability to restore from checkpoint data
+    /// Restores sysctl configuration files from the checkpoint and reloads
+    /// the kernel parameters using `sysctl --system`.
     ///
     /// # Arguments
-    /// * `ctx` - Execution context containing checkpoint data
+    /// * `ctx` - Execution context containing checkpoint manager
     /// * `checkpoint` - The checkpoint to restore to
-    fn rollback(&self, _ctx: &mut Context, _checkpoint: &Checkpoint) -> Result<()> {
-        // TODO: Implement checkpoint-based rollback
-        // Placeholder:
-        warn!("Rollback not yet implemented for kernel plugin");
+    fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> {
+        info!(
+            "Rolling back kernel configuration to checkpoint: {}",
+            checkpoint.checkpoint_id.as_str()
+        );
+
+        // Get the checkpoint manager from context
+        let manager = ctx.checkpoint_manager().ok_or_else(|| {
+            hardener_common::error::HardeningError::State(
+                "CheckpointManager not available in context".to_string(),
+            )
+        })?;
+
+        // Run async rollback to restore configuration files
+        let checkpoint_id = checkpoint.checkpoint_id.clone();
+        let manager = manager.clone();
+
+        let rt = tokio::runtime::Runtime::new().map_err(|e| {
+            hardener_common::error::HardeningError::State(format!(
+                "Failed to create tokio runtime: {}",
+                e
+            ))
+        })?;
+
+        rt.block_on(async { manager.rollback(&checkpoint_id).await })?;
+
+        info!("Kernel configuration files restored from checkpoint");
+
+        // Reload sysctl settings from restored config files
+        let reload_result = std::process::Command::new("sysctl")
+            .arg("--system")
+            .output();
+
+        match reload_result {
+            Ok(output) if output.status.success() => {
+                info!("Kernel parameters reloaded successfully");
+            }
+            Ok(output) => {
+                warn!(
+                    "sysctl --system returned non-zero: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+            Err(e) => {
+                warn!("Failed to reload sysctl settings: {}", e);
+            }
+        }
+
         Ok(())
     }
 

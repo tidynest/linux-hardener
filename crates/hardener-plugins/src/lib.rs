@@ -8,6 +8,76 @@ pub mod permissions;
 pub mod services;
 pub mod ssh;
 
+/// Common rollback helper for plugins.
+///
+/// This function handles the common pattern of restoring files from a checkpoint.
+/// Plugins can call this and then perform any additional service restarts needed.
+pub fn rollback_files_from_checkpoint(
+    ctx: &hardener_core::Context,
+    checkpoint: &hardener_core::Checkpoint,
+) -> hardener_common::error::Result<()> {
+    // Get the checkpoint manager from context
+    let manager = ctx.checkpoint_manager().ok_or_else(|| {
+        hardener_common::error::HardeningError::State(
+            "CheckpointManager not available in context".to_string(),
+        )
+    })?;
+
+    // Run async rollback to restore configuration files
+    let checkpoint_id = checkpoint.checkpoint_id.clone();
+    let manager = manager.clone();
+
+    let rt = tokio::runtime::Runtime::new().map_err(|e| {
+        hardener_common::error::HardeningError::State(format!(
+            "Failed to create tokio runtime: {}",
+            e
+        ))
+    })?;
+
+    rt.block_on(async { manager.rollback(&checkpoint_id).await })?;
+
+    Ok(())
+}
+
+/// Creates a checkpoint before applying changes.
+///
+/// This function captures the current state of the specified files so they can
+/// be restored later via rollback. Returns the checkpoint ID if successful.
+///
+/// # Arguments
+/// * `ctx` - Execution context containing the checkpoint manager
+/// * `checkpoint_name` - Human-readable name for the checkpoint
+/// * `file_paths` - List of file paths to capture in the checkpoint
+pub fn create_checkpoint_for_apply(
+    ctx: &hardener_core::Context,
+    checkpoint_name: &str,
+    file_paths: &[&std::path::Path],
+) -> hardener_common::error::Result<Option<String>> {
+    // Get the checkpoint manager from context
+    let manager = match ctx.checkpoint_manager() {
+        Some(m) => m.clone(),
+        None => {
+            tracing::debug!("CheckpointManager not available - skipping checkpoint creation");
+            return Ok(None);
+        }
+    };
+
+    let rt = tokio::runtime::Runtime::new().map_err(|e| {
+        hardener_common::error::HardeningError::State(format!(
+            "Failed to create tokio runtime: {}",
+            e
+        ))
+    })?;
+
+    let checkpoint_id = rt.block_on(async {
+        manager.create_checkpoint(checkpoint_name, file_paths).await
+    })?;
+
+    tracing::info!("Created checkpoint: {}", checkpoint_id.as_str());
+
+    Ok(Some(checkpoint_id.as_str().to_string()))
+}
+
 // Re-export dependencies for macro use
 #[doc(hidden)]
 pub use audit::AuditHardeningPlugin;
