@@ -14,7 +14,7 @@
 
 use hardener_common::{
     error::Result,
-    types::{FindingCategory, PluginId, Severity}
+    types::{ComplianceMapping, ComplianceFramework, FindingCategory, PluginId, Severity}
 };
 use hardener_core::{
     ApplyResult, Change, ChangeType, Checkpoint, Config, ValidationIssue, ValidationReport,
@@ -337,6 +337,37 @@ fn restart_auditd_service() -> Result<()> {
     Ok(())
 }
 
+/// Returns compliance mappings for audit findings.
+fn get_audit_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
+    match finding_type {
+        "not_installed" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "4.1.1.1".to_string(),
+                compliance_control_title: "Ensure auditd is installed".to_string(),
+                compliance_section: Some("Logging and Auditing".to_string()),
+            },
+        ],
+        "not_enabled" | "not_running" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "4.1.1.2".to_string(),
+                compliance_control_title: "Ensure auditd service is enabled and running".to_string(),
+                compliance_section: Some("Logging and Auditing".to_string()),
+            },
+        ],
+        "config" | "rules" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "4.1.2.1".to_string(),
+                compliance_control_title: "Ensure audit log storage size is  configured".to_string(),
+                compliance_section: Some("Logging and Auditing".to_string()),
+            },
+        ],
+        _ => vec![],
+    }
+}
+
 /// ============================================================================
 /// HARDENING PLUGIN TRAIT IMPLEMENTATION
 /// ============================================================================
@@ -440,6 +471,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
                 ],
                 finding_severity: Severity::Critical,
                 finding_title: "Audit daemon not installed".to_string(),
+                finding_compliance: get_audit_compliance_mappings("not_installed"),
             });
 
             // If not installed, no pint checking further
@@ -465,6 +497,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
                 finding_remediation_steps: vec!["systemctl enable auditd".to_string()],
                 finding_severity:          Severity::High,
                 finding_title:             "Audit daemon not enabled".to_string(),
+                finding_compliance: get_audit_compliance_mappings("not_enabled"),
             });
         }
 
@@ -481,6 +514,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
                 finding_remediation_steps: vec!["systemctl start auditd".to_string()],
                 finding_severity:          Severity::High,
                 finding_title:             "Audit daemon not running".to_string(),
+                finding_compliance: get_audit_compliance_mappings("not_running"),
             });
         }
 
@@ -521,6 +555,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
                             "Missing audit rule: {}",
                             rule.audit_rule_category
                         ),
+                        finding_compliance: get_audit_compliance_mappings("rules"),
                     });
                 }
             }

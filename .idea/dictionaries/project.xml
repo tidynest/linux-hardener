@@ -8,6 +8,7 @@
       <w>auditctl</w>
       <w>auditd</w>
       <w>bindgen</w>
+      <w>chrono</w>
       <w>dcredit</w>
       <w>deserialise</w>
       <w>dmesg</w>

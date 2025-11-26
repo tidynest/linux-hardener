@@ -9,7 +9,7 @@
 
 use hardener_common::{
     error::Result,
-    types::{FindingCategory, PluginId, Severity},
+    types::{ComplianceMapping, ComplianceFramework, FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
     ApplyResult, Change, ChangeType, Checkpoint, Config, ValidationIssue, ValidationReport,
@@ -34,6 +34,38 @@ impl ServicesHardeningPlugin {
     /// Creates a new instance of the Services Plugin.
     pub fn new() -> ServicesHardeningPlugin {
         ServicesHardeningPlugin {}
+    }
+}
+
+/// Returns compliance mappings for service findings.
+fn get_service_compliance_mappings(service_name: &str) -> Vec<ComplianceMapping>
+{
+    match service_name {
+        "xinetd" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "2.1.1".to_string(),
+                compliance_control_title: "Ensure xinetd is not installed".to_string(),
+                compliance_section: Some("Services".to_string()),
+            },
+        ],
+        "avahi-daemon" | "avahi" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "2.2.3".to_string(),
+                compliance_control_title: "Ensure Avahi Server is not installed".to_string(),
+                compliance_section: Some("Services".to_string()),
+            },
+        ],
+        "cups" | "cupsd" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "2.2.4".to_string(),
+                compliance_control_title: "Ensure CUPS is not  installed".to_string(),
+                compliance_section: Some("Services".to_string()),
+            },
+        ],
+        _ => vec![],
     }
 }
 
@@ -231,6 +263,7 @@ impl HardeningPlugin for ServicesHardeningPlugin {
                     ],
                     finding_severity: directive.service_issue_severity,
                     finding_title: format!("Unnecessary service {} is running", directive.service_name),
+                    finding_compliance: get_service_compliance_mappings(directive.service_name),
                 });
             }
         }

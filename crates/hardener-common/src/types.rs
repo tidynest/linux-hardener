@@ -124,17 +124,58 @@ pub enum ComplianceFramework {
     PCIDSS,
     /// Security Technical Implementation Guides.
     STIG,
+    /// General Data Protection Regulation (EU).
+    GDPR,
 }
 
 impl fmt::Display for ComplianceFramework {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ComplianceFramework::CIS => write!(f, "CIS"),
-            ComplianceFramework::HIPAA => write!(f, "HIPAA"),
+            ComplianceFramework::CIS      => write!(f, "CIS"),
+            ComplianceFramework::HIPAA    => write!(f, "HIPAA"),
             ComplianceFramework::ISO27001 => write!(f, "ISO27001"),
-            ComplianceFramework::NIST => write!(f, "NIST"),
-            ComplianceFramework::PCIDSS => write!(f, "PCIDSS"),
-            ComplianceFramework::STIG => write!(f, "STIG"),
+            ComplianceFramework::NIST     => write!(f, "NIST"),
+            ComplianceFramework::PCIDSS   => write!(f, "PCIDSS"),
+            ComplianceFramework::STIG     => write!(f, "STIG"),
+            ComplianceFramework::GDPR     => write!(f, "GDPR"),
+        }
+    }
+}
+
+/// Mapping of a finding to a specific compliance framework control.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ComplianceMapping {
+    /// The compliance framework this mapping belongs to.
+    pub compliance_framework: ComplianceFramework,
+    /// The control identifier (e.g., "1.5.1" for CIS, "V-230223" for STIG).
+    pub compliance_control_id: String,
+    /// Human-readable title of the control.
+    pub compliance_control_title: String,
+    /// Optional section/category within the framework.
+    pub compliance_section: Option<String>,
+}
+
+/// Status of a compliance control check.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub enum ControlStatus {
+    /// Control requirements are met.
+    Pass,
+    /// Control requirements are not met.
+    Fail,
+    /// Control is not applicable to this system.
+    #[default]
+    NotApplicable,
+    /// Control requires manual review.
+    ManualReview,
+}
+
+impl fmt::Display for ControlStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ControlStatus::Pass => write!(f, "Pass"),
+            ControlStatus::Fail => write!(f, "Fail"),
+            ControlStatus::NotApplicable => write!(f, "N/A"),
+            ControlStatus::ManualReview => write!(f, "MANUAL"),
         }
     }
 }

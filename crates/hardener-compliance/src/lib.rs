@@ -1,14 +1,35 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+//! Compliance framework mapping and report generation.
+//!
+//! This crate provides:
+//! - Compliance framework definitions (CIS, STIG, NIST, etc.)
+//! - Report generation from scan findings
+//! - Multiple output formats (text, JSON, CSV, HTML)
+//!
+//! # Architecture
+//!
+//! The compliance system is designed for use by both CLI and GUI:
+//!
+//! ```text
+//! ┌─────────────┐     ┌─────────────┐
+//! │ CLI         │     │ GUI         │
+//! └──────┬──────┘     └──────┬──────┘
+//!        │                   │
+//!        ▼                   ▼
+//! ┌─────────────────────────────────┐
+//! │     hardener-compliance         │
+//! │  - ReportConfig                 │
+//! │  - ReportGenerator              │
+//! │  - ReportFormatter              │
+//! └─────────────────────────────────┘
+//! ```
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub mod config;
+pub mod frameworks;
+pub mod generator;
+pub mod output;
+pub mod report;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub use config::{OutputFormat, ReportConfig, Scenario};
+pub use generator::ReportGenerator;
+pub use output::{JsonFormatter, ReportFormatter, TextFormatter};
+pub use report::{ComplianceReport, ComplianceSummary, ControlResult};

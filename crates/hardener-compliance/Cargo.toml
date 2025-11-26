@@ -1,6 +1,11 @@
 [package]
 name = "hardener-compliance"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
+hardener-common = { workspace = true }
+hardener-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { version = "0.4", features = ["serde"] }

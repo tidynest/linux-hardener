@@ -13,7 +13,7 @@
 use hardener_common::{
     error::Result,
     file_utils::update_file_atomically,
-    types::{FindingCategory, PluginId, Severity},
+    types::{ComplianceMapping, ComplianceFramework, FindingCategory, Severity},
 };
 use hardener_core::{
     ApplyResult, Change, ChangeType, Checkpoint, Config, ValidationIssue, ValidationReport,
@@ -22,6 +22,7 @@ use hardener_core::{
 };
 use std::{fs, path::Path, process::Command, time::Instant};
 use tracing::{error, info, warn};
+use hardener_common::types::PluginId;
 
 /// Represents a single SSH configuration directive to be hardened.
 #[derive(Clone, Debug)]
@@ -268,6 +269,69 @@ impl SshHardeningPlugin {
     }
 }
 
+/// Returns compliance mappings for a given SSH directive.
+fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
+    match directive_name {
+        "PermitRootLogin" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "5.2.10".to_string(),
+                compliance_control_title: "Ensure SSH root login is disabled".to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+        ],
+        "PasswordAuthentication" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "5.2.11".to_string(),
+                compliance_control_title: "Ensure SSH PermitEmptyPasswords is disabled".to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+        ],
+        "PermitEmptyPasswords" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "5.2.11".to_string(),
+                compliance_control_title: "Ensure SSH PermitEmptyPasswords is disabled".to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+        ],
+        "Protocol" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "5.2.4".to_string(),
+                compliance_control_title: "Ensure SSH Protocol is set to 2".to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+        ],
+        "MaxAuthTries" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "5.2.7".to_string(),
+                compliance_control_title: "Ensure SSH MaxAuthTries is set to 4 or less".to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+        ],
+        "X11Forwarding" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "5.2.6".to_string(),
+                compliance_control_title: "Ensure SSH X11 forwarding is disabled".to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+        ],
+        "ClientAliveInterval" | "ClientAliveCountMax" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "5.2.13".to_string(),
+                compliance_control_title: "Ensure SSH Idle Timeout Interval is configured".to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+        ],
+        _ => vec![],
+    }
+}
+
 impl HardeningPlugin for SshHardeningPlugin {
     fn metadata(&self) -> PluginMetadata {
         PluginMetadata {
@@ -336,6 +400,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                     ],
                     finding_severity: directive.ssh_severity,
                     finding_title: format!("Insecure SSH setting: {}", directive.ssh_directive_name,),
+                    finding_compliance: get_ssh_compliance_mappings(directive.ssh_directive_name),
                 });
             }
         }

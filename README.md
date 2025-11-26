@@ -150,20 +150,44 @@ cargo tauri dev
 
 ## Usage
 
-### Command Line (Future)
+### Command Line
 
 ```bash
+# List available security plugins
+hardener plugins
+
 # Scan system for security issues
-linux-hardener scan
+hardener scan
+
+# Scan with severity filter (critical, high, medium, low, info)
+hardener scan --severity high
+
+# Scan specific plugins only
+hardener scan --plugin kernel-hardening --plugin ssh-hardening
+
+# Output as JSON
+hardener scan --format json
+
+# Dry-run: see what would be changed without applying
+sudo hardener apply --dry-run --all
 
 # Apply all recommended hardening
-sudo linux-hardener apply --all
+sudo hardener apply --all
 
-# Rollback to previous checkpoint
-sudo linux-hardener rollback --checkpoint <id>
+# Apply specific plugin
+sudo hardener apply --plugin kernel-hardening
 
-# Generate compliance report
-linux-hardener report --format json --output report.json
+# Create a checkpoint before making changes
+sudo hardener checkpoint create "before-hardening"
+
+# List all checkpoints
+hardener checkpoint list
+
+# Show checkpoint details
+hardener checkpoint show <checkpoint-id>
+
+# Rollback to a previous checkpoint
+sudo hardener checkpoint rollback <checkpoint-id>
 ```
 
 ### Desktop Application
@@ -240,8 +264,10 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 
 ## Roadmap
 
+See [PLAN.md](PLAN.md) for detailed implementation plans for upcoming features.
+
 ### v0.2.0 (Planned)
-- [ ] CLI interface
+- [x] CLI interface
 - [ ] Compliance report generation (CIS, STIG)
 - [ ] Remote scanning via SSH
 

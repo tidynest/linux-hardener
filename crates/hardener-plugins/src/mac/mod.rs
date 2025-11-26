@@ -9,7 +9,7 @@
 
 use hardener_common::{
     error::{HardeningError, Result},
-    types::{FindingCategory, PluginId, Severity},
+    types::{ComplianceMapping, ComplianceFramework, FindingCategory, Severity},
 };
 use hardener_core::{
     ApplyResult, Change, ChangeType, Checkpoint, Config, ValidationIssue, ValidationReport,
@@ -19,6 +19,7 @@ use hardener_core::{
 use std::process::Command;
 use std::time::Instant;
 use tracing::{info, warn};
+use hardener_common::types::PluginId;
 
 /// Represents the type of MAC system detected on the host.
 #[derive(Clone, Debug, PartialEq)]
@@ -172,6 +173,37 @@ impl MacHardeningPlugin {
     }
 }
 
+/// Returns compliance mappings for MAC findings.
+fn get_mac_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
+    match finding_type {
+        "no-mac-system" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "1.6.1.1".to_string(),
+                compliance_control_title: "Ensure SELinux or AppArmor is installed".to_string(),
+                compliance_section: Some("Mandatory Access Control".to_string()),
+            },
+        ],
+        "selinux-not-enforcing" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "1.6.1.4".to_string(),
+                compliance_control_title: "Ensure the SELinux mode is enforcing or AppArmor is enabled".to_string(),
+                compliance_section: Some("Mandatory Access Control".to_string()),
+            },
+        ],
+        "apparmor-complain-mode" | "apparmor-no-profiles" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "1.6.1.4".to_string(),
+                compliance_control_title: "Ensure the SELinux mode is enforcing  or AppArmor is enabled".to_string(),
+                compliance_section: Some("Mandatory Access Control".to_string()),
+            },
+        ],
+        _ => vec![],
+    }
+}
+
 impl HardeningPlugin for MacHardeningPlugin {
     fn metadata(&self) -> PluginMetadata {
         PluginMetadata {
@@ -217,6 +249,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                                 ],
                                 finding_severity: Severity::High,
                                 finding_title:    "SELinux Not Enforcing".to_string(),
+                                finding_compliance: get_mac_compliance_mappings("selinux-not-enforcing"),
                             });
                         }
                     }
@@ -244,6 +277,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                                 ],
                                 finding_severity: Severity::Medium,
                                 finding_title: "AppArmor Profiles in Complain Mode".to_string(),
+                                finding_compliance: get_mac_compliance_mappings("apparmor-complain-mode"),
                             });
                         }
 
@@ -262,6 +296,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                                 ],
                                 finding_severity: Severity::High,
                                 finding_title: "No AppArmor Profiles Loaded".to_string(),
+                                finding_compliance: get_mac_compliance_mappings("apparmor-no-profiles"),
                             });
                         }
                     }
@@ -285,6 +320,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                     ],
                     finding_severity: Severity::Medium,
                     finding_title: "No MAC System Found".to_string(),
+                    finding_compliance: get_mac_compliance_mappings("no-mac-system"),
                 });
             }
         }

@@ -49,7 +49,7 @@ impl CheckpointManager {
         CheckpointId::new(format!("cp_{}_{:08x}", timestamp, random_suffix))
     }
 
-    /// Captures the current state of a file.
+    /// Captures the current state of a single file (not a directory).
     ///
     /// Records file content, permissions, and ownership.
     ///
@@ -58,7 +58,7 @@ impl CheckpointManager {
     ///
     /// # Errors
     /// Returns an error if the file cannot be read or metadata cannot be accessed.
-    fn capture_file_state(&self, file_path: &Path) -> Result<FileState> {
+    fn capture_single_file(&self, file_path: &Path) -> Result<FileState> {
         use std::fs;
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
@@ -94,6 +94,68 @@ impl CheckpointManager {
             file_owner_uid,
             file_owner_gid,
         })
+    }
+
+    /// Captures the current state of a file or directory.
+    ///
+    /// If the path is a directory, recursively captures all files within it.
+    /// Records file content, permissions, and ownership for each file.
+    ///
+    /// # Arguments
+    /// * `file_path` - Path to the file or directory to capture
+    ///
+    /// # Errors
+    /// Returns an error if files cannot be read or metadata cannot be accessed.
+    fn capture_file_state(&self, file_path: &Path) -> Result<Vec<FileState>> {
+        use std::fs;
+
+        // Check if path exists
+        if !file_path.exists() {
+            // Path doesn't exist - record that fact as a single entry
+            return Ok(vec![FileState {
+                file_path: file_path.to_string_lossy().to_string(),
+                file_content: None,
+                file_permissions: 0,
+                file_owner_uid: 0,
+                file_owner_gid: 0,
+            }]);
+        }
+
+        let metadata = fs::metadata(file_path).map_err(hardener_common::error::HardeningError::System)?;
+
+        if metadata.is_dir() {
+            // Recursively capture all files in directory
+            self.capture_directory_recursive(file_path)
+        } else {
+            // Single file
+            Ok(vec![self.capture_single_file(file_path)?])
+        }
+    }
+
+    /// Recursively captures all files within a directory.
+    fn capture_directory_recursive(&self, dir_path: &Path) -> Result<Vec<FileState>> {
+        use std::fs;
+
+        let mut file_states = Vec::new();
+
+        let entries = fs::read_dir(dir_path).map_err(hardener_common::error::HardeningError::System)?;
+
+        for entry in entries {
+            let entry = entry.map_err(hardener_common::error::HardeningError::System)?;
+            let path = entry.path();
+
+            if path.is_dir() {
+                // Recurse into subdirectory
+                let sub_states = self.capture_directory_recursive(&path)?;
+                file_states.extend(sub_states);
+            } else {
+                // Capture file
+                let state = self.capture_single_file(&path)?;
+                file_states.push(state);
+            }
+        }
+
+        Ok(file_states)
     }
 
     /// Generates a cryptographic signature for checkpoint integrity.
@@ -167,11 +229,11 @@ impl CheckpointManager {
         // Get current username
         let checkpoint_username = std::env::var("USER").unwrap_or_else(|_| "unknown".to_string());
 
-        // Capture file states
+        // Capture file states (handles both files and directories)
         let mut file_states = Vec::new();
         for file_path in file_paths {
-            let state = self.capture_file_state(file_path)?;
-            file_states.push(state);
+            let states = self.capture_file_state(file_path)?;
+            file_states.extend(states);
         }
 
         // Generate cryptographic signature over checkpoint data

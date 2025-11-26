@@ -1,0 +1,38 @@
+[package]
+name = "hardener-cli"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Command-line interface for Linux System Hardener"
+
+[[bin]]
+name = "hardener"
+path = "src/main.rs"
+
+[dependencies]
+# Workspace crates
+hardener-common = { path = "../hardener-common" }
+hardener-compliance = { path = "../hardener-compliance" }
+hardener-core = { path = "../hardener-core" }
+hardener-plugins = { path = "../hardener-plugins" }
+hardener-state = { path = "../hardener-state" }
+
+# CLI
+clap = { version = "4.5", features = ["derive", "color", "env"] }
+
+# Async runtime
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+
+# Output formatting
+colored = "2.1"
+serde_json = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+nix = "0.30.1"
+
+# Utilities
+chrono = "0.4"
+dirs = "5"

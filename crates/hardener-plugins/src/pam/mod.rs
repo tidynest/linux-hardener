@@ -8,7 +8,7 @@
 use hardener_common::{
     error::{HardeningError, Result},
     file_utils::update_file_atomically,
-    types::{FindingCategory, PluginId, Severity},
+    types::{ComplianceMapping, ComplianceFramework, FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
     Change, ChangeType, Checkpoint, Config, Context,
@@ -33,6 +33,44 @@ impl PamHardeningPlugin {
     /// Creates a new PAM hardening plugin instance.
     pub fn new() -> PamHardeningPlugin {
         PamHardeningPlugin {}
+    }
+}
+
+/// Returns compliance mappings for PAM findings.
+fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
+    match check_name {
+        name if name.contains("minlen") || name.contains("complexity") => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "5.3.1".to_string(),
+                compliance_control_title: "Ensure password creation requirements are configured".to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+        ],
+        name if name.contains("lockout") || name.contains("deny") => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "5.3.2".to_string(),
+                compliance_control_title: "Ensure lockout for failed password attempts is configured".to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+        ],
+        name if name.contains("remember") || name.contains("reuse") => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "5.3.3".to_string(),
+                compliance_control_title: "Ensure password reuse is limited".to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+        ],
+        _ => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "5.3.1".to_string(),
+                compliance_control_title: "Ensure password creation requirements  are configured".to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+        ],
     }
 }
 
@@ -123,6 +161,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                         "Insecure PAM setting: {}",
                         directive.pam_directive_name
                     ),
+                    finding_compliance: get_pam_compliance_mappings(&format!("{}", directive.pam_directive_name)),
                 });
             }
         }

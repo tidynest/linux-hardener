@@ -12,7 +12,7 @@
 
 use hardener_common::{
     error::Result,
-    types::{FindingCategory, PluginId, Severity}
+    types::{ComplianceMapping, ComplianceFramework, FindingCategory, PluginId, Severity}
 };
 use hardener_core::{
     ApplyResult, Change, ChangeType, Checkpoint, Config,
@@ -129,27 +129,71 @@ fn check_path_permissions(directive: &PermissionDirective) -> Option<Finding> {
     // Check if permissions are incorrect
     if current_mode != directive.permission_mode {
         return Some(Finding {
-            finding_category:           FindingCategory::FileSystem,
-            finding_current_value:      format!("{:04o}", current_mode),
-            finding_description:        directive.permission_description.to_string(),
-            finding_explanation:        format!(
+            finding_category: FindingCategory::FileSystem,
+            finding_current_value: format!("{:04o}", current_mode),
+            finding_description: directive.permission_description.to_string(),
+            finding_explanation: format!(
                 "The path {} has permissions {:04o} but should have {:04o} to prevent unauthorised access",
                 directive.permission_path, current_mode, directive.permission_mode,
             ),
-            finding_id:                 format!("perm-{}", directive.permission_path.replace('/', "-")),
-            finding_impact:             "Low - only affects security posture, no functional impact".to_string(),
-            finding_recommended_value:  format!("{:04o}", directive.permission_mode),
-            finding_remediation_steps:  vec![format!(
+            finding_id: format!("perm-{}", directive.permission_path.replace('/', "-")),
+            finding_impact: "Low - only affects security posture, no functional impact".to_string(),
+            finding_recommended_value: format!("{:04o}", directive.permission_mode),
+            finding_remediation_steps: vec![format!(
                 "chmod {:04o} {}",
                 directive.permission_mode,
                 directive.permission_path,
             )],
-            finding_severity:           directive.permission_severity,
-            finding_title:              format!("Insecure permissions on {}", directive.permission_path),
+            finding_severity: directive.permission_severity,
+            finding_title: format!("Insecure permissions on {}", directive.permission_path),
+            finding_compliance: get_permissions_compliance_mappings(directive.permission_path),
         })
     }
 
     None
+}
+
+/// Returns compliance mappings for permission findings.
+fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
+    match path {
+        "/etc/passwd" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "6.1.2".to_string(),
+                compliance_control_title: "Ensure permissions on /etc/passwd are
+  configured".to_string(),
+                compliance_section: Some("System Maintenance".to_string()),
+            },
+        ],
+        "/etc/shadow" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "6.1.3".to_string(),
+                compliance_control_title: "Ensure permissions on /etc/shadow are
+  configured".to_string(),
+                compliance_section: Some("System Maintenance".to_string()),
+            },
+        ],
+        "/etc/group" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "6.1.4".to_string(),
+                compliance_control_title: "Ensure permissions on /etc/group are
+  configured".to_string(),
+                compliance_section: Some("System Maintenance".to_string()),
+            },
+        ],
+        "/etc/gshadow" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "6.1.5".to_string(),
+                compliance_control_title: "Ensure permissions on /etc/gshadow are
+   configured".to_string(),
+                compliance_section: Some("System Maintenance".to_string()),
+            },
+        ],
+        _ => vec![],
+    }
 }
 
 /// Applies correct permissions to a path and tracks the change.

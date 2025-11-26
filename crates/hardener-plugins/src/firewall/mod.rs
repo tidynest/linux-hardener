@@ -12,7 +12,7 @@ pub mod ufw;
 
 use hardener_common::{
     error::Result,
-    types::{FindingCategory, PluginId, Severity},
+    types::{ComplianceMapping, ComplianceFramework, FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
     ApplyResult, Change, Checkpoint, Config, ValidationReport,
@@ -78,6 +78,19 @@ pub trait FirewallBackend: Send + Sync {
     /// - Allow SSH (port 22)
     /// - Drop all other inbound by default.
     fn get_default_rules(&self) -> Vec<Rule>;
+}
+
+/// Returns compliance mappings for firewall findings.
+fn get_firewall_compliance_mappings() -> Vec<ComplianceMapping> {
+    vec![
+        ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "3.4.1.2".to_string(),
+            compliance_control_title: "Ensure firewall service is enabled and
+  running".to_string(),
+            compliance_section: Some("Network Configuration".to_string()),
+        },
+    ]
 }
 
 /// Returns sensible default firewall rules for hardening.
@@ -228,6 +241,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
                 finding_remediation_steps: vec![format!("Enable {} firewall", backend.backend_name())],
                 finding_severity: Severity::High,
                 finding_title: "Firewall disabled".to_string(),
+                finding_compliance: get_firewall_compliance_mappings(),
             });
         }
 

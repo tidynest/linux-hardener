@@ -4,7 +4,7 @@
 
 use hardener_common::{
     error::Result,
-    types::{FindingCategory, PluginId},
+    types::{ComplianceMapping, FindingCategory, PluginId},
 };
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -80,6 +80,8 @@ pub struct Finding {
     pub finding_severity: hardener_common::types::Severity,
     /// Short title describing the issue.
     pub finding_title: String,
+    /// Compliance framework mappings for this finding.
+    pub finding_compliance: Vec<ComplianceMapping>,
 }
 
 /// Result of applying hardening changes.

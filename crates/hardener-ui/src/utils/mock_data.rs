@@ -26,6 +26,7 @@ pub fn create_mock_scan_results() -> Vec<ScanResult> {
                         "Set kernel.randomize_va_space = 2 in /etc/sysctl.conf".to_string(),
                         "Run 'sudo sysctl -p' to apply changes".to_string(),
                     ],
+                    finding_compliance: vec![],
                 },
                 Finding {
                     finding_id: "kernel-002".to_string(),
@@ -40,6 +41,7 @@ pub fn create_mock_scan_results() -> Vec<ScanResult> {
                     finding_remediation_steps: vec![
                         "Set kernel.kptr_restrict = 2".to_string(),
                     ],
+                    finding_compliance: vec![],
                 },
             ],
             scan_duration_us: 1250,
@@ -66,6 +68,7 @@ pub fn create_mock_scan_results() -> Vec<ScanResult> {
                         "Set PermitRootLogin no".to_string(),
                         "Restart SSH service: sudo systemctl restart sshd".to_string(),
                     ],
+                    finding_compliance: vec![],
                 },
             ],
             scan_duration_us: 890,
@@ -90,6 +93,7 @@ pub fn create_mock_scan_results() -> Vec<ScanResult> {
                         "Enable firewall: sudo ufw enable".to_string(),
                         "Configure default deny: sudo ufw default deny incoming".to_string(),
                     ],
+                    finding_compliance: vec![],
                 },
             ],
             scan_duration_us: 450,
