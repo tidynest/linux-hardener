@@ -1,0 +1,29 @@
+# cargo-release configuration
+# Install: cargo install cargo-release
+# Usage: cargo release patch/minor/major --execute
+
+[workspace]
+# Versioning applies to all workspace members
+allow-branch = ["main", "master"]
+sign-commit = false
+sign-tag = false
+push = true
+publish = false  # Don't publish to crates.io (private project)
+
+# Pre-release replacements
+pre-release-replacements = [
+    { file = "CHANGELOG.md", search = "## \\[Unreleased\\]", replace = "## [Unreleased]\n\n## [{{version}}] - {{date}}", exactly = 1 },
+    { file = "README.md", search = "version = \"[0-9]+\\.[0-9]+\\.[0-9]+\"", replace = "version = \"{{version}}\"", exactly = 1, prerelease = true },
+]
+
+# Tag format
+tag-prefix = "v"
+tag-name = "v{{version}}"
+tag-message = "Release {{version}}"
+
+# Commit message format
+pre-release-commit-message = "chore(release): prepare for {{version}}"
+post-release-commit-message = "chore(release): start next development iteration"
+
+# Hooks for running tests before release
+pre-release-hook = ["cargo", "test", "--workspace"]

@@ -160,6 +160,41 @@ Edit `.git/hooks/pre-commit` to add more checks.
 
 ---
 
+## Release Script
+
+**Script**: `release.sh`
+
+**Purpose**: Automates the version bump and release process
+
+**Usage**:
+```bash
+# Dry run (shows what would happen without making changes)
+./scripts/release.sh patch --dry-run
+./scripts/release.sh minor --dry-run
+./scripts/release.sh major --dry-run
+
+# Actual release
+./scripts/release.sh patch   # 0.1.0 -> 0.1.1
+./scripts/release.sh minor   # 0.1.0 -> 0.2.0
+./scripts/release.sh major   # 0.1.0 -> 1.0.0
+```
+
+**What It Does**:
+1. Validates you're on main/master branch with clean working directory
+2. Runs cargo test and clippy
+3. Updates version in Cargo.toml
+4. Updates CHANGELOG.md with new version section
+5. Creates git commit and tag
+6. Pushes to GitHub and GitLab remotes
+
+**Exit Codes**:
+- `0`: Release completed successfully
+- `1`: Error (wrong branch, dirty working directory, tests failed)
+
+For complete release documentation, see [docs/RELEASING.md](../docs/RELEASING.md).
+
+---
+
 ## Future Scripts
 
 Additional utility scripts can be added here:
@@ -170,4 +205,4 @@ Additional utility scripts can be added here:
 
 ---
 
-**Last Updated**: 2025-11-21 by Eric Jingryd
+**Last Updated**: 2025-11-27

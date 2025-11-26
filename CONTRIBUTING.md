@@ -88,19 +88,28 @@ This project uses British English for all documentation, comments, and user-faci
 
 ### Commit Messages
 
-- Use clear, descriptive commit messages
-- Start with a verb in imperative mood: "Add", "Fix", "Update"
-- Keep the first line under 72 characters
-- Add details in the body if needed
+We use [Conventional Commits](https://www.conventionalcommits.org/) for automated changelog generation:
 
-Example:
 ```
-Add kernel parameter validation for ASLR settings
+<type>(<scope>): <description>
 
-- Implement check for kernel.randomize_va_space
-- Add test cases for valid and invalid values
-- Update documentation
+[optional body]
+
+[optional footer(s)]
 ```
+
+**Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `security`
+
+**Scopes**: `cli`, `core`, `plugins`, `config`, `state`, `compliance`, `ui`, `deps`
+
+Examples:
+```bash
+feat(cli): add --compliance flag for scan command
+fix(plugins): correct SSH directive parsing for comments
+docs(readme): update installation instructions
+```
+
+For details, see [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Pull Request Checklist
 
@@ -191,8 +200,19 @@ linux-system-hardener/
 │   └── hardener-ui/          # User interface
 ├── src-tauri/                # Desktop app backend
 ├── scripts/                  # Development utilities
-└── docs/                     # Documentation
+├── docs/                     # Documentation
+├── .github/workflows/        # GitHub Actions CI/CD
+└── .gitlab-ci.yml            # GitLab CI/CD
 ```
+
+## Releasing
+
+See [docs/RELEASING.md](docs/RELEASING.md) for the complete release process, including:
+
+- Semantic versioning strategy
+- Conventional commits format
+- Release script usage
+- CI/CD pipeline details
 
 ## Review Process
 

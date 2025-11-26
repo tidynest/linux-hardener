@@ -1,0 +1,160 @@
+# GitLab CI/CD Configuration for Linux System Hardener
+
+stages:
+  - check
+  - test
+  - build
+  - release
+
+variables:
+  CARGO_HOME: ${CI_PROJECT_DIR}/.cargo
+  RUST_BACKTRACE: "1"
+
+# Cache cargo dependencies between jobs
+.cargo-cache: &cargo-cache
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}
+    paths:
+      - .cargo/registry
+      - .cargo/git
+      - target/
+
+# Base Rust image
+.rust-base: &rust-base
+  image: rust:latest
+  before_script:
+    - rustup component add clippy rustfmt
+  <<: *cargo-cache
+
+# =============================================================================
+# Check Stage
+# =============================================================================
+
+check:
+  <<: *rust-base
+  stage: check
+  script:
+    - cargo check --workspace --all-features
+
+fmt:
+  <<: *rust-base
+  stage: check
+  script:
+    - cargo fmt --all -- --check
+
+clippy:
+  <<: *rust-base
+  stage: check
+  script:
+    - cargo clippy --workspace --all-features -- -D warnings
+  allow_failure: true  # Allow warnings during development
+
+# =============================================================================
+# Test Stage
+# =============================================================================
+
+test:
+  <<: *rust-base
+  stage: test
+  script:
+    - cargo test --workspace
+  artifacts:
+    reports:
+      junit: target/nextest/ci/junit.xml
+    when: always
+
+security-audit:
+  <<: *rust-base
+  stage: test
+  script:
+    - cargo install cargo-audit
+    - cargo audit
+  allow_failure: true  # Don't block on security advisories during development
+
+# =============================================================================
+# Build Stage
+# =============================================================================
+
+build:linux-x86_64:
+  <<: *rust-base
+  stage: build
+  script:
+    - cargo build --release -p hardener-cli
+  artifacts:
+    paths:
+      - target/release/hardener
+    expire_in: 1 week
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "master"
+    - if: $CI_COMMIT_TAG
+
+build:linux-musl:
+  <<: *rust-base
+  stage: build
+  before_script:
+    - apt-get update && apt-get install -y musl-tools
+    - rustup target add x86_64-unknown-linux-musl
+  script:
+    - cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli
+  artifacts:
+    paths:
+      - target/x86_64-unknown-linux-musl/release/hardener
+    expire_in: 1 week
+  rules:
+    - if: $CI_COMMIT_TAG
+
+# =============================================================================
+# Release Stage
+# =============================================================================
+
+release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  script:
+    - echo "Creating release for $CI_COMMIT_TAG"
+  release:
+    tag_name: $CI_COMMIT_TAG
+    name: 'Release $CI_COMMIT_TAG'
+    description: |
+      ## Linux System Hardener $CI_COMMIT_TAG
+
+      ### Installation
+
+      Download the appropriate binary for your system:
+      - `hardener-linux-x86_64.tar.gz` - Standard Linux x86_64
+      - `hardener-linux-x86_64-musl.tar.gz` - Static binary (musl libc)
+
+      ### Verification
+
+      ```bash
+      tar -xzf hardener-linux-x86_64.tar.gz
+      chmod +x hardener
+      ./hardener --version
+      ```
+    assets:
+      links:
+        - name: 'hardener-linux-x86_64'
+          url: '${CI_JOB_URL}/artifacts/file/target/release/hardener'
+          filepath: '/hardener-linux-x86_64'
+          link_type: 'package'
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/
+  needs:
+    - job: build:linux-x86_64
+      artifacts: true
+    - job: build:linux-musl
+      artifacts: true
+
+# =============================================================================
+# Scheduled Jobs
+# =============================================================================
+
+# Weekly security audit (runs on schedule)
+scheduled-audit:
+  <<: *rust-base
+  stage: test
+  script:
+    - cargo install cargo-audit
+    - cargo audit
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
