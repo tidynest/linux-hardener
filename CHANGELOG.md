@@ -8,10 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Planned
-- CLI interface
-- Compliance report generation (CIS, STIG)
+- Interactive report wizard
+- PDF report formatter
+- Config file support (`~/.config/linux-hardener/`)
+- GUI compliance report page
 - Remote scanning via SSH
-- Web interface
 
 ## [0.1.0] - 2025-11-25
 
@@ -25,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Checkpoint system with SQLite storage
 - Ed25519 cryptographic signatures for checkpoints
 - Hash chain audit logging with tamper detection
+- Full plugin rollback integration with checkpoint system
 
 #### Security Plugins (8 Total)
 - **Kernel Hardening**: 12 sysctl security parameters (ASLR, ptrace, dmesg, etc.)
@@ -35,6 +37,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Audit Hardening**: auditd configuration and rules
 - **Permissions Hardening**: File permission security checks
 - **MAC Hardening**: SELinux/AppArmor detection and status
+
+#### Command Line Interface
+- `hardener scan` - Scan system for security issues
+- `hardener apply` - Apply hardening recommendations
+- `hardener report` - Generate compliance reports
+- `hardener checkpoint` - Manage system checkpoints
+- `hardener plugins` - List available plugins
+- Severity filtering and JSON output support
+
+#### Compliance Report Generation
+- **CIS Benchmark** framework (35+ controls)
+- **STIG** framework - DISA Security Technical Implementation Guides (20+ controls)
+- **NIST 800-53** framework - US Federal security controls (20+ controls)
+- **PCI-DSS v4.0** framework - Payment Card Industry standards (20+ controls)
+- **HIPAA** Security Rule framework (15+ controls)
+- **GDPR** Article 32 framework (12+ controls)
+- Output formats: Text, JSON, CSV, HTML
 
 #### User Interface
 - Tauri-based desktop application
@@ -48,11 +67,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Developer Tools
 - Naming convention validator script
 - Pre-commit hook for validation
-- Comprehensive test suite (73 tests)
+- Comprehensive test suite (107 tests)
+
+### Security
+- Disabled unused sqlx database backends (mysql, postgres) to reduce attack surface
 
 ### Test Coverage
-- 36 plugin tests
-- 37 core infrastructure tests
+- 48 plugin tests
+- 59 core infrastructure tests
 - >80% code coverage
 
 ### Known Limitations

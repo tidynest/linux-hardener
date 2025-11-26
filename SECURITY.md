@@ -127,8 +127,23 @@ This tool maps findings to:
 
 - CIS Benchmarks (Level 1 and Level 2)
 - DISA STIG (where applicable)
-- PCI DSS requirements
+- NIST 800-53 security controls
+- PCI-DSS v4.0 requirements
 - HIPAA technical safeguards
+- GDPR Article 32 (security of processing)
+
+## Known Security Advisories
+
+### RUSTSEC-2023-0071 (rsa crate) - False Positive
+
+Dependabot/cargo-audit may report a vulnerability in the `rsa` crate (Marvin Attack timing sidechannel). This is a **false positive** for this project because:
+
+- The `rsa` crate is pulled in by `sqlx-mysql` as an optional dependency
+- This project uses SQLite only (`default-features = false` with only `sqlite` feature)
+- The `rsa` crate appears in Cargo.lock metadata but is **not compiled or used**
+- Verification: `cargo tree -p rsa` shows "nothing to print"
+
+The advisory can be safely dismissed as it does not affect this project's security posture.
 
 ## Contact
 
