@@ -98,8 +98,7 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
         ComplianceMapping {
             compliance_framework: ComplianceFramework::NIST,
             compliance_control_id: "IA-2".to_string(),
-            compliance_control_title: "Identification and Authentication (Organizational
-  Users)".to_string(),
+            compliance_control_title: "Identification and Authentication (Organizational Users)".to_string(),
             compliance_section: Some("Identification and Authentication".to_string()),
         },
         ComplianceMapping {
