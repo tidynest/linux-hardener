@@ -18,6 +18,7 @@ pub(crate) use crate::context::Context;
 pub struct Checkpoint;
 
 #[cfg(feature = "system")]
+#[derive(Default)]
 pub struct Config;
 
 /// Metadata describing a hardening plugin.
