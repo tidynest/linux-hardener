@@ -7,10 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Configuration file support with layered loading (system → user → CLI → env vars)
+- `HardenerConfig`, `GlobalConfig`, `PluginConfig` structs for configuration management
+- `ConfigLoader` with multi-source config merging
+- `PolicyException` support for documenting security deviations with audit trail
+- `FindingPolicyException` field on `Finding` struct for policy annotation
+- CLI flags: `--config`, `--audit`, `--compliance`, `--exit-code` for scan command
+- Three scan modes: Default (annotated), Audit (pure), Compliance (violations only)
+- Config paths: `/etc/linux-hardener/config.toml` (system), `~/.config/linux-hardener/config.toml` (user)
+
 ### Planned
 - Interactive report wizard
 - PDF report formatter
-- Config file support (`~/.config/linux-hardener/`)
 - GUI compliance report page
 - Remote scanning via SSH
 

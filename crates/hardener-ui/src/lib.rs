@@ -1,20 +1,20 @@
 use leptos::prelude::*;
 use leptos_router::{
-    components::{Route, Router, Routes},
     StaticSegment,
+    components::{Route, Router, Routes},
 };
 
 mod components;
 mod pages;
 pub mod state;
-mod utils;
 mod tauri_bindings;
 mod types;
+mod utils;
 
-pub use types::*;
 use components::{ApplyResults, CheckpointList};
 use pages::{ConfigurationPage, DashboardPage, ScannerPage};
 use state::AppState;
+pub use types::*;
 
 /// Main application component with routing and navigation.
 ///

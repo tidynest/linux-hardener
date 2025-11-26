@@ -12,7 +12,9 @@ pub fn ApplyResults() -> impl IntoView {
 
     // Get the most recent apply result (must access signal inside the view closure)
     let get_latest_result = move || {
-        app_state.apply_results.with(|results| results.last().cloned())
+        app_state
+            .apply_results
+            .with(|results| results.last().cloned())
     };
 
     view! {

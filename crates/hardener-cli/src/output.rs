@@ -3,12 +3,12 @@ use hardener_common::types::Severity;
 use hardener_core::{ApplyResult, Finding, PluginMetadata, ValidationReport};
 use hardener_state::{Checkpoint, FileState};
 
-use crate::cli::OutputFormat;
+use crate::cli::{OutputFormat, ScanMode};
 
 pub fn status(format: &OutputFormat, message: &str) {
     match format {
         OutputFormat::Text => eprintln!("{} {}", "→".blue(), message),
-        OutputFormat::Json => {}  // Silent in JSON mode
+        OutputFormat::Json => {} // Silent in JSON mode
     }
 }
 
@@ -30,7 +30,11 @@ pub fn error(format: &OutputFormat, message: &str) {
     }
 }
 
-pub fn scan_results(format: &OutputFormat, results: &[(PluginMetadata, Vec<Finding>)]) {
+pub fn scan_results(
+    format: &OutputFormat,
+    results: &[(PluginMetadata, Vec<Finding>)],
+    _mode: ScanMode,
+) {
     match format {
         OutputFormat::Text => {
             println!("\n{}", "═══ Scan Results ═══".bold());
@@ -38,42 +42,48 @@ pub fn scan_results(format: &OutputFormat, results: &[(PluginMetadata, Vec<Findi
             let mut total_findings = 0;
             for (metadata, findings) in results {
                 if findings.is_empty() {
-                    println!("{} {} - {}",
+                    println!(
+                        "{} {} - {}",
                         "✓".green(),
                         metadata.plugin_name,
                         "No issues found".dimmed()
                     );
                 } else {
-                    println!("\n{} {} - {} finding(s)",
+                    println!(
+                        "\n{} {} - {} finding(s)",
                         "!".yellow(),
-                        metadata.plugin_name.bold(), findings.len()
+                        metadata.plugin_name.bold(),
+                        findings.len()
                     );
                     for finding in findings {
                         let severity_str = format_severity(&finding.finding_severity);
-                        println!("  {} [{}] {}", "•".dimmed(),
+                        println!(
+                            "  {} [{}] {}",
+                            "•".dimmed(),
                             severity_str,
                             finding.finding_title
                         );
 
                         if !finding.finding_description.is_empty() {
                             println!("    {}", finding.finding_description.dimmed());
-                            }
                         }
-                        total_findings += findings.len();
                     }
+                    total_findings += findings.len();
                 }
-
-                println!("\n{}", "═══════════════════".dimmed());
-                println!("Total: {} finding(s) across {} plugin(s)",
-                    total_findings,
-                    results.len()
-                );
             }
-            OutputFormat::Json => {
-                let json_results: Vec<_> = results
-                    .iter()
-                    .map(|(m, f)| {
-                        serde_json::json!({
+
+            println!("\n{}", "═══════════════════".dimmed());
+            println!(
+                "Total: {} finding(s) across {} plugin(s)",
+                total_findings,
+                results.len()
+            );
+        }
+        OutputFormat::Json => {
+            let json_results: Vec<_> = results
+                .iter()
+                .map(|(m, f)| {
+                    serde_json::json!({
                         "plugin_id": m.plugin_id.as_str(),
                         "plugin_name": m.plugin_name,
                         "findings": f,
@@ -92,17 +102,23 @@ pub fn apply_results(format: &OutputFormat, results: &[(PluginMetadata, ApplyRes
 
             for (metadata, result) in results {
                 if result.apply_success {
-                    println!("{} {} - {} change(s) applied",
-                         "✓".green(),
-                         metadata.plugin_name,
-                         result.apply_changes.len()
+                    println!(
+                        "{} {} - {} change(s) applied",
+                        "✓".green(),
+                        metadata.plugin_name,
+                        result.apply_changes.len()
                     );
                     for change in &result.apply_changes {
-                        let status = if change.change_success { "✓".green() } else { "✗".red() };
+                        let status = if change.change_success {
+                            "✓".green()
+                        } else {
+                            "✗".red()
+                        };
                         println!("  {} {}", status, change.change_description);
                     }
                 } else {
-                    println!("{} {} - {}",
+                    println!(
+                        "{} {} - {}",
                         "✗".red(),
                         metadata.plugin_name,
                         result.apply_error.as_deref().unwrap_or("Unknown error")
@@ -148,7 +164,8 @@ pub fn checkpoint_list(format: &OutputFormat, checkpoints: &[Checkpoint]) {
             println!("{}", "Checkpoints".bold());
             println!("{}", "─".repeat(80));
             for cp in checkpoints {
-                println!("{} {} ({})",
+                println!(
+                    "{} {} ({})",
                     cp.checkpoint_id.as_str().cyan(),
                     cp.checkpoint_name,
                     format_timestamp(cp.checkpoint_timestamp).dimmed()
@@ -161,12 +178,10 @@ pub fn checkpoint_list(format: &OutputFormat, checkpoints: &[Checkpoint]) {
     }
 }
 
-pub fn checkpoint_created(format: &OutputFormat, id:
-&hardener_state::CheckpointId) {
+pub fn checkpoint_created(format: &OutputFormat, id: &hardener_state::CheckpointId) {
     match format {
         OutputFormat::Text => {
-            println!("{} Checkpoint created: {}", "✓".green(),
-                     id.as_str().cyan());
+            println!("{} Checkpoint created: {}", "✓".green(), id.as_str().cyan());
         }
         OutputFormat::Json => {
             println!("{}", serde_json::json!({ "checkpoint_id": id.as_str() }));
@@ -181,7 +196,10 @@ pub fn checkpoint_details(format: &OutputFormat, checkpoint: &Checkpoint, files:
             println!("{}", "─".repeat(60));
             println!("ID:        {}", checkpoint.checkpoint_id.as_str().cyan());
             println!("Name:      {}", checkpoint.checkpoint_name);
-            println!("Created:   {}", format_timestamp(checkpoint.checkpoint_timestamp));
+            println!(
+                "Created:   {}",
+                format_timestamp(checkpoint.checkpoint_timestamp)
+            );
             println!("User:      {}", checkpoint.checkpoint_username);
             println!("Files:     {}", files.len());
 
@@ -193,21 +211,29 @@ pub fn checkpoint_details(format: &OutputFormat, checkpoint: &Checkpoint, files:
             }
         }
         OutputFormat::Json => {
-            println!("{}", serde_json::json!({
-                  "checkpoint": checkpoint,
-                  "files": files
-              }));
+            println!(
+                "{}",
+                serde_json::json!({
+                    "checkpoint": checkpoint,
+                    "files": files
+                })
+            );
         }
     }
 }
 
-pub fn validation_report(format: &OutputFormat, metadata: &PluginMetadata, report: &ValidationReport) {
+pub fn validation_report(
+    format: &OutputFormat,
+    metadata: &PluginMetadata,
+    report: &ValidationReport,
+) {
     match format {
         OutputFormat::Text => {
-            println!("{} {} - {} item(s) to apply",
-                     "○".blue(),
-                     metadata.plugin_name,
-                     report.validation_report_estimated_changes.len()
+            println!(
+                "{} {} - {} item(s) to apply",
+                "○".blue(),
+                metadata.plugin_name,
+                report.validation_report_estimated_changes.len()
             );
             for item in &report.validation_report_estimated_changes {
                 println!("  {} {}", "•".dimmed(), item);
@@ -232,7 +258,8 @@ fn format_severity(severity: &Severity) -> colored::ColoredString {
 fn format_timestamp(timestamp: i64) -> String {
     use chrono::{DateTime, Local, TimeZone, Utc};
 
-    let datetime: DateTime<Utc> = Utc.timestamp_opt(timestamp, 0)
+    let datetime: DateTime<Utc> = Utc
+        .timestamp_opt(timestamp, 0)
         .single()
         .unwrap_or_else(Utc::now);
 

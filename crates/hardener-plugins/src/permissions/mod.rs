@@ -12,11 +12,10 @@
 
 use hardener_common::{
     error::Result,
-    types::{ComplianceMapping, ComplianceFramework, FindingCategory, PluginId, Severity}
+    types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
-    ApplyResult, Change, ChangeType, Checkpoint, Config,
-    ValidationReport,
+    ApplyResult, Change, ChangeType, Checkpoint, Config, ValidationReport,
     context::Context,
     plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult},
 };
@@ -48,11 +47,11 @@ impl PermissionsHardeningPlugin {
 #[derive(Clone, Debug)]
 struct PermissionDirective {
     permission_description: &'static str,
-    permission_path:        &'static str,
-    permission_mode:        u32,  // Octal mode like 0o700
-    _permission_owner:       &'static str,
-    _permission_group:       &'static str,
-    permission_severity:    Severity,
+    permission_path: &'static str,
+    permission_mode: u32, // Octal mode like 0o700
+    _permission_owner: &'static str,
+    _permission_group: &'static str,
+    permission_severity: Severity,
 }
 
 /// Critical system paths with their required permissions.
@@ -67,42 +66,43 @@ struct PermissionDirective {
 const CRITICAL_PERMISSIONS: &[PermissionDirective] = &[
     PermissionDirective {
         permission_description: "Root home directory must be restricted to root only",
-        permission_path:        "/root",
-        permission_mode:        0o700,
-        _permission_owner:       "root",
-        _permission_group:       "root",
-        permission_severity:    Severity::High,
+        permission_path: "/root",
+        permission_mode: 0o700,
+        _permission_owner: "root",
+        _permission_group: "root",
+        permission_severity: Severity::High,
     },
     PermissionDirective {
         permission_description: "Boot directory must be protected from unauthorised modification",
-        permission_path:        "/boot",
-        permission_mode:        0o700,
-        _permission_owner:       "root",
-        _permission_group:       "root",
-        permission_severity:    Severity::High,
+        permission_path: "/boot",
+        permission_mode: 0o700,
+        _permission_owner: "root",
+        _permission_group: "root",
+        permission_severity: Severity::High,
     },
     PermissionDirective {
         permission_description: "SSH configuration directory must be restricted",
-        permission_path:        "/etc/ssh",
-        permission_mode:        0o755,
-        _permission_owner:       "root",
-        _permission_group:       "root",
-        permission_severity:    Severity::High,
-    },    PermissionDirective {
+        permission_path: "/etc/ssh",
+        permission_mode: 0o755,
+        _permission_owner: "root",
+        _permission_group: "root",
+        permission_severity: Severity::High,
+    },
+    PermissionDirective {
         permission_description: "Sudoers file must be read-only for root group",
-        permission_path:        "/etc/sudoers",
-        permission_mode:        0o440,
-        _permission_owner:       "root",
-        _permission_group:       "root",
-        permission_severity:    Severity::Critical,
+        permission_path: "/etc/sudoers",
+        permission_mode: 0o440,
+        _permission_owner: "root",
+        _permission_group: "root",
+        permission_severity: Severity::Critical,
     },
     PermissionDirective {
         permission_description: "Sudoers directory must be restricted",
-        permission_path:        "/etc/sudoers.d",
-        permission_mode:        0o750,
-        _permission_owner:       "root",
-        _permission_group:       "root",
-        permission_severity:    Severity::Critical,
+        permission_path: "/etc/sudoers.d",
+        permission_mode: 0o750,
+        _permission_owner: "root",
+        _permission_group: "root",
+        permission_severity: Severity::Critical,
     },
 ];
 
@@ -120,7 +120,7 @@ fn check_path_permissions(directive: &PermissionDirective) -> Option<Finding> {
     // Get file metadata
     let metadata = match fs::metadata(path) {
         Ok(metadata) => metadata,
-        Err(_) => return None,  // Can't read, skip it
+        Err(_) => return None, // Can't read, skip it
     };
 
     // Get current permissions (only last 9 bits = rwxrwxrwx)
@@ -141,13 +141,13 @@ fn check_path_permissions(directive: &PermissionDirective) -> Option<Finding> {
             finding_recommended_value: format!("{:04o}", directive.permission_mode),
             finding_remediation_steps: vec![format!(
                 "chmod {:04o} {}",
-                directive.permission_mode,
-                directive.permission_path,
+                directive.permission_mode, directive.permission_path,
             )],
             finding_severity: directive.permission_severity,
             finding_title: format!("Insecure permissions on {}", directive.permission_path),
             finding_compliance: get_permissions_compliance_mappings(directive.permission_path),
-        })
+            finding_policy_exception: None,
+        });
     }
 
     None
@@ -156,42 +156,38 @@ fn check_path_permissions(directive: &PermissionDirective) -> Option<Finding> {
 /// Returns compliance mappings for permission findings.
 fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
     match path {
-        "/etc/passwd" => vec![
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "6.1.2".to_string(),
-                compliance_control_title: "Ensure permissions on /etc/passwd are
-  configured".to_string(),
-                compliance_section: Some("System Maintenance".to_string()),
-            },
-        ],
-        "/etc/shadow" => vec![
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "6.1.3".to_string(),
-                compliance_control_title: "Ensure permissions on /etc/shadow are
-  configured".to_string(),
-                compliance_section: Some("System Maintenance".to_string()),
-            },
-        ],
-        "/etc/group" => vec![
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "6.1.4".to_string(),
-                compliance_control_title: "Ensure permissions on /etc/group are
-  configured".to_string(),
-                compliance_section: Some("System Maintenance".to_string()),
-            },
-        ],
-        "/etc/gshadow" => vec![
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "6.1.5".to_string(),
-                compliance_control_title: "Ensure permissions on /etc/gshadow are
-   configured".to_string(),
-                compliance_section: Some("System Maintenance".to_string()),
-            },
-        ],
+        "/etc/passwd" => vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "6.1.2".to_string(),
+            compliance_control_title: "Ensure permissions on /etc/passwd are
+  configured"
+                .to_string(),
+            compliance_section: Some("System Maintenance".to_string()),
+        }],
+        "/etc/shadow" => vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "6.1.3".to_string(),
+            compliance_control_title: "Ensure permissions on /etc/shadow are
+  configured"
+                .to_string(),
+            compliance_section: Some("System Maintenance".to_string()),
+        }],
+        "/etc/group" => vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "6.1.4".to_string(),
+            compliance_control_title: "Ensure permissions on /etc/group are
+  configured"
+                .to_string(),
+            compliance_section: Some("System Maintenance".to_string()),
+        }],
+        "/etc/gshadow" => vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "6.1.5".to_string(),
+            compliance_control_title: "Ensure permissions on /etc/gshadow are
+   configured"
+                .to_string(),
+            compliance_section: Some("System Maintenance".to_string()),
+        }],
         _ => vec![],
     }
 }
@@ -237,11 +233,12 @@ fn apply_path_permissions(directive: &PermissionDirective) -> Option<Change> {
 impl HardeningPlugin for PermissionsHardeningPlugin {
     fn metadata(&self) -> PluginMetadata {
         PluginMetadata {
-            plugin_category:    FindingCategory::FileSystem,
-            plugin_description: "Audits and secures critical file and directory permissions".to_string(),
-            plugin_id:          PluginId::new("permissions-hardening"),
-            plugin_name:        "File Permissions Hardening".to_string(),
-            plugin_version:     "0.1.0".to_string(),
+            plugin_category: FindingCategory::FileSystem,
+            plugin_description: "Audits and secures critical file and directory permissions"
+                .to_string(),
+            plugin_id: PluginId::new("permissions-hardening"),
+            plugin_name: "File Permissions Hardening".to_string(),
+            plugin_version: "0.1.0".to_string(),
         }
     }
 

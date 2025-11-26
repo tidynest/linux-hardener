@@ -4,8 +4,8 @@
 //! and maps them to plugin findings.
 
 pub mod cis;
-pub mod hipaa;
 pub mod gdpr;
+pub mod hipaa;
 pub mod nist;
 pub mod pci;
 pub mod stig;

@@ -169,6 +169,18 @@ hardener scan --plugin kernel-hardening --plugin ssh-hardening
 # Output as JSON
 hardener scan --format json
 
+# Use custom config file
+hardener scan --config /path/to/config.toml
+
+# Audit mode - ignore all config, pure security assessment
+hardener scan --audit
+
+# Compliance mode - only show policy violations (no valid exception)
+hardener scan --compliance
+
+# CI/CD mode - exit with code 1 if findings exist
+hardener scan --compliance --exit-code
+
 # Dry-run: see what would be changed without applying
 sudo hardener apply --dry-run --all
 
@@ -204,17 +216,51 @@ sudo hardener checkpoint rollback <checkpoint-id>
 
 ## Configuration
 
-### Plugin Configuration
+### Config File Locations
 
-Plugins can be configured via TOML files in `/etc/linux-hardener/`:
+Configuration is loaded from multiple sources (later overrides earlier):
+
+1. **System config**: `/etc/linux-hardener/config.toml`
+2. **User config**: `~/.config/linux-hardener/config.toml`
+3. **CLI config**: `--config /path/to/file.toml`
+4. **Environment**: `HARDENER_*` variables
+
+### Basic Configuration
 
 ```toml
-# /etc/linux-hardener/kernel.toml
+# ~/.config/linux-hardener/config.toml
+
+[global]
+# Plugins to explicitly disable
+disabled_plugins = ["mac"]
+
+[ssh]
+enabled = true
+
 [kernel]
-enforce_aslr = true
-disable_ptrace = true
-restrict_dmesg = true
+enabled = true
 ```
+
+### Policy Exceptions
+
+Document deviations from secure baseline with audit metadata:
+
+```toml
+[ssh.exceptions.PasswordAuthentication]
+value = "yes"
+allowed = true
+reason = "Legacy LDAP integration until Q2 2025 migration"
+approved_by = "security-team@company.com"
+approved_date = "2024-11-01"
+ticket = "SEC-1234"
+expires = "2025-06-30"
+```
+
+### Scan Modes
+
+- **Default** (`hardener scan`): Shows all findings with policy annotations
+- **Audit** (`hardener scan --audit`): Ignores config, pure security assessment
+- **Compliance** (`hardener scan --compliance`): Only shows policy violations
 
 ### Checkpoint Location
 
@@ -267,10 +313,12 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 
 See [PLAN.md](PLAN.md) for detailed implementation plans for upcoming features.
 
-### v0.2.0 (Planned)
+### v0.2.0 (In Progress)
+- [x] Config file support (`~/.config/linux-hardener/`)
+- [x] CLI flags: `--config`, `--audit`, `--compliance`, `--exit-code`
+- [x] Policy exception system with audit trail
 - [ ] Interactive report wizard
 - [ ] PDF report formatter
-- [ ] Config file support (`~/.config/linux-hardener/`)
 - [ ] GUI compliance report page
 
 ### v0.3.0 (Planned)

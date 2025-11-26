@@ -70,7 +70,10 @@ fn test_kernel_validate_checks_parameters() {
     assert!(result.is_ok(), "Validation should succeed");
 
     let validation = result.unwrap();
-    assert_eq!(validation.validation_report_plugin_id.as_str(), "kernel-hardening");
+    assert_eq!(
+        validation.validation_report_plugin_id.as_str(),
+        "kernel-hardening"
+    );
 
     // Should have estimated changes for parameters that can be modified
     assert!(
@@ -82,10 +85,17 @@ fn test_kernel_validate_checks_parameters() {
         "Validation found {} potential issues",
         validation.validation_report_issues.len()
     );
-    println!("Would make {} changes", validation.validation_report_estimated_changes.len());
+    println!(
+        "Would make {} changes",
+        validation.validation_report_estimated_changes.len()
+    );
 
     // Show a few estimated changes
-    for change in validation.validation_report_estimated_changes.iter().take(3) {
+    for change in validation
+        .validation_report_estimated_changes
+        .iter()
+        .take(3)
+    {
         println!("  - {}", change);
     }
 }
@@ -107,8 +117,16 @@ fn test_kernel_apply_requires_root() {
             println!("Overall success: {}", apply_result.apply_success);
             println!("Changes made: {}", apply_result.apply_changes.len());
 
-            let successful = apply_result.apply_changes.iter().filter(|c| c.change_success).count();
-            let failed = apply_result.apply_changes.iter().filter(|c| !c.change_success).count();
+            let successful = apply_result
+                .apply_changes
+                .iter()
+                .filter(|c| c.change_success)
+                .count();
+            let failed = apply_result
+                .apply_changes
+                .iter()
+                .filter(|c| !c.change_success)
+                .count();
 
             println!("  Successful: {}", successful);
             println!("  Failed: {}", failed);

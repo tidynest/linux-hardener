@@ -1,15 +1,31 @@
+use crate::cli::{OutputFormat, ScanMode, SeverityFilter};
+use crate::output;
 use anyhow::Result;
 use hardener_common::types::Severity;
-use hardener_core::{Context, PluginRegistry};
-use crate::cli::{OutputFormat, SeverityFilter};
-use crate::output;
+use hardener_core::{ConfigLoader, Context, HardenerConfig, PluginRegistry};
+use std::path::PathBuf;
 
 pub async fn run(
     plugin_filter: &[String],
     severity_filter: SeverityFilter,
     format: OutputFormat,
     quiet: bool,
+    config_path: Option<&PathBuf>,
+    audit: bool,
+    compliance: bool,
+    exit_code: bool,
 ) -> Result<()> {
+    // Determine scan mode
+    let mode = if audit {
+        ScanMode::Audit
+    } else if compliance {
+        ScanMode::Compliance
+    } else {
+        ScanMode::Default
+    };
+
+    // Load config (ignored in audit mode)
+    let _config = load_config(config_path, mode)?;
     let registry = create_plugin_registry();
     let ctx = Context::new();
 
@@ -21,8 +37,9 @@ pub async fn run(
     for metadata in &plugins {
         // Skip if plugin filter is set and this plugin isn't in it
         if !plugin_filter.is_empty()
-            && !plugin_filter.iter().any(|p| p ==
-                metadata.plugin_id.as_str())
+            && !plugin_filter
+                .iter()
+                .any(|p| p == metadata.plugin_id.as_str())
         {
             continue;
         }
@@ -46,16 +63,39 @@ pub async fn run(
                 Err(e) => {
                     output::error(
                         &format,
-                        &format!("Failed to scan {}: {e}", metadata.plugin_name
-                        ));
+                        &format!("Failed to scan {}: {e}", metadata.plugin_name),
+                    );
                 }
             }
         }
     }
 
-    output::scan_results(&format, &all_results);
+    output::scan_results(&format, &all_results, mode);
+
+    // Handle exit code flag
+    if exit_code {
+        let has_findings = all_results.iter().any(|(_, findings)| !findings.is_empty());
+        if has_findings {
+            std::process::exit(1);
+        }
+    }
 
     Ok(())
+}
+
+fn load_config(config_path: Option<&PathBuf>, mode: ScanMode) -> Result<HardenerConfig> {
+    // In audit mode, ignore all config and use defaults
+    if mode == ScanMode::Audit {
+        return Ok(HardenerConfig::default());
+    }
+
+    let mut loader = ConfigLoader::new();
+    if let Some(path) = config_path {
+        loader = loader.with_cli_config(path.clone());
+    }
+    loader
+        .load()
+        .map_err(|e| anyhow::anyhow!("Config error: {}", e))
 }
 
 fn create_plugin_registry() -> PluginRegistry {
@@ -75,10 +115,10 @@ fn create_plugin_registry() -> PluginRegistry {
 
 fn severity_filter_to_severity(filter: &SeverityFilter) -> Severity {
     match filter {
-        SeverityFilter::Info     => Severity::Info,
-        SeverityFilter::Low      => Severity::Low,
-        SeverityFilter::Medium   => Severity::Medium,
-        SeverityFilter::High     => Severity::High,
+        SeverityFilter::Info => Severity::Info,
+        SeverityFilter::Low => Severity::Low,
+        SeverityFilter::Medium => Severity::Medium,
+        SeverityFilter::High => Severity::High,
         SeverityFilter::Critical => Severity::Critical,
     }
 }

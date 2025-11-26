@@ -167,9 +167,7 @@ impl FirewallBackend for FirewalldBackend {
             }
 
             if rule.rule_description.contains("established") {
-                debug!(
-                    "Skipping established/related rule (handled by firewalld automatically)"
-                );
+                debug!("Skipping established/related rule (handled by firewalld automatically)");
                 continue;
             }
 
@@ -184,7 +182,10 @@ impl FirewallBackend for FirewalldBackend {
                     Ok(_) => {
                         changes.push(Change {
                             change_type: ChangeType::FirewallRule,
-                            change_description: format!("Set zone '{}' default target to DROP", zone,),
+                            change_description: format!(
+                                "Set zone '{}' default target to DROP",
+                                zone,
+                            ),
                             change_success: true,
                             change_error: None,
                         });
@@ -192,7 +193,10 @@ impl FirewallBackend for FirewalldBackend {
                     Err(e) => {
                         changes.push(Change {
                             change_type: ChangeType::FirewallRule,
-                            change_description: format!("Set zone '{}' default target to DROP", zone,),
+                            change_description: format!(
+                                "Set zone '{}' default target to DROP",
+                                zone,
+                            ),
                             change_success: false,
                             change_error: Some(e.to_string()),
                         });
@@ -215,7 +219,10 @@ impl FirewallBackend for FirewalldBackend {
                     Ok(_) => {
                         changes.push(Change {
                             change_type: ChangeType::FirewallRule,
-                            change_description: format!("Added port {} to zone '{}'", port_spec, zone),
+                            change_description: format!(
+                                "Added port {} to zone '{}'",
+                                port_spec, zone
+                            ),
                             change_success: true,
                             change_error: None,
                         });
@@ -224,7 +231,10 @@ impl FirewallBackend for FirewalldBackend {
                         warn!("Failed to add port {}: {}", port_spec, e);
                         changes.push(Change {
                             change_type: ChangeType::FirewallRule,
-                            change_description: format!("Added port {} to zone '{}'", port_spec, zone),
+                            change_description: format!(
+                                "Added port {} to zone '{}'",
+                                port_spec, zone
+                            ),
                             change_success: false,
                             change_error: Some(e.to_string()),
                         });

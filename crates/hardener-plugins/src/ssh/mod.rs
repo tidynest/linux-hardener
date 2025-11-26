@@ -10,10 +10,11 @@
 //! The plugin reads the sshd_config file, compares against secure baselines,
 //! and can apply hardening configurations with automatic backup support.
 
+use hardener_common::types::PluginId;
 use hardener_common::{
     error::Result,
     file_utils::update_file_atomically,
-    types::{ComplianceMapping, ComplianceFramework, FindingCategory, Severity},
+    types::{ComplianceFramework, ComplianceMapping, FindingCategory, Severity},
 };
 use hardener_core::{
     ApplyResult, Change, ChangeType, Checkpoint, Config, ValidationIssue, ValidationReport,
@@ -22,7 +23,6 @@ use hardener_core::{
 };
 use std::{fs, path::Path, process::Command, time::Instant};
 use tracing::{error, info, warn};
-use hardener_common::types::PluginId;
 
 /// Represents a single SSH configuration directive to be hardened.
 #[derive(Clone, Debug)]
@@ -272,62 +272,48 @@ impl SshHardeningPlugin {
 /// Returns compliance mappings for a given SSH directive.
 fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
     match directive_name {
-        "PermitRootLogin" => vec![
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "5.2.10".to_string(),
-                compliance_control_title: "Ensure SSH root login is disabled".to_string(),
-                compliance_section: Some("Access Control".to_string()),
-            },
-        ],
-        "PasswordAuthentication" => vec![
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "5.2.11".to_string(),
-                compliance_control_title: "Ensure SSH PermitEmptyPasswords is disabled".to_string(),
-                compliance_section: Some("Access Control".to_string()),
-            },
-        ],
-        "PermitEmptyPasswords" => vec![
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "5.2.11".to_string(),
-                compliance_control_title: "Ensure SSH PermitEmptyPasswords is disabled".to_string(),
-                compliance_section: Some("Access Control".to_string()),
-            },
-        ],
-        "Protocol" => vec![
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "5.2.4".to_string(),
-                compliance_control_title: "Ensure SSH Protocol is set to 2".to_string(),
-                compliance_section: Some("Access Control".to_string()),
-            },
-        ],
-        "MaxAuthTries" => vec![
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "5.2.7".to_string(),
-                compliance_control_title: "Ensure SSH MaxAuthTries is set to 4 or less".to_string(),
-                compliance_section: Some("Access Control".to_string()),
-            },
-        ],
-        "X11Forwarding" => vec![
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "5.2.6".to_string(),
-                compliance_control_title: "Ensure SSH X11 forwarding is disabled".to_string(),
-                compliance_section: Some("Access Control".to_string()),
-            },
-        ],
-        "ClientAliveInterval" | "ClientAliveCountMax" => vec![
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "5.2.13".to_string(),
-                compliance_control_title: "Ensure SSH Idle Timeout Interval is configured".to_string(),
-                compliance_section: Some("Access Control".to_string()),
-            },
-        ],
+        "PermitRootLogin" => vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "5.2.10".to_string(),
+            compliance_control_title: "Ensure SSH root login is disabled".to_string(),
+            compliance_section: Some("Access Control".to_string()),
+        }],
+        "PasswordAuthentication" => vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "5.2.11".to_string(),
+            compliance_control_title: "Ensure SSH PermitEmptyPasswords is disabled".to_string(),
+            compliance_section: Some("Access Control".to_string()),
+        }],
+        "PermitEmptyPasswords" => vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "5.2.11".to_string(),
+            compliance_control_title: "Ensure SSH PermitEmptyPasswords is disabled".to_string(),
+            compliance_section: Some("Access Control".to_string()),
+        }],
+        "Protocol" => vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "5.2.4".to_string(),
+            compliance_control_title: "Ensure SSH Protocol is set to 2".to_string(),
+            compliance_section: Some("Access Control".to_string()),
+        }],
+        "MaxAuthTries" => vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "5.2.7".to_string(),
+            compliance_control_title: "Ensure SSH MaxAuthTries is set to 4 or less".to_string(),
+            compliance_section: Some("Access Control".to_string()),
+        }],
+        "X11Forwarding" => vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "5.2.6".to_string(),
+            compliance_control_title: "Ensure SSH X11 forwarding is disabled".to_string(),
+            compliance_section: Some("Access Control".to_string()),
+        }],
+        "ClientAliveInterval" | "ClientAliveCountMax" => vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "5.2.13".to_string(),
+            compliance_control_title: "Ensure SSH Idle Timeout Interval is configured".to_string(),
+            compliance_section: Some("Access Control".to_string()),
+        }],
         _ => vec![],
     }
 }
@@ -389,7 +375,8 @@ impl HardeningPlugin for SshHardeningPlugin {
                         directive.ssh_directive_name, directive.ssh_description,
                     ),
                     finding_id: format!("ssh-{}", directive.ssh_directive_name.to_lowercase()),
-                    finding_impact: "May allow unauthorised access or weaken SSH security".to_string(),
+                    finding_impact: "May allow unauthorised access or weaken SSH security"
+                        .to_string(),
                     finding_recommended_value: directive.ssh_secure_value.to_string(),
                     finding_remediation_steps: vec![
                         format!(
@@ -399,8 +386,12 @@ impl HardeningPlugin for SshHardeningPlugin {
                         "Restart SSH service: systemctl restart sshd".to_string(),
                     ],
                     finding_severity: directive.ssh_severity,
-                    finding_title: format!("Insecure SSH setting: {}", directive.ssh_directive_name,),
+                    finding_title: format!(
+                        "Insecure SSH setting: {}",
+                        directive.ssh_directive_name,
+                    ),
                     finding_compliance: get_ssh_compliance_mappings(directive.ssh_directive_name),
+                    finding_policy_exception: None,
                 });
             }
         }
@@ -489,8 +480,7 @@ impl HardeningPlugin for SshHardeningPlugin {
 
                 info!(
                     "Applied SSH directive: {} = {}",
-                    directive.ssh_directive_name,
-                    directive.ssh_secure_value
+                    directive.ssh_directive_name, directive.ssh_secure_value
                 );
             }
         }

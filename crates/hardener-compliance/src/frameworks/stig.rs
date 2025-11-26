@@ -14,19 +14,22 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
         ComplianceMapping {
             compliance_framework: ComplianceFramework::STIG,
             compliance_control_id: "V-230280".to_string(),
-            compliance_control_title: "RHEL must implement address space layout randomization (ASLR)".to_string(),
+            compliance_control_title:
+                "RHEL must implement address space layout randomization (ASLR)".to_string(),
             compliance_section: Some("Kernel Security".to_string()),
         },
         ComplianceMapping {
             compliance_framework: ComplianceFramework::STIG,
             compliance_control_id: "V-230281".to_string(),
-            compliance_control_title: "RHEL must restrict exposed kernel pointer addresses".to_string(),
+            compliance_control_title: "RHEL must restrict exposed kernel pointer addresses"
+                .to_string(),
             compliance_section: Some("Kernel Security".to_string()),
         },
         ComplianceMapping {
             compliance_framework: ComplianceFramework::STIG,
             compliance_control_id: "V-230282".to_string(),
-            compliance_control_title: "RHEL must restrict access to the kernel message buffer".to_string(),
+            compliance_control_title: "RHEL must restrict access to the kernel message buffer"
+                .to_string(),
             compliance_section: Some("Kernel Security".to_string()),
         },
         ComplianceMapping {
@@ -50,10 +53,10 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
         ComplianceMapping {
             compliance_framework: ComplianceFramework::STIG,
             compliance_control_id: "V-230289".to_string(),
-            compliance_control_title: "RHEL must use reverse path filtering on all IPv4 interfaces".to_string(),
+            compliance_control_title: "RHEL must use reverse path filtering on all IPv4 interfaces"
+                .to_string(),
             compliance_section: Some("Network Security".to_string()),
         },
-
         // ===========================================
         // SSH Server Configuration
         // ===========================================
@@ -87,14 +90,14 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
             compliance_control_title: "RHEL must limit SSH authentication attempts".to_string(),
             compliance_section: Some("SSH Configuration".to_string()),
         },
-
         // ===========================================
         // Audit System
         // ===========================================
         ComplianceMapping {
             compliance_framework: ComplianceFramework::STIG,
             compliance_control_id: "V-230386".to_string(),
-            compliance_control_title: "RHEL must have the audit system installed and enabled".to_string(),
+            compliance_control_title: "RHEL must have the audit system installed and enabled"
+                .to_string(),
             compliance_section: Some("Auditing".to_string()),
         },
         ComplianceMapping {
@@ -103,7 +106,6 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
             compliance_control_title: "RHEL must audit privileged functions".to_string(),
             compliance_section: Some("Auditing".to_string()),
         },
-
         // ===========================================
         // Mandatory Access Control
         // ===========================================
@@ -119,14 +121,14 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
             compliance_control_title: "RHEL must use SELinux targeted policy".to_string(),
             compliance_section: Some("Mandatory Access Control".to_string()),
         },
-
         // ===========================================
         // Password/PAM Configuration
         // ===========================================
         ComplianceMapping {
             compliance_framework: ComplianceFramework::STIG,
             compliance_control_id: "V-230356".to_string(),
-            compliance_control_title: "RHEL must require passwords of at least 14 characters".to_string(),
+            compliance_control_title: "RHEL must require passwords of at least 14 characters"
+                .to_string(),
             compliance_section: Some("Authentication".to_string()),
         },
         ComplianceMapping {
@@ -141,7 +143,6 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
             compliance_control_title: "RHEL must enforce password maximum lifetime".to_string(),
             compliance_section: Some("Authentication".to_string()),
         },
-
         // ===========================================
         // Firewall
         // ===========================================

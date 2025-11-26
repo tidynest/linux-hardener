@@ -12,7 +12,7 @@
 
 use hardener_common::{
     error::Result,
-    types::{ComplianceMapping, ComplianceFramework, FindingCategory, PluginId, Severity},
+    types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
     Change, ChangeType, Checkpoint, Config, ValidationIssue, ValidationReport,
@@ -123,80 +123,66 @@ const KERNEL_PARAMS: &[(&str, &str, &str)] = &[
 /// Returns compliance mappings for a given kernel parameter.
 fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
     match param_name {
-        "kernel.randomize_va_space" => vec![
-            ComplianceMapping {
+        "kernel.randomize_va_space" => vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "1.5.1".to_string(),
+            compliance_control_title: "Ensure address space layout randomisation (ASLR) is enabled"
+                .to_string(),
+            compliance_section: Some("Initial Setup".to_string()),
+        }],
+        "kernel.kptr_restrict" => vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "1.5.4".to_string(),
+            compliance_control_title: "Ensure kernel pointers are restricted".to_string(),
+            compliance_section: Some("Initial Setup".to_string()),
+        }],
+        "kernel.dmesg_restrict" => vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "1.5.4".to_string(),
+            compliance_control_title: "Ensure kernel pointers are restricted".to_string(),
+            compliance_section: Some("Initial Setup".to_string()),
+        }],
+        "kernel.yama.ptrace_scope" => vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "1.5.2".to_string(),
+            compliance_control_title: "Ensure ptrace_scope is restricted".to_string(),
+            compliance_section: Some("Initial Setup".to_string()),
+        }],
+        "fs.suid_dumpable" => vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "1.5.3".to_string(),
+            compliance_control_title: "Ensure core dumps are restricted".to_string(),
+            compliance_section: Some("Initial Setup".to_string()),
+        }],
+        "fs.protected_hardlinks" | "fs.protected_symlinks" => vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "1.5.3".to_string(),
+            compliance_control_title: "Ensure core dumps are restricted".to_string(),
+            compliance_section: Some("Initial Setup".to_string()),
+        }],
+        "net.ipv4.conf.all.rp_filter" | "net.ipv4.conf.default.rp_filter" => {
+            vec![ComplianceMapping {
                 compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "1.5.1".to_string(),
-                compliance_control_title: "Ensure address space layout randomisation (ASLR) is enabled".to_string(),
-                compliance_section: Some("Initial Setup".to_string()),
-            },
-        ],
-        "kernel.kptr_restrict" => vec![
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "1.5.4".to_string(),
-                compliance_control_title: "Ensure kernel pointers are restricted".to_string(),
-                compliance_section: Some("Initial Setup".to_string()),
-            },
-        ],
-        "kernel.dmesg_restrict" => vec![
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "1.5.4".to_string(),
-                compliance_control_title: "Ensure kernel pointers are restricted".to_string(),
-                compliance_section: Some("Initial Setup".to_string()),
-            },
-        ],
-        "kernel.yama.ptrace_scope" => vec![
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "1.5.2".to_string(),
-                compliance_control_title: "Ensure ptrace_scope is restricted".to_string(),
-                compliance_section: Some("Initial Setup".to_string()),
-            },
-        ],
-        "fs.suid_dumpable" => vec![
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "1.5.3".to_string(),
-                compliance_control_title: "Ensure core dumps are restricted".to_string(),
-                compliance_section: Some("Initial Setup".to_string()),
-            },
-        ],
-        "fs.protected_hardlinks" | "fs.protected_symlinks" => vec![
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "1.5.3".to_string(),
-                compliance_control_title: "Ensure core dumps are restricted".to_string(),
-                compliance_section: Some("Initial Setup".to_string()),
-            },
-        ],
-        "net.ipv4.conf.all.rp_filter" | "net.ipv4.conf.default.rp_filter" =>
-            vec![
-                ComplianceMapping {
-                    compliance_framework: ComplianceFramework::CIS,
-                    compliance_control_id: "3.2.7".to_string(),
-                    compliance_control_title: "Ensure reverse path filtering is enabled".to_string(),
-                    compliance_section: Some("Network Configuration".to_string()),
-                },
-            ],
-        "net.ipv4.tcp_syncookies" => vec![
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "3.2.8".to_string(),
-                compliance_control_title: "Ensure TCP SYN cookies is enabled".to_string(),
+                compliance_control_id: "3.2.7".to_string(),
+                compliance_control_title: "Ensure reverse path filtering is enabled".to_string(),
                 compliance_section: Some("Network Configuration".to_string()),
-            },
-        ],
-        "net.ipv4.conf.all.accept_source_route" |
-        "net.ipv4.conf.default.accept_source_route" => vec![
-            ComplianceMapping {
+            }]
+        }
+        "net.ipv4.tcp_syncookies" => vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "3.2.8".to_string(),
+            compliance_control_title: "Ensure TCP SYN cookies is enabled".to_string(),
+            compliance_section: Some("Network Configuration".to_string()),
+        }],
+        "net.ipv4.conf.all.accept_source_route" | "net.ipv4.conf.default.accept_source_route" => {
+            vec![ComplianceMapping {
                 compliance_framework: ComplianceFramework::CIS,
                 compliance_control_id: "3.2.1".to_string(),
-                compliance_control_title: "Ensure source routed packets are not accepted".to_string(),
+                compliance_control_title: "Ensure source routed packets are not accepted"
+                    .to_string(),
                 compliance_section: Some("Network Configuration".to_string()),
-            },
-        ],
+            }]
+        }
         _ => vec![],
     }
 }
@@ -241,7 +227,8 @@ impl HardeningPlugin for KernelHardeningPlugin {
                                 expected_value
                             ),
                             finding_id: format!("kernel_{}", param_name.replace('.', "_")),
-                            finding_impact: "Low impact - requires reboot or sysctl reload".to_string(),
+                            finding_impact: "Low impact - requires reboot or sysctl reload"
+                                .to_string(),
                             finding_recommended_value: expected_value.to_string(),
                             finding_remediation_steps: vec![format!(
                                 "Set {} = {}",
@@ -250,6 +237,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
                             finding_severity: Severity::Medium,
                             finding_title: format!("Insecure value for {}", param_name),
                             finding_compliance: get_compliance_mappings(param_name),
+                            finding_policy_exception: None,
                         });
                     }
                 }
@@ -285,15 +273,10 @@ impl HardeningPlugin for KernelHardeningPlugin {
         let mut apply_changes = Vec::new();
 
         // Create checkpoint to capture sysctl config files before changes
-        let sysctl_paths: Vec<&Path> = vec![
-            Path::new("/etc/sysctl.conf"),
-            Path::new("/etc/sysctl.d"),
-        ];
-        let checkpoint_id = crate::create_checkpoint_for_apply(
-            ctx,
-            "kernel-hardening-pre-apply",
-            &sysctl_paths,
-        )?;
+        let sysctl_paths: Vec<&Path> =
+            vec![Path::new("/etc/sysctl.conf"), Path::new("/etc/sysctl.d")];
+        let checkpoint_id =
+            crate::create_checkpoint_for_apply(ctx, "kernel-hardening-pre-apply", &sysctl_paths)?;
 
         if checkpoint_id.is_some() {
             apply_changes.push(Change {
@@ -310,7 +293,10 @@ impl HardeningPlugin for KernelHardeningPlugin {
             match fs::write(&path, expected_value) {
                 Ok(_) => {
                     apply_changes.push(Change {
-                        change_description: format!("{}: set to {}", param_description, expected_value),
+                        change_description: format!(
+                            "{}: set to {}",
+                            param_description, expected_value
+                        ),
                         change_type: ChangeType::KernelParameter,
                         change_success: true,
                         change_error: None,
@@ -430,7 +416,10 @@ impl HardeningPlugin for KernelHardeningPlugin {
                 Err(_) => {
                     issues.push(ValidationIssue {
                         validation_issue_severity: Severity::Low,
-                        validation_issue_message: format!("{} does not exist on this kernel", param_name),
+                        validation_issue_message: format!(
+                            "{} does not exist on this kernel",
+                            param_name
+                        ),
                         validation_issue_config_key: Some(param_name.to_string()),
                     });
                 }
@@ -439,7 +428,9 @@ impl HardeningPlugin for KernelHardeningPlugin {
 
         Ok(ValidationReport {
             validation_report_plugin_id: self.metadata().plugin_id,
-            validation_report_is_valid: issues.iter().all(|i| i.validation_issue_severity != Severity::High),
+            validation_report_is_valid: issues
+                .iter()
+                .all(|i| i.validation_issue_severity != Severity::High),
             validation_report_issues: issues,
             validation_report_estimated_changes: estimated_changes,
         })

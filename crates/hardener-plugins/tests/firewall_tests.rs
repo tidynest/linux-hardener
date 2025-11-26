@@ -70,7 +70,10 @@ fn test_firewall_validate_checks_backend() {
     assert!(result.is_ok(), "Validate should return Ok result");
 
     let validation_report = result.unwrap();
-    assert_eq!(validation_report.validation_report_plugin_id.as_str(), "firewall-hardening");
+    assert_eq!(
+        validation_report.validation_report_plugin_id.as_str(),
+        "firewall-hardening"
+    );
     assert_eq!(validation_report.validation_report_is_valid, true);
 }
 
@@ -99,7 +102,11 @@ fn test_firewall_apply_requires_root() {
             println!(
                 "  - {}: {}",
                 change.change_description,
-                if change.change_success { "[OK]" } else { "[FAILED]" }
+                if change.change_success {
+                    "[OK]"
+                } else {
+                    "[FAILED]"
+                }
             );
             if let Some(ref error) = change.change_error {
                 println!("    Error: {}", error);
@@ -122,7 +129,10 @@ fn test_firewall_apply_requires_root() {
         } else {
             println!("[WARNING] Firewall still shows as disabled:");
             for finding in disabled_findings {
-                println!("  - {}: {}", finding.finding_title, finding.finding_description);
+                println!(
+                    "  - {}: {}",
+                    finding.finding_title, finding.finding_description
+                );
             }
         }
     } else {

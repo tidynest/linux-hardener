@@ -52,8 +52,7 @@ impl ReportGenerator {
                     .filter(|f| {
                         f.finding_compliance.iter().any(|c| {
                             c.compliance_framework == *framework
-                                && c.compliance_control_id ==
-                                control.compliance_control_id
+                                && c.compliance_control_id == control.compliance_control_id
                         })
                     })
                     .cloned()
@@ -115,6 +114,7 @@ mod tests {
                 compliance_control_title: "Test Control".to_string(),
                 compliance_section: Some("Test Section".to_string()),
             }],
+            finding_policy_exception: None,
         }
     }
 

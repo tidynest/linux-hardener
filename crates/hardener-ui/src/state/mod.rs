@@ -1,10 +1,5 @@
-use crate::types::{
-    ApplyResult,
-    Finding,
-    ScanResult
-};
+use crate::types::{ApplyResult, Finding, ScanResult};
 use leptos::prelude::*;
-
 
 /// Application state container holding all reactive signals for the UI.
 ///
@@ -35,14 +30,11 @@ pub struct AppState {
 impl Default for AppState {
     fn default() -> AppState {
         AppState {
-            scan_results:     RwSignal::new(Vec::new()),
+            scan_results: RwSignal::new(Vec::new()),
             selected_finding: RwSignal::new(None),
-            apply_results:    RwSignal::new(Vec::new()),
-            is_scanning:      RwSignal::new(false),
-            is_applying:      RwSignal::new(false),
+            apply_results: RwSignal::new(Vec::new()),
+            is_scanning: RwSignal::new(false),
+            is_applying: RwSignal::new(false),
         }
     }
 }
-
-
-

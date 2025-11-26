@@ -2,7 +2,7 @@ use hardener_common::types::PluginId;
 use hardener_core::{ApplyResult, Context, PluginRegistry, ScanResult};
 use hardener_plugins::{
     AuditHardeningPlugin, FirewallHardeningPlugin, KernelHardeningPlugin, MacHardeningPlugin,
-    PamHardeningPlugin, PermissionsHardeningPlugin, ServicesHardeningPlugin, SshHardeningPlugin
+    PamHardeningPlugin, PermissionsHardeningPlugin, ServicesHardeningPlugin, SshHardeningPlugin,
 };
 use hardener_state::{init_db, CheckpointId, CheckpointManager};
 use serde::Serialize;
@@ -93,9 +93,9 @@ pub fn run_scan() -> Result<Vec<ScanResult>, String> {
 /// Takes a list of plugin IDs to apply and returns the results
 #[tauri::command]
 pub fn run_apply(plugin_ids: Vec<String>) -> Result<Vec<ApplyResult>, String> {
-    let mut ctx  = Context::new();
+    let mut ctx = Context::new();
     let registry = create_plugin_registry();
-    let config   = hardener_core::Config;
+    let config = hardener_core::Config;
 
     let mut results = Vec::new();
 
@@ -109,11 +109,11 @@ pub fn run_apply(plugin_ids: Vec<String>) -> Result<Vec<ApplyResult>, String> {
                     error!("Apply failed for plugin {}: {}", plugin_id_str, e);
 
                     results.push(ApplyResult {
-                        apply_plugin_id:     plugin_id,
-                        apply_success:       false,
-                        apply_changes:       vec![],
+                        apply_plugin_id: plugin_id,
+                        apply_success: false,
+                        apply_changes: vec![],
                         apply_checkpoint_id: None,
-                        apply_error:         Some(e.to_string()),
+                        apply_error: Some(e.to_string()),
                     });
                 }
             }
@@ -129,12 +129,9 @@ pub fn run_apply(plugin_ids: Vec<String>) -> Result<Vec<ApplyResult>, String> {
 #[tauri::command]
 pub async fn run_rollback(checkpoint_id: String) -> Result<bool, String> {
     let manager = create_checkpoint_manager().await?;
-    let id =      CheckpointId::new(checkpoint_id);
+    let id = CheckpointId::new(checkpoint_id);
 
-    manager
-        .rollback(&id)
-        .await
-        .map_err(|e| e.to_string())?;
+    manager.rollback(&id).await.map_err(|e| e.to_string())?;
 
     Ok(true)
 }
@@ -154,11 +151,10 @@ pub async fn get_checkpoints() -> Result<Vec<CheckpointInfo>, String> {
     Ok(checkpoints
         .into_iter()
         .map(|cp| CheckpointInfo {
-            checkpoint_id:      cp.checkpoint_id.as_str().to_string(),
-            checkpoint_name:    cp.checkpoint_name,
+            checkpoint_id: cp.checkpoint_id.as_str().to_string(),
+            checkpoint_name: cp.checkpoint_name,
             checkpoint_created: format_timestamp(cp.checkpoint_timestamp),
-            checkpoint_user:    cp.checkpoint_username,
+            checkpoint_user: cp.checkpoint_username,
         })
-        .collect()
-    )
+        .collect())
 }

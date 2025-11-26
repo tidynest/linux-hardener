@@ -71,16 +71,32 @@ pub fn ConfigurationPage() -> impl IntoView {
 
         // Build list of enabled plugin IDs
         let mut plugin_ids = Vec::new();
-        if kernel_enabled.get() { plugin_ids.push("kernel-hardening".to_string()); }
-        if ssh_enabled.get() { plugin_ids.push("ssh-hardening".to_string()); }
-        if firewall_enabled.get() { plugin_ids.push("firewall-hardening".to_string()); }
+        if kernel_enabled.get() {
+            plugin_ids.push("kernel-hardening".to_string());
+        }
+        if ssh_enabled.get() {
+            plugin_ids.push("ssh-hardening".to_string());
+        }
+        if firewall_enabled.get() {
+            plugin_ids.push("firewall-hardening".to_string());
+        }
 
-        if pam_enabled.get() { plugin_ids.push("pam-hardening".to_string()); }
-        if services_enabled.get() { plugin_ids.push("service-minimisation".to_string()); }
+        if pam_enabled.get() {
+            plugin_ids.push("pam-hardening".to_string());
+        }
+        if services_enabled.get() {
+            plugin_ids.push("service-minimisation".to_string());
+        }
 
-        if audit_enabled.get() { plugin_ids.push("audit-hardening".to_string()); }
-        if permissions_enabled.get() { plugin_ids.push("permissions-hardening".to_string()); }
-        if mac_enabled.get() { plugin_ids.push("mac-hardening".to_string()); }
+        if audit_enabled.get() {
+            plugin_ids.push("audit-hardening".to_string());
+        }
+        if permissions_enabled.get() {
+            plugin_ids.push("permissions-hardening".to_string());
+        }
+        if mac_enabled.get() {
+            plugin_ids.push("mac-hardening".to_string());
+        }
 
         // Spawn async task to call backend
         leptos::task::spawn_local(async move {

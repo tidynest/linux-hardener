@@ -32,13 +32,11 @@ impl Default for JsonFormatter {
 impl ReportFormatter for JsonFormatter {
     fn format(&self, report: &ComplianceReport) -> String {
         if self.pretty {
-            serde_json::to_string_pretty(report).unwrap_or_else(|e| {
-                format!("{{\"error\": \"Failed to serialise report: {}\"}}", e)
-            })
+            serde_json::to_string_pretty(report)
+                .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialise report: {}\"}}", e))
         } else {
-            serde_json::to_string(report).unwrap_or_else(|e| {
-                format!("{{\"error\": \"Failed to serialise report: {}\"}}", e)
-            })
+            serde_json::to_string(report)
+                .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialise report: {}\"}}", e))
         }
     }
 

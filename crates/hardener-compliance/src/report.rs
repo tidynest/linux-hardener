@@ -56,14 +56,22 @@ impl ComplianceSummary {
     /// Creates a new summary by calculating statistics from control results.
     pub fn from_controls(controls: &[ControlResult]) -> ComplianceSummary {
         let total = controls.len();
-        let passing = controls.iter().filter(|c|
-            c.control_status == ControlStatus::Pass).count();
-        let failing = controls.iter().filter(|c|
-            c.control_status == ControlStatus::Fail).count();
-        let not_applicable = controls.iter().filter(|c|
-            c.control_status == ControlStatus::NotApplicable).count();
-        let manual_review = controls.iter().filter(|c|
-            c.control_status == ControlStatus::ManualReview).count();
+        let passing = controls
+            .iter()
+            .filter(|c| c.control_status == ControlStatus::Pass)
+            .count();
+        let failing = controls
+            .iter()
+            .filter(|c| c.control_status == ControlStatus::Fail)
+            .count();
+        let not_applicable = controls
+            .iter()
+            .filter(|c| c.control_status == ControlStatus::NotApplicable)
+            .count();
+        let manual_review = controls
+            .iter()
+            .filter(|c| c.control_status == ControlStatus::ManualReview)
+            .count();
 
         let applicable = total.saturating_sub(not_applicable);
         let score = if applicable > 0 {

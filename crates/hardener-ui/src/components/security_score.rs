@@ -32,10 +32,10 @@ pub fn SecurityScore() -> impl IntoView {
             for finding in scan_result.scan_findings.iter() {
                 let deduction = match finding.finding_severity {
                     Severity::Critical => 10,
-                    Severity::High     => 5,
-                    Severity::Medium   => 2,
-                    Severity::Low      => 1,
-                    Severity::Info     => 0,
+                    Severity::High => 5,
+                    Severity::Medium => 2,
+                    Severity::Low => 1,
+                    Severity::Info => 0,
                 };
                 total_score = total_score.saturating_sub(deduction);
             }

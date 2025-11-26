@@ -7,9 +7,10 @@
 //! - SELinux (RHEL, Fedora, CentOS, Rocky Linux, AlmaLinux)
 //! - AppArmor (Ubuntu, Debian, openSUSE)
 
+use hardener_common::types::PluginId;
 use hardener_common::{
     error::{HardeningError, Result},
-    types::{ComplianceMapping, ComplianceFramework, FindingCategory, Severity},
+    types::{ComplianceFramework, ComplianceMapping, FindingCategory, Severity},
 };
 use hardener_core::{
     ApplyResult, Change, ChangeType, Checkpoint, Config, ValidationIssue, ValidationReport,
@@ -19,7 +20,6 @@ use hardener_core::{
 use std::process::Command;
 use std::time::Instant;
 use tracing::{info, warn};
-use hardener_common::types::PluginId;
 
 /// Represents the type of MAC system detected on the host.
 #[derive(Clone, Debug, PartialEq)]
@@ -96,9 +96,9 @@ impl MacHardeningPlugin {
         if current_mode == "Enforcing" {
             return Ok(Change {
                 change_description: "SELinux already in enforcing mode".to_string(),
-                change_type:        ChangeType::ConfigFile,
-                change_success:     true,
-                change_error:       None,
+                change_type: ChangeType::ConfigFile,
+                change_success: true,
+                change_error: None,
             });
         }
 
@@ -111,17 +111,17 @@ impl MacHardeningPlugin {
         if output.status.success() {
             Ok(Change {
                 change_description: format!("Set SELinux mode from {} to Enforcing", current_mode),
-                change_type:        ChangeType::ConfigFile,
-                change_success:     true,
-                change_error:       None,
+                change_type: ChangeType::ConfigFile,
+                change_success: true,
+                change_error: None,
             })
         } else {
             let error_msg = String::from_utf8_lossy(&output.stderr).to_string();
             Ok(Change {
                 change_description: "Failed to set SELinux to enforcing mode".to_string(),
-                change_type:        ChangeType::ConfigFile,
-                change_success:     false,
-                change_error:       Some(error_msg),
+                change_type: ChangeType::ConfigFile,
+                change_success: false,
+                change_error: Some(error_msg),
             })
         }
     }
@@ -151,7 +151,7 @@ impl MacHardeningPlugin {
     fn count_apparmor_profiles(&self) -> Result<(usize, usize, usize)> {
         let status = self.get_apparmor_status()?;
 
-        let mut enforce_count  = 0;
+        let mut enforce_count = 0;
         let mut complain_count = 0;
 
         // Parse the aa-status output
@@ -176,30 +176,26 @@ impl MacHardeningPlugin {
 /// Returns compliance mappings for MAC findings.
 fn get_mac_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
     match finding_type {
-        "no-mac-system" => vec![
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "1.6.1.1".to_string(),
-                compliance_control_title: "Ensure SELinux or AppArmor is installed".to_string(),
-                compliance_section: Some("Mandatory Access Control".to_string()),
-            },
-        ],
-        "selinux-not-enforcing" => vec![
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "1.6.1.4".to_string(),
-                compliance_control_title: "Ensure the SELinux mode is enforcing or AppArmor is enabled".to_string(),
-                compliance_section: Some("Mandatory Access Control".to_string()),
-            },
-        ],
-        "apparmor-complain-mode" | "apparmor-no-profiles" => vec![
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "1.6.1.4".to_string(),
-                compliance_control_title: "Ensure the SELinux mode is enforcing  or AppArmor is enabled".to_string(),
-                compliance_section: Some("Mandatory Access Control".to_string()),
-            },
-        ],
+        "no-mac-system" => vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "1.6.1.1".to_string(),
+            compliance_control_title: "Ensure SELinux or AppArmor is installed".to_string(),
+            compliance_section: Some("Mandatory Access Control".to_string()),
+        }],
+        "selinux-not-enforcing" => vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "1.6.1.4".to_string(),
+            compliance_control_title: "Ensure the SELinux mode is enforcing or AppArmor is enabled"
+                .to_string(),
+            compliance_section: Some("Mandatory Access Control".to_string()),
+        }],
+        "apparmor-complain-mode" | "apparmor-no-profiles" => vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "1.6.1.4".to_string(),
+            compliance_control_title:
+                "Ensure the SELinux mode is enforcing  or AppArmor is enabled".to_string(),
+            compliance_section: Some("Mandatory Access Control".to_string()),
+        }],
         _ => vec![],
     }
 }
@@ -207,11 +203,11 @@ fn get_mac_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
 impl HardeningPlugin for MacHardeningPlugin {
     fn metadata(&self) -> PluginMetadata {
         PluginMetadata {
-            plugin_category:    FindingCategory::Kernel,
+            plugin_category: FindingCategory::Kernel,
             plugin_description: "Manages SELinux and AppArmor MAC system configuration".to_string(),
-            plugin_id:          PluginId::new("mac-hardening"),
-            plugin_name:        "MAC System Hardening".to_string(),
-            plugin_version:     "0.1.0".to_string(),
+            plugin_id: PluginId::new("mac-hardening"),
+            plugin_name: "MAC System Hardening".to_string(),
+            plugin_version: "0.1.0".to_string(),
         }
     }
 
@@ -220,12 +216,9 @@ impl HardeningPlugin for MacHardeningPlugin {
         vec![]
     }
 
-    fn scan(
-        &self,
-        _ctx: &Context
-    ) -> Result<ScanResult> {
-        let start_time   = Instant::now();
-        let plugin_id    = PluginId::new("mac-hardening");
+    fn scan(&self, _ctx: &Context) -> Result<ScanResult> {
+        let start_time = Instant::now();
+        let plugin_id = PluginId::new("mac-hardening");
         let mut findings = Vec::new();
 
         // Detect which MAC system is present
@@ -250,6 +243,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                                 finding_severity: Severity::High,
                                 finding_title:    "SELinux Not Enforcing".to_string(),
                                 finding_compliance: get_mac_compliance_mappings("selinux-not-enforcing"),
+                                finding_policy_exception: None,
                             });
                         }
                     }
@@ -278,6 +272,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                                 finding_severity: Severity::Medium,
                                 finding_title: "AppArmor Profiles in Complain Mode".to_string(),
                                 finding_compliance: get_mac_compliance_mappings("apparmor-complain-mode"),
+                                finding_policy_exception: None,
                             });
                         }
 
@@ -286,9 +281,11 @@ impl HardeningPlugin for MacHardeningPlugin {
                                 finding_category: FindingCategory::Kernel,
                                 finding_current_value: "0 profiles loaded".to_string(),
                                 finding_description: "No AppArmor profiles are loaded".to_string(),
-                                finding_explanation: "AppArmor is installed but no profiles are active".to_string(),
+                                finding_explanation:
+                                    "AppArmor is installed but no profiles are active".to_string(),
                                 finding_id: "apparmor-no-profiles".to_string(),
-                                finding_impact: "No application confinement is in effect".to_string(),
+                                finding_impact: "No application confinement is in effect"
+                                    .to_string(),
                                 finding_recommended_value: "Load AppArmor profiles".to_string(),
                                 finding_remediation_steps: vec![
                                     "Install apparmor-profiles package".to_string(),
@@ -296,7 +293,10 @@ impl HardeningPlugin for MacHardeningPlugin {
                                 ],
                                 finding_severity: Severity::High,
                                 finding_title: "No AppArmor Profiles Loaded".to_string(),
-                                finding_compliance: get_mac_compliance_mappings("apparmor-no-profiles"),
+                                finding_compliance: get_mac_compliance_mappings(
+                                    "apparmor-no-profiles",
+                                ),
+                                finding_policy_exception: None,
                             });
                         }
                     }
@@ -321,24 +321,22 @@ impl HardeningPlugin for MacHardeningPlugin {
                     finding_severity: Severity::Medium,
                     finding_title: "No MAC System Found".to_string(),
                     finding_compliance: get_mac_compliance_mappings("no-mac-system"),
+                    finding_policy_exception: None,
                 });
             }
         }
 
         let duration_us = start_time.elapsed().as_micros() as u64;
         Ok(ScanResult {
-            scan_plugin_id:   plugin_id,
-            scan_success:     true,
-            scan_findings:    findings,
+            scan_plugin_id: plugin_id,
+            scan_success: true,
+            scan_findings: findings,
             scan_duration_us: duration_us,
-            scan_error:       None,
+            scan_error: None,
         })
     }
 
-    fn validate(
-        &self,
-        _config: &Config
-    ) -> Result<ValidationReport> {
+    fn validate(&self, _config: &Config) -> Result<ValidationReport> {
         let validation_plugin_id = PluginId::new("mac-hardening");
         let mut issues = Vec::new();
         let mut estimated_changes = Vec::new();
@@ -355,8 +353,10 @@ impl HardeningPlugin for MacHardeningPlugin {
                     }
                     Err(_) => {
                         issues.push(ValidationIssue {
-                            validation_issue_severity:   Severity::High,
-                            validation_issue_message:    "Cannot read SELinux status - getenforce may not be available".to_string(),
+                            validation_issue_severity: Severity::High,
+                            validation_issue_message:
+                                "Cannot read SELinux status - getenforce may not be available"
+                                    .to_string(),
                             validation_issue_config_key: Some("selinux.mode".to_string()),
                         });
                     }
@@ -367,9 +367,10 @@ impl HardeningPlugin for MacHardeningPlugin {
                 if self.get_apparmor_status().is_err() {
                     issues.push(ValidationIssue {
                         validation_issue_severity: Severity::High,
-                        validation_issue_message: "Cannot read AppArmor status - aa-status may not be available".to_string(),
-                        validation_issue_config_key:
-                        Some("apparmor.status".to_string()),
+                        validation_issue_message:
+                            "Cannot read AppArmor status - aa-status may not be available"
+                                .to_string(),
+                        validation_issue_config_key: Some("apparmor.status".to_string()),
                     });
                 }
             }
@@ -382,18 +383,14 @@ impl HardeningPlugin for MacHardeningPlugin {
         let is_valid = issues.is_empty();
 
         Ok(ValidationReport {
-            validation_report_plugin_id:         validation_plugin_id,
-            validation_report_is_valid:          is_valid,
-            validation_report_issues:            issues,
+            validation_report_plugin_id: validation_plugin_id,
+            validation_report_is_valid: is_valid,
+            validation_report_issues: issues,
             validation_report_estimated_changes: estimated_changes,
         })
     }
 
-    fn apply(
-        &self,
-        ctx: &mut Context,
-        _config: &Config
-    ) -> Result<ApplyResult> {
+    fn apply(&self, ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
         use std::path::Path;
 
         let apply_plugin_id = PluginId::new("mac-hardening");
@@ -405,11 +402,8 @@ impl HardeningPlugin for MacHardeningPlugin {
             Path::new("/etc/apparmor"),
             Path::new("/etc/apparmor.d"),
         ];
-        let checkpoint_id = crate::create_checkpoint_for_apply(
-            ctx,
-            "mac-hardening-pre-apply",
-            &mac_paths,
-        )?;
+        let checkpoint_id =
+            crate::create_checkpoint_for_apply(ctx, "mac-hardening-pre-apply", &mac_paths)?;
 
         if checkpoint_id.is_some() {
             apply_changes.push(Change {
@@ -444,10 +438,13 @@ impl HardeningPlugin for MacHardeningPlugin {
                 // as this requires knowing which profiles should be enforced.
                 // Instead, we report what needs to be done.
                 apply_changes.push(Change {
-                    change_description: "AppArmor detected - manual profile enforcement required".to_string(),
+                    change_description: "AppArmor detected - manual profile enforcement required"
+                        .to_string(),
                     change_type: ChangeType::ConfigFile,
                     change_success: true,
-                    change_error: Some("Use aa-enforce to set specific profiles to enforce mode".to_string()),
+                    change_error: Some(
+                        "Use aa-enforce to set specific profiles to enforce mode".to_string(),
+                    ),
                 });
             }
             None => {
@@ -456,7 +453,9 @@ impl HardeningPlugin for MacHardeningPlugin {
                     apply_success: false,
                     apply_changes: vec![],
                     apply_checkpoint_id: checkpoint_id,
-                    apply_error: Some("No MAC system detected - cannot apply hardening".to_string()),
+                    apply_error: Some(
+                        "No MAC system detected - cannot apply hardening".to_string(),
+                    ),
                 });
             }
         }
@@ -472,11 +471,7 @@ impl HardeningPlugin for MacHardeningPlugin {
         })
     }
 
-    fn rollback(
-        &self,
-        ctx: &mut Context,
-        checkpoint: &Checkpoint
-    ) -> Result<()> {
+    fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> {
         info!(
             "Rolling back MAC configuration to checkpoint: {}",
             checkpoint.checkpoint_id.as_str()
@@ -489,9 +484,7 @@ impl HardeningPlugin for MacHardeningPlugin {
 
         // Reload SELinux/AppArmor based on what's available
         // Try SELinux first
-        let selinux_result = std::process::Command::new("setenforce")
-            .arg("1")
-            .output();
+        let selinux_result = std::process::Command::new("setenforce").arg("1").output();
 
         if selinux_result.is_ok() {
             info!("SELinux policy reloaded");

@@ -35,7 +35,6 @@ pub fn ScannerPage() -> impl IntoView {
             }
             // Clear scanning state
             app_state.is_scanning.set(false);
-
         });
     };
 

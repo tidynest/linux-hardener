@@ -9,7 +9,7 @@
 
 use hardener_common::{
     error::Result,
-    types::{ComplianceMapping, ComplianceFramework, FindingCategory, PluginId, Severity},
+    types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
     ApplyResult, Change, ChangeType, Checkpoint, Config, ValidationIssue, ValidationReport,
@@ -38,33 +38,26 @@ impl ServicesHardeningPlugin {
 }
 
 /// Returns compliance mappings for service findings.
-fn get_service_compliance_mappings(service_name: &str) -> Vec<ComplianceMapping>
-{
+fn get_service_compliance_mappings(service_name: &str) -> Vec<ComplianceMapping> {
     match service_name {
-        "xinetd" => vec![
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "2.1.1".to_string(),
-                compliance_control_title: "Ensure xinetd is not installed".to_string(),
-                compliance_section: Some("Services".to_string()),
-            },
-        ],
-        "avahi-daemon" | "avahi" => vec![
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "2.2.3".to_string(),
-                compliance_control_title: "Ensure Avahi Server is not installed".to_string(),
-                compliance_section: Some("Services".to_string()),
-            },
-        ],
-        "cups" | "cupsd" => vec![
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "2.2.4".to_string(),
-                compliance_control_title: "Ensure CUPS is not  installed".to_string(),
-                compliance_section: Some("Services".to_string()),
-            },
-        ],
+        "xinetd" => vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "2.1.1".to_string(),
+            compliance_control_title: "Ensure xinetd is not installed".to_string(),
+            compliance_section: Some("Services".to_string()),
+        }],
+        "avahi-daemon" | "avahi" => vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "2.2.3".to_string(),
+            compliance_control_title: "Ensure Avahi Server is not installed".to_string(),
+            compliance_section: Some("Services".to_string()),
+        }],
+        "cups" | "cupsd" => vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "2.2.4".to_string(),
+            compliance_control_title: "Ensure CUPS is not  installed".to_string(),
+            compliance_section: Some("Services".to_string()),
+        }],
         _ => vec![],
     }
 }
@@ -206,8 +199,8 @@ impl HardeningPlugin for ServicesHardeningPlugin {
             _ => {
                 issues.push(ValidationIssue {
                     validation_issue_config_key: None,
-                    validation_issue_message: "systemctl command not found - this plugin requires systemd"
-                        .to_string(),
+                    validation_issue_message:
+                        "systemctl command not found - this plugin requires systemd".to_string(),
                     validation_issue_severity: Severity::Critical,
                 });
             }
@@ -254,7 +247,8 @@ impl HardeningPlugin for ServicesHardeningPlugin {
                         directive.service_name, current_state, directive.service_description
                     ),
                     finding_id: format!("service_{}", directive.service_name.replace("-", "_")),
-                    finding_impact: "Reduces attack surface by disabling unnecessary service".to_string(),
+                    finding_impact: "Reduces attack surface by disabling unnecessary service"
+                        .to_string(),
                     finding_recommended_value: "disabled and masked".to_string(),
                     finding_remediation_steps: vec![
                         format!("systemctl stop {}", directive.service_name),
@@ -262,8 +256,12 @@ impl HardeningPlugin for ServicesHardeningPlugin {
                         format!("systemctl mask {}", directive.service_name),
                     ],
                     finding_severity: directive.service_issue_severity,
-                    finding_title: format!("Unnecessary service {} is running", directive.service_name),
+                    finding_title: format!(
+                        "Unnecessary service {} is running",
+                        directive.service_name
+                    ),
                     finding_compliance: get_service_compliance_mappings(directive.service_name),
+                    finding_policy_exception: None,
                 });
             }
         }
@@ -324,7 +322,10 @@ impl HardeningPlugin for ServicesHardeningPlugin {
                     Ok(_) => {
                         changes.push(Change {
                             change_type: ChangeType::Service,
-                            change_description: format!("Stopped service {}", directive.service_name),
+                            change_description: format!(
+                                "Stopped service {}",
+                                directive.service_name
+                            ),
                             change_error: None,
                             change_success: true,
                         });
@@ -350,7 +351,10 @@ impl HardeningPlugin for ServicesHardeningPlugin {
                     Ok(_) => {
                         changes.push(Change {
                             change_type: ChangeType::Service,
-                            change_description: format!("Disabled service {}", directive.service_name),
+                            change_description: format!(
+                                "Disabled service {}",
+                                directive.service_name
+                            ),
                             change_error: None,
                             change_success: true,
                         });
@@ -382,7 +386,10 @@ impl HardeningPlugin for ServicesHardeningPlugin {
                 Err(e) => {
                     changes.push(Change {
                         change_type: ChangeType::Service,
-                        change_description: format!("Failed to mask service {}", directive.service_name),
+                        change_description: format!(
+                            "Failed to mask service {}",
+                            directive.service_name
+                        ),
                         change_error: Some(e.to_string()),
                         change_success: false,
                     });

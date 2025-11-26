@@ -80,8 +80,8 @@ pub async fn run(
                     Err(e) => {
                         output::error(
                             &format,
-                            &format!("Validation failed for {}: {}", metadata.plugin_name, e
-                            ));
+                            &format!("Validation failed for {}: {}", metadata.plugin_name, e),
+                        );
                     }
                 }
             } else {
@@ -92,13 +92,16 @@ pub async fn run(
                     Err(e) => {
                         output::error(
                             &format,
-                            &format!("Failed to apply {}: {e}", metadata.plugin_name
-                            ));
+                            &format!("Failed to apply {}: {e}", metadata.plugin_name),
+                        );
                     }
                 }
             }
         } else {
-            output::error(&format, &format!("Plugin not found: {}", plugin_id.as_str()));
+            output::error(
+                &format,
+                &format!("Plugin not found: {}", plugin_id.as_str()),
+            );
         }
     }
 

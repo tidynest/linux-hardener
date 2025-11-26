@@ -486,7 +486,10 @@ fn test_execute_scan_workflow() {
     }
 
     // Verify we have results for each plugin
-    let plugin_ids: Vec<String> = results.iter().map(|r| r.scan_plugin_id.to_string()).collect();
+    let plugin_ids: Vec<String> = results
+        .iter()
+        .map(|r| r.scan_plugin_id.to_string())
+        .collect();
     assert!(
         plugin_ids.contains(&"plugin-a".to_string()),
         "Should have result for plugin-a"
@@ -548,7 +551,10 @@ fn test_execute_apply_workflow() {
     }
 
     // Verify we have results for each plugin
-    let plugin_ids: Vec<String> = results.iter().map(|r| r.apply_plugin_id.to_string()).collect();
+    let plugin_ids: Vec<String> = results
+        .iter()
+        .map(|r| r.apply_plugin_id.to_string())
+        .collect();
     assert!(
         plugin_ids.contains(&"plugin-a".to_string()),
         "Should have result for plugin-a"

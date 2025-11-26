@@ -12,7 +12,7 @@ pub mod ufw;
 
 use hardener_common::{
     error::Result,
-    types::{ComplianceMapping, ComplianceFramework, FindingCategory, PluginId, Severity},
+    types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
     ApplyResult, Change, ChangeType, Checkpoint, Config, ValidationReport,
@@ -82,15 +82,14 @@ pub trait FirewallBackend: Send + Sync {
 
 /// Returns compliance mappings for firewall findings.
 fn get_firewall_compliance_mappings() -> Vec<ComplianceMapping> {
-    vec![
-        ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "3.4.1.2".to_string(),
-            compliance_control_title: "Ensure firewall service is enabled and
-  running".to_string(),
-            compliance_section: Some("Network Configuration".to_string()),
-        },
-    ]
+    vec![ComplianceMapping {
+        compliance_framework: ComplianceFramework::CIS,
+        compliance_control_id: "3.4.1.2".to_string(),
+        compliance_control_title: "Ensure firewall service is enabled and
+  running"
+            .to_string(),
+        compliance_section: Some("Network Configuration".to_string()),
+    }]
 }
 
 /// Returns sensible default firewall rules for hardening.
@@ -238,10 +237,14 @@ impl HardeningPlugin for FirewallHardeningPlugin {
                 finding_id: format!("{}-disabled", backend.backend_name()),
                 finding_impact: "System exposed to network attacks".to_string(),
                 finding_recommended_value: "enabled".to_string(),
-                finding_remediation_steps: vec![format!("Enable {} firewall", backend.backend_name())],
+                finding_remediation_steps: vec![format!(
+                    "Enable {} firewall",
+                    backend.backend_name()
+                )],
                 finding_severity: Severity::High,
                 finding_title: "Firewall disabled".to_string(),
                 finding_compliance: get_firewall_compliance_mappings(),
+                finding_policy_exception: None,
             });
         }
 
@@ -296,12 +299,15 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         let mut apply_changes = backend.apply_rules(&rules)?;
 
         if checkpoint_id.is_some() {
-            apply_changes.insert(0, Change {
-                change_description: "Created checkpoint for rollback".to_string(),
-                change_type: ChangeType::FirewallRule,
-                change_success: true,
-                change_error: None,
-            });
+            apply_changes.insert(
+                0,
+                Change {
+                    change_description: "Created checkpoint for rollback".to_string(),
+                    change_type: ChangeType::FirewallRule,
+                    change_success: true,
+                    change_error: None,
+                },
+            );
         }
 
         Ok(ApplyResult {
@@ -326,12 +332,10 @@ impl HardeningPlugin for FirewallHardeningPlugin {
 
         // Re-enable firewall to reload rules based on detected backend
         match self.detect_backend() {
-            Ok(backend) => {
-                match backend.enable() {
-                    Ok(_) => info!("Firewall re-enabled successfully"),
-                    Err(e) => warn!("Failed to re-enable firewall: {}", e),
-                }
-            }
+            Ok(backend) => match backend.enable() {
+                Ok(_) => info!("Firewall re-enabled successfully"),
+                Err(e) => warn!("Failed to re-enable firewall: {}", e),
+            },
             Err(e) => {
                 warn!("Could not detect firewall backend for reload: {}", e);
             }

@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 
-use crate::components::{SecurityScore, QuickActions};
+use crate::components::{QuickActions, SecurityScore};
 
 /// Dashboard page showing system security overview.
 ///

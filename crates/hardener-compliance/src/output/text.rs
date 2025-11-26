@@ -27,10 +27,7 @@ impl ReportFormatter for TextFormatter {
         let mut output = String::new();
 
         // Header
-        output.push_str(&format!(
-            "{} Compliance Report\n",
-            report.report_framework
-        ));
+        output.push_str(&format!("{} Compliance Report\n", report.report_framework));
         output.push_str(&"=".repeat(60));
         output.push('\n');
         output.push_str(&format!(
@@ -40,8 +37,7 @@ impl ReportFormatter for TextFormatter {
         output.push('\n');
 
         // Group controls by section
-        let mut sections: std::collections::BTreeMap<&str,
-            Vec<&crate::report::ControlResult>> =
+        let mut sections: std::collections::BTreeMap<&str, Vec<&crate::report::ControlResult>> =
             std::collections::BTreeMap::new();
 
         for control in &report.report_controls {
@@ -83,10 +79,7 @@ impl ReportFormatter for TextFormatter {
         }
 
         // Summary
-        output.push_str(&format!(
-            "\n{}\n",
-            "=".repeat(60)
-        ));
+        output.push_str(&format!("\n{}\n", "=".repeat(60)));
         output.push_str("Summary\n");
         output.push_str(&"-".repeat(7));
         output.push('\n');

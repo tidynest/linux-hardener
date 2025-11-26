@@ -16,14 +16,12 @@ pub fn CheckpointList() -> impl IntoView {
         checkpoint_username: String,
     }
 
-    let mock_checkpoints = vec![
-        CheckpointData {
-            checkpoint_id: "cp_2024_001".to_string(),
-            checkpoint_name: "Before kernel hardening".to_string(),
-            checkpoint_timestamp: 170000000,
-            checkpoint_username: "admin".to_string(),
-        },
-    ];
+    let mock_checkpoints = vec![CheckpointData {
+        checkpoint_id: "cp_2024_001".to_string(),
+        checkpoint_name: "Before kernel hardening".to_string(),
+        checkpoint_timestamp: 170000000,
+        checkpoint_username: "admin".to_string(),
+    }];
 
     let checkpoints = RwSignal::new(mock_checkpoints);
 
@@ -38,9 +36,7 @@ pub fn CheckpointList() -> impl IntoView {
         // TODO: Delete checkpoint via backend
         leptos::logging::log!("Delete checkpoint: {}", checkpoint_id);
         // Remove from local state for demonstration
-        checkpoints.update(|cps| {
-            cps.retain(|cp| cp.checkpoint_id != checkpoint_id)
-        });
+        checkpoints.update(|cps| cps.retain(|cp| cp.checkpoint_id != checkpoint_id));
     };
 
     view! {

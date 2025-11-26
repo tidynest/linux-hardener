@@ -3,8 +3,8 @@
 use anyhow::{anyhow, Result};
 use hardener_common::types::ComplianceFramework;
 use hardener_compliance::{
-    JsonFormatter, OutputFormat, ReportConfig, ReportFormatter, ReportGenerator,
-    Scenario, TextFormatter,
+    JsonFormatter, OutputFormat, ReportConfig, ReportFormatter, ReportGenerator, Scenario,
+    TextFormatter,
 };
 use hardener_core::{Context, PluginRegistry};
 use hardener_plugins::*;
@@ -31,8 +31,10 @@ pub async fn run(
         // Interactive mode - for now default to Server
         if !quiet {
             println!("No scenario specified, using 'server' (CIS + STIG)");
-            println!("Use --scenario or --framework to specify. Run 'hardener
-  report --help' for options.\n");
+            println!(
+                "Use --scenario or --framework to specify. Run 'hardener
+  report --help' for options.\n"
+            );
         }
         Scenario::Server
     };
@@ -43,9 +45,9 @@ pub async fn run(
         "text" | "txt" => OutputFormat::Text,
         _ => {
             return Err(anyhow!(
-                  "Unsupported format '{}'. Use 'text' or 'json'.",
-                  report_format
-              ))
+                "Unsupported format '{}'. Use 'text' or 'json'.",
+                report_format
+            ))
         }
     };
 
@@ -157,10 +159,10 @@ fn parse_scenario(s: &str) -> Result<Scenario> {
         "gdpr" => Ok(Scenario::Gdpr),
         "all" => Ok(Scenario::All),
         _ => Err(anyhow!(
-              "Unknown scenario '{}'. Valid options: server, workstation,
+            "Unknown scenario '{}'. Valid options: server, workstation,
   government, healthcare, financial, gdpr, all",
-              s
-          )),
+            s
+        )),
     }
 }
 
@@ -174,9 +176,9 @@ fn parse_framework(s: &str) -> Result<ComplianceFramework> {
         "gdpr" => Ok(ComplianceFramework::GDPR),
         "iso27001" | "iso" => Ok(ComplianceFramework::ISO27001),
         _ => Err(anyhow!(
-              "Unknown framework '{}'. Valid options: cis, stig, nist, pcidss,
+            "Unknown framework '{}'. Valid options: cis, stig, nist, pcidss,
   hipaa, gdpr, iso27001",
-              s
-          )),
+            s
+        )),
     }
 }

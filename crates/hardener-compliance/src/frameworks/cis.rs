@@ -16,7 +16,8 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
         ComplianceMapping {
             compliance_framework: ComplianceFramework::CIS,
             compliance_control_id: "1.5.1".to_string(),
-            compliance_control_title: "Ensure address space layout randomisation (ASLR)".to_string(),
+            compliance_control_title: "Ensure address space layout randomisation (ASLR)"
+                .to_string(),
             compliance_section: Some("Initial Setup".to_string()),
         },
         ComplianceMapping {
@@ -37,7 +38,6 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
             compliance_control_title: "Ensure kernel pointers are restricted".to_string(),
             compliance_section: Some("Initial Setup".to_string()),
         },
-
         // ===========================================
         // Section 3: Network Configuration
         // ===========================================
@@ -79,7 +79,6 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
             compliance_control_title: "Ensure TCP SYN cookies is enabled".to_string(),
             compliance_section: Some("Network Configuration".to_string()),
         },
-
         // 3.4 Firewall Configuration
         ComplianceMapping {
             compliance_framework: ComplianceFramework::CIS,
@@ -93,11 +92,9 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
             compliance_control_title: "Ensure firewall service is enabled and running".to_string(),
             compliance_section: Some("Network Configuration".to_string()),
         },
-
         // ===========================================
         // Section 4: Logging and Auditing
         // ===========================================
-
         ComplianceMapping {
             compliance_framework: ComplianceFramework::CIS,
             compliance_control_id: "4.1.1.1".to_string(),
@@ -116,7 +113,6 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
             compliance_control_title: "Ensure audit log storage size is configured".to_string(),
             compliance_section: Some("Logging and Auditing".to_string()),
         },
-
         // ===========================================
         // Section 5: Access, Authentication and Authorisation
         // ===========================================
@@ -128,12 +124,12 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
             compliance_control_title: "Ensure cron is restricted to authorised users".to_string(),
             compliance_section: Some("Access Control".to_string()),
         },
-
         // 5.2 SSH Server Configuration
         ComplianceMapping {
             compliance_framework: ComplianceFramework::CIS,
             compliance_control_id: "5.2.1".to_string(),
-            compliance_control_title: "Ensure permissions on /etc/ssh/sshd_config are configured".to_string(),
+            compliance_control_title: "Ensure permissions on /etc/ssh/sshd_config are configured"
+                .to_string(),
             compliance_section: Some("Access Control".to_string()),
         },
         ComplianceMapping {
@@ -172,18 +168,19 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
             compliance_control_title: "Ensure SSH Idle Timeout Interval is configured".to_string(),
             compliance_section: Some("Access Control".to_string()),
         },
-
         // 5.3 Configure PAM
         ComplianceMapping {
             compliance_framework: ComplianceFramework::CIS,
             compliance_control_id: "5.3.1".to_string(),
-            compliance_control_title: "Ensure password creation requirements are configured".to_string(),
+            compliance_control_title: "Ensure password creation requirements are configured"
+                .to_string(),
             compliance_section: Some("Access Control".to_string()),
         },
         ComplianceMapping {
             compliance_framework: ComplianceFramework::CIS,
             compliance_control_id: "5.3.2".to_string(),
-            compliance_control_title: "Ensure lockout for failed password attempts is configured".to_string(),
+            compliance_control_title: "Ensure lockout for failed password attempts is configured"
+                .to_string(),
             compliance_section: Some("Access Control".to_string()),
         },
         ComplianceMapping {
@@ -192,7 +189,6 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
             compliance_control_title: "Ensure password reuse is limited".to_string(),
             compliance_section: Some("Access Control".to_string()),
         },
-
         // ===========================================
         // Section 6: System Maintenance
         // ===========================================
@@ -201,13 +197,15 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
         ComplianceMapping {
             compliance_framework: ComplianceFramework::CIS,
             compliance_control_id: "6.1.2".to_string(),
-            compliance_control_title: "Ensure permissions on /etc/passwd are configured".to_string(),
+            compliance_control_title: "Ensure permissions on /etc/passwd are configured"
+                .to_string(),
             compliance_section: Some("System Maintenance".to_string()),
         },
         ComplianceMapping {
             compliance_framework: ComplianceFramework::CIS,
             compliance_control_id: "6.1.3".to_string(),
-            compliance_control_title: "Ensure permissions on /etc/shadow are configured".to_string(),
+            compliance_control_title: "Ensure permissions on /etc/shadow are configured"
+                .to_string(),
             compliance_section: Some("System Maintenance".to_string()),
         },
         ComplianceMapping {
@@ -219,10 +217,10 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
         ComplianceMapping {
             compliance_framework: ComplianceFramework::CIS,
             compliance_control_id: "6.1.5".to_string(),
-            compliance_control_title: "Ensure permissions on /etc/gshadow are configured".to_string(),
+            compliance_control_title: "Ensure permissions on /etc/gshadow are configured"
+                .to_string(),
             compliance_section: Some("System Maintenance".to_string()),
         },
-
         // 6.2 User and Group Settings (Services)
         ComplianceMapping {
             compliance_framework: ComplianceFramework::CIS,
@@ -251,7 +249,6 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
         // ===========================================
         // Mandatory Access Control
         // ===========================================
-
         ComplianceMapping {
             compliance_framework: ComplianceFramework::CIS,
             compliance_control_id: "1.6.1.1".to_string(),
@@ -261,7 +258,8 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
         ComplianceMapping {
             compliance_framework: ComplianceFramework::CIS,
             compliance_control_id: "1.6.1.2".to_string(),
-            compliance_control_title: "Ensure SELinux is not disabled in bootloader configuration".to_string(),
+            compliance_control_title: "Ensure SELinux is not disabled in bootloader configuration"
+                .to_string(),
             compliance_section: Some("Mandatory Access Control".to_string()),
         },
         ComplianceMapping {
@@ -273,11 +271,9 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
         ComplianceMapping {
             compliance_framework: ComplianceFramework::CIS,
             compliance_control_id: "1.6.1.4".to_string(),
-            compliance_control_title: "Ensure the SELinux mode is enforcing or AppArmor is enabled".to_string(),
+            compliance_control_title: "Ensure the SELinux mode is enforcing or AppArmor is enabled"
+                .to_string(),
             compliance_section: Some("Mandatory Access Control".to_string()),
         },
     ]
 }
-
-
-

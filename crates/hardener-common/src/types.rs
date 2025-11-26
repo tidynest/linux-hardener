@@ -131,13 +131,13 @@ pub enum ComplianceFramework {
 impl fmt::Display for ComplianceFramework {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ComplianceFramework::CIS      => write!(f, "CIS"),
-            ComplianceFramework::HIPAA    => write!(f, "HIPAA"),
+            ComplianceFramework::CIS => write!(f, "CIS"),
+            ComplianceFramework::HIPAA => write!(f, "HIPAA"),
             ComplianceFramework::ISO27001 => write!(f, "ISO27001"),
-            ComplianceFramework::NIST     => write!(f, "NIST"),
-            ComplianceFramework::PCIDSS   => write!(f, "PCIDSS"),
-            ComplianceFramework::STIG     => write!(f, "STIG"),
-            ComplianceFramework::GDPR     => write!(f, "GDPR"),
+            ComplianceFramework::NIST => write!(f, "NIST"),
+            ComplianceFramework::PCIDSS => write!(f, "PCIDSS"),
+            ComplianceFramework::STIG => write!(f, "STIG"),
+            ComplianceFramework::GDPR => write!(f, "GDPR"),
         }
     }
 }
@@ -178,4 +178,25 @@ impl fmt::Display for ControlStatus {
             ControlStatus::ManualReview => write!(f, "MANUAL"),
         }
     }
+}
+
+/// Policy exception attached to a finding when config allows a deviation.
+///
+/// This provides an audit trail for intentional deviations from security baselines.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct FindingPolicyException {
+    /// The value that was allowed by policy.
+    pub exception_allowed_value: String,
+    /// Human-readable reason for the exception.
+    pub exception_reason: String,
+    /// Who approved this exception.
+    pub exception_approved_by: Option<String>,
+    /// When this exception was approved (ISO 8601 date).
+    pub exception_approved_date: Option<String>,
+    /// Reference to approval ticket/issue.
+    pub exception_ticket: Option<String>,
+    /// When this exception expires (ISO 8601 date).
+    pub exception_expires: Option<String>,
+    /// Whether the exception has expired.
+    pub exception_is_expired: bool,
 }

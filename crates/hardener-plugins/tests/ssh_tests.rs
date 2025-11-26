@@ -44,11 +44,16 @@ fn test_ssh_scan_reads_configuration() {
             assert!(scan_result.scan_error.is_none(), "Should not have errors");
 
             // Print findings for manual verification
-            println!("SSH scan found {} findings:", scan_result.scan_findings.len());
+            println!(
+                "SSH scan found {} findings:",
+                scan_result.scan_findings.len()
+            );
             for finding in &scan_result.scan_findings {
                 println!(
                     "  - {}: {} → {}",
-                    finding.finding_title, finding.finding_current_value, finding.finding_recommended_value
+                    finding.finding_title,
+                    finding.finding_current_value,
+                    finding.finding_recommended_value
                 );
             }
         }
@@ -71,7 +76,10 @@ fn test_ssh_validate_checks_config_file() {
 
     match result {
         Ok(validation_report) => {
-            assert_eq!(validation_report.validation_report_plugin_id, PluginId::new("ssh-hardening"));
+            assert_eq!(
+                validation_report.validation_report_plugin_id,
+                PluginId::new("ssh-hardening")
+            );
 
             println!(
                 "SSH validation result: valid={}",
@@ -81,7 +89,10 @@ fn test_ssh_validate_checks_config_file() {
             if !validation_report.validation_report_issues.is_empty() {
                 println!("Validation issues found:");
                 for issue in &validation_report.validation_report_issues {
-                    println!("  - [{}] {}", issue.validation_issue_severity, issue.validation_issue_message);
+                    println!(
+                        "  - [{}] {}",
+                        issue.validation_issue_severity, issue.validation_issue_message
+                    );
                 }
             }
 
@@ -151,7 +162,8 @@ fn test_ssh_apply_requires_root() {
 
             // Verify service restart was attempted
             let has_service_restart = apply_result.apply_changes.iter().any(|c| {
-                c.change_description.contains("SSH service") || c.change_description.contains("Restart")
+                c.change_description.contains("SSH service")
+                    || c.change_description.contains("Restart")
             });
             assert!(has_service_restart, "Should include SSH service restart");
         }

@@ -264,7 +264,10 @@ impl FirewallBackend for NftablesBackend {
                 Ok(_) => {
                     info!("Applied nftables rule: {}", rule.rule_description);
                     changes.push(Change {
-                        change_description: format!("Added firewall rule: {}", rule.rule_description),
+                        change_description: format!(
+                            "Added firewall rule: {}",
+                            rule.rule_description
+                        ),
                         change_type: ChangeType::FirewallRule,
                         change_success: true,
                         change_error: None,

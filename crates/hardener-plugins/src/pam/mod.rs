@@ -8,7 +8,7 @@
 use hardener_common::{
     error::{HardeningError, Result},
     file_utils::update_file_atomically,
-    types::{ComplianceMapping, ComplianceFramework, FindingCategory, PluginId, Severity},
+    types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
     Change, ChangeType, Checkpoint, Config, Context,
@@ -39,38 +39,33 @@ impl PamHardeningPlugin {
 /// Returns compliance mappings for PAM findings.
 fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
     match check_name {
-        name if name.contains("minlen") || name.contains("complexity") => vec![
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "5.3.1".to_string(),
-                compliance_control_title: "Ensure password creation requirements are configured".to_string(),
-                compliance_section: Some("Access Control".to_string()),
-            },
-        ],
-        name if name.contains("lockout") || name.contains("deny") => vec![
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "5.3.2".to_string(),
-                compliance_control_title: "Ensure lockout for failed password attempts is configured".to_string(),
-                compliance_section: Some("Access Control".to_string()),
-            },
-        ],
-        name if name.contains("remember") || name.contains("reuse") => vec![
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "5.3.3".to_string(),
-                compliance_control_title: "Ensure password reuse is limited".to_string(),
-                compliance_section: Some("Access Control".to_string()),
-            },
-        ],
-        _ => vec![
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "5.3.1".to_string(),
-                compliance_control_title: "Ensure password creation requirements  are configured".to_string(),
-                compliance_section: Some("Access Control".to_string()),
-            },
-        ],
+        name if name.contains("minlen") || name.contains("complexity") => vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "5.3.1".to_string(),
+            compliance_control_title: "Ensure password creation requirements are configured"
+                .to_string(),
+            compliance_section: Some("Access Control".to_string()),
+        }],
+        name if name.contains("lockout") || name.contains("deny") => vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "5.3.2".to_string(),
+            compliance_control_title: "Ensure lockout for failed password attempts is configured"
+                .to_string(),
+            compliance_section: Some("Access Control".to_string()),
+        }],
+        name if name.contains("remember") || name.contains("reuse") => vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "5.3.3".to_string(),
+            compliance_control_title: "Ensure password reuse is limited".to_string(),
+            compliance_section: Some("Access Control".to_string()),
+        }],
+        _ => vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "5.3.1".to_string(),
+            compliance_control_title: "Ensure password creation requirements  are configured"
+                .to_string(),
+            compliance_section: Some("Access Control".to_string()),
+        }],
     }
 }
 
@@ -162,6 +157,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                         directive.pam_directive_name
                     ),
                     finding_compliance: get_pam_compliance_mappings(directive.pam_directive_name),
+                    finding_policy_exception: None,
                 });
             }
         }
@@ -198,11 +194,8 @@ impl HardeningPlugin for PamHardeningPlugin {
             Path::new("/etc/login.defs"),
             Path::new("/etc/pam.d"),
         ];
-        let checkpoint_id = crate::create_checkpoint_for_apply(
-            ctx,
-            "pam-hardening-pre-apply",
-            &pam_paths,
-        )?;
+        let checkpoint_id =
+            crate::create_checkpoint_for_apply(ctx, "pam-hardening-pre-apply", &pam_paths)?;
 
         if checkpoint_id.is_some() {
             changes.push(Change {
@@ -417,8 +410,9 @@ impl HardeningPlugin for PamHardeningPlugin {
                 if !metadata.is_file() {
                     issues.push(ValidationIssue {
                         validation_issue_config_key: None,
-                        validation_issue_message: "/etc/security/pwquality.conf exists but is not a regular file"
-                            .to_string(),
+                        validation_issue_message:
+                            "/etc/security/pwquality.conf exists but is not a regular file"
+                                .to_string(),
                         validation_issue_severity: Severity::High,
                     });
                 }
@@ -439,7 +433,8 @@ impl HardeningPlugin for PamHardeningPlugin {
                 if !metadata.is_file() {
                     issues.push(ValidationIssue {
                         validation_issue_config_key: None,
-                        validation_issue_message: "/etc/login.defs exists but is not a regular file".to_string(),
+                        validation_issue_message:
+                            "/etc/login.defs exists but is not a regular file".to_string(),
                         validation_issue_severity: Severity::High,
                     });
                 }
@@ -447,7 +442,8 @@ impl HardeningPlugin for PamHardeningPlugin {
             Err(_) => {
                 issues.push(ValidationIssue {
                     validation_issue_config_key: None,
-                    validation_issue_message: "/etc/login.defs does not exist or is not readable".to_string(),
+                    validation_issue_message: "/etc/login.defs does not exist or is not readable"
+                        .to_string(),
                     validation_issue_severity: Severity::High,
                 });
             }

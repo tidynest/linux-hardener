@@ -64,8 +64,7 @@ impl ReportFormatter for HtmlFormatter {
         html.push_str("</div>\n</div>\n");
 
         // Group controls by section
-        let mut sections: std::collections::BTreeMap<&str, Vec<&crate::report::ControlResult>>
-            =
+        let mut sections: std::collections::BTreeMap<&str, Vec<&crate::report::ControlResult>> =
             std::collections::BTreeMap::new();
 
         for control in &report.report_controls {
@@ -79,8 +78,10 @@ impl ReportFormatter for HtmlFormatter {
         for (section, controls) in &sections {
             html.push_str(&format!("<h2>{}</h2>\n", section));
             html.push_str("<table>\n");
-            html.push_str("<thead><tr><th>Control
-  ID</th><th>Title</th><th>Status</th></tr></thead>\n");
+            html.push_str(
+                "<thead><tr><th>Control
+  ID</th><th>Title</th><th>Status</th></tr></thead>\n",
+            );
             html.push_str("<tbody>\n");
 
             for control in controls {
@@ -100,8 +101,9 @@ impl ReportFormatter for HtmlFormatter {
                 ));
 
                 // Show findings for failed controls
-                if control.control_status == ControlStatus::Fail &&
-                    !control.control_findings.is_empty() {
+                if control.control_status == ControlStatus::Fail
+                    && !control.control_findings.is_empty()
+                {
                     for finding in &control.control_findings {
                         html.push_str(&format!(
                             "<tr class=\"finding\"><td></td><td colspan=\"2\">→ [{}]

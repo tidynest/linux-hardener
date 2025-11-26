@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use hardener_state::{init_db, CheckpointManager, CheckpointId, CheckpointSigner};
+use hardener_state::{init_db, CheckpointId, CheckpointManager, CheckpointSigner};
 use std::path::PathBuf;
 
 use crate::cli::OutputFormat;
@@ -80,7 +80,10 @@ pub async fn rollback(checkpoint_id: &str, format: OutputFormat, quiet: bool) ->
     let id = CheckpointId::new(checkpoint_id);
 
     if !quiet {
-        output::status(&format, &format!("Rolling back to checkpoint: {checkpoint_id}"));
+        output::status(
+            &format,
+            &format!("Rolling back to checkpoint: {checkpoint_id}"),
+        );
     }
 
     manager.rollback(&id).await?;
@@ -101,4 +104,3 @@ fn collect_config_paths() -> Vec<&'static std::path::Path> {
         Path::new("/etc/audit/rules.d"),
     ]
 }
-

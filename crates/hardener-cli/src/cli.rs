@@ -24,6 +24,10 @@ pub struct Cli {
     /// Suppress non-essential output.
     #[arg(global = true, short, long)]
     pub quiet: bool,
+
+    /// Path to configuration file.
+    #[arg(global = true, short = 'C', long, value_name = "FILE")]
+    pub config: Option<std::path::PathBuf>,
 }
 
 #[derive(Subcommand)]
@@ -33,6 +37,18 @@ pub enum Command {
         /// Only scan specific plugins (can be repeated).
         #[arg(short, long)]
         plugin: Vec<String>,
+
+        /// Audit mode: ignore config, pure security assessment.
+        #[arg(long)]
+        audit: bool,
+
+        /// Compliance mode: only show policy violations.
+        #[arg(long, conflicts_with = "audit")]
+        compliance: bool,
+
+        /// Exit with code 1 if findings exist (useful for CI/CD).
+        #[arg(long)]
+        exit_code: bool,
 
         /// Minimum severity to report.
         #[arg(short, long, default_value = "info")]
@@ -60,7 +76,7 @@ pub enum Command {
         checkpoint_id: String,
     },
 
-    /// Manage checkpoints. 
+    /// Manage checkpoints.
     Checkpoint {
         #[command(subcommand)]
         action: CheckpointAction,
@@ -86,7 +102,7 @@ pub enum Command {
         /// Output file path (prints to stdout if not specified).
         #[arg(short, long)]
         output: Option<String>,
-    }
+    },
 }
 
 #[derive(Subcommand)]
@@ -95,19 +111,13 @@ pub enum CheckpointAction {
     List,
 
     /// Create a new checkpoint.
-    Create {
-        name: String,
-    },
+    Create { name: String },
 
     /// Delete a checkpoint.
-    Delete {
-        checkpoint_id: String,
-    },
+    Delete { checkpoint_id: String },
 
     /// Show checkpoint details.
-    Show {
-        checkpoint_id: String,
-    },
+    Show { checkpoint_id: String },
 }
 
 #[derive(ValueEnum, Clone, Default)]
@@ -125,4 +135,16 @@ pub enum SeverityFilter {
     Medium,
     High,
     Critical,
+}
+
+/// Scan output mode.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ScanMode {
+    /// Default mode: show all findings with policy annotations.
+    #[default]
+    Default,
+    /// Audit mode: ignore config, pure security assessment.
+    Audit,
+    /// Compliance mode: only show findings without valid policy exceptions.
+    Compliance,
 }

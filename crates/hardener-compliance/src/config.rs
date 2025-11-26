@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 /// Pre-defined compliance scenarios for common use cases.
 #[derive(Clone, Debug)]
-pub enum  Scenario {
+pub enum Scenario {
     /// Production server hardening (CIS Server, STIG).
     Server,
     /// Desktop/laptop security (CIS Workstation).
@@ -90,7 +90,7 @@ impl OutputFormat {
 
 /// Configuration for report generation.
 #[derive(Clone, Debug)]
-pub struct ReportConfig  {
+pub struct ReportConfig {
     /// The scenario determining which frameworks to check.
     pub scenario: Scenario,
     /// Output formats to generate.
@@ -108,6 +108,3 @@ impl Default for ReportConfig {
         }
     }
 }
-
-
-

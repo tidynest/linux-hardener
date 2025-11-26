@@ -295,10 +295,16 @@ impl PluginManager {
             match plugin.apply(ctx, config) {
                 Ok(result) => {
                     if result.apply_success {
-                        debug!("Plugin {} apply completed: {}", plugin_id, result.apply_plugin_id);
+                        debug!(
+                            "Plugin {} apply completed: {}",
+                            plugin_id, result.apply_plugin_id
+                        );
                         all_results.push(result);
                     } else {
-                        warn!("Plugin {} apply failed: {:?}", plugin_id, result.apply_error);
+                        warn!(
+                            "Plugin {} apply failed: {:?}",
+                            plugin_id, result.apply_error
+                        );
                         all_results.push(result);
                         // Continue with other plugins even if one fails
                     }
@@ -308,11 +314,11 @@ impl PluginManager {
 
                     // Create error result
                     all_results.push(ApplyResult {
-                        apply_plugin_id:     plugin_id.clone(),
-                        apply_success:       false,
-                        apply_changes:       vec![],
+                        apply_plugin_id: plugin_id.clone(),
+                        apply_success: false,
+                        apply_changes: vec![],
                         apply_checkpoint_id: None,
-                        apply_error:         Some(e.to_string()),
+                        apply_error: Some(e.to_string()),
                     });
                 }
             }

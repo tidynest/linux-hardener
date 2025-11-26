@@ -48,9 +48,11 @@ This document tracks the development progress and planned features for Linux Sys
 
 | Feature | Status | Priority |
 |---------|--------|----------|
+| Config file support (`~/.config/linux-hardener/`) | ✅ Complete | Medium |
+| CLI flags: `--config`, `--audit`, `--compliance`, `--exit-code` | ✅ Complete | Medium |
+| Policy exception system with audit trail | ✅ Complete | Medium |
 | Interactive report wizard | ⬜ Pending | Medium |
 | PDF report formatter | ⬜ Pending | Low |
-| Config file support (`~/.config/linux-hardener/`) | ⬜ Pending | Medium |
 | GUI compliance report page | ⬜ Pending | Medium |
 
 ---

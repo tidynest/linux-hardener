@@ -1820,12 +1820,16 @@ name = "hardener-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
+ "dirs 6.0.0",
  "hardener-common",
  "hardener-state",
  "hostname",
  "nix",
  "petgraph",
  "serde",
+ "tempfile",
+ "toml 0.9.8",
  "tracing",
 ]
 

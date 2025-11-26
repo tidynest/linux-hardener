@@ -14,17 +14,18 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
         ComplianceMapping {
             compliance_framework: ComplianceFramework::GDPR,
             compliance_control_id: "Art.32(1)(a)".to_string(),
-            compliance_control_title: "Pseudonymisation and encryption of personal data".to_string(),
+            compliance_control_title: "Pseudonymisation and encryption of personal data"
+                .to_string(),
             compliance_section: Some("Security of Processing".to_string()),
         },
-
         // ===========================================
         // Article 32(1)(b) - Confidentiality, Integrity, Availability
         // ===========================================
         ComplianceMapping {
             compliance_framework: ComplianceFramework::GDPR,
             compliance_control_id: "Art.32(1)(b)-C".to_string(),
-            compliance_control_title: "Ensure ongoing confidentiality of processing systems".to_string(),
+            compliance_control_title: "Ensure ongoing confidentiality of processing systems"
+                .to_string(),
             compliance_section: Some("Security of Processing".to_string()),
         },
         ComplianceMapping {
@@ -36,7 +37,8 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
         ComplianceMapping {
             compliance_framework: ComplianceFramework::GDPR,
             compliance_control_id: "Art.32(1)(b)-A".to_string(),
-            compliance_control_title: "Ensure ongoing availability of processing systems".to_string(),
+            compliance_control_title: "Ensure ongoing availability of processing systems"
+                .to_string(),
             compliance_section: Some("Security of Processing".to_string()),
         },
         ComplianceMapping {
@@ -45,34 +47,34 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
             compliance_control_title: "Ensure resilience of processing systems".to_string(),
             compliance_section: Some("Security of Processing".to_string()),
         },
-
         // ===========================================
         // Article 32(1)(c) - Restore Availability
         // ===========================================
         ComplianceMapping {
             compliance_framework: ComplianceFramework::GDPR,
             compliance_control_id: "Art.32(1)(c)".to_string(),
-            compliance_control_title: "Ability to restore availability and access to personal data".to_string(),
+            compliance_control_title: "Ability to restore availability and access to personal data"
+                .to_string(),
             compliance_section: Some("Security of Processing".to_string()),
         },
-
         // ===========================================
         // Article 32(1)(d) - Testing and Evaluation
         // ===========================================
         ComplianceMapping {
             compliance_framework: ComplianceFramework::GDPR,
             compliance_control_id: "Art.32(1)(d)".to_string(),
-            compliance_control_title: "Process for regularly testing and evaluating security measures".to_string(),
+            compliance_control_title:
+                "Process for regularly testing and evaluating security measures".to_string(),
             compliance_section: Some("Security of Processing".to_string()),
         },
-
         // ===========================================
         // Technical Measures (derived from Art. 32)
         // ===========================================
         ComplianceMapping {
             compliance_framework: ComplianceFramework::GDPR,
             compliance_control_id: "TM-AC".to_string(),
-            compliance_control_title: "Access Control - Restrict access to personal data".to_string(),
+            compliance_control_title: "Access Control - Restrict access to personal data"
+                .to_string(),
             compliance_section: Some("Technical Measures".to_string()),
         },
         ComplianceMapping {

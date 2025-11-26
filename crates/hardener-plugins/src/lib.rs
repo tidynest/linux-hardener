@@ -69,9 +69,8 @@ pub fn create_checkpoint_for_apply(
         ))
     })?;
 
-    let checkpoint_id = rt.block_on(async {
-        manager.create_checkpoint(checkpoint_name, file_paths).await
-    })?;
+    let checkpoint_id =
+        rt.block_on(async { manager.create_checkpoint(checkpoint_name, file_paths).await })?;
 
     tracing::info!("Created checkpoint: {}", checkpoint_id.as_str());
 

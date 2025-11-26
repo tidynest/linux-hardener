@@ -121,7 +121,8 @@ impl CheckpointManager {
             }]);
         }
 
-        let metadata = fs::metadata(file_path).map_err(hardener_common::error::HardeningError::System)?;
+        let metadata =
+            fs::metadata(file_path).map_err(hardener_common::error::HardeningError::System)?;
 
         if metadata.is_dir() {
             // Recursively capture all files in directory
@@ -138,7 +139,8 @@ impl CheckpointManager {
 
         let mut file_states = Vec::new();
 
-        let entries = fs::read_dir(dir_path).map_err(hardener_common::error::HardeningError::System)?;
+        let entries =
+            fs::read_dir(dir_path).map_err(hardener_common::error::HardeningError::System)?;
 
         for entry in entries {
             let entry = entry.map_err(hardener_common::error::HardeningError::System)?;

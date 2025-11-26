@@ -38,12 +38,21 @@ fn test_services_scan_detects_services() {
     assert!(result.is_ok(), "Scan should succeed: {:?}", result.err());
 
     let scan_result = result.unwrap();
-    assert!(scan_result.scan_success, "Scan should be marked as successful");
-    assert_eq!(scan_result.scan_plugin_id.to_string(), "service-minimisation");
+    assert!(
+        scan_result.scan_success,
+        "Scan should be marked as successful"
+    );
+    assert_eq!(
+        scan_result.scan_plugin_id.to_string(),
+        "service-minimisation"
+    );
 
     // Should have findings if any unnecessary services are enabled
     // (Most systems will have at least some of these services)
-    println!("Services scan found {} findings", scan_result.scan_findings.len());
+    println!(
+        "Services scan found {} findings",
+        scan_result.scan_findings.len()
+    );
 
     // Verify timing is captured
     assert!(
@@ -53,11 +62,27 @@ fn test_services_scan_detects_services() {
 
     // If findings exist, verify their structure
     for finding in &scan_result.scan_findings {
-        assert!(!finding.finding_id.is_empty(), "Finding ID should not be empty");
-        assert!(!finding.finding_title.is_empty(), "Finding title should not be empty");
-        assert!(!finding.finding_description.is_empty(), "Finding description should not be empty");
-        assert!(!finding.finding_remediation_steps.is_empty(), "Should have remediation steps");
-        assert_eq!(finding.finding_remediation_steps.len(), 3, "Should have 3 remediation steps (stop, disable, mask)");
+        assert!(
+            !finding.finding_id.is_empty(),
+            "Finding ID should not be empty"
+        );
+        assert!(
+            !finding.finding_title.is_empty(),
+            "Finding title should not be empty"
+        );
+        assert!(
+            !finding.finding_description.is_empty(),
+            "Finding description should not be empty"
+        );
+        assert!(
+            !finding.finding_remediation_steps.is_empty(),
+            "Should have remediation steps"
+        );
+        assert_eq!(
+            finding.finding_remediation_steps.len(),
+            3,
+            "Should have 3 remediation steps (stop, disable, mask)"
+        );
     }
 }
 
@@ -76,10 +101,19 @@ fn test_services_validate_checks_systemctl() {
     );
 
     let validation_report = result.unwrap();
-    assert_eq!(validation_report.validation_report_plugin_id.to_string(), "service-minimisation");
+    assert_eq!(
+        validation_report.validation_report_plugin_id.to_string(),
+        "service-minimisation"
+    );
 
-    println!("Validation valid: {}", validation_report.validation_report_is_valid);
-    println!("Issues found: {}", validation_report.validation_report_issues.len());
+    println!(
+        "Validation valid: {}",
+        validation_report.validation_report_is_valid
+    );
+    println!(
+        "Issues found: {}",
+        validation_report.validation_report_issues.len()
+    );
     println!(
         "Estimated changes: {}",
         validation_report.validation_report_estimated_changes.len()
@@ -92,7 +126,10 @@ fn test_services_validate_checks_systemctl() {
             "Valid validation should have no issues"
         );
         // Estimated changes might be empty if no services need disabling
-        println!("Services to be disabled: {}", validation_report.validation_report_estimated_changes.len());
+        println!(
+            "Services to be disabled: {}",
+            validation_report.validation_report_estimated_changes.len()
+        );
     } else {
         // If systemctl is not available, should have a critical issue
         assert!(
@@ -100,7 +137,10 @@ fn test_services_validate_checks_systemctl() {
             "Invalid validation should have issues"
         );
         assert!(
-            validation_report.validation_report_issues.iter().any(|i| i.validation_issue_message.contains("systemctl")),
+            validation_report
+                .validation_report_issues
+                .iter()
+                .any(|i| i.validation_issue_message.contains("systemctl")),
             "Should mention systemctl in issues"
         );
     }
@@ -121,7 +161,10 @@ fn test_services_apply_requires_root() {
             println!("Services apply succeeded (running as root)");
             println!("Changes made: {}", apply_result.apply_changes.len());
 
-            assert_eq!(apply_result.apply_plugin_id.to_string(), "service-minimisation");
+            assert_eq!(
+                apply_result.apply_plugin_id.to_string(),
+                "service-minimisation"
+            );
 
             // Print all changes for manual verification
             for change in &apply_result.apply_changes {
@@ -134,7 +177,10 @@ fn test_services_apply_requires_root() {
 
             // Verify change structure if any changes were made
             for change in &apply_result.apply_changes {
-                assert!(!change.change_description.is_empty(), "Change description should not be empty");
+                assert!(
+                    !change.change_description.is_empty(),
+                    "Change description should not be empty"
+                );
             }
         }
         Err(e) => {

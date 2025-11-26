@@ -25,8 +25,7 @@ pub async fn invoke_scan() -> Result<Vec<ScanResult>, String> {
 /// Invokes the run_apply Tauri command.
 ///
 /// Applies hardening changes for the specified plugins.
-pub async fn invoke_apply(plugin_ids: Vec<String>
-) -> Result<Vec<ApplyResult>, String> {
+pub async fn invoke_apply(plugin_ids: Vec<String>) -> Result<Vec<ApplyResult>, String> {
     let args = serde_wasm_bindgen::to_value(&serde_json::json!({
         "plugin_ids": plugin_ids,
     }))

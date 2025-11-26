@@ -1268,7 +1268,7 @@ fn restart_ssh_service() -> Result<()> { }
 
 ```rust
 // Struct:
-pub struct ServicesPlugin { }
+pub struct ServicesHardeningPlugin { }
 
 pub struct ServiceDirective {
     service_description: &'static str,
@@ -1293,6 +1293,87 @@ fn is_service_active(service_name: &str) -> Result<bool> { }
 fn stop_service(service_name: &str) -> Result<()> { }
 fn disable_service(service_name: &str) -> Result<()> { }
 fn mask_service(service_name: &str) -> Result<()> { }
+```
+
+### Configuration Domain
+
+```rust
+// Main Config Struct:
+pub struct HardenerConfig {
+    pub global: GlobalConfig,
+    pub ssh: SshConfig,
+    pub kernel: KernelConfig,
+    pub firewall: FirewallConfig,
+    pub pam: PamConfig,
+    pub audit: AuditConfig,
+    pub mac: MacConfig,
+    pub permissions: PermissionsConfig,
+    pub services: ServicesConfig,
+}
+
+// Plugin-Specific Config Structs:
+// Pattern: <Domain>Config
+pub struct GlobalConfig {
+    pub enabled_plugins: Vec<String>,
+    pub disabled_plugins: Vec<String>,
+}
+
+pub struct SshConfig {
+    pub enabled: bool,
+    pub directives: HashMap<String, String>,
+    pub custom_directives: HashMap<String, String>,
+    pub exceptions: HashMap<String, PolicyException>,
+}
+
+pub struct KernelConfig {
+    pub enabled: bool,
+    pub params: HashMap<String, String>,
+    pub custom_params: HashMap<String, String>,
+    pub exceptions: HashMap<String, PolicyException>,
+}
+
+// Policy Exception Struct:
+pub struct PolicyException {
+    pub value: String,
+    pub allowed: bool,
+    pub reason: String,
+    pub approved_by: Option<String>,
+    pub approved_date: Option<String>,
+    pub ticket: Option<String>,
+    pub expires: Option<String>,
+}
+
+// Finding Policy Exception (attached to Finding):
+pub struct FindingPolicyException {
+    pub allowed_value: String,
+    pub reason: String,
+    pub approved_by: Option<String>,
+    pub approved_date: Option<String>,
+    pub ticket: Option<String>,
+    pub expires: Option<String>,
+    pub is_expired: bool,
+}
+
+// Config Loader:
+pub struct ConfigLoader {
+    cli_config_path: Option<PathBuf>,
+}
+
+// Methods:
+impl ConfigLoader {
+    pub fn new() -> ConfigLoader { }
+    pub fn with_cli_config(self, path: PathBuf) -> ConfigLoader { }
+    pub fn load(&self) -> Result<HardenerConfig, ConfigError> { }
+}
+
+// Helper functions:
+fn user_config_path() -> Option<PathBuf> { }
+fn is_exception_expired(exception: &PolicyException) -> bool { }
+
+// Constants:
+const SYSTEM_CONFIG_PATH: &str = "/etc/linux-hardener/config.toml";
+const USER_CONFIG_DIR: &str = "linux-hardener";
+const CONFIG_FILE_NAME: &str = "config.toml";
 ```
 
 ### User Interface (Leptos) Domain

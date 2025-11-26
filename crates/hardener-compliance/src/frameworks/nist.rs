@@ -47,7 +47,6 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
             compliance_control_title: "Remote Access".to_string(),
             compliance_section: Some("Access Control".to_string()),
         },
-
         // ===========================================
         // AU - Audit and Accountability
         // ===========================================
@@ -75,7 +74,6 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
             compliance_control_title: "Audit Record Generation".to_string(),
             compliance_section: Some("Audit and Accountability".to_string()),
         },
-
         // ===========================================
         // CM - Configuration Management
         // ===========================================
@@ -91,14 +89,14 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
             compliance_control_title: "Least Functionality".to_string(),
             compliance_section: Some("Configuration Management".to_string()),
         },
-
         // ===========================================
         // IA - Identification and Authentication
         // ===========================================
         ComplianceMapping {
             compliance_framework: ComplianceFramework::NIST,
             compliance_control_id: "IA-2".to_string(),
-            compliance_control_title: "Identification and Authentication (Organizational Users)".to_string(),
+            compliance_control_title: "Identification and Authentication (Organizational Users)"
+                .to_string(),
             compliance_section: Some("Identification and Authentication".to_string()),
         },
         ComplianceMapping {
@@ -107,7 +105,6 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
             compliance_control_title: "Authenticator Management".to_string(),
             compliance_section: Some("Identification and Authentication".to_string()),
         },
-
         // ===========================================
         // SC - System and Communications Protection
         // ===========================================
@@ -135,7 +132,6 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
             compliance_control_title: "Session Authenticity".to_string(),
             compliance_section: Some("System and Communications Protection".to_string()),
         },
-
         // ===========================================
         // SI - System and Information Integrity
         // ===========================================

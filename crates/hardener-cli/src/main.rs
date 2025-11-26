@@ -4,26 +4,42 @@ mod output;
 
 use anyhow::Result;
 use clap::Parser;
-use cli::{Cli, Command, CheckpointAction};
+use cli::{CheckpointAction, Cli, Command};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    
+
     let result = match cli.command {
-        Command::Scan { plugin, severity } => {
-            commands::scan::run(&plugin, severity, cli.format, cli.quiet).await
+        Command::Scan {
+            plugin,
+            severity,
+            audit,
+            compliance,
+            exit_code,
+        } => {
+            commands::scan::run(
+                &plugin,
+                severity,
+                cli.format,
+                cli.quiet,
+                cli.config.as_ref(),
+                audit,
+                compliance,
+                exit_code,
+            )
+            .await
         }
-        Command::Apply { plugin, all, dry_run } => {
-            commands::apply::run(&plugin, all, dry_run, cli.format, cli.quiet).await
-        }
+        Command::Apply {
+            plugin,
+            all,
+            dry_run,
+        } => commands::apply::run(&plugin, all, dry_run, cli.format, cli.quiet).await,
         Command::Rollback { checkpoint_id } => {
             commands::checkpoint::rollback(&checkpoint_id, cli.format, cli.quiet).await
         }
         Command::Checkpoint { action } => match action {
-            CheckpointAction::List => {
-                commands::checkpoint::list(cli.format, cli.quiet).await
-            }
+            CheckpointAction::List => commands::checkpoint::list(cli.format, cli.quiet).await,
             CheckpointAction::Create { name } => {
                 commands::checkpoint::create(&name, cli.format, cli.quiet).await
             }
@@ -34,11 +50,22 @@ async fn main() -> Result<()> {
                 commands::checkpoint::show(&checkpoint_id, cli.format, cli.quiet).await
             }
         },
-        Command::Plugins => {
-            commands::plugins::run(cli.format, cli.quiet).await
-        }
-        Command::Report { scenario, framework, report_format, output } => {
-            commands::report::run(scenario, framework, report_format, output, cli.format, cli.quiet).await
+        Command::Plugins => commands::plugins::run(cli.format, cli.quiet).await,
+        Command::Report {
+            scenario,
+            framework,
+            report_format,
+            output,
+        } => {
+            commands::report::run(
+                scenario,
+                framework,
+                report_format,
+                output,
+                cli.format,
+                cli.quiet,
+            )
+            .await
         }
     };
 
@@ -46,6 +73,6 @@ async fn main() -> Result<()> {
         eprintln!("Error: {}", e);
         std::process::exit(1);
     }
-    
+
     Ok(())
 }
