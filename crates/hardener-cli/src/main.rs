@@ -5,6 +5,7 @@ mod output;
 use anyhow::Result;
 use clap::Parser;
 use cli::{CheckpointAction, Cli, Command};
+use commands::scan::ScanOptions;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -18,16 +19,16 @@ async fn main() -> Result<()> {
             compliance,
             exit_code,
         } => {
-            commands::scan::run(
-                &plugin,
-                severity,
-                cli.format,
-                cli.quiet,
-                cli.config.as_ref(),
+            commands::scan::run(ScanOptions {
+                plugin_filter: &plugin,
+                severity_filter: severity,
+                format: cli.format,
+                quiet: cli.quiet,
+                config_path: cli.config.as_ref(),
                 audit,
                 compliance,
-                exit_code,
-            )
+                exit_code
+            })
             .await
         }
         Command::Apply {

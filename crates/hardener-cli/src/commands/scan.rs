@@ -5,47 +5,49 @@ use hardener_common::types::Severity;
 use hardener_core::{ConfigLoader, Context, HardenerConfig, PluginRegistry};
 use std::path::PathBuf;
 
-pub async fn run(
-    plugin_filter: &[String],
-    severity_filter: SeverityFilter,
-    format: OutputFormat,
-    quiet: bool,
-    config_path: Option<&PathBuf>,
-    audit: bool,
-    compliance: bool,
-    exit_code: bool,
-) -> Result<()> {
+pub struct ScanOptions<'a> {
+    pub plugin_filter: &'a [String],
+    pub severity_filter: SeverityFilter,
+    pub format: OutputFormat,
+    pub quiet: bool,
+    pub config_path: Option<&'a PathBuf>,
+    pub audit: bool,
+    pub compliance: bool,
+    pub exit_code: bool,
+}
+
+pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
     // Determine scan mode
-    let mode = if audit {
+    let mode = if opts.audit {
         ScanMode::Audit
-    } else if compliance {
+    } else if opts.compliance {
         ScanMode::Compliance
     } else {
         ScanMode::Default
     };
 
     // Load config (ignored in audit mode)
-    let _config = load_config(config_path, mode)?;
+    let _config = load_config(opts.config_path, mode)?;
     let registry = create_plugin_registry();
     let ctx = Context::new();
 
     let plugins = registry.list()?;
-    let min_severity = severity_filter_to_severity(&severity_filter);
+    let min_severity = severity_filter_to_severity(&opts.severity_filter);
 
     let mut all_results = Vec::new();
 
     for metadata in &plugins {
         // Skip if plugin filter is set and this plugin isn't in it
-        if !plugin_filter.is_empty()
-            && !plugin_filter
+        if !opts.plugin_filter.is_empty()
+            && !opts.plugin_filter
                 .iter()
                 .any(|p| p == metadata.plugin_id.as_str())
         {
             continue;
         }
 
-        if !quiet {
-            output::status(&format, &format!("Scanning: {}", metadata.plugin_name));
+        if !opts.quiet {
+            output::status(&opts.format, &format!("Scanning: {}", metadata.plugin_name));
         }
 
         if let Ok(Some(plugin)) = registry.get(&metadata.plugin_id) {
@@ -62,7 +64,7 @@ pub async fn run(
                 }
                 Err(e) => {
                     output::error(
-                        &format,
+                        &opts.format,
                         &format!("Failed to scan {}: {e}", metadata.plugin_name),
                     );
                 }
@@ -70,10 +72,10 @@ pub async fn run(
         }
     }
 
-    output::scan_results(&format, &all_results, mode);
+    output::scan_results(&opts.format, &all_results, mode);
 
     // Handle exit code flag
-    if exit_code {
+    if opts.exit_code {
         let has_findings = all_results.iter().any(|(_, findings)| !findings.is_empty());
         if has_findings {
             std::process::exit(1);
