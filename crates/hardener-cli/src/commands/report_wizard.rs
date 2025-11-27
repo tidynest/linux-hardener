@@ -199,18 +199,15 @@ fn print_welcome() {
 }
 
 fn wizard_flow() -> Result<WizardState> {
-    let mut state = WizardState::default();
+    let scenario = Some(select_scenario()?);
+    let output_formats = select_output_formats()?;
+    let output_path = select_output_path()?;
 
-    // Step 1: Select scenario
-    state.scenario = Some(select_scenario()?);
-
-    // Step 2: Select output formats
-    state.output_formats = select_output_formats()?;
-
-    // Step 3: Select output destination
-    state.output_path = select_output_path()?;
-
-    Ok(state)
+    Ok(WizardState {
+        scenario,
+        output_formats,
+        output_path,
+    })
 }
 
 fn select_scenario() -> Result<Scenario> {
@@ -276,7 +273,7 @@ fn select_frameworks() -> Result<Vec<ComplianceFramework>> {
 
     let frameworks: Vec<ComplianceFramework> = selections
         .iter()
-        .map(|&i| FRAMEWORKS[i].framework.clone())
+        .map(|&i| FRAMEWORKS[i].framework)
         .collect();
 
     Ok(frameworks)
@@ -492,9 +489,10 @@ fn output_reports(
                     fs::write(&path, &formatted)?;
                 }
                 println!(
-                    "  {} {}",
+                    "  {} Saved {} report to: {}",
                     "✓".green(),
-                    format!("Saved {} report to: {}", format_name(format), path.display())
+                    format_name(format),
+                    path.display()
                 );
             }
             None => {
@@ -505,9 +503,9 @@ fn output_reports(
                     let bytes: Vec<u8> = formatted.chars().map(|c| c as u8).collect();
                     fs::write(&filename, bytes)?;
                     println!(
-                        "  {} {}",
+                        "  {} Saved PDF report to: {}",
                         "✓".green(),
-                        format!("Saved PDF report to: {}", filename)
+                        filename
                     );
                     continue;
                 }
