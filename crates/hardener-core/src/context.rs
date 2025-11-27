@@ -12,6 +12,7 @@ use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
 };
+use crate::executor::{local::LocalExecutor, SystemExecutor};
 
 /// Execution context provided to plugins.
 ///
@@ -27,6 +28,8 @@ pub struct Context {
     shared_data: Arc<RwLock<HashMap<String, String>>>,
     /// Information about the current system.
     system_info: SystemInfo,
+    /// System executor for file and command operations.
+    executor: Arc<dyn SystemExecutor>,
 }
 
 /// Plugin audit log entry for tracking plugin operations in context.
@@ -115,7 +118,7 @@ impl PluginAuditEntry {
 pub struct SystemInfo {
     /// Architecture (e.g., "x86_64", "aarch64").
     pub system_architecture: String,
-    /// Operating system distribution name (e.g. "Ubuntu", "RHEL"),
+    /// Operating system distribution name (e.g., "Ubuntu", "RHEL"),
     pub system_distribution: String,
     /// Distribution version (e.g., "22.04, "9").
     pub system_distribution_version: String,
@@ -220,6 +223,10 @@ impl Context {
     ///
     /// This will be used during normal operations.
     pub fn new() -> Context {
+        Self::with_executor(Arc::new(LocalExecutor::new()))
+    }
+
+    pub fn with_executor(executor: Arc<dyn SystemExecutor>) -> Context {
         Self {
             audit_log: Arc::new(RwLock::new(Vec::new())),
             checkpoint_manager: None,
@@ -231,6 +238,7 @@ impl Context {
                 system_hostname: "Unknown".to_string(),
                 system_kernel_version: "Unknown".to_string(),
             }),
+            executor,
         }
     }
 
@@ -238,18 +246,9 @@ impl Context {
     ///
     /// Use this when you need checkpoint/rollback functionality.
     pub fn with_checkpoint_manager(checkpoint_manager: CheckpointManager) -> Context {
-        Self {
-            audit_log: Arc::new(RwLock::new(Vec::new())),
-            checkpoint_manager: Some(Arc::new(checkpoint_manager)),
-            shared_data: Arc::new(RwLock::new(HashMap::new())),
-            system_info: SystemInfo::detect().unwrap_or_else(|_| SystemInfo {
-                system_architecture: "Unknown".to_string(),
-                system_distribution: "Unknown".to_string(),
-                system_distribution_version: "Unknown".to_string(),
-                system_hostname: "Unknown".to_string(),
-                system_kernel_version: "Unknown".to_string(),
-            }),
-        }
+        let mut ctx = Self::new();
+        ctx.checkpoint_manager = Some(Arc::new(checkpoint_manager));
+        ctx
     }
 
     /// Sets the checkpoint manager for this context.
@@ -269,7 +268,7 @@ impl Context {
     pub fn log_audit(&self, entry: PluginAuditEntry) -> Result<()> {
         let mut log = self.audit_log.write().map_err(|e| {
             hardener_common::error::HardeningError::State(format!(
-                "Failed to acquire audit log lock: {}",
+                "Failed to get audit log lock: {}",
                 e
             ))
         })?;
@@ -281,6 +280,11 @@ impl Context {
     /// Returns a reference to the system information.
     pub fn system_info(&self) -> &SystemInfo {
         &self.system_info
+    }
+
+    /// Returns a reference to the system executor.
+    pub fn executor(&self) -> &Arc<dyn SystemExecutor> {
+        &self.executor
     }
 }
 

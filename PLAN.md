@@ -62,12 +62,21 @@ This document tracks the development progress and planned features for Linux Sys
 
 ### v0.3.0 - Remote & Automation
 
-| Feature | Description | Priority |
-|---------|-------------|----------|
-| Remote scanning via SSH | Scan remote hosts without installing | High |
-| Scheduled scanning | Cron-like scheduled security checks | Medium |
-| CI/CD integration | Exit codes and machine-readable output | Medium |
-| Ansible/Puppet modules | Integration with config management | Low |
+| Feature | Description | Priority | Status |
+|---------|-------------|----------|--------|
+| Remote scanning via SSH | Scan remote hosts without installing | High | 🔄 In Progress |
+| Scheduled scanning | Cron-like scheduled security checks | Medium | Pending |
+| CI/CD integration | Exit codes and machine-readable output | Medium | Pending |
+| Ansible/Puppet modules | Integration with config management | Low | Pending |
+
+**v0.3.0 Progress:**
+- [x] SystemExecutor trait for abstracting file/command operations
+- [x] LocalExecutor implementation (wraps current behaviour)
+- [x] SshExecutor implementation (remote operations via SSH)
+- [x] Context integration with executor
+- [ ] CLI flags (`--ssh`, `--ssh-key`, `--ssh-port`)
+- [ ] Plugin refactoring to use executor
+- [ ] Testing and documentation
 
 ### v0.4.0 - Web Interface
 

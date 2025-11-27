@@ -40,6 +40,7 @@ Linux System Hardener is a modular security hardening tool for Linux systems, pr
 │  ├─ PluginRegistry (central plugin registry)                    │
 │  ├─ PluginManager (orchestration, dependency resolution)        │
 │  ├─ Context (execution context, system info, audit logging)     │
+│  ├─ SystemExecutor trait (local/remote abstraction)             │
 │  └─ Finding/ScanResult/ApplyResult types                        │
 └─────────────────────────────────────────────────────────────────┘
                               │
@@ -100,7 +101,7 @@ Linux System Hardener is a modular security hardening tool for Linux systems, pr
 
 | Crate | Purpose | Key Exports |
 |-------|---------|-------------|
-| `hardener-core` | Plugin framework, execution context, config | `HardeningPlugin`, `Context`, `PluginManager`, `HardenerConfig`, `ConfigLoader` |
+| `hardener-core` | Plugin framework, execution context, config | `HardeningPlugin`, `Context`, `PluginManager`, `HardenerConfig`, `ConfigLoader`, `SystemExecutor`, `LocalExecutor`, `SshExecutor` |
 | `hardener-common` | Shared types and utilities | `Severity`, `FindingCategory`, `HardeningError`, `FindingPolicyException` |
 | `hardener-plugins` | 8 security plugin implementations | All plugin structs |
 | `hardener-state` | Checkpoint and audit system | `CheckpointManager`, `AuditLogger` |
@@ -128,6 +129,29 @@ pub trait HardeningPlugin: Send + Sync {
     fn validate(&self, config: &Config) -> Result<ValidationReport>;
 }
 ```
+
+### SystemExecutor
+
+Abstraction for local and remote system operations:
+
+```rust
+#[async_trait]
+pub trait SystemExecutor: Send + Sync {
+    fn description(&self) -> String;
+    fn is_remote(&self) -> bool;
+    async fn read_file(&self, path: &Path) -> Result<String>;
+    async fn read_file_optional(&self, path: &Path) -> Result<Option<String>>;
+    async fn write_file(&self, path: &Path, content: &str) -> Result<()>;
+    async fn path_exists(&self, path: &Path) -> Result<bool>;
+    async fn file_metadata(&self, path: &Path) -> Result<FileMetadata>;
+    async fn execute_command(&self, program: &str, args: &[&str]) -> Result<CommandOutput>;
+    async fn command_exists(&self, program: &str) -> Result<bool>;
+}
+```
+
+Implementations:
+- `LocalExecutor` - Wraps `std::fs` and `std::process::Command`
+- `SshExecutor` - Runs operations over SSH on remote hosts
 
 ### FirewallBackend
 

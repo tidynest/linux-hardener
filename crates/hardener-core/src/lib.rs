@@ -10,6 +10,7 @@ pub mod context;
 pub mod plugin_manager;
 #[cfg(feature = "system")]
 pub mod registry;
+pub mod executor;
 
 // Re-export commonly used types (always available)
 pub use plugin::{
@@ -32,3 +33,11 @@ pub use context::{Context, PluginAuditEntry, SystemInfo};
 pub use plugin_manager::PluginManager;
 #[cfg(feature = "system")]
 pub use registry::PluginRegistry;
+
+// Re-export executor types
+pub use executor::{
+    {CommandOutput, FileMetadata, SystemExecutor},
+    local::LocalExecutor,
+};
+#[cfg(feature = "system")]
+pub use executor::ssh::{SshConfig, SshExecutor};

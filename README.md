@@ -333,8 +333,9 @@ See [PLAN.md](PLAN.md) for detailed implementation plans for upcoming features.
 - [x] PDF report formatter with automatic timestamped filenames and colour-coded badges
 - [x] GUI compliance report page
 
-### v0.3.0 (Planned)
-- [ ] Remote scanning via SSH
+### v0.3.0 (In Progress)
+- [x] SystemExecutor abstraction layer for local/remote operations
+- [ ] Remote scanning via SSH (CLI integration pending)
 - [ ] Scheduled scanning
 - [ ] CI/CD integration
 
