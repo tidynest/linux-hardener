@@ -1,6 +1,6 @@
 # Linux System Hardener - File Map
 
-**Last Updated:** 2025-11-26
+**Last Updated:** 2025-11-27
 
 This document lists all source files with their purpose and key exports.
 
@@ -244,7 +244,29 @@ pub fn get_checkpoints() -> Result<Vec<Checkpoint>, String>
 | `Cargo.toml` | Workspace definition |
 | `rustfmt.toml` | Rust formatting config |
 | `tauri.conf.json` | Tauri app config |
+| `release.toml` | cargo-release configuration |
+| `cliff.toml` | git-cliff changelog generation |
 | `.gitignore` | Git ignore rules |
+
+---
+
+## CI/CD Files
+
+| File | Purpose |
+|------|---------|
+| `.github/workflows/ci.yml` | GitHub Actions: check, test, clippy, fmt, security audit, build |
+| `.github/workflows/release.yml` | GitHub Actions: multi-target builds, GitHub releases on tag push |
+| `.gitlab-ci.yml` | GitLab CI: check, test, build, release stages |
+
+---
+
+## Scripts
+
+| File | Purpose |
+|------|---------|
+| `scripts/validate_naming.py` | Naming convention validator |
+| `scripts/release.sh` | Automated version bumping and release |
+| `.git/hooks/pre-commit` | Pre-commit naming convention check |
 
 ---
 
@@ -263,6 +285,7 @@ pub fn get_checkpoints() -> Result<Vec<Checkpoint>, String>
 | `docs/HANDOFF.md` | Developer handoff |
 | `docs/FILE_MAP.md` | This file |
 | `docs/NAMING_CONVENTIONS.md` | Naming standards |
+| `docs/RELEASING.md` | Versioning and release process |
 
 ---
 

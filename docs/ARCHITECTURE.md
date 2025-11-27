@@ -1,6 +1,6 @@
 # Linux System Hardener - Architecture Documentation
 
-**Last Updated:** 2025-11-26
+**Last Updated:** 2025-11-27
 **Version:** 0.1.0
 
 ---
@@ -271,9 +271,42 @@ pub struct PolicyException {
 
 ---
 
+## CI/CD Infrastructure
+
+### GitHub Actions
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| `ci.yml` | Push/PR to main/master | Tests, clippy, fmt, security audit, build |
+| `release.yml` | Tag `v*` | Multi-target builds, GitHub releases |
+
+### GitLab CI
+
+| Stage | Jobs | Purpose |
+|-------|------|---------|
+| check | check, fmt, clippy | Code quality |
+| test | test, security-audit | Testing |
+| build | build:linux-* | Release binaries |
+| release | release | Create GitLab release |
+
+### Release Artifacts
+
+| Artifact | Target | Description |
+|----------|--------|-------------|
+| `hardener-linux-x86_64.tar.gz` | x86_64-unknown-linux-gnu | Standard Linux binary |
+| `hardener-linux-x86_64-musl.tar.gz` | x86_64-unknown-linux-musl | Static binary (portable) |
+| `hardener-linux-aarch64.tar.gz` | aarch64-unknown-linux-gnu | ARM64 Linux binary |
+
+### Branch Strategy
+
+Both `main` and `master` branches are kept in sync on GitHub and GitLab. The release script (`scripts/release.sh`) automatically syncs both branches on both remotes.
+
+---
+
 ## See Also
 
 - `docs/DATA_FLOW.md` - Detailed data flow diagrams
 - `docs/CONFIG_DESIGN.md` - Configuration system security design
+- `docs/RELEASING.md` - Versioning and release process
 - `PLAN.md` - Development roadmap
 - `README.md` - User documentation

@@ -100,6 +100,14 @@ Use the release script:
 ./scripts/release.sh major   # 0.2.0 -> 1.0.0
 ```
 
+The release script automatically:
+- Runs tests and clippy
+- Updates version in `Cargo.toml`
+- Updates `CHANGELOG.md`
+- Creates git commit and tag
+- Pushes to both `main` and `master` branches on GitHub and GitLab
+- Pushes the release tag to both remotes
+
 ### Manual Release
 
 If you prefer manual control:
@@ -176,6 +184,18 @@ Releases produce these artifacts:
 | `hardener-linux-x86_64.tar.gz` | x86_64-unknown-linux-gnu | Standard Linux binary |
 | `hardener-linux-x86_64-musl.tar.gz` | x86_64-unknown-linux-musl | Static binary (portable) |
 | `hardener-linux-aarch64.tar.gz` | aarch64-unknown-linux-gnu | ARM64 Linux binary |
+
+### Branch Synchronisation
+
+Both `main` and `master` branches are kept in sync on both GitHub and GitLab. The release script handles this automatically:
+
+```
+origin (GitHub)     gitlab (GitLab)
+├── main    <──────>  main
+└── master  <──────>  master
+```
+
+When releasing from either branch, the script pushes to both branches on both remotes.
 
 ---
 
