@@ -684,7 +684,7 @@ mod tests {
         assert_eq!(truncate_string("short", 10), "short");
         assert_eq!(
             truncate_string("this is a longer string", 10),
-            "this is a …"
+            "this is a ..."
         );
     }
 

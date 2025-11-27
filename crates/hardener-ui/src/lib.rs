@@ -12,7 +12,7 @@ mod types;
 mod utils;
 
 use components::{ApplyResults, CheckpointList};
-use pages::{ConfigurationPage, DashboardPage, ScannerPage};
+use pages::{CompliancePage, ConfigurationPage, DashboardPage, ScannerPage};
 use state::AppState;
 pub use types::*;
 
@@ -37,6 +37,7 @@ pub fn App() -> impl IntoView {
                         <li><a href="/">"Dashboard"</a></li>
                         <li><a href="/scan">"Scanner"</a></li>
                         <li><a href="/config">"Configuration"</a></li>
+                        <li><a href="/compliance">"Compliance"</a></li>
                         <li><a href="/results">"Results"</a></li>
                         <li><a href="/checkpoints">"Checkpoints"</a></li>
                     </ul>
@@ -54,6 +55,7 @@ pub fn App() -> impl IntoView {
                     <Route path=StaticSegment("") view=DashboardPage/>
                     <Route path=StaticSegment("checkpoints") view=CheckpointList/>
                     <Route path=StaticSegment("config") view=ConfigurationPage/>
+                    <Route path=StaticSegment("compliance") view=CompliancePage/>
                     <Route path=StaticSegment("results") view=ApplyResults/>
                     <Route path=StaticSegment("scan") view=ScannerPage/>
                 </Routes>

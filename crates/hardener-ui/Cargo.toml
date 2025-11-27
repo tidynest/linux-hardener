@@ -19,6 +19,7 @@ serde-wasm-bindgen = { workspace = true }
 # Backend type dependencies (without system-specific features for WASM)
 hardener-core = { path = "../hardener-core", default-features = false }
 hardener-common = { path = "../hardener-common" }
+hardener-compliance = { path = "../hardener-compliance" }
 
 # Tauri bindings for WASM
 wasm-bindgen = "0.2.105"

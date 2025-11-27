@@ -13,3 +13,6 @@ pub struct CheckpointInfo {
     pub checkpoint_created: String,
     pub checkpoint_user: String,
 }
+
+pub use hardener_common::types::{ComplianceFramework, ControlStatus};
+pub use hardener_compliance::{ComplianceReport, ComplianceSummary, ControlResult};

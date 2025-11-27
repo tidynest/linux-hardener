@@ -27,7 +27,8 @@ Linux System Hardener is a modular security hardening tool for Linux systems, pr
 │   └─ Apply         │   └─ Dashboard       │   └─ hardener-state │
 │   └─ Rollback      │   └─ Scanner Page    │                     │
 │   └─ Checkpoint    │   └─ Configuration   │                     │
-│   └─ Report        │   └─ Checkpoints     │                     │
+│   └─ Report        │   └─ Compliance      │                     │
+│                    │   └─ Checkpoints     │                     │
 └────────────────────┴──────────────────────┴─────────────────────┘
                               │
                               ▼

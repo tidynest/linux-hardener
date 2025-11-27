@@ -206,6 +206,7 @@ pub struct FileState {
 | `src/pages/dashboard_page.rs` | Dashboard view | `DashboardPage` |
 | `src/pages/scanner_page.rs` | Scan interface | `ScannerPage` |
 | `src/pages/configuration_page.rs` | Config UI | `ConfigurationPage` |
+| `src/pages/compliance_page.rs` | Compliance reports | `CompliancePage`, `ReportCard` |
 | `src/pages/results_page.rs` | Results view | `ResultsPage` |
 | `src/pages/checkpoints_page.rs` | Checkpoint management | `CheckpointsPage` |
 | `src/components/findings_grid.rs` | Findings display | `FindingsGrid` |
@@ -221,7 +222,7 @@ pub struct FileState {
 | File | Purpose | Key Exports |
 |------|---------|-------------|
 | `src/main.rs` | Tauri app entry | `main()` |
-| `src/commands.rs` | Tauri invoke handlers | `run_scan`, `run_apply`, `run_rollback`, `get_checkpoints` |
+| `src/commands.rs` | Tauri invoke handlers | `run_scan`, `run_apply`, `run_rollback`, `get_checkpoints`, `generate_compliance_report` |
 
 ### Tauri Commands
 
@@ -237,6 +238,9 @@ pub fn run_rollback(checkpoint_id: String) -> Result<(), String>
 
 #[tauri::command]
 pub fn get_checkpoints() -> Result<Vec<Checkpoint>, String>
+
+#[tauri::command]
+pub fn generate_compliance_report(frameworks: Vec<String>) -> Result<Vec<ComplianceReport>, String>
 ```
 
 ---

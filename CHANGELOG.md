@@ -26,13 +26,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Full compliance framework names in report titles (e.g., "CIS Benchmark" instead of "CIS")
 - `full_name()` and `description()` methods on `ComplianceFramework` enum
 - Improved PDF findings formatting: bold 10pt text, proper indentation, spacing after FAIL rows
+- GUI compliance report page with framework selection and report generation
+- Tauri command `generate_compliance_report` for GUI integration
+- Compliance page route `/compliance` with navigation link
 
 ### Changed
 - Test suite expanded from 107 to 220 tests (105% increase)
 - PDF findings now display with better visual hierarchy and spacing
 
 ### Planned
-- GUI compliance report page
 - Remote scanning via SSH
 
 ## [0.1.0] - 2025-11-25

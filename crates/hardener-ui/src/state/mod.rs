@@ -1,4 +1,4 @@
-use crate::types::{ApplyResult, Finding, ScanResult};
+use crate::types::{ApplyResult, ComplianceReport, Finding, ScanResult};
 use leptos::prelude::*;
 
 /// Application state container holding all reactive signals for the UI.
@@ -25,6 +25,12 @@ pub struct AppState {
 
     /// Whether hardening changes are currently being applied.
     pub is_applying: RwSignal<bool>,
+
+    /// Compliance reports from the most recent generation.
+    pub compliance_reports: RwSignal<Vec<ComplianceReport>>,
+
+    /// Whether compliance reports are currently being generated.
+    pub is_generating_report: RwSignal<bool>,
 }
 
 impl Default for AppState {
@@ -35,6 +41,8 @@ impl Default for AppState {
             apply_results: RwSignal::new(Vec::new()),
             is_scanning: RwSignal::new(false),
             is_applying: RwSignal::new(false),
+            compliance_reports: RwSignal::new(Vec::new()),
+            is_generating_report: RwSignal::new(false),
         }
     }
 }

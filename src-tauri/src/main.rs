@@ -1,10 +1,11 @@
 mod commands;
 
-use commands::{get_checkpoints, run_apply, run_rollback, run_scan};
+use commands::{generate_compliance_report, get_checkpoints, run_apply, run_rollback, run_scan};
 
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
+            generate_compliance_report,
             get_checkpoints,
             run_apply,
             run_rollback,

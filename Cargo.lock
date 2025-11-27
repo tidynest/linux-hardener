@@ -1985,6 +1985,7 @@ name = "hardener-ui"
 version = "0.1.0"
 dependencies = [
  "hardener-common",
+ "hardener-compliance",
  "hardener-core",
  "js-sys",
  "leptos",
@@ -2851,6 +2852,7 @@ version = "0.1.0"
 dependencies = [
  "dirs",
  "hardener-common",
+ "hardener-compliance",
  "hardener-core",
  "hardener-plugins",
  "hardener-state",

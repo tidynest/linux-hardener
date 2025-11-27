@@ -5,6 +5,7 @@
 use crate::types::{ApplyResult, ScanResult};
 
 use wasm_bindgen::prelude::*;
+use hardener_compliance::ComplianceReport;
 
 #[wasm_bindgen]
 extern "C" {
@@ -36,3 +37,21 @@ pub async fn invoke_apply(plugin_ids: Vec<String>) -> Result<Vec<ApplyResult>, S
     serde_wasm_bindgen::from_value(result)
         .map_err(|e| format!("Failed to deserialise apply results: {}", e))
 }
+
+/// Invokes the generate_compliance_report Tauri command
+///
+/// Generates compliance reports for the specified frameworks.
+pub async fn invoke_generate_report(
+    frameworks: Vec<String>,
+) -> Result<Vec<ComplianceReport>, String> {
+    let args = serde_wasm_bindgen::to_value(&serde_json::json!({
+        "frameworks": frameworks,
+    }))
+    .map_err(|e| format!("Failed to serialise arguments: {}", e))?;
+
+    let result = tauri_invoke("generate_compliance_report", args).await;
+
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to deserialise generate compliance reports: {}", e))
+}
+

@@ -54,7 +54,7 @@ This document tracks the development progress and planned features for Linux Sys
 | Interactive report wizard | ✅ Complete | Medium |
 | CSV and HTML format support in CLI | ✅ Complete | Low |
 | PDF report formatter | ✅ Complete | Low |
-| GUI compliance report page | ⬜ Pending | Medium |
+| GUI compliance report page | ✅ Complete | Medium |
 
 ---
 

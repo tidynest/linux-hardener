@@ -1,4 +1,7 @@
-use hardener_common::types::PluginId;
+use hardener_common::types::{ComplianceFramework, PluginId};
+use hardener_compliance::{
+    ComplianceReport, OutputFormat, ReportConfig, ReportGenerator, Scenario,
+};
 use hardener_core::{ApplyResult, Context, PluginRegistry, ScanResult};
 use hardener_plugins::{
     AuditHardeningPlugin, FirewallHardeningPlugin, KernelHardeningPlugin, MacHardeningPlugin,
@@ -158,3 +161,54 @@ pub async fn get_checkpoints() -> Result<Vec<CheckpointInfo>, String> {
         })
         .collect())
 }
+
+/// Generates compliance reports for the specified frameworks.
+///
+/// Takes a list of framework names and returns compliance reports.
+#[tauri::command]
+pub fn generate_compliance_report(frameworks: Vec<String>) -> Result<Vec<ComplianceReport>, String> {
+    // First run a scan to get findings
+    let ctx = Context::new();
+    let registry = create_plugin_registry();
+
+    let mut all_findings = Vec::new();
+    let plugin_list = registry.list().map_err(|e| e.to_string())?;
+
+    for metadata in plugin_list {
+        if let Ok(Some(plugin)) = registry.get(&metadata.plugin_id) {
+            if let Ok(result) = plugin.scan(&ctx) {
+                all_findings.extend(result.scan_findings);
+            }
+        }
+    }
+
+    // Parse framework names into ComplianceFramework enum
+    let parsed_frameworks: Vec<ComplianceFramework> = frameworks
+        .iter()
+        .filter_map(|f| match f.to_uppercase().as_str() {
+            "CIS" => Some(ComplianceFramework::CIS),
+            "STIG" => Some(ComplianceFramework::STIG),
+            "NIST" => Some(ComplianceFramework::NIST),
+            "PCIDSS" | "PCI-DSS" | "PCI" => Some(ComplianceFramework::PCIDSS),
+            "HIPAA" => Some(ComplianceFramework::HIPAA),
+            "GDPR" => Some(ComplianceFramework::GDPR),
+            _ => None,
+        })
+        .collect();
+
+    // Create report config with custom frameworks
+    let config = ReportConfig {
+        scenario: Scenario::Custom(parsed_frameworks),
+        formats: vec![OutputFormat::Text],
+        output_dir: None,
+    };
+
+    // Generate reports
+    let generator = ReportGenerator::new(config);
+    let reports = generator.generate(&all_findings);
+
+    Ok(reports)
+}
+
+
+
