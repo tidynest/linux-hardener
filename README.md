@@ -331,7 +331,7 @@ See [PLAN.md](PLAN.md) for detailed implementation plans for upcoming features.
 - [x] Interactive report wizard (`hardener report --interactive`)
 - [x] CSV and HTML format support in CLI
 - [x] PDF report formatter with automatic timestamped filenames and colour-coded badges
-- [ ] GUI compliance report page
+- [x] GUI compliance report page
 
 ### v0.3.0 (Planned)
 - [ ] Remote scanning via SSH

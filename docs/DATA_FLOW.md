@@ -501,7 +501,7 @@ struct Finding {
 | `run_apply` | `plugins: Vec<String>` | `Vec<ApplyResult>` |
 | `run_rollback` | `checkpoint_id: String` | `Result<(), String>` |
 | `get_checkpoints` | None | `Vec<Checkpoint>` |
-| `list_plugins` | None | `Vec<PluginMetadata>` |
+| `generate_compliance_report` | `frameworks: Vec<String>` | `Vec<ComplianceReport>` |
 
 ---
 
