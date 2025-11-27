@@ -160,18 +160,40 @@ else
     git tag -a "${TAG_NAME}" -m "Release ${NEW_VERSION}"
 fi
 
-# Step 8: Push to remotes
+# Step 8: Push to remotes (both branches on both remotes)
 echo -e "\n${BLUE}Step 8: Pushing to remotes...${NC}"
 if $DRY_RUN; then
-    echo "Would push commits and tag to origin and gitlab"
+    echo "Would push to all remotes and branches:"
+    echo "  - origin/master"
+    echo "  - origin/main"
+    echo "  - origin/${TAG_NAME}"
+    echo "  - gitlab/master"
+    echo "  - gitlab/main"
+    echo "  - gitlab/${TAG_NAME}"
 else
     echo "Pushing to origin (GitHub)..."
-    git push origin "${CURRENT_BRANCH}"
-    git push origin "${TAG_NAME}"
+    git push origin "${CURRENT_BRANCH}" || echo -e "${YELLOW}GitHub ${CURRENT_BRANCH} push failed${NC}"
+
+    # Sync the other branch on GitHub
+    if [[ "$CURRENT_BRANCH" == "master" ]]; then
+        git push origin master:main || echo -e "${YELLOW}GitHub master:main sync failed${NC}"
+    else
+        git push origin main:master || echo -e "${YELLOW}GitHub main:master sync failed${NC}"
+    fi
+
+    git push origin "${TAG_NAME}" || echo -e "${YELLOW}GitHub tag push failed${NC}"
 
     echo "Pushing to gitlab..."
-    git push gitlab "${CURRENT_BRANCH}" || echo -e "${YELLOW}GitLab push failed (may require manual push)${NC}"
-    git push gitlab "${TAG_NAME}" || echo -e "${YELLOW}GitLab tag push failed (may require manual push)${NC}"
+    git push gitlab "${CURRENT_BRANCH}" || echo -e "${YELLOW}GitLab ${CURRENT_BRANCH} push failed${NC}"
+
+    # Sync the other branch on GitLab
+    if [[ "$CURRENT_BRANCH" == "master" ]]; then
+        git push gitlab master:main || echo -e "${YELLOW}GitLab master:main sync failed${NC}"
+    else
+        git push gitlab main:master || echo -e "${YELLOW}GitLab main:master sync failed${NC}"
+    fi
+
+    git push gitlab "${TAG_NAME}" || echo -e "${YELLOW}GitLab tag push failed${NC}"
 fi
 
 # Summary
@@ -179,6 +201,7 @@ echo -e "\n${GREEN}=== Release Summary ===${NC}"
 echo -e "Version: ${CURRENT_VERSION} -> ${NEW_VERSION}"
 echo -e "Tag: ${TAG_NAME}"
 echo -e "Branch: ${CURRENT_BRANCH}"
+echo -e "Synced: master <-> main on both remotes"
 
 if $DRY_RUN; then
     echo -e "\n${YELLOW}This was a dry run. No changes were made.${NC}"
