@@ -367,7 +367,7 @@ struct Finding {
 
 ## 5. Compliance Report Flow
 
-**Command:** `hardener report --framework cis --format html --output report.html`
+**Command:** `hardener report --framework cis --report-format html --output report.html`
 
 ```
 ┌──────────────────┐
@@ -378,7 +378,7 @@ struct Finding {
 ┌──────────────────────────────────────────────────────────────┐
 │  commands/report.rs::run()                                   │
 │  ├─ Parse framework (CIS, NIST, STIG, etc.)                  │
-│  └─ Parse output format (text, json, csv, html)              │
+│  └─ Parse output format (text, json, csv, html, pdf)         │
 └────────┬─────────────────────────────────────────────────────┘
          │
          ▼
@@ -436,7 +436,8 @@ struct Finding {
 │  ├─ TextFormatter: Plain text report                         │
 │  ├─ JsonFormatter: JSON structure                            │
 │  ├─ CsvFormatter: CSV for spreadsheets                       │
-│  └─ HtmlFormatter: Interactive HTML with styling             │
+│  ├─ HtmlFormatter: Interactive HTML with styling             │
+│  └─ PdfFormatter: Professional PDF with embedded fonts       │
 └────────┬─────────────────────────────────────────────────────┘
          │
          ▼

@@ -19,6 +19,7 @@ This document lists all source files with their purpose and key exports.
 | `src/commands/checkpoint.rs` | Checkpoint management | `list()`, `create()`, `show()`, `delete()` |
 | `src/commands/plugins.rs` | List plugins command | `run()` |
 | `src/commands/report.rs` | Compliance report generation | `run()` |
+| `src/commands/report_wizard.rs` | Interactive report wizard | `run_interactive()` |
 
 ---
 
@@ -175,6 +176,9 @@ pub struct FileState {
 | `src/output/json.rs` | JSON formatter | `JsonFormatter` |
 | `src/output/csv.rs` | CSV formatter | `CsvFormatter` |
 | `src/output/html.rs` | HTML formatter | `HtmlFormatter` |
+| `src/output/pdf.rs` | PDF formatter | `PdfFormatter` |
+| `src/fonts/NotoSans-Regular.ttf` | Embedded font | Regular weight |
+| `src/fonts/NotoSans-Bold.ttf` | Embedded font | Bold weight |
 
 ---
 

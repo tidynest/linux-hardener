@@ -75,7 +75,8 @@ Linux System Hardener is a modular security hardening tool for Linux systems, pr
 │                         │     │ hardener-compliance             │
 │                         │     │ ├─ Framework implementations    │
 │                         │     │ ├─ Report generation            │
-│                         │     │ └─ Output formatters            │
+│                         │     │ └─ Output formatters (Text,     │
+│                         │     │    JSON, CSV, HTML, PDF)        │
 └─────────────────────────┘     └─────────────────────────────────┘
                               │
                               ▼
