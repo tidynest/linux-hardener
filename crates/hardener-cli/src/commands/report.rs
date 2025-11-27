@@ -10,7 +10,6 @@ use hardener_core::{Context, PluginRegistry};
 use hardener_plugins::*;
 use std::fs;
 use std::io::{self, Write};
-
 use crate::cli::OutputFormat as CliOutputFormat;
 
 pub async fn run(
@@ -43,9 +42,11 @@ pub async fn run(
     let output_format = match report_format.to_lowercase().as_str() {
         "json" => OutputFormat::Json,
         "text" | "txt" => OutputFormat::Text,
+        "csv" => OutputFormat::Csv,
+        "html" => OutputFormat::Html,
         _ => {
             return Err(anyhow!(
-                "Unsupported format '{}'. Use 'text' or 'json'.",
+                "Unsupported format '{}'. Use 'TEXT', 'JSON', 'CSV' or 'HTML'.",
                 report_format
             ))
         }
@@ -83,8 +84,12 @@ pub async fn run(
             let formatter = JsonFormatter::pretty();
             formatter.format_all(&reports)
         }
-        _ => {
-            let formatter = TextFormatter::new();
+        OutputFormat::Csv => {
+            let formatter = hardener_compliance::output::CsvFormatter::new();
+            formatter.format_all(&reports)
+        }
+        OutputFormat::Html => {
+            let formatter = hardener_compliance::output::HtmlFormatter::new();
             formatter.format_all(&reports)
         }
     };
@@ -103,7 +108,7 @@ pub async fn run(
     Ok(())
 }
 
-fn run_scan(quiet: bool) -> Result<Vec<hardener_core::plugin::Finding>> {
+pub fn run_scan(quiet: bool) -> Result<Vec<hardener_core::plugin::Finding>> {
     let registry = create_plugin_registry();
     let ctx = Context::new();
 
@@ -136,7 +141,7 @@ fn run_scan(quiet: bool) -> Result<Vec<hardener_core::plugin::Finding>> {
     Ok(all_findings)
 }
 
-fn create_plugin_registry() -> PluginRegistry {
+pub fn create_plugin_registry() -> PluginRegistry {
     let registry = PluginRegistry::new();
     let _ = registry.register(Box::new(AuditHardeningPlugin::new()));
     let _ = registry.register(Box::new(FirewallHardeningPlugin::new()));

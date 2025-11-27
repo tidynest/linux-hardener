@@ -16,9 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CLI flags: `--config`, `--audit`, `--compliance`, `--exit-code` for scan command
 - Three scan modes: Default (annotated), Audit (pure), Compliance (violations only)
 - Config paths: `/etc/linux-hardener/config.toml` (system), `~/.config/linux-hardener/config.toml` (user)
+- Interactive report wizard with `--interactive` flag for guided report generation
+- CSV and HTML output format support in CLI report command
+- `dialoguer` dependency for interactive terminal prompts
 
 ### Planned
-- Interactive report wizard
 - PDF report formatter
 - GUI compliance report page
 - Remote scanning via SSH

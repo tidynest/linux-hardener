@@ -102,6 +102,10 @@ pub enum Command {
         /// Output file path (prints to stdout if not specified).
         #[arg(short, long)]
         output: Option<String>,
+
+        /// Launch interactive wizard to configure report.
+        #[arg(short, long)]
+        interactive: bool,
     },
 }
 

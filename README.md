@@ -181,6 +181,13 @@ hardener scan --compliance
 # CI/CD mode - exit with code 1 if findings exist
 hardener scan --compliance --exit-code
 
+# Interactive report wizard
+hardener report --interactive
+
+# Generate report in different formats
+hardener report --framework cis --report-format html --output report.html
+hardener report --framework cis --report-format csv --output report.csv
+
 # Dry-run: see what would be changed without applying
 sudo hardener apply --dry-run --all
 
@@ -317,7 +324,8 @@ See [PLAN.md](PLAN.md) for detailed implementation plans for upcoming features.
 - [x] Config file support (`~/.config/linux-hardener/`)
 - [x] CLI flags: `--config`, `--audit`, `--compliance`, `--exit-code`
 - [x] Policy exception system with audit trail
-- [ ] Interactive report wizard
+- [x] Interactive report wizard (`hardener report --interactive`)
+- [x] CSV and HTML format support in CLI
 - [ ] PDF report formatter
 - [ ] GUI compliance report page
 

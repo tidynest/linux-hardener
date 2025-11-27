@@ -31,5 +31,5 @@ pub mod report;
 
 pub use config::{OutputFormat, ReportConfig, Scenario};
 pub use generator::ReportGenerator;
-pub use output::{JsonFormatter, ReportFormatter, TextFormatter};
+pub use output::{CsvFormatter, HtmlFormatter, JsonFormatter, ReportFormatter, TextFormatter};
 pub use report::{ComplianceReport, ComplianceSummary, ControlResult};

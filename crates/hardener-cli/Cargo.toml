@@ -20,13 +20,13 @@ hardener-plugins = { path = "../hardener-plugins" }
 hardener-state = { path = "../hardener-state" }
 
 # CLI
-clap = { version = "4.5", features = ["derive", "color", "env"] }
+clap = { version = "4.5.53", features = ["derive", "color", "env"] }
 
 # Async runtime
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 
 # Output formatting
-colored = "2.1"
+colored = "3.0.0"
 serde_json = { workspace = true }
 
 # Error handling
@@ -34,5 +34,8 @@ anyhow = { workspace = true }
 nix = "0.30.1"
 
 # Utilities
-chrono = "0.4"
-dirs = "5"
+chrono = "0.4.42"
+dirs = "6.0.0"
+
+# Interactive prompts
+dialoguer = { version = "0.12.0", features = ["fuzzy-select"]}

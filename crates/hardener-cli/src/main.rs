@@ -56,16 +56,21 @@ async fn main() -> Result<()> {
             framework,
             report_format,
             output,
+            interactive,
         } => {
-            commands::report::run(
-                scenario,
-                framework,
-                report_format,
-                output,
-                cli.format,
-                cli.quiet,
-            )
-            .await
+            if interactive {
+                commands::report_wizard::run(cli.quiet).await
+            } else {
+                commands::report::run(
+                    scenario,
+                    framework,
+                    report_format,
+                    output,
+                    cli.format,
+                    cli.quiet,
+                )
+                .await
+            }
         }
     };
 
