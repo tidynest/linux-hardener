@@ -27,7 +27,10 @@ impl ReportFormatter for TextFormatter {
         let mut output = String::new();
 
         // Header
-        output.push_str(&format!("{} Compliance Report\n", report.report_framework));
+        output.push_str(&format!(
+            "{} Compliance Report\n",
+            report.report_framework.full_name()
+        ));
         output.push_str(&"=".repeat(60));
         output.push('\n');
         output.push_str(&format!(
@@ -157,7 +160,7 @@ mod tests {
         let formatter = TextFormatter::new();
         let output = formatter.format(&report);
 
-        assert!(output.contains("CIS Compliance Report"));
+        assert!(output.contains("CIS Benchmark Compliance Report"));
         assert!(output.contains("[PASS]"));
         assert!(output.contains("[FAIL]"));
         assert!(output.contains("Score:          50.0%"));

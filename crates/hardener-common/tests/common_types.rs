@@ -96,6 +96,45 @@ fn test_compliance_framework_display() {
 }
 
 #[test]
+fn test_compliance_framework_full_name() {
+    assert_eq!(ComplianceFramework::CIS.full_name(), "CIS Benchmark");
+    assert_eq!(
+        ComplianceFramework::HIPAA.full_name(),
+        "HIPAA Security Rule"
+    );
+    assert_eq!(ComplianceFramework::ISO27001.full_name(), "ISO/IEC 27001");
+    assert_eq!(ComplianceFramework::NIST.full_name(), "NIST 800-53");
+    assert_eq!(ComplianceFramework::PCIDSS.full_name(), "PCI-DSS v4.0");
+    assert_eq!(ComplianceFramework::STIG.full_name(), "DISA STIG");
+    assert_eq!(ComplianceFramework::GDPR.full_name(), "GDPR Article 32");
+}
+
+#[test]
+fn test_compliance_framework_description() {
+    assert!(ComplianceFramework::CIS
+        .description()
+        .contains("Center for Internet Security"));
+    assert!(ComplianceFramework::HIPAA
+        .description()
+        .contains("Health Insurance"));
+    assert!(ComplianceFramework::ISO27001
+        .description()
+        .contains("International Organisation"));
+    assert!(ComplianceFramework::NIST
+        .description()
+        .contains("National Institute"));
+    assert!(ComplianceFramework::PCIDSS
+        .description()
+        .contains("Payment Card"));
+    assert!(ComplianceFramework::STIG
+        .description()
+        .contains("Defense Information"));
+    assert!(ComplianceFramework::GDPR
+        .description()
+        .contains("General Data Protection"));
+}
+
+#[test]
 fn test_types_are_serializable() {
     // Test that types can be serialised to JSON
     let id = PluginId::new("test");

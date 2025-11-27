@@ -27,7 +27,7 @@ async fn main() -> Result<()> {
                 config_path: cli.config.as_ref(),
                 audit,
                 compliance,
-                exit_code
+                exit_code,
             })
             .await
         }

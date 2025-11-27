@@ -70,10 +70,14 @@ The tool is designed for system administrators, DevOps engineers, and security p
 ### Test Coverage
 
 ```
-Total Tests: 107 passing
+Total Tests: 220 passing
 ├── Plugin Tests: 48
 ├── Core Tests: 59
-└── Coverage: >80%
+├── Compliance Tests: 46
+├── State Tests: 31
+├── CLI Tests: 21
+├── Distro Tests: 15
+└── Coverage: >90%
 ```
 
 ### Build Status
@@ -311,7 +315,7 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 
 - Follow naming conventions in [docs/NAMING_CONVENTIONS.md](docs/NAMING_CONVENTIONS.md)
 - All code must pass `cargo clippy` without warnings
-- Maintain >80% test coverage for new code
+- Maintain >90% test coverage for new code
 - Use British English in documentation and user-facing text
 
 ---

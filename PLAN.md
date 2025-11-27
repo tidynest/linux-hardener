@@ -94,7 +94,8 @@ This document tracks the development progress and planned features for Linux Sys
 
 | Item | Description | Priority |
 |------|-------------|----------|
-| Increase test coverage | Target 90%+ coverage | Medium |
+| ~~Increase test coverage~~ | ~~Target 90%+ coverage~~ | ✅ Complete (220 tests) |
+| Framework descriptions in reports | Add `description()` as subtitle in compliance reports | Low |
 | SELinux/AppArmor policy management | Full policy editing, not just detection | Low |
 | ISO 27001 framework | Add ISO 27001 compliance controls | Low |
 

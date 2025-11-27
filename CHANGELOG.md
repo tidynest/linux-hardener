@@ -23,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatic timestamped PDF filenames (`compliance-report-YYYYMMDD-HHMMSS.pdf`)
 - Colour-coded status badges in PDF reports (PASS=green, FAIL=red, PARTIAL=amber)
 - `krilla` dependency for PDF generation
+- Full compliance framework names in report titles (e.g., "CIS Benchmark" instead of "CIS")
+- `full_name()` and `description()` methods on `ComplianceFramework` enum
+- Improved PDF findings formatting: bold 10pt text, proper indentation, spacing after FAIL rows
+
+### Changed
+- Test suite expanded from 107 to 220 tests (105% increase)
+- PDF findings now display with better visual hierarchy and spacing
 
 ### Planned
 - GUI compliance report page
@@ -81,7 +88,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Developer Tools
 - Naming convention validator script
 - Pre-commit hook for validation
-- Comprehensive test suite (107 tests)
+- Comprehensive test suite (220 tests)
 
 ### Security
 - Disabled unused sqlx database backends (mysql, postgres) to reduce attack surface
@@ -89,7 +96,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Test Coverage
 - 48 plugin tests
 - 59 core infrastructure tests
-- >80% code coverage
+- 113 new unit/integration tests added
+- >90% code coverage
 
 ### Known Limitations
 - Some hardening requires system reboot

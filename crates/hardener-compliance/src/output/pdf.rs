@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 const FONT_DATA: &[u8] = include_bytes!("../fonts/NotoSans-Regular.ttf");
 const FONT_BOLD_DATA: &[u8] = include_bytes!("../fonts/NotoSans-Bold.ttf");
 
-/// Page dimensions (A4 in points: 595 x 842).
+/// Page dimensions (A4 in points: 595 × 842).
 const PAGE_WIDTH: f32 = 595.0;
 const PAGE_HEIGHT: f32 = 842.0;
 
@@ -137,19 +137,20 @@ impl YTracker {
 
 /// Generates a PDF document from a compliance report.
 fn generate_pdf(report: &ComplianceReport) -> Vec<u8> {
-    let font_regular = Font::new(FONT_DATA.to_vec().into(), 0)
-        .expect("Failed to load regular font - ensure NotoSans-Regular.ttf is
-  present");
-    let font_bold = Font::new(FONT_BOLD_DATA.to_vec().into(), 0)
-        .expect("Failed to load bold font - ensure NotoSans-Bold.ttf is
-  present");
+    let font_regular = Font::new(FONT_DATA.to_vec().into(), 0).expect(
+        "Failed to load regular font - ensure NotoSans-Regular.ttf is
+  present",
+    );
+    let font_bold = Font::new(FONT_BOLD_DATA.to_vec().into(), 0).expect(
+        "Failed to load bold font - ensure NotoSans-Bold.ttf is
+  present",
+    );
 
     let mut document = Document::new();
     let mut y = YTracker::new();
 
     // Group controls by section for organised output
-    let mut sections: BTreeMap<&str, Vec<&crate::report::ControlResult>> =
-        BTreeMap::new();
+    let mut sections: BTreeMap<&str, Vec<&crate::report::ControlResult>> = BTreeMap::new();
     for control in &report.report_controls {
         sections
             .entry(control.control_section.as_str())
@@ -167,8 +168,7 @@ fn generate_pdf(report: &ComplianceReport) -> Vec<u8> {
     });
 
     // Start first page
-    let mut page = document.start_page_with(PageSettings::new(PAGE_WIDTH,
-                                                              PAGE_HEIGHT));
+    let mut page = document.start_page_with(PageSettings::new(PAGE_WIDTH, PAGE_HEIGHT));
     let mut surface = page.surface();
 
     // === Title ===
@@ -178,7 +178,7 @@ fn generate_pdf(report: &ComplianceReport) -> Vec<u8> {
         rule: FillRule::default(),
     }));
 
-    let title = format!("{} Compliance Report", report.report_framework);
+    let title = format!("{} Compliance Report", report.report_framework.full_name());
     surface.draw_text(
         Point::from_xy(MARGIN_LEFT, y.y() + TITLE_SIZE),
         font_bold.clone(),
@@ -217,13 +217,11 @@ fn generate_pdf(report: &ComplianceReport) -> Vec<u8> {
     // === Controls by Section ===
     for (section_name, controls) in &sections_vec {
         // Check if we need a new page for the section header
-        if y.needs_new_page(HEADING_SIZE * LINE_HEIGHT + BODY_SIZE *
-            LINE_HEIGHT * 3.0) {
+        if y.needs_new_page(HEADING_SIZE * LINE_HEIGHT + BODY_SIZE * LINE_HEIGHT * 3.0) {
             surface.finish();
             page.finish();
             y.reset();
-            page = document.start_page_with(PageSettings::new(PAGE_WIDTH,
-                                                              PAGE_HEIGHT));
+            page = document.start_page_with(PageSettings::new(PAGE_WIDTH, PAGE_HEIGHT));
             surface = page.surface();
         }
 
@@ -289,23 +287,20 @@ fn generate_pdf(report: &ComplianceReport) -> Vec<u8> {
             // Check if we need a new page
             let control_height = BODY_SIZE * LINE_HEIGHT * 2.0
                 + if control.control_status == ControlStatus::Fail {
-                control.control_findings.len() as f32 * SMALL_SIZE *
-                    LINE_HEIGHT
-            } else {
-                0.0
-            };
+                    control.control_findings.len() as f32 * BODY_SIZE * LINE_HEIGHT
+                } else {
+                    0.0
+                };
 
             if y.needs_new_page(control_height) {
                 surface.finish();
                 page.finish();
                 y.reset();
-                page = document.start_page_with(PageSettings::new(PAGE_WIDTH,
-                                                                  PAGE_HEIGHT));
+                page = document.start_page_with(PageSettings::new(PAGE_WIDTH, PAGE_HEIGHT));
                 surface = page.surface();
             }
 
-            draw_control(&mut surface, &mut y, control, &font_regular,
-                         &font_bold);
+            draw_control(&mut surface, &mut y, control, &font_regular, &font_bold);
         }
 
         y.advance(15.0);
@@ -415,8 +410,7 @@ fn draw_summary_box(
         opacity: NormalizedF32::ONE,
         rule: FillRule::default(),
     }));
-    let passing_text = format!("Passing: {}",
-                               report.report_summary.summary_passing);
+    let passing_text = format!("Passing: {}", report.report_summary.summary_passing);
     surface.draw_text(
         Point::from_xy(stats_x, start_y + 30.0),
         font_regular.clone(),
@@ -432,8 +426,7 @@ fn draw_summary_box(
         opacity: NormalizedF32::ONE,
         rule: FillRule::default(),
     }));
-    let failing_text = format!("Failing: {}",
-                               report.report_summary.summary_failing);
+    let failing_text = format!("Failing: {}", report.report_summary.summary_failing);
     surface.draw_text(
         Point::from_xy(stats_x, start_y + 45.0),
         font_regular.clone(),
@@ -450,8 +443,7 @@ fn draw_summary_box(
             opacity: NormalizedF32::ONE,
             rule: FillRule::default(),
         }));
-        let na_text = format!("N/A: {}",
-                              report.report_summary.summary_not_applicable);
+        let na_text = format!("N/A: {}", report.report_summary.summary_not_applicable);
         surface.draw_text(
             Point::from_xy(stats_x, start_y + 60.0),
             font_regular.clone(),
@@ -469,8 +461,7 @@ fn draw_summary_box(
             opacity: NormalizedF32::ONE,
             rule: FillRule::default(),
         }));
-        let manual_text = format!("Manual: {}",
-                                  report.report_summary.summary_manual_review);
+        let manual_text = format!("Manual: {}", report.report_summary.summary_manual_review);
         surface.draw_text(
             Point::from_xy(stats_x + 100.0, start_y + 30.0),
             font_regular.clone(),
@@ -487,8 +478,7 @@ fn draw_summary_box(
         opacity: NormalizedF32::ONE,
         rule: FillRule::default(),
     }));
-    let total_text = format!("Total: {}",
-                             report.report_summary.summary_total_controls);
+    let total_text = format!("Total: {}", report.report_summary.summary_total_controls);
     surface.draw_text(
         Point::from_xy(stats_x + 100.0, start_y + 45.0),
         font_regular.clone(),
@@ -570,8 +560,8 @@ fn draw_control(
     y.advance(BODY_SIZE * LINE_HEIGHT);
 
     // Show findings for failed controls
-    if control.control_status == ControlStatus::Fail &&
-        !control.control_findings.is_empty() {
+    if control.control_status == ControlStatus::Fail && !control.control_findings.is_empty() {
+        y.advance(BODY_SIZE * LINE_HEIGHT * 0.5);
         for finding in &control.control_findings {
             surface.set_fill(Some(Fill {
                 paint: colour_fail().into(),
@@ -580,28 +570,27 @@ fn draw_control(
             }));
 
             let finding_text = format!(
-                "    -> [{}] {}",
+                " -> [{}] {}",
                 finding.finding_severity,
                 truncate_string(&finding.finding_title, 60)
             );
 
             surface.draw_text(
-                Point::from_xy(MARGIN_LEFT + 20.0, y.y() + SMALL_SIZE),
-                font_regular.clone(),
+                Point::from_xy(MARGIN_LEFT + 120.0, y.y() + SMALL_SIZE),
+                font_bold.clone(),
                 SMALL_SIZE,
                 &finding_text,
                 false,
                 TextDirection::LeftToRight,
             );
 
-            y.advance(SMALL_SIZE * LINE_HEIGHT);
+            y.advance(BODY_SIZE * LINE_HEIGHT);
         }
     }
 }
 
 /// Draws a horizontal line across the content area.
-fn draw_horizontal_line(surface: &mut krilla::surface::Surface, y: f32, colour:
-color::rgb::Color) {
+fn draw_horizontal_line(surface: &mut krilla::surface::Surface, y: f32, colour: color::rgb::Color) {
     // Draw a thin rectangle as a line
     let mut rect_pb = PathBuilder::new();
     rect_pb.move_to(MARGIN_LEFT, y);
@@ -695,7 +684,7 @@ mod tests {
         assert_eq!(truncate_string("short", 10), "short");
         assert_eq!(
             truncate_string("this is a longer string", 10),
-            "this is a ..."
+            "this is a …"
         );
     }
 

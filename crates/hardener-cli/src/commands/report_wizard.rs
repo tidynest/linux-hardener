@@ -120,8 +120,8 @@ const SCENARIOS: &[ScenarioInfo] = &[
 pub async fn run(quiet: bool) -> Result<()> {
     if quiet {
         return Err(anyhow!(
-              "Interactive wizard cannot run in quiet mode. Remove --quiet flag."
-          ));
+            "Interactive wizard cannot run in quiet mode. Remove --quiet flag."
+        ));
     }
 
     // Print welcome banner
@@ -141,7 +141,11 @@ pub async fn run(quiet: bool) -> Result<()> {
     let findings = run_scan(false)?;
     println!(
         "{}",
-        format!("Found {} total findings across all plugins.", findings.len()).dimmed()
+        format!(
+            "Found {} total findings across all plugins.",
+            findings.len()
+        )
+        .dimmed()
     );
 
     // Step 4: Generate reports
@@ -337,10 +341,7 @@ fn select_output_path() -> Result<Option<PathBuf>> {
         .interact()?;
 
     if !save_to_file {
-        println!(
-            "{}",
-            "Report will be displayed in terminal.".dimmed()
-        );
+        println!("{}", "Report will be displayed in terminal.".dimmed());
         println!();
         return Ok(None);
     }
@@ -377,16 +378,8 @@ fn confirm_selections(state: &WizardState) -> Result<bool> {
             })
             .collect();
 
-        println!(
-            "  {} {}",
-            "Scenario:".bold(),
-            scenario.name()
-        );
-        println!(
-            "  {} {}",
-            "Frameworks:".bold(),
-            framework_names.join(", ")
-        );
+        println!("  {} {}", "Scenario:".bold(), scenario.name());
+        println!("  {} {}", "Frameworks:".bold(), framework_names.join(", "));
     }
 
     // Show formats
@@ -401,19 +394,11 @@ fn confirm_selections(state: &WizardState) -> Result<bool> {
             OutputFormat::Pdf => "PDF",
         })
         .collect();
-    println!(
-        "  {} {}",
-        "Formats:".bold(),
-        format_names.join(", ")
-    );
+    println!("  {} {}", "Formats:".bold(), format_names.join(", "));
 
     // Show output
     match &state.output_path {
-        Some(path) => println!(
-            "  {} {}",
-            "Output:".bold(),
-            path.display()
-        ),
+        Some(path) => println!("  {} {}", "Output:".bold(), path.display()),
         None => println!("  {} stdout", "Output:".bold()),
     }
 
@@ -502,11 +487,7 @@ fn output_reports(
                     let filename = format!("compliance-report-{}.pdf", timestamp);
                     let bytes: Vec<u8> = formatted.chars().map(|c| c as u8).collect();
                     fs::write(&filename, bytes)?;
-                    println!(
-                        "  {} Saved PDF report to: {}",
-                        "✓".green(),
-                        filename
-                    );
+                    println!("  {} Saved PDF report to: {}", "✓".green(), filename);
                     continue;
                 }
                 // Print text formats to stdout

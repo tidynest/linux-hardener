@@ -1,5 +1,6 @@
 //! Compliance report generation command.
 
+use crate::cli::OutputFormat as CliOutputFormat;
 use anyhow::{anyhow, Result};
 use chrono::Local;
 use hardener_common::types::ComplianceFramework;
@@ -11,7 +12,6 @@ use hardener_core::{Context, PluginRegistry};
 use hardener_plugins::*;
 use std::fs;
 use std::io::{self, Write};
-use crate::cli::OutputFormat as CliOutputFormat;
 
 pub async fn run(
     scenario: Option<String>,
@@ -207,7 +207,8 @@ fn parse_framework(s: &str) -> Result<ComplianceFramework> {
         "gdpr" => Ok(ComplianceFramework::GDPR),
         "iso27001" | "iso" => Ok(ComplianceFramework::ISO27001),
         _ => Err(anyhow!(
-            "Unknown framework '{}'. Valid options: cis, stig, nist, pcidss, hipaa, gdpr, iso27001", s
+            "Unknown framework '{}'. Valid options: cis, stig, nist, pcidss, hipaa, gdpr, iso27001",
+            s
         )),
     }
 }

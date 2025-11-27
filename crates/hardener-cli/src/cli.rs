@@ -154,3 +154,139 @@ pub enum ScanMode {
     /// Compliance mode: only show findings without valid policy exceptions.
     Compliance,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn test_cli_parse_scan() {
+        let cli = Cli::parse_from(["hardener", "scan"]);
+        assert!(matches!(cli.command, Command::Scan { .. }));
+    }
+
+    #[test]
+    fn test_cli_parse_scan_with_plugin() {
+        let cli = Cli::parse_from(["hardener", "scan", "--plugin", "kernel"]);
+        if let Command::Scan { plugin, .. } = cli.command {
+            assert_eq!(plugin, vec!["kernel"]);
+        } else {
+            panic!("Expected Scan command");
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_scan_with_severity() {
+        let cli = Cli::parse_from(["hardener", "scan", "--severity", "high"]);
+        if let Command::Scan { severity, .. } = cli.command {
+            assert!(matches!(severity, SeverityFilter::High));
+        } else {
+            panic!("Expected Scan command");
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_apply() {
+        let cli = Cli::parse_from(["hardener", "apply", "--all"]);
+        if let Command::Apply { all, .. } = cli.command {
+            assert!(all);
+        } else {
+            panic!("Expected Apply command");
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_apply_dry_run() {
+        let cli = Cli::parse_from(["hardener", "apply", "--all", "--dry-run"]);
+        if let Command::Apply { dry_run, .. } = cli.command {
+            assert!(dry_run);
+        } else {
+            panic!("Expected Apply command");
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_plugins() {
+        let cli = Cli::parse_from(["hardener", "plugins"]);
+        assert!(matches!(cli.command, Command::Plugins));
+    }
+
+    #[test]
+    fn test_cli_parse_report_framework() {
+        let cli = Cli::parse_from(["hardener", "report", "--framework", "cis"]);
+        if let Command::Report { framework, .. } = cli.command {
+            assert_eq!(framework, Some("cis".to_string()));
+        } else {
+            panic!("Expected Report command");
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_checkpoint_list() {
+        let cli = Cli::parse_from(["hardener", "checkpoint", "list"]);
+        if let Command::Checkpoint { action } = cli.command {
+            assert!(matches!(action, CheckpointAction::List));
+        } else {
+            panic!("Expected Checkpoint command");
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_checkpoint_create() {
+        let cli = Cli::parse_from(["hardener", "checkpoint", "create", "my-checkpoint"]);
+        if let Command::Checkpoint { action } = cli.command {
+            if let CheckpointAction::Create { name } = action {
+                assert_eq!(name, "my-checkpoint");
+            } else {
+                panic!("Expected Create action");
+            }
+        } else {
+            panic!("Expected Checkpoint command");
+        }
+    }
+
+    #[test]
+    fn test_cli_global_format_json() {
+        let cli = Cli::parse_from(["hardener", "--format", "json", "scan"]);
+        assert!(matches!(cli.format, OutputFormat::Json));
+    }
+
+    #[test]
+    fn test_cli_global_quiet() {
+        let cli = Cli::parse_from(["hardener", "--quiet", "scan"]);
+        assert!(cli.quiet);
+    }
+
+    #[test]
+    fn test_scan_mode_default() {
+        let mode = ScanMode::default();
+        assert_eq!(mode, ScanMode::Default);
+    }
+
+    #[test]
+    fn test_severity_filter_default() {
+        let filter = SeverityFilter::default();
+        assert!(matches!(filter, SeverityFilter::Info));
+    }
+
+    #[test]
+    fn test_report_format_values() {
+        assert!(matches!(
+            ReportFormat::from_str("text", true).unwrap(),
+            ReportFormat::Text
+        ));
+        assert!(matches!(
+            ReportFormat::from_str("json", true).unwrap(),
+            ReportFormat::Json
+        ));
+        assert!(matches!(
+            ReportFormat::from_str("csv", true).unwrap(),
+            ReportFormat::Csv
+        ));
+        assert!(matches!(
+            ReportFormat::from_str("html", true).unwrap(),
+            ReportFormat::Html
+        ));
+    }
+}

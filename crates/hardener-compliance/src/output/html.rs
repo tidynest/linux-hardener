@@ -32,7 +32,7 @@ impl ReportFormatter for HtmlFormatter {
         // Report Title
         html.push_str(&format!(
             "<h1>{} Compliance Report</h1>\n",
-            report.report_framework
+            report.report_framework.full_name()
         ));
         html.push_str(&format!(
             "<p class=\"generated\">Generated: {}</p>\n",
@@ -259,7 +259,7 @@ mod tests {
         let output = formatter.format(&report);
 
         assert!(output.contains("<!DOCTYPE html>"));
-        assert!(output.contains("CIS Compliance Report"));
+        assert!(output.contains("CIS Benchmark Compliance Report"));
         assert!(output.contains("100.0%"));
         assert!(output.contains("PASS"));
     }

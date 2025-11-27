@@ -297,6 +297,16 @@ pub fn get_checkpoints() -> Result<Vec<Checkpoint>, String>
 
 Tests are co-located with source files using `#[cfg(test)]` modules, plus integration tests in `tests/` directories within each crate.
 
+| Crate | Unit Tests | Integration Tests | Total |
+|-------|------------|-------------------|-------|
+| hardener-common | `error.rs`, `file_utils.rs`, `logging.rs` | `common_types.rs` | 30 |
+| hardener-compliance | `config.rs`, `report.rs`, `output/*.rs`, `generator.rs` | `framework_tests.rs` | 46 |
+| hardener-state | `audit.rs`, `hash_chain.rs`, `signing.rs`, `db.rs` | `checkpoint_system.rs` | 31 |
+| hardener-distro | `adapter.rs`, `package/*.rs` | - | 15 |
+| hardener-cli | `cli.rs`, `output.rs` | - | 21 |
+| hardener-plugins | - | `*_tests.rs` (8 files) | 48 |
+| hardener-core | `config.rs`, `context.rs`, `plugin.rs`, `registry.rs`, `config_loader.rs` | `plugin_manager_tests.rs` | 29 |
+
 ---
 
 ## Configuration Files (Implemented)

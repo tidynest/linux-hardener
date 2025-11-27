@@ -142,6 +142,38 @@ impl fmt::Display for ComplianceFramework {
     }
 }
 
+impl ComplianceFramework {
+    /// Returns the full name of the compliance framework.
+    pub fn full_name(&self) -> &'static str {
+        match self {
+            ComplianceFramework::CIS => "CIS Benchmark",
+            ComplianceFramework::HIPAA => "HIPAA Security Rule",
+            ComplianceFramework::ISO27001 => "ISO/IEC 27001",
+            ComplianceFramework::NIST => "NIST 800-53",
+            ComplianceFramework::PCIDSS => "PCI-DSS v4.0",
+            ComplianceFramework::STIG => "DISA STIG",
+            ComplianceFramework::GDPR => "GDPR Article 32",
+        }
+    }
+
+    /// Returns a brief description of the compliance framework.
+    pub fn description(&self) -> &'static str {
+        match self {
+            ComplianceFramework::CIS => "Center for Internet Security Benchmarks for Linux",
+            ComplianceFramework::HIPAA => "Health Insurance Portability and Accountability Act",
+            ComplianceFramework::ISO27001 => "International Organisation for Standardisation 27001",
+            ComplianceFramework::NIST => {
+                "National Institute of Standards and Technology Special Publication 800-53"
+            }
+            ComplianceFramework::PCIDSS => "Payment Card Industry Data Security Standard",
+            ComplianceFramework::STIG => {
+                "Defense Information Systems Agency Security Technical Implementation Guides"
+            }
+            ComplianceFramework::GDPR => "European Union General Data Protection Regulation",
+        }
+    }
+}
+
 /// Mapping of a finding to a specific compliance framework control.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ComplianceMapping {

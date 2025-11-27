@@ -39,7 +39,8 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
     for metadata in &plugins {
         // Skip if plugin filter is set and this plugin isn't in it
         if !opts.plugin_filter.is_empty()
-            && !opts.plugin_filter
+            && !opts
+                .plugin_filter
                 .iter()
                 .any(|p| p == metadata.plugin_id.as_str())
         {

@@ -267,3 +267,59 @@ fn format_timestamp(timestamp: i64) -> String {
     let local: DateTime<Local> = datetime.into();
     local.format("%Y-%m-%d %H:%M:%S").to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_severity_critical() {
+        let formatted = format_severity(&Severity::Critical);
+        assert_eq!(formatted.to_string(), "CRIT");
+    }
+
+    #[test]
+    fn test_format_severity_high() {
+        let formatted = format_severity(&Severity::High);
+        assert_eq!(formatted.to_string(), "HIGH");
+    }
+
+    #[test]
+    fn test_format_severity_medium() {
+        let formatted = format_severity(&Severity::Medium);
+        assert_eq!(formatted.to_string(), "MED ");
+    }
+
+    #[test]
+    fn test_format_severity_low() {
+        let formatted = format_severity(&Severity::Low);
+        assert_eq!(formatted.to_string(), "LOW ");
+    }
+
+    #[test]
+    fn test_format_severity_info() {
+        let formatted = format_severity(&Severity::Info);
+        assert_eq!(formatted.to_string(), "INFO");
+    }
+
+    #[test]
+    fn test_format_timestamp_valid() {
+        // Unix timestamp for 2024-01-15 12:00:00 UTC
+        let timestamp = 1705320000;
+        let formatted = format_timestamp(timestamp);
+
+        // Should contain the date (the time portion may vary due to timezone)
+        assert!(formatted.contains("2024-01-15"));
+    }
+
+    #[test]
+    fn test_format_timestamp_zero() {
+        // Unix epoch
+        let timestamp = 0;
+        let formatted = format_timestamp(timestamp);
+
+        // Should produce a valid date string
+        assert!(!formatted.is_empty());
+        assert!(formatted.contains("-")); // Date format includes dashes
+    }
+}
