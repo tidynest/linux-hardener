@@ -7,26 +7,26 @@ use crate::cli::{OutputFormat, ScanMode};
 
 pub fn status(format: &OutputFormat, message: &str) {
     match format {
-        OutputFormat::Text => eprintln!("{} {}", "→".blue(), message),
-        OutputFormat::Json => {} // Silent in JSON mode
+        OutputFormat::Json => {}
+        _ => eprintln!("{} {}", "→".blue(), message),
     }
 }
 
 pub fn info(format: &OutputFormat, message: &str) {
     match format {
-        OutputFormat::Text => println!("{} {}", "i".cyan(), message),
         OutputFormat::Json => {
             println!("{}", serde_json::json!({ "info": message }));
         }
+        _ => println!("{} {}", "i".cyan(), message),
     }
 }
 
 pub fn error(format: &OutputFormat, message: &str) {
     match format {
-        OutputFormat::Text => eprintln!("{} {}", "x".red(), message),
         OutputFormat::Json => {
             eprintln!("{}", serde_json::json!({ "error": message }));
         }
+        _ => eprintln!("{} {}", "x".red(), message),
     }
 }
 
@@ -36,7 +36,7 @@ pub fn scan_results(
     _mode: ScanMode,
 ) {
     match format {
-        OutputFormat::Text => {
+        OutputFormat::Json => {
             println!("\n{}", "═══ Scan Results ═══".bold());
 
             let mut total_findings = 0;
@@ -79,7 +79,7 @@ pub fn scan_results(
                 results.len()
             );
         }
-        OutputFormat::Json => {
+        _ => {
             let json_results: Vec<_> = results
                 .iter()
                 .map(|(m, f)| {
@@ -97,7 +97,7 @@ pub fn scan_results(
 
 pub fn apply_results(format: &OutputFormat, results: &[(PluginMetadata, ApplyResult)]) {
     match format {
-        OutputFormat::Text => {
+        OutputFormat::Json => {
             println!("\n{}", "═══ Apply Results ═══".bold());
 
             for (metadata, result) in results {
@@ -126,7 +126,7 @@ pub fn apply_results(format: &OutputFormat, results: &[(PluginMetadata, ApplyRes
                 }
             }
         }
-        OutputFormat::Json => {
+        _ => {
             println!("{}", serde_json::to_string_pretty(&results).unwrap());
         }
     }
@@ -134,7 +134,7 @@ pub fn apply_results(format: &OutputFormat, results: &[(PluginMetadata, ApplyRes
 
 pub fn plugin_list(format: &OutputFormat, plugins: &[PluginMetadata]) {
     match format {
-        OutputFormat::Text => {
+        OutputFormat::Json => {
             println!("{}", "Available Plugins".bold());
             println!("{}", "─".repeat(60));
             for plugin in plugins {
@@ -147,7 +147,7 @@ pub fn plugin_list(format: &OutputFormat, plugins: &[PluginMetadata]) {
                 println!("  {}", plugin.plugin_description.dimmed());
             }
         }
-        OutputFormat::Json => {
+        _ => {
             println!("{}", serde_json::to_string_pretty(&plugins).unwrap());
         }
     }
@@ -155,7 +155,7 @@ pub fn plugin_list(format: &OutputFormat, plugins: &[PluginMetadata]) {
 
 pub fn checkpoint_list(format: &OutputFormat, checkpoints: &[Checkpoint]) {
     match format {
-        OutputFormat::Text => {
+        OutputFormat::Json => {
             if checkpoints.is_empty() {
                 println!("No checkpoints found.");
                 return;
@@ -172,7 +172,7 @@ pub fn checkpoint_list(format: &OutputFormat, checkpoints: &[Checkpoint]) {
                 );
             }
         }
-        OutputFormat::Json => {
+        _ => {
             println!("{}", serde_json::to_string_pretty(&checkpoints).unwrap());
         }
     }
@@ -180,10 +180,10 @@ pub fn checkpoint_list(format: &OutputFormat, checkpoints: &[Checkpoint]) {
 
 pub fn checkpoint_created(format: &OutputFormat, id: &hardener_state::CheckpointId) {
     match format {
-        OutputFormat::Text => {
+        OutputFormat::Json => {
             println!("{} Checkpoint created: {}", "✓".green(), id.as_str().cyan());
         }
-        OutputFormat::Json => {
+        _ => {
             println!("{}", serde_json::json!({ "checkpoint_id": id.as_str() }));
         }
     }
@@ -191,7 +191,7 @@ pub fn checkpoint_created(format: &OutputFormat, id: &hardener_state::Checkpoint
 
 pub fn checkpoint_details(format: &OutputFormat, checkpoint: &Checkpoint, files: &[FileState]) {
     match format {
-        OutputFormat::Text => {
+        OutputFormat::Json => {
             println!("{}", "Checkpoint Details".bold());
             println!("{}", "─".repeat(60));
             println!("ID:        {}", checkpoint.checkpoint_id.as_str().cyan());
@@ -210,7 +210,7 @@ pub fn checkpoint_details(format: &OutputFormat, checkpoint: &Checkpoint, files:
                 }
             }
         }
-        OutputFormat::Json => {
+        _ => {
             println!(
                 "{}",
                 serde_json::json!({
@@ -228,7 +228,7 @@ pub fn validation_report(
     report: &ValidationReport,
 ) {
     match format {
-        OutputFormat::Text => {
+        OutputFormat::Json => {
             println!(
                 "{} {} - {} item(s) to apply",
                 "○".blue(),
@@ -239,7 +239,7 @@ pub fn validation_report(
                 println!("  {} {}", "•".dimmed(), item);
             }
         }
-        OutputFormat::Json => {
+        _ => {
             println!("{}", serde_json::to_string_pretty(&report).unwrap());
         }
     }

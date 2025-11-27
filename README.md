@@ -326,7 +326,7 @@ See [PLAN.md](PLAN.md) for detailed implementation plans for upcoming features.
 - [x] Policy exception system with audit trail
 - [x] Interactive report wizard (`hardener report --interactive`)
 - [x] CSV and HTML format support in CLI
-- [ ] PDF report formatter
+- [x] PDF report formatter with automatic timestamped filenames and colour-coded badges
 - [ ] GUI compliance report page
 
 ### v0.3.0 (Planned)

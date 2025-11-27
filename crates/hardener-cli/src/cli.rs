@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand, ValueEnum};
+pub(crate) use hardener_compliance::OutputFormat;
 
 #[derive(Parser)]
 #[command(
@@ -124,11 +125,12 @@ pub enum CheckpointAction {
     Show { checkpoint_id: String },
 }
 
-#[derive(ValueEnum, Clone, Default)]
-pub enum OutputFormat {
-    #[default]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ReportFormat {
     Text,
     Json,
+    Csv,
+    Html,
 }
 
 #[derive(ValueEnum, Clone, Default)]

@@ -53,7 +53,7 @@ This document tracks the development progress and planned features for Linux Sys
 | Policy exception system with audit trail | ✅ Complete | Medium |
 | Interactive report wizard | ✅ Complete | Medium |
 | CSV and HTML format support in CLI | ✅ Complete | Low |
-| PDF report formatter | ⬜ Pending | Low |
+| PDF report formatter | ✅ Complete | Low |
 | GUI compliance report page | ⬜ Pending | Medium |
 
 ---
@@ -120,7 +120,7 @@ The compliance module (`hardener-compliance`) is designed for reuse:
 │              hardener-compliance (Shared Logic)             │
 │   - ReportGenerator                                         │
 │   - Framework definitions (CIS, STIG, NIST, etc.)          │
-│   - Output formatters (Text, JSON, CSV, HTML)              │
+│   - Output formatters (Text, JSON, CSV, HTML, PDF)         │
 └─────────────────────────────────────────────────────────────┘
 ```
 

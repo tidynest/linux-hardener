@@ -19,9 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Interactive report wizard with `--interactive` flag for guided report generation
 - CSV and HTML output format support in CLI report command
 - `dialoguer` dependency for interactive terminal prompts
+- PDF report formatter with professional multi-page layout and embedded fonts (NotoSans)
+- Automatic timestamped PDF filenames (`compliance-report-YYYYMMDD-HHMMSS.pdf`)
+- Colour-coded status badges in PDF reports (PASS=green, FAIL=red, PARTIAL=amber)
+- `krilla` dependency for PDF generation
 
 ### Planned
-- PDF report formatter
 - GUI compliance report page
 - Remote scanning via SSH
 

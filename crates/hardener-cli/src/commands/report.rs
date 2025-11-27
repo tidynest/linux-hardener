@@ -1,6 +1,7 @@
 //! Compliance report generation command.
 
 use anyhow::{anyhow, Result};
+use chrono::Local;
 use hardener_common::types::ComplianceFramework;
 use hardener_compliance::{
     JsonFormatter, OutputFormat, ReportConfig, ReportFormatter, ReportGenerator, Scenario,
@@ -31,8 +32,7 @@ pub async fn run(
         if !quiet {
             println!("No scenario specified, using 'server' (CIS + STIG)");
             println!(
-                "Use --scenario or --framework to specify. Run 'hardener
-  report --help' for options.\n"
+                "Use --scenario or --framework to specify. Run 'hardener report --help' for options.\n"
             );
         }
         Scenario::Server
@@ -44,9 +44,10 @@ pub async fn run(
         "text" | "txt" => OutputFormat::Text,
         "csv" => OutputFormat::Csv,
         "html" => OutputFormat::Html,
+        "pdf" => OutputFormat::Pdf,
         _ => {
             return Err(anyhow!(
-                "Unsupported format '{}'. Use 'TEXT', 'JSON', 'CSV' or 'HTML'.",
+                "Unsupported format '{}'. Use 'TEXT', 'JSON', 'CSV', 'HTML' or 'PDF'.",
                 report_format
             ))
         }
@@ -92,13 +93,40 @@ pub async fn run(
             let formatter = hardener_compliance::output::HtmlFormatter::new();
             formatter.format_all(&reports)
         }
+        OutputFormat::Pdf => {
+            let formatter = hardener_compliance::output::PdfFormatter::new();
+            formatter.format_all(&reports)
+        }
     };
 
     // Output result
     if let Some(path) = output {
-        fs::write(&path, &formatted)?;
+        // Use provided path, adding extension if missing
+        let final_path = if std::path::Path::new(&path).extension().is_none() {
+            format!("{}.{}", path, output_format.extension())
+        } else {
+            path
+        };
+
+        if output_format == OutputFormat::Pdf {
+            // PDF is binary - convert back to bytes
+            let bytes: Vec<u8> = formatted.chars().map(|c| c as u8).collect();
+            fs::write(&final_path, bytes)?;
+        } else {
+            fs::write(&final_path, &formatted)?;
+        }
         if !quiet {
-            println!("Report saved to: {}", path);
+            println!("Report saved to: {}", final_path);
+        }
+    } else if output_format == OutputFormat::Pdf {
+        // PDF requires file output - generate timestamped filename
+        let timestamp = Local::now().format("%Y%m%d-%H%M%S");
+        let filename = format!("compliance-report-{}.pdf", timestamp);
+
+        let bytes: Vec<u8> = formatted.chars().map(|c| c as u8).collect();
+        fs::write(&filename, bytes)?;
+        if !quiet {
+            println!("Report saved to: {}", filename);
         }
     } else {
         let mut stdout = io::stdout().lock();
@@ -164,9 +192,7 @@ fn parse_scenario(s: &str) -> Result<Scenario> {
         "gdpr" => Ok(Scenario::Gdpr),
         "all" => Ok(Scenario::All),
         _ => Err(anyhow!(
-            "Unknown scenario '{}'. Valid options: server, workstation,
-  government, healthcare, financial, gdpr, all",
-            s
+            "Unknown scenario '{}'. Valid options: server, workstation, government, healthcare, financial, gdpr, all", s
         )),
     }
 }
@@ -181,9 +207,7 @@ fn parse_framework(s: &str) -> Result<ComplianceFramework> {
         "gdpr" => Ok(ComplianceFramework::GDPR),
         "iso27001" | "iso" => Ok(ComplianceFramework::ISO27001),
         _ => Err(anyhow!(
-            "Unknown framework '{}'. Valid options: cis, stig, nist, pcidss,
-  hipaa, gdpr, iso27001",
-            s
+            "Unknown framework '{}'. Valid options: cis, stig, nist, pcidss, hipaa, gdpr, iso27001", s
         )),
     }
 }

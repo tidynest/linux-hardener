@@ -2,6 +2,7 @@
 //!
 //! Defines scenarios, output formats, and report configuration.
 
+use clap::ValueEnum;
 use hardener_common::types::ComplianceFramework;
 use std::path::PathBuf;
 
@@ -64,7 +65,7 @@ impl Scenario {
 }
 
 /// Output format for compliance reports.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 pub enum OutputFormat {
     /// Plain text format for terminal viewing.
     Text,
@@ -74,6 +75,8 @@ pub enum OutputFormat {
     Csv,
     /// HTML format for web viewing.
     Html,
+    /// PDF format for printing/archiving.
+    Pdf,
 }
 
 impl OutputFormat {
@@ -84,6 +87,7 @@ impl OutputFormat {
             OutputFormat::Json => "json",
             OutputFormat::Csv => "csv",
             OutputFormat::Html => "html",
+            OutputFormat::Pdf => "pdf",
         }
     }
 }

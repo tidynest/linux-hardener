@@ -5,11 +5,13 @@
 pub mod csv;
 pub mod html;
 pub mod json;
+pub mod pdf;
 pub mod text;
 
 pub use csv::CsvFormatter;
 pub use html::HtmlFormatter;
 pub use json::JsonFormatter;
+pub use pdf::PdfFormatter;
 pub use text::TextFormatter;
 
 use crate::report::ComplianceReport;

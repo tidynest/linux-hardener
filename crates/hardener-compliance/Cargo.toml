@@ -4,8 +4,10 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+clap = { version = "4.5", features = ["derive"] }
 hardener-common = { workspace = true }
 hardener-core = { workspace = true }
+krilla = "0.5.0"
 serde = { workspace = true }
 serde_json = { workspace = true }
 chrono = { version = "0.4", features = ["serde"] }

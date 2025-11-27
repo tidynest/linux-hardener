@@ -3,11 +3,12 @@
 //! Provides a guided CLI experience for generating compliance reports.
 
 use anyhow::{anyhow, Result};
+use chrono::Local;
 use colored::Colorize;
 use dialoguer::{theme::ColorfulTheme, Confirm, MultiSelect, Select};
 use hardener_common::types::ComplianceFramework;
 use hardener_compliance::{
-    output::{CsvFormatter, HtmlFormatter},
+    output::{CsvFormatter, HtmlFormatter, PdfFormatter},
     JsonFormatter, OutputFormat, ReportConfig, ReportFormatter, ReportGenerator, Scenario,
     TextFormatter,
 };
@@ -296,9 +297,10 @@ fn select_output_formats() -> Result<Vec<OutputFormat>> {
         "JSON   - Machine-readable for automation",
         "CSV    - Spreadsheet-friendly format",
         "HTML   - Styled web report with summary",
+        "PDF    - Portable document for printing/archiving",
     ];
 
-    let defaults = vec![true, false, false, false]; // Text selected by default
+    let defaults = vec![true, false, false, false, false]; // Text selected by default
 
     let selections = MultiSelect::with_theme(&theme)
         .with_prompt("Select format(s) (Space to toggle, Enter to confirm)")
@@ -317,6 +319,7 @@ fn select_output_formats() -> Result<Vec<OutputFormat>> {
             1 => OutputFormat::Json,
             2 => OutputFormat::Csv,
             3 => OutputFormat::Html,
+            4 => OutputFormat::Pdf,
             _ => OutputFormat::Text,
         })
         .collect();
@@ -398,6 +401,7 @@ fn confirm_selections(state: &WizardState) -> Result<bool> {
             OutputFormat::Json => "JSON",
             OutputFormat::Csv => "CSV",
             OutputFormat::Html => "HTML",
+            OutputFormat::Pdf => "PDF",
         })
         .collect();
     println!(
@@ -449,6 +453,10 @@ fn output_reports(
                 let formatter = HtmlFormatter::new();
                 formatter.format_all(reports)
             }
+            OutputFormat::Pdf => {
+                let formatter = PdfFormatter::new();
+                formatter.format_all(reports)
+            }
         };
 
         match &state.output_path {
@@ -477,7 +485,12 @@ fn output_reports(
                     }
                 }
 
-                fs::write(&path, &formatted)?;
+                if *format == OutputFormat::Pdf {
+                    let bytes: Vec<u8> = formatted.chars().map(|c| c as u8).collect();
+                    fs::write(&path, bytes)?;
+                } else {
+                    fs::write(&path, &formatted)?;
+                }
                 println!(
                     "  {} {}",
                     "✓".green(),
@@ -485,7 +498,20 @@ fn output_reports(
                 );
             }
             None => {
-                // Print to stdout
+                // For PDF, generate timestamped file since it can't go to stdout
+                if *format == OutputFormat::Pdf {
+                    let timestamp = Local::now().format("%Y%m%d-%H%M%S");
+                    let filename = format!("compliance-report-{}.pdf", timestamp);
+                    let bytes: Vec<u8> = formatted.chars().map(|c| c as u8).collect();
+                    fs::write(&filename, bytes)?;
+                    println!(
+                        "  {} {}",
+                        "✓".green(),
+                        format!("Saved PDF report to: {}", filename)
+                    );
+                    continue;
+                }
+                // Print text formats to stdout
                 if state.output_formats.len() > 1 {
                     println!(
                         "\n{}\n",
@@ -507,6 +533,7 @@ fn format_name(format: &OutputFormat) -> &'static str {
         OutputFormat::Json => "JSON",
         OutputFormat::Csv => "CSV",
         OutputFormat::Html => "HTML",
+        OutputFormat::Pdf => "PDF",
     }
 }
 
