@@ -70,11 +70,12 @@ The tool is designed for system administrators, DevOps engineers, and security p
 ### Test Coverage
 
 ```
-Total Tests: 320+ passing
+Total Tests: 335+ passing
 ├── Plugin Tests: 48 + 80 mock tests
 ├── Core Tests: 59 + 14 mock executor tests
 ├── Compliance Tests: 46
 ├── State Tests: 31
+├── Scheduler Tests: 14
 ├── CLI Tests: 21
 ├── Distro Tests: 15
 ├── SSH Integration Tests: 24
@@ -100,6 +101,7 @@ linux-system-hardener/
 │   ├── hardener-plugins/     # Security plugin implementations
 │   ├── hardener-state/       # Checkpoint manager, audit logging
 │   ├── hardener-compliance/  # Compliance framework mapping
+│   ├── hardener-scheduler/   # Scheduled scanning daemon
 │   └── hardener-ui/          # Leptos frontend components
 ├── src-tauri/                # Tauri backend (desktop app)
 ├── scripts/                  # Development utilities
@@ -352,14 +354,14 @@ See [PLAN.md](PLAN.md) for detailed implementation plans for upcoming features.
 - [x] PDF report formatter with automatic timestamped filenames and colour-coded badges
 - [x] GUI compliance report page
 
-### v0.3.0 (Complete)
+### v0.3.0 (In Progress)
 - [x] SystemExecutor abstraction layer for local/remote operations
 - [x] Remote scanning via SSH
 - [x] SSH CLI flags: `--ssh`, `--ssh-key`, `--ssh-port`, `--ssh-timeout`, `--ssh-no-verify`
 - [x] MockExecutor for unit testing
 - [x] All plugins converted to async
 - [x] SSH remote scanning documentation
-- [ ] Scheduled scanning (planned)
+- [ ] Scheduled scanning (in progress - Phase 1 complete)
 - [ ] CI/CD GitHub Actions integration (workflows exist, not connected)
 
 ### v1.0.0 (Future)

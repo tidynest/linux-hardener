@@ -32,3 +32,8 @@ Thumbs.db
 crates/hardener-ui/dist/*.js
 crates/hardener-ui/dist/*.wasm
 
+# Internal development documents (not for public repositories)
+SSH_CLI_IMPLEMENTATION.md
+docs/HANDOFF.md
+docs/SSH_REMOTE_PLAN.md
+

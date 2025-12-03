@@ -58,11 +58,11 @@ This document tracks the development progress and planned features for Linux Sys
 | Feature | Description | Priority | Status |
 |---------|-------------|----------|--------|
 | Remote scanning via SSH | Scan remote hosts without installing | High | ✅ Complete |
-| Scheduled scanning | Cron-like scheduled security checks | Medium | Pending |
+| Scheduled scanning | Cron-like scheduled security checks | Medium | 🔄 In Progress |
 | CI/CD integration | Exit codes and machine-readable output | Medium | Pending |
 | Ansible/Puppet modules | Integration with config management | Low | Pending |
 
-**v0.3.0 Progress:**
+**v0.3.0 Progress - SSH Remote Scanning:**
 - [x] SystemExecutor trait for abstracting file/command operations
 - [x] LocalExecutor implementation (wraps current behaviour)
 - [x] SshExecutor implementation (remote operations via SSH)
@@ -83,6 +83,22 @@ This document tracks the development progress and planned features for Linux Sys
 - [x] Plugin mock tests for all 8 plugins (80 tests) ✅
 - [x] SSH integration tests ✅ **DONE (2025-12-01)**
 - [x] SSH remote scanning documentation (user guide) ✅ **DONE (2025-12-01)**
+
+**v0.3.0 Progress - Scheduled Scanning:**
+- [x] `hardener-scheduler` crate skeleton
+- [x] `SchedulerConfig` structs with serde (5 tests)
+- [x] `ScanHistoryManager` SQLite storage (5 tests)
+- [x] `JsonStore` timestamped JSON output (4 tests)
+- [ ] `ScanRunner` (orchestrates plugin scans)
+- [ ] `Daemon` with tokio-cron-scheduler
+- [ ] Signal handling (SIGTERM, SIGINT)
+- [ ] CLI `daemon` command
+- [ ] `Notifier` trait and `NotificationDispatcher`
+- [ ] `EmailNotifier` (lettre SMTP)
+- [ ] `WebhookNotifier` (Slack/Discord/generic)
+- [ ] `SystemdGenerator` (.service/.timer templates)
+- [ ] CLI `systemd` commands
+- [ ] CLI `history` commands
 
 ### v0.4.0 - Web Interface
 

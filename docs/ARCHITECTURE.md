@@ -1,7 +1,7 @@
 # Linux System Hardener - Architecture Documentation
 
-**Last Updated:** 2025-12-01
-**Version:** 0.3.0
+**Last Updated:** 2025-12-03
+**Version:** 0.3.0 (Scheduled Scanning - Phase 1)
 
 ---
 
@@ -81,6 +81,19 @@ Linux System Hardener is a modular security hardening tool for Linux systems, pr
 │                         │     │    JSON, CSV, HTML, PDF)        │
 └─────────────────────────┘     └─────────────────────────────────┘
                               │
+              ┌───────────────┴───────────────┐
+              ▼                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     Scheduling System                           │
+├─────────────────────────────────────────────────────────────────┤
+│ hardener-scheduler                                              │
+│ ├─ SchedulerConfig (TOML configuration)                         │
+│ ├─ ScanHistoryManager (SQLite storage)                          │
+│ ├─ JsonStore (timestamped JSON output)                          │
+│ ├─ Daemon (cron-based scheduling) [pending]                     │
+│ └─ Notifications (email, webhooks) [pending]                    │
+└─────────────────────────────────────────────────────────────────┘
+                              │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                     System Interface                            │
@@ -107,6 +120,7 @@ Linux System Hardener is a modular security hardening tool for Linux systems, pr
 | `hardener-state` | Checkpoint and audit system | `CheckpointManager`, `AuditLogger` |
 | `hardener-compliance` | Compliance framework mapping | `ReportGenerator`, frameworks |
 | `hardener-distro` | Distribution detection | `Distribution`, `DistroFamily` |
+| `hardener-scheduler` | Scheduled scanning daemon | `SchedulerConfig`, `ScanHistoryManager`, `JsonStore` |
 | `hardener-cli` | Command-line interface | Binary entry point |
 | `hardener-ui` | Leptos web components | Frontend components |
 | `src-tauri` | Desktop app backend | Tauri commands |

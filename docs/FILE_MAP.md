@@ -1,6 +1,6 @@
 # Linux System Hardener - File Map
 
-**Last Updated:** 2025-12-01
+**Last Updated:** 2025-12-03
 
 This document lists all source files with their purpose and key exports.
 
@@ -203,6 +203,75 @@ pub struct FileState {
 
 ---
 
+## hardener-scheduler (Scheduled Scanning)
+
+| File | Purpose | Key Exports |
+|------|---------|-------------|
+| `src/lib.rs` | Module exports | Re-exports public types |
+| `src/config.rs` | Scheduler configuration | `SchedulerConfig`, `StorageConfig`, `NotificationConfig`, `EmailConfig`, `WebhookConfig` |
+| `src/db.rs` | SQLite scan history | `ScanHistoryManager`, `ScanSession`, `ScanFinding` |
+| `src/json_store.rs` | JSON file storage | `JsonStore`, `StoredScan` |
+
+### Key Structures (config.rs)
+
+```rust
+pub struct SchedulerConfig {
+    pub scheduler_enabled: bool,
+    pub scheduler_schedule: String,           // Cron expression
+    pub scheduler_plugins: Vec<String>,
+    pub scheduler_min_severity: String,
+    pub scheduler_storage: StorageConfig,
+    pub scheduler_notifications: NotificationConfig,
+}
+
+pub struct StorageConfig {
+    pub storage_database_path: PathBuf,
+    pub storage_json_output_dir: PathBuf,
+    pub storage_retention_count: u32,
+    pub storage_retention_days: u32,
+}
+```
+
+### Database Schema (db.rs)
+
+```sql
+CREATE TABLE scan_sessions (
+    id TEXT PRIMARY KEY,
+    started_at INTEGER NOT NULL,
+    completed_at INTEGER,
+    status TEXT NOT NULL DEFAULT 'running',
+    trigger_type TEXT NOT NULL,
+    host_identifier TEXT NOT NULL,
+    plugins_scanned TEXT NOT NULL,
+    total_findings INTEGER DEFAULT 0,
+    critical_count INTEGER DEFAULT 0,
+    high_count INTEGER DEFAULT 0,
+    medium_count INTEGER DEFAULT 0,
+    low_count INTEGER DEFAULT 0,
+    info_count INTEGER DEFAULT 0,
+    error_message TEXT,
+    json_file_path TEXT,
+    hash TEXT
+);
+
+CREATE TABLE scan_findings (...);
+CREATE TABLE notification_log (...);
+```
+
+### Pending Files (Phase 2-4)
+
+| File | Purpose | Status |
+|------|---------|--------|
+| `src/daemon.rs` | Daemon with signal handling | Pending |
+| `src/scan_runner.rs` | Orchestrates plugin scans | Pending |
+| `src/scheduler.rs` | Cron scheduler wrapper | Pending |
+| `src/systemd.rs` | Systemd file generation | Pending |
+| `src/notification/mod.rs` | Notifier trait | Pending |
+| `src/notification/email.rs` | SMTP via lettre | Pending |
+| `src/notification/webhook.rs` | HTTP POST notifications | Pending |
+
+---
+
 ## hardener-ui (Leptos Frontend)
 
 | File | Purpose | Key Exports |
@@ -316,6 +385,7 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | hardener-compliance | `config.rs`, `report.rs`, `output/*.rs`, `generator.rs` | `framework_tests.rs` | 46 |
 | hardener-state | `audit.rs`, `hash_chain.rs`, `signing.rs`, `db.rs` | `checkpoint_system.rs` | 31 |
 | hardener-distro | `adapter.rs`, `package/*.rs` | - | 15 |
+| hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs` | - | 14 |
 | hardener-cli | `cli.rs`, `output.rs` | - | 21 |
 | hardener-plugins | - | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs` | 128+ |
 | hardener-core | `config.rs`, `context.rs`, `plugin.rs`, `registry.rs`, `config_loader.rs` | `plugin_manager_tests.rs`, `mock_executor_tests.rs`, `ssh_executor_tests.rs` | 43+ |

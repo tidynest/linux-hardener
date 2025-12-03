@@ -49,6 +49,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 94 new mock-based unit tests for plugin testing
 - SSH integration tests (Docker-compatible)
 - `testing.rs` module with `MockPlugin` builder for test infrastructure
+- **Scheduled Scanning (Phase 1)**: Foundation for scheduled security scans
+- `hardener-scheduler` crate with configuration, SQLite storage, and JSON output
+- `SchedulerConfig` structs for TOML configuration
+- `ScanHistoryManager` for SQLite scan history storage
+- `JsonStore` for timestamped JSON file output with SHA-256 integrity hashing
 
 ### Documentation
 - Added `docs/SSH_REMOTE_SCANNING.md` - comprehensive user guide for SSH remote scanning
