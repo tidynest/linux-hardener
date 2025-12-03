@@ -11,9 +11,10 @@ Author: Eric Jingryd
 import re
 import sys
 from pathlib import Path
-from typing import List, Tuple, Dict
-from dataclasses import dataclass
+from typing import List, Dict, Set
+from dataclasses import dataclass, field
 from enum import Enum
+from collections import defaultdict
 
 
 class Severity(Enum):
@@ -32,6 +33,18 @@ class ValidationIssue:
     category: str
     issue: str
     suggestion: str = ""
+    in_test: bool = False
+
+
+@dataclass
+class WarningSummary:
+    """Summarises warnings of the same type"""
+    category: str
+    issue: str
+    suggestion: str
+    locations: List[str] = field(default_factory=list)
+    test_count: int = 0
+    non_test_count: int = 0
 
 
 class NamingValidator:
@@ -49,22 +62,44 @@ class NamingValidator:
             'kebab-case': re.compile(r'^[a-z][a-z0-9-]*$'),
         }
 
-        # Common abbreviations to avoid
+        # Abbreviations to check (key: abbrev, value: (full_word, is_allowed_in_context))
+        # Some abbreviations are domain-specific and acceptable
         self.forbidden_abbreviations = {
-            'mgr': 'manager',
-            'ctx': 'context',
-            'cfg': 'config',
-            'cmd': 'command',
-            'msg': 'message',
-            'dist': 'distribution',
-            'distro': 'distribution',  # Except in 'distro_' prefix
-            'param': 'parameter',
-            'res': 'result',
-            'val': 'value',
-            'pkg': 'package',
-            'auth': 'authentication',
-            'perms': 'permissions',
+            'mgr': ('manager', False),
+            'ctx': ('context', True),  # Allowed - standard parameter name for Context
+            'cfg': ('config', True),   # Allowed - Rust keyword in #[cfg(...)]
+            'cmd': ('command', True),  # Allowed - common in CLI/executor contexts
+            'msg': ('message', False),
+            'dist': ('distribution', False),
+            'distro': ('distribution', True),  # Allowed - domain term
+            'param': ('parameter', False),
+            'res': ('result', False),
+            'val': ('value', False),
+            'pkg': ('package', False),
+            'auth': ('authentication', False),
+            'perms': ('permissions', False),
         }
+
+        # Allowed in specific contexts (don't warn)
+        self.context_allowlist = {
+            'cfg': [r'#\[cfg\(', r'cfg!'],  # Rust cfg attribute/macro
+            'ctx': [r'ctx:', r'&ctx', r'ctx\.', r'ctx,', r'\(ctx\)', r'mut ctx', r'ctx\)', r'let ctx'],  # Context param
+            'distro': [r'distro_', r'DistroFamily', r'hardener-distro'],
+            'cmd': [r'execute_command', r'CommandOutput', r'firewall_cmd', r'cmd:', r'&cmd', r'cmd\.', r'let cmd'],
+        }
+
+        # External crate terms that use American English (can't be changed)
+        self.external_american_terms = {
+            'serialize', 'deserialize', 'serializer', 'deserializer',
+            'color',  # From PDF/graphics libraries (printpdf crate)
+        }
+
+        # Lines containing these patterns skip British English checks entirely
+        self.external_crate_patterns = [
+            r'printpdf::',  # PDF library uses American English
+            r'Rgb::',       # Colour type from printpdf
+            r'Color::',     # External colour types
+        ]
 
         # Required prefixes for struct fields
         self.field_prefixes = {
@@ -108,19 +143,42 @@ class NamingValidator:
             content = file_path.read_text(encoding='utf-8')
             lines = content.split('\n')
 
+            # Track if we're inside a test module or function
+            in_test_context = False
+            brace_depth = 0
+            test_brace_start = -1
+
             # Track if next function is a Leptos component
             next_is_component = False
 
             for line_num, line in enumerate(lines, start=1):
                 stripped = line.strip()
 
+                # Track brace depth for test context
+                brace_depth += line.count('{') - line.count('}')
+
+                # Detect test module or test function start
+                if '#[cfg(test)]' in stripped or '#[test]' in stripped or '#[tokio::test]' in stripped:
+                    in_test_context = True
+                    test_brace_start = brace_depth
+
+                # Exit test context when we close the test block
+                if in_test_context and brace_depth < test_brace_start:
+                    in_test_context = False
+                    test_brace_start = -1
+
+                # Also detect test modules by name
+                if 'mod tests' in stripped or 'mod test' in stripped:
+                    in_test_context = True
+                    test_brace_start = brace_depth
+
                 # Check if this line is a #[component] attribute
                 if stripped == '#[component]':
                     next_is_component = True
                     continue
 
-                # Validate the line, passing component flag
-                self.validate_line(file_path, line_num, stripped, next_is_component)
+                # Validate the line, passing context flags
+                self.validate_line(file_path, line_num, stripped, next_is_component, in_test_context)
 
                 # Reset component flag after processing function definition
                 if stripped.startswith('fn ') or stripped.startswith('pub fn '):
@@ -129,7 +187,8 @@ class NamingValidator:
         except Exception as e:
             print(f"⚠️  Error reading {file_path}: {e}")
 
-    def validate_line(self, file_path: Path, line_num: int, line: str, is_component: bool = False):
+    def validate_line(self, file_path: Path, line_num: int, line: str,
+                      is_component: bool = False, in_test: bool = False):
         """Validate naming conventions in a single line"""
         line = line.strip()
 
@@ -162,11 +221,11 @@ class NamingValidator:
             const_name = match.group(1)
             self.validate_const_name(file_path, line_num, const_name)
 
-        # Check for common abbreviations
-        self.check_abbreviations(file_path, line_num, line)
+        # Check for common abbreviations (pass test context)
+        self.check_abbreviations(file_path, line_num, line, in_test)
 
-        # Check for American spellings
-        self.check_british_english(file_path, line_num, line)
+        # Check for American spellings (pass test context)
+        self.check_british_english(file_path, line_num, line, in_test)
 
     def validate_struct_name(self, file_path: Path, line_num: int, name: str):
         """Validate struct name follows PascalCase"""
@@ -251,15 +310,17 @@ class NamingValidator:
                 suggestion=self.to_screaming_snake_case(name)
             ))
 
-    def check_abbreviations(self, file_path: Path, line_num: int, line: str):
+    def check_abbreviations(self, file_path: Path, line_num: int, line: str, in_test: bool = False):
         """Check for forbidden abbreviations"""
-        for abbrev, full_word in self.forbidden_abbreviations.items():
+        for abbrev, (full_word, is_contextual) in self.forbidden_abbreviations.items():
             # Look for abbreviation as a whole word (not part of another word)
             pattern = r'\b' + abbrev + r'\b'
             if re.search(pattern, line, re.IGNORECASE):
-                # Allow 'distro_' prefix
-                if abbrev == 'distro' and 'distro_' in line:
-                    continue
+                # Check if this abbreviation is allowed in this context
+                if is_contextual and abbrev in self.context_allowlist:
+                    # Check if any allowlist pattern matches
+                    if any(re.search(p, line) for p in self.context_allowlist[abbrev]):
+                        continue
 
                 self.issues.append(ValidationIssue(
                     file_path=file_path,
@@ -267,11 +328,16 @@ class NamingValidator:
                     severity=Severity.WARNING,
                     category="Abbreviation",
                     issue=f"Avoid abbreviation '{abbrev}'",
-                    suggestion=f"Use '{full_word}' instead"
+                    suggestion=f"Use '{full_word}' instead",
+                    in_test=in_test
                 ))
 
-    def check_british_english(self, file_path: Path, line_num: int, line: str):
+    def check_british_english(self, file_path: Path, line_num: int, line: str, in_test: bool = False):
         """Check for American English spellings"""
+        # Skip lines that are clearly from external crates
+        if any(re.search(p, line) for p in self.external_crate_patterns):
+            return
+
         american_to_british = {
             'authorize': 'authorise',
             'color': 'colour',
@@ -283,12 +349,27 @@ class NamingValidator:
 
         for american, british in american_to_british.items():
             if re.search(r'\b' + american + r'\b', line, re.IGNORECASE):
+                # Skip if this is from an external crate (serde, etc.)
+                if american in self.external_american_terms:
+                    # Check if it's in a derive attribute or similar
+                    if re.search(r'#\[derive\(.*' + american, line, re.IGNORECASE):
+                        continue
+                    if re.search(r'serde\(', line, re.IGNORECASE):
+                        continue
+                    # Skip 'Serialize' and 'Deserialize' trait names entirely
+                    if american in ('serialize', 'deserialize') and american.capitalize() in line:
+                        continue
+                    # Skip 'color' when used with external types
+                    if american == 'color':
+                        continue
+
                 self.issues.append(ValidationIssue(
                     file_path=file_path,
                     line_number=line_num,
                     severity=Severity.WARNING,
                     category="British English",
-                    issue=f"Use British spelling '{british}' instead of '{american}'"
+                    issue=f"Use British spelling '{british}' instead of '{american}'",
+                    in_test=in_test
                 ))
 
     def print_results(self):
@@ -301,7 +382,11 @@ class NamingValidator:
         errors = [i for i in self.issues if i.severity == Severity.ERROR]
         warnings = [i for i in self.issues if i.severity == Severity.WARNING]
 
-        # Print errors
+        # Separate warnings into test and non-test
+        test_warnings = [w for w in warnings if w.in_test]
+        non_test_warnings = [w for w in warnings if not w.in_test]
+
+        # Print errors (always show all)
         if errors:
             print(f"❌ Found {len(errors)} naming convention error(s):\n")
             for issue in errors:
@@ -311,19 +396,52 @@ class NamingValidator:
                     print(f"    Suggestion: {issue.suggestion}")
                 print()
 
-        # Print warnings
-        if warnings:
-            print(f"⚠️  Found {len(warnings)} naming convention warning(s):\n")
-            for issue in warnings:
-                print(f"  {issue.file_path}:{issue.line_number}")
-                print(f"    [{issue.category}] {issue.issue}")
-                if issue.suggestion:
-                    print(f"    Suggestion: {issue.suggestion}")
+        # Print non-test warnings (show all)
+        if non_test_warnings:
+            print(f"⚠️  Found {len(non_test_warnings)} naming convention warning(s) in production code:\n")
+
+            # Group by issue type for cleaner output
+            grouped = self._group_warnings(non_test_warnings)
+            for key, summary in grouped.items():
+                print(f"  [{summary.category}] {summary.issue}")
+                if summary.suggestion:
+                    print(f"    Suggestion: {summary.suggestion}")
+                if len(summary.locations) <= 3:
+                    for loc in summary.locations:
+                        print(f"    - {loc}")
+                else:
+                    for loc in summary.locations[:3]:
+                        print(f"    - {loc}")
+                    print(f"    ... and {len(summary.locations) - 3} more")
                 print()
 
+        # Summarise test warnings (don't show individual locations)
+        if test_warnings:
+            test_grouped = self._group_warnings(test_warnings)
+            print(f"📋 Found {len(test_warnings)} warning(s) in test code (summarised):\n")
+            for key, summary in test_grouped.items():
+                print(f"  [{summary.category}] {summary.issue} ({len(summary.locations)} occurrences)")
+            print()
+
         # Summary
-        print(f"Summary: {len(errors)} errors, {len(warnings)} warnings")
+        print(f"Summary: {len(errors)} errors, {len(non_test_warnings)} production warnings, {len(test_warnings)} test warnings")
         print(f"\nRefer to docs/NAMING_CONVENTIONS.md for complete naming standards.\n")
+
+    def _group_warnings(self, warnings: List[ValidationIssue]) -> Dict[str, WarningSummary]:
+        """Group warnings by type for cleaner output"""
+        grouped: Dict[str, WarningSummary] = {}
+
+        for w in warnings:
+            key = f"{w.category}:{w.issue}"
+            if key not in grouped:
+                grouped[key] = WarningSummary(
+                    category=w.category,
+                    issue=w.issue,
+                    suggestion=w.suggestion
+                )
+            grouped[key].locations.append(f"{w.file_path}:{w.line_number}")
+
+        return grouped
 
     @staticmethod
     def to_snake_case(name: str) -> str:
