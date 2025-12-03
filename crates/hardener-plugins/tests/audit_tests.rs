@@ -2,6 +2,7 @@
 
 use hardener_core::{Config, Context, plugin::HardeningPlugin};
 use hardener_plugins::AuditHardeningPlugin;
+use tokio;
 
 #[test]
 fn test_audit_plugin_metadata() {
@@ -26,13 +27,13 @@ fn test_audit_plugin_has_no_dependencies() {
     );
 }
 
-#[test]
-fn test_audit_scan_detects_configuration() {
+#[tokio::test]
+async fn test_audit_scan_detects_configuration() {
     let plugin = AuditHardeningPlugin::new();
     let context = Context::new();
 
     // Run scan
-    let result = plugin.scan(&context);
+    let result = plugin.scan(&context).await;
 
     // Should succeed even if auditd isn't installed (graceful degradation)
     assert!(result.is_ok(), "Scan should succeed: {:?}", result.err());
@@ -77,13 +78,14 @@ fn test_audit_scan_detects_configuration() {
     }
 }
 
-#[test]
-fn test_audit_validate_checks_auditd() {
+#[tokio::test]
+async fn test_audit_validate_checks_auditd() {
     let plugin = AuditHardeningPlugin::new();
+    let context = Context::new();
     let config = Config::default();
 
     // Run validation
-    let result = plugin.validate(&config);
+    let result = plugin.validate(&context, &config).await;
 
     assert!(
         result.is_ok(),
@@ -136,15 +138,15 @@ fn test_audit_validate_checks_auditd() {
     }
 }
 
-#[test]
+#[tokio::test]
 #[ignore = "Requires root privileges and modifies system audit configuration"]
-fn test_audit_apply_requires_root() {
+async fn test_audit_apply_requires_root() {
     let plugin = AuditHardeningPlugin::new();
     let mut context = Context::new();
     let config = Config::default();
 
     // This will fail without root, or succeed with root
-    let result = plugin.apply(&mut context, &config);
+    let result = plugin.apply(&mut context, &config).await;
 
     match result {
         Ok(apply_result) => {

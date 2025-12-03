@@ -10,6 +10,7 @@ pub mod firewalld;
 pub mod nftables;
 pub mod ufw;
 
+use async_trait::async_trait;
 use hardener_common::{
     error::Result,
     types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
@@ -41,6 +42,7 @@ pub struct Rule {
 ///
 /// Each firewall system (nftables, firewalld, ufw) implements this trait
 /// to provide unified firewall management.
+#[async_trait]
 pub trait FirewallBackend: Send + Sync {
     /// Returns the name of this backend (e.g., "nftables", "firewalld", "ufw").
     fn backend_name(&self) -> &str;
@@ -48,18 +50,18 @@ pub trait FirewallBackend: Send + Sync {
     /// Detects if this backend is available on the system.
     ///
     /// This typically checks if the backend's command-line tool exists and is executable.
-    fn detect(&self) -> Result<bool>;
+    async fn detect(&self, ctx: &Context) -> Result<bool>;
 
     /// Checks if the firewall is currently enabled and running.
-    fn is_enabled(&self) -> Result<()>;
+    async fn is_enabled(&self, ctx: &Context) -> Result<()>;
 
     /// Enables and starts the firewall service.
-    fn enable(&self) -> Result<()>;
+    async fn enable(&self, ctx: &Context) -> Result<()>;
 
     /// Lists current firewall rules in a backend-agnostic format.
     ///
     /// This converts the backend's rule format into the unified Rule structure.
-    fn list_rules(&self) -> Result<Vec<Rule>>;
+    async fn list_rules(&self, ctx: &Context) -> Result<Vec<Rule>>;
 
     /// Applies a set of firewall rules.
     ///
@@ -68,7 +70,7 @@ pub trait FirewallBackend: Send + Sync {
     ///
     /// # Returns
     /// A list of changes made, or an error if application fails.
-    fn apply_rules(&self, rules: &[Rule]) -> Result<Vec<Change>>;
+    async fn apply_rules(&self, ctx: &Context, rules: &[Rule]) -> Result<Vec<Change>>;
 
     /// Returns the recommended baseline firewall rules.
     ///
@@ -161,24 +163,24 @@ impl FirewallHardeningPlugin {
     ///
     /// # Returns
     /// A boxed backend implementation, or an error if no backend is available.
-    fn detect_backend(&self) -> Result<Box<dyn FirewallBackend>> {
+    async fn detect_backend(&self, ctx: &Context) -> Result<Box<dyn FirewallBackend>> {
         // Try firewalld first (RHEL/Fedora/CentOS).
         let firewalld = firewalld::FirewalldBackend::new();
-        if firewalld.detect()? {
+        if firewalld.detect(ctx).await? {
             info!("Detected firewalld firewall backend");
             return Ok(Box::new(firewalld));
         }
 
         // Try UFW second (Ubuntu/Debian).
         let ufw = ufw::UfwBackend::new();
-        if ufw.detect()? {
+        if ufw.detect(ctx).await? {
             info!("Detected UFW firewall backend");
             return Ok(Box::new(ufw));
         }
 
         // Try nftables third (modern systems, Arch, Debian 10+, Ubuntu 20.04+).
         let nftables = nftables::NftablesBackend::new();
-        if nftables.detect()? {
+        if nftables.detect(ctx).await? {
             info!("Detected nftables firewall backend");
             return Ok(Box::new(nftables));
         }
@@ -190,6 +192,7 @@ impl FirewallHardeningPlugin {
     }
 }
 
+#[async_trait]
 impl HardeningPlugin for FirewallHardeningPlugin {
     fn metadata(&self) -> PluginMetadata {
         PluginMetadata {
@@ -207,14 +210,14 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         vec![]
     }
 
-    fn scan(&self, _ctx: &Context) -> Result<ScanResult> {
+    async fn scan(&self, ctx: &Context) -> Result<ScanResult> {
         let start_time = Instant::now();
         let plugin_id = PluginId::new("firewall-hardening");
 
         let mut findings = Vec::new();
 
         // Detect backend.
-        let backend = match self.detect_backend() {
+        let backend = match self.detect_backend(ctx).await {
             Ok(backend) => backend,
             Err(e) => {
                 return Ok(ScanResult {
@@ -228,7 +231,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         };
 
         // Check if firewall is enabled.
-        if backend.is_enabled().is_err() {
+        if backend.is_enabled(ctx).await.is_err() {
             findings.push(Finding {
                 finding_category: FindingCategory::Network,
                 finding_current_value: "disabled".to_string(),
@@ -258,7 +261,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         })
     }
 
-    fn apply(&self, ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
+    async fn apply(&self, ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
         use std::path::Path;
 
         let apply_plugin_id = PluginId::new("firewall-hardening");
@@ -276,7 +279,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         )?;
 
         // Detect backend.
-        let backend = match self.detect_backend() {
+        let backend = match self.detect_backend(ctx).await {
             Ok(b) => b,
             Err(e) => {
                 return Ok(ApplyResult {
@@ -290,13 +293,13 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         };
 
         // Enable firewall if not already enabled.
-        if backend.is_enabled().is_err() {
-            backend.enable()?;
+        if backend.is_enabled(ctx).await.is_err() {
+            backend.enable(ctx).await?;
         }
 
         // Apply default rules.
         let rules = backend.get_default_rules();
-        let mut apply_changes = backend.apply_rules(&rules)?;
+        let mut apply_changes = backend.apply_rules(ctx, &rules).await?;
 
         if checkpoint_id.is_some() {
             apply_changes.insert(
@@ -319,7 +322,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         })
     }
 
-    fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> {
+    async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> {
         info!(
             "Rolling back firewall configuration to checkpoint: {}",
             checkpoint.checkpoint_id.as_str()
@@ -331,8 +334,8 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         info!("Firewall configuration files restored from checkpoint");
 
         // Re-enable firewall to reload rules based on detected backend
-        match self.detect_backend() {
-            Ok(backend) => match backend.enable() {
+        match self.detect_backend(ctx).await {
+            Ok(backend) => match backend.enable(ctx).await {
                 Ok(_) => info!("Firewall re-enabled successfully"),
                 Err(e) => warn!("Failed to re-enable firewall: {}", e),
             },
@@ -344,7 +347,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         Ok(())
     }
 
-    fn validate(&self, _config: &Config) -> Result<ValidationReport> {
+    async fn validate(&self, _ctx: &Context, _config: &Config) -> Result<ValidationReport> {
         let validation_plugin_id = PluginId::new("firewall-hardening");
 
         // Stub implementation - will be completed after backends are implemented

@@ -166,6 +166,10 @@ cargo release major --execute
 | `ci.yml` | Push/PR to main/master | Tests, clippy, fmt, build |
 | `release.yml` | Tag `v*` | Build binaries, create release |
 
+> **Note:** GitHub Actions CI/CD is not currently connected to this repository.
+> Until resolved, releases should be done manually using `./scripts/release.sh`.
+> The workflow files exist but require GitHub repository integration setup.
+
 ### GitLab CI
 
 | Stage | Jobs | Purpose |

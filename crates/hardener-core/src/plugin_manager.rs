@@ -179,15 +179,15 @@ impl PluginManager {
     /// Returns an error if dependency resolution fails or no plugins are registered.
     ///
     /// # Example
-    /// ```no_run
+    /// ```ignore
     /// # use hardener_core::{PluginManager, PluginRegistry, Context};
     /// let mut manager = PluginManager::new(PluginRegistry::new());
     /// manager.resolve_dependencies()?;
     /// let ctx = Context::new();
-    /// let results = manager.execute_scan(&ctx)?;
+    /// let results = manager.execute_scan(&ctx).await?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn execute_scan(&self, ctx: &Context) -> Result<Vec<ScanResult>> {
+    pub async fn execute_scan(&self, ctx: &Context) -> Result<Vec<ScanResult>> {
         info!("Starting scan execution");
 
         let execution_order = self.execution_order()?;
@@ -201,7 +201,7 @@ impl PluginManager {
 
             info!("Executing scan for plugin: {}", plugin_id);
 
-            match plugin.scan(ctx) {
+            match plugin.scan(ctx).await {
                 Ok(result) => {
                     debug!(
                         "Plugin {} scan completed: {} findings",
@@ -246,16 +246,16 @@ impl PluginManager {
     /// Returns an error if dependency resolution fails or checkpoint creation fails.
     ///
     /// # Example
-    /// ```no_run
+    /// ```ignore
     /// # use hardener_core::{PluginManager, PluginRegistry, Context, Config};
     /// let mut manager = PluginManager::new(PluginRegistry::new());
     /// manager.resolve_dependencies()?;
     /// let mut ctx = Context::new();
     /// let config = Config::default();
-    /// let results = manager.execute_apply(&mut ctx, &config, &[])?;
+    /// let results = manager.execute_apply(&mut ctx, &config, &[]).await?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn execute_apply(
+    pub async fn execute_apply(
         &self,
         ctx: &mut Context,
         config: &Config,
@@ -292,7 +292,7 @@ impl PluginManager {
 
             info!("Executing apply for plugin: {}", plugin_id);
 
-            match plugin.apply(ctx, config) {
+            match plugin.apply(ctx, config).await {
                 Ok(result) => {
                     if result.apply_success {
                         debug!(

@@ -122,78 +122,12 @@ impl Default for PluginRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::{ApplyResult, ScanResult, ValidationReport};
-    use crate::{Checkpoint, Config, Context};
-    use hardener_common::types::FindingCategory;
-
-    // Mock plugin for testing.
-    struct MockPlugin {
-        id: String,
-        name: String,
-    }
-
-    impl MockPlugin {
-        fn new(id: &str, name: &str) -> Self {
-            Self {
-                id: id.to_string(),
-                name: name.to_string(),
-            }
-        }
-    }
-
-    impl HardeningPlugin for MockPlugin {
-        fn metadata(&self) -> PluginMetadata {
-            PluginMetadata {
-                plugin_category: FindingCategory::Kernel,
-                plugin_description: "Mock plugin for testing".to_string(),
-                plugin_id: PluginId::new(&self.id),
-                plugin_name: self.name.clone(),
-                plugin_version: "1.0.0".to_string(),
-            }
-        }
-
-        fn dependencies(&self) -> Vec<PluginId> {
-            vec![] // Non dependencies for mock
-        }
-
-        fn scan(&self, _ctx: &Context) -> Result<ScanResult> {
-            Ok(ScanResult {
-                scan_plugin_id: PluginId::new(&self.id),
-                scan_success: true,
-                scan_findings: vec![],
-                scan_duration_us: 0,
-                scan_error: None,
-            })
-        }
-
-        fn apply(&self, _ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
-            Ok(ApplyResult {
-                apply_plugin_id: PluginId::new(&self.id),
-                apply_success: true,
-                apply_changes: vec![],
-                apply_checkpoint_id: None,
-                apply_error: None,
-            })
-        }
-
-        fn rollback(&self, _ctx: &mut Context, _checkpoint: &Checkpoint) -> Result<()> {
-            Ok(())
-        }
-
-        fn validate(&self, _config: &Config) -> Result<ValidationReport> {
-            Ok(ValidationReport {
-                validation_report_plugin_id: PluginId::new(&self.id),
-                validation_report_is_valid: true,
-                validation_report_issues: vec![],
-                validation_report_estimated_changes: vec![],
-            })
-        }
-    }
+    use crate::testing::MockPlugin;
 
     #[test]
     fn test_register_plugin() {
         let registry = PluginRegistry::new();
-        let plugin = Box::new(MockPlugin::new("test_plugin", "Test Plugin"));
+        let plugin = Box::new(MockPlugin::new("test_plugin").name("Test Plugin"));
         let result = registry.register(plugin);
         assert!(result.is_ok());
 
@@ -204,8 +138,8 @@ mod tests {
     #[test]
     fn test_register_duplicate_plugin_fails() {
         let registry = PluginRegistry::new();
-        let plugin1 = Box::new(MockPlugin::new("test_plugin", "Test Plugin"));
-        let plugin2 = Box::new(MockPlugin::new("test_plugin", "Test Plugin"));
+        let plugin1 = Box::new(MockPlugin::new("test_plugin").name("Test Plugin"));
+        let plugin2 = Box::new(MockPlugin::new("test_plugin").name("Test Plugin"));
         registry.register(plugin1).unwrap();
 
         let result = registry.register(plugin2);
@@ -215,7 +149,7 @@ mod tests {
     #[test]
     fn test_get_plugin() {
         let registry = PluginRegistry::new();
-        let plugin = Box::new(MockPlugin::new("test_plugin", "Test Plugin"));
+        let plugin = Box::new(MockPlugin::new("test_plugin").name("Test Plugin"));
         registry.register(plugin).unwrap();
 
         let retrieved = registry.get(&PluginId::new("test_plugin")).unwrap();
@@ -237,13 +171,13 @@ mod tests {
     fn test_list_plugins() {
         let registry = PluginRegistry::new();
         registry
-            .register(Box::new(MockPlugin::new("plugin_b", "Plugin B")))
+            .register(Box::new(MockPlugin::new("plugin_b").name("Plugin B")))
             .unwrap();
         registry
-            .register(Box::new(MockPlugin::new("plugin_a", "Plugin A")))
+            .register(Box::new(MockPlugin::new("plugin_a").name("Plugin A")))
             .unwrap();
         registry
-            .register(Box::new(MockPlugin::new("plugin_c", "Plugin C")))
+            .register(Box::new(MockPlugin::new("plugin_c").name("Plugin C")))
             .unwrap();
 
         let list = registry.list().unwrap();
@@ -257,7 +191,7 @@ mod tests {
     #[test]
     fn test_contains() {
         let registry = PluginRegistry::new();
-        let plugin = Box::new(MockPlugin::new("test_plugin", "Test Plugin"));
+        let plugin = Box::new(MockPlugin::new("test_plugin").name("Test Plugin"));
         registry.register(plugin).unwrap();
         assert!(registry.contains(&PluginId::new("test_plugin")).unwrap());
         assert!(!registry.contains(&PluginId::new("nonexistent")).unwrap());

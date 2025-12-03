@@ -8,10 +8,17 @@ use hardener_compliance::{
     JsonFormatter, OutputFormat, ReportConfig, ReportFormatter, ReportGenerator, Scenario,
     TextFormatter,
 };
-use hardener_core::{Context, PluginRegistry};
+use hardener_core::{
+    Context,
+    executor::SystemExecutor,
+};
 use hardener_plugins::*;
-use std::fs;
-use std::io::{self, Write};
+use std::{
+    io,
+    io::Write,
+    fs,
+    sync::Arc,
+};
 
 pub async fn run(
     scenario: Option<String>,
@@ -20,6 +27,7 @@ pub async fn run(
     output: Option<String>,
     _cli_format: CliOutputFormat,
     quiet: bool,
+    executor: Arc<dyn SystemExecutor>,
 ) -> Result<()> {
     // Determine scenario/frameworks
     let scenario = if let Some(fw) = framework {
@@ -65,7 +73,7 @@ pub async fn run(
     }
 
     // Run scan to get findings
-    let findings = run_scan(quiet)?;
+    let findings = run_scan(quiet, executor).await?;
 
     if !quiet {
         println!("Generating compliance report...\n");
@@ -136,9 +144,11 @@ pub async fn run(
     Ok(())
 }
 
-pub fn run_scan(quiet: bool) -> Result<Vec<hardener_core::plugin::Finding>> {
+pub async fn run_scan(
+    quiet: bool, executor: Arc<dyn SystemExecutor>
+) -> Result<Vec<hardener_core::plugin::Finding>> {
     let registry = create_plugin_registry();
-    let ctx = Context::new();
+    let ctx = Context::with_executor(executor);
 
     let plugins = registry.list()?;
     let mut all_findings = Vec::new();
@@ -149,7 +159,7 @@ pub fn run_scan(quiet: bool) -> Result<Vec<hardener_core::plugin::Finding>> {
         }
 
         if let Ok(Some(plugin)) = registry.get(&metadata.plugin_id) {
-            match plugin.scan(&ctx) {
+            match plugin.scan(&ctx).await {
                 Ok(result) => {
                     let count = result.scan_findings.len();
                     all_findings.extend(result.scan_findings);
@@ -167,19 +177,6 @@ pub fn run_scan(quiet: bool) -> Result<Vec<hardener_core::plugin::Finding>> {
     }
 
     Ok(all_findings)
-}
-
-pub fn create_plugin_registry() -> PluginRegistry {
-    let registry = PluginRegistry::new();
-    let _ = registry.register(Box::new(AuditHardeningPlugin::new()));
-    let _ = registry.register(Box::new(FirewallHardeningPlugin::new()));
-    let _ = registry.register(Box::new(KernelHardeningPlugin::new()));
-    let _ = registry.register(Box::new(MacHardeningPlugin::new()));
-    let _ = registry.register(Box::new(PamHardeningPlugin::new()));
-    let _ = registry.register(Box::new(PermissionsHardeningPlugin::new()));
-    let _ = registry.register(Box::new(ServicesHardeningPlugin::new()));
-    let _ = registry.register(Box::new(SshHardeningPlugin::new()));
-    registry
 }
 
 fn parse_scenario(s: &str) -> Result<Scenario> {

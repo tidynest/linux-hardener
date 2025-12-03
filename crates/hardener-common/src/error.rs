@@ -57,6 +57,16 @@ pub enum HardeningError {
     /// Validation of configuration or system state failed.
     #[error("Validation error: {0}")]
     Validation(String),
+
+    /// An executor operation failed.
+    #[error("Executor error: {0}")]
+    Executor(String),
+}
+
+impl From<anyhow::Error> for HardeningError {
+    fn from(err: anyhow::Error) -> Self {
+        HardeningError::Executor(err.to_string())
+    }
 }
 
 /// Result type alias using HardeningError.

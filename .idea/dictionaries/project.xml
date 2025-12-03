@@ -9,8 +9,10 @@
       <w>auditd</w>
       <w>bindgen</w>
       <w>chrono</w>
+      <w>cupsd</w>
       <w>dcredit</w>
       <w>deserialise</w>
+      <w>deserialises</w>
       <w>disa</w>
       <w>dmesg</w>
       <w>dnf's</w>
@@ -19,6 +21,7 @@
       <w>ericjingryd</w>
       <w>fchmodat</w>
       <w>fchownat</w>
+      <w>fsetxattr</w>
       <w>getenforce</w>
       <w>gshadow</w>
       <w>icns</w>
@@ -28,6 +31,7 @@
       <w>lcredit</w>
       <w>leptos</w>
       <w>linuxmint</w>
+      <w>lsetxattr</w>
       <w>lynis</w>
       <w>maxrepeat</w>
       <w>minlen</w>
@@ -51,6 +55,7 @@
       <w>sethostname</w>
       <w>settime</w>
       <w>settimeofday</w>
+      <w>setxattr</w>
       <w>sgid</w>
       <w>showformat</w>
       <w>syncookies</w>

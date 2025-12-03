@@ -1,6 +1,7 @@
 //! System executor abstraction for local and remote operations.
 
 pub mod local;
+pub mod mock;
 #[cfg(feature = "system")]
 pub mod ssh;
 

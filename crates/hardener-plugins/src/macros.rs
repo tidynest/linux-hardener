@@ -35,6 +35,7 @@ macro_rules! define_plugin {
         }
 
         // Implement the HardeningPlugin trait
+        #[async_trait::async_trait]
         impl $crate::hardener_core::plugin::HardeningPlugin for $plugin_name {
             fn metadata(&self) -> $crate::hardener_core::plugin::PluginMetadata {
                 Self::metadata_impl()
@@ -45,14 +46,14 @@ macro_rules! define_plugin {
                 vec![$(PluginId::from($dep)),*]
             }
 
-            fn scan(
+            async fn scan(
                 &self,
                 _ctx: &$crate::hardener_core::Context,
             ) -> $crate::hardener_common::error::Result<$crate::hardener_core::plugin::ScanResult> {
                 todo!("Implement scan() for {}", stringify!($plugin_name))
             }
 
-            fn apply(
+            async fn apply(
                 &self,
                 _ctx: &mut $crate::hardener_core::Context,
                 _config: &$crate::hardener_core::plugin::Config,
@@ -60,7 +61,7 @@ macro_rules! define_plugin {
                 todo!("Implement apply() for {}", stringify!($plugin_name))
             }
 
-            fn rollback(
+            async fn rollback(
                 &self,
                 _ctx: &mut $crate::hardener_core::Context,
                 _checkpoint: &$crate::hardener_core::plugin::Checkpoint,
@@ -68,8 +69,9 @@ macro_rules! define_plugin {
                 todo!("Implement rollback() for {}", stringify!($plugin_name))
             }
 
-            fn validate(
+            async fn validate(
                 &self,
+                _ctx: &$crate::hardener_core::Context,
                 _config: &$crate::hardener_core::plugin::Config,
             ) -> $crate::hardener_common::error::Result<$crate::hardener_core::plugin::ValidationReport> {
                 todo!("Implement validate() for {}", stringify!($plugin_name))

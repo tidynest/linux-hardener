@@ -2,6 +2,7 @@
 
 use hardener_core::{Config, Context, plugin::HardeningPlugin};
 use hardener_plugins::ServicesHardeningPlugin;
+use tokio;
 
 #[test]
 fn test_services_plugin_metadata() {
@@ -26,13 +27,13 @@ fn test_services_plugin_has_no_dependencies() {
     );
 }
 
-#[test]
-fn test_services_scan_detects_services() {
+#[tokio::test]
+async fn test_services_scan_detects_services() {
     let plugin = ServicesHardeningPlugin::new();
     let context = Context::new();
 
     // Run scan
-    let result = plugin.scan(&context);
+    let result = plugin.scan(&context).await;
 
     // Should succeed even if systemctl isn't available (graceful degradation)
     assert!(result.is_ok(), "Scan should succeed: {:?}", result.err());
@@ -86,13 +87,14 @@ fn test_services_scan_detects_services() {
     }
 }
 
-#[test]
-fn test_services_validate_checks_systemctl() {
+#[tokio::test]
+async fn test_services_validate_checks_systemctl() {
     let plugin = ServicesHardeningPlugin::new();
+    let context = Context::new();
     let config = Config::default();
 
     // Run validation
-    let result = plugin.validate(&config);
+    let result = plugin.validate(&context, &config).await;
 
     assert!(
         result.is_ok(),
@@ -146,15 +148,15 @@ fn test_services_validate_checks_systemctl() {
     }
 }
 
-#[test]
+#[tokio::test]
 #[ignore = "Requires root privileges and modifies system services"]
-fn test_services_apply_requires_root() {
+async fn test_services_apply_requires_root() {
     let plugin = ServicesHardeningPlugin::new();
     let mut context = Context::new();
     let config = Config::default();
 
     // This will fail without root, or succeed with root
-    let result = plugin.apply(&mut context, &config);
+    let result = plugin.apply(&mut context, &config).await;
 
     match result {
         Ok(apply_result) => {

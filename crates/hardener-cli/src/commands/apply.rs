@@ -1,9 +1,10 @@
 use anyhow::{bail, Result};
 use hardener_common::types::PluginId;
-use hardener_core::{Config, Context, PluginRegistry};
+use hardener_core::{Config, Context, SystemExecutor};
+use hardener_plugins::create_plugin_registry;
 use hardener_state::{init_db, CheckpointManager, CheckpointSigner};
 use std::path::PathBuf;
-
+use std::sync::Arc;
 use crate::cli::OutputFormat;
 use crate::output;
 
@@ -28,6 +29,7 @@ pub async fn run(
     dry_run: bool,
     format: OutputFormat,
     quiet: bool,
+    executor: Arc<dyn SystemExecutor>
 ) -> Result<()> {
     // Must be root to apply changes
     if !nix::unistd::geteuid().is_root() && !dry_run {
@@ -41,7 +43,8 @@ pub async fn run(
     let registry = create_plugin_registry();
 
     // Create context with checkpoint manager for automatic rollback support
-    let mut ctx = if !dry_run {
+    let mut ctx = Context::with_executor(executor);
+    if !dry_run {
         let manager = get_checkpoint_manager().await?;
         Context::with_checkpoint_manager(manager)
     } else {
@@ -73,7 +76,7 @@ pub async fn run(
 
             if dry_run {
                 // Just validate without applying
-                match plugin.validate(&config) {
+                match plugin.validate(&ctx, &config).await {
                     Ok(report) => {
                         output::validation_report(&format, &metadata, &report);
                     }
@@ -85,7 +88,7 @@ pub async fn run(
                     }
                 }
             } else {
-                match plugin.apply(&mut ctx, &config) {
+                match plugin.apply(&mut ctx, &config).await {
                     Ok(result) => {
                         results.push((metadata, result));
                     }
@@ -110,19 +113,4 @@ pub async fn run(
     }
 
     Ok(())
-}
-
-fn create_plugin_registry() -> PluginRegistry {
-    use hardener_plugins::*;
-
-    let registry = PluginRegistry::new();
-    let _ = registry.register(Box::new(AuditHardeningPlugin::new()));
-    let _ = registry.register(Box::new(FirewallHardeningPlugin::new()));
-    let _ = registry.register(Box::new(KernelHardeningPlugin::new()));
-    let _ = registry.register(Box::new(MacHardeningPlugin::new()));
-    let _ = registry.register(Box::new(PamHardeningPlugin::new()));
-    let _ = registry.register(Box::new(PermissionsHardeningPlugin::new()));
-    let _ = registry.register(Box::new(ServicesHardeningPlugin::new()));
-    let _ = registry.register(Box::new(SshHardeningPlugin::new()));
-    registry
 }

@@ -2,315 +2,10 @@
 //!
 //! Tests dependency resolution, execution order, and plugin workflows.
 
-use hardener_common::types::{FindingCategory, PluginId};
-use hardener_core::{
-    ApplyResult, Checkpoint, Config, Context, HardeningPlugin, PluginManager, PluginMetadata,
-    PluginRegistry, ScanResult, ValidationReport,
-};
+use hardener_core::{Config, Context, PluginManager, PluginRegistry};
+use hardener_core::testing::MockPlugin;
 
-/// Mock plugin with no dependencies - used as a base plugin
-struct MockPluginA;
-
-impl HardeningPlugin for MockPluginA {
-    fn metadata(&self) -> PluginMetadata {
-        PluginMetadata {
-            plugin_category: FindingCategory::Kernel,
-            plugin_description: "Test plugin with no dependencies".to_string(),
-            plugin_id: PluginId::from("plugin-a"),
-            plugin_name: "Mock Plugin A".to_string(),
-            plugin_version: "1.0.0".to_string(),
-        }
-    }
-
-    fn dependencies(&self) -> Vec<PluginId> {
-        vec![] // No dependencies
-    }
-
-    fn scan(&self, _ctx: &Context) -> hardener_common::error::Result<ScanResult> {
-        Ok(ScanResult {
-            scan_plugin_id: PluginId::from("plugin-a"),
-            scan_success: true,
-            scan_findings: vec![],
-            scan_duration_us: 10,
-            scan_error: None,
-        })
-    }
-
-    fn apply(
-        &self,
-        _ctx: &mut Context,
-        _config: &Config,
-    ) -> hardener_common::error::Result<ApplyResult> {
-        Ok(ApplyResult {
-            apply_plugin_id: PluginId::from("plugin-a"),
-            apply_success: true,
-            apply_changes: vec![],
-            apply_checkpoint_id: None,
-            apply_error: None,
-        })
-    }
-
-    fn rollback(
-        &self,
-        _ctx: &mut Context,
-        _checkpoint: &Checkpoint,
-    ) -> hardener_common::error::Result<()> {
-        Ok(())
-    }
-
-    fn validate(&self, _config: &Config) -> hardener_common::error::Result<ValidationReport> {
-        Ok(ValidationReport {
-            validation_report_plugin_id: PluginId::from("plugin-a"),
-            validation_report_is_valid: true,
-            validation_report_issues: vec![],
-            validation_report_estimated_changes: vec![],
-        })
-    }
-}
-
-/// Mock plugin that depends on Mock Plugin A.
-struct MockPluginB;
-
-impl HardeningPlugin for MockPluginB {
-    fn metadata(&self) -> PluginMetadata {
-        PluginMetadata {
-            plugin_id: PluginId::from("plugin-b"),
-            plugin_name: "Mock Plugin B".to_string(),
-            plugin_version: "1.0.0".to_string(),
-            plugin_description: "Test plugin that depends on plugin-a".to_string(),
-            plugin_category: FindingCategory::Network,
-        }
-    }
-
-    fn dependencies(&self) -> Vec<PluginId> {
-        vec![PluginId::from("plugin-a")] // Depends on plugin A
-    }
-
-    fn scan(&self, _ctx: &Context) -> hardener_common::error::Result<ScanResult> {
-        Ok(ScanResult {
-            scan_plugin_id: PluginId::from("plugin-b"),
-            scan_success: true,
-            scan_findings: vec![],
-            scan_duration_us: 15,
-            scan_error: None,
-        })
-    }
-
-    fn apply(
-        &self,
-        _ctx: &mut Context,
-        _config: &Config,
-    ) -> hardener_common::error::Result<ApplyResult> {
-        Ok(ApplyResult {
-            apply_plugin_id: PluginId::from("plugin-b"),
-            apply_success: true,
-            apply_changes: vec![],
-            apply_checkpoint_id: None,
-            apply_error: None,
-        })
-    }
-
-    fn rollback(
-        &self,
-        _ctx: &mut Context,
-        _checkpoint: &Checkpoint,
-    ) -> hardener_common::error::Result<()> {
-        Ok(())
-    }
-
-    fn validate(&self, _config: &Config) -> hardener_common::error::Result<ValidationReport> {
-        Ok(ValidationReport {
-            validation_report_plugin_id: PluginId::from("plugin-b"),
-            validation_report_is_valid: true,
-            validation_report_issues: vec![],
-            validation_report_estimated_changes: vec![],
-        })
-    }
-}
-
-/// Mock plugin that depends on Mock Plugin B (creating chain: A -> B -> C).
-struct MockPluginC;
-
-impl HardeningPlugin for MockPluginC {
-    fn metadata(&self) -> PluginMetadata {
-        PluginMetadata {
-            plugin_id: PluginId::from("plugin-c"),
-            plugin_name: "Mock Plugin C".to_string(),
-            plugin_version: "1.0.0".to_string(),
-            plugin_description: "Test plugin that depends on plugin-b".to_string(),
-            plugin_category: FindingCategory::Authentication,
-        }
-    }
-
-    fn dependencies(&self) -> Vec<PluginId> {
-        vec![PluginId::from("plugin-b")] // Depends on plugin-b
-    }
-
-    fn scan(&self, _ctx: &Context) -> hardener_common::error::Result<ScanResult> {
-        Ok(ScanResult {
-            scan_plugin_id: PluginId::from("plugin-c"),
-            scan_success: true,
-            scan_findings: vec![],
-            scan_duration_us: 20,
-            scan_error: None,
-        })
-    }
-
-    fn apply(
-        &self,
-        _ctx: &mut Context,
-        _config: &Config,
-    ) -> hardener_common::error::Result<ApplyResult> {
-        Ok(ApplyResult {
-            apply_plugin_id: PluginId::from("plugin-c"),
-            apply_success: true,
-            apply_changes: vec![],
-            apply_checkpoint_id: None,
-            apply_error: None,
-        })
-    }
-
-    fn rollback(
-        &self,
-        _ctx: &mut Context,
-        _checkpoint: &Checkpoint,
-    ) -> hardener_common::error::Result<()> {
-        Ok(())
-    }
-
-    fn validate(&self, _config: &Config) -> hardener_common::error::Result<ValidationReport> {
-        Ok(ValidationReport {
-            validation_report_plugin_id: PluginId::from("plugin-c"),
-            validation_report_is_valid: true,
-            validation_report_issues: vec![],
-            validation_report_estimated_changes: vec![],
-        })
-    }
-}
-
-/// Mock plugin for testing circular dependency detection.
-/// When combined with MockPluginCircularB, creates a cycle
-struct MockPluginCircular;
-
-impl HardeningPlugin for MockPluginCircular {
-    fn metadata(&self) -> PluginMetadata {
-        PluginMetadata {
-            plugin_id: PluginId::from("plugin-circular"),
-            plugin_name: "Mock Plugin Circular".to_string(),
-            plugin_version: "1.0.0".to_string(),
-            plugin_description: "Test plugin for circular dependency".to_string(),
-            plugin_category: FindingCategory::Services,
-        }
-    }
-
-    fn dependencies(&self) -> Vec<PluginId> {
-        vec![PluginId::from("plugin-circular-b")] // Depends on circular-b
-    }
-
-    fn scan(&self, _ctx: &Context) -> hardener_common::error::Result<ScanResult> {
-        Ok(ScanResult {
-            scan_plugin_id: PluginId::from("plugin-circular"),
-            scan_success: true,
-            scan_findings: vec![],
-            scan_duration_us: 10,
-            scan_error: None,
-        })
-    }
-
-    fn apply(
-        &self,
-        _ctx: &mut Context,
-        _config: &Config,
-    ) -> hardener_common::error::Result<ApplyResult> {
-        Ok(ApplyResult {
-            apply_plugin_id: PluginId::from("plugin-circular"),
-            apply_success: true,
-            apply_changes: vec![],
-            apply_checkpoint_id: None,
-            apply_error: None,
-        })
-    }
-
-    fn rollback(
-        &self,
-        _ctx: &mut Context,
-        _checkpoint: &Checkpoint,
-    ) -> hardener_common::error::Result<()> {
-        Ok(())
-    }
-
-    fn validate(&self, _config: &Config) -> hardener_common::error::Result<ValidationReport> {
-        Ok(ValidationReport {
-            validation_report_plugin_id: PluginId::from("plugin-circular"),
-            validation_report_is_valid: true,
-            validation_report_issues: vec![],
-            validation_report_estimated_changes: vec![],
-        })
-    }
-}
-
-/// Mock plugin that completes the circular dependency.
-/// Depends on MockPluginCircular, creating a cycle.
-struct MockPluginCircularB;
-
-impl HardeningPlugin for MockPluginCircularB {
-    fn metadata(&self) -> PluginMetadata {
-        PluginMetadata {
-            plugin_id: PluginId::from("plugin-circular-b"),
-            plugin_name: "Mock Plugin Circular B".to_string(),
-            plugin_version: "1.0.0".to_string(),
-            plugin_description: "Test plugin that completes circular dependency".to_string(),
-            plugin_category: FindingCategory::FileSystem,
-        }
-    }
-
-    fn dependencies(&self) -> Vec<PluginId> {
-        vec![PluginId::from("plugin-circular")] // Depends back on circular - CREATES CYCLE!
-    }
-
-    fn scan(&self, _ctx: &Context) -> hardener_common::error::Result<ScanResult> {
-        Ok(ScanResult {
-            scan_plugin_id: PluginId::from("plugin-circular-b"),
-            scan_success: true,
-            scan_findings: vec![],
-            scan_duration_us: 10,
-            scan_error: None,
-        })
-    }
-
-    fn apply(
-        &self,
-        _ctx: &mut Context,
-        _config: &Config,
-    ) -> hardener_common::error::Result<ApplyResult> {
-        Ok(ApplyResult {
-            apply_plugin_id: PluginId::from("plugin-circular-b"),
-            apply_success: true,
-            apply_changes: vec![],
-            apply_checkpoint_id: None,
-            apply_error: None,
-        })
-    }
-
-    fn rollback(
-        &self,
-        _ctx: &mut Context,
-        _checkpoint: &Checkpoint,
-    ) -> hardener_common::error::Result<()> {
-        Ok(())
-    }
-
-    fn validate(&self, _config: &Config) -> hardener_common::error::Result<ValidationReport> {
-        Ok(ValidationReport {
-            validation_report_plugin_id: PluginId::from("plugin-circular-b"),
-            validation_report_is_valid: true,
-            validation_report_issues: vec![],
-            validation_report_estimated_changes: vec![],
-        })
-    }
-}
-
-/// Tests basic dependency resolution with a valid chain: A -> B -> C.
+/// Tests basic dependency resolution with a valid chain: A → B → C.
 ///
 /// Verifies that:
 /// - All plugins are registered successfully
@@ -320,9 +15,9 @@ impl HardeningPlugin for MockPluginCircularB {
 fn test_dependency_resolution_valid_chain() {
     // Create registry and register plugins in random order
     let registry = PluginRegistry::new();
-    registry.register(Box::new(MockPluginB)).unwrap();
-    registry.register(Box::new(MockPluginA)).unwrap();
-    registry.register(Box::new(MockPluginC)).unwrap();
+    registry.register(Box::new(MockPlugin::new("plugin-b").depends_on(&["plugin-a"]))).unwrap();
+    registry.register(Box::new(MockPlugin::new("plugin-a"))).unwrap();
+    registry.register(Box::new(MockPlugin::new("plugin-c").depends_on(&["plugin-b"]))).unwrap();
 
     // Create plugin manager
     let mut manager = PluginManager::new(registry);
@@ -347,8 +42,7 @@ fn test_dependency_resolution_valid_chain() {
 fn test_dependency_resolution_missing_dependency() {
     // Create registry and register only PluginB (which depends on PluginA)
     let registry = PluginRegistry::new();
-    registry.register(Box::new(MockPluginB)).unwrap();
-    // Note: PluginA is NOT registered, but PluginB depends on it
+    registry.register(Box::new(MockPlugin::new("plugin-b").depends_on(&["plugin-a"]))).unwrap();
 
     // Create plugin manager
     let mut manager = PluginManager::new(registry);
@@ -375,8 +69,10 @@ fn test_dependency_resolution_missing_dependency() {
 fn test_dependency_resolution_circular() {
     // Create registry and register both circular plugins
     let registry = PluginRegistry::new();
-    registry.register(Box::new(MockPluginCircular)).unwrap();
-    registry.register(Box::new(MockPluginCircularB)).unwrap();
+    registry.register(Box::new(MockPlugin::new("plugin-circular").depends_on(&["plugin-circular-b"
+    ]))).unwrap();
+    registry.register(Box::new(MockPlugin::new("plugin-circular-b").depends_on(&["plugin-circular"
+    ]))).unwrap();
     // These two plugins depend on each other, creating a cycle
 
     // Create plugin manager
@@ -403,14 +99,16 @@ fn test_dependency_resolution_circular() {
 /// Verifies that:
 /// - Plugins are ordered based on their dependencies
 /// - Dependencies execute before dependents
-/// - For chain A <- B <- C, order is [A, B, C]
+/// - For chain A ← B ← C, order is [A, B, C]
 #[test]
 fn test_execution_order_respects_dependencies() {
     // Create registry and register plugins in random order
     let registry = PluginRegistry::new();
-    registry.register(Box::new(MockPluginC)).unwrap();
-    registry.register(Box::new(MockPluginA)).unwrap();
-    registry.register(Box::new(MockPluginB)).unwrap();
+    registry.register(Box::new(MockPlugin::new("plugin-c").depends_on(&["plugin-b"
+    ]))).unwrap();
+    registry.register(Box::new(MockPlugin::new("plugin-a"))).unwrap();
+    registry.register(Box::new(MockPlugin::new("plugin-b").depends_on(&["plugin-a"
+    ]))).unwrap();
 
     // Create plugin manager and resolve dependencies
     let mut manager = PluginManager::new(registry);
@@ -446,13 +144,15 @@ fn test_execution_order_respects_dependencies() {
 /// - All registered plugins are scanned
 /// - Results are aggregated correctly
 /// - Scan executes in dependency order
-#[test]
-fn test_execute_scan_workflow() {
+#[tokio::test]
+async fn test_execute_scan_workflow() {
     // Create registry and register plugins
     let registry = PluginRegistry::new();
-    registry.register(Box::new(MockPluginA)).unwrap();
-    registry.register(Box::new(MockPluginB)).unwrap();
-    registry.register(Box::new(MockPluginC)).unwrap();
+    registry.register(Box::new(MockPlugin::new("plugin-a"))).unwrap();
+    registry.register(Box::new(MockPlugin::new("plugin-b").depends_on(&["plugin-a"
+    ]))).unwrap();
+    registry.register(Box::new(MockPlugin::new("plugin-c").depends_on(&["plugin-b"
+    ]))).unwrap();
 
     // Create plugin manager and resolve dependencies
     let mut manager = PluginManager::new(registry);
@@ -462,7 +162,7 @@ fn test_execute_scan_workflow() {
     let ctx = Context::new();
 
     // Execute scan
-    let results = manager.execute_scan(&ctx).unwrap();
+    let results = manager.execute_scan(&ctx).await.unwrap();
 
     // Verify all 3 plugins were scanned
     assert_eq!(
@@ -510,13 +210,15 @@ fn test_execute_scan_workflow() {
 /// - All registered plugins can apply changes
 /// - Results are aggregated correctly
 /// - Apply executes in dependency order
-#[test]
-fn test_execute_apply_workflow() {
+#[tokio::test]
+async fn test_execute_apply_workflow() {
     // Create registry and register plugins
     let registry = PluginRegistry::new();
-    registry.register(Box::new(MockPluginA)).unwrap();
-    registry.register(Box::new(MockPluginB)).unwrap();
-    registry.register(Box::new(MockPluginC)).unwrap();
+    registry.register(Box::new(MockPlugin::new("plugin-a"))).unwrap();
+    registry.register(Box::new(MockPlugin::new("plugin-b").depends_on(&["plugin-a"
+    ]))).unwrap();
+    registry.register(Box::new(MockPlugin::new("plugin-c").depends_on(&["plugin-b"
+    ]))).unwrap();
 
     // Create plugin manager and resolve dependencies
     let mut manager = PluginManager::new(registry);
@@ -527,7 +229,7 @@ fn test_execute_apply_workflow() {
     let config = Config::default();
 
     // Execute apply on all plugins (empty vec = all plugins)
-    let results = manager.execute_apply(&mut ctx, &config, &[]).unwrap();
+    let results = manager.execute_apply(&mut ctx, &config, &[]).await.unwrap();
 
     // Verify all 3 plugins were applied
     assert_eq!(

@@ -1,0 +1,59 @@
+[package]
+name = "hardener-scheduler"
+version.workspace    = true
+authors.workspace    = true
+edition.workspace    = true
+license.workspace    = true
+repository.workspace = true
+description = "Scheduled scanning daemon for Linux System Hardener"
+
+[dependencies]
+# Workspace crates
+hardener-common  = { workspace = true }
+hardener-core    = { workspace = true }
+hardener-plugins = { workspace = true }
+
+# Async runtime
+async-trait = { workspace = true }
+tokio       = { workspace = true }
+
+# Scheduling
+tokio-cron-scheduler = "0.15.1"
+
+# Database
+sqlx = { workspace = true, features = ["derive"] }
+
+# HTTP client for webhooks
+reqwest = { version = "0.12.24", default-features = false, features = ["json", "rustls-tls"] }
+
+# Email
+lettre = { version = "0.11.19", default-features = false, features = ["tokio1", "tokio1-rustls-tls", "smtp-transport", "builder"] }
+
+# Serialisation
+serde      = { workspace = true }
+serde_json = { workspace = true }
+toml       = { workspace = true }
+
+# Date/time
+chrono = { version = "0.4.42", features = ["serde"] }
+
+# Error handling
+anyhow    = { workspace = true }
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# System
+hostname = { workspace = true }
+
+# UUID for session IDs
+uuid = { version = "1.19.0", features = ["v4"] }
+
+# Hashing and encoding
+ring = { workspace = true }
+hex = "0.4.3"
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio-test = "0.4.4"

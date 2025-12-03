@@ -2,6 +2,7 @@
 //!
 //! Defines the HardeningPlugin trait that all security plugins must implement.
 
+use async_trait::async_trait;
 use hardener_common::{
     error::Result,
     types::{ComplianceMapping, FindingCategory, FindingPolicyException, PluginId},
@@ -197,6 +198,7 @@ pub struct ValidationIssue {
 ///
 /// This trait is only available with the `system` feature enabled.
 #[cfg(feature = "system")]
+#[async_trait]
 pub trait HardeningPlugin: Send + Sync {
     /// Returns metadata describing this plugin.
     fn metadata(&self) -> PluginMetadata;
@@ -209,18 +211,18 @@ pub trait HardeningPlugin: Send + Sync {
     /// Scans the system for security issues in this plugin's domain.
     ///
     /// This method should not modify the system (read-only operation).
-    fn scan(&self, ctx: &Context) -> Result<ScanResult>;
+    async fn scan(&self, ctx: &Context) -> Result<ScanResult>;
 
     /// Applies hardening changes based on the provided configuration.
     ///
     /// Should create a checkpoint before making changes.
-    fn apply(&self, ctx: &mut Context, config: &Config) -> Result<ApplyResult>;
+    async fn apply(&self, ctx: &mut Context, config: &Config) -> Result<ApplyResult>;
 
     /// Rolls back changes to a previous checkpoint
-    fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()>;
+    async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()>;
 
     /// Validates configuration without applying changes (dry-run).
-    fn validate(&self, config: &Config) -> Result<ValidationReport>;
+    async fn validate(&self, ctx: &Context, config: &Config) -> Result<ValidationReport>;
 }
 
 #[cfg(test)]

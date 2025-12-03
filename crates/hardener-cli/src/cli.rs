@@ -29,6 +29,26 @@ pub struct Cli {
     /// Path to configuration file.
     #[arg(global = true, short = 'C', long, value_name = "FILE")]
     pub config: Option<std::path::PathBuf>,
+
+    /// Remote host to scan via SSH (user@host or host).
+    #[arg(global = true, long, value_name = "HOST")]
+    pub ssh: Option<String>,
+
+    /// SSH port.
+    #[arg(global = true, long, default_value = "22", value_name = "PORT")]
+    pub port: u16,
+
+    /// SSH identity file (private key).
+    #[arg(global = true, long, value_name = "FILE")]
+    pub ssh_key: Option<std::path::PathBuf>,
+
+    /// SSH connection timeout in seconds.
+    #[arg(global = true, long, default_value = "30", value_name = "SECONDS")]
+    pub ssh_timeout: u64,
+
+    /// Skip SSH host key verification (insecure).
+    #[arg(global = true, long)]
+    pub ssh_no_verify: bool,
 }
 
 #[derive(Subcommand)]

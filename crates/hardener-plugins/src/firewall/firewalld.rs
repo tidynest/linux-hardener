@@ -5,9 +5,9 @@
 //! and permanent configurations.
 
 use crate::firewall::{FirewallBackend, Rule, get_baseline_rules};
+use async_trait::async_trait;
 use hardener_common::error::{HardeningError, Result};
-use hardener_core::{Change, ChangeType};
-use std::process::Command;
+use hardener_core::{Change, ChangeType, context::Context};
 use tracing::{debug, error, info, warn};
 
 /// Firewalld backend for RHEL/Fedora/CentOS systems.
@@ -22,29 +22,32 @@ impl FirewalldBackend {
         FirewalldBackend
     }
 
-    fn execute_firewall_cmd(&self, args: &[&str]) -> Result<String> {
-        let output = Command::new("firewall-cmd")
-            .args(args)
-            .output()
+    async fn execute_firewall_cmd(&self, ctx: &Context, args: &[&str]) -> Result<String> {
+        let output = ctx
+            .executor()
+            .execute_command("firewall-cmd", args)
+            .await
             .map_err(|e| {
                 HardeningError::Plugin(format!("Failed to execute firewall-cmd: {}", e))
             })?;
 
-        if !output.status.success() {
+        if !output.success() {
             return Err(HardeningError::Plugin(format!(
                 "firewall-cmd failed: {}",
-                String::from_utf8_lossy(&output.stderr)
+                output.stderr
             )));
         }
 
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        Ok(output.stdout)
     }
 
     /// Gets the default zone used by firewalld.
     ///
     /// This is typically "public" but can be customised by the user.
-    fn get_default_zone(&self) -> Result<String> {
-        let output = self.execute_firewall_cmd(&["--get-default-zone"])?;
+    async fn get_default_zone(&self, ctx: &Context) -> Result<String> {
+        let output = self
+            .execute_firewall_cmd(ctx, &["--get-default-zone"])
+            .await?;
         Ok(output.trim().to_string())
     }
 }
@@ -55,22 +58,23 @@ impl Default for FirewalldBackend {
     }
 }
 
+#[async_trait]
 impl FirewallBackend for FirewalldBackend {
     fn backend_name(&self) -> &str {
         "firewalld"
     }
 
-    fn detect(&self) -> Result<bool> {
-        // Check if firewall-cmd command exists
-        match Command::new("firewall-cmd").arg("--version").output() {
-            Ok(output) => Ok(output.status.success()),
-            Err(_) => Ok(false),
-        }
+    async fn detect(&self, ctx: &Context) -> Result<bool> {
+        // Check if firewall-cmd command exists using executor
+        ctx.executor()
+            .command_exists("firewall-cmd")
+            .await
+            .map_err(|e| HardeningError::Plugin(e.to_string()))
     }
 
-    fn is_enabled(&self) -> Result<()> {
+    async fn is_enabled(&self, ctx: &Context) -> Result<()> {
         // Check if firewalld is running
-        let output = self.execute_firewall_cmd(&["--state"])?;
+        let output = self.execute_firewall_cmd(ctx, &["--state"]).await?;
 
         if output.trim() == "running" {
             Ok(())
@@ -81,32 +85,34 @@ impl FirewallBackend for FirewalldBackend {
         }
     }
 
-    fn enable(&self) -> Result<()> {
+    async fn enable(&self, ctx: &Context) -> Result<()> {
         info!("Enabling firewalld service");
 
         // Start firewalld service
-        let start_output = Command::new("systemctl")
-            .args(["start", "firewalld"])
-            .output()
+        let start_output = ctx
+            .executor()
+            .execute_command("systemctl", &["start", "firewalld"])
+            .await
             .map_err(|e| HardeningError::Plugin(format!("Failed to start firewalld: {}", e)))?;
 
-        if !start_output.status.success() {
+        if !start_output.success() {
             return Err(HardeningError::Plugin(format!(
                 "Failed to start firewalld: {}",
-                String::from_utf8_lossy(&start_output.stderr)
+                start_output.stderr
             )));
         }
 
         // Enable firewalld to start on boot
-        let enable_output = Command::new("systemctl")
-            .args(["enable", "firewalld"])
-            .output()
+        let enable_output = ctx
+            .executor()
+            .execute_command("systemctl", &["enable", "firewalld"])
+            .await
             .map_err(|e| HardeningError::Plugin(format!("Failed to enable firewalld: {}", e)))?;
 
-        if !enable_output.status.success() {
+        if !enable_output.success() {
             return Err(HardeningError::Plugin(format!(
                 "Failed to enable firewalld: {}",
-                String::from_utf8_lossy(&enable_output.stderr)
+                enable_output.stderr
             )));
         }
 
@@ -114,16 +120,14 @@ impl FirewallBackend for FirewalldBackend {
         Ok(())
     }
 
-    fn get_default_rules(&self) -> Vec<Rule> {
-        get_baseline_rules()
-    }
-
-    fn list_rules(&self) -> Result<Vec<Rule>> {
-        let zone = self.get_default_zone()?;
+    async fn list_rules(&self, ctx: &Context) -> Result<Vec<Rule>> {
+        let zone = self.get_default_zone(ctx).await?;
         let mut rules = Vec::new();
 
         // List services allowed in the zone
-        let service_output = self.execute_firewall_cmd(&["--zone", &zone, "--list-services"])?;
+        let service_output = self
+            .execute_firewall_cmd(ctx, &["--zone", &zone, "--list-services"])
+            .await?;
 
         for service in service_output.split_whitespace() {
             rules.push(Rule {
@@ -136,7 +140,9 @@ impl FirewallBackend for FirewalldBackend {
         }
 
         // List ports allowed in the zone
-        let ports_output = self.execute_firewall_cmd(&["--zone", &zone, "--list-ports"])?;
+        let ports_output = self
+            .execute_firewall_cmd(ctx, &["--zone", &zone, "--list-ports"])
+            .await?;
 
         for port in ports_output.split_whitespace() {
             let parts: Vec<&str> = port.split('/').collect();
@@ -154,8 +160,8 @@ impl FirewallBackend for FirewalldBackend {
         Ok(rules)
     }
 
-    fn apply_rules(&self, rules: &[Rule]) -> Result<Vec<Change>> {
-        let zone = self.get_default_zone()?;
+    async fn apply_rules(&self, ctx: &Context, rules: &[Rule]) -> Result<Vec<Change>> {
+        let zone = self.get_default_zone(ctx).await?;
         let mut changes = Vec::new();
 
         info!("Applying {} firewalld rules to zone {}", rules.len(), zone);
@@ -173,12 +179,10 @@ impl FirewallBackend for FirewalldBackend {
 
             // Handle drop/default deny rules (set zone target)
             if rule.rule_action == "drop" && rule.rule_port == "any" {
-                match self.execute_firewall_cmd(&[
-                    "--permanent",
-                    "--zone",
-                    &zone,
-                    "--set-target=DROP",
-                ]) {
+                match self
+                    .execute_firewall_cmd(ctx, &["--permanent", "--zone", &zone, "--set-target=DROP"])
+                    .await
+                {
                     Ok(_) => {
                         changes.push(Change {
                             change_type: ChangeType::FirewallRule,
@@ -209,13 +213,13 @@ impl FirewallBackend for FirewalldBackend {
             if rule.rule_action == "accept" {
                 let port_spec = format!("{}/{}", rule.rule_port, rule.rule_protocol);
 
-                match self.execute_firewall_cmd(&[
-                    "--permanent",
-                    "--zone",
-                    &zone,
-                    "--add-port",
-                    &port_spec,
-                ]) {
+                match self
+                    .execute_firewall_cmd(
+                        ctx,
+                        &["--permanent", "--zone", &zone, "--add-port", &port_spec],
+                    )
+                    .await
+                {
                     Ok(_) => {
                         changes.push(Change {
                             change_type: ChangeType::FirewallRule,
@@ -244,7 +248,7 @@ impl FirewallBackend for FirewalldBackend {
         }
 
         // Reload firewalld to activate permanent changes
-        match self.execute_firewall_cmd(&["--reload"]) {
+        match self.execute_firewall_cmd(ctx, &["--reload"]).await {
             Ok(_) => {
                 info!("Reloaded firewalld configuration");
                 changes.push(Change {
@@ -266,5 +270,9 @@ impl FirewallBackend for FirewalldBackend {
         }
 
         Ok(changes)
+    }
+
+    fn get_default_rules(&self) -> Vec<Rule> {
+        get_baseline_rules()
     }
 }

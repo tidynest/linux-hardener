@@ -3,9 +3,9 @@
 //! This backend manages firewall rules on Ubuntu/Debian systems using ufw.
 
 use crate::firewall::{FirewallBackend, Rule, get_baseline_rules};
+use async_trait::async_trait;
 use hardener_common::error::{HardeningError, Result};
-use hardener_core::{Change, ChangeType};
-use std::process::Command;
+use hardener_core::{Change, ChangeType, context::Context};
 use tracing::{info, warn};
 
 /// UFW firewall backend for Ubuntu/Debian systems.
@@ -20,23 +20,25 @@ impl UfwBackend {
     /// Executes a ufw command and returns the output.
     ///
     /// # Arguments
+    /// * `ctx` - The context containing the executor.
     /// * `args` - Command arguments to pass to ufw.
     ///
     /// # Returns
     /// The command output as a string, or an error if execution fails.
-    fn execute_ufw(&self, args: &[&str]) -> Result<String> {
-        let output = Command::new("ufw")
-            .args(args)
-            .output()
+    async fn execute_ufw(&self, ctx: &Context, args: &[&str]) -> Result<String> {
+        let output = ctx
+            .executor()
+            .execute_command("ufw", args)
+            .await
             .map_err(|e| HardeningError::Plugin(format!("Failed to execute ufw command: {}", e)))?;
 
-        if !output.status.success() {
+        if !output.success() {
             return Err(HardeningError::Plugin(format!(
                 "ufw command failed: {}",
-                String::from_utf8_lossy(&output.stderr)
+                output.stderr
             )));
         }
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        Ok(output.stdout)
     }
 
     /// Parses a single UFW status line into a Rule.
@@ -127,22 +129,23 @@ impl Default for UfwBackend {
     }
 }
 
+#[async_trait]
 impl FirewallBackend for UfwBackend {
     fn backend_name(&self) -> &str {
         "ufw"
     }
 
-    fn detect(&self) -> Result<bool> {
-        // Check if ufw command exists by trying to run it.
-        match Command::new("which").arg("ufw").output() {
-            Ok(output) => Ok(output.status.success()),
-            Err(_) => Ok(false),
-        }
+    async fn detect(&self, ctx: &Context) -> Result<bool> {
+        // Check if ufw command exists using executor.
+        ctx.executor()
+            .command_exists("ufw")
+            .await
+            .map_err(|e| HardeningError::Plugin(e.to_string()))
     }
 
-    fn is_enabled(&self) -> Result<()> {
+    async fn is_enabled(&self, ctx: &Context) -> Result<()> {
         // Run 'ufw status' and check if it says "Status: active".
-        let output = self.execute_ufw(&["status"])?;
+        let output = self.execute_ufw(ctx, &["status"]).await?;
 
         if output.contains("Status: active") {
             Ok(())
@@ -151,11 +154,11 @@ impl FirewallBackend for UfwBackend {
         }
     }
 
-    fn enable(&self) -> Result<()> {
+    async fn enable(&self, ctx: &Context) -> Result<()> {
         // Enable UFW firewall
         info!("Enabling UFW firewall");
 
-        let output = self.execute_ufw(&["--force", "enable"])?;
+        let output = self.execute_ufw(ctx, &["--force", "enable"]).await?;
 
         if output.contains("Firewall is active") || output.contains("enabled") {
             info!("UFW firewall enabled successfully");
@@ -167,8 +170,8 @@ impl FirewallBackend for UfwBackend {
         }
     }
 
-    fn list_rules(&self) -> Result<Vec<Rule>> {
-        let output = self.execute_ufw(&["status"])?;
+    async fn list_rules(&self, ctx: &Context) -> Result<Vec<Rule>> {
+        let output = self.execute_ufw(ctx, &["status"]).await?;
         let mut rules = Vec::new();
 
         // Skip header, parse rule line.
@@ -194,14 +197,14 @@ impl FirewallBackend for UfwBackend {
         Ok(rules)
     }
 
-    fn apply_rules(&self, rules: &[Rule]) -> Result<Vec<Change>> {
+    async fn apply_rules(&self, ctx: &Context, rules: &[Rule]) -> Result<Vec<Change>> {
         let mut changes = Vec::new();
 
         for rule in rules {
             let ufw_args = self.build_ufw_rule_args(rule);
 
             let args_refs: Vec<&str> = ufw_args.iter().map(|s| s.as_str()).collect();
-            match self.execute_ufw(&args_refs) {
+            match self.execute_ufw(ctx, &args_refs).await {
                 Ok(_) => {
                     info!("Applied UFW rule: {}", rule.rule_description);
                     changes.push(Change {

@@ -5,9 +5,9 @@
 //! Ubuntu 20.04+, Arch Linux, and other distributions.
 
 use crate::firewall::{FirewallBackend, Rule, get_baseline_rules};
+use async_trait::async_trait;
 use hardener_common::error::{HardeningError, Result};
-use hardener_core::{Change, ChangeType};
-use std::process::Command;
+use hardener_core::{Change, ChangeType, context::Context};
 use tracing::{info, warn};
 
 /// Nftables firewall backend for modern Linux systems.
@@ -27,24 +27,26 @@ impl NftablesBackend {
     /// Executes an nft command and returns the output.
     ///
     /// # Arguments
+    /// * `ctx` - The context containing the executor.
     /// * `args` - Command arguments to pass to nft.
     ///
     /// # Returns
     /// The command output as a string, or an error if execution fails.
-    fn execute_nft(&self, args: &[&str]) -> Result<String> {
-        let output = Command::new("nft")
-            .args(args)
-            .output()
+    async fn execute_nft(&self, ctx: &Context, args: &[&str]) -> Result<String> {
+        let output = ctx
+            .executor()
+            .execute_command("nft", args)
+            .await
             .map_err(|e| HardeningError::Plugin(format!("Failed to execute nft command: {}", e)))?;
 
-        if !output.status.success() {
+        if !output.success() {
             return Err(HardeningError::Plugin(format!(
                 "nft command failed: {}",
-                String::from_utf8_lossy(&output.stderr)
+                output.stderr
             )));
         }
 
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        Ok(output.stdout)
     }
 
     /// Parses a single nftables rule line into a Rule.
@@ -160,23 +162,24 @@ impl Default for NftablesBackend {
     }
 }
 
+#[async_trait]
 impl FirewallBackend for NftablesBackend {
     fn backend_name(&self) -> &str {
         "nftables"
     }
 
-    fn detect(&self) -> Result<bool> {
-        // Check if nft command exists by trying to run it.
-        match Command::new("which").arg("nft").output() {
-            Ok(output) => Ok(output.status.success()),
-            Err(_) => Ok(false),
-        }
+    async fn detect(&self, ctx: &Context) -> Result<bool> {
+        // Check if nft command exists using executor.
+        ctx.executor()
+            .command_exists("nft")
+            .await
+            .map_err(|e| HardeningError::Plugin(e.to_string()))
     }
 
-    fn is_enabled(&self) -> Result<()> {
+    async fn is_enabled(&self, ctx: &Context) -> Result<()> {
         // Check if nftables has any active ruleset.
         // An empty ruleset means nftables is installed but not configured.
-        let output = self.execute_nft(&["list", "ruleset"])?;
+        let output = self.execute_nft(ctx, &["list", "ruleset"]).await?;
 
         // If there are tables defined, nftables is considered "enabled"
         if output.contains("table") {
@@ -188,39 +191,52 @@ impl FirewallBackend for NftablesBackend {
         }
     }
 
-    fn enable(&self) -> Result<()> {
+    async fn enable(&self, ctx: &Context) -> Result<()> {
         info!("Enabling nftables firewall");
 
         // Create a basic inet filter table with input/output/forward chains
         // This is the foundation for the firewall rules
 
         // Step 1: Create the table
-        self.execute_nft(&["add", "table", "inet", "filter"])?;
+        self.execute_nft(ctx, &["add", "table", "inet", "filter"])
+            .await?;
 
         // Step 2: Create input chain (with drop policy for security
-        self.execute_nft(&[
-            "add", "chain", "inet", "filter", "input", "{", "type", "filter", "hook", "input",
-            "priority", "0", ";", "policy", "drop", ";", "}",
-        ])?;
+        self.execute_nft(
+            ctx,
+            &[
+                "add", "chain", "inet", "filter", "input", "{", "type", "filter", "hook", "input",
+                "priority", "0", ";", "policy", "drop", ";", "}",
+            ],
+        )
+        .await?;
 
         // Step 3: Create forward chain
-        self.execute_nft(&[
-            "add", "chain", "inet", "filter", "forward", "{", "type", "filter", "hook", "forward",
-            "priority", "0", ";", "policy", "drop", ";", "}",
-        ])?;
+        self.execute_nft(
+            ctx,
+            &[
+                "add", "chain", "inet", "filter", "forward", "{", "type", "filter", "hook",
+                "forward", "priority", "0", ";", "policy", "drop", ";", "}",
+            ],
+        )
+        .await?;
 
         // Step 4: Create output chain (allow all outbound by default)
-        self.execute_nft(&[
-            "add", "chain", "inet", "filter", "output", "{", "type", "filter", "hook", "output",
-            "priority", "0", ";", "policy", "accept", ";", "}",
-        ])?;
+        self.execute_nft(
+            ctx,
+            &[
+                "add", "chain", "inet", "filter", "output", "{", "type", "filter", "hook", "output",
+                "priority", "0", ";", "policy", "accept", ";", "}",
+            ],
+        )
+        .await?;
 
         info!("Nftables firewall enabled successfully");
         Ok(())
     }
 
-    fn list_rules(&self) -> Result<Vec<Rule>> {
-        let output = self.execute_nft(&["list", "ruleset"])?;
+    async fn list_rules(&self, ctx: &Context) -> Result<Vec<Rule>> {
+        let output = self.execute_nft(ctx, &["list", "ruleset"]).await?;
         let mut rules = Vec::new();
 
         // Parse nftables output format:
@@ -253,14 +269,14 @@ impl FirewallBackend for NftablesBackend {
         Ok(rules)
     }
 
-    fn apply_rules(&self, rules: &[Rule]) -> Result<Vec<Change>> {
+    async fn apply_rules(&self, ctx: &Context, rules: &[Rule]) -> Result<Vec<Change>> {
         let mut changes = Vec::new();
 
         for rule in rules {
             let nft_args = self.build_nft_rule_args(rule);
 
             let args_refs: Vec<&str> = nft_args.iter().map(|s| s.as_str()).collect();
-            match self.execute_nft(&args_refs) {
+            match self.execute_nft(ctx, &args_refs).await {
                 Ok(_) => {
                     info!("Applied nftables rule: {}", rule.rule_description);
                     changes.push(Change {

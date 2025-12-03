@@ -1,6 +1,7 @@
 use hardener_common::types::{FindingCategory, PluginId};
 use hardener_core::{Config, context::Context, plugin::HardeningPlugin};
 use hardener_plugins::ssh::SshHardeningPlugin;
+use tokio;
 
 #[test]
 fn test_ssh_plugin_metadata() {
@@ -23,12 +24,12 @@ fn test_ssh_plugin_has_no_dependencies() {
     assert!(deps.is_empty(), "SSH plugin should have no dependencies");
 }
 
-#[test]
-fn test_ssh_scan_reads_configuration() {
+#[tokio::test]
+async fn test_ssh_scan_reads_configuration() {
     let plugin = SshHardeningPlugin::new();
     let ctx = Context::new();
 
-    let result = plugin.scan(&ctx);
+    let result = plugin.scan(&ctx).await;
 
     match result {
         Ok(scan_result) => {
@@ -67,12 +68,13 @@ fn test_ssh_scan_reads_configuration() {
     }
 }
 
-#[test]
-fn test_ssh_validate_checks_config_file() {
+#[tokio::test]
+async fn test_ssh_validate_checks_config_file() {
     let plugin = SshHardeningPlugin::new();
+    let ctx = Context::new();
     let config = Config::default();
 
-    let result = plugin.validate(&config);
+    let result = plugin.validate(&ctx, &config).await;
 
     match result {
         Ok(validation_report) => {
@@ -107,9 +109,9 @@ fn test_ssh_validate_checks_config_file() {
     }
 }
 
-#[test]
+#[tokio::test]
 #[ignore] // Requires root privileges - run with: cargo test --test ssh_tests -- --ignored
-fn test_ssh_apply_requires_root() {
+async fn test_ssh_apply_requires_root() {
     let plugin = SshHardeningPlugin::new();
     let mut ctx = Context::new();
     let config = Config::default();
@@ -122,7 +124,7 @@ fn test_ssh_apply_requires_root() {
     println!("4. Restart the SSH service");
     println!("\nIMPORTANT: Ensure you have SSH key access before running!\n");
 
-    let result = plugin.apply(&mut ctx, &config);
+    let result = plugin.apply(&mut ctx, &config).await;
 
     match result {
         Ok(apply_result) => {

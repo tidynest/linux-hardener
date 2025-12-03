@@ -1,6 +1,6 @@
 # Linux System Hardener - File Map
 
-**Last Updated:** 2025-11-27
+**Last Updated:** 2025-12-01
 
 This document lists all source files with their purpose and key exports.
 
@@ -20,6 +20,7 @@ This document lists all source files with their purpose and key exports.
 | `src/commands/plugins.rs` | List plugins command | `run()` |
 | `src/commands/report.rs` | Compliance report generation | `run()` |
 | `src/commands/report_wizard.rs` | Interactive report wizard | `run_interactive()` |
+| `src/ssh_config.rs` | SSH connection config helper | `SshConnectionConfig` |
 
 ---
 
@@ -34,17 +35,23 @@ This document lists all source files with their purpose and key exports.
 | `src/registry.rs` | Plugin registration | `PluginRegistry` |
 | `src/config.rs` | Configuration structs | `HardenerConfig`, `GlobalConfig`, `PluginConfig`, `PolicyException` |
 | `src/config_loader.rs` | Config loading and merging | `ConfigLoader` |
+| `src/testing.rs` | MockPlugin builder for tests | `MockPlugin` |
+| `src/executor/mod.rs` | SystemExecutor trait and types | `SystemExecutor`, `CommandOutput`, `FileMetadata` |
+| `src/executor/local.rs` | Local file/command operations | `LocalExecutor` |
+| `src/executor/ssh.rs` | SSH remote operations | `SshExecutor`, `SshConfig` |
+| `src/executor/mock.rs` | Virtual filesystem for testing | `MockExecutor` |
 
 ### Key Trait (plugin.rs)
 
 ```rust
+#[async_trait]
 pub trait HardeningPlugin: Send + Sync {
     fn metadata(&self) -> PluginMetadata;
     fn dependencies(&self) -> Vec<PluginId>;
-    fn scan(&self, ctx: &Context) -> Result<ScanResult>;
-    fn apply(&self, ctx: &mut Context, config: &Config) -> Result<ApplyResult>;
-    fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()>;
-    fn validate(&self, config: &Config) -> Result<ValidationReport>;
+    async fn scan(&self, ctx: &Context) -> Result<ScanResult>;
+    async fn apply(&self, ctx: &mut Context, config: &Config) -> Result<ApplyResult>;
+    async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()>;
+    async fn validate(&self, ctx: &Context, config: &Config) -> Result<ValidationReport>;
 }
 ```
 
@@ -294,6 +301,8 @@ pub fn generate_compliance_report(frameworks: Vec<String>) -> Result<Vec<Complia
 | `docs/FILE_MAP.md` | This file |
 | `docs/NAMING_CONVENTIONS.md` | Naming standards |
 | `docs/RELEASING.md` | Versioning and release process |
+| `docs/SSH_REMOTE_SCANNING.md` | SSH remote scanning user guide |
+| `docs/SSH_REMOTE_PLAN.md` | SSH implementation plan (internal) |
 
 ---
 
@@ -308,8 +317,17 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | hardener-state | `audit.rs`, `hash_chain.rs`, `signing.rs`, `db.rs` | `checkpoint_system.rs` | 31 |
 | hardener-distro | `adapter.rs`, `package/*.rs` | - | 15 |
 | hardener-cli | `cli.rs`, `output.rs` | - | 21 |
-| hardener-plugins | - | `*_tests.rs` (8 files) | 48 |
-| hardener-core | `config.rs`, `context.rs`, `plugin.rs`, `registry.rs`, `config_loader.rs` | `plugin_manager_tests.rs` | 29 |
+| hardener-plugins | - | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs` | 128+ |
+| hardener-core | `config.rs`, `context.rs`, `plugin.rs`, `registry.rs`, `config_loader.rs` | `plugin_manager_tests.rs`, `mock_executor_tests.rs`, `ssh_executor_tests.rs` | 43+ |
+
+### New Test Files (v0.3.0)
+
+| File | Purpose | Tests |
+|------|---------|-------|
+| `hardener-core/tests/mock_executor_tests.rs` | MockExecutor unit tests | 14 |
+| `hardener-core/tests/ssh_executor_tests.rs` | SshExecutor unit/integration tests | 14 |
+| `hardener-plugins/tests/*_mock_tests.rs` | Mock-based plugin tests (8 files) | 80 |
+| `hardener-plugins/tests/ssh_integration_tests.rs` | Plugin SSH integration tests | 10 |
 
 ---
 

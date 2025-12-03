@@ -10,6 +10,7 @@
 //! - SSH key file permissions
 //! - Sudo configuration files
 
+use async_trait::async_trait;
 use hardener_common::{
     error::Result,
     types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
@@ -19,7 +20,7 @@ use hardener_core::{
     context::Context,
     plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult},
 };
-use std::{fs, os::unix::fs::PermissionsExt, path::Path, time::Instant};
+use std::{path::Path, time::Instant};
 use tracing::info;
 
 /// File Permissions Hardening Plugin
@@ -109,22 +110,22 @@ const CRITICAL_PERMISSIONS: &[PermissionDirective] = &[
 /// Checks if a path has the correct permissions, owner, and group.
 ///
 /// Returns a Finding if permissions are incorrect, None if correct
-fn check_path_permissions(directive: &PermissionDirective) -> Option<Finding> {
+async fn check_path_permissions(ctx: &Context, directive: &PermissionDirective) -> Option<Finding> {
     let path = Path::new(directive.permission_path);
 
     // Skip if path doesn't exist
-    if !path.exists() {
+    if !ctx.executor().path_exists(path).await.unwrap_or(false) {
         return None;
     }
 
     // Get file metadata
-    let metadata = match fs::metadata(path) {
+    let metadata = match ctx.executor().file_metadata(path).await {
         Ok(metadata) => metadata,
         Err(_) => return None, // Can't read, skip it
     };
 
     // Get current permissions (only last 9 bits = rwxrwxrwx)
-    let current_mode = metadata.permissions().mode() & 0o777;
+    let current_mode = metadata.mode & 0o777;
 
     // Check if permissions are incorrect
     if current_mode != directive.permission_mode {
@@ -195,41 +196,68 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
 /// Applies correct permissions to a path and tracks the change.
 ///
 /// Returns a Change object if successful, None if path doesn't exist or on error.
-fn apply_path_permissions(directive: &PermissionDirective) -> Option<Change> {
+async fn apply_path_permissions(ctx: &Context, directive: &PermissionDirective) -> Option<Change> {
     let path = Path::new(directive.permission_path);
 
     // Skip if path doesn't exist
-    if !path.exists() {
+    if !ctx.executor().path_exists(path).await.unwrap_or(false) {
         return None;
     }
 
     // Get current permissions
-    let metadata = fs::metadata(path).ok()?;
-    let current_mode = metadata.permissions().mode() & 0o777;
+    let metadata = ctx.executor().file_metadata(path).await.ok()?;
+    let current_mode = metadata.mode & 0o777;
 
     // Skip if already correct
     if current_mode == directive.permission_mode {
         return None;
     }
 
-    // Apply new permissions
-    let new_permissions = fs::Permissions::from_mode(directive.permission_mode);
-    if fs::set_permissions(path, new_permissions).is_err() {
-        return None; // Failed to set permissions
-    }
+    // Apply new permissions using chmod command
+    let mode_str = format!("{:04o}", directive.permission_mode);
+    let result = ctx.executor()
+        .execute_command("chmod", &[&mode_str, directive.permission_path])
+        .await;
 
-    // Return successful change
-    Some(Change {
-        change_description: format!(
-            "Changed permissions on {} from {:04o} to {:04o}",
-            directive.permission_path, current_mode, directive.permission_mode
-        ),
-        change_type: ChangeType::Permissions,
-        change_success: true,
-        change_error: None,
-    })
+    match result {
+        Ok(output) if output.success() => {
+            // Return successful change
+            Some(Change {
+                change_description: format!(
+                    "Changed permissions on {} from {:04o} to {:04o}",
+                    directive.permission_path, current_mode, directive.permission_mode
+                ),
+                change_type: ChangeType::Permissions,
+                change_success: true,
+                change_error: None,
+            })
+        }
+        Ok(output) => {
+            Some(Change {
+                change_description: format!(
+                    "Failed to change permissions on {}",
+                    directive.permission_path
+                ),
+                change_type: ChangeType::Permissions,
+                change_success: false,
+                change_error: Some(output.stderr),
+            })
+        }
+        Err(e) => {
+            Some(Change {
+                change_description: format!(
+                    "Failed to change permissions on {}",
+                    directive.permission_path
+                ),
+                change_type: ChangeType::Permissions,
+                change_success: false,
+                change_error: Some(e.to_string()),
+            })
+        }
+    }
 }
 
+#[async_trait]
 impl HardeningPlugin for PermissionsHardeningPlugin {
     fn metadata(&self) -> PluginMetadata {
         PluginMetadata {
@@ -242,13 +270,17 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
         }
     }
 
-    fn scan(&self, _ctx: &Context) -> Result<ScanResult> {
+    fn dependencies(&self) -> Vec<PluginId> {
+        vec![]
+    }
+
+    async fn scan(&self, ctx: &Context) -> Result<ScanResult> {
         let start_time = Instant::now();
         let mut findings = Vec::new();
 
         // Check all critical permissions
         for directive in CRITICAL_PERMISSIONS {
-            if let Some(finding) = check_path_permissions(directive) {
+            if let Some(finding) = check_path_permissions(ctx, directive).await {
                 findings.push(finding);
             }
         }
@@ -262,11 +294,7 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
         })
     }
 
-    fn dependencies(&self) -> Vec<PluginId> {
-        vec![]
-    }
-
-    fn apply(&self, ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
+    async fn apply(&self, ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
         let mut changes = Vec::new();
 
         // Collect paths to checkpoint
@@ -292,7 +320,7 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
 
         // Apply permissions to all critical paths
         for directive in CRITICAL_PERMISSIONS {
-            if let Some(change) = apply_path_permissions(directive) {
+            if let Some(change) = apply_path_permissions(ctx, directive).await {
                 changes.push(change);
             }
         }
@@ -308,7 +336,7 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
         })
     }
 
-    fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> {
+    async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> {
         info!(
             "Rolling back file permissions to checkpoint: {}",
             checkpoint.checkpoint_id.as_str()
@@ -325,7 +353,7 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
         Ok(())
     }
 
-    fn validate(&self, _config: &Config) -> Result<ValidationReport> {
+    async fn validate(&self, _ctx: &Context, _config: &Config) -> Result<ValidationReport> {
         Ok(ValidationReport {
             validation_report_plugin_id: self.metadata().plugin_id,
             validation_report_is_valid: true,

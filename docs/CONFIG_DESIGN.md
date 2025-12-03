@@ -3,7 +3,7 @@
 **Author:** Eric Jingryd
 **Status:** Design Document
 **Version:** Draft 1.0
-**Date:** 2025-11-26
+**Date:** 2025-12-01
 
 ---
 

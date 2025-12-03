@@ -14,6 +14,7 @@ use hardener_core::{
     plugin::{Config, HardeningPlugin},
 };
 use hardener_plugins::FirewallHardeningPlugin;
+use tokio;
 
 #[test]
 fn test_firewall_plugin_metadata() {
@@ -35,12 +36,12 @@ fn test_firewall_plugin_has_no_dependencies() {
     assert_eq!(deps.len(), 0, "Firewall plugin should have no dependencies");
 }
 
-#[test]
-fn test_firewall_scan_detects_backend() {
+#[tokio::test]
+async fn test_firewall_scan_detects_backend() {
     let plugin = FirewallHardeningPlugin::new();
     let ctx = Context::new();
 
-    let result = plugin.scan(&ctx);
+    let result = plugin.scan(&ctx).await;
 
     // The scan should succeed (even if no backend is found, it returns success: false)
     assert!(result.is_ok(), "Scan should return Ok result");
@@ -59,12 +60,13 @@ fn test_firewall_scan_detects_backend() {
     }
 }
 
-#[test]
-fn test_firewall_validate_checks_backend() {
+#[tokio::test]
+async fn test_firewall_validate_checks_backend() {
     let plugin = FirewallHardeningPlugin::new();
+    let ctx = Context::new();
     let config = Config::default();
 
-    let result = plugin.validate(&config);
+    let result = plugin.validate(&ctx, &config).await;
 
     // Validate should always return Ok (stub implementation currently)
     assert!(result.is_ok(), "Validate should return Ok result");
@@ -77,9 +79,9 @@ fn test_firewall_validate_checks_backend() {
     assert_eq!(validation_report.validation_report_is_valid, true);
 }
 
-#[test]
+#[tokio::test]
 #[ignore] // Requires root privileges to enable firewall and apply rules
-fn test_firewall_apply_requires_root() {
+async fn test_firewall_apply_requires_root() {
     let plugin = FirewallHardeningPlugin::new();
     let mut ctx = Context::new();
     let config = Config::default();
@@ -87,7 +89,7 @@ fn test_firewall_apply_requires_root() {
     // This test should only be run with root privileges
     // Run with: sudo cargo test --package hardener-plugins test_firewall_apply_requires_root -- --ignored --nocapture
 
-    let result = plugin.apply(&mut ctx, &config);
+    let result = plugin.apply(&mut ctx, &config).await;
 
     assert!(result.is_ok(), "Apply should return Ok result");
 
@@ -114,7 +116,7 @@ fn test_firewall_apply_requires_root() {
         }
 
         // Verify scan now shows firewall as enabled
-        let scan_result = plugin.scan(&ctx).unwrap();
+        let scan_result = plugin.scan(&ctx).await.unwrap();
         assert!(scan_result.scan_success, "Scan should succeed after apply");
 
         // Should have no findings if firewall is now enabled
@@ -147,8 +149,8 @@ fn test_firewall_apply_requires_root() {
 // Backend-Specific Tests
 // ============================================================================
 
-#[test]
-fn test_backend_detection_order() {
+#[tokio::test]
+async fn test_backend_detection_order() {
     // This test verifies that backend detection follows the correct priority:
     // 1. Firewalld (RHEL/Fedora/CentOS)
     // 2. UFW (Ubuntu/Debian)
@@ -157,7 +159,7 @@ fn test_backend_detection_order() {
     let plugin = FirewallHardeningPlugin::new();
     let ctx = Context::new();
 
-    let result = plugin.scan(&ctx);
+    let result = plugin.scan(&ctx).await;
     assert!(
         result.is_ok(),
         "Scan should return Ok even if no backend found"
@@ -255,17 +257,18 @@ fn test_rule_structure_fields() {
 // Integration Tests (Require Specific Backends Installed)
 // ============================================================================
 
-#[test]
+#[tokio::test]
 #[ignore] // Only run on systems with firewalld installed
-fn test_firewalld_backend_detection() {
+async fn test_firewalld_backend_detection() {
     // Test firewalld-specific detection
     // Run with: cargo test --package hardener-plugins test_firewalld_backend_detection -- --ignored --nocapture
 
     use hardener_plugins::firewall::FirewallBackend;
     use hardener_plugins::firewall::firewalld::FirewalldBackend;
 
+    let ctx = hardener_core::context::Context::new();
     let backend = FirewalldBackend::new();
-    let detected = backend.detect();
+    let detected = backend.detect(&ctx).await;
 
     assert!(detected.is_ok(), "Firewalld detection should not error");
 
@@ -276,7 +279,7 @@ fn test_firewalld_backend_detection() {
         assert_eq!(backend.backend_name(), "firewalld");
 
         // Test is_enabled
-        let enabled = backend.is_enabled();
+        let enabled = backend.is_enabled(&ctx).await;
         if enabled.is_ok() {
             println!("[OK] Firewalld is running");
         } else {
@@ -292,17 +295,18 @@ fn test_firewalld_backend_detection() {
     }
 }
 
-#[test]
+#[tokio::test]
 #[ignore] // Only run on systems with UFW installed
-fn test_ufw_backend_detection() {
+async fn test_ufw_backend_detection() {
     // Test UFW-specific detection
     // Run with: cargo test --package hardener-plugins test_ufw_backend_detection -- --ignored --nocapture
 
     use hardener_plugins::firewall::FirewallBackend;
     use hardener_plugins::firewall::ufw::UfwBackend;
 
+    let ctx = hardener_core::context::Context::new();
     let backend = UfwBackend::new();
-    let detected = backend.detect();
+    let detected = backend.detect(&ctx).await;
 
     assert!(detected.is_ok(), "UFW detection should not error");
 
@@ -313,7 +317,7 @@ fn test_ufw_backend_detection() {
         assert_eq!(backend.backend_name(), "ufw");
 
         // Test is_enabled
-        let enabled = backend.is_enabled();
+        let enabled = backend.is_enabled(&ctx).await;
         if enabled.is_ok() {
             println!("[OK] UFW is active");
         } else {
@@ -329,17 +333,18 @@ fn test_ufw_backend_detection() {
     }
 }
 
-#[test]
+#[tokio::test]
 #[ignore] // Only run on systems with nftables installed
-fn test_nftables_backend_detection() {
+async fn test_nftables_backend_detection() {
     // Test nftables-specific detection
     // Run with: cargo test --package hardener-plugins test_nftables_backend_detection -- --ignored --nocapture
 
     use hardener_plugins::firewall::FirewallBackend;
     use hardener_plugins::firewall::nftables::NftablesBackend;
 
+    let ctx = hardener_core::context::Context::new();
     let backend = NftablesBackend::new();
-    let detected = backend.detect();
+    let detected = backend.detect(&ctx).await;
 
     assert!(detected.is_ok(), "Nftables detection should not error");
 
@@ -350,7 +355,7 @@ fn test_nftables_backend_detection() {
         assert_eq!(backend.backend_name(), "nftables");
 
         // Test is_enabled
-        let enabled = backend.is_enabled();
+        let enabled = backend.is_enabled(&ctx).await;
         if enabled.is_ok() {
             println!("[OK] Nftables has active ruleset");
         } else {

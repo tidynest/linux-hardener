@@ -2,6 +2,7 @@
 
 use hardener_core::{Config, Context, plugin::HardeningPlugin};
 use hardener_plugins::PamHardeningPlugin;
+use tokio;
 
 #[test]
 fn test_pam_plugin_metadata() {
@@ -26,13 +27,13 @@ fn test_pam_plugin_has_no_dependencies() {
     );
 }
 
-#[test]
-fn test_pam_scan_reads_configuration() {
+#[tokio::test]
+async fn test_pam_scan_reads_configuration() {
     let plugin = PamHardeningPlugin::new();
     let context = Context::new();
 
     // Run scan
-    let result = plugin.scan(&context);
+    let result = plugin.scan(&context).await;
 
     // Should succeed even if files don't exist (graceful degradation)
     assert!(result.is_ok(), "Scan should succeed: {:?}", result.err());
@@ -58,13 +59,14 @@ fn test_pam_scan_reads_configuration() {
     );
 }
 
-#[test]
-fn test_pam_validate_checks_config_files() {
+#[tokio::test]
+async fn test_pam_validate_checks_config_files() {
     let plugin = PamHardeningPlugin::new();
+    let context = Context::new();
     let config = Config::default();
 
     // Run validation
-    let result = plugin.validate(&config);
+    let result = plugin.validate(&context, &config).await;
 
     assert!(
         result.is_ok(),
@@ -100,15 +102,15 @@ fn test_pam_validate_checks_config_files() {
     );
 }
 
-#[test]
+#[tokio::test]
 #[ignore = "Requires root privileges and modifies system PAM configuration"]
-fn test_pam_apply_requires_root() {
+async fn test_pam_apply_requires_root() {
     let plugin = PamHardeningPlugin::new();
     let mut context = Context::new();
     let config = Config::default();
 
     // This will fail without root, or succeed with root
-    let result = plugin.apply(&mut context, &config);
+    let result = plugin.apply(&mut context, &config).await;
 
     match result {
         Ok(apply_result) => {

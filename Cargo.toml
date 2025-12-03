@@ -7,6 +7,7 @@ members = [
     "crates/hardener-core",
     "crates/hardener-distro",
     "crates/hardener-plugins",
+    "crates/hardener-scheduler",
     "crates/hardener-state",
     "crates/hardener-ui",
     "src-tauri",
@@ -40,6 +41,7 @@ hardener-compliance = { path = "crates/hardener-compliance" }
 hardener-core = { path = "crates/hardener-core" }
 hardener-distro = { path = "crates/hardener-distro" }
 hardener-plugins = { path = "crates/hardener-plugins" }
+hardener-scheduler = { path = "crates/hardener-scheduler"}
 hardener-state = { path = "crates/hardener-state" }
 hardener-ui = { path = "crates/hardener-ui" }
 

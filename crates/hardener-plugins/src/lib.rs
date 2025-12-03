@@ -77,7 +77,7 @@ pub fn create_checkpoint_for_apply(
     Ok(Some(checkpoint_id.as_str().to_string()))
 }
 
-// Re-export dependencies for macro use
+/// Re-export dependencies for macro use
 #[doc(hidden)]
 pub use audit::AuditHardeningPlugin;
 pub use firewall::FirewallHardeningPlugin;
@@ -90,8 +90,21 @@ pub use permissions::PermissionsHardeningPlugin;
 pub use services::ServicesHardeningPlugin;
 pub use ssh::SshHardeningPlugin;
 
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
+/// Creates a plugin registry with all available hardening plugins registered.
+///
+/// Canonically creates a fully-populated registry.
+/// Used by CLI commands, Tauri backend, and tests.
+pub fn create_plugin_registry() -> hardener_core::PluginRegistry {
+    let registry = hardener_core::PluginRegistry::new();
+    let _ = registry.register(Box::new(AuditHardeningPlugin::new()));
+    let _ = registry.register(Box::new(FirewallHardeningPlugin::new()));
+    let _ = registry.register(Box::new(KernelHardeningPlugin::new()));
+    let _ = registry.register(Box::new(MacHardeningPlugin::new()));
+    let _ = registry.register(Box::new(PamHardeningPlugin::new()));
+    let _ = registry.register(Box::new(PermissionsHardeningPlugin::new()));
+    let _ = registry.register(Box::new(ServicesHardeningPlugin::new()));
+    let _ = registry.register(Box::new(SshHardeningPlugin::new()));
+    registry
 }
 
 #[cfg(test)]

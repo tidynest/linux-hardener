@@ -5,6 +5,7 @@
 //! - Account lookout policies (failed login attempts)
 //! - Password ageing policies (expiry, reuse prevention)
 
+use async_trait::async_trait;
 use hardener_common::{
     error::{HardeningError, Result},
     file_utils::update_file_atomically,
@@ -17,6 +18,8 @@ use hardener_core::{
         ValidationReport,
     },
 };
+use hardener_common::file_utils::{parse_config_value, ConfigFormat};
+use std::path::Path;
 use std::time::Instant;
 use tracing::{debug, info, warn};
 
@@ -69,6 +72,7 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
     }
 }
 
+#[async_trait]
 impl HardeningPlugin for PamHardeningPlugin {
     fn metadata(&self) -> PluginMetadata {
         PluginMetadata {
@@ -86,19 +90,19 @@ impl HardeningPlugin for PamHardeningPlugin {
         vec![]
     }
 
-    fn scan(&self, _context: &Context) -> Result<ScanResult> {
+    async fn scan(&self, ctx: &Context) -> Result<ScanResult> {
         let start = Instant::now();
         info!("Starting PAM authentication hardening scan");
 
         let mut findings = Vec::new();
 
         // Read configuration files.
-        let pwquality_content = read_pwquality_config().unwrap_or_else(|e| {
+        let pwquality_content = read_pwquality_config(ctx).await.unwrap_or_else(|e| {
             warn!("Failed to read pwquality.conf: {}", e);
             String::new() // Empty content means all directives will be flagged as missing.
         });
 
-        let login_defs_content: String = read_login_defs().unwrap_or_else(|e| {
+        let login_defs_content: String = read_login_defs(ctx).await.unwrap_or_else(|e| {
             warn!("Failed to read login.defs: {}", e);
             String::new()
         });
@@ -107,10 +111,20 @@ impl HardeningPlugin for PamHardeningPlugin {
         for directive in PAM_DIRECTIVES {
             let current_value = match directive.pam_config_file {
                 PamConfigFile::PwQuality => {
-                    parse_config_directive(&pwquality_content, directive.pam_directive_name)
+                    parse_config_value(
+                        &pwquality_content,
+                        directive.pam_directive_name,
+                        ConfigFormat::Auto,
+                        true,
+                    )
                 }
                 PamConfigFile::LoginDefs => {
-                    parse_config_directive(&login_defs_content, directive.pam_directive_name)
+                    parse_config_value(
+                        &login_defs_content,
+                        directive.pam_directive_name,
+                        ConfigFormat::Auto,
+                        true,
+                    )
                 }
                 PamConfigFile::PamAuth => {
                     // PAM module configuration - skip for now, implement during phase 2.
@@ -179,9 +193,7 @@ impl HardeningPlugin for PamHardeningPlugin {
         })
     }
 
-    fn apply(&self, ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
-        use std::path::Path;
-
+    async fn apply(&self, ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
         let start = Instant::now();
         info!("Starting PAM authentication hardening apply");
 
@@ -207,7 +219,7 @@ impl HardeningPlugin for PamHardeningPlugin {
         }
 
         // Step 1: Create backups (legacy, in addition to checkpoint)
-        let pwquality_backup = match create_config_backup("/etc/security/pwquality.conf") {
+        let pwquality_backup = match create_config_backup(ctx, "/etc/security/pwquality.conf").await {
             Ok(path) => {
                 changes.push(Change {
                     change_type: ChangeType::ConfigFile,
@@ -230,7 +242,7 @@ impl HardeningPlugin for PamHardeningPlugin {
             }
         };
 
-        let login_defs_backup = match create_config_backup("/etc/login.defs") {
+        let login_defs_backup = match create_config_backup(ctx, "/etc/login.defs").await {
             Ok(path) => {
                 changes.push(Change {
                     change_type: ChangeType::ConfigFile,
@@ -254,12 +266,12 @@ impl HardeningPlugin for PamHardeningPlugin {
         };
 
         // Step 2: Read current configuration files
-        let mut pwquality_content = read_pwquality_config().unwrap_or_else(|e| {
+        let mut pwquality_content = read_pwquality_config(ctx).await.unwrap_or_else(|e| {
             warn!("Failed to read pwquality.conf, using empty content: {}", e);
             String::new()
         });
 
-        let mut login_defs_content = read_login_defs().unwrap_or_else(|e| {
+        let mut login_defs_content = read_login_defs(ctx).await.unwrap_or_else(|e| {
             warn!("Failed to read login.defs, using empty content: {}", e);
             String::new()
         });
@@ -382,7 +394,7 @@ impl HardeningPlugin for PamHardeningPlugin {
         })
     }
 
-    fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> {
+    async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> {
         info!(
             "Rolling back PAM configuration to checkpoint: {}",
             checkpoint.checkpoint_id.as_str()
@@ -399,15 +411,15 @@ impl HardeningPlugin for PamHardeningPlugin {
         Ok(())
     }
 
-    fn validate(&self, _config: &Config) -> Result<ValidationReport> {
+    async fn validate(&self, ctx: &Context, _config: &Config) -> Result<ValidationReport> {
         info!("Validating PAM configuration files");
 
         let mut issues = Vec::new();
 
         // Check pwquality.conf
-        match std::fs::metadata("/etc/security/pwquality.conf") {
+        match ctx.executor().file_metadata(Path::new("/etc/security/pwquality.conf")).await {
             Ok(metadata) => {
-                if !metadata.is_file() {
+                if !metadata.is_file {
                     issues.push(ValidationIssue {
                         validation_issue_config_key: None,
                         validation_issue_message:
@@ -428,9 +440,9 @@ impl HardeningPlugin for PamHardeningPlugin {
         }
 
         // Check login.defs
-        match std::fs::metadata("/etc/login.defs") {
+        match ctx.executor().file_metadata(Path::new("/etc/login.defs")).await {
             Ok(metadata) => {
-                if !metadata.is_file() {
+                if !metadata.is_file {
                     issues.push(ValidationIssue {
                         validation_issue_config_key: None,
                         validation_issue_message:
@@ -557,52 +569,23 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
 ];
 
 /// Reads the pwquality configuration file.
-fn read_pwquality_config() -> Result<String> {
-    Ok(std::fs::read_to_string("/etc/security/pwquality.conf")?)
+async fn read_pwquality_config(ctx: &Context) -> Result<String> {
+    ctx.executor()
+        .read_file(Path::new("/etc/security/pwquality.conf"))
+        .await
+        .map_err(|e| HardeningError::Plugin(e.to_string()))
 }
 
 /// Reads the login.defs configuration file.
-fn read_login_defs() -> Result<String> {
-    Ok(std::fs::read_to_string("/etc/login.defs")?)
-}
-
-/// Parses a configuration directive from file content.
-///
-/// Looks for matching "directive_name = value" or "directive_name value".
-/// Ignores comments (lines starting with #).
-/// Returns None if directive not found.
-fn parse_config_directive(content: &str, directive_name: &str) -> Option<String> {
-    for line in content.lines() {
-        let trimmed = line.trim();
-
-        // Skip comments and empty lines.
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
-
-        // Check for "key = value" or "key value" format.
-        if let Some(stripped) = trimmed.strip_prefix(directive_name) {
-            let remainder = stripped.trim();
-
-            // Handle "key = value" format.
-            if let Some(value) = remainder.strip_prefix('=') {
-                return Some(value.trim().to_string());
-            }
-
-            // Handle "key value" format (space-separated)
-            if let Some(ch) = remainder.chars().next()
-                && ch.is_whitespace()
-            {
-                return Some(remainder.trim().to_string());
-            }
-        }
-    }
-
-    None
+async fn read_login_defs(ctx: &Context) -> Result<String> {
+    ctx.executor()
+        .read_file(Path::new("/etc/login.defs"))
+        .await
+        .map_err(|e| HardeningError::Plugin(e.to_string()))
 }
 
 /// Creates a timestamped backup of a configuration file.
-fn create_config_backup(file_path: &str) -> Result<String> {
+async fn create_config_backup(ctx: &Context, file_path: &str) -> Result<String> {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     let timestamp = SystemTime::now()
@@ -612,7 +595,10 @@ fn create_config_backup(file_path: &str) -> Result<String> {
 
     let backup_path = format!("{}.backup-{}", file_path, timestamp);
 
-    std::fs::copy(file_path, &backup_path)?;
+    ctx.executor()
+        .execute_command("cp", &[file_path, &backup_path])
+        .await
+        .map_err(|e| HardeningError::Plugin(e.to_string()))?;
 
     Ok(backup_path)
 }

@@ -10,6 +10,7 @@
 //! The plugin reads current values, compares against secure baselines,
 //! and can apply hardening configurations with automatic rollback support.
 
+use async_trait::async_trait;
 use hardener_common::{
     error::Result,
     types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
@@ -19,7 +20,7 @@ use hardener_core::{
     context::Context,
     plugin::{ApplyResult, Finding, HardeningPlugin, PluginMetadata, ScanResult},
 };
-use std::{fs, time::Instant};
+use std::{path::Path, time::Instant};
 use tracing::{info, warn};
 
 /// Kernel hardening plugin implementing sysctl parameter management.
@@ -41,12 +42,13 @@ impl KernelHardeningPlugin {
     ///
     /// # Arguments
     /// * `param` - Parameter name in dot notation (e.g., "kernel.randomize_va_space")
+    /// * `ctx` - Execution context providing the system executor
     ///
     /// # Returns
     /// The parameter values as a string, or an error if reading fails.
-    fn read_sysctl(&self, param: &str) -> Result<String> {
+    async fn read_sysctl(&self, param: &str, ctx: &Context) -> Result<String> {
         let path = format!("/proc/sys/{}", param.replace('.', "/"));
-        let content = fs::read_to_string(&path)?;
+        let content = ctx.executor().read_file(Path::new(&path)).await?;
         Ok(content.trim().to_string())
     }
 }
@@ -187,6 +189,7 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
     }
 }
 
+#[async_trait]
 impl HardeningPlugin for KernelHardeningPlugin {
     /// Returns metadata about the kernel hardening plugin.
     ///
@@ -210,12 +213,12 @@ impl HardeningPlugin for KernelHardeningPlugin {
         Vec::new()
     }
 
-    fn scan(&self, _ctx: &Context) -> Result<ScanResult> {
+    async fn scan(&self, ctx: &Context) -> Result<ScanResult> {
         let start_time = Instant::now();
         let mut findings = Vec::new();
 
         for (param_name, expected_value, param_description) in KERNEL_PARAMS {
-            match self.read_sysctl(param_name) {
+            match self.read_sysctl(param_name, ctx).await {
                 Ok(actual_value) => {
                     if actual_value != *expected_value {
                         findings.push(Finding {
@@ -267,7 +270,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
     /// # Arguments
     /// * `ctx`    - Execution context with checkpoint manager
     /// * `config` - Configuration (unused for now, applies all hardening)
-    fn apply(&self, ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
+    async fn apply(&self, ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
         use std::path::Path;
 
         let mut apply_changes = Vec::new();
@@ -290,7 +293,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
         for (param_name, expected_value, param_description) in KERNEL_PARAMS {
             let path = format!("/proc/sys/{}", param_name.replace('.', "/"));
 
-            match fs::write(&path, expected_value) {
+            match ctx.executor().write_file(Path::new(&path), expected_value).await {
                 Ok(_) => {
                     apply_changes.push(Change {
                         change_description: format!(
@@ -334,7 +337,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
     /// # Arguments
     /// * `ctx` - Execution context containing checkpoint manager
     /// * `checkpoint` - The checkpoint to restore to
-    fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> {
+    async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> {
         info!(
             "Rolling back kernel configuration to checkpoint: {}",
             checkpoint.checkpoint_id.as_str()
@@ -351,35 +354,17 @@ impl HardeningPlugin for KernelHardeningPlugin {
         let checkpoint_id = checkpoint.checkpoint_id.clone();
         let manager = manager.clone();
 
-        let rt = tokio::runtime::Runtime::new().map_err(|e| {
-            hardener_common::error::HardeningError::State(format!(
-                "Failed to create tokio runtime: {}",
-                e
-            ))
-        })?;
-
-        rt.block_on(async { manager.rollback(&checkpoint_id).await })?;
+        manager.rollback(&checkpoint_id).await?;
 
         info!("Kernel configuration files restored from checkpoint");
 
         // Reload sysctl settings from restored config files
-        let reload_result = std::process::Command::new("sysctl")
-            .arg("--system")
-            .output();
+        let reload_result = ctx.executor().execute_command("sysctl", &["--system"]).await?;
 
-        match reload_result {
-            Ok(output) if output.status.success() => {
-                info!("Kernel parameters reloaded successfully");
-            }
-            Ok(output) => {
-                warn!(
-                    "sysctl --system returned non-zero: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                );
-            }
-            Err(e) => {
-                warn!("Failed to reload sysctl settings: {}", e);
-            }
+        if reload_result.success() {
+            info!("Kernel parameters reloaded successfully");
+        } else {
+            warn!("sysctl --system returned non-zero: {}", reload_result.stderr);
         }
 
         Ok(())
@@ -392,7 +377,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
     ///
     /// # Arguments
     /// * `config` - Configuration to validate (unused for now)
-    fn validate(&self, _config: &Config) -> Result<ValidationReport> {
+    async fn validate(&self, ctx: &Context, _config: &Config) -> Result<ValidationReport> {
         let mut issues = Vec::new();
         let mut estimated_changes = Vec::new();
 
@@ -400,9 +385,10 @@ impl HardeningPlugin for KernelHardeningPlugin {
             let path = format!("/proc/sys/{}", param_name.replace('.', "/"));
 
             // Check if parameter exists and is readable
-            match fs::metadata(&path) {
+            match ctx.executor().file_metadata(Path::new(&path)).await {
                 Ok(metadata) => {
-                    if metadata.permissions().readonly() {
+                    // Check if writeable (mode has write bit for owner)
+                    if metadata.mode & 0o200 == 0 {
                         issues.push(ValidationIssue {
                             validation_issue_severity: Severity::High,
                             validation_issue_message: format!("{} is read-only", param_name),

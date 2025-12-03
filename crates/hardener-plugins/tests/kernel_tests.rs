@@ -1,6 +1,7 @@
 use hardener_common::types::FindingCategory;
 use hardener_core::{Config, Context, plugin::HardeningPlugin};
 use hardener_plugins::KernelHardeningPlugin;
+use tokio;
 
 #[test]
 fn test_kernel_plugin_metadata() {
@@ -22,12 +23,12 @@ fn test_kernel_plugin_has_no_dependencies() {
     assert_eq!(deps.len(), 0, "Kernel plugin should have no dependencies");
 }
 
-#[test]
-fn test_kernel_scan_reads_parameters() {
+#[tokio::test]
+async fn test_kernel_scan_reads_parameters() {
     let plugin = KernelHardeningPlugin::new();
     let ctx = Context::new();
 
-    let result = plugin.scan(&ctx);
+    let result = plugin.scan(&ctx).await;
     assert!(result.is_ok(), "Scan should succeed");
 
     let scan_result = result.unwrap();
@@ -61,12 +62,13 @@ fn test_kernel_scan_reads_parameters() {
     }
 }
 
-#[test]
-fn test_kernel_validate_checks_parameters() {
+#[tokio::test]
+async fn test_kernel_validate_checks_parameters() {
     let plugin = KernelHardeningPlugin::new();
+    let ctx = Context::new();
     let config = Config::default();
 
-    let result = plugin.validate(&config);
+    let result = plugin.validate(&ctx, &config).await;
     assert!(result.is_ok(), "Validation should succeed");
 
     let validation = result.unwrap();
@@ -100,14 +102,14 @@ fn test_kernel_validate_checks_parameters() {
     }
 }
 
-#[test]
+#[tokio::test]
 #[ignore] // Run manually with: sudo cargo test kernel_apply -- --ignored --nocapture
-fn test_kernel_apply_requires_root() {
+async fn test_kernel_apply_requires_root() {
     let plugin = KernelHardeningPlugin::new();
     let mut ctx = Context::new();
     let config = Config::default();
 
-    let result = plugin.apply(&mut ctx, &config);
+    let result = plugin.apply(&mut ctx, &config).await;
 
     // This test requires root - will fail without privileges
     match result {

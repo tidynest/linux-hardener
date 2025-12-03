@@ -2,8 +2,14 @@ use crate::cli::{OutputFormat, ScanMode, SeverityFilter};
 use crate::output;
 use anyhow::Result;
 use hardener_common::types::Severity;
-use hardener_core::{ConfigLoader, Context, HardenerConfig, PluginRegistry};
-use std::path::PathBuf;
+use hardener_core::{
+    ConfigLoader, Context, HardenerConfig,
+    executor::SystemExecutor,
+};
+use std::{
+    path::PathBuf,
+    sync::Arc,
+};
 
 pub struct ScanOptions<'a> {
     pub plugin_filter: &'a [String],
@@ -14,6 +20,7 @@ pub struct ScanOptions<'a> {
     pub audit: bool,
     pub compliance: bool,
     pub exit_code: bool,
+    pub executor: Arc<dyn SystemExecutor>,
 }
 
 pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
@@ -28,8 +35,8 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
 
     // Load config (ignored in audit mode)
     let _config = load_config(opts.config_path, mode)?;
-    let registry = create_plugin_registry();
-    let ctx = Context::new();
+    let registry = hardener_plugins::create_plugin_registry();
+    let ctx = Context::with_executor(opts.executor.clone());
 
     let plugins = registry.list()?;
     let min_severity = severity_filter_to_severity(&opts.severity_filter);
@@ -52,7 +59,7 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
         }
 
         if let Ok(Some(plugin)) = registry.get(&metadata.plugin_id) {
-            match plugin.scan(&ctx) {
+            match plugin.scan(&ctx).await {
                 Ok(results) => {
                     // Filter findings by severity
                     let filtered_findings: Vec<_> = results
@@ -99,21 +106,6 @@ fn load_config(config_path: Option<&PathBuf>, mode: ScanMode) -> Result<Hardener
     loader
         .load()
         .map_err(|e| anyhow::anyhow!("Config error: {}", e))
-}
-
-fn create_plugin_registry() -> PluginRegistry {
-    use hardener_plugins::*;
-
-    let registry = PluginRegistry::new();
-    let _ = registry.register(Box::new(AuditHardeningPlugin::new()));
-    let _ = registry.register(Box::new(FirewallHardeningPlugin::new()));
-    let _ = registry.register(Box::new(KernelHardeningPlugin::new()));
-    let _ = registry.register(Box::new(MacHardeningPlugin::new()));
-    let _ = registry.register(Box::new(PamHardeningPlugin::new()));
-    let _ = registry.register(Box::new(PermissionsHardeningPlugin::new()));
-    let _ = registry.register(Box::new(ServicesHardeningPlugin::new()));
-    let _ = registry.register(Box::new(SshHardeningPlugin::new()));
-    registry
 }
 
 fn severity_filter_to_severity(filter: &SeverityFilter) -> Severity {

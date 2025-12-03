@@ -1,7 +1,7 @@
 # Linux System Hardener - Architecture Documentation
 
-**Last Updated:** 2025-11-27
-**Version:** 0.1.0
+**Last Updated:** 2025-12-01
+**Version:** 0.3.0
 
 ---
 
@@ -120,13 +120,14 @@ Linux System Hardener is a modular security hardening tool for Linux systems, pr
 The core interface all plugins implement:
 
 ```rust
+#[async_trait]
 pub trait HardeningPlugin: Send + Sync {
     fn metadata(&self) -> PluginMetadata;
     fn dependencies(&self) -> Vec<PluginId>;
-    fn scan(&self, ctx: &Context) -> Result<ScanResult>;
-    fn apply(&self, ctx: &mut Context, config: &Config) -> Result<ApplyResult>;
-    fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()>;
-    fn validate(&self, config: &Config) -> Result<ValidationReport>;
+    async fn scan(&self, ctx: &Context) -> Result<ScanResult>;
+    async fn apply(&self, ctx: &mut Context, config: &Config) -> Result<ApplyResult>;
+    async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()>;
+    async fn validate(&self, ctx: &Context, config: &Config) -> Result<ValidationReport>;
 }
 ```
 
@@ -152,6 +153,7 @@ pub trait SystemExecutor: Send + Sync {
 Implementations:
 - `LocalExecutor` - Wraps `std::fs` and `std::process::Command`
 - `SshExecutor` - Runs operations over SSH on remote hosts
+- `MockExecutor` - Virtual filesystem for unit testing without real system access
 
 ### FirewallBackend
 
@@ -305,6 +307,10 @@ pub struct PolicyException {
 |----------|---------|---------|
 | `ci.yml` | Push/PR to main/master | Tests, clippy, fmt, security audit, build |
 | `release.yml` | Tag `v*` | Multi-target builds, GitHub releases |
+
+> **Note:** GitHub Actions CI/CD is not currently connected to this repository.
+> Until resolved, releases should be done manually using `./scripts/release.sh`.
+> The workflow files exist but require GitHub repository integration setup.
 
 ### GitLab CI
 

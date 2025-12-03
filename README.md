@@ -1,7 +1,7 @@
 # Linux System Hardener
 
 **Author**: Eric Jingryd
-**Version**: 0.1.0 (Development Release)
+**Version**: 0.3.0 (Development Release)
 **License**: Apache-2.0
 
 A comprehensive Linux security automation tool with multi-distribution support, built in Rust. Provides automated security scanning, hardening, and compliance reporting with full rollback capabilities.
@@ -65,18 +65,19 @@ The tool is designed for system administrators, DevOps engineers, and security p
 
 ## Project Status
 
-**Current Phase**: Development Release (v0.1.0)
+**Current Phase**: Development Release (v0.3.0)
 
 ### Test Coverage
 
 ```
-Total Tests: 220 passing
-├── Plugin Tests: 48
-├── Core Tests: 59
+Total Tests: 320+ passing
+├── Plugin Tests: 48 + 80 mock tests
+├── Core Tests: 59 + 14 mock executor tests
 ├── Compliance Tests: 46
 ├── State Tests: 31
 ├── CLI Tests: 21
 ├── Distro Tests: 15
+├── SSH Integration Tests: 24
 └── Coverage: >90%
 ```
 
@@ -214,6 +215,24 @@ hardener checkpoint show <checkpoint-id>
 sudo hardener checkpoint rollback <checkpoint-id>
 ```
 
+### SSH Remote Scanning
+
+```bash
+# Scan a remote host
+hardener --ssh user@hostname scan
+
+# Scan with specific SSH key
+hardener --ssh admin@192.168.1.100 --ssh-key ~/.ssh/id_ed25519 scan
+
+# Apply hardening remotely
+sudo hardener --ssh root@server apply --all
+
+# Generate compliance report from remote host
+hardener --ssh root@server report --framework cis --format pdf
+```
+
+See [docs/SSH_REMOTE_SCANNING.md](docs/SSH_REMOTE_SCANNING.md) for complete SSH documentation.
+
 ### Desktop Application
 
 1. Launch the application
@@ -333,11 +352,15 @@ See [PLAN.md](PLAN.md) for detailed implementation plans for upcoming features.
 - [x] PDF report formatter with automatic timestamped filenames and colour-coded badges
 - [x] GUI compliance report page
 
-### v0.3.0 (In Progress)
+### v0.3.0 (Complete)
 - [x] SystemExecutor abstraction layer for local/remote operations
-- [ ] Remote scanning via SSH (CLI integration pending)
-- [ ] Scheduled scanning
-- [ ] CI/CD integration
+- [x] Remote scanning via SSH
+- [x] SSH CLI flags: `--ssh`, `--ssh-key`, `--ssh-port`, `--ssh-timeout`, `--ssh-no-verify`
+- [x] MockExecutor for unit testing
+- [x] All plugins converted to async
+- [x] SSH remote scanning documentation
+- [ ] Scheduled scanning (planned)
+- [ ] CI/CD GitHub Actions integration (workflows exist, not connected)
 
 ### v1.0.0 (Future)
 - [ ] Production-ready release

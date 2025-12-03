@@ -4,6 +4,8 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
+| 0.3.x   | :white_check_mark: |
+| 0.2.x   | :white_check_mark: |
 | 0.1.x   | :white_check_mark: |
 
 ## Reporting a Vulnerability
@@ -83,6 +85,18 @@ This tool is designed to harden systems against common attack vectors, but is **
 3. **External Dependencies**: The tool relies on system utilities (`sysctl`, `systemctl`, etc.) which must be trusted.
 
 4. **Distribution Detection**: Relies on `/etc/os-release` which could be spoofed on a compromised system.
+
+### SSH Remote Scanning Security
+
+The SSH remote scanning feature (`--ssh` flag) has these security considerations:
+
+1. **Host Key Verification**: By default, strict host key checking is enforced. The `--ssh-no-verify` flag disables this but should only be used for testing.
+
+2. **Credential Handling**: SSH keys are recommended over passwords. Passwords can be passed via `HARDENER_SSH_PASSWORD` environment variable (hidden from CLI history).
+
+3. **Privilege Escalation**: Apply/rollback operations on remote hosts require sudo access. Configure passwordless sudo for specific commands if needed.
+
+4. **Network Exposure**: SSH connections should use secure networks. Consider using VPNs or jump hosts for production environments.
 
 ## Secure Development Practices
 

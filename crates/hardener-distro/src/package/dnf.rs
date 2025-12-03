@@ -19,60 +19,8 @@ impl DnfPackageManager {
         Self
     }
 
-    /// Executes a dnf command and returns the output.
-    ///
-    /// # Arguments
-    /// * `args` - Command-line arguments to pass to dnf
-    ///
-    /// # Security
-    /// This method runs dnf with elevated privileges. Ensures arguments
-    /// are validated before passing them to this function.
     fn execute_dnf(&self, args: &[&str]) -> Result<String> {
-        let output = Command::new("dnf")
-            .args(args)
-            .output()
-            .map_err(|e| HardeningError::PackageManager(format!("Failed to execute dnf: {}", e)))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(HardeningError::PackageManager(format!(
-                "DNF command failed: {}",
-                stderr
-            )));
-        }
-
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    }
-
-    /// Validates a package name to prevent command injection.
-    ///
-    /// RPM package names must follow specific rules:
-    /// - Must start with alphanumeric
-    /// - Can contain: letters, digits, plus, minus, dot, underscore
-    /// - Must be at least 2 characters
-    ///
-    /// # Security
-    /// This precents command injection attacks via malicious package names.
-    fn validate_package_name(package_name: &str) -> Result<()> {
-        if package_name.len() < 2 {
-            return Err(HardeningError::Validation(
-                "Package name too short".to_string(),
-            ));
-        }
-
-        // RPM package naming rules: alphanumeric, +, -, ., _
-        let valid = package_name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.' || c == '_');
-
-        if !valid {
-            return Err(HardeningError::Validation(format!(
-                "Invalid package name '{}': contains forbidden characters",
-                package_name
-            )));
-        }
-
-        Ok(())
+        super::execute_command("dnf", args)
     }
 }
 
@@ -94,9 +42,7 @@ impl PackageManager for DnfPackageManager {
         }
 
         // Validate all package names before executing command
-        for package_name in packages {
-            Self::validate_package_name(package_name)?;
-        }
+        super::validate_package_names(packages, super::PackageNameRules::Rpm)?;
 
         let mut args = vec!["-y", "install"];
         args.extend(packages);
@@ -111,9 +57,7 @@ impl PackageManager for DnfPackageManager {
         }
 
         // Validate all package names before executing command
-        for package_name in packages {
-            Self::validate_package_name(package_name)?;
-        }
+        super::validate_package_names(packages, super::PackageNameRules::Rpm)?;
 
         let mut args = vec!["-y", "remove"];
         args.extend(packages);
@@ -123,42 +67,12 @@ impl PackageManager for DnfPackageManager {
     }
 
     fn list_installed(&self) -> Result<Vec<Package>> {
-        let output = Command::new("rpm")
-            .args([
-                "-qa",
-                "--queryformat",
-                "%{NAME}\t%{VERSION}-%{RELEASE}\t%{ARCH}\n",
-            ])
-            .output()
-            .map_err(|e| HardeningError::PackageManager(format!("Failed to execute rpm: {}", e)))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(HardeningError::PackageManager(format!(
-                "rpm command failed: {}",
-                stderr
-            )));
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let packages = stdout
-            .lines()
-            .filter_map(|line| {
-                let parts: Vec<&str> = line.split('\t').collect();
-                if parts.len() >= 3 {
-                    Some(Package {
-                        package_name: parts[0].to_string(),
-                        package_version: parts[1].to_string(),
-                        package_architecture: parts[2].to_string(),
-                        package_is_security_update: false,
-                    })
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        Ok(packages)
+        let output = super::execute_command("rpm", &[
+            "-qa",
+            "--queryformat",
+            "%{NAME}\t%{VERSION}-%{RELEASE}\t%{ARCH}\n",
+        ])?;
+        Ok(super::parse_rpm_package_list(&output))
     }
 
     fn is_installed(&self, package: &str) -> Result<bool> {
@@ -223,29 +137,5 @@ impl PackageManager for DnfPackageManager {
         }
 
         Ok(packages)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_validate_package_name_valid() {
-        // Valid RPM package names
-        assert!(DnfPackageManager::validate_package_name("kernel").is_ok());
-        assert!(DnfPackageManager::validate_package_name("glibc-2.34").is_ok());
-        assert!(DnfPackageManager::validate_package_name("lib_ssl+extra").is_ok());
-    }
-
-    #[test]
-    fn test_validate_package_name_invalid() {
-        // Too short
-        assert!(DnfPackageManager::validate_package_name("x").is_err());
-
-        // Invalid characters (shell metacharacters)
-        assert!(DnfPackageManager::validate_package_name("package;malicious").is_err());
-        assert!(DnfPackageManager::validate_package_name("package&&cmd").is_err());
-        assert!(DnfPackageManager::validate_package_name("package|cat").is_err());
     }
 }

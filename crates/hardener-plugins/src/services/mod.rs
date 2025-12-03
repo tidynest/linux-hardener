@@ -7,6 +7,7 @@
 //! The plugin uses systemctl to manage services on all supported distributions
 //! (all target distributions use systemd)
 
+use async_trait::async_trait;
 use hardener_common::{
     error::Result,
     types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
@@ -16,7 +17,7 @@ use hardener_core::{
     context::Context,
     plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult},
 };
-use std::{process::Command, time::Instant};
+use std::time::Instant;
 use tracing::{info, warn};
 
 /// Service Minimisation Plugin
@@ -55,7 +56,7 @@ fn get_service_compliance_mappings(service_name: &str) -> Vec<ComplianceMapping>
         "cups" | "cupsd" => vec![ComplianceMapping {
             compliance_framework: ComplianceFramework::CIS,
             compliance_control_id: "2.2.4".to_string(),
-            compliance_control_title: "Ensure CUPS is not  installed".to_string(),
+            compliance_control_title: "Ensure CUPS is not installed".to_string(),
             compliance_section: Some("Services".to_string()),
         }],
         _ => vec![],
@@ -97,66 +98,55 @@ const UNNECESSARY_SERVICES: &[ServiceDirective] = &[
 ];
 
 /// Checks if a systemd service unit exists on the system.
-fn is_service_exists(service_name: &str) -> Result<bool> {
-    let output = Command::new("systemctl")
-        .args(["list-unit-files", service_name])
-        .output()
-        .map_err(hardener_common::error::HardeningError::System)?;
+async fn is_service_exists(ctx: &Context, service_name: &str) -> Result<bool> {
+    let output = ctx.executor()
+        .execute_command("systemctl", &["list-unit-files", service_name])
+        .await?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(stdout.contains(service_name))
+    Ok(output.stdout.contains(service_name))
 }
 
 /// Checks if a service is enabled to start at boot.
-fn is_service_enabled(service_name: &str) -> Result<bool> {
-    let output = Command::new("systemctl")
-        .args(["is-enabled", service_name])
-        .output()
-        .map_err(hardener_common::error::HardeningError::System)?;
-
-    Ok(output.status.success())
+async fn is_service_enabled(ctx: &Context, service_name: &str) -> Result<bool> {
+    let output = ctx.executor()
+        .execute_command("systemctl", &["is-enabled", service_name])
+        .await?;
+    Ok(output.success())
 }
 
 /// Checks if a service is currently active (running).
-fn is_service_active(service_name: &str) -> Result<bool> {
-    let output = Command::new("systemctl")
-        .args(["is-active", service_name])
-        .output()
-        .map_err(hardener_common::error::HardeningError::System)?;
-
-    Ok(output.status.success())
+async fn is_service_active(ctx: &Context, service_name: &str) -> Result<bool> {
+    let output = ctx.executor()
+        .execute_command("systemctl", &["is-active", service_name])
+        .await?;
+    Ok(output.success())
 }
 
 /// Stops a running service.
-fn stop_service(service_name: &str) -> Result<()> {
-    Command::new("systemctl")
-        .args(["stop", service_name])
-        .output()
-        .map_err(hardener_common::error::HardeningError::System)?;
-
+async fn stop_service(ctx: &Context, service_name: &str) -> Result<()> {
+    ctx.executor()
+        .execute_command("systemctl", &["stop", service_name])
+        .await?;
     Ok(())
 }
 
-/// Disable a service from starting at boot.
-fn disable_service(service_name: &str) -> Result<()> {
-    Command::new("systemctl")
-        .args(["disable", service_name])
-        .output()
-        .map_err(hardener_common::error::HardeningError::System)?;
-
+/// Disables a service from starting at boot.
+async fn disable_service(ctx: &Context, service_name: &str) -> Result<()> {
+    ctx.executor()
+        .execute_command("systemctl", &["disable", service_name])
+        .await?;
     Ok(())
 }
 
 /// Masks a service to prevent it from being started.
-fn mask_service(service_name: &str) -> Result<()> {
-    Command::new("systemctl")
-        .args(["mask", service_name])
-        .output()
-        .map_err(hardener_common::error::HardeningError::System)?;
-
+async fn mask_service(ctx: &Context, service_name: &str) -> Result<()> {
+    ctx.executor()
+        .execute_command("systemctl", &["mask", service_name])
+        .await?;
     Ok(())
 }
 
+#[async_trait]
 impl HardeningPlugin for ServicesHardeningPlugin {
     fn metadata(&self) -> PluginMetadata {
         PluginMetadata {
@@ -172,61 +162,19 @@ impl HardeningPlugin for ServicesHardeningPlugin {
         vec![]
     }
 
-    fn validate(&self, _config: &Config) -> Result<ValidationReport> {
-        let mut estimated_changes = Vec::new();
-        let mut issues = Vec::new();
-
-        // Check if systemctl is available
-        let systemctl_check = Command::new("which").arg("systemctl").status();
-
-        match systemctl_check {
-            Ok(status) if status.success() => {
-                // systemctl is available, list services that would be disabled
-                for directive in UNNECESSARY_SERVICES {
-                    if let Ok(true) = is_service_exists(directive.service_name) {
-                        let is_enabled =
-                            is_service_enabled(directive.service_name).unwrap_or(false);
-                        let is_active = is_service_active(directive.service_name).unwrap_or(false);
-                        if is_enabled || is_active {
-                            estimated_changes.push(format!(
-                                "Disable and mask service: {}",
-                                directive.service_name
-                            ));
-                        }
-                    }
-                }
-            }
-            _ => {
-                issues.push(ValidationIssue {
-                    validation_issue_config_key: None,
-                    validation_issue_message:
-                        "systemctl command not found - this plugin requires systemd".to_string(),
-                    validation_issue_severity: Severity::Critical,
-                });
-            }
-        }
-
-        Ok(ValidationReport {
-            validation_report_estimated_changes: estimated_changes,
-            validation_report_is_valid: issues.is_empty(),
-            validation_report_issues: issues,
-            validation_report_plugin_id: self.metadata().plugin_id,
-        })
-    }
-
-    fn scan(&self, _ctx: &Context) -> Result<ScanResult> {
+    async fn scan(&self, ctx: &Context) -> Result<ScanResult> {
         let start = Instant::now();
         let mut findings = Vec::new();
 
         // Check each service in our list
         for directive in UNNECESSARY_SERVICES {
             // Skip if service doesn't exist on the system
-            if !is_service_exists(directive.service_name).unwrap_or(false) {
+            if !is_service_exists(ctx, directive.service_name).await.unwrap_or(false) {
                 continue;
             }
 
-            let is_enabled = is_service_enabled(directive.service_name).unwrap_or(false);
-            let is_active = is_service_active(directive.service_name).unwrap_or(false);
+            let is_enabled = is_service_enabled(ctx, directive.service_name).await.unwrap_or(false);
+            let is_active = is_service_active(ctx, directive.service_name).await.unwrap_or(false);
 
             // Only create finding if service is enabled or active
             if is_enabled || is_active {
@@ -275,7 +223,7 @@ impl HardeningPlugin for ServicesHardeningPlugin {
         })
     }
 
-    fn apply(&self, ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
+    async fn apply(&self, ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
         use std::path::Path;
 
         let _start = Instant::now();
@@ -304,21 +252,21 @@ impl HardeningPlugin for ServicesHardeningPlugin {
         // Process each service
         for directive in UNNECESSARY_SERVICES {
             // Skip if service does not exist
-            if !is_service_exists(directive.service_name).unwrap_or(false) {
+            if !is_service_exists(ctx, directive.service_name).await.unwrap_or(false) {
                 continue;
             }
 
-            let is_enabled = is_service_enabled(directive.service_name).unwrap_or(false);
-            let is_active = is_service_active(directive.service_name).unwrap_or(false);
+            let is_enabled = is_service_enabled(ctx, directive.service_name).await.unwrap_or(false);
+            let is_active = is_service_active(ctx, directive.service_name).await.unwrap_or(false);
 
             // Only process if service is enabled or active
-            if !is_enabled || !is_active {
+            if !is_enabled && !is_active {
                 continue;
             }
 
             // Stop the service if it is running
             if is_active {
-                match stop_service(directive.service_name) {
+                match stop_service(ctx, directive.service_name).await {
                     Ok(_) => {
                         changes.push(Change {
                             change_type: ChangeType::Service,
@@ -347,7 +295,7 @@ impl HardeningPlugin for ServicesHardeningPlugin {
 
             // Disable the service
             if is_enabled {
-                match disable_service(directive.service_name) {
+                match disable_service(ctx, directive.service_name).await {
                     Ok(_) => {
                         changes.push(Change {
                             change_type: ChangeType::Service,
@@ -374,7 +322,7 @@ impl HardeningPlugin for ServicesHardeningPlugin {
             }
 
             // Mask the service (prevents re-enabling)
-            match mask_service(directive.service_name) {
+            match mask_service(ctx, directive.service_name).await {
                 Ok(_) => {
                     changes.push(Change {
                         change_type: ChangeType::Service,
@@ -408,7 +356,7 @@ impl HardeningPlugin for ServicesHardeningPlugin {
         })
     }
 
-    fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> {
+    async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> {
         info!(
             "Rolling back service configuration to checkpoint: {}",
             checkpoint.checkpoint_id.as_str()
@@ -420,18 +368,18 @@ impl HardeningPlugin for ServicesHardeningPlugin {
         info!("Service configuration files restored from checkpoint");
 
         // Reload systemd to pick up any restored unit files
-        let reload_result = std::process::Command::new("systemctl")
-            .arg("daemon-reload")
-            .output();
+        let reload_result = ctx.executor()
+            .execute_command("systemctl", &["daemon-reload"])
+            .await;
 
         match reload_result {
-            Ok(output) if output.status.success() => {
+            Ok(output) if output.success() => {
                 info!("Systemd daemon reloaded successfully");
             }
             Ok(output) => {
                 warn!(
                     "systemctl daemon-reload returned non-zero: {}",
-                    String::from_utf8_lossy(&output.stderr)
+                    output.stderr
                 );
             }
             Err(e) => {
@@ -440,5 +388,45 @@ impl HardeningPlugin for ServicesHardeningPlugin {
         }
 
         Ok(())
+    }
+
+    async fn validate(&self, ctx: &Context, _config: &Config) -> Result<ValidationReport> {
+        let mut estimated_changes = Vec::new();
+        let mut issues = Vec::new();
+
+        // Check if systemctl is available
+        let systemctl_available = ctx.executor().command_exists("systemctl").await?;
+
+        if systemctl_available {
+            // systemctl is available, list services that would be disabled
+            for directive in UNNECESSARY_SERVICES {
+                if is_service_exists(ctx, directive.service_name).await.unwrap_or(false) {
+                    let is_enabled =
+                        is_service_enabled(ctx, directive.service_name).await.unwrap_or(false);
+                    let is_active =
+                        is_service_active(ctx, directive.service_name).await.unwrap_or(false);
+                    if is_enabled || is_active {
+                        estimated_changes.push(format!(
+                            "Disable and mask service: {}",
+                            directive.service_name
+                        ));
+                    }
+                }
+            }
+        } else {
+            issues.push(ValidationIssue {
+                validation_issue_config_key: None,
+                validation_issue_message:
+                    "systemctl command not found - this plugin requires systemd".to_string(),
+                validation_issue_severity: Severity::Critical,
+            });
+        }
+
+        Ok(ValidationReport {
+            validation_report_estimated_changes: estimated_changes,
+            validation_report_is_valid: issues.is_empty(),
+            validation_report_issues: issues,
+            validation_report_plugin_id: self.metadata().plugin_id,
+        })
     }
 }

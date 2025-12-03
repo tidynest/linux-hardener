@@ -21,6 +21,10 @@ dirs = "6.0.0"
 toml = "0.9.8"
 tempfile = "3.23.0"
 
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
 [features]
 default = ["system"]
 system = ["hostname", "nix", "petgraph", "hardener-state", "openssh"]
+testing = []

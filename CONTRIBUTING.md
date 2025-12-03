@@ -41,7 +41,7 @@ cargo fmt
 - Follow the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/)
 - Use `rustfmt` for consistent formatting
 - All code must pass `cargo clippy` without warnings
-- Maintain >80% test coverage for new code
+- Maintain >90% test coverage for new code
 
 ### Naming Conventions
 
@@ -185,6 +185,7 @@ sudo cargo test -- --ignored
 - Unit tests go in the same file as the code
 - Integration tests go in `tests/` directories
 - Use descriptive test names: `test_kernel_plugin_scan_detects_insecure_aslr`
+- Use `#[tokio::test]` for async tests (all plugin tests are async)
 
 ## Project Structure
 

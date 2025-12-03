@@ -10,18 +10,19 @@
 //! The plugin reads the sshd_config file, compares against secure baselines,
 //! and can apply hardening configurations with automatic backup support.
 
-use hardener_common::types::PluginId;
+use async_trait::async_trait;
+use chrono::Utc;
 use hardener_common::{
     error::Result,
-    file_utils::update_file_atomically,
-    types::{ComplianceFramework, ComplianceMapping, FindingCategory, Severity},
+    file_utils::{parse_config_value, set_config_directive, ConfigFormat},
+    types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
     ApplyResult, Change, ChangeType, Checkpoint, Config, ValidationIssue, ValidationReport,
     context::Context,
     plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult},
 };
-use std::{fs, path::Path, process::Command, time::Instant};
+use std::{path::Path, time::Instant};
 use tracing::{error, info, warn};
 
 /// Represents a single SSH configuration directive to be hardened.
@@ -106,122 +107,6 @@ impl SshHardeningPlugin {
         SshHardeningPlugin
     }
 
-    /// Reads the SSH daemon configuration file.
-    ///
-    /// # Returns
-    /// The entire sshd_config file contents as a string, or an error if the file cannot be read.
-    fn read_ssh_config() -> Result<String> {
-        let config_path = "/etc/ssh/sshd_config";
-        fs::read_to_string(config_path).map_err(|e| {
-            hardener_common::error::HardeningError::Plugin(format!(
-                "Failed to read {}: {}",
-                config_path, e
-            ))
-        })
-    }
-
-    /// Parses a specific directive value from the SSH config content.
-    ///
-    /// # Arguments
-    /// * `config_content` - The full sshd_config file content
-    /// * `directive_name` - The directive to search for (e.g., "PermitRootLogin")
-    ///
-    /// # Returns
-    /// The directive's value if found, or None if not present or commented out.
-    fn parse_ssh_directive(config_content: &str, directive_name: &str) -> Option<String> {
-        for line in config_content.lines() {
-            let trimmed = line.trim();
-
-            // Skip comments and empty lines
-            if trimmed.is_empty() || trimmed.starts_with('#') {
-                continue;
-            }
-
-            // Split on whitespace to get directive and value
-            let parts: Vec<&str> = trimmed.split_whitespace().collect();
-            if parts.len() >= 2 && parts[0].eq_ignore_ascii_case(directive_name) {
-                return Some(parts[1].to_string());
-            }
-        }
-        None
-    }
-
-    /// Creates a timestamped backup of the SSH configuration file.
-    ///
-    /// # Returns
-    /// The path to the backup file on success, or an error if backup fails.
-    fn create_ssh_backup() -> Result<String> {
-        let config_path = "/etc/ssh/sshd_config";
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|e| {
-                hardener_common::error::HardeningError::Plugin(format!(
-                    "Failed to get timestamp: {}",
-                    e
-                ))
-            })?
-            .as_secs();
-
-        let backup_path = format!("{}.backup.{}", config_path, timestamp);
-
-        fs::copy(config_path, &backup_path).map_err(|e| {
-            hardener_common::error::HardeningError::Plugin(format!(
-                "Failed to create backup at {}: {}",
-                backup_path, e
-            ))
-        })?;
-
-        info!("Created SSH config backup: {}", backup_path);
-        Ok(backup_path)
-    }
-
-    /// Modifies SSH configuration content to apply secure directives.
-    ///
-    /// This updates existing directives or adds them if missing.
-    ///
-    /// # Arguments
-    /// * `config_content` - The current sshd_config file content.
-    /// * `directive`      - The directive to set securely.
-    ///
-    /// # Returns
-    /// Modified configuration content with the directive set to the secure value.
-    fn apply_ssh_directive(config_content: &str, directive: &SshConfigDirective) -> String {
-        let mut lines: Vec<String> = config_content.lines().map(String::from).collect();
-        let mut directive_found = false;
-
-        // First pass: update existing directive.
-        for line in &mut lines {
-            let trimmed = line.trim();
-
-            // Skip empty lines.
-            if trimmed.is_empty() {
-                continue;
-            }
-
-            // Check else if this line is out directive (active or commented).
-            let parts: Vec<&str> = trimmed.trim_start_matches('#').split_whitespace().collect();
-            if !parts.is_empty() && parts[0].eq_ignore_ascii_case(directive.ssh_directive_name) {
-                // Replace the line with secure setting.
-                *line = format!(
-                    "{} {}",
-                    directive.ssh_directive_name, directive.ssh_secure_value
-                );
-                directive_found = true;
-                break;
-            }
-        }
-
-        // Second pass: add directive if not found.
-        if !directive_found {
-            lines.push(format!(
-                "{} {}",
-                directive.ssh_directive_name, directive.ssh_secure_value
-            ));
-        }
-
-        lines.join("\n")
-    }
-
     /// Restarts the SSH daemon to apply configuration changes.
     ///
     /// Attempts to restart using systemctl (systemd) first, then falls back
@@ -229,20 +114,20 @@ impl SshHardeningPlugin {
     ///
     /// # Returns
     /// Ok(()) if restart succeeded, or an error describing the failure.
-    fn restart_ssh_service() -> Result<()> {
+    async fn restart_ssh_service(ctx: &Context) -> Result<()> {
         // Try systemctl first (most modern distribution).
-        let systemctl_result = Command::new("systemctl")
-            .arg("restart")
-            .arg("sshd")
-            .output();
+        let systemctl_result = ctx
+            .executor()
+            .execute_command("systemctl", &["restart", "sshd"])
+            .await;
 
         match systemctl_result {
-            Ok(output) if output.status.success() => {
+            Ok(output) if output.success() => {
                 info!("SSH service restarted successfully via systemctl");
                 return Ok(());
             }
             Ok(output) => {
-                warn!("systemctl restart sshd failed: {:?}", output.stderr);
+                warn!("systemctl restart sshd failed: {}", output.stderr);
             }
             Err(e) => {
                 warn!("systemctl command failed: {}", e);
@@ -250,16 +135,19 @@ impl SshHardeningPlugin {
         }
 
         // Fallback to service command.
-        let service_result = Command::new("service").arg("ssh").arg("restart").output();
+        let service_result = ctx
+            .executor()
+            .execute_command("service", &["ssh", "restart"])
+            .await;
 
         match service_result {
-            Ok(output) if output.status.success() => {
+            Ok(output) if output.success() => {
                 info!("SSH service restarted successfully via service command");
                 Ok(())
             }
             Ok(output) => Err(hardener_common::error::HardeningError::Plugin(format!(
                 "Failed to restart SSH service: {}",
-                String::from_utf8_lossy(&output.stderr)
+                output.stderr
             ))),
             Err(e) => Err(hardener_common::error::HardeningError::Plugin(format!(
                 "Failed to execute service restart command: {}",
@@ -318,6 +206,7 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
     }
 }
 
+#[async_trait]
 impl HardeningPlugin for SshHardeningPlugin {
     fn metadata(&self) -> PluginMetadata {
         PluginMetadata {
@@ -334,13 +223,17 @@ impl HardeningPlugin for SshHardeningPlugin {
         vec![]
     }
 
-    fn scan(&self, _ctx: &Context) -> Result<ScanResult> {
+    async fn scan(&self, ctx: &Context) -> Result<ScanResult> {
         let start_time = Instant::now();
         let mut findings = Vec::new();
         let plugin_id = PluginId::new("ssh-hardening");
 
-        // Read the SSH configuration file
-        let config_content = match Self::read_ssh_config() {
+        // Read the SSH configuration file using executor
+        let config_content = match ctx
+            .executor()
+            .read_file(Path::new("/etc/ssh/sshd_config"))
+            .await
+        {
             Ok(content) => content,
             Err(e) => {
                 // If we can't read the config, create a critical finding.
@@ -358,7 +251,12 @@ impl HardeningPlugin for SshHardeningPlugin {
         // Check each SSH directive
         for directive in SSH_DIRECTIVES {
             let current_value =
-                Self::parse_ssh_directive(&config_content, directive.ssh_directive_name);
+                parse_config_value(
+                    &config_content,
+                    directive.ssh_directive_name,
+                    ConfigFormat::SpaceSeparated,
+                    false
+                );
 
             let is_insecure = match current_value {
                 Some(ref value) => value != directive.ssh_secure_value,
@@ -406,7 +304,7 @@ impl HardeningPlugin for SshHardeningPlugin {
         })
     }
 
-    fn apply(&self, ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
+    async fn apply(&self, ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
         let plugin_id = PluginId::new("ssh-hardening");
         let mut changes = Vec::new();
         let config_path = "/etc/ssh/sshd_config";
@@ -428,8 +326,17 @@ impl HardeningPlugin for SshHardeningPlugin {
         }
 
         // Step 2: Create backup (legacy backup in addition to checkpoint).
-        match Self::create_ssh_backup() {
-            Ok(backup_path) => {
+        let backup_path = format!(
+            "{}.backup.{}",
+            config_path,
+            Utc::now().format("%Y%m%d_%H%M%S")
+        );
+        match ctx
+            .executor()
+            .execute_command("cp", &["-p", config_path, &backup_path])
+            .await
+        {
+            Ok(output) if output.success() => {
                 changes.push(Change {
                     change_description: format!("Created backup: {}", backup_path),
                     change_type: ChangeType::ConfigFile,
@@ -437,6 +344,15 @@ impl HardeningPlugin for SshHardeningPlugin {
                     change_error: None,
                 });
                 info!("SSH config backup created: {}", backup_path);
+            }
+            Ok(output) => {
+                return Ok(ApplyResult {
+                    apply_plugin_id: plugin_id,
+                    apply_success: false,
+                    apply_changes: changes,
+                    apply_checkpoint_id: checkpoint_id,
+                    apply_error: Some(format!("Failed to create backup: {}", output.stderr)),
+                });
             }
             Err(e) => {
                 return Ok(ApplyResult {
@@ -449,13 +365,27 @@ impl HardeningPlugin for SshHardeningPlugin {
             }
         }
 
-        // Step 3: Read current configuration.
-        let mut config_content = Self::read_ssh_config()?;
+        // Step 3: Read current configuration using executor.
+        let mut config_content = ctx
+            .executor()
+            .read_file(Path::new(config_path))
+            .await
+            .map_err(|e| {
+                hardener_common::error::HardeningError::Plugin(format!(
+                    "Failed to read {}: {}",
+                    config_path, e
+                ))
+            })?;
 
         // Step 3: Apply each directive.
         for directive in SSH_DIRECTIVES {
             let original_value =
-                Self::parse_ssh_directive(&config_content, directive.ssh_directive_name);
+                parse_config_value(
+                    &config_content,
+                    directive.ssh_directive_name,
+                    ConfigFormat::SpaceSeparated,
+                    false
+                );
 
             // Check if change is needed.
             let needs_change = match &original_value {
@@ -464,7 +394,13 @@ impl HardeningPlugin for SshHardeningPlugin {
             };
 
             if needs_change {
-                config_content = Self::apply_ssh_directive(&config_content, directive);
+                config_content = set_config_directive(
+                    &config_content,
+                    directive.ssh_directive_name,
+                    directive.ssh_secure_value,
+                    ConfigFormat::SpaceSeparated,
+                    false,
+                );
 
                 changes.push(Change {
                     change_description: format!(
@@ -485,8 +421,12 @@ impl HardeningPlugin for SshHardeningPlugin {
             }
         }
 
-        // Step 4: Write modified configuration atomically.
-        match update_file_atomically(Path::new(config_path), &config_content) {
+        // Step 4: Write modified configuration using executor.
+        match ctx
+            .executor()
+            .write_file(Path::new(config_path), &config_content)
+            .await
+        {
             Ok(_) => {
                 changes.push(Change {
                     change_description: format!("Updated {}", config_path),
@@ -494,7 +434,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                     change_success: true,
                     change_error: None,
                 });
-                info!("SSH configuration updated successfully (atomic write)");
+                info!("SSH configuration updated successfully");
             }
             Err(e) => {
                 changes.push(Change {
@@ -508,7 +448,7 @@ impl HardeningPlugin for SshHardeningPlugin {
         }
 
         // Step 5: Restart SSH service to apply changes.
-        match Self::restart_ssh_service() {
+        match Self::restart_ssh_service(ctx).await {
             Ok(_) => {
                 changes.push(Change {
                     change_description: "Restarted SSH service".to_string(),
@@ -539,37 +479,19 @@ impl HardeningPlugin for SshHardeningPlugin {
         })
     }
 
-    fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> {
+    async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> {
         info!(
             "Rolling back SSH configuration to checkpoint: {}",
             checkpoint.checkpoint_id.as_str()
         );
 
-        // Get the checkpoint manager from context
-        let manager = ctx.checkpoint_manager().ok_or_else(|| {
-            hardener_common::error::HardeningError::State(
-                "CheckpointManager not available in context".to_string(),
-            )
-        })?;
-
-        // Use tokio runtime to run async rollback
-        let checkpoint_id = checkpoint.checkpoint_id.clone();
-        let manager = manager.clone();
-
-        // Run the async rollback operation
-        let rt = tokio::runtime::Runtime::new().map_err(|e| {
-            hardener_common::error::HardeningError::State(format!(
-                "Failed to create tokio runtime: {}",
-                e
-            ))
-        })?;
-
-        rt.block_on(async { manager.rollback(&checkpoint_id).await })?;
+        // Use the common rollback helper
+        crate::rollback_files_from_checkpoint(ctx, checkpoint)?;
 
         info!("SSH configuration files restored from checkpoint");
 
         // Restart SSH service to apply the restored configuration
-        match Self::restart_ssh_service() {
+        match Self::restart_ssh_service(ctx).await {
             Ok(_) => {
                 info!("SSH service restarted after rollback");
             }
@@ -582,19 +504,22 @@ impl HardeningPlugin for SshHardeningPlugin {
         Ok(())
     }
 
-    fn validate(&self, _config: &Config) -> Result<ValidationReport> {
+    async fn validate(&self, ctx: &Context, _config: &Config) -> Result<ValidationReport> {
         let mut issues = Vec::new();
         let plugin_id = PluginId::new("ssh-hardening");
-        let config_path = "/etc/ssh/sshd_config";
+        let config_path = Path::new("/etc/ssh/sshd_config");
 
-        // Check if SSH config file exists and is readable.
-        match fs::metadata(config_path) {
+        // Check if SSH config file exists and is readable using executor.
+        match ctx.executor().file_metadata(config_path).await {
             Ok(metadata) => {
                 // Check if it is a regular file.
-                if !metadata.is_file() {
+                if !metadata.is_file {
                     issues.push(ValidationIssue {
                         validation_issue_severity: Severity::Critical,
-                        validation_issue_message: format!("{} is not a regular file", config_path),
+                        validation_issue_message: format!(
+                            "{} is not a regular file",
+                            config_path.display()
+                        ),
                         validation_issue_config_key: None,
                     });
                 }
@@ -602,22 +527,29 @@ impl HardeningPlugin for SshHardeningPlugin {
             Err(e) => {
                 issues.push(ValidationIssue {
                     validation_issue_severity: Severity::Critical,
-                    validation_issue_message: format!("Cannot access {}: {}", config_path, e),
+                    validation_issue_message: format!(
+                        "Cannot access {}: {}",
+                        config_path.display(),
+                        e
+                    ),
                     validation_issue_config_key: None,
                 });
             }
         }
 
-        // Try to read the configuration.
-        if let Err(e) = Self::read_ssh_config() {
+        // Try to read the configuration using executor.
+        if let Err(e) = ctx.executor().read_file(config_path).await {
             issues.push(ValidationIssue {
                 validation_issue_severity: Severity::Critical,
-                validation_issue_message: format!("Cannot access {}: {}", config_path, e),
+                validation_issue_message: format!(
+                    "Cannot read {}: {}",
+                    config_path.display(),
+                    e
+                ),
                 validation_issue_config_key: None,
             });
         }
 
-        // Test.
         let valid = issues.is_empty();
         Ok(ValidationReport {
             validation_report_plugin_id: plugin_id,

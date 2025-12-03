@@ -31,11 +31,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Compliance page route `/compliance` with navigation link
 
 ### Changed
-- Test suite expanded from 107 to 220 tests (105% increase)
+- Test suite expanded from 220 to 320+ tests (45% increase)
 - PDF findings now display with better visual hierarchy and spacing
+- All 8 plugins converted to async with `#[async_trait]`
+- HardeningPlugin trait methods now async: `scan()`, `apply()`, `rollback()`, `validate()`
 
-### Planned
-- Remote scanning via SSH
+### Added (v0.3.0 Features)
+- **SSH Remote Scanning**: Scan, apply, and rollback on remote hosts via SSH
+- `SystemExecutor` trait for abstracting local/remote operations
+- `LocalExecutor` implementation (wraps std::fs and std::process)
+- `SshExecutor` implementation (uses openssh crate for remote operations)
+- `MockExecutor` implementation for unit testing without filesystem access
+- CLI SSH flags: `--ssh`, `--ssh-key`, `--ssh-port`, `--ssh-timeout`, `--ssh-no-verify`
+- `SshConnectionConfig` helper for CLI argument parsing
+- SSH remote scanning user guide (`docs/SSH_REMOTE_SCANNING.md`)
+- Context now holds executor via `ctx.executor()` accessor
+- 94 new mock-based unit tests for plugin testing
+- SSH integration tests (Docker-compatible)
+- `testing.rs` module with `MockPlugin` builder for test infrastructure
+
+### Documentation
+- Added `docs/SSH_REMOTE_SCANNING.md` - comprehensive user guide for SSH remote scanning
+
+### CI/CD Status
+- GitHub Actions CI/CD workflows exist but are not currently connected to repository
+- Manual releases recommended via `./scripts/release.sh` until resolved
 
 ## [0.1.0] - 2025-11-25
 

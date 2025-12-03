@@ -19,37 +19,6 @@ impl ZypperPackageManager {
         Self
     }
 
-    /// Validates a package name to prevent command injection.
-    ///
-    /// RPM package names must follow specific rules:
-    /// - Must start with alphanumeric
-    /// - Can contain: letters, digits, plus, minus, dot, underscore
-    /// - Must be at least 2 characters
-    ///
-    /// # Security
-    /// This prevents command injection attacks via malicious package names.
-    fn validate_package_name(package_name: &str) -> Result<()> {
-        if package_name.len() < 2 {
-            return Err(HardeningError::Validation(
-                "Package name too short".to_string(),
-            ));
-        }
-
-        // RPM package naming rules: alphanumeric, +, -, ., _
-        let valid = package_name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.' || c == '_');
-
-        if !valid {
-            return Err(HardeningError::Validation(format!(
-                "Invalid package name '{}': contains forbidden characters",
-                package_name
-            )));
-        }
-
-        Ok(())
-    }
-
     /// Executes a zypper command and returns the output.
     ///
     /// # Arguments
@@ -59,19 +28,7 @@ impl ZypperPackageManager {
     /// This method runs zypper with elevated privileges. Ensures arguments
     /// are validated before passing them to this function.
     fn execute_zypper(&self, args: &[&str]) -> Result<String> {
-        let output = Command::new("zypper").args(args).output().map_err(|e| {
-            HardeningError::PackageManager(format!("Failed to execute zypper: {}", e))
-        })?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(HardeningError::PackageManager(format!(
-                "Zypper command failed: {}",
-                stderr
-            )));
-        }
-
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        super::execute_command("zypper", args)
     }
 }
 
@@ -87,9 +44,7 @@ impl PackageManager for ZypperPackageManager {
         }
 
         // Validate all package names before executing command
-        for package_name in packages {
-            Self::validate_package_name(package_name)?;
-        }
+        super::validate_package_names(packages, super::PackageNameRules::Rpm)?;
 
         let mut args = vec!["--non-interactive", "install"];
         args.extend(packages);
@@ -104,9 +59,7 @@ impl PackageManager for ZypperPackageManager {
         }
 
         // Validate all package names before executing command
-        for package_name in packages {
-            Self::validate_package_name(package_name)?;
-        }
+        super::validate_package_names(packages, super::PackageNameRules::Rpm)?;
 
         let mut args = vec!["--non-interactive", "remove"];
         args.extend(packages);
@@ -116,42 +69,12 @@ impl PackageManager for ZypperPackageManager {
     }
 
     fn list_installed(&self) -> Result<Vec<Package>> {
-        let output = Command::new("rpm")
-            .args([
-                "-qa",
-                "--queryformat",
-                "%{NAME}\t%{VERSION}-%{RELEASE}\t%{ARCH}\n",
-            ])
-            .output()
-            .map_err(|e| HardeningError::PackageManager(format!("Failed to execute rpm: {}", e)))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(HardeningError::PackageManager(format!(
-                "rpm command failed: {}",
-                stderr
-            )));
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let packages = stdout
-            .lines()
-            .filter_map(|line| {
-                let parts: Vec<&str> = line.split('\t').collect();
-                if parts.len() >= 3 {
-                    Some(Package {
-                        package_name: parts[0].to_string(),
-                        package_version: parts[1].to_string(),
-                        package_architecture: parts[2].to_string(),
-                        package_is_security_update: false,
-                    })
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        Ok(packages)
+        let output = super::execute_command("rpm", &[
+            "-qa",
+            "--queryformat",
+            "%{NAME}\t%{VERSION}-%{RELEASE}\t%{ARCH}\n",
+        ])?;
+        Ok(super::parse_rpm_package_list(&output))
     }
 
     fn is_installed(&self, package: &str) -> Result<bool> {
@@ -202,29 +125,5 @@ impl PackageManager for ZypperPackageManager {
         }
 
         Ok(packages)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_validate_package_name_valid() {
-        // Valid RPM package names (same rules as DNF)
-        assert!(ZypperPackageManager::validate_package_name("zypper").is_ok());
-        assert!(ZypperPackageManager::validate_package_name("kernel-default").is_ok());
-        assert!(ZypperPackageManager::validate_package_name("lib_ssl+devel").is_ok());
-    }
-
-    #[test]
-    fn test_validate_package_name_invalid() {
-        // Too short
-        assert!(ZypperPackageManager::validate_package_name("z").is_err());
-
-        // Invalid characters (shell metacharacters)
-        assert!(ZypperPackageManager::validate_package_name("package;evil").is_err());
-        assert!(ZypperPackageManager::validate_package_name("package&&bad").is_err());
-        assert!(ZypperPackageManager::validate_package_name("package|cmd").is_err());
     }
 }

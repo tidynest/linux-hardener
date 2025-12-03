@@ -19,37 +19,6 @@ impl AptPackageManager {
         Self
     }
 
-    /// Validates a package name to prevent command injection.
-    ///
-    /// Package names in Debian/Ubuntu must follow specific rules:
-    /// - Must start with alphanumeric
-    /// - Can contain: letters, digits, plus, minus, dot
-    /// - Must be at least 2 characters
-    ///
-    /// # Security
-    /// This prevents command injection attacks via malicious package names.
-    fn validate_package_name(package_name: &str) -> Result<()> {
-        if package_name.len() < 2 {
-            return Err(HardeningError::Validation(
-                "Package name too short".to_string(),
-            ));
-        }
-
-        // Debian package naming rules: alphanumeric, +, -, .
-        let valid = package_name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.');
-
-        if !valid {
-            return Err(HardeningError::Validation(format!(
-                "Invalid package name '{}': contains forbidden characters",
-                package_name
-            )));
-        }
-
-        Ok(())
-    }
-
     /// Executes an apt-get command and returns the output.
     ///
     /// # Arguments
@@ -58,20 +27,8 @@ impl AptPackageManager {
     /// # Security
     /// This method runs apt-get with elevated privileges. Ensures arguments
     /// are validated before passing them to this function.
-    fn execute_apt(&self, args: &[&str]) -> Result<String> {
-        let output = Command::new("apt-get").args(args).output().map_err(|e| {
-            HardeningError::PackageManager(format!("Failed to execute apt-get: {}", e))
-        })?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(HardeningError::PackageManager(format!(
-                "APT command failed: {}",
-                stderr
-            )));
-        }
-
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    fn execute_apt(&self, args: &[&str]) -> Result<String> { 
+        super::execute_command("apt-get", args)
     }
 
     /// Executes a dpkg-query command and returns the output.
@@ -107,9 +64,7 @@ impl PackageManager for AptPackageManager {
         }
 
         // Validate all package names before executing command
-        for package_name in packages {
-            Self::validate_package_name(package_name)?;
-        }
+        super::validate_package_names(packages, super::PackageNameRules::Debian)?;
 
         let mut args = vec!["install", "-y"];
         args.extend(packages);
@@ -228,29 +183,5 @@ impl PackageManager for AptPackageManager {
         }
 
         Ok(packages)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_validate_package_name_valid() {
-        // Valid Debian package names
-        assert!(AptPackageManager::validate_package_name("nginx").is_ok());
-        assert!(AptPackageManager::validate_package_name("lib-ssl1.1").is_ok());
-        assert!(AptPackageManager::validate_package_name("python3+extra").is_ok());
-    }
-
-    #[test]
-    fn test_validate_package_name_invalid() {
-        // Too short
-        assert!(AptPackageManager::validate_package_name("a").is_err());
-
-        // Invalid characters (shell metacharacters)
-        assert!(AptPackageManager::validate_package_name("package;rm-rf").is_err());
-        assert!(AptPackageManager::validate_package_name("package&&malicious").is_err());
-        assert!(AptPackageManager::validate_package_name("package|whoami").is_err());
     }
 }

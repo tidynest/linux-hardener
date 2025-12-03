@@ -1,7 +1,7 @@
 # Linux System Hardener - Data Flow Documentation
 
-**Last Updated:** 2025-11-26
-**Version:** 0.1.0
+**Last Updated:** 2025-12-01
+**Version:** 0.3.0
 
 This document describes the data flow for all major operations in the system.
 
@@ -15,6 +15,7 @@ This document describes the data flow for all major operations in the system.
 4. [Rollback Flow](#4-rollback-flow)
 5. [Compliance Report Flow](#5-compliance-report-flow)
 6. [GUI/Tauri Flow](#6-guitauri-flow)
+7. [SSH Remote Scanning Flow](#7-ssh-remote-scanning-flow)
 
 ---
 
@@ -43,7 +44,11 @@ This document describes the data flow for all major operations in the system.
 │  │   └─ Merge: defaults → /etc/ → ~/.config/ → CLI → env     │
 │  ├─ Create PluginRegistry                                    │
 │  │   └─ Register all 8 plugins                               │
-│  ├─ Create Context                                           │
+│  ├─ Create Executor (Local or SSH based on --ssh flag)       │
+│  │   └─ LocalExecutor: std::fs + std::process::Command       │
+│  │   └─ SshExecutor: openssh crate for remote operations     │
+│  ├─ Create Context with executor                             │
+│  │   └─ Context::with_executor(executor)                     │
 │  │   └─ SystemInfo::detect() reads:                          │
 │  │       • /etc/os-release (distro)                          │
 │  │       • hostname                                          │
@@ -540,3 +545,83 @@ If any entry is modified, the hash chain breaks and tampering is detected.
 | PAM Config | `/etc/pam.d/*` | PAM |
 | Audit Rules | `/etc/audit/rules.d/*` | auditd |
 | Firewall | Varies by backend | Backend-specific |
+
+---
+
+## 7. SSH Remote Scanning Flow
+
+**Command:** `hardener --ssh user@hostname --ssh-key ~/.ssh/id_ed25519 scan`
+
+```
+┌──────────────────┐
+│   CLI Input      │
+│   --ssh flag     │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────────┐
+│  hardener-cli/src/main.rs                                    │
+│  ├─ Parse SSH args (--ssh, --ssh-key, --ssh-port, etc.)     │
+│  └─ Create SshConnectionConfig from CLI args                 │
+└────────┬─────────────────────────────────────────────────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────────┐
+│  SshExecutor::connect(config)                                │
+│  ├─ Establish SSH connection via openssh crate               │
+│  ├─ Use SSH agent or key file for authentication             │
+│  └─ Verify host key (unless --ssh-no-verify)                 │
+└────────┬─────────────────────────────────────────────────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Context::with_executor(Arc::new(ssh_executor))              │
+│  └─ All plugins now use ctx.executor() for operations        │
+└────────┬─────────────────────────────────────────────────────┘
+         │
+         ▼ For each plugin operation
+┌──────────────────────────────────────────────────────────────┐
+│  ctx.executor().read_file(path).await                        │
+│  ├─ SshExecutor: Runs `cat {path}` over SSH                  │
+│  └─ Returns file content from remote host                    │
+│                                                              │
+│  ctx.executor().execute_command("sysctl", &["-a"]).await     │
+│  ├─ SshExecutor: Runs command on remote host via SSH         │
+│  └─ Returns CommandOutput { stdout, stderr, exit_code }      │
+│                                                              │
+│  ctx.executor().write_file(path, content).await              │
+│  ├─ SshExecutor: Pipes content to `cat > {path}` via SSH     │
+│  └─ Or uses sudo tee for privileged paths                    │
+└────────┬─────────────────────────────────────────────────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Plugin scan/apply/rollback results                          │
+│  └─ Same ScanResult/ApplyResult as local execution           │
+└────────┬─────────────────────────────────────────────────────┘
+         │
+         ▼
+┌──────────────────┐
+│   stdout/file    │
+│   (local)        │
+└──────────────────┘
+```
+
+### SSH Executor Method Mapping
+
+| Executor Method | SSH Implementation |
+|-----------------|-------------------|
+| `read_file(path)` | `cat {path}` |
+| `read_file_optional(path)` | `cat {path}` (returns None on error) |
+| `write_file(path, content)` | `cat > {path}` with stdin |
+| `path_exists(path)` | `test -e {path}` |
+| `file_metadata(path)` | `stat -c '%F %a %s' {path}` |
+| `execute_command(prog, args)` | Direct SSH command execution |
+| `command_exists(prog)` | `command -v {prog}` |
+
+### Key Differences from Local Execution
+
+1. **Checkpoints**: Stored locally on the machine running hardener, not on remote
+2. **SystemInfo**: Detected from remote host via SSH commands
+3. **Privileged operations**: May require sudo on remote (user configures)
+4. **Network latency**: Each operation involves SSH round-trip

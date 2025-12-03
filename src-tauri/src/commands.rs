@@ -2,11 +2,8 @@ use hardener_common::types::{ComplianceFramework, PluginId};
 use hardener_compliance::{
     ComplianceReport, OutputFormat, ReportConfig, ReportGenerator, Scenario,
 };
-use hardener_core::{ApplyResult, Context, PluginRegistry, ScanResult};
-use hardener_plugins::{
-    AuditHardeningPlugin, FirewallHardeningPlugin, KernelHardeningPlugin, MacHardeningPlugin,
-    PamHardeningPlugin, PermissionsHardeningPlugin, ServicesHardeningPlugin, SshHardeningPlugin,
-};
+use hardener_core::{ApplyResult, Context, ScanResult};
+use hardener_plugins::create_plugin_registry;
 use hardener_state::{init_db, CheckpointId, CheckpointManager};
 use serde::Serialize;
 use tracing::error;
@@ -27,23 +24,6 @@ fn format_timestamp(timestamp: i64) -> String {
     let datetime = UNIX_EPOCH + Duration::from_secs(timestamp as u64);
     // Simple ISO-like format
     format!("{:?}", datetime)
-}
-
-/// Creates a registry with all available plugins registered.
-fn create_plugin_registry() -> PluginRegistry {
-    let registry = PluginRegistry::new();
-
-    // Register all plugins (ignoring errors for simplicity)
-    let _ = registry.register(Box::new(AuditHardeningPlugin::new()));
-    let _ = registry.register(Box::new(FirewallHardeningPlugin::new()));
-    let _ = registry.register(Box::new(KernelHardeningPlugin::new()));
-    let _ = registry.register(Box::new(MacHardeningPlugin::new()));
-    let _ = registry.register(Box::new(PamHardeningPlugin::new()));
-    let _ = registry.register(Box::new(PermissionsHardeningPlugin::new()));
-    let _ = registry.register(Box::new(ServicesHardeningPlugin::new()));
-    let _ = registry.register(Box::new(SshHardeningPlugin::new()));
-
-    registry
 }
 
 /// Creates a CheckpointManager with database connection.
@@ -67,7 +47,7 @@ async fn create_checkpoint_manager() -> Result<CheckpointManager, String> {
 ///
 /// Returns a vector of scan results, one per plugin.
 #[tauri::command]
-pub fn run_scan() -> Result<Vec<ScanResult>, String> {
+pub async fn run_scan() -> Result<Vec<ScanResult>, String> {
     let ctx = Context::new();
     let registry = create_plugin_registry();
 
@@ -79,7 +59,7 @@ pub fn run_scan() -> Result<Vec<ScanResult>, String> {
     for metadata in plugin_list {
         // Retrieve the actual plugin
         if let Ok(Some(plugin)) = registry.get(&metadata.plugin_id) {
-            match plugin.scan(&ctx) {
+            match plugin.scan(&ctx).await {
                 Ok(result) => results.push(result),
                 Err(e) => {
                     error!("Scan failed for plugin {}: {}", metadata.plugin_id, e);
@@ -95,7 +75,7 @@ pub fn run_scan() -> Result<Vec<ScanResult>, String> {
 ///
 /// Takes a list of plugin IDs to apply and returns the results
 #[tauri::command]
-pub fn run_apply(plugin_ids: Vec<String>) -> Result<Vec<ApplyResult>, String> {
+pub async fn run_apply(plugin_ids: Vec<String>) -> Result<Vec<ApplyResult>, String> {
     let mut ctx = Context::new();
     let registry = create_plugin_registry();
     let config = hardener_core::Config;
@@ -106,7 +86,7 @@ pub fn run_apply(plugin_ids: Vec<String>) -> Result<Vec<ApplyResult>, String> {
         let plugin_id = PluginId::new(&plugin_id_str);
 
         if let Ok(Some(plugin)) = registry.get(&plugin_id) {
-            match plugin.apply(&mut ctx, &config) {
+            match plugin.apply(&mut ctx, &config).await {
                 Ok(result) => results.push(result),
                 Err(e) => {
                     error!("Apply failed for plugin {}: {}", plugin_id_str, e);
@@ -166,7 +146,7 @@ pub async fn get_checkpoints() -> Result<Vec<CheckpointInfo>, String> {
 ///
 /// Takes a list of framework names and returns compliance reports.
 #[tauri::command]
-pub fn generate_compliance_report(frameworks: Vec<String>) -> Result<Vec<ComplianceReport>, String> {
+pub async fn generate_compliance_report(frameworks: Vec<String>) -> Result<Vec<ComplianceReport>, String> {
     // First run a scan to get findings
     let ctx = Context::new();
     let registry = create_plugin_registry();
@@ -176,7 +156,7 @@ pub fn generate_compliance_report(frameworks: Vec<String>) -> Result<Vec<Complia
 
     for metadata in plugin_list {
         if let Ok(Some(plugin)) = registry.get(&metadata.plugin_id) {
-            if let Ok(result) = plugin.scan(&ctx) {
+            if let Ok(result) = plugin.scan(&ctx).await {
                 all_findings.extend(result.scan_findings);
             }
         }

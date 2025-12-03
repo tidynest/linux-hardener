@@ -15,7 +15,8 @@ use hardener_compliance::{
 use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
-
+use std::sync::Arc;
+use hardener_core::{LocalExecutor, SystemExecutor};
 use super::report::run_scan;
 
 /// Wizard state tracking user selections.
@@ -138,7 +139,8 @@ pub async fn run(quiet: bool) -> Result<()> {
 
     // Step 3: Run scan
     println!("\n{}", "Running security scan...".cyan());
-    let findings = run_scan(false)?;
+    let executor: Arc<dyn SystemExecutor> = Arc::new(LocalExecutor::new());
+    let findings = run_scan(false, executor).await?;
     println!(
         "{}",
         format!(
