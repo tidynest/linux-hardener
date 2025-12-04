@@ -1,7 +1,7 @@
 # Linux System Hardener - Architecture Documentation
 
 **Last Updated:** 2025-12-04
-**Version:** 0.3.0 (Scheduled Scanning - Phase 1.5)
+**Version:** 0.3.0 (Scheduled Scanning - Phase 2)
 
 ---
 
@@ -91,7 +91,7 @@ Linux System Hardener is a modular security hardening tool for Linux systems, pr
 │ ├─ ScanHistoryManager (SQLite storage)                          │
 │ ├─ JsonStore (timestamped JSON output)                          │
 │ ├─ ScanRunner (orchestrates plugin scans) ✓                     │
-│ ├─ Daemon (cron-based scheduling) [pending]                     │
+│ ├─ Daemon (cron-based scheduling) ✓                             │
 │ └─ Notifications (email, webhooks) [pending]                    │
 └─────────────────────────────────────────────────────────────────┘
                               │

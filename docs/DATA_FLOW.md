@@ -631,14 +631,22 @@ If any entry is modified, the hash chain breaks and tampering is detected.
 
 ## 8. Scheduled Scanning Flow
 
-**Trigger:** Cron schedule, systemd timer, or manual `hardener daemon scan` command
+**Trigger:** Cron schedule, systemd timer, or manual `hardener daemon run-once` command
 
 ```
 ┌──────────────────┐
 │   Trigger        │
-│   (cron/systemd/ │
+│   (cron/daemon/  │
 │    manual)       │
 └────────┬─────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Daemon::start() or Daemon::run_once()                       │
+│  ├─ Check daemon_scan_in_progress (AtomicBool guard)         │
+│  ├─ If scheduled: tokio-cron-scheduler triggers at interval  │
+│  └─ Calls ScanRunner::run()                                  │
+└────────┬─────────────────────────────────────────────────────┘
          │
          ▼
 ┌──────────────────────────────────────────────────────────────┐
@@ -818,10 +826,59 @@ CREATE TABLE notification_log (
 );
 ```
 
+### Daemon Structure
+
+```rust
+pub struct Daemon {
+    daemon_config: SchedulerConfig,
+    daemon_runner: Arc<ScanRunner>,
+    daemon_scheduler: Option<JobScheduler>,
+    daemon_shutdown_tx: Option<broadcast::Sender<()>>,
+    daemon_scan_in_progress: Arc<AtomicBool>,
+}
+```
+
+### Daemon Lifecycle
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  hardener daemon start                                       │
+└────────┬─────────────────────────────────────────────────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Daemon::start()                                             │
+│  ├─ Validate config.enabled == true                          │
+│  ├─ Create JobScheduler with tokio-cron-scheduler            │
+│  ├─ Parse cron expression from config.schedule               │
+│  ├─ Create broadcast channel for shutdown signalling         │
+│  ├─ Spawn signal handler (SIGTERM, SIGINT)                   │
+│  └─ scheduler.start() - blocks until shutdown                │
+└────────┬─────────────────────────────────────────────────────┘
+         │ On schedule trigger
+         ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Daemon::execute_scan()                                      │
+│  ├─ Check scan_in_progress.compare_exchange() atomically     │
+│  ├─ If already running: skip (warn log)                      │
+│  ├─ Run ScanRunner::run() with TriggerType::Scheduled        │
+│  └─ Clear scan_in_progress flag on completion                │
+└────────┬─────────────────────────────────────────────────────┘
+         │ On SIGTERM/SIGINT
+         ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Graceful Shutdown                                           │
+│  ├─ Signal handler sends () on broadcast channel             │
+│  ├─ Wait for scan_in_progress to clear                       │
+│  ├─ scheduler.shutdown()                                     │
+│  └─ Return Ok(())                                            │
+└──────────────────────────────────────────────────────────────┘
+```
+
 ### File Locations
 
 | Data | Location | Format |
 |------|----------|--------|
-| Scan History DB | `/var/lib/linux-hardener/scans/history.db` | SQLite |
-| JSON Exports | `/var/lib/linux-hardener/scans/` | JSON with SHA-256 |
-| Scheduler Config | `/etc/linux-hardener/scheduler.toml` | TOML |
+| Scan History DB | `~/.local/share/linux-hardener/scheduler/history.db` | SQLite |
+| JSON Exports | `~/.local/share/linux-hardener/scheduler/scans/` | JSON with SHA-256 |
+| Scheduler Config | `[scheduler]` section in config.toml | TOML |

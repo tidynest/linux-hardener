@@ -215,6 +215,26 @@ pub struct FileState {
 | `src/runner.rs` | Scan execution orchestrator | `ScanRunner`, `ScanSummary`, `TriggerType` |
 | `src/daemon.rs` | Cron-scheduled scanning daemon | `Daemon` |
 
+### Key Structures (daemon.rs)
+
+```rust
+/// Cron-scheduled scanning daemon with graceful shutdown.
+pub struct Daemon {
+    daemon_config: SchedulerConfig,
+    daemon_runner: Arc<ScanRunner>,
+    daemon_scheduler: Option<JobScheduler>,
+    daemon_shutdown_tx: Option<broadcast::Sender<()>>,
+    daemon_scan_in_progress: Arc<AtomicBool>,
+}
+
+impl Daemon {
+    pub fn new(config: SchedulerConfig, db: Arc<ScanHistoryManager>, json_store: Arc<JsonStore>) -> Self;
+    pub async fn start(&mut self, pm: Arc<PluginManager>, ctx: Arc<Context>) -> Result<()>;
+    pub async fn run_once(&self, pm: &PluginManager, ctx: &Context, trigger: TriggerType) -> Result<ScanSummary>;
+    pub async fn stop(&mut self) -> Result<()>;
+}
+```
+
 ### Key Structures (config.rs)
 
 ```rust
@@ -297,12 +317,10 @@ pub struct ScanRunner {
 }
 ```
 
-### Pending Files (Phase 2-4)
+### Pending Files (Phase 3-4)
 
 | File | Purpose | Status |
 |------|---------|--------|
-| `src/daemon.rs` | Daemon with signal handling | Pending |
-| `src/scheduler.rs` | Cron scheduler wrapper | Pending |
 | `src/systemd.rs` | Systemd file generation | Pending |
 | `src/notification/mod.rs` | Notifier trait | Pending |
 | `src/notification/email.rs` | SMTP via lettre | Pending |
@@ -423,8 +441,8 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | hardener-compliance | `config.rs`, `report.rs`, `output/*.rs`, `generator.rs` | `framework_tests.rs` | 46 |
 | hardener-state | `audit.rs`, `hash_chain.rs`, `signing.rs`, `db.rs` | `checkpoint_system.rs` | 31 |
 | hardener-distro | `adapter.rs`, `package/*.rs` | - | 15 |
-| hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs` | - | 25 |
-| hardener-cli | `cli.rs`, `output.rs` | - | 21 |
+| hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs` | - | 29 |
+| hardener-cli | `cli.rs`, `output.rs` | - | 23 |
 | hardener-plugins | - | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs` | 128+ |
 | hardener-core | `config.rs`, `context.rs`, `plugin.rs`, `registry.rs`, `config_loader.rs` | `plugin_manager_tests.rs`, `mock_executor_tests.rs`, `ssh_executor_tests.rs` | 43+ |
 

@@ -1,7 +1,7 @@
 # Naming Conventions Reference
 
 **Author**: Eric Jingryd
-**Last Updated**: 2025-11-22
+**Last Updated**: 2025-12-04
 **Purpose**: Complete and authoritative naming standards for all identifiers in the project
 
 ---
@@ -1376,6 +1376,85 @@ const USER_CONFIG_DIR: &str = "linux-hardener";
 const CONFIG_FILE_NAME: &str = "config.toml";
 ```
 
+### Scheduler/Daemon Domain
+
+```rust
+// Main Daemon Struct:
+pub struct Daemon {
+    daemon_config: SchedulerConfig,
+    daemon_runner: Arc<ScanRunner>,
+    daemon_scheduler: Option<JobScheduler>,
+    daemon_shutdown_tx: Option<broadcast::Sender<()>>,
+    daemon_scan_in_progress: Arc<AtomicBool>,
+}
+
+// Scan Runner Struct:
+pub struct ScanRunner {
+    runner_db: Arc<ScanHistoryManager>,
+    runner_json_store: Arc<JsonStore>,
+    runner_min_severity: Severity,
+    runner_plugins: Vec<String>,
+    runner_host: String,
+}
+
+// Scan Summary (for notifications):
+pub struct ScanSummary {
+    pub session_id: String,
+    pub host: String,
+    pub plugins_scanned: Vec<String>,
+    pub total_findings: usize,
+    pub critical_count: usize,
+    pub high_count: usize,
+    pub medium_count: usize,
+    pub low_count: usize,
+    pub info_count: usize,
+    pub json_path: Option<String>,
+    pub json_hash: Option<String>,
+    pub had_errors: bool,
+}
+
+// Trigger Type Enum:
+pub enum TriggerType {
+    Scheduled,  // Cron scheduler daemon
+    Manual,     // CLI command
+    Systemd,    // Systemd timer
+}
+
+// Scheduler Config Structs:
+pub struct SchedulerConfig {
+    pub enabled: bool,
+    pub schedule: String,               // Cron expression
+    pub plugins: Vec<String>,
+    pub min_severity: String,
+    pub storage: StorageConfig,
+    pub notifications: NotificationConfig,
+}
+
+pub struct StorageConfig {
+    pub database_path: PathBuf,
+    pub json_output_dir: PathBuf,
+    pub retention_count: u32,
+    pub retention_days: u32,
+}
+
+// Methods:
+impl Daemon {
+    pub fn new(config: SchedulerConfig, db: Arc<ScanHistoryManager>, json_store: Arc<JsonStore>) -> Daemon { }
+    pub async fn start(&mut self, pm: Arc<PluginManager>, ctx: Arc<Context>) -> Result<()> { }
+    pub async fn run_once(&self, pm: &PluginManager, ctx: &Context, trigger: TriggerType) -> Result<ScanSummary> { }
+    pub async fn stop(&mut self) -> Result<()> { }
+}
+
+impl ScanRunner {
+    pub fn new(db: Arc<ScanHistoryManager>, json_store: Arc<JsonStore>, config: &SchedulerConfig, host: String) -> ScanRunner { }
+    pub async fn run(&self, pm: &PluginManager, ctx: &Context, trigger: TriggerType) -> Result<ScanSummary> { }
+}
+
+// Helper functions:
+fn spawn_signal_handler(shutdown_tx: broadcast::Sender<()>) { }
+async fn execute_scan(runner: Arc<ScanRunner>, pm: Arc<PluginManager>, ctx: Arc<Context>, scan_in_progress: Arc<AtomicBool>) { }
+```
+
 ### User Interface (Leptos) Domain
 
 ```rust
@@ -1471,9 +1550,22 @@ When naming any identifier in this project, verify:
 
 ---
 
-**Last Updated**: 2025-11-24 by Eric Jingryd
+**Last Updated**: 2025-12-04 by Eric Jingryd
 
 ## Recent Additions
+
+### 2025-12-04
+
+**Scheduler/Daemon Domain**:
+- Added `Daemon` struct for cron-scheduled scanning
+- Fields use `daemon_*` prefix: `daemon_config`, `daemon_runner`, `daemon_scheduler`, `daemon_shutdown_tx`, `daemon_scan_in_progress`
+- Added `ScanRunner` struct for scan orchestration
+- Added `ScanSummary` struct for notification payloads
+- Added `TriggerType` enum: `Scheduled`, `Manual`, `Systemd`
+- Added `JsonStore` struct for timestamped JSON output
+- Added `ScanHistoryManager` for SQLite scan history
+- Added `SchedulerConfig`, `StorageConfig`, `NotificationConfig` structs
+- Config fields use domain prefixes: `scheduler_*`, `storage_*`
 
 ### 2025-11-24
 

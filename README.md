@@ -70,12 +70,12 @@ The tool is designed for system administrators, DevOps engineers, and security p
 ### Test Coverage
 
 ```
-Total Tests: 338+ passing
+Total Tests: 377+ passing
 ├── Plugin Tests: 48 + 80 mock tests
 ├── Core Tests: 59 + 14 mock executor tests
 ├── Compliance Tests: 46
 ├── State Tests: 31
-├── Scheduler Tests: 21
+├── Scheduler Tests: 25 (daemon + runner)
 ├── CLI Tests: 23
 ├── Distro Tests: 13
 ├── SSH Integration Tests: 24
@@ -215,6 +215,15 @@ hardener checkpoint show <checkpoint-id>
 
 # Rollback to a previous checkpoint
 sudo hardener checkpoint rollback <checkpoint-id>
+
+# Start the scheduled scanning daemon
+hardener daemon start
+
+# Run a single scan immediately (without scheduler)
+hardener daemon run-once
+
+# Show scheduler status and scan history
+hardener daemon status
 ```
 
 ### SSH Remote Scanning
@@ -361,7 +370,10 @@ See [PLAN.md](PLAN.md) for detailed implementation plans for upcoming features.
 - [x] MockExecutor for unit testing
 - [x] All plugins converted to async
 - [x] SSH remote scanning documentation
-- [ ] Scheduled scanning (in progress - Phase 1 complete)
+- [x] Scheduled scanning daemon with tokio-cron-scheduler
+- [x] CLI daemon commands: `start`, `run-once`, `status`
+- [ ] Notifications (email, webhooks) - in progress
+- [ ] Systemd timer generation - planned
 - [ ] CI/CD GitHub Actions integration (workflows exist, not connected)
 
 ### v1.0.0 (Future)

@@ -60,6 +60,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SeverityCounts` shared helper for consistent severity counting across crate
 - Severity filtering with configurable minimum threshold
 - Compliance mapping conversion for scheduled scan findings
+- **Scheduled Scanning Daemon**: Cron-based scheduling with graceful shutdown
+- `Daemon` struct with tokio-cron-scheduler for automated scans
+- Signal handling (SIGTERM, SIGINT) for graceful daemon shutdown
+- Atomic scan guard to prevent overlapping scans
+- CLI daemon commands: `hardener daemon start`, `run-once`, `status`
+- Scan history display with session ID, status, trigger type, and severity counts
 
 ### Documentation
 - Added `docs/SSH_REMOTE_SCANNING.md` - comprehensive user guide for SSH remote scanning
