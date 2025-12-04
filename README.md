@@ -70,14 +70,14 @@ The tool is designed for system administrators, DevOps engineers, and security p
 ### Test Coverage
 
 ```
-Total Tests: 335+ passing
+Total Tests: 338+ passing
 ├── Plugin Tests: 48 + 80 mock tests
 ├── Core Tests: 59 + 14 mock executor tests
 ├── Compliance Tests: 46
 ├── State Tests: 31
-├── Scheduler Tests: 14
-├── CLI Tests: 21
-├── Distro Tests: 15
+├── Scheduler Tests: 21
+├── CLI Tests: 23
+├── Distro Tests: 13
 ├── SSH Integration Tests: 24
 └── Coverage: >90%
 ```

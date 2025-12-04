@@ -17,6 +17,7 @@ hardener-common = { path = "../hardener-common" }
 hardener-compliance = { path = "../hardener-compliance" }
 hardener-core = { path = "../hardener-core" }
 hardener-plugins = { path = "../hardener-plugins" }
+hardener-scheduler = { path = "../hardener-scheduler" }
 hardener-state = { path = "../hardener-state" }
 
 # CLI
@@ -27,7 +28,9 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 
 # Output formatting
 colored = "3.0.0"
+serde = { workspace = true }
 serde_json = { workspace = true }
+toml = { workspace = true }
 
 # Error handling
 anyhow = { workspace = true }

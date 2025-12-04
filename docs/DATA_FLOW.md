@@ -1,6 +1,6 @@
 # Linux System Hardener - Data Flow Documentation
 
-**Last Updated:** 2025-12-01
+**Last Updated:** 2025-12-04
 **Version:** 0.3.0
 
 This document describes the data flow for all major operations in the system.
@@ -16,6 +16,7 @@ This document describes the data flow for all major operations in the system.
 5. [Compliance Report Flow](#5-compliance-report-flow)
 6. [GUI/Tauri Flow](#6-guitauri-flow)
 7. [SSH Remote Scanning Flow](#7-ssh-remote-scanning-flow)
+8. [Scheduled Scanning Flow](#8-scheduled-scanning-flow)
 
 ---
 
@@ -625,3 +626,202 @@ If any entry is modified, the hash chain breaks and tampering is detected.
 2. **SystemInfo**: Detected from remote host via SSH commands
 3. **Privileged operations**: May require sudo on remote (user configures)
 4. **Network latency**: Each operation involves SSH round-trip
+
+---
+
+## 8. Scheduled Scanning Flow
+
+**Trigger:** Cron schedule, systemd timer, or manual `hardener daemon scan` command
+
+```
+┌──────────────────┐
+│   Trigger        │
+│   (cron/systemd/ │
+│    manual)       │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────────┐
+│  ScanRunner::run(plugin_manager, ctx, trigger_type)          │
+│  ├─ Determine plugins to scan (from config or all)           │
+│  ├─ Get hostname for session identification                  │
+│  └─ Apply minimum severity filter from config                │
+└────────┬─────────────────────────────────────────────────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────────┐
+│  ScanHistoryManager::create_session()                        │
+│  ├─ Generate UUID session ID                                 │
+│  ├─ Record trigger_type (scheduled/manual/systemd)           │
+│  ├─ Record host_identifier                                   │
+│  ├─ Record plugins to scan                                   │
+│  └─ Set status = "running"                                   │
+└────────┬─────────────────────────────────────────────────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────────┐
+│  PluginManager::execute_scan(ctx)                            │
+│  ├─ Resolve dependencies (topological sort)                  │
+│  ├─ Execute each plugin's scan() method                      │
+│  └─ Collect Vec<ScanResult>                                  │
+└────────┬─────────────────────────────────────────────────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────────┐
+│  ScanRunner::process_findings()                              │
+│  ├─ Filter by minimum severity threshold                     │
+│  │   (only include findings >= min_severity)                 │
+│  ├─ Convert Finding → ScanFinding                            │
+│  │   ├─ plugin_id, finding_id, severity                      │
+│  │   ├─ title, description, current/recommended values       │
+│  │   └─ compliance_mappings: "CIS:1.5.1", "NIST:AC-6"       │
+│  └─ Return Vec<ScanFinding>                                  │
+└────────┬─────────────────────────────────────────────────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────────┐
+│  ScanRunner::build_summary()                                 │
+│  ├─ Count findings by severity using SeverityCounts          │
+│  └─ Create ScanSummary {                                     │
+│        session_id, host, plugins_scanned,                    │
+│        total_findings, critical_count, high_count,           │
+│        medium_count, low_count, info_count,                  │
+│        had_errors                                            │
+│     }                                                        │
+└────────┬─────────────────────────────────────────────────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────────┐
+│  JsonStore::write(session_id, export_payload)                │
+│  ├─ Create timestamped filename: {session_id}_{timestamp}.json│
+│  ├─ Serialize JSON with:                                     │
+│  │   host, timestamp, min_severity, plugins_scanned,         │
+│  │   findings (full details), plugin_errors                  │
+│  ├─ Write to storage_json_output_dir                         │
+│  └─ Return (file_path, sha256_hash)                          │
+└────────┬─────────────────────────────────────────────────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────────┐
+│  ScanHistoryManager::complete_session()                      │
+│  ├─ Store all ScanFinding records in scan_findings table     │
+│  ├─ Update session with:                                     │
+│  │   completed_at, status = "completed",                     │
+│  │   total_findings, severity counts,                        │
+│  │   json_file_path, hash                                    │
+│  └─ Cleanup old scans (if retention_count exceeded)          │
+└────────┬─────────────────────────────────────────────────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Return ScanSummary                                          │
+│  {                                                           │
+│    session_id: "abc123-def456-...",                          │
+│    host: "server.example.com",                               │
+│    plugins_scanned: ["kernel", "ssh", "firewall"],           │
+│    total_findings: 12,                                       │
+│    critical_count: 2,                                        │
+│    high_count: 5,                                            │
+│    medium_count: 4,                                          │
+│    low_count: 1,                                             │
+│    info_count: 0,                                            │
+│    json_path: "/var/lib/hardener/scans/abc123_2025...json",  │
+│    json_hash: "sha256:a1b2c3...",                            │
+│    had_errors: false                                         │
+│  }                                                           │
+└────────┬─────────────────────────────────────────────────────┘
+         │
+         ▼ (Future: Phase 2-4)
+┌──────────────────────────────────────────────────────────────┐
+│  Notifier::send(summary)  [PENDING]                          │
+│  ├─ EmailNotifier: SMTP via lettre                           │
+│  ├─ WebhookNotifier: HTTP POST to Slack/Discord/generic      │
+│  └─ Log notification result to notification_log table        │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Key Types
+
+```rust
+/// Trigger source for a scan session.
+pub enum TriggerType {
+    Scheduled,  // Cron scheduler daemon
+    Manual,     // CLI command
+    Systemd,    // Systemd timer
+}
+
+/// Summary returned after scan completion.
+pub struct ScanSummary {
+    pub session_id: String,
+    pub host: String,
+    pub plugins_scanned: Vec<String>,
+    pub total_findings: usize,
+    pub critical_count: usize,
+    pub high_count: usize,
+    pub medium_count: usize,
+    pub low_count: usize,
+    pub info_count: usize,
+    pub json_path: Option<String>,
+    pub json_hash: Option<String>,
+    pub had_errors: bool,
+}
+```
+
+### Database Tables (hardener-scheduler)
+
+```sql
+-- Scan session tracking
+CREATE TABLE scan_sessions (
+    id TEXT PRIMARY KEY,
+    started_at INTEGER NOT NULL,
+    completed_at INTEGER,
+    status TEXT NOT NULL DEFAULT 'running',
+    trigger_type TEXT NOT NULL,
+    host_identifier TEXT NOT NULL,
+    plugins_scanned TEXT NOT NULL,  -- JSON array
+    total_findings INTEGER DEFAULT 0,
+    critical_count INTEGER DEFAULT 0,
+    high_count INTEGER DEFAULT 0,
+    medium_count INTEGER DEFAULT 0,
+    low_count INTEGER DEFAULT 0,
+    info_count INTEGER DEFAULT 0,
+    error_message TEXT,
+    json_file_path TEXT,
+    hash TEXT
+);
+
+-- Individual findings per session
+CREATE TABLE scan_findings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    plugin_id TEXT NOT NULL,
+    finding_id TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    current_value TEXT,
+    recommended_value TEXT,
+    category TEXT,
+    compliance_mappings TEXT,  -- JSON array
+    FOREIGN KEY(session_id) REFERENCES scan_sessions(id)
+);
+
+-- Notification delivery log
+CREATE TABLE notification_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    notification_type TEXT NOT NULL,
+    sent_at INTEGER NOT NULL,
+    success INTEGER NOT NULL,
+    error_message TEXT,
+    FOREIGN KEY(session_id) REFERENCES scan_sessions(id)
+);
+```
+
+### File Locations
+
+| Data | Location | Format |
+|------|----------|--------|
+| Scan History DB | `/var/lib/linux-hardener/scans/history.db` | SQLite |
+| JSON Exports | `/var/lib/linux-hardener/scans/` | JSON with SHA-256 |
+| Scheduler Config | `/etc/linux-hardener/scheduler.toml` | TOML |

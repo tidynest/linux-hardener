@@ -5,7 +5,7 @@ mod ssh_config;
 
 use anyhow::Result;
 use clap::Parser;
-use cli::{CheckpointAction, Cli, Command};
+use cli::{CheckpointAction, Cli, Command, DaemonAction};
 use commands::scan::ScanOptions;
 use hardener_core::{executor::SystemExecutor, LocalExecutor, SshExecutor};
 use ssh_config::SshConnectionConfig;
@@ -109,6 +109,13 @@ async fn main() -> Result<()> {
                 .await
             }
         }
+        Command::Daemon { action } => match action {
+            DaemonAction::Start => commands::daemon::start(cli.format, cli.quiet).await,
+            DaemonAction::RunOnce => commands::daemon::run_once(cli.format, cli.quiet).await,
+            DaemonAction::Status { limit } => {
+                commands::daemon::status(cli.format, cli.quiet, limit).await
+            }
+        },
     };
 
     if let Err(e) = result {

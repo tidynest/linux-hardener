@@ -429,17 +429,17 @@ pub struct SessionFilter {
 
 /// Severity counts for a set of findings.
 #[derive(Clone, Debug, Default)]
-struct SeverityCounts {
-    total: usize,
-    critical: usize,
-    high: usize,
-    medium: usize,
-    low: usize,
-    info: usize,
+pub struct SeverityCounts {
+    pub total: usize,
+    pub critical: usize,
+    pub high: usize,
+    pub medium: usize,
+    pub low: usize,
+    pub info: usize,
 }
 
 impl SeverityCounts {
-    fn from_findings(findings: &[ScanFinding]) -> SeverityCounts {
+    pub fn from_findings(findings: &[ScanFinding]) -> SeverityCounts {
         let mut counts = SeverityCounts {
             total: findings.len(),
             ..Default::default()

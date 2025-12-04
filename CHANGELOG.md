@@ -31,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Compliance page route `/compliance` with navigation link
 
 ### Changed
-- Test suite expanded from 220 to 320+ tests (45% increase)
+- Test suite expanded from 220 to 338+ tests (54% increase)
 - PDF findings now display with better visual hierarchy and spacing
 - All 8 plugins converted to async with `#[async_trait]`
 - HardeningPlugin trait methods now async: `scan()`, `apply()`, `rollback()`, `validate()`
@@ -49,11 +49,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 94 new mock-based unit tests for plugin testing
 - SSH integration tests (Docker-compatible)
 - `testing.rs` module with `MockPlugin` builder for test infrastructure
-- **Scheduled Scanning (Phase 1)**: Foundation for scheduled security scans
-- `hardener-scheduler` crate with configuration, SQLite storage, and JSON output
+- **Scheduled Scanning (Phase 1 + 1.5)**: Foundation for scheduled security scans
+- `hardener-scheduler` crate with configuration, SQLite storage, JSON output, and scan orchestration
 - `SchedulerConfig` structs for TOML configuration
 - `ScanHistoryManager` for SQLite scan history storage
 - `JsonStore` for timestamped JSON file output with SHA-256 integrity hashing
+- `ScanRunner` for orchestrating plugin scans with database and JSON persistence
+- `TriggerType` enum (Scheduled, Manual, Systemd) for session tracking
+- `ScanSummary` struct for notification payloads with severity counts
+- `SeverityCounts` shared helper for consistent severity counting across crate
+- Severity filtering with configurable minimum threshold
+- Compliance mapping conversion for scheduled scan findings
 
 ### Documentation
 - Added `docs/SSH_REMOTE_SCANNING.md` - comprehensive user guide for SSH remote scanning

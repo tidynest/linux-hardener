@@ -89,10 +89,21 @@ This document tracks the development progress and planned features for Linux Sys
 - [x] `SchedulerConfig` structs with serde (5 tests)
 - [x] `ScanHistoryManager` SQLite storage (5 tests)
 - [x] `JsonStore` timestamped JSON output (4 tests)
-- [ ] `ScanRunner` (orchestrates plugin scans)
-- [ ] `Daemon` with tokio-cron-scheduler
-- [ ] Signal handling (SIGTERM, SIGINT)
-- [ ] CLI `daemon` command
+- [x] `ScanRunner` orchestrates plugin scans (7 tests) ✅ **DONE (2025-12-03)**
+  - `TriggerType` enum (Scheduled, Manual, Systemd)
+  - `ScanSummary` for notification payloads
+  - Severity filtering with configurable threshold
+  - Integration with `PluginManager`, `ScanHistoryManager`, `JsonStore`
+  - Reuses `SeverityCounts` (no code duplication)
+- [x] `Daemon` with tokio-cron-scheduler (4 tests) ✅ **DONE (2025-12-04)**
+  - Cron-scheduled scans via `tokio-cron-scheduler`
+  - Signal handling (SIGTERM, SIGINT) for graceful shutdown
+  - Atomic scan guard to prevent overlapping scans
+  - `run_once()` for manual/testing triggers
+- [x] CLI `daemon` command ✅ **DONE (2025-12-04)**
+  - `hardener daemon start` - starts scheduling daemon
+  - `hardener daemon run-once` - single scan without scheduler
+  - `hardener daemon status` - shows config and scan history
 - [ ] `Notifier` trait and `NotificationDispatcher`
 - [ ] `EmailNotifier` (lettre SMTP)
 - [ ] `WebhookNotifier` (Slack/Discord/generic)
@@ -125,7 +136,7 @@ This document tracks the development progress and planned features for Linux Sys
 
 | Item | Description | Priority |
 |------|-------------|----------|
-| ~~Increase test coverage~~ | ~~Target 90%+ coverage~~ | ✅ Complete (320+ tests) |
+| ~~Increase test coverage~~ | ~~Target 90%+ coverage~~ | ✅ Complete (338+ tests) |
 | ~~Consolidate `create_plugin_registry()`~~ | ~~Duplicated in CLI, report, Tauri~~ | ✅ Complete |
 | ~~Consolidate test mock plugins~~ | ~~Duplicated in registry.rs and plugin_manager_tests.rs~~ | ✅ Complete |
 | ~~Config file utilities~~ | ~~Duplicated parsing/backup in SSH and PAM plugins~~ | ✅ Complete |

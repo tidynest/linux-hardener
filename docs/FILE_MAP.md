@@ -1,6 +1,6 @@
 # Linux System Hardener - File Map
 
-**Last Updated:** 2025-12-03
+**Last Updated:** 2025-12-04
 
 This document lists all source files with their purpose and key exports.
 
@@ -11,7 +11,7 @@ This document lists all source files with their purpose and key exports.
 | File | Purpose | Key Exports/Functions |
 |------|---------|----------------------|
 | `src/main.rs` | Entry point, command routing | `main()` |
-| `src/cli.rs` | Clap argument definitions | `Cli`, `Command`, `OutputFormat` |
+| `src/cli.rs` | Clap argument definitions | `Cli`, `Command`, `DaemonAction`, `OutputFormat` |
 | `src/output.rs` | Output formatting utilities | `format_findings()`, `format_json()` |
 | `src/commands/mod.rs` | Command module exports | - |
 | `src/commands/scan.rs` | Scan command implementation | `run()` |
@@ -20,6 +20,7 @@ This document lists all source files with their purpose and key exports.
 | `src/commands/plugins.rs` | List plugins command | `run()` |
 | `src/commands/report.rs` | Compliance report generation | `run()` |
 | `src/commands/report_wizard.rs` | Interactive report wizard | `run_interactive()` |
+| `src/commands/daemon.rs` | Daemon management commands | `start()`, `run_once()`, `status()` |
 | `src/ssh_config.rs` | SSH connection config helper | `SshConnectionConfig` |
 
 ---
@@ -209,8 +210,10 @@ pub struct FileState {
 |------|---------|-------------|
 | `src/lib.rs` | Module exports | Re-exports public types |
 | `src/config.rs` | Scheduler configuration | `SchedulerConfig`, `StorageConfig`, `NotificationConfig`, `EmailConfig`, `WebhookConfig` |
-| `src/db.rs` | SQLite scan history | `ScanHistoryManager`, `ScanSession`, `ScanFinding` |
+| `src/db.rs` | SQLite scan history | `ScanHistoryManager`, `ScanSession`, `ScanFinding`, `SeverityCounts` |
 | `src/json_store.rs` | JSON file storage | `JsonStore`, `StoredScan` |
+| `src/runner.rs` | Scan execution orchestrator | `ScanRunner`, `ScanSummary`, `TriggerType` |
+| `src/daemon.rs` | Cron-scheduled scanning daemon | `Daemon` |
 
 ### Key Structures (config.rs)
 
@@ -258,12 +261,47 @@ CREATE TABLE scan_findings (...);
 CREATE TABLE notification_log (...);
 ```
 
+### Key Structures (runner.rs)
+
+```rust
+/// Trigger source for a scan session.
+pub enum TriggerType {
+    Scheduled,  // Cron scheduler daemon
+    Manual,     // CLI command
+    Systemd,    // Systemd timer
+}
+
+/// Summary of a completed scan for notifications.
+pub struct ScanSummary {
+    pub session_id: String,
+    pub host: String,
+    pub plugins_scanned: Vec<String>,
+    pub total_findings: usize,
+    pub critical_count: usize,
+    pub high_count: usize,
+    pub medium_count: usize,
+    pub low_count: usize,
+    pub info_count: usize,
+    pub json_path: Option<String>,
+    pub json_hash: Option<String>,
+    pub had_errors: bool,
+}
+
+/// Orchestrates plugin scans with database and JSON persistence.
+pub struct ScanRunner {
+    db: Arc<ScanHistoryManager>,
+    json_store: Arc<JsonStore>,
+    min_severity: Severity,
+    plugins: Vec<String>,
+    host: String,
+}
+```
+
 ### Pending Files (Phase 2-4)
 
 | File | Purpose | Status |
 |------|---------|--------|
 | `src/daemon.rs` | Daemon with signal handling | Pending |
-| `src/scan_runner.rs` | Orchestrates plugin scans | Pending |
 | `src/scheduler.rs` | Cron scheduler wrapper | Pending |
 | `src/systemd.rs` | Systemd file generation | Pending |
 | `src/notification/mod.rs` | Notifier trait | Pending |
@@ -385,7 +423,7 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | hardener-compliance | `config.rs`, `report.rs`, `output/*.rs`, `generator.rs` | `framework_tests.rs` | 46 |
 | hardener-state | `audit.rs`, `hash_chain.rs`, `signing.rs`, `db.rs` | `checkpoint_system.rs` | 31 |
 | hardener-distro | `adapter.rs`, `package/*.rs` | - | 15 |
-| hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs` | - | 14 |
+| hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs` | - | 25 |
 | hardener-cli | `cli.rs`, `output.rs` | - | 21 |
 | hardener-plugins | - | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs` | 128+ |
 | hardener-core | `config.rs`, `context.rs`, `plugin.rs`, `registry.rs`, `config_loader.rs` | `plugin_manager_tests.rs`, `mock_executor_tests.rs`, `ssh_executor_tests.rs` | 43+ |

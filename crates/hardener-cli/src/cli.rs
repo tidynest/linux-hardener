@@ -128,6 +128,12 @@ pub enum Command {
         #[arg(short, long)]
         interactive: bool,
     },
+
+    /// Manage the scheduled scanning daemon.
+    Daemon {
+        #[command(subcommand)]
+        action: DaemonAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -143,6 +149,19 @@ pub enum CheckpointAction {
 
     /// Show checkpoint details.
     Show { checkpoint_id: String },
+}
+
+#[derive(Subcommand)]
+pub enum DaemonAction {
+    /// Start the scheduling daemon (blocks until shutdown).
+    Start,
+    /// Run a single scan immediately without starting the daemon,
+    RunOnce,
+    /// Show daemon status and recent scan history.
+    Status {
+        /// Number of recent sessions to show.
+        limit: u32,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
