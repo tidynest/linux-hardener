@@ -1593,6 +1593,14 @@ When naming any identifier in this project, verify:
 
 **Last Updated**: 2025-12-05 by Eric Jingryd
 
+### 2025-12-05 (GUI Styling)
+
+**CSS Styling**:
+- Added `styles.css` with dark terminal theme (~500 lines)
+- CSS Variables for colours, typography, spacing (e.g., `--bg-primary`, `--accent-green`, `--font-mono`)
+- Component class naming: `kebab-case` (e.g., `.security-score`, `.nav-links`, `.severity-badge`)
+- State class naming: `<component>-<state>` (e.g., `.score-good`, `.score-warning`, `.score-critical`, `.score-pending`)
+
 ## Recent Additions
 
 ### 2025-12-05 (WASM Fix)

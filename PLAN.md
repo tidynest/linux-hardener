@@ -137,13 +137,26 @@ See [docs/WASM_FIX_PLAN.md](docs/WASM_FIX_PLAN.md) for implementation details.
 
 ### v0.3.1 - GUI Polish & Testing
 
-| Feature | Description | Priority |
-|---------|-------------|----------|
-| Fix "Loading..." text | Remove loading placeholder after app mounts | High |
-| GUI styling/CSS | Improve visual design and user experience | High |
-| GUI functional testing | Verify all GUI features work correctly | High |
-| CLI functional testing | Verify all CLI commands work correctly | High |
-| Safe testing environment | Test in VM/container to avoid system changes | Critical |
+| Feature | Description | Priority | Status |
+|---------|-------------|----------|--------|
+| Fix "Loading..." text | Remove loading placeholder after app mounts | High | ✅ Complete |
+| GUI styling/CSS | Improve visual design and user experience | High | ✅ Complete |
+| Fix security score default | Show "--/100" before scan instead of "100/100" | High | ✅ Complete |
+| Fix View Findings button | Use button instead of hyperlink styling | Medium | ✅ Complete |
+| Timestamp formatting | Format raw timestamp numbers on Checkpoints page | Medium | Pending |
+| Background personalisation | Make background colour more personable/warm | Low | Pending |
+| Responsive layout | Support varying screen/browser resolutions | Medium | Pending |
+| Navigation restructure | Evaluate merging Configuration/Compliance into Scanner | Low | Pending |
+| GUI functional testing | Verify all GUI features work correctly | High | In Progress |
+| CLI functional testing | Verify all CLI commands work correctly | High | Pending |
+| Safe testing environment | Test in VM/container to avoid system changes | Critical | Pending |
+
+**v0.3.1 Completed Items (2025-12-05):**
+- Fixed "Loading..." text persistence by mounting app to `#app` element
+- Added dark terminal theme with CSS Variables, JetBrains Mono + Inter fonts
+- Security score now shows "--/100" before scan with "Run a scan to see your score"
+- "View Findings" now uses styled button with programmatic navigation
+- All 6 pages styled: Dashboard, Scanner, Configuration, Compliance, Results, Checkpoints
 
 **Testing Requirements:**
 - All testing MUST be done in a safe, isolated environment (VM or container)

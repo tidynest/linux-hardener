@@ -1,7 +1,7 @@
 # Linux System Hardener - Architecture Documentation
 
 **Last Updated:** 2025-12-05
-**Version:** 0.3.0 (Scheduled Scanning - Phase 3)
+**Version:** 0.3.1 (GUI Polish)
 
 ---
 
@@ -125,7 +125,7 @@ Linux System Hardener is a modular security hardening tool for Linux systems, pr
 | `hardener-distro` | Distribution detection | `Distribution`, `DistroFamily` |
 | `hardener-scheduler` | Scheduled scanning daemon | `SchedulerConfig`, `ScanHistoryManager`, `JsonStore`, `ScanRunner`, `ScanSummary`, `TriggerType`, `Daemon`, `Notifier`, `EmailNotifier`, `WebhookNotifier`, `NotificationDispatcher`, `SystemdGenerator` |
 | `hardener-cli` | Command-line interface | Binary entry point |
-| `hardener-ui` | Leptos WASM frontend | Frontend components (depends only on hardener-types) |
+| `hardener-ui` | Leptos WASM frontend | Frontend components, dark terminal CSS theme (depends only on hardener-types) |
 | `src-tauri` | Desktop app backend | Tauri commands |
 
 ---

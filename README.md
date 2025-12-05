@@ -58,6 +58,8 @@ The tool is designed for system administrators, DevOps engineers, and security p
 ### User Interface
 
 - **Desktop Application**: Tauri-based native app with Leptos (Rust) frontend
+- **Web Interface**: Runs in browser via Trunk (WASM)
+- **Dark Terminal Theme**: Professional security-focused aesthetic with colour-coded severity states
 - **Progressive Disclosure**: Simple overview with drill-down for details
 - **Real-time Feedback**: Live scan progress and results
 
@@ -153,6 +155,9 @@ cargo install trunk
 
 # Run desktop app in development mode
 cargo tauri dev
+
+# Run web UI in development mode (browser)
+cd crates/hardener-ui && trunk serve --port 1420
 ```
 
 ---
@@ -391,6 +396,8 @@ See [PLAN.md](PLAN.md) for detailed implementation plans for upcoming features.
 - [x] CLI daemon commands: `start`, `run-once`, `status`
 - [x] Notifications (email via SMTP, webhooks for Slack/Discord/generic)
 - [x] Systemd timer generation (`hardener systemd generate/install/uninstall/status`)
+- [x] WASM compilation fix (hardener-types crate for WASM-safe dependencies)
+- [x] GUI dark terminal theme with CSS styling
 - [ ] CI/CD GitHub Actions integration (workflows exist, not connected)
 
 ### v1.0.0 (Future)

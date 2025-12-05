@@ -387,6 +387,8 @@ pub struct ScanRunner {
 
 | File | Purpose | Key Exports |
 |------|---------|-------------|
+| `index.html` | Entry HTML with font links | `#app` mount point |
+| `styles.css` | Dark terminal theme CSS | CSS Variables, navigation, score gauge, buttons, tables, forms |
 | `src/lib.rs` | Main App component, WASM entry point | `App`, `#[wasm_bindgen(start)] main()` |
 | `src/types.rs` | Re-exports from hardener-types | `pub use hardener_types::*`, `CheckpointInfo` |
 | `src/state/mod.rs` | Reactive state | `AppState` |

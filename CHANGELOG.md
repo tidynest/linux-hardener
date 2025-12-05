@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **GUI Dark Terminal Theme**: Complete CSS styling with professional dark aesthetic
+  - CSS Variables for consistent theming (colours, typography, spacing)
+  - JetBrains Mono for data/code, Inter for UI text
+  - Colour-coded security states (green/amber/red for good/warning/critical)
+  - Horizontal navigation bar with hover effects
+  - Security score circular gauge with glow effects
+  - Styled buttons, tables, forms, badges, and empty states
+  - Foundation styles for all 6 pages: Dashboard, Scanner, Configuration, Compliance, Results, Checkpoints
 - **WASM-Compatible Types Crate**: New `hardener-types` crate for shared type definitions
   - Extracted all shared types (PluginId, Severity, Finding, ScanResult, etc.) to dedicated crate
   - WASM-safe dependencies only (serde, chrono)
@@ -15,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **PDF Feature Gate**: krilla PDF library now behind optional `pdf` feature in hardener-compliance
 - **WASM Entry Point**: Added `#[wasm_bindgen(start)]` entry point for Leptos app mounting
 - `.cargo/config.toml` for WASM rustflags (getrandom backend configuration)
+- `crates/hardener-ui/styles.css` - Complete dark terminal theme CSS (~500 lines)
+
+### Fixed
+- **GUI "Loading..." text persistence**: Fixed by mounting app to `#app` element instead of body and clearing inner HTML
+- **Security score showing 100/100 before scan**: Added `has_scan_results()` check, now shows "--/100" and "Run a scan to see your score" initially
+- **"View Findings" appearing as hyperlink**: Changed from `<A>` link to styled `<button>` with programmatic navigation
+
 - Configuration file support with layered loading (system → user → CLI → env vars)
 - `HardenerConfig`, `GlobalConfig`, `PluginConfig` structs for configuration management
 - `ConfigLoader` with multi-source config merging

@@ -2,10 +2,11 @@ use crate::state::AppState;
 use crate::types::Severity;
 use leptos::prelude::*;
 
-
 /// Displays the calculated security score based on scan findings.
 ///
-/// Score calculation:
+/// Shows "Run a scan" when no scan has been performed yet.
+///
+/// Score calculation (when scan data exists):
 /// - Start at 100
 /// - Critical: -10 points each
 /// - High: -5 points each
@@ -15,6 +16,7 @@ use leptos::prelude::*;
 /// - Minimum score: 0
 ///
 /// Colour coding:
+/// - No scan: Grey (neutral)
 /// - 0-40: Red (critical state)
 /// - 41-70: Yellow (needs attention)
 /// - 71-100: Green (good state)
@@ -22,10 +24,11 @@ use leptos::prelude::*;
 pub fn SecurityScore() -> impl IntoView {
     let app_state = expect_context::<AppState>();
 
+    let has_scan_results = move || !app_state.scan_results.get().is_empty();
+
     // Calculate score from all findings across all scan results
     let score = move || {
         let results = app_state.scan_results.get();
-
         let mut total_score: i32 = 100;
 
         for scan_result in results.iter() {
@@ -45,6 +48,9 @@ pub fn SecurityScore() -> impl IntoView {
     };
 
     let score_class = move || {
+        if !has_scan_results() {
+            return "score-pending";
+        }
         let current_score = score();
         if current_score <= 40 {
             "score-critical"
@@ -56,6 +62,9 @@ pub fn SecurityScore() -> impl IntoView {
     };
 
     let score_status = move || {
+        if !has_scan_results() {
+            return "Run a scan to see your score";
+        }
         let current_score = score();
         if current_score <= 40 {
             "Critical - Immediate action required"
@@ -70,8 +79,17 @@ pub fn SecurityScore() -> impl IntoView {
         <section class="security-score">
             <h2>"Security Score"</h2>
             <output class={move || format!("score-display {}", score_class())}>
-                <span class="score-value">{score}</span>
-                <span class="score-max">"/100"</span>
+                {move || if has_scan_results() {
+                    view! {
+                        <span class="score-value">{score}</span>
+                        <span class="score-max">"/100"</span>
+                    }.into_any()
+                } else {
+                    view! {
+                        <span class="score-value">"--"</span>
+                        <span class="score-max">"/100"</span>
+                    }.into_any()
+                }}
             </output>
             <p class="score-status">{score_status}</p>
         </section>

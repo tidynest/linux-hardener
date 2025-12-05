@@ -65,11 +65,23 @@ pub fn App() -> impl IntoView {
 }
 
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsCast;
+use web_sys::HtmlElement;
 
 /// Entry point for the WASM application.
 /// Trunk calls this function to start the app.
 #[wasm_bindgen(start)]
 pub fn main() {
-    // Mount the App component to the element with id="app"
-    leptos::mount::mount_to_body(App);
+    let document = web_sys::window()
+        .expect("no window")
+        .document()
+        .expect("no document");
+    let app_element = document
+        .get_element_by_id("app")
+        .expect("element with id='app' not found")
+        .dyn_into::<HtmlElement>()
+        .expect("element is not HtmlElement");
+    // Clear "Loading..." and mount the App component
+    app_element.set_inner_html("");
+    mount_to(app_element, App).forget();
 }

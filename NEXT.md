@@ -421,13 +421,17 @@ cargo check -p hardener-ui --target wasm32-unknown-unknown
    - GUI now compiles to `wasm32-unknown-unknown` and runs in browser/Tauri
 
 5. **Next Tasks**:
-   - v0.3.1: GUI Polish & Testing (see PLAN.md)
+   - v0.3.1: GUI Polish & Testing (see PLAN.md) - **IN PROGRESS**
    - v0.3.2: Distribution-Specific Validation
    - v0.4.0 Web Interface planning
 
 6. **Known Issues** (v0.3.1 scope):
-   - GUI: "Loading..." text stays visible after app mounts (needs removal)
-   - GUI: Styling needs significant improvement
+   - ~~GUI: "Loading..." text stays visible after app mounts~~ ✅ **FIXED (2025-12-05)**
+   - ~~GUI: Styling needs significant improvement~~ ✅ **FIXED (2025-12-05)** - Dark terminal theme implemented
+   - GUI: Timestamp display on Checkpoints page shows raw numbers (needs formatting)
+   - GUI: Background colour could be more personable (currently #0d1117)
+   - GUI: Responsive layout needed for varying screen resolutions
+   - GUI: Page navigation structure could be improved (e.g., merge Configuration/Compliance into Scanner)
    - Wayland: Requires `WEBKIT_DISABLE_COMPOSITING_MODE=1` environment variable
 
 7. **Always Remember**:
