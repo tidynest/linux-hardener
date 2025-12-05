@@ -377,6 +377,15 @@ cargo test -p hardener-scheduler
 # Run the CLI
 ./target/debug/hardener --help
 ./target/debug/hardener daemon status
+
+# Run desktop app (Wayland workaround)
+WEBKIT_DISABLE_COMPOSITING_MODE=1 cargo tauri dev
+
+# Build WASM frontend only
+cd crates/hardener-ui && trunk build
+
+# Verify WASM compilation
+cargo check -p hardener-ui --target wasm32-unknown-unknown
 ```
 
 ---
@@ -416,7 +425,12 @@ cargo test -p hardener-scheduler
    - v0.3.2: Distribution-Specific Validation
    - v0.4.0 Web Interface planning
 
-6. **Always Remember**:
+6. **Known Issues** (v0.3.1 scope):
+   - GUI: "Loading..." text stays visible after app mounts (needs removal)
+   - GUI: Styling needs significant improvement
+   - Wayland: Requires `WEBKIT_DISABLE_COMPOSITING_MODE=1` environment variable
+
+7. **Always Remember**:
    - Update documentation after changes
    - Follow naming conventions strictly
    - No AI attributions
