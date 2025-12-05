@@ -143,6 +143,7 @@ See [docs/WASM_FIX_PLAN.md](docs/WASM_FIX_PLAN.md) for implementation details.
 | GUI styling/CSS | Improve visual design and user experience | High | ✅ Complete |
 | Fix security score default | Show "--/100" before scan instead of "100/100" | High | ✅ Complete |
 | Fix View Findings button | Use button instead of hyperlink styling | Medium | ✅ Complete |
+| **State persistence bug** | Changes lost when navigating between pages - "Applying []" shows but no actual effect | Critical | Pending |
 | Timestamp formatting | Format raw timestamp numbers on Checkpoints page | Medium | Pending |
 | Background personalisation | Make background colour more personable/warm | Low | Pending |
 | Responsive layout | Support varying screen/browser resolutions | Medium | Pending |
@@ -158,13 +159,90 @@ See [docs/WASM_FIX_PLAN.md](docs/WASM_FIX_PLAN.md) for implementation details.
 - "View Findings" now uses styled button with programmatic navigation
 - All 6 pages styled: Dashboard, Scanner, Configuration, Compliance, Results, Checkpoints
 
+**Known Bugs (2025-12-05):**
+- State persistence: Configuration/settings changes are lost when navigating to another page
+- "Applying []" feedback messages appear but changes may not actually be applied to the system
+
 **Testing Requirements:**
 - All testing MUST be done in a safe, isolated environment (VM or container)
 - Tests must not modify the host system
 - Both CLI and GUI (Desktop + Browser) need verification
 - Arch Linux (LTS) specific: Ensure scan findings are relevant to Arch, not false positives from other distro-specific checks
 
-### v0.3.2 - Distribution-Specific Validation
+### v0.3.2 - GUI Major Redesign & Comprehensive Testing
+
+This version focuses on making the GUI fully functional, intuitive, and thoroughly tested.
+
+#### A. Page Architecture Redesign
+
+| Feature | Description | Priority |
+|---------|-------------|----------|
+| Page consolidation | Reduce 6 pages to 3-4 logical sections | High |
+| Workflow-oriented design | Guide users through scan → configure → apply → verify flow | High |
+| State management overhaul | Ensure all changes persist across navigation | Critical |
+| Backend integration | Connect GUI actions to actual Tauri commands | Critical |
+
+**Proposed Page Structure:**
+
+| Page | Purpose | Contains |
+|------|---------|----------|
+| **Dashboard** | Overview & quick start | Security score, quick actions, recent activity, system status |
+| **Hardening** | Main workflow page | Scan controls, findings list, configuration options, apply actions (tabbed or accordion layout) |
+| **History** | Audit trail & recovery | Results history, checkpoints, rollback options |
+| **Settings** | App configuration | Notification settings, scan scheduling, theme preferences |
+
+#### B. User Guidance & UX
+
+| Feature | Description | Priority |
+|---------|-------------|----------|
+| Contextual help text | Short, friendly explanations on every page section | High |
+| Workflow indicators | Visual cues showing recommended order of actions | High |
+| Tooltips & info icons | Hover explanations for technical terms and settings | Medium |
+| Empty state guidance | Helpful prompts when no data exists (e.g., "Run your first scan") | Medium |
+| Progress indicators | Clear feedback during scans, applies, and other operations | High |
+| Error messages | User-friendly error text with suggested fixes | High |
+
+**User Guidance Principles:**
+- Every page section should have a brief, friendly heading explaining what it does
+- Users should understand "what to do next" at a glance
+- Technical jargon should be minimised or explained inline
+- Recommended settings should be clearly indicated
+- Dangerous actions should have clear warnings and confirmations
+
+#### C. Comprehensive GUI Testing
+
+| Test Category | Description | Priority |
+|---------------|-------------|----------|
+| **Unit tests** | Test individual components in isolation | High |
+| **Integration tests** | Test component interactions and state flow | High |
+| **E2E tests (Web)** | Puppeteer/Playwright tests for browser UI | Critical |
+| **E2E tests (Desktop)** | Tauri test harness for desktop app | Critical |
+| **State persistence tests** | Verify data survives navigation and refresh | Critical |
+| **Backend communication tests** | Verify Tauri commands execute correctly | Critical |
+| **Error handling tests** | Verify graceful degradation on failures | High |
+| **Responsive layout tests** | Verify UI works at various resolutions | Medium |
+| **Accessibility tests** | Keyboard navigation, screen reader compatibility | Medium |
+
+**Testing Infrastructure Needs:**
+- Leptos component testing framework setup
+- Puppeteer/Playwright test suite for Web UI
+- Tauri test mode for Desktop app
+- Mock backend for isolated frontend testing
+- CI/CD integration for automated test runs
+- Test coverage reporting
+
+#### D. Backend Integration
+
+| Feature | Description | Priority |
+|---------|-------------|----------|
+| Scan execution | Connect "Run Scan" to actual Tauri scan command | Critical |
+| Apply hardening | Connect "Apply" buttons to Tauri apply command | Critical |
+| Checkpoint creation | Create checkpoints before applying changes | Critical |
+| Rollback functionality | Connect rollback to Tauri rollback command | Critical |
+| Real-time progress | WebSocket or polling for scan/apply progress | High |
+| Error propagation | Surface backend errors to UI properly | High |
+
+### v0.3.3 - Distribution-Specific Validation
 
 | Feature | Description | Priority |
 |---------|-------------|----------|

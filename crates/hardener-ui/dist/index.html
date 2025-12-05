@@ -4,14 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Linux System Hardener</title>
-    <!-- Trunk will inject WASM scripts here -->
-<link rel="modulepreload" href="/hardener-ui-44ccc1d234a7f04.js" crossorigin="anonymous" integrity="sha384-GThiDax26zxlZJorGasIlx9btd2079K9PV3bCjTvnz/BQcCYUc4/o9cj3ssJfxMF"><link rel="preload" href="/hardener-ui-44ccc1d234a7f04_bg.wasm" crossorigin="anonymous" integrity="sha384-LYX8V6rrP8U3mnIPGj+Bc5JfpBIjZmRV3h4e44a51+NwbRBICRff+OpWA2rMrXZP" as="fetch" type="application/wasm"></head>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Styles -->
+    <link rel="stylesheet" href="/styles-fbd1fdd52b65bef0.css" integrity="sha384-THC0SzwjkPciciIIr5NkfzuyWqnevt8kxB2M6JwuLn903VqG5LF23LD4jxgOh9QY"/>
+<link rel="modulepreload" href="/hardener-ui-d3f8adb77421fb8.js" crossorigin="anonymous" integrity="sha384-Jgg4KlfEmXA+ExSN1YYWFjDV/UVINqSo1shLf9pvS4RCM6Fdc+XTnSSYFqW55oWp"><link rel="preload" href="/hardener-ui-d3f8adb77421fb8_bg.wasm" crossorigin="anonymous" integrity="sha384-t1+oAQvfRWcnJHp0DqqxEW5dXiV5gwjyALX0JDQHkur7x9OHYga9t4Lud1o9deeq" as="fetch" type="application/wasm"></head>
 <body>
     <div id="app">Loading...</div>
 
 <script type="module">
-import init, * as bindings from '/hardener-ui-44ccc1d234a7f04.js';
-const wasm = await init({ module_or_path: '/hardener-ui-44ccc1d234a7f04_bg.wasm' });
+import init, * as bindings from '/hardener-ui-d3f8adb77421fb8.js';
+const wasm = await init({ module_or_path: '/hardener-ui-d3f8adb77421fb8_bg.wasm' });
 
 
 window.wasmBindings = bindings;
