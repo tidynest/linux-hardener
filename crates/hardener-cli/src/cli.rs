@@ -140,6 +140,12 @@ pub enum Command {
         #[command(subcommand)]
         action: SystemdAction,
     },
+
+    /// View and export scan history.
+    History {
+        #[command(subcommand)]
+        action: HistoryAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -161,8 +167,10 @@ pub enum CheckpointAction {
 pub enum DaemonAction {
     /// Start the scheduling daemon (blocks until shutdown).
     Start,
+
     /// Run a single scan immediately without starting the daemon,
     RunOnce,
+
     /// Show daemon status and recent scan history.
     Status {
         /// Number of recent sessions to show.
@@ -213,6 +221,41 @@ pub enum SystemdAction {
         user: bool,
     },
 }
+
+#[derive(Subcommand)]
+pub enum HistoryAction {
+    /// List recent scan sessions.
+    List {
+        /// Maximum number of sessions to show.
+        #[arg(short, long, default_value = "20")]
+        limit: u32,
+
+        /// Filter by host identifier.
+        #[arg(long)]
+        host: Option<String>,
+
+        /// Filter by status (running, completed, failed).
+        #[arg(long)]
+        status: Option<String>,
+    },
+
+    /// Show details of a specific scan session.
+    Show {
+        /// Session ID (UUID) to display).
+        session_id: String,
+    },
+
+    /// Export a scan session to a JSON file.
+    Export {
+        /// Session ID (UUID) to export
+        session_id: String,
+
+        /// Output file path (defaults to session-<id>.json).
+        #[arg(short, long)]
+        output: Option<std::path::PathBuf>,
+    },
+}
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum ReportFormat {
@@ -403,4 +446,95 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_cli_parse_history_list() {
+        let cli = Cli::parse_from(["hardener", "history", "list"]);
+        if let Command::History { action } = cli.command {
+            assert!(matches!(action, HistoryAction::List { .. }));
+        } else {
+            panic!("Expected History command");
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_history_list_with_limit() {
+        let cli = Cli::parse_from(["hardener", "history", "list", "--limit",
+            "50"]);
+        if let Command::History { action } = cli.command {
+            if let HistoryAction::List { limit, .. } = action {
+                assert_eq!(limit, 50);
+            } else {
+                panic!("Expected List action");
+            }
+        } else {
+            panic!("Expected History command");
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_history_list_with_filters() {
+        let cli = Cli::parse_from([
+            "hardener", "history", "list",
+            "--host", "server1",
+            "--status", "completed",
+        ]);
+        if let Command::History { action } = cli.command {
+            if let HistoryAction::List { host, status, .. } = action {
+                assert_eq!(host, Some("server1".to_string()));
+                assert_eq!(status, Some("completed".to_string()));
+            } else {
+                panic!("Expected List action");
+            }
+        } else {
+            panic!("Expected History command");
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_history_show() {
+        let cli = Cli::parse_from(["hardener", "history", "show", "abc-123"]);
+        if let Command::History { action } = cli.command {
+            if let HistoryAction::Show { session_id } = action {
+                assert_eq!(session_id, "abc-123");
+            } else {
+                panic!("Expected Show action");
+            }
+        } else {
+            panic!("Expected History command");
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_history_export() {
+        let cli = Cli::parse_from(["hardener", "history", "export", "abc-123"]);
+        if let Command::History { action } = cli.command {
+            if let HistoryAction::Export { session_id, output } = action {
+                assert_eq!(session_id, "abc-123");
+                assert!(output.is_none());
+            } else {
+                panic!("Expected Export action");
+            }
+        } else {
+            panic!("Expected History command");
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_history_export_with_output() {
+        let cli = Cli::parse_from([
+            "hardener", "history", "export", "abc-123",
+            "--output", "/tmp/export.json",
+        ]);
+        if let Command::History { action } = cli.command {
+            if let HistoryAction::Export { session_id, output } = action {
+                assert_eq!(session_id, "abc-123");
+                assert_eq!(output,
+                           Some(std::path::PathBuf::from("/tmp/export.json")));
+            } else {
+                panic!("Expected Export action");
+            }
+        } else {
+            panic!("Expected History command");
+        }
+    }
 }

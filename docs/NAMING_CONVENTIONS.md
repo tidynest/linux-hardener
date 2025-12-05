@@ -1594,6 +1594,12 @@ When naming any identifier in this project, verify:
 
 ### 2025-12-05
 
+**History CLI Domain**:
+- Added `HistoryAction` enum with variants: `List`, `Show`, `Export`
+- CLI commands: `history list`, `history show`, `history export`
+- Helper functions: `list()`, `show()`, `export()`, `open_database()`, `format_timestamp()`, `print_session_detail()`, `truncate_string()`
+- Internal struct: `SessionDetail` for JSON serialisation
+
 **Systemd Integration Domain**:
 - Added `SystemdGenerator` struct for unit file generation
 - Added module-level helper functions: `service_name()`, `timer_name()`, `system_unit_path()`, `user_unit_path()`

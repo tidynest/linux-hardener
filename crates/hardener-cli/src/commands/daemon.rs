@@ -199,7 +199,7 @@ struct ConfigFile {
 /// Loads scheduler configuration from standard config file locations.
 ///
 /// Uses the same paths as `ConfigLoader` to avoid duplication.
-fn load_scheduler_config() -> Result<SchedulerConfig> {
+pub fn load_scheduler_config() -> Result<SchedulerConfig> {
     // Check locations in order: user config, then system config
     // (ConfigLoader checks in reverse order for merging, but only the first found is needed)
     let paths = [

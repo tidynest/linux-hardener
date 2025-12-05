@@ -78,6 +78,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CLI commands: `hardener systemd generate`, `install`, `uninstall`, `status`
 - Security hardening directives in generated service unit (NoNewPrivileges, ProtectSystem, etc.)
 - Support for both system and user service installation
+- **History CLI Commands**: View and export scan history
+- CLI commands: `hardener history list`, `show`, `export`
+- Session filtering by host, status, and limit
+- JSON export for session data and findings
 
 ### Documentation
 - Added `docs/SSH_REMOTE_SCANNING.md` - comprehensive user guide for SSH remote scanning

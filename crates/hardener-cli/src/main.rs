@@ -5,7 +5,7 @@ mod ssh_config;
 
 use anyhow::Result;
 use clap::Parser;
-use cli::{CheckpointAction, Cli, Command, DaemonAction, SystemdAction};
+use cli::{CheckpointAction, Cli, Command, DaemonAction, HistoryAction, SystemdAction};
 use commands::scan::ScanOptions;
 use hardener_core::{executor::SystemExecutor, LocalExecutor, SshExecutor};
 use ssh_config::SshConnectionConfig;
@@ -128,6 +128,17 @@ async fn main() -> Result<()> {
             }
             SystemdAction::Status { user } => {
                 commands::systemd::status(user, cli.quiet).await
+            }
+        },
+        Command::History { action } => match action {
+            HistoryAction::List { limit, host, status } => {
+                commands::history::list(cli.format, cli.quiet, limit, host, status).await
+            }
+            HistoryAction::Show { session_id } => {
+                commands::history::show(&session_id, cli.format, cli.quiet).await
+            }
+            HistoryAction::Export { session_id, output } => {
+                commands::history::export(&session_id, output, cli.format, cli.quiet).await
             }
         },
     };

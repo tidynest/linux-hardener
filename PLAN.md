@@ -58,7 +58,7 @@ This document tracks the development progress and planned features for Linux Sys
 | Feature | Description | Priority | Status |
 |---------|-------------|----------|--------|
 | Remote scanning via SSH | Scan remote hosts without installing | High | ✅ Complete |
-| Scheduled scanning | Cron-like scheduled security checks | Medium | 🔄 In Progress |
+| Scheduled scanning | Cron-like scheduled security checks | Medium | ✅ Complete |
 | CI/CD integration | Exit codes and machine-readable output | Medium | Pending |
 | Ansible/Puppet modules | Integration with config management | Low | Pending |
 
@@ -116,7 +116,10 @@ This document tracks the development progress and planned features for Linux Sys
   - `hardener systemd install` - install and enable timer (system or user)
   - `hardener systemd uninstall` - disable and remove units
   - `hardener systemd status` - show timer/service status
-- [ ] CLI `history` commands
+- [x] CLI `history` commands ✅ **DONE (2025-12-05)**
+  - `hardener history list` - list recent scan sessions with filtering
+  - `hardener history show <id>` - display session details and findings
+  - `hardener history export <id>` - export session to JSON file
 
 ### v0.4.0 - Web Interface
 

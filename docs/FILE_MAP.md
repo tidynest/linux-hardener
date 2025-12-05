@@ -11,7 +11,7 @@ This document lists all source files with their purpose and key exports.
 | File | Purpose | Key Exports/Functions |
 |------|---------|----------------------|
 | `src/main.rs` | Entry point, command routing | `main()` |
-| `src/cli.rs` | Clap argument definitions | `Cli`, `Command`, `DaemonAction`, `SystemdAction`, `OutputFormat` |
+| `src/cli.rs` | Clap argument definitions | `Cli`, `Command`, `DaemonAction`, `HistoryAction`, `SystemdAction`, `OutputFormat` |
 | `src/output.rs` | Output formatting utilities | `format_findings()`, `format_json()` |
 | `src/commands/mod.rs` | Command module exports | - |
 | `src/commands/scan.rs` | Scan command implementation | `run()` |
@@ -22,6 +22,7 @@ This document lists all source files with their purpose and key exports.
 | `src/commands/report_wizard.rs` | Interactive report wizard | `run_interactive()` |
 | `src/commands/daemon.rs` | Daemon management commands | `start()`, `run_once()`, `status()` |
 | `src/commands/systemd.rs` | Systemd unit file commands | `generate()`, `install()`, `uninstall()`, `status()` |
+| `src/commands/history.rs` | Scan history commands | `list()`, `show()`, `export()` |
 | `src/ssh_config.rs` | SSH connection config helper | `SshConnectionConfig` |
 
 ---
@@ -359,12 +360,6 @@ pub struct ScanRunner {
 }
 ```
 
-### Pending Files (Phase 3-4)
-
-| File | Purpose | Status |
-|------|---------|--------|
-| `src/systemd.rs` | Systemd file generation | Pending |
-
 ---
 
 ## hardener-ui (Leptos Frontend)
@@ -481,7 +476,7 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | hardener-state | `audit.rs`, `hash_chain.rs`, `signing.rs`, `db.rs` | `checkpoint_system.rs` | 31 |
 | hardener-distro | `adapter.rs`, `package/*.rs` | - | 15 |
 | hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `notification/*.rs` | - | 48 |
-| hardener-cli | `cli.rs`, `output.rs` | - | 23 |
+| hardener-cli | `cli.rs`, `output.rs`, `history.rs` | - | 31 |
 | hardener-plugins | - | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs` | 128+ |
 | hardener-core | `config.rs`, `context.rs`, `plugin.rs`, `registry.rs`, `config_loader.rs` | `plugin_manager_tests.rs`, `mock_executor_tests.rs`, `ssh_executor_tests.rs` | 43+ |
 

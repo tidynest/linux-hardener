@@ -179,16 +179,27 @@ hardener systemd status                # Show timer/service status
 
 ---
 
-### Phase 4: PLANNED - History CLI Commands
+### Phase 4: COMPLETE - History CLI Commands ✅
 
-**File to Create:**
-- `crates/hardener-cli/src/commands/history.rs`
+**Completed 2025-12-05**
 
-**Commands to Add:**
+#### Implemented Files
+
+| File | Purpose |
+|------|---------|
+| `crates/hardener-cli/src/commands/history.rs` | History command implementations |
+| `crates/hardener-cli/src/cli.rs` | Added `HistoryAction` enum and `History` command |
+
+#### CLI Commands
+
 ```bash
 hardener history list              # List recent scan sessions
+hardener history list --limit 50   # Show more sessions
+hardener history list --host srv1  # Filter by host
+hardener history list --status completed  # Filter by status
 hardener history show <session-id> # Show session details and findings
-hardener history export <id>       # Export session to JSON
+hardener history export <id>       # Export session to JSON file
+hardener history export <id> -o /path/to/file.json  # Custom output path
 ```
 
 ---
@@ -370,10 +381,17 @@ cargo test -p hardener-scheduler
    - CLI commands: `generate`, `install`, `uninstall`, `status`
    - 9 new tests (57 total in scheduler crate)
 
-3. **Next Tasks**:
-   - History CLI commands (Phase 4)
+3. **Completed**: History CLI commands (Phase 4) ✅
+   - `history list` with `--limit`, `--host`, `--status` filters
+   - `history show <session-id>` with detailed findings
+   - `history export <session-id>` to JSON file
+   - 6 new CLI tests (31 total in hardener-cli)
 
-4. **Always Remember**:
+4. **Next Tasks**:
+   - CI/CD integration (exit codes, machine-readable output)
+   - v0.4.0 Web Interface planning
+
+5. **Always Remember**:
    - Update documentation after changes
    - Follow naming conventions strictly
    - No AI attributions
