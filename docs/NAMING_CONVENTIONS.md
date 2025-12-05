@@ -184,13 +184,16 @@ tests/kernel-tests.rs      # Wrong separator
 
 **Project Crates**:
 ```
+hardener-types          # WASM-compatible shared type definitions
 hardener-core           # Core engine and traits
-hardener-common         # Shared types and utilities
+hardener-common         # Shared utilities and error types
 hardener-distro         # Distribution detection and adaptation
 hardener-plugins        # Security plugin implementations
 hardener-state          # State management (checkpoints, audit)
-hardener-compliance     # Compliance framework mapping
-hardener-ui             # User interface (Leptos components)
+hardener-compliance     # Compliance framework mapping (pdf feature)
+hardener-scheduler      # Scheduled scanning daemon
+hardener-cli            # Command-line interface
+hardener-ui             # Leptos WASM frontend
 ```
 
 ---
@@ -1592,7 +1595,25 @@ When naming any identifier in this project, verify:
 
 ## Recent Additions
 
-### 2025-12-05
+### 2025-12-05 (WASM Fix)
+
+**hardener-types Crate**:
+- New crate for WASM-compatible shared type definitions
+- Contains all types previously in hardener-common/src/types.rs, hardener-core/src/plugin.rs, hardener-compliance/src/report.rs
+- Dependencies: serde, chrono only (no system dependencies)
+- Key exports: `PluginId`, `Severity`, `FindingCategory`, `ComplianceFramework`, `Finding`, `ScanResult`, `ApplyResult`, `ComplianceReport`, `ControlResult`, `ComplianceSummary`
+
+**Type Re-exports**:
+- `hardener-common/src/types.rs` now uses `pub use hardener_types::*;`
+- `hardener-core/src/plugin.rs` now re-exports from hardener-types
+- `hardener-compliance/src/report.rs` now re-exports from hardener-types
+- `hardener-ui/src/types.rs` now uses `pub use hardener_types::*;`
+
+**hardener-compliance Feature Gate**:
+- krilla PDF library now behind `pdf` feature (default enabled)
+- Allows WASM builds to exclude native PDF dependencies
+
+### 2025-12-05 (History/Systemd)
 
 **History CLI Domain**:
 - Added `HistoryAction` enum with variants: `List`, `Show`, `Export`

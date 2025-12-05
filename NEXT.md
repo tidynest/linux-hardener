@@ -8,11 +8,12 @@
 
 **Linux System Hardener** is a comprehensive Linux security automation tool written in Rust. It's a mature workspace-based project with:
 
-- **9 Core Crates + 1 Tauri App**
+- **10 Core Crates + 1 Tauri App**
 - **8 Security Plugins**: Kernel, SSH, Firewall, PAM, Services, Audit, Permissions, MAC
-- **377+ Passing Tests**
+- **378+ Passing Tests**
 - **Multi-Distribution Support**: Ubuntu, Debian, Fedora, RHEL, Arch, openSUSE
 - **Current Version**: 0.3.0 (Development Release)
+- **WASM Support**: GUI frontend compiles to `wasm32-unknown-unknown`
 
 ---
 
@@ -23,14 +24,16 @@
 ```
 /home/bakri/RustroverProjects/linux-system-hardener/
 ├── Cargo.toml (workspace root)
+├── .cargo/config.toml       # WASM rustflags for getrandom
 ├── crates/
+│   ├── hardener-types/      # WASM-compatible shared type definitions
 │   ├── hardener-cli/        # CLI interface (entry point)
 │   ├── hardener-core/       # Core scanning/execution engine
 │   ├── hardener-plugins/    # 8 security hardening plugins
 │   ├── hardener-scheduler/  # Daemon for scheduled scanning
 │   ├── hardener-state/      # Checkpoint/audit trail (Ed25519 signed)
-│   ├── hardener-compliance/ # PDF report generation
-│   ├── hardener-common/     # Shared types/errors
+│   ├── hardener-compliance/ # PDF report generation (pdf feature)
+│   ├── hardener-common/     # Shared utilities/errors
 │   ├── hardener-distro/     # Distribution abstraction
 │   └── hardener-ui/         # Leptos WASM frontend
 ├── src-tauri/               # Desktop application
@@ -49,12 +52,24 @@ hardener-cli (entry point)
   ├── hardener-state (audit trail)
   └── hardener-common (shared)
 
+hardener-types (WASM-safe, no system deps)
+  └── serde, chrono only
+
 hardener-core
+  ├── hardener-types
   ├── hardener-common
   └── hardener-state (optional)
 
 hardener-plugins
   └── hardener-core
+
+hardener-compliance
+  ├── hardener-types
+  ├── hardener-core (default-features = false)
+  └── krilla (optional, pdf feature)
+
+hardener-ui (WASM frontend)
+  └── hardener-types (only!)
 
 hardener-scheduler
   ├── hardener-core
@@ -387,11 +402,21 @@ cargo test -p hardener-scheduler
    - `history export <session-id>` to JSON file
    - 6 new CLI tests (31 total in hardener-cli)
 
-4. **Next Tasks**:
-   - CI/CD integration (exit codes, machine-readable output)
+4. **Completed**: WASM Compilation Fix ✅
+   - Created `hardener-types` crate with WASM-safe dependencies
+   - Extracted shared types from hardener-common, hardener-core, hardener-compliance
+   - Feature-gated krilla PDF library behind `pdf` feature
+   - Updated hardener-ui to depend only on hardener-types
+   - Added `.cargo/config.toml` for getrandom WASM backend
+   - Added `#[wasm_bindgen(start)]` entry point for Leptos app
+   - GUI now compiles to `wasm32-unknown-unknown` and runs in browser/Tauri
+
+5. **Next Tasks**:
+   - v0.3.1: GUI Polish & Testing (see PLAN.md)
+   - v0.3.2: Distribution-Specific Validation
    - v0.4.0 Web Interface planning
 
-5. **Always Remember**:
+6. **Always Remember**:
    - Update documentation after changes
    - Follow naming conventions strictly
    - No AI attributions

@@ -121,6 +121,20 @@ This document tracks the development progress and planned features for Linux Sys
   - `hardener history show <id>` - display session details and findings
   - `hardener history export <id>` - export session to JSON file
 
+### v0.3.0 - WASM Compilation Fix ✅
+
+**Completed 2025-12-05**
+
+- [x] Created `hardener-types` crate with WASM-safe dependencies (serde, chrono only)
+- [x] Extracted shared types from hardener-common, hardener-core, hardener-compliance
+- [x] Feature-gated krilla PDF library behind `pdf` feature in hardener-compliance
+- [x] Updated hardener-ui to depend only on hardener-types
+- [x] Added `.cargo/config.toml` for getrandom WASM backend configuration
+- [x] Added `#[wasm_bindgen(start)]` entry point for Leptos app mounting
+- [x] GUI compiles to `wasm32-unknown-unknown` and runs in Tauri
+
+See [docs/WASM_FIX_PLAN.md](docs/WASM_FIX_PLAN.md) for implementation details.
+
 ### v0.3.1 - GUI Polish & Testing
 
 | Feature | Description | Priority |

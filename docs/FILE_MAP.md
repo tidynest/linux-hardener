@@ -6,6 +6,40 @@ This document lists all source files with their purpose and key exports.
 
 ---
 
+## hardener-types (WASM-Compatible Shared Types)
+
+| File | Purpose | Key Exports |
+|------|---------|-------------|
+| `src/lib.rs` | All shared type definitions | `PluginId`, `Severity`, `FindingCategory`, `ComplianceFramework`, `ComplianceMapping`, `ControlStatus`, `FindingPolicyException`, `PluginMetadata`, `ScanResult`, `Finding`, `ApplyResult`, `Change`, `ChangeType`, `ValidationReport`, `ValidationIssue`, `ComplianceReport`, `ControlResult`, `ComplianceSummary` |
+
+### Key Types (lib.rs)
+
+```rust
+// Core identifiers
+pub struct PluginId(String);
+
+// Severity levels (ordered)
+pub enum Severity { Info, Low, Medium, High, Critical }
+
+// Finding categories
+pub enum FindingCategory { Audit, Authentication, Cryptography, FileSystem, Kernel, MandatoryAccessControl, Network, Services }
+
+// Compliance frameworks
+pub enum ComplianceFramework { CIS, HIPAA, ISO27001, NIST, PCIDSS, STIG, GDPR }
+
+// Scan/Apply results
+pub struct ScanResult { scan_plugin_id, scan_success, scan_findings, scan_duration_us, scan_error }
+pub struct ApplyResult { apply_plugin_id, apply_success, apply_changes, apply_checkpoint_id, apply_error }
+pub struct Finding { finding_id, finding_title, finding_severity, ... }
+
+// Compliance report types
+pub struct ComplianceReport { report_framework, report_generated_at, report_controls, report_summary }
+pub struct ControlResult { control_id, control_name, control_status, control_findings }
+pub struct ComplianceSummary { summary_total_controls, summary_passing, summary_failing, ... }
+```
+
+---
+
 ## hardener-cli (CLI Binary)
 
 | File | Purpose | Key Exports/Functions |
@@ -60,30 +94,17 @@ pub trait HardeningPlugin: Send + Sync {
 
 ---
 
-## hardener-common (Shared Types)
+## hardener-common (Shared Utilities)
 
 | File | Purpose | Key Exports |
 |------|---------|-------------|
 | `src/lib.rs` | Module exports | Re-exports |
-| `src/types.rs` | Core type definitions | `PluginId`, `Severity`, `FindingCategory`, `ComplianceFramework`, `ComplianceMapping`, `FindingPolicyException` |
+| `src/types.rs` | Re-exports from hardener-types | `pub use hardener_types::*` (backwards compatibility) |
 | `src/error.rs` | Error types | `HardeningError`, `Result<T>` |
 | `src/logging.rs` | Logging setup | `init_logging()` |
-| `src/file_utils.rs` | File utilities | `update_file_atomically()` |
+| `src/file_utils.rs` | File utilities | `update_file_atomically()`, `read_config_file()`, `set_config_directive()`, `create_timestamped_backup()` |
 
-### Key Enums (types.rs)
-
-```rust
-pub enum Severity { Info, Low, Medium, High, Critical }
-
-pub enum FindingCategory {
-    Audit, Authentication, Cryptography, FileSystem,
-    Kernel, MandatoryAccessControl, Network, Services
-}
-
-pub enum ComplianceFramework {
-    CIS, HIPAA, ISO27001, NIST, PCIDSS, STIG, GDPR
-}
-```
+**Note**: Core types (Severity, FindingCategory, etc.) are now defined in `hardener-types` and re-exported here for backwards compatibility.
 
 ---
 
@@ -362,12 +383,12 @@ pub struct ScanRunner {
 
 ---
 
-## hardener-ui (Leptos Frontend)
+## hardener-ui (Leptos WASM Frontend)
 
 | File | Purpose | Key Exports |
 |------|---------|-------------|
-| `src/lib.rs` | Main App component | `App` |
-| `src/types.rs` | Frontend types | UI-specific types |
+| `src/lib.rs` | Main App component, WASM entry point | `App`, `#[wasm_bindgen(start)] main()` |
+| `src/types.rs` | Re-exports from hardener-types | `pub use hardener_types::*`, `CheckpointInfo` |
 | `src/state/mod.rs` | Reactive state | `AppState` |
 | `src/pages/dashboard_page.rs` | Dashboard view | `DashboardPage` |
 | `src/pages/scanner_page.rs` | Scan interface | `ScannerPage` |
@@ -380,6 +401,8 @@ pub struct ScanRunner {
 | `src/components/apply_results.rs` | Apply results | `ApplyResults` |
 | `src/tauri_bindings.rs` | Tauri command bindings | `invoke_*` functions |
 | `src/utils/mock_data.rs` | Development mocks | Mock data generators |
+
+**Note**: This crate depends only on `hardener-types` to ensure WASM compatibility. All types are re-exported from hardener-types.
 
 ---
 
@@ -416,6 +439,7 @@ pub fn generate_compliance_report(frameworks: Vec<String>) -> Result<Vec<Complia
 | File | Purpose |
 |------|---------|
 | `Cargo.toml` | Workspace definition |
+| `.cargo/config.toml` | WASM rustflags (getrandom backend) |
 | `rustfmt.toml` | Rust formatting config |
 | `tauri.conf.json` | Tauri app config |
 | `release.toml` | cargo-release configuration |
@@ -462,6 +486,7 @@ pub fn generate_compliance_report(frameworks: Vec<String>) -> Result<Vec<Complia
 | `docs/RELEASING.md` | Versioning and release process |
 | `docs/SSH_REMOTE_SCANNING.md` | SSH remote scanning user guide |
 | `docs/SSH_REMOTE_PLAN.md` | SSH implementation plan (internal) |
+| `docs/WASM_FIX_PLAN.md` | WASM compilation fix implementation |
 
 ---
 

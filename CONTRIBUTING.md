@@ -192,15 +192,16 @@ sudo cargo test -- --ignored
 ```
 linux-system-hardener/
 ├── crates/
+│   ├── hardener-types/       # WASM-compatible shared type definitions
 │   ├── hardener-core/        # Core plugin infrastructure
-│   ├── hardener-common/      # Shared types
+│   ├── hardener-common/      # Shared utilities and error types
 │   ├── hardener-distro/      # Distribution detection
 │   ├── hardener-plugins/     # Security plugins
 │   ├── hardener-state/       # State management
-│   ├── hardener-compliance/  # Compliance mapping
+│   ├── hardener-compliance/  # Compliance mapping (PDF behind feature flag)
 │   ├── hardener-scheduler/   # Scheduled scanning daemon
 │   ├── hardener-cli/         # Command-line interface
-│   └── hardener-ui/          # User interface
+│   └── hardener-ui/          # Leptos WASM frontend
 ├── src-tauri/                # Desktop app backend
 ├── scripts/                  # Development utilities
 ├── docs/                     # Documentation

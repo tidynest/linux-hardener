@@ -96,13 +96,14 @@ Total Tests: 378+ passing
 linux-system-hardener/
 ├── crates/
 │   ├── hardener-core/        # Plugin trait, context, checkpoint system
-│   ├── hardener-common/      # Shared types (Severity, Finding, etc.)
+│   ├── hardener-common/      # Shared utilities and error types
+│   ├── hardener-types/       # WASM-compatible shared type definitions
 │   ├── hardener-distro/      # Distribution detection and adaptation
 │   ├── hardener-plugins/     # Security plugin implementations
 │   ├── hardener-state/       # Checkpoint manager, audit logging
 │   ├── hardener-compliance/  # Compliance framework mapping
 │   ├── hardener-scheduler/   # Scheduled scanning daemon
-│   └── hardener-ui/          # Leptos frontend components
+│   └── hardener-ui/          # Leptos WASM frontend components
 ├── src-tauri/                # Tauri backend (desktop app)
 ├── scripts/                  # Development utilities
 └── docs/                     # Project documentation

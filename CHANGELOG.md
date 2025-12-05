@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **WASM-Compatible Types Crate**: New `hardener-types` crate for shared type definitions
+  - Extracted all shared types (PluginId, Severity, Finding, ScanResult, etc.) to dedicated crate
+  - WASM-safe dependencies only (serde, chrono)
+  - Enables GUI frontend to compile to `wasm32-unknown-unknown` target
+- **PDF Feature Gate**: krilla PDF library now behind optional `pdf` feature in hardener-compliance
+- **WASM Entry Point**: Added `#[wasm_bindgen(start)]` entry point for Leptos app mounting
+- `.cargo/config.toml` for WASM rustflags (getrandom backend configuration)
 - Configuration file support with layered loading (system → user → CLI → env vars)
 - `HardenerConfig`, `GlobalConfig`, `PluginConfig` structs for configuration management
 - `ConfigLoader` with multi-source config merging
@@ -31,10 +38,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Compliance page route `/compliance` with navigation link
 
 ### Changed
-- Test suite expanded from 220 to 338+ tests (54% increase)
+- Test suite expanded from 220 to 378+ tests (72% increase)
 - PDF findings now display with better visual hierarchy and spacing
 - All 8 plugins converted to async with `#[async_trait]`
 - HardeningPlugin trait methods now async: `scan()`, `apply()`, `rollback()`, `validate()`
+- **hardener-ui** now depends only on `hardener-types` (removed hardener-core, hardener-common, hardener-compliance dependencies)
+- Types re-exported from source crates for backwards compatibility
 
 ### Added (v0.3.0 Features)
 - **SSH Remote Scanning**: Scan, apply, and rollback on remote hosts via SSH

@@ -116,15 +116,16 @@ Linux System Hardener is a modular security hardening tool for Linux systems, pr
 
 | Crate | Purpose | Key Exports |
 |-------|---------|-------------|
+| `hardener-types` | WASM-compatible shared types | `PluginId`, `Severity`, `Finding`, `ScanResult`, `ApplyResult`, `ComplianceReport`, etc. |
 | `hardener-core` | Plugin framework, execution context, config | `HardeningPlugin`, `Context`, `PluginManager`, `HardenerConfig`, `ConfigLoader`, `SystemExecutor`, `LocalExecutor`, `SshExecutor` |
-| `hardener-common` | Shared types and utilities | `Severity`, `FindingCategory`, `HardeningError`, `FindingPolicyException` |
+| `hardener-common` | Shared utilities and error types | `HardeningError`, file utilities (re-exports types from hardener-types) |
 | `hardener-plugins` | 8 security plugin implementations | All plugin structs |
 | `hardener-state` | Checkpoint and audit system | `CheckpointManager`, `AuditLogger` |
-| `hardener-compliance` | Compliance framework mapping | `ReportGenerator`, frameworks |
+| `hardener-compliance` | Compliance framework mapping | `ReportGenerator`, frameworks (PDF behind `pdf` feature) |
 | `hardener-distro` | Distribution detection | `Distribution`, `DistroFamily` |
 | `hardener-scheduler` | Scheduled scanning daemon | `SchedulerConfig`, `ScanHistoryManager`, `JsonStore`, `ScanRunner`, `ScanSummary`, `TriggerType`, `Daemon`, `Notifier`, `EmailNotifier`, `WebhookNotifier`, `NotificationDispatcher`, `SystemdGenerator` |
 | `hardener-cli` | Command-line interface | Binary entry point |
-| `hardener-ui` | Leptos web components | Frontend components |
+| `hardener-ui` | Leptos WASM frontend | Frontend components (depends only on hardener-types) |
 | `src-tauri` | Desktop app backend | Tauri commands |
 
 ---

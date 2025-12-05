@@ -542,6 +542,7 @@ If any entry is modified, the hash chain breaks and tampering is detected.
 | Signing Keys | `~/.local/share/linux-hardener/signing.key` | Ed25519 |
 | User Config | `~/.config/linux-hardener/config.toml` | TOML |
 | System Config | `/etc/linux-hardener/config.toml` | TOML |
+| WASM Rustflags | `.cargo/config.toml` | TOML |
 | SSH Config | `/etc/ssh/sshd_config` | OpenSSH |
 | Kernel Params | `/proc/sys/*` | Virtual FS |
 | PAM Config | `/etc/pam.d/*` | PAM |
