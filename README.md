@@ -70,13 +70,13 @@ The tool is designed for system administrators, DevOps engineers, and security p
 ### Test Coverage
 
 ```
-Total Tests: 377+ passing
+Total Tests: 378+ passing
 ├── Plugin Tests: 48 + 80 mock tests
 ├── Core Tests: 59 + 14 mock executor tests
 ├── Compliance Tests: 46
 ├── State Tests: 31
-├── Scheduler Tests: 25 (daemon + runner)
-├── CLI Tests: 23
+├── Scheduler Tests: 57 (daemon, runner, notifications, systemd)
+├── CLI Tests: 25
 ├── Distro Tests: 13
 ├── SSH Integration Tests: 24
 └── Coverage: >90%
@@ -224,6 +224,22 @@ hardener daemon run-once
 
 # Show scheduler status and scan history
 hardener daemon status
+
+# Generate systemd unit files (outputs to stdout)
+hardener systemd generate
+
+# Generate with custom schedule (cron or systemd calendar format)
+hardener systemd generate --schedule "0 2 * * *"
+
+# Install systemd timer (requires root for system, or use --user)
+sudo hardener systemd install
+hardener systemd install --user
+
+# Check systemd timer status
+hardener systemd status
+
+# Remove systemd timer
+sudo hardener systemd uninstall
 ```
 
 ### SSH Remote Scanning
@@ -372,8 +388,8 @@ See [PLAN.md](PLAN.md) for detailed implementation plans for upcoming features.
 - [x] SSH remote scanning documentation
 - [x] Scheduled scanning daemon with tokio-cron-scheduler
 - [x] CLI daemon commands: `start`, `run-once`, `status`
-- [ ] Notifications (email, webhooks) - in progress
-- [ ] Systemd timer generation - planned
+- [x] Notifications (email via SMTP, webhooks for Slack/Discord/generic)
+- [x] Systemd timer generation (`hardener systemd generate/install/uninstall/status`)
 - [ ] CI/CD GitHub Actions integration (workflows exist, not connected)
 
 ### v1.0.0 (Future)

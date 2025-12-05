@@ -5,7 +5,7 @@ mod ssh_config;
 
 use anyhow::Result;
 use clap::Parser;
-use cli::{CheckpointAction, Cli, Command, DaemonAction};
+use cli::{CheckpointAction, Cli, Command, DaemonAction, SystemdAction};
 use commands::scan::ScanOptions;
 use hardener_core::{executor::SystemExecutor, LocalExecutor, SshExecutor};
 use ssh_config::SshConnectionConfig;
@@ -114,6 +114,20 @@ async fn main() -> Result<()> {
             DaemonAction::RunOnce => commands::daemon::run_once(cli.format, cli.quiet).await,
             DaemonAction::Status { limit } => {
                 commands::daemon::status(cli.format, cli.quiet, limit).await
+            }
+        },
+        Command::Systemd { action } => match action {
+            SystemdAction::Generate { output, binary, schedule } => {
+                commands::systemd::generate(output, binary, schedule, cli.config, cli.quiet).await
+            }
+            SystemdAction::Install { user, schedule } => {
+                commands::systemd::install(user, schedule, cli.config, cli.quiet).await
+            }
+            SystemdAction::Uninstall { user } => {
+                commands::systemd::uninstall(user, cli.quiet).await
+            }
+            SystemdAction::Status { user } => {
+                commands::systemd::status(user, cli.quiet).await
             }
         },
     };

@@ -1,6 +1,6 @@
 # Linux System Hardener - File Map
 
-**Last Updated:** 2025-12-04
+**Last Updated:** 2025-12-05
 
 This document lists all source files with their purpose and key exports.
 
@@ -11,7 +11,7 @@ This document lists all source files with their purpose and key exports.
 | File | Purpose | Key Exports/Functions |
 |------|---------|----------------------|
 | `src/main.rs` | Entry point, command routing | `main()` |
-| `src/cli.rs` | Clap argument definitions | `Cli`, `Command`, `DaemonAction`, `OutputFormat` |
+| `src/cli.rs` | Clap argument definitions | `Cli`, `Command`, `DaemonAction`, `SystemdAction`, `OutputFormat` |
 | `src/output.rs` | Output formatting utilities | `format_findings()`, `format_json()` |
 | `src/commands/mod.rs` | Command module exports | - |
 | `src/commands/scan.rs` | Scan command implementation | `run()` |
@@ -21,6 +21,7 @@ This document lists all source files with their purpose and key exports.
 | `src/commands/report.rs` | Compliance report generation | `run()` |
 | `src/commands/report_wizard.rs` | Interactive report wizard | `run_interactive()` |
 | `src/commands/daemon.rs` | Daemon management commands | `start()`, `run_once()`, `status()` |
+| `src/commands/systemd.rs` | Systemd unit file commands | `generate()`, `install()`, `uninstall()`, `status()` |
 | `src/ssh_config.rs` | SSH connection config helper | `SshConnectionConfig` |
 
 ---
@@ -214,6 +215,11 @@ pub struct FileState {
 | `src/json_store.rs` | JSON file storage | `JsonStore`, `StoredScan` |
 | `src/runner.rs` | Scan execution orchestrator | `ScanRunner`, `ScanSummary`, `TriggerType` |
 | `src/daemon.rs` | Cron-scheduled scanning daemon | `Daemon` |
+| `src/notification/mod.rs` | Notification system module | `Notifier`, `NotificationResult`, `parse_severity()`, `meets_severity_threshold()` |
+| `src/notification/email.rs` | SMTP email notifications | `EmailNotifier` |
+| `src/notification/webhook.rs` | HTTP webhook notifications | `WebhookNotifier` |
+| `src/notification/dispatcher.rs` | Notification coordinator | `NotificationDispatcher` |
+| `src/systemd.rs` | Systemd unit file generation | `SystemdGenerator`, `cron_to_calendar()`, `service_name()`, `timer_name()` |
 
 ### Key Structures (daemon.rs)
 
@@ -281,6 +287,42 @@ CREATE TABLE scan_findings (...);
 CREATE TABLE notification_log (...);
 ```
 
+### Key Trait (notification/mod.rs)
+
+```rust
+/// Trait for notification channels.
+#[async_trait]
+pub trait Notifier: Send + Sync {
+    /// Sends a notification with the scan summary.
+    async fn send(&self, summary: &ScanSummary) -> NotificationResult;
+    /// Returns the channel identifier for logging.
+    fn channel(&self) -> &str;
+}
+
+/// Result of a notification attempt.
+pub struct NotificationResult {
+    pub channel: String,
+    pub success: bool,
+    pub error: Option<String>,
+}
+```
+
+### Key Structures (dispatcher.rs)
+
+```rust
+/// Dispatches notifications to all configured channels.
+pub struct NotificationDispatcher {
+    notifiers: Vec<Box<dyn Notifier>>,
+    min_severity: Severity,
+    db: Arc<ScanHistoryManager>,
+}
+
+impl NotificationDispatcher {
+    pub fn new(config: &NotificationConfig, db: Arc<ScanHistoryManager>) -> Self;
+    pub async fn dispatch(&self, summary: &ScanSummary) -> Vec<NotificationResult>;
+}
+```
+
 ### Key Structures (runner.rs)
 
 ```rust
@@ -322,9 +364,6 @@ pub struct ScanRunner {
 | File | Purpose | Status |
 |------|---------|--------|
 | `src/systemd.rs` | Systemd file generation | Pending |
-| `src/notification/mod.rs` | Notifier trait | Pending |
-| `src/notification/email.rs` | SMTP via lettre | Pending |
-| `src/notification/webhook.rs` | HTTP POST notifications | Pending |
 
 ---
 
@@ -441,7 +480,7 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | hardener-compliance | `config.rs`, `report.rs`, `output/*.rs`, `generator.rs` | `framework_tests.rs` | 46 |
 | hardener-state | `audit.rs`, `hash_chain.rs`, `signing.rs`, `db.rs` | `checkpoint_system.rs` | 31 |
 | hardener-distro | `adapter.rs`, `package/*.rs` | - | 15 |
-| hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs` | - | 29 |
+| hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `notification/*.rs` | - | 48 |
 | hardener-cli | `cli.rs`, `output.rs` | - | 23 |
 | hardener-plugins | - | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs` | 128+ |
 | hardener-core | `config.rs`, `context.rs`, `plugin.rs`, `registry.rs`, `config_loader.rs` | `plugin_manager_tests.rs`, `mock_executor_tests.rs`, `ssh_executor_tests.rs` | 43+ |

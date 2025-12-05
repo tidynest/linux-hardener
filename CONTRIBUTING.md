@@ -100,7 +100,7 @@ We use [Conventional Commits](https://www.conventionalcommits.org/) for automate
 
 **Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `security`
 
-**Scopes**: `cli`, `core`, `plugins`, `config`, `state`, `compliance`, `ui`, `deps`
+**Scopes**: `cli`, `core`, `plugins`, `config`, `state`, `compliance`, `scheduler`, `ui`, `deps`
 
 Examples:
 ```bash
@@ -198,6 +198,8 @@ linux-system-hardener/
 │   ├── hardener-plugins/     # Security plugins
 │   ├── hardener-state/       # State management
 │   ├── hardener-compliance/  # Compliance mapping
+│   ├── hardener-scheduler/   # Scheduled scanning daemon
+│   ├── hardener-cli/         # Command-line interface
 │   └── hardener-ui/          # User interface
 ├── src-tauri/                # Desktop app backend
 ├── scripts/                  # Development utilities

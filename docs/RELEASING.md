@@ -64,6 +64,7 @@ We use [Conventional Commits](https://www.conventionalcommits.org/) for automate
 | `config` | Configuration system |
 | `state` | Checkpoint/rollback system |
 | `compliance` | Compliance reporting |
+| `scheduler` | Scheduled scanning and daemon |
 | `ui` | Desktop GUI |
 | `deps` | Dependencies |
 

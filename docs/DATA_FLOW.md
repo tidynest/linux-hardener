@@ -1,6 +1,6 @@
 # Linux System Hardener - Data Flow Documentation
 
-**Last Updated:** 2025-12-04
+**Last Updated:** 2025-12-05
 **Version:** 0.3.0
 
 This document describes the data flow for all major operations in the system.
@@ -17,6 +17,7 @@ This document describes the data flow for all major operations in the system.
 6. [GUI/Tauri Flow](#6-guitauri-flow)
 7. [SSH Remote Scanning Flow](#7-ssh-remote-scanning-flow)
 8. [Scheduled Scanning Flow](#8-scheduled-scanning-flow)
+9. [Systemd Unit Generation Flow](#9-systemd-unit-generation-flow)
 
 ---
 
@@ -739,12 +740,15 @@ If any entry is modified, the hash chain breaks and tampering is detected.
 │  }                                                           │
 └────────┬─────────────────────────────────────────────────────┘
          │
-         ▼ (Future: Phase 2-4)
+         ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  Notifier::send(summary)  [PENDING]                          │
-│  ├─ EmailNotifier: SMTP via lettre                           │
-│  ├─ WebhookNotifier: HTTP POST to Slack/Discord/generic      │
-│  └─ Log notification result to notification_log table        │
+│  NotificationDispatcher::notify(summary)                     │
+│  ├─ Check severity threshold (config.min_severity)           │
+│  ├─ EmailNotifier: SMTP via lettre (if configured)           │
+│  │   └─ Send HTML email with severity counts and findings    │
+│  ├─ WebhookNotifier: HTTP POST (if configured)               │
+│  │   └─ Format: Slack, Discord, or generic JSON              │
+│  └─ Log each result to notification_log table                │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -882,3 +886,83 @@ pub struct Daemon {
 | Scan History DB | `~/.local/share/linux-hardener/scheduler/history.db` | SQLite |
 | JSON Exports | `~/.local/share/linux-hardener/scheduler/scans/` | JSON with SHA-256 |
 | Scheduler Config | `[scheduler]` section in config.toml | TOML |
+
+---
+
+## 9. Systemd Unit Generation Flow
+
+**Command:** `hardener systemd generate` or `hardener systemd install`
+
+```
+┌──────────────────┐
+│   CLI Input      │
+│   (schedule,     │
+│    --user flag)  │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────────┐
+│  commands/systemd.rs::generate() or install()                │
+│  ├─ Resolve binary path (current exe or --binary)            │
+│  ├─ Resolve calendar expression:                             │
+│  │   └─ If cron format: cron_to_calendar() conversion        │
+│  │   └─ Else: use as-is (e.g., "daily", "*-*-* 02:00:00")    │
+│  └─ Create SystemdGenerator                                  │
+└────────┬─────────────────────────────────────────────────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────────┐
+│  SystemdGenerator::generate_service()                        │
+│  └─ Returns .service unit content:                           │
+│      [Unit]                                                  │
+│      Description=Linux System Hardener...                    │
+│      After=network.target                                    │
+│                                                              │
+│      [Service]                                               │
+│      Type=oneshot                                            │
+│      ExecStart=/path/to/hardener daemon run-once             │
+│      NoNewPrivileges=true                                    │
+│      ProtectSystem=strict                                    │
+│      ...                                                     │
+└────────┬─────────────────────────────────────────────────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────────┐
+│  SystemdGenerator::generate_timer()                          │
+│  └─ Returns .timer unit content:                             │
+│      [Timer]                                                 │
+│      OnCalendar=daily (or custom schedule)                   │
+│      Persistent=true                                         │
+│      RandomizedDelaySec=300                                  │
+│                                                              │
+│      [Install]                                               │
+│      WantedBy=timers.target                                  │
+└────────┬─────────────────────────────────────────────────────┘
+         │
+         ▼ (if install command)
+┌──────────────────────────────────────────────────────────────┐
+│  Install to systemd                                          │
+│  ├─ System mode: /etc/systemd/system/                        │
+│  └─ User mode: ~/.config/systemd/user/                       │
+│                                                              │
+│  Post-install:                                               │
+│  ├─ systemctl daemon-reload                                  │
+│  └─ systemctl enable --now linux-hardener.timer              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Cron to Calendar Conversion
+
+| Cron Expression | Systemd Calendar |
+|-----------------|------------------|
+| `0 2 * * *` | `*-*-* 02:00:00` |
+| `0 0 * * 0` | `Sun *-*-* 00:00:00` |
+| `0 3 1 * *` | `*-*-01 03:00:00` |
+| `30 14 15 6 *` | `*-06-15 14:30:00` |
+
+### Generated Unit Files
+
+| File | Purpose |
+|------|---------|
+| `linux-hardener.service` | Runs `hardener daemon run-once` (Type=oneshot) |
+| `linux-hardener.timer` | Triggers service on schedule |

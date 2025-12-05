@@ -7,6 +7,7 @@ use crate::{
     config::SchedulerConfig,
     db::{ScanFinding, ScanHistoryManager, SeverityCounts},
     json_store::JsonStore,
+    notification::dispatcher::NotificationDispatcher,
 };
 use hardener_common::{
     error::{HardeningError, Result},
@@ -79,6 +80,8 @@ pub struct ScanRunner {
     plugins: Vec<String>,
     /// Host identifier for this system.
     host: String,
+    /// Notification dispatcher (optional)
+    dispatcher: Option<NotificationDispatcher>,
 }
 
 /// JSON export file structure.
@@ -117,11 +120,12 @@ impl ScanRunner {
             .unwrap_or_else(|_| "localhost".to_string());
 
         ScanRunner {
-            db,
+            db: Arc::clone(&db),
             json_store,
             min_severity: Self::parse_severity(&config.min_severity),
             plugins: config.plugins.clone(),
             host,
+            dispatcher: Some(NotificationDispatcher::new(&config.notifications, db)),
         }
     }
 
@@ -139,6 +143,7 @@ impl ScanRunner {
             min_severity,
             plugins,
             host,
+            dispatcher: None,
         }
     }
 
@@ -251,11 +256,26 @@ impl ScanRunner {
         summary.high_count, summary.medium_count, summary.low_count,
     );
 
-        Ok(ScanSummary {
-            json_path: Some(json_path),
-            json_hash: Some(json_hash),
+        // Dispatch notifications
+        let final_summary = ScanSummary {
+            json_path: Some(json_path.clone()),
+            json_hash: Some(json_hash.clone()),
             ..summary
-        })
+        };
+
+        if let Some(ref dispatcher) = self.dispatcher {
+            let results = dispatcher.dispatch(&final_summary).await;
+            let success_count = results.iter().filter(|r| r.success).count();
+            let fail_count = results.len() - success_count;
+            if !results.is_empty() {
+                info!(
+                    "Notifications: {} sent, {} failed",
+                    success_count, fail_count
+                );
+            }
+        }
+
+        Ok(final_summary)
     }
 
     /// Converts plugin findings to database format with severity filtering.

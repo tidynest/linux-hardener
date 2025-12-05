@@ -22,6 +22,14 @@ pub enum HardeningError {
     #[error("Dependency error: {0}")]
     Dependency(String),
 
+    /// An executor operation failed.
+    #[error("Executor error: {0}")]
+    Executor(String),
+
+    /// Notification delivery failed.
+    #[error("Notification error: {0}")]
+    Notification(String),
+
     /// Package manager operation failed.
     #[error("Package manager error: {0}")]
     PackageManager(String),
@@ -57,10 +65,6 @@ pub enum HardeningError {
     /// Validation of configuration or system state failed.
     #[error("Validation error: {0}")]
     Validation(String),
-
-    /// An executor operation failed.
-    #[error("Executor error: {0}")]
-    Executor(String),
 }
 
 impl From<anyhow::Error> for HardeningError {
@@ -137,6 +141,12 @@ mod tests {
     fn test_error_display_validation() {
         let err = HardeningError::Validation("invalid input".to_string());
         assert_eq!(format!("{}", err), "Validation error: invalid input");
+    }
+
+    #[test]
+    fn test_error_display_notification() {
+        let err = HardeningError::Notification("SMTP connection refused".to_string());
+        assert_eq!(format!("{}", err), "Notification error: SMTP connection refused");
     }
 
     #[test]

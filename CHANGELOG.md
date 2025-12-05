@@ -66,6 +66,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Atomic scan guard to prevent overlapping scans
 - CLI daemon commands: `hardener daemon start`, `run-once`, `status`
 - Scan history display with session ID, status, trigger type, and severity counts
+- **Notification System**: Email and webhook notifications for scan results
+- `Notifier` trait with `NotificationResult` for consistent notification handling
+- `EmailNotifier` implementation using lettre for SMTP delivery
+- `WebhookNotifier` for Slack, Discord, and generic HTTP endpoints
+- `NotificationDispatcher` for coordinating multiple notification channels
+- Configurable severity thresholds for notification triggers
+- **Systemd Integration**: Generate and manage systemd unit files
+- `SystemdGenerator` for creating `.service` and `.timer` unit files
+- `cron_to_calendar()` function for cron-to-systemd calendar conversion
+- CLI commands: `hardener systemd generate`, `install`, `uninstall`, `status`
+- Security hardening directives in generated service unit (NoNewPrivileges, ProtectSystem, etc.)
+- Support for both system and user service installation
 
 ### Documentation
 - Added `docs/SSH_REMOTE_SCANNING.md` - comprehensive user guide for SSH remote scanning

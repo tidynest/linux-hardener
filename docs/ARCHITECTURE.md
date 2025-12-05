@@ -1,7 +1,7 @@
 # Linux System Hardener - Architecture Documentation
 
-**Last Updated:** 2025-12-04
-**Version:** 0.3.0 (Scheduled Scanning - Phase 2)
+**Last Updated:** 2025-12-05
+**Version:** 0.3.0 (Scheduled Scanning - Phase 3)
 
 ---
 
@@ -92,7 +92,8 @@ Linux System Hardener is a modular security hardening tool for Linux systems, pr
 │ ├─ JsonStore (timestamped JSON output)                          │
 │ ├─ ScanRunner (orchestrates plugin scans) ✓                     │
 │ ├─ Daemon (cron-based scheduling) ✓                             │
-│ └─ Notifications (email, webhooks) [pending]                    │
+│ ├─ Notifications (email, webhooks) ✓                            │
+│ └─ SystemdGenerator (.service/.timer files) ✓                   │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -121,7 +122,7 @@ Linux System Hardener is a modular security hardening tool for Linux systems, pr
 | `hardener-state` | Checkpoint and audit system | `CheckpointManager`, `AuditLogger` |
 | `hardener-compliance` | Compliance framework mapping | `ReportGenerator`, frameworks |
 | `hardener-distro` | Distribution detection | `Distribution`, `DistroFamily` |
-| `hardener-scheduler` | Scheduled scanning daemon | `SchedulerConfig`, `ScanHistoryManager`, `JsonStore`, `ScanRunner`, `ScanSummary`, `TriggerType` |
+| `hardener-scheduler` | Scheduled scanning daemon | `SchedulerConfig`, `ScanHistoryManager`, `JsonStore`, `ScanRunner`, `ScanSummary`, `TriggerType`, `Daemon`, `Notifier`, `EmailNotifier`, `WebhookNotifier`, `NotificationDispatcher`, `SystemdGenerator` |
 | `hardener-cli` | Command-line interface | Binary entry point |
 | `hardener-ui` | Leptos web components | Frontend components |
 | `src-tauri` | Desktop app backend | Tauri commands |

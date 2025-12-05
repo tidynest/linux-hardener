@@ -78,7 +78,7 @@ pub enum Command {
 
     /// Apply hardening recommendations.
     Apply {
-        /// Apply specific plugins (can be repreated).
+        /// Apply specific plugins (can be repeated).
         #[arg(short, long)]
         plugin: Vec<String>,
 
@@ -134,6 +134,12 @@ pub enum Command {
         #[command(subcommand)]
         action: DaemonAction,
     },
+
+    /// Manage systemd unit files for scheduled scanning.
+    Systemd {
+        #[command(subcommand)]
+        action: SystemdAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -161,6 +167,50 @@ pub enum DaemonAction {
     Status {
         /// Number of recent sessions to show.
         limit: u32,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum SystemdAction {
+    /// Generate systemd unit files and print to stdout.
+    Generate {
+        /// Write files to this directory instead of stdout.
+        #[arg(short, long, value_name = "DIR")]
+        output: Option<std::path::PathBuf>,
+
+        /// Path to the hardener binary (auto-detected if not specified).
+        #[arg(long, value_name = "PATH")]
+        binary: Option<std::path::PathBuf>,
+
+        /// Schedule in systemd calendar format (e.g., "daily", "*-*-* 02:00:00").
+          #[arg(short, long, default_value = "daily")]
+          schedule: String,
+    },
+
+    /// Install unit files to systemd (requires root for system install).
+
+    Install {
+        /// Install as user service instead of system service.
+        #[arg(long)]
+        user: bool,
+
+        /// Schedule in systemd calendar format.
+        #[arg(short, long, default_value = "daily")]
+        schedule: String,
+    },
+
+    /// Uninstall unit files from systemd.
+    Uninstall {
+        /// Uninstall user service instead of system service.
+        #[arg(long)]
+        user: bool,
+    },
+
+    /// Show systemd timer and service status.
+    Status {
+        /// Show user service status instead of system service.
+        #[arg(long)]
+        user: bool,
     },
 }
 
@@ -328,4 +378,29 @@ mod tests {
             ReportFormat::Html
         ));
     }
+
+    #[test]
+    fn test_cli_parse_systemd_generate() {
+        let cli = Cli::parse_from(["hardener", "systemd", "generate"]);
+        if let Command::Systemd { action } = cli.command {
+            assert!(matches!(action, SystemdAction::Generate { .. }));
+        } else {
+            panic!("Expected Systemd command");
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_systemd_install_user() {
+        let cli = Cli::parse_from(["hardener", "systemd", "install", "--user"]);
+        if let Command::Systemd { action } = cli.command {
+            if let SystemdAction::Install { user, .. } = action {
+                assert!(user);
+            } else {
+                panic!("Expected Install action");
+            }
+        } else {
+            panic!("Expected Systemd command");
+        }
+    }
+
 }

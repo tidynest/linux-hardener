@@ -104,11 +104,18 @@ This document tracks the development progress and planned features for Linux Sys
   - `hardener daemon start` - starts scheduling daemon
   - `hardener daemon run-once` - single scan without scheduler
   - `hardener daemon status` - shows config and scan history
-- [ ] `Notifier` trait and `NotificationDispatcher`
-- [ ] `EmailNotifier` (lettre SMTP)
-- [ ] `WebhookNotifier` (Slack/Discord/generic)
-- [ ] `SystemdGenerator` (.service/.timer templates)
-- [ ] CLI `systemd` commands
+- [x] `Notifier` trait and `NotificationDispatcher` ✅ **DONE (2025-12-04)**
+- [x] `EmailNotifier` (lettre SMTP) ✅ **DONE (2025-12-04)**
+- [x] `WebhookNotifier` (Slack/Discord/generic) ✅ **DONE (2025-12-04)**
+- [x] `SystemdGenerator` (.service/.timer templates) ✅ **DONE (2025-12-05)**
+  - Generates `.service` and `.timer` unit files
+  - Cron-to-systemd calendar expression conversion
+  - Security hardening directives in service unit
+- [x] CLI `systemd` commands ✅ **DONE (2025-12-05)**
+  - `hardener systemd generate` - output unit files to stdout or directory
+  - `hardener systemd install` - install and enable timer (system or user)
+  - `hardener systemd uninstall` - disable and remove units
+  - `hardener systemd status` - show timer/service status
 - [ ] CLI `history` commands
 
 ### v0.4.0 - Web Interface

@@ -1453,6 +1453,44 @@ impl ScanRunner {
 // Helper functions:
 fn spawn_signal_handler(shutdown_tx: broadcast::Sender<()>) { }
 async fn execute_scan(runner: Arc<ScanRunner>, pm: Arc<PluginManager>, ctx: Arc<Context>, scan_in_progress: Arc<AtomicBool>) { }
+
+// Notification System:
+#[async_trait]
+pub trait Notifier: Send + Sync {
+    async fn send(&self, summary: &ScanSummary) -> NotificationResult;
+    fn channel(&self) -> &str;
+}
+
+pub struct NotificationResult {
+    pub channel: String,
+    pub success: bool,
+    pub error: Option<String>,
+}
+
+pub struct EmailNotifier {
+    config: EmailConfig,
+    transport: AsyncSmtpTransport<Tokio1Executor>,
+}
+
+pub struct WebhookNotifier {
+    endpoint: WebhookEndpoint,
+    client: Client,
+}
+
+pub struct NotificationDispatcher {
+    notifiers: Vec<Box<dyn Notifier>>,
+    min_severity: Severity,
+    db: Arc<ScanHistoryManager>,
+}
+
+impl NotificationDispatcher {
+    pub fn new(config: &NotificationConfig, db: Arc<ScanHistoryManager>) -> Self { }
+    pub async fn dispatch(&self, summary: &ScanSummary) -> Vec<NotificationResult> { }
+}
+
+// Helper functions:
+pub fn parse_severity(s: &str) -> Severity { }
+pub fn meets_severity_threshold(summary: &ScanSummary, min_severity: Severity) -> bool { }
 ```
 
 ### User Interface (Leptos) Domain
@@ -1550,9 +1588,18 @@ When naming any identifier in this project, verify:
 
 ---
 
-**Last Updated**: 2025-12-04 by Eric Jingryd
+**Last Updated**: 2025-12-05 by Eric Jingryd
 
 ## Recent Additions
+
+### 2025-12-05
+
+**Systemd Integration Domain**:
+- Added `SystemdGenerator` struct for unit file generation
+- Added module-level helper functions: `service_name()`, `timer_name()`, `system_unit_path()`, `user_unit_path()`
+- Added `cron_to_calendar()` function for cron-to-systemd conversion
+- CLI commands: `systemd generate`, `systemd install`, `systemd uninstall`, `systemd status`
+- Added `SystemdAction` enum to CLI
 
 ### 2025-12-04
 
