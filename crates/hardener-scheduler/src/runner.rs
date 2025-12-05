@@ -11,7 +11,7 @@ use crate::{
 };
 use hardener_common::{
     error::{HardeningError, Result},
-    types::Severity
+    types::Severity,
 };
 use hardener_core::{Context, PluginManager, ScanResult};
 use serde::Serialize;
@@ -183,11 +183,7 @@ impl ScanRunner {
         ctx: &Context,
         trigger: TriggerType,
     ) -> Result<ScanSummary> {
-        info!(
-        "Starting {} scan on host '{}'",
-        trigger.as_str(),
-        self.host
-    );
+        info!("Starting {} scan on host '{}'", trigger.as_str(), self.host);
 
         // Determines which plugins to scan
         let plugins_to_scan: Vec<String> = if self.plugins.is_empty() {
@@ -229,10 +225,13 @@ impl ScanRunner {
         let findings = self.process_findings(&scan_results);
 
         info!(
-        "Scan complete: {} findings (filtered from {} total)",
-        findings.len(),
-        scan_results.iter().map(|r| r.scan_findings.len()).sum::<usize>(),
-    );
+            "Scan complete: {} findings (filtered from {} total)",
+            findings.len(),
+            scan_results
+                .iter()
+                .map(|r| r.scan_findings.len())
+                .sum::<usize>(),
+        );
 
         // Build summary counts
         let summary = self.build_summary(&session_id, &plugins_to_scan, &findings, had_errors);
@@ -240,7 +239,10 @@ impl ScanRunner {
         // Export to JSON
         let (json_path, json_hash) = self
             .json_store
-            .write(&session_id, &self.build_json_export(&scan_results, &findings))
+            .write(
+                &session_id,
+                &self.build_json_export(&scan_results, &findings),
+            )
             .await?;
 
         debug!("Exported JSON to: {}", json_path);
@@ -251,10 +253,14 @@ impl ScanRunner {
             .await?;
 
         info!(
-        "Session {} completed: {} findings, {} critical, {} high, {} medium, {} low",
-        session_id, summary.total_findings, summary.critical_count,
-        summary.high_count, summary.medium_count, summary.low_count,
-    );
+            "Session {} completed: {} findings, {} critical, {} high, {} medium, {} low",
+            session_id,
+            summary.total_findings,
+            summary.critical_count,
+            summary.high_count,
+            summary.medium_count,
+            summary.low_count,
+        );
 
         // Dispatch notifications
         let final_summary = ScanSummary {
@@ -279,8 +285,7 @@ impl ScanRunner {
     }
 
     /// Converts plugin findings to database format with severity filtering.
-    fn process_findings(&self, scan_results: &[ScanResult]) -> Vec<ScanFinding>
-    {
+    fn process_findings(&self, scan_results: &[ScanResult]) -> Vec<ScanFinding> {
         scan_results
             .iter()
             .flat_map(|result| {
@@ -296,13 +301,10 @@ impl ScanRunner {
                         severity: finding.finding_severity.to_string(),
                         title: finding.finding_title.clone(),
                         description: Some(finding.finding_description.clone()),
-                        current_value:
-                        Some(finding.finding_current_value.clone()),
-                        recommended_value:
-                        Some(finding.finding_recommended_value.clone()),
+                        current_value: Some(finding.finding_current_value.clone()),
+                        recommended_value: Some(finding.finding_recommended_value.clone()),
                         category: Some(finding.finding_category.to_string()),
-                        compliance_mappings: if
-                        finding.finding_compliance.is_empty() {
+                        compliance_mappings: if finding.finding_compliance.is_empty() {
                             None
                         } else {
                             Some(
@@ -312,8 +314,7 @@ impl ScanRunner {
                                     .map(|c| {
                                         format!(
                                             "{}:{}",
-                                            c.compliance_framework,
-                                            c.compliance_control_id
+                                            c.compliance_framework, c.compliance_control_id
                                         )
                                     })
                                     .collect(),
@@ -411,7 +412,11 @@ mod tests {
             scan_success: success,
             scan_findings: findings,
             scan_duration_us: 1000,
-            scan_error: if success { None } else { Some("Test error".to_string()) },
+            scan_error: if success {
+                None
+            } else {
+                Some("Test error".to_string())
+            },
         }
     }
 
@@ -592,14 +597,12 @@ mod tests {
         );
 
         let mut finding = make_finding("K001", Severity::High);
-        finding.finding_compliance = vec![
-            hardener_common::types::ComplianceMapping {
-                compliance_framework: hardener_common::types::ComplianceFramework::CIS,
-                compliance_control_id: "1.5.1".to_string(),
-                compliance_control_title: "Test control".to_string(),
-                compliance_section: None,
-            },
-        ];
+        finding.finding_compliance = vec![hardener_common::types::ComplianceMapping {
+            compliance_framework: hardener_common::types::ComplianceFramework::CIS,
+            compliance_control_id: "1.5.1".to_string(),
+            compliance_control_title: "Test control".to_string(),
+            compliance_section: None,
+        }];
 
         let scan_results = vec![make_scan_result("kernel", vec![finding], true)];
         let findings = runner.process_findings(&scan_results);

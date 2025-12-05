@@ -119,7 +119,11 @@ impl Daemon {
         info!("Scheduled scan triggered");
 
         let result = runner
-            .run(plugin_manager.as_ref(), ctx.as_ref(), TriggerType::Scheduled)
+            .run(
+                plugin_manager.as_ref(),
+                ctx.as_ref(),
+                TriggerType::Scheduled,
+            )
             .await;
 
         scan_in_progress.store(false, Ordering::SeqCst);
@@ -164,14 +168,15 @@ impl Daemon {
             ));
         }
 
-        info!("Starting daemon with schedule '{}'",
-        self.daemon_config.schedule
+        info!(
+            "Starting daemon with schedule '{}'",
+            self.daemon_config.schedule
         );
 
         // Create the job scheduler
-        let scheduler = JobScheduler::new().await.map_err(|e| {
-            HardeningError::State(format!("Failed to create scheduler: {}", e))
-        })?;
+        let scheduler = JobScheduler::new()
+            .await
+            .map_err(|e| HardeningError::State(format!("Failed to create scheduler: {}", e)))?;
 
         // Clone Arc references for the job closure
         let runner = self.daemon_runner.clone();
@@ -188,18 +193,15 @@ impl Daemon {
                 let ctx = context.clone();
                 let flag = scan_flag.clone();
 
-                Box::pin(async move {
-                    Self::execute_scan(runner, pm, ctx, flag).await
-                })
+                Box::pin(async move { Self::execute_scan(runner, pm, ctx, flag).await })
             },
         )
-        .map_err(|e| {
-            HardeningError::Config(format!("Invalid cron expression: {}", e))
-        })?;
+        .map_err(|e| HardeningError::Config(format!("Invalid cron expression: {}", e)))?;
 
-        scheduler.add(job).await.map_err(|e| {
-            HardeningError::State(format!("Failed to add job: {}", e))
-        })?;
+        scheduler
+            .add(job)
+            .await
+            .map_err(|e| HardeningError::State(format!("Failed to add job: {}", e)))?;
 
         // Set up shutdown channel
         let (shutdown_tx, mut shutdown_rx) = broadcast::channel::<()>(1);
@@ -209,9 +211,10 @@ impl Daemon {
         tokio::spawn(Self::signal_handler(shutdown_tx));
 
         // start the scheduler
-        scheduler.start().await.map_err(|e| {
-            HardeningError::State(format!("Failed to start scheduler: {}", e))
-        })?;
+        scheduler
+            .start()
+            .await
+            .map_err(|e| HardeningError::State(format!("Failed to start scheduler: {}", e)))?;
 
         self.daemon_scheduler = Some(scheduler);
 

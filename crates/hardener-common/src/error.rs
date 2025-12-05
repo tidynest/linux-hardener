@@ -146,7 +146,10 @@ mod tests {
     #[test]
     fn test_error_display_notification() {
         let err = HardeningError::Notification("SMTP connection refused".to_string());
-        assert_eq!(format!("{}", err), "Notification error: SMTP connection refused");
+        assert_eq!(
+            format!("{}", err),
+            "Notification error: SMTP connection refused"
+        );
     }
 
     #[test]

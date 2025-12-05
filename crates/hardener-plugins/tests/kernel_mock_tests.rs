@@ -60,7 +60,7 @@ fn partial_kernel_executor() -> MockExecutor {
         // Some insecure
         .with_file("/proc/sys/kernel/kptr_restrict", "0")
         .with_file("/proc/sys/fs/suid_dumpable", "1")
-        // Some missing (kernel.yama.ptrace_scope, etc.)
+    // Some missing (kernel.yama.ptrace_scope, etc.)
 }
 
 #[tokio::test]
@@ -76,7 +76,11 @@ async fn test_kernel_scan_secure_config_no_findings() {
     assert!(
         result.scan_findings.is_empty(),
         "Secure kernel should have no findings, but got: {:?}",
-        result.scan_findings.iter().map(|f| &f.finding_title).collect::<Vec<_>>()
+        result
+            .scan_findings
+            .iter()
+            .map(|f| &f.finding_title)
+            .collect::<Vec<_>>()
     );
 }
 
@@ -99,7 +103,9 @@ async fn test_kernel_scan_insecure_config_finds_all_issues() {
     );
 
     // Check specific findings exist
-    let finding_ids: Vec<_> = result.scan_findings.iter()
+    let finding_ids: Vec<_> = result
+        .scan_findings
+        .iter()
         .map(|f| f.finding_id.as_str())
         .collect();
 
@@ -119,7 +125,9 @@ async fn test_kernel_scan_partial_config_finds_some_issues() {
     assert!(result.scan_success);
 
     // Should find issues for insecure params, skip missing ones
-    let finding_ids: Vec<_> = result.scan_findings.iter()
+    let finding_ids: Vec<_> = result
+        .scan_findings
+        .iter()
         .map(|f| f.finding_id.as_str())
         .collect();
 
@@ -149,8 +157,7 @@ async fn test_kernel_scan_missing_params_gracefully_skipped() {
 
 #[tokio::test]
 async fn test_kernel_scan_finding_structure() {
-    let executor = MockExecutor::new()
-        .with_file("/proc/sys/kernel/randomize_va_space", "0");
+    let executor = MockExecutor::new().with_file("/proc/sys/kernel/randomize_va_space", "0");
 
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = KernelHardeningPlugin::new();
@@ -180,33 +187,42 @@ async fn test_kernel_scan_compliance_mappings() {
     let result = plugin.scan(&ctx).await.unwrap();
 
     // ASLR finding should have CIS 1.5.1 mapping
-    let aslr_finding = result.scan_findings.iter()
+    let aslr_finding = result
+        .scan_findings
+        .iter()
         .find(|f| f.finding_id == "kernel_kernel_randomize_va_space")
         .unwrap();
     assert!(!aslr_finding.finding_compliance.is_empty());
-    assert_eq!(aslr_finding.finding_compliance[0].compliance_control_id, "1.5.1");
+    assert_eq!(
+        aslr_finding.finding_compliance[0].compliance_control_id,
+        "1.5.1"
+    );
 
     // TCP syncookies should have CIS 3.2.8 mapping
-    let syncookies_finding = result.scan_findings.iter()
+    let syncookies_finding = result
+        .scan_findings
+        .iter()
         .find(|f| f.finding_id == "kernel_net_ipv4_tcp_syncookies")
         .unwrap();
-    assert_eq!(syncookies_finding.finding_compliance[0].compliance_control_id, "3.2.8");
+    assert_eq!(
+        syncookies_finding.finding_compliance[0].compliance_control_id,
+        "3.2.8"
+    );
 }
 
 #[tokio::test]
 async fn test_kernel_validate_writable_params() {
-    let executor = MockExecutor::new()
-        .with_file_metadata(
-            "/proc/sys/kernel/randomize_va_space",
-            "2",
-            FileMetadata {
-                exists: true,
-                is_file: true,
-                is_dir: false,
-                mode: 0o644, // rw-r--r-- (writable by owner)
-                size: 2,
-            },
-        );
+    let executor = MockExecutor::new().with_file_metadata(
+        "/proc/sys/kernel/randomize_va_space",
+        "2",
+        FileMetadata {
+            exists: true,
+            is_file: true,
+            is_dir: false,
+            mode: 0o644, // rw-r--r-- (writable by owner)
+            size: 2,
+        },
+    );
 
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = KernelHardeningPlugin::new();
@@ -221,18 +237,17 @@ async fn test_kernel_validate_writable_params() {
 
 #[tokio::test]
 async fn test_kernel_validate_readonly_params() {
-    let executor = MockExecutor::new()
-        .with_file_metadata(
-            "/proc/sys/kernel/randomize_va_space",
-            "2",
-            FileMetadata {
-                exists: true,
-                is_file: true,
-                is_dir: false,
-                mode: 0o444, // r--r--r-- (read-only)
-                size: 2,
-            },
-        );
+    let executor = MockExecutor::new().with_file_metadata(
+        "/proc/sys/kernel/randomize_va_space",
+        "2",
+        FileMetadata {
+            exists: true,
+            is_file: true,
+            is_dir: false,
+            mode: 0o444, // r--r--r-- (read-only)
+            size: 2,
+        },
+    );
 
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = KernelHardeningPlugin::new();
@@ -287,12 +302,16 @@ async fn test_kernel_scan_logs_file_reads() {
     let log = executor.log();
 
     // Should have attempted to read all kernel params
-    assert!(log.files_read.iter().any(|p|
-        p.to_str().unwrap().contains("randomize_va_space")
-    ));
-    assert!(log.files_read.iter().any(|p|
-        p.to_str().unwrap().contains("kptr_restrict")
-    ));
+    assert!(
+        log.files_read
+            .iter()
+            .any(|p| p.to_str().unwrap().contains("randomize_va_space"))
+    );
+    assert!(
+        log.files_read
+            .iter()
+            .any(|p| p.to_str().unwrap().contains("kptr_restrict"))
+    );
 }
 
 #[tokio::test]
@@ -303,7 +322,10 @@ async fn test_kernel_scan_duration_recorded() {
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_duration_us > 0, "Scan duration should be recorded");
+    assert!(
+        result.scan_duration_us > 0,
+        "Scan duration should be recorded"
+    );
 }
 
 #[tokio::test]
@@ -324,7 +346,10 @@ async fn test_kernel_scan_with_remote_executor() {
 
     assert!(result.scan_success);
     // Should find kptr_restrict issue
-    assert!(result.scan_findings.iter().any(|f|
-        f.finding_id == "kernel_kernel_kptr_restrict"
-    ));
+    assert!(
+        result
+            .scan_findings
+            .iter()
+            .any(|f| f.finding_id == "kernel_kernel_kptr_restrict")
+    );
 }

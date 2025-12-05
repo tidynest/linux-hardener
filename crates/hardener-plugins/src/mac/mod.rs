@@ -56,13 +56,23 @@ impl MacHardeningPlugin {
     /// 3. Return None if neither is found
     async fn detect_mac_system(&self, ctx: &Context) -> Option<MacSystem> {
         // Check for SELinux first
-        if ctx.executor().path_exists(Path::new("/sys/fs/selinux")).await.unwrap_or(false) {
+        if ctx
+            .executor()
+            .path_exists(Path::new("/sys/fs/selinux"))
+            .await
+            .unwrap_or(false)
+        {
             info!("Detected SELinux MAC system");
             return Some(MacSystem::SELinux);
         }
 
         // Check for AppArmor second
-        if ctx.executor().path_exists(Path::new("/sys/kernel/security/apparmor")).await.unwrap_or(false) {
+        if ctx
+            .executor()
+            .path_exists(Path::new("/sys/kernel/security/apparmor"))
+            .await
+            .unwrap_or(false)
+        {
             info!("Detected AppArmor MAC system");
             return Some(MacSystem::AppArmor);
         }
@@ -75,7 +85,8 @@ impl MacHardeningPlugin {
     ///
     /// Returns one of: "Enforcing", "Permissive", or "Disabled"
     async fn get_selinux_mode(&self, ctx: &Context) -> Result<String> {
-        let output = ctx.executor()
+        let output = ctx
+            .executor()
             .execute_command("getenforce", &[])
             .await
             .map_err(|e| HardeningError::Plugin(format!("Failed to execute getenforce: {}", e)))?;
@@ -105,7 +116,8 @@ impl MacHardeningPlugin {
         }
 
         // Set to enforcing mode
-        let output = ctx.executor()
+        let output = ctx
+            .executor()
             .execute_command("setenforce", &["1"])
             .await
             .map_err(|e| HardeningError::Plugin(format!("Failed to execute setenforce: {}", e)))?;
@@ -131,7 +143,8 @@ impl MacHardeningPlugin {
     ///
     /// Uses `aa-status` to get the current state of AppArmor profiles.
     async fn get_apparmor_status(&self, ctx: &Context) -> Result<String> {
-        let output = ctx.executor()
+        let output = ctx
+            .executor()
             .execute_command("aa-status", &["--verbose"])
             .await
             .map_err(|e| HardeningError::Plugin(format!("Failed to execute aa-status: {}", e)))?;
@@ -193,8 +206,8 @@ fn get_mac_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
         "apparmor-complain-mode" | "apparmor-no-profiles" => vec![ComplianceMapping {
             compliance_framework: ComplianceFramework::CIS,
             compliance_control_id: "1.6.1.4".to_string(),
-            compliance_control_title:
-                "Ensure the SELinux mode is enforcing or AppArmor is enabled".to_string(),
+            compliance_control_title: "Ensure the SELinux mode is enforcing or AppArmor is enabled"
+                .to_string(),
             compliance_section: Some("Mandatory Access Control".to_string()),
         }],
         _ => vec![],
@@ -430,15 +443,14 @@ impl HardeningPlugin for MacHardeningPlugin {
 
         // Reload SELinux/AppArmor based on what's available
         // Try SELinux first
-        let selinux_result = ctx.executor()
-            .execute_command("setenforce", &["1"])
-            .await;
+        let selinux_result = ctx.executor().execute_command("setenforce", &["1"]).await;
 
         if selinux_result.is_ok() {
             info!("SELinux policy reloaded");
         } else {
             // Try AppArmor
-            let apparmor_result = ctx.executor()
+            let apparmor_result = ctx
+                .executor()
                 .execute_command("systemctl", &["reload", "apparmor"])
                 .await;
 

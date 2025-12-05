@@ -2,8 +2,8 @@
 //!
 //! Tests dependency resolution, execution order, and plugin workflows.
 
-use hardener_core::{Config, Context, PluginManager, PluginRegistry};
 use hardener_core::testing::MockPlugin;
+use hardener_core::{Config, Context, PluginManager, PluginRegistry};
 
 /// Tests basic dependency resolution with a valid chain: A → B → C.
 ///
@@ -15,9 +15,19 @@ use hardener_core::testing::MockPlugin;
 fn test_dependency_resolution_valid_chain() {
     // Create registry and register plugins in random order
     let registry = PluginRegistry::new();
-    registry.register(Box::new(MockPlugin::new("plugin-b").depends_on(&["plugin-a"]))).unwrap();
-    registry.register(Box::new(MockPlugin::new("plugin-a"))).unwrap();
-    registry.register(Box::new(MockPlugin::new("plugin-c").depends_on(&["plugin-b"]))).unwrap();
+    registry
+        .register(Box::new(
+            MockPlugin::new("plugin-b").depends_on(&["plugin-a"]),
+        ))
+        .unwrap();
+    registry
+        .register(Box::new(MockPlugin::new("plugin-a")))
+        .unwrap();
+    registry
+        .register(Box::new(
+            MockPlugin::new("plugin-c").depends_on(&["plugin-b"]),
+        ))
+        .unwrap();
 
     // Create plugin manager
     let mut manager = PluginManager::new(registry);
@@ -42,7 +52,11 @@ fn test_dependency_resolution_valid_chain() {
 fn test_dependency_resolution_missing_dependency() {
     // Create registry and register only PluginB (which depends on PluginA)
     let registry = PluginRegistry::new();
-    registry.register(Box::new(MockPlugin::new("plugin-b").depends_on(&["plugin-a"]))).unwrap();
+    registry
+        .register(Box::new(
+            MockPlugin::new("plugin-b").depends_on(&["plugin-a"]),
+        ))
+        .unwrap();
 
     // Create plugin manager
     let mut manager = PluginManager::new(registry);
@@ -69,10 +83,16 @@ fn test_dependency_resolution_missing_dependency() {
 fn test_dependency_resolution_circular() {
     // Create registry and register both circular plugins
     let registry = PluginRegistry::new();
-    registry.register(Box::new(MockPlugin::new("plugin-circular").depends_on(&["plugin-circular-b"
-    ]))).unwrap();
-    registry.register(Box::new(MockPlugin::new("plugin-circular-b").depends_on(&["plugin-circular"
-    ]))).unwrap();
+    registry
+        .register(Box::new(
+            MockPlugin::new("plugin-circular").depends_on(&["plugin-circular-b"]),
+        ))
+        .unwrap();
+    registry
+        .register(Box::new(
+            MockPlugin::new("plugin-circular-b").depends_on(&["plugin-circular"]),
+        ))
+        .unwrap();
     // These two plugins depend on each other, creating a cycle
 
     // Create plugin manager
@@ -104,11 +124,19 @@ fn test_dependency_resolution_circular() {
 fn test_execution_order_respects_dependencies() {
     // Create registry and register plugins in random order
     let registry = PluginRegistry::new();
-    registry.register(Box::new(MockPlugin::new("plugin-c").depends_on(&["plugin-b"
-    ]))).unwrap();
-    registry.register(Box::new(MockPlugin::new("plugin-a"))).unwrap();
-    registry.register(Box::new(MockPlugin::new("plugin-b").depends_on(&["plugin-a"
-    ]))).unwrap();
+    registry
+        .register(Box::new(
+            MockPlugin::new("plugin-c").depends_on(&["plugin-b"]),
+        ))
+        .unwrap();
+    registry
+        .register(Box::new(MockPlugin::new("plugin-a")))
+        .unwrap();
+    registry
+        .register(Box::new(
+            MockPlugin::new("plugin-b").depends_on(&["plugin-a"]),
+        ))
+        .unwrap();
 
     // Create plugin manager and resolve dependencies
     let mut manager = PluginManager::new(registry);
@@ -148,11 +176,19 @@ fn test_execution_order_respects_dependencies() {
 async fn test_execute_scan_workflow() {
     // Create registry and register plugins
     let registry = PluginRegistry::new();
-    registry.register(Box::new(MockPlugin::new("plugin-a"))).unwrap();
-    registry.register(Box::new(MockPlugin::new("plugin-b").depends_on(&["plugin-a"
-    ]))).unwrap();
-    registry.register(Box::new(MockPlugin::new("plugin-c").depends_on(&["plugin-b"
-    ]))).unwrap();
+    registry
+        .register(Box::new(MockPlugin::new("plugin-a")))
+        .unwrap();
+    registry
+        .register(Box::new(
+            MockPlugin::new("plugin-b").depends_on(&["plugin-a"]),
+        ))
+        .unwrap();
+    registry
+        .register(Box::new(
+            MockPlugin::new("plugin-c").depends_on(&["plugin-b"]),
+        ))
+        .unwrap();
 
     // Create plugin manager and resolve dependencies
     let mut manager = PluginManager::new(registry);
@@ -214,11 +250,19 @@ async fn test_execute_scan_workflow() {
 async fn test_execute_apply_workflow() {
     // Create registry and register plugins
     let registry = PluginRegistry::new();
-    registry.register(Box::new(MockPlugin::new("plugin-a"))).unwrap();
-    registry.register(Box::new(MockPlugin::new("plugin-b").depends_on(&["plugin-a"
-    ]))).unwrap();
-    registry.register(Box::new(MockPlugin::new("plugin-c").depends_on(&["plugin-b"
-    ]))).unwrap();
+    registry
+        .register(Box::new(MockPlugin::new("plugin-a")))
+        .unwrap();
+    registry
+        .register(Box::new(
+            MockPlugin::new("plugin-b").depends_on(&["plugin-a"]),
+        ))
+        .unwrap();
+    registry
+        .register(Box::new(
+            MockPlugin::new("plugin-c").depends_on(&["plugin-b"]),
+        ))
+        .unwrap();
 
     // Create plugin manager and resolve dependencies
     let mut manager = PluginManager::new(registry);

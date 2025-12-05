@@ -248,7 +248,8 @@ async fn is_auditd_installed(ctx: &Context) -> Result<bool> {
 
 /// Checks if auditd service is enabled to start at boot.
 async fn is_auditd_enabled(ctx: &Context) -> Result<bool> {
-    let output = ctx.executor()
+    let output = ctx
+        .executor()
         .execute_command("systemctl", &["is-enabled", "auditd"])
         .await?;
     Ok(output.success())
@@ -256,7 +257,8 @@ async fn is_auditd_enabled(ctx: &Context) -> Result<bool> {
 
 /// Checks if auditd service is currently running.
 async fn is_auditd_running(ctx: &Context) -> Result<bool> {
-    let output = ctx.executor()
+    let output = ctx
+        .executor()
         .execute_command("systemctl", &["is-active", "auditd"])
         .await?;
     Ok(output.success())
@@ -264,15 +266,14 @@ async fn is_auditd_running(ctx: &Context) -> Result<bool> {
 
 /// Reads current audit rules from the system using auditctl.
 async fn read_current_audit_rules(ctx: &Context) -> Result<Vec<String>> {
-    let output = ctx.executor()
-        .execute_command("auditctl", &["-l"])
-        .await?;
+    let output = ctx.executor().execute_command("auditctl", &["-l"]).await?;
 
     if !output.success() {
         return Ok(Vec::new());
     }
 
-    let rules = output.stdout
+    let rules = output
+        .stdout
         .lines()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty() && !s.starts_with("No rules"))
@@ -288,7 +289,12 @@ async fn write_audit_rules_file(ctx: &Context, content: &str) -> Result<String> 
     let backup_path = format!("{}.backup.{}", AUDIT_RULES_PATH, timestamp);
 
     // Backup existing file if it exists
-    if ctx.executor().path_exists(Path::new(AUDIT_RULES_PATH)).await.unwrap_or(false) {
+    if ctx
+        .executor()
+        .path_exists(Path::new(AUDIT_RULES_PATH))
+        .await
+        .unwrap_or(false)
+    {
         ctx.executor()
             .execute_command("cp", &[AUDIT_RULES_PATH, &backup_path])
             .await?;
@@ -297,7 +303,10 @@ async fn write_audit_rules_file(ctx: &Context, content: &str) -> Result<String> 
     // Ensure directory exists
     if let Some(parent) = Path::new(AUDIT_RULES_PATH).parent() {
         ctx.executor()
-            .execute_command("mkdir", &["-p", parent.to_str().unwrap_or("/etc/audit/rules.d")])
+            .execute_command(
+                "mkdir",
+                &["-p", parent.to_str().unwrap_or("/etc/audit/rules.d")],
+            )
             .await?;
     }
 
@@ -311,7 +320,8 @@ async fn write_audit_rules_file(ctx: &Context, content: &str) -> Result<String> 
 
 /// Restarts the auditd service to load new rules.
 async fn restart_auditd_service(ctx: &Context) -> Result<()> {
-    let output = ctx.executor()
+    let output = ctx
+        .executor()
         .execute_command("systemctl", &["restart", "auditd"])
         .await?;
 
@@ -525,7 +535,8 @@ impl HardeningPlugin for AuditHardeningPlugin {
 
         // Enable auditd if not enabled
         if !is_auditd_enabled(ctx).await.unwrap_or(false) {
-            let result = ctx.executor()
+            let result = ctx
+                .executor()
                 .execute_command("systemctl", &["enable", "auditd"])
                 .await;
             match result {
@@ -550,7 +561,8 @@ impl HardeningPlugin for AuditHardeningPlugin {
 
         // Start auditd if not running
         if !is_auditd_running(ctx).await.unwrap_or(false) {
-            let result = ctx.executor()
+            let result = ctx
+                .executor()
                 .execute_command("systemctl", &["start", "auditd"])
                 .await;
             match result {
@@ -669,7 +681,8 @@ impl HardeningPlugin for AuditHardeningPlugin {
         info!("Audit configuration files restored from checkpoint");
 
         // Restart auditd to apply restored rules
-        let restart_result = ctx.executor()
+        let restart_result = ctx
+            .executor()
             .execute_command("systemctl", &["restart", "auditd"])
             .await;
 

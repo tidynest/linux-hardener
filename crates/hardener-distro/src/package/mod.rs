@@ -3,10 +3,7 @@
 //! This module provides a unified interface for interacting with different
 //! package managers across Linux distributions (APT, DNF, Pacman, Zypper).
 
-use hardener_common::error::{
-    HardeningError,
-    Result,
-};
+use hardener_common::error::{HardeningError, Result};
 use serde::{Deserialize, Serialize};
 
 /// Represents a software package in the system.
@@ -43,19 +40,13 @@ pub fn validate_package_name(package_name: &str, rules: PackageNameRules) -> Res
     let valid = match rules {
         PackageNameRules::Debian => package_name
             .chars()
-            .all(|c| c.is_ascii_alphanumeric()
-                || c == '+' || c == '-' || c == '.'
-            ),
+            .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.'),
         PackageNameRules::Rpm => package_name
             .chars()
-            .all(|c| c.is_ascii_alphanumeric()
-                || c == '+' || c == '-' || c == '.' || c == '_'
-            ),
-        PackageNameRules::Arch => package_name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric()
-                || c == '@' || c == '.' || c == '_' || c == '+' || c == '-'
-            ),
+            .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.' || c == '_'),
+        PackageNameRules::Arch => package_name.chars().all(|c| {
+            c.is_ascii_alphanumeric() || c == '@' || c == '.' || c == '_' || c == '+' || c == '-'
+        }),
     };
 
     if !valid {
@@ -81,14 +72,15 @@ pub fn execute_command(command: &str, args: &[&str]) -> Result<String> {
     let output = std::process::Command::new(command)
         .args(args)
         .output()
-        .map_err(|e| HardeningError::PackageManager(format!(
-            "Failed to execute {}: {}", command, e
-        )))?;
+        .map_err(|e| {
+            HardeningError::PackageManager(format!("Failed to execute {}: {}", command, e))
+        })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(HardeningError::PackageManager(format!(
-            "{} command failed: {}", command, stderr
+            "{} command failed: {}",
+            command, stderr
         )));
     }
 

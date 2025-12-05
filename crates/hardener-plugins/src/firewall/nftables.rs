@@ -225,8 +225,8 @@ impl FirewallBackend for NftablesBackend {
         self.execute_nft(
             ctx,
             &[
-                "add", "chain", "inet", "filter", "output", "{", "type", "filter", "hook", "output",
-                "priority", "0", ";", "policy", "accept", ";", "}",
+                "add", "chain", "inet", "filter", "output", "{", "type", "filter", "hook",
+                "output", "priority", "0", ";", "policy", "accept", ";", "}",
             ],
         )
         .await?;

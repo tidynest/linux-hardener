@@ -18,9 +18,9 @@ pub struct JsonStore {
 impl JsonStore {
     /// Creates a new store, ensuring the output directory exists.
     pub async fn new(output_dir: &Path) -> Result<JsonStore> {
-        fs::create_dir_all(&output_dir)
-            .await
-            .map_err(|e| HardeningError::Database(format!("Failed to create output directory: {}", e)))?;
+        fs::create_dir_all(&output_dir).await.map_err(|e| {
+            HardeningError::Database(format!("Failed to create output directory: {}", e))
+        })?;
 
         Ok(JsonStore {
             output_dir: output_dir.to_path_buf(),
@@ -33,7 +33,7 @@ impl JsonStore {
     pub async fn write<T: Serialize>(
         &self,
         session_id: &str,
-        data: &T
+        data: &T,
     ) -> Result<(String, String)> {
         let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
         let filename = format!("scan_{}_{}.json", timestamp, &session_id[..8]);
@@ -45,7 +45,8 @@ impl JsonStore {
         let hash = Self::sha256(&json);
 
         fs::write(&path, &json)
-            .await.map_err(|e| HardeningError::Database(format!("Failed to write file: {}", e)))?;
+            .await
+            .map_err(|e| HardeningError::Database(format!("Failed to write file: {}", e)))?;
 
         Ok((path.to_string_lossy().to_string(), hash))
     }
@@ -68,7 +69,7 @@ impl JsonStore {
             }
         }
 
-        files.sort_by(|a, b| b.cmp(a));  // Newest first
+        files.sort_by(|a, b| b.cmp(a)); // Newest first
         Ok(files)
     }
 
@@ -189,7 +190,10 @@ mod tests {
         };
 
         for i in 0..5 {
-            store.write(&format!("file{:04}-0000", i), &data).await.unwrap();
+            store
+                .write(&format!("file{:04}-0000", i), &data)
+                .await
+                .unwrap();
         }
 
         let deleted = store.cleanup(2).await.unwrap();

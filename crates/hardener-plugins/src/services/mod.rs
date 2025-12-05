@@ -99,7 +99,8 @@ const UNNECESSARY_SERVICES: &[ServiceDirective] = &[
 
 /// Checks if a systemd service unit exists on the system.
 async fn is_service_exists(ctx: &Context, service_name: &str) -> Result<bool> {
-    let output = ctx.executor()
+    let output = ctx
+        .executor()
         .execute_command("systemctl", &["list-unit-files", service_name])
         .await?;
 
@@ -108,7 +109,8 @@ async fn is_service_exists(ctx: &Context, service_name: &str) -> Result<bool> {
 
 /// Checks if a service is enabled to start at boot.
 async fn is_service_enabled(ctx: &Context, service_name: &str) -> Result<bool> {
-    let output = ctx.executor()
+    let output = ctx
+        .executor()
         .execute_command("systemctl", &["is-enabled", service_name])
         .await?;
     Ok(output.success())
@@ -116,7 +118,8 @@ async fn is_service_enabled(ctx: &Context, service_name: &str) -> Result<bool> {
 
 /// Checks if a service is currently active (running).
 async fn is_service_active(ctx: &Context, service_name: &str) -> Result<bool> {
-    let output = ctx.executor()
+    let output = ctx
+        .executor()
         .execute_command("systemctl", &["is-active", service_name])
         .await?;
     Ok(output.success())
@@ -169,12 +172,19 @@ impl HardeningPlugin for ServicesHardeningPlugin {
         // Check each service in our list
         for directive in UNNECESSARY_SERVICES {
             // Skip if service doesn't exist on the system
-            if !is_service_exists(ctx, directive.service_name).await.unwrap_or(false) {
+            if !is_service_exists(ctx, directive.service_name)
+                .await
+                .unwrap_or(false)
+            {
                 continue;
             }
 
-            let is_enabled = is_service_enabled(ctx, directive.service_name).await.unwrap_or(false);
-            let is_active = is_service_active(ctx, directive.service_name).await.unwrap_or(false);
+            let is_enabled = is_service_enabled(ctx, directive.service_name)
+                .await
+                .unwrap_or(false);
+            let is_active = is_service_active(ctx, directive.service_name)
+                .await
+                .unwrap_or(false);
 
             // Only create finding if service is enabled or active
             if is_enabled || is_active {
@@ -252,12 +262,19 @@ impl HardeningPlugin for ServicesHardeningPlugin {
         // Process each service
         for directive in UNNECESSARY_SERVICES {
             // Skip if service does not exist
-            if !is_service_exists(ctx, directive.service_name).await.unwrap_or(false) {
+            if !is_service_exists(ctx, directive.service_name)
+                .await
+                .unwrap_or(false)
+            {
                 continue;
             }
 
-            let is_enabled = is_service_enabled(ctx, directive.service_name).await.unwrap_or(false);
-            let is_active = is_service_active(ctx, directive.service_name).await.unwrap_or(false);
+            let is_enabled = is_service_enabled(ctx, directive.service_name)
+                .await
+                .unwrap_or(false);
+            let is_active = is_service_active(ctx, directive.service_name)
+                .await
+                .unwrap_or(false);
 
             // Only process if service is enabled or active
             if !is_enabled && !is_active {
@@ -368,7 +385,8 @@ impl HardeningPlugin for ServicesHardeningPlugin {
         info!("Service configuration files restored from checkpoint");
 
         // Reload systemd to pick up any restored unit files
-        let reload_result = ctx.executor()
+        let reload_result = ctx
+            .executor()
             .execute_command("systemctl", &["daemon-reload"])
             .await;
 
@@ -400,11 +418,16 @@ impl HardeningPlugin for ServicesHardeningPlugin {
         if systemctl_available {
             // systemctl is available, list services that would be disabled
             for directive in UNNECESSARY_SERVICES {
-                if is_service_exists(ctx, directive.service_name).await.unwrap_or(false) {
-                    let is_enabled =
-                        is_service_enabled(ctx, directive.service_name).await.unwrap_or(false);
-                    let is_active =
-                        is_service_active(ctx, directive.service_name).await.unwrap_or(false);
+                if is_service_exists(ctx, directive.service_name)
+                    .await
+                    .unwrap_or(false)
+                {
+                    let is_enabled = is_service_enabled(ctx, directive.service_name)
+                        .await
+                        .unwrap_or(false);
+                    let is_active = is_service_active(ctx, directive.service_name)
+                        .await
+                        .unwrap_or(false);
                     if is_enabled || is_active {
                         estimated_changes.push(format!(
                             "Disable and mask service: {}",

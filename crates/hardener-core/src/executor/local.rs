@@ -1,13 +1,9 @@
 //! Local system executor - wraps direct filesystem and command operations.
 
+use super::{CommandOutput, FileMetadata, SystemExecutor};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use std::{
-    os::unix::fs::PermissionsExt,
-    path::Path,
-    process::Command,
-};
-use super::{CommandOutput, FileMetadata, SystemExecutor};
+use std::{os::unix::fs::PermissionsExt, path::Path, process::Command};
 
 /// Local system executor that operates on the current machine.
 #[derive(Clone, Debug, Default)]

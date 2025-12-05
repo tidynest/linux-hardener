@@ -76,10 +76,7 @@ impl EmailNotifier {
 
         let transport = builder
             .port(config.smtp_port)
-            .credentials(Credentials::new(
-                config.smtp_username.clone(),
-                password,
-            ))
+            .credentials(Credentials::new(config.smtp_username.clone(), password))
             .build();
 
         Some(transport)

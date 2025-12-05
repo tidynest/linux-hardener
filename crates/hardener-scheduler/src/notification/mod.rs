@@ -78,9 +78,7 @@ pub fn meets_severity_threshold(summary: &ScanSummary, min_severity: Severity) -
         Severity::Critical => summary.critical_count > 0,
         Severity::High => summary.critical_count > 0 || summary.high_count > 0,
         Severity::Medium => {
-            summary.critical_count > 0
-                || summary.high_count > 0
-                || summary.medium_count > 0
+            summary.critical_count > 0 || summary.high_count > 0 || summary.medium_count > 0
         }
         Severity::Low => {
             summary.critical_count > 0
@@ -98,8 +96,7 @@ mod tests {
     use crate::runner::ScanSummary;
 
     /// Creates a test summary with specified severity counts.
-    fn make_summary(critical: usize, high: usize, medium: usize, low: usize)
-                    -> ScanSummary {
+    fn make_summary(critical: usize, high: usize, medium: usize, low: usize) -> ScanSummary {
         ScanSummary {
             session_id: "test-session".to_string(),
             host: "testhost".to_string(),
@@ -155,32 +152,74 @@ mod tests {
 
     #[test]
     fn threshold_critical_requires_critical() {
-        assert!(meets_severity_threshold(&make_summary(1, 0, 0, 0), Severity::Critical));
-        assert!(!meets_severity_threshold(&make_summary(0, 5, 0, 0), Severity::Critical));
-        assert!(!meets_severity_threshold(&make_summary(0, 0, 10, 0), Severity::Critical));
+        assert!(meets_severity_threshold(
+            &make_summary(1, 0, 0, 0),
+            Severity::Critical
+        ));
+        assert!(!meets_severity_threshold(
+            &make_summary(0, 5, 0, 0),
+            Severity::Critical
+        ));
+        assert!(!meets_severity_threshold(
+            &make_summary(0, 0, 10, 0),
+            Severity::Critical
+        ));
     }
 
     #[test]
     fn threshold_high_accepts_critical_or_high() {
-        assert!(meets_severity_threshold(&make_summary(1, 0, 0, 0), Severity::High));
-        assert!(meets_severity_threshold(&make_summary(0, 1, 0, 0), Severity::High));
-        assert!(!meets_severity_threshold(&make_summary(0, 0, 10, 0), Severity::High));
+        assert!(meets_severity_threshold(
+            &make_summary(1, 0, 0, 0),
+            Severity::High
+        ));
+        assert!(meets_severity_threshold(
+            &make_summary(0, 1, 0, 0),
+            Severity::High
+        ));
+        assert!(!meets_severity_threshold(
+            &make_summary(0, 0, 10, 0),
+            Severity::High
+        ));
     }
 
     #[test]
     fn threshold_medium_accepts_critical_high_medium() {
-        assert!(meets_severity_threshold(&make_summary(1, 0, 0, 0), Severity::Medium));
-        assert!(meets_severity_threshold(&make_summary(0, 1, 0, 0), Severity::Medium));
-        assert!(meets_severity_threshold(&make_summary(0, 0, 1, 0), Severity::Medium));
-        assert!(!meets_severity_threshold(&make_summary(0, 0, 0, 5), Severity::Medium));
+        assert!(meets_severity_threshold(
+            &make_summary(1, 0, 0, 0),
+            Severity::Medium
+        ));
+        assert!(meets_severity_threshold(
+            &make_summary(0, 1, 0, 0),
+            Severity::Medium
+        ));
+        assert!(meets_severity_threshold(
+            &make_summary(0, 0, 1, 0),
+            Severity::Medium
+        ));
+        assert!(!meets_severity_threshold(
+            &make_summary(0, 0, 0, 5),
+            Severity::Medium
+        ));
     }
 
     #[test]
     fn threshold_low_accepts_all_except_info() {
-        assert!(meets_severity_threshold(&make_summary(1, 0, 0, 0), Severity::Low));
-        assert!(meets_severity_threshold(&make_summary(0, 1, 0, 0), Severity::Low));
-        assert!(meets_severity_threshold(&make_summary(0, 0, 1, 0), Severity::Low));
-        assert!(meets_severity_threshold(&make_summary(0, 0, 0, 1), Severity::Low));
+        assert!(meets_severity_threshold(
+            &make_summary(1, 0, 0, 0),
+            Severity::Low
+        ));
+        assert!(meets_severity_threshold(
+            &make_summary(0, 1, 0, 0),
+            Severity::Low
+        ));
+        assert!(meets_severity_threshold(
+            &make_summary(0, 0, 1, 0),
+            Severity::Low
+        ));
+        assert!(meets_severity_threshold(
+            &make_summary(0, 0, 0, 1),
+            Severity::Low
+        ));
     }
 
     #[test]

@@ -115,10 +115,7 @@ pub async fn run_once(format: OutputFormat, quiet: bool) -> Result<()> {
             println!("  Findings:  {}", summary.total_findings);
             println!(
                 "    Critical: {}, High: {}, Medium: {}, Low: {}",
-                summary.critical_count,
-                summary.high_count,
-                summary.medium_count,
-                summary.low_count
+                summary.critical_count, summary.high_count, summary.medium_count, summary.low_count
             );
             if let Some(path) = &summary.json_path {
                 println!("  Export:   {}", path);
@@ -209,13 +206,11 @@ pub fn load_scheduler_config() -> Result<SchedulerConfig> {
 
     for path in paths.into_iter().flatten() {
         if path.exists() {
-            let content = std::fs::read_to_string(&path).map_err(|e| {
-                anyhow!("Failed to read config file {}: {}", path.display(), e)
-            })?;
+            let content = std::fs::read_to_string(&path)
+                .map_err(|e| anyhow!("Failed to read config file {}: {}", path.display(), e))?;
 
-            let config: ConfigFile = toml::from_str(&content).map_err(|e| {
-                anyhow!("Failed to parse config file {}: {}", path.display(), e)
-            })?;
+            let config: ConfigFile = toml::from_str(&content)
+                .map_err(|e| anyhow!("Failed to parse config file {}: {}", path.display(), e))?;
 
             return Ok(config.scheduler);
         }

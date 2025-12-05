@@ -27,7 +27,7 @@ impl AptPackageManager {
     /// # Security
     /// This method runs apt-get with elevated privileges. Ensures arguments
     /// are validated before passing them to this function.
-    fn execute_apt(&self, args: &[&str]) -> Result<String> { 
+    fn execute_apt(&self, args: &[&str]) -> Result<String> {
         super::execute_command("apt-get", args)
     }
 

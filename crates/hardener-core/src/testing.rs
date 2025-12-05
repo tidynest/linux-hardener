@@ -2,8 +2,11 @@
 //!
 //! Provides MockPlugin for testing plugin-related functionality.
 
+use crate::{
+    ApplyResult, Checkpoint, Config, Context, HardeningPlugin, PluginMetadata, ScanResult,
+    ValidationReport,
+};
 use async_trait::async_trait;
-use crate::{ApplyResult, Checkpoint, Config, Context, HardeningPlugin, PluginMetadata, ScanResult, ValidationReport};
 use hardener_common::{
     error::Result,
     types::{FindingCategory, PluginId},
@@ -115,8 +118,7 @@ impl HardeningPlugin for MockPlugin {
         })
     }
 
-    async fn apply(&self, _ctx: &mut Context, _config: &Config) ->
-    Result<ApplyResult> {
+    async fn apply(&self, _ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
         if self.fail_apply {
             return Err(hardener_common::error::HardeningError::Plugin(
                 "Mock apply failure".to_string(),
@@ -131,13 +133,11 @@ impl HardeningPlugin for MockPlugin {
         })
     }
 
-    async fn rollback(&self, _ctx: &mut Context, _checkpoint: &Checkpoint) ->
-    Result<()> {
+    async fn rollback(&self, _ctx: &mut Context, _checkpoint: &Checkpoint) -> Result<()> {
         Ok(())
     }
 
-    async fn validate(&self, _ctx: &Context, _config: &Config) ->
-    Result<ValidationReport> {
+    async fn validate(&self, _ctx: &Context, _config: &Config) -> Result<ValidationReport> {
         Ok(ValidationReport {
             validation_report_plugin_id: PluginId::new(&self.plugin_id),
             validation_report_is_valid: true,

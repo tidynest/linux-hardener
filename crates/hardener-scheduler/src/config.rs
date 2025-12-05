@@ -4,10 +4,7 @@
 //! supporting scan scheduling, storage options, and notifications.
 
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::HashMap,
-    path::PathBuf
-};
+use std::{collections::HashMap, path::PathBuf};
 
 /// Root scheduler configuration.
 ///
@@ -32,7 +29,7 @@ impl Default for SchedulerConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            schedule: "0 0 2 * * *".into(),  // Daily at 02:00
+            schedule: "0 0 2 * * *".into(), // Daily at 02:00
             plugins: Vec::new(),
             min_severity: "medium".into(),
             storage: StorageConfig::default(),

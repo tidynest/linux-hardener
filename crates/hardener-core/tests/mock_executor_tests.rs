@@ -21,10 +21,12 @@ async fn test_mock_executor_description() {
 
 #[tokio::test]
 async fn test_mock_executor_read_file() {
-    let executor = MockExecutor::new()
-        .with_file("/etc/test.conf", "key=value\n");
+    let executor = MockExecutor::new().with_file("/etc/test.conf", "key=value\n");
 
-    let content = executor.read_file(Path::new("/etc/test.conf")).await.unwrap();
+    let content = executor
+        .read_file(Path::new("/etc/test.conf"))
+        .await
+        .unwrap();
     assert_eq!(content, "key=value\n");
 
     // Verify read was logged
@@ -44,15 +46,20 @@ async fn test_mock_executor_read_file_not_found() {
 
 #[tokio::test]
 async fn test_mock_executor_read_file_optional() {
-    let executor = MockExecutor::new()
-        .with_file("/etc/exists.conf", "content");
+    let executor = MockExecutor::new().with_file("/etc/exists.conf", "content");
 
     // File exists
-    let result = executor.read_file_optional(Path::new("/etc/exists.conf")).await.unwrap();
+    let result = executor
+        .read_file_optional(Path::new("/etc/exists.conf"))
+        .await
+        .unwrap();
     assert_eq!(result, Some("content".to_string()));
 
     // File doesn't exist
-    let result = executor.read_file_optional(Path::new("/etc/missing.conf")).await.unwrap();
+    let result = executor
+        .read_file_optional(Path::new("/etc/missing.conf"))
+        .await
+        .unwrap();
     assert_eq!(result, None);
 }
 
@@ -60,10 +67,16 @@ async fn test_mock_executor_read_file_optional() {
 async fn test_mock_executor_write_file() {
     let executor = MockExecutor::new();
 
-    executor.write_file(Path::new("/etc/new.conf"), "new content").await.unwrap();
+    executor
+        .write_file(Path::new("/etc/new.conf"), "new content")
+        .await
+        .unwrap();
 
     // Verify file was written
-    let content = executor.read_file(Path::new("/etc/new.conf")).await.unwrap();
+    let content = executor
+        .read_file(Path::new("/etc/new.conf"))
+        .await
+        .unwrap();
     assert_eq!(content, "new content");
 
     // Verify write was logged
@@ -79,9 +92,15 @@ async fn test_mock_executor_path_exists() {
         .with_file("/etc/exists.conf", "")
         .with_directory("/etc/mydir");
 
-    assert!(executor.path_exists(Path::new("/etc/exists.conf")).await.unwrap());
+    assert!(executor
+        .path_exists(Path::new("/etc/exists.conf"))
+        .await
+        .unwrap());
     assert!(executor.path_exists(Path::new("/etc/mydir")).await.unwrap());
-    assert!(!executor.path_exists(Path::new("/etc/missing")).await.unwrap());
+    assert!(!executor
+        .path_exists(Path::new("/etc/missing"))
+        .await
+        .unwrap());
 }
 
 #[tokio::test]
@@ -91,7 +110,10 @@ async fn test_mock_executor_file_metadata() {
         .with_directory("/etc/mydir");
 
     // File metadata
-    let meta = executor.file_metadata(Path::new("/etc/test.conf")).await.unwrap();
+    let meta = executor
+        .file_metadata(Path::new("/etc/test.conf"))
+        .await
+        .unwrap();
     assert!(meta.exists);
     assert!(meta.is_file);
     assert!(!meta.is_dir);
@@ -99,14 +121,20 @@ async fn test_mock_executor_file_metadata() {
     assert_eq!(meta.size, 5); // "12345" = 5 bytes
 
     // Directory metadata
-    let meta = executor.file_metadata(Path::new("/etc/mydir")).await.unwrap();
+    let meta = executor
+        .file_metadata(Path::new("/etc/mydir"))
+        .await
+        .unwrap();
     assert!(meta.exists);
     assert!(!meta.is_file);
     assert!(meta.is_dir);
     assert_eq!(meta.mode, 0o755);
 
     // Nonexistent path
-    let meta = executor.file_metadata(Path::new("/nonexistent")).await.unwrap();
+    let meta = executor
+        .file_metadata(Path::new("/nonexistent"))
+        .await
+        .unwrap();
     assert!(!meta.exists);
 }
 
@@ -120,24 +148,32 @@ async fn test_mock_executor_custom_file_metadata() {
         size: 100,
     };
 
-    let executor = MockExecutor::new()
-        .with_file_metadata("/etc/secret.key", "secret", custom_meta);
+    let executor = MockExecutor::new().with_file_metadata("/etc/secret.key", "secret", custom_meta);
 
-    let meta = executor.file_metadata(Path::new("/etc/secret.key")).await.unwrap();
+    let meta = executor
+        .file_metadata(Path::new("/etc/secret.key"))
+        .await
+        .unwrap();
     assert_eq!(meta.mode, 0o600);
     assert_eq!(meta.size, 100); // Custom size, not actual content length
 }
 
 #[tokio::test]
 async fn test_mock_executor_execute_command() {
-    let executor = MockExecutor::new()
-        .with_command("systemctl", &["status", "sshd"], CommandOutput {
+    let executor = MockExecutor::new().with_command(
+        "systemctl",
+        &["status", "sshd"],
+        CommandOutput {
             stdout: "active (running)\n".to_string(),
             stderr: String::new(),
             exit_code: 0,
-        });
+        },
+    );
 
-    let output = executor.execute_command("systemctl", &["status", "sshd"]).await.unwrap();
+    let output = executor
+        .execute_command("systemctl", &["status", "sshd"])
+        .await
+        .unwrap();
     assert!(output.success());
     assert_eq!(output.stdout, "active (running)\n");
     assert_eq!(output.exit_code, 0);
@@ -155,7 +191,10 @@ async fn test_mock_executor_command_not_registered() {
 
     let result = executor.execute_command("unknown", &["arg"]).await;
     assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("command not registered"));
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("command not registered"));
 }
 
 #[tokio::test]
@@ -163,11 +202,15 @@ async fn test_mock_executor_command_exists() {
     let executor = MockExecutor::new()
         .with_command_exists("systemctl", true)
         .with_command_exists("nonexistent", false)
-        .with_command("sshd", &["-t"], CommandOutput {
-            stdout: String::new(),
-            stderr: String::new(),
-            exit_code: 0,
-        });
+        .with_command(
+            "sshd",
+            &["-t"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        );
 
     // Explicitly registered
     assert!(executor.command_exists("systemctl").await.unwrap());
@@ -184,11 +227,15 @@ async fn test_mock_executor_command_exists() {
 async fn test_mock_executor_log_operations() {
     let executor = MockExecutor::new()
         .with_file("/etc/test", "content")
-        .with_command("echo", &["hello"], CommandOutput {
-            stdout: "hello\n".to_string(),
-            stderr: String::new(),
-            exit_code: 0,
-        });
+        .with_command(
+            "echo",
+            &["hello"],
+            CommandOutput {
+                stdout: "hello\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        );
 
     // Perform operations
     let _ = executor.read_file(Path::new("/etc/test")).await;
@@ -222,13 +269,15 @@ async fn test_mock_executor_files_accessor() {
 
 #[tokio::test]
 async fn test_mock_executor_clone_shares_state() {
-    let executor = MockExecutor::new()
-        .with_file("/etc/test", "original");
+    let executor = MockExecutor::new().with_file("/etc/test", "original");
 
     let clone = executor.clone();
 
     // Write via clone
-    clone.write_file(Path::new("/etc/test"), "modified").await.unwrap();
+    clone
+        .write_file(Path::new("/etc/test"), "modified")
+        .await
+        .unwrap();
 
     // Original sees the change (they share Arc<Mutex<...>>)
     let content = executor.read_file(Path::new("/etc/test")).await.unwrap();

@@ -75,7 +75,10 @@ fn test_ssh_config_custom() {
     assert_eq!(config.host, "example.com");
     assert_eq!(config.port, 2222);
     assert_eq!(config.user, Some("admin".to_string()));
-    assert_eq!(config.identity_file, Some("/home/user/.ssh/id_ed25519".to_string()));
+    assert_eq!(
+        config.identity_file,
+        Some("/home/user/.ssh/id_ed25519".to_string())
+    );
     assert_eq!(config.connect_timeout, Duration::from_secs(60));
 }
 
@@ -106,7 +109,11 @@ async fn test_ssh_executor_connect() {
     let config = get_test_config().expect("SSH_TEST_HOST not set");
 
     let executor = SshExecutor::connect(config).await;
-    assert!(executor.is_ok(), "Should connect successfully: {:?}", executor.err());
+    assert!(
+        executor.is_ok(),
+        "Should connect successfully: {:?}",
+        executor.err()
+    );
 
     let executor = executor.unwrap();
     assert!(executor.is_remote());
@@ -117,11 +124,17 @@ async fn test_ssh_executor_connect() {
 #[ignore = "Requires SSH_TEST_HOST environment variable"]
 async fn test_ssh_executor_read_file() {
     let config = get_test_config().expect("SSH_TEST_HOST not set");
-    let executor = SshExecutor::connect(config).await.expect("Failed to connect");
+    let executor = SshExecutor::connect(config)
+        .await
+        .expect("Failed to connect");
 
     // /etc/hostname should exist on any Linux system
     let content = executor.read_file(Path::new("/etc/hostname")).await;
-    assert!(content.is_ok(), "Should read /etc/hostname: {:?}", content.err());
+    assert!(
+        content.is_ok(),
+        "Should read /etc/hostname: {:?}",
+        content.err()
+    );
     assert!(!content.unwrap().is_empty());
 }
 
@@ -129,9 +142,13 @@ async fn test_ssh_executor_read_file() {
 #[ignore = "Requires SSH_TEST_HOST environment variable"]
 async fn test_ssh_executor_read_file_not_found() {
     let config = get_test_config().expect("SSH_TEST_HOST not set");
-    let executor = SshExecutor::connect(config).await.expect("Failed to connect");
+    let executor = SshExecutor::connect(config)
+        .await
+        .expect("Failed to connect");
 
-    let result = executor.read_file(Path::new("/nonexistent/file/path")).await;
+    let result = executor
+        .read_file(Path::new("/nonexistent/file/path"))
+        .await;
     assert!(result.is_err());
 }
 
@@ -139,15 +156,21 @@ async fn test_ssh_executor_read_file_not_found() {
 #[ignore = "Requires SSH_TEST_HOST environment variable"]
 async fn test_ssh_executor_read_file_optional() {
     let config = get_test_config().expect("SSH_TEST_HOST not set");
-    let executor = SshExecutor::connect(config).await.expect("Failed to connect");
+    let executor = SshExecutor::connect(config)
+        .await
+        .expect("Failed to connect");
 
     // Existing file
-    let result = executor.read_file_optional(Path::new("/etc/hostname")).await;
+    let result = executor
+        .read_file_optional(Path::new("/etc/hostname"))
+        .await;
     assert!(result.is_ok());
     assert!(result.unwrap().is_some());
 
     // Non-existing file
-    let result = executor.read_file_optional(Path::new("/nonexistent/path")).await;
+    let result = executor
+        .read_file_optional(Path::new("/nonexistent/path"))
+        .await;
     assert!(result.is_ok());
     assert!(result.unwrap().is_none());
 }
@@ -156,21 +179,31 @@ async fn test_ssh_executor_read_file_optional() {
 #[ignore = "Requires SSH_TEST_HOST environment variable"]
 async fn test_ssh_executor_path_exists() {
     let config = get_test_config().expect("SSH_TEST_HOST not set");
-    let executor = SshExecutor::connect(config).await.expect("Failed to connect");
+    let executor = SshExecutor::connect(config)
+        .await
+        .expect("Failed to connect");
 
     // Should exist
     assert!(executor.path_exists(Path::new("/etc")).await.unwrap());
-    assert!(executor.path_exists(Path::new("/etc/passwd")).await.unwrap());
+    assert!(executor
+        .path_exists(Path::new("/etc/passwd"))
+        .await
+        .unwrap());
 
     // Should not exist
-    assert!(!executor.path_exists(Path::new("/nonexistent")).await.unwrap());
+    assert!(!executor
+        .path_exists(Path::new("/nonexistent"))
+        .await
+        .unwrap());
 }
 
 #[tokio::test]
 #[ignore = "Requires SSH_TEST_HOST environment variable"]
 async fn test_ssh_executor_file_metadata() {
     let config = get_test_config().expect("SSH_TEST_HOST not set");
-    let executor = SshExecutor::connect(config).await.expect("Failed to connect");
+    let executor = SshExecutor::connect(config)
+        .await
+        .expect("Failed to connect");
 
     // Directory
     let meta = executor.file_metadata(Path::new("/etc")).await.unwrap();
@@ -180,14 +213,20 @@ async fn test_ssh_executor_file_metadata() {
     assert!(meta.mode > 0);
 
     // File
-    let meta = executor.file_metadata(Path::new("/etc/passwd")).await.unwrap();
+    let meta = executor
+        .file_metadata(Path::new("/etc/passwd"))
+        .await
+        .unwrap();
     assert!(meta.exists);
     assert!(meta.is_file);
     assert!(!meta.is_dir);
     assert!(meta.size > 0);
 
     // Non-existent
-    let meta = executor.file_metadata(Path::new("/nonexistent")).await.unwrap();
+    let meta = executor
+        .file_metadata(Path::new("/nonexistent"))
+        .await
+        .unwrap();
     assert!(!meta.exists);
 }
 
@@ -195,10 +234,15 @@ async fn test_ssh_executor_file_metadata() {
 #[ignore = "Requires SSH_TEST_HOST environment variable"]
 async fn test_ssh_executor_execute_command() {
     let config = get_test_config().expect("SSH_TEST_HOST not set");
-    let executor = SshExecutor::connect(config).await.expect("Failed to connect");
+    let executor = SshExecutor::connect(config)
+        .await
+        .expect("Failed to connect");
 
     // Simple command
-    let output = executor.execute_command("echo", &["hello", "world"]).await.unwrap();
+    let output = executor
+        .execute_command("echo", &["hello", "world"])
+        .await
+        .unwrap();
     assert!(output.success());
     assert_eq!(output.stdout.trim(), "hello world");
     assert_eq!(output.exit_code, 0);
@@ -213,21 +257,28 @@ async fn test_ssh_executor_execute_command() {
 #[ignore = "Requires SSH_TEST_HOST environment variable"]
 async fn test_ssh_executor_command_exists() {
     let config = get_test_config().expect("SSH_TEST_HOST not set");
-    let executor = SshExecutor::connect(config).await.expect("Failed to connect");
+    let executor = SshExecutor::connect(config)
+        .await
+        .expect("Failed to connect");
 
     // Should exist on any Linux system
     assert!(executor.command_exists("cat").await.unwrap());
     assert!(executor.command_exists("ls").await.unwrap());
 
     // Should not exist
-    assert!(!executor.command_exists("definitely_not_a_real_command_xyz").await.unwrap());
+    assert!(!executor
+        .command_exists("definitely_not_a_real_command_xyz")
+        .await
+        .unwrap());
 }
 
 #[tokio::test]
 #[ignore = "Requires SSH_TEST_HOST environment variable and write permissions"]
 async fn test_ssh_executor_write_file() {
     let config = get_test_config().expect("SSH_TEST_HOST not set");
-    let executor = SshExecutor::connect(config).await.expect("Failed to connect");
+    let executor = SshExecutor::connect(config)
+        .await
+        .expect("Failed to connect");
 
     // Write to temp file
     let test_path = Path::new("/tmp/hardener_ssh_test");
@@ -241,7 +292,9 @@ async fn test_ssh_executor_write_file() {
     assert_eq!(content, test_content);
 
     // Cleanup
-    let _ = executor.execute_command("rm", &["-f", "/tmp/hardener_ssh_test"]).await;
+    let _ = executor
+        .execute_command("rm", &["-f", "/tmp/hardener_ssh_test"])
+        .await;
 }
 
 #[test]
@@ -266,12 +319,14 @@ fn test_ssh_executor_description_format() {
 #[ignore = "Requires SSH_TEST_HOST environment variable"]
 async fn test_ssh_executor_kernel_param_read() {
     let config = get_test_config().expect("SSH_TEST_HOST not set");
-    let executor = SshExecutor::connect(config).await.expect("Failed to connect");
+    let executor = SshExecutor::connect(config)
+        .await
+        .expect("Failed to connect");
 
     // Read a kernel parameter that should exist
-    let result = executor.read_file_optional(
-        Path::new("/proc/sys/kernel/hostname")
-    ).await;
+    let result = executor
+        .read_file_optional(Path::new("/proc/sys/kernel/hostname"))
+        .await;
 
     assert!(result.is_ok());
     let content = result.unwrap();
@@ -282,15 +337,20 @@ async fn test_ssh_executor_kernel_param_read() {
 #[ignore = "Requires SSH_TEST_HOST environment variable"]
 async fn test_ssh_executor_systemctl_command() {
     let config = get_test_config().expect("SSH_TEST_HOST not set");
-    let executor = SshExecutor::connect(config).await.expect("Failed to connect");
+    let executor = SshExecutor::connect(config)
+        .await
+        .expect("Failed to connect");
 
     // Check if systemctl exists
     if executor.command_exists("systemctl").await.unwrap() {
         // List unit files (should work without root)
-        let output = executor.execute_command(
-            "systemctl",
-            &["list-unit-files", "--no-pager", "--no-legend"]
-        ).await.unwrap();
+        let output = executor
+            .execute_command(
+                "systemctl",
+                &["list-unit-files", "--no-pager", "--no-legend"],
+            )
+            .await
+            .unwrap();
 
         // Even if it fails, we should get a response
         assert!(!output.stdout.is_empty() || !output.stderr.is_empty());

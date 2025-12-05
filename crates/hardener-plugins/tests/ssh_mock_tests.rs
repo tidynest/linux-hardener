@@ -9,8 +9,9 @@ use std::sync::Arc;
 
 /// Creates a mock executor with a typical secure SSH config.
 fn secure_ssh_executor() -> MockExecutor {
-    MockExecutor::new()
-        .with_file("/etc/ssh/sshd_config", r#"
+    MockExecutor::new().with_file(
+        "/etc/ssh/sshd_config",
+        r#"
 # Secure SSH configuration
 PermitRootLogin no
 PasswordAuthentication no
@@ -20,24 +21,27 @@ MaxAuthTries 3
 X11Forwarding no
 ClientAliveInterval 300
 ClientAliveCountMax 2
-"#)
+"#,
+    )
 }
 
 /// Creates a mock executor with an insecure SSH config.
 fn insecure_ssh_executor() -> MockExecutor {
-    MockExecutor::new()
-        .with_file("/etc/ssh/sshd_config", r#"
+    MockExecutor::new().with_file(
+        "/etc/ssh/sshd_config",
+        r#"
 # Default SSH configuration (insecure)
 PermitRootLogin yes
 PasswordAuthentication yes
 X11Forwarding yes
-"#)
+"#,
+    )
 }
 
 /// Creates a mock executor with no SSH config file.
 fn missing_ssh_executor() -> MockExecutor {
     MockExecutor::new()
-        // No /etc/ssh/sshd_config file
+    // No /etc/ssh/sshd_config file
 }
 
 #[tokio::test]
@@ -54,7 +58,11 @@ async fn test_ssh_scan_secure_config_no_findings() {
     assert!(
         result.scan_findings.is_empty(),
         "Secure config should have no findings, but got: {:?}",
-        result.scan_findings.iter().map(|f| &f.finding_title).collect::<Vec<_>>()
+        result
+            .scan_findings
+            .iter()
+            .map(|f| &f.finding_title)
+            .collect::<Vec<_>>()
     );
 }
 
@@ -67,19 +75,35 @@ async fn test_ssh_scan_insecure_config_finds_issues() {
     let result = plugin.scan(&ctx).await.unwrap();
 
     assert!(result.scan_success);
-    assert!(!result.scan_findings.is_empty(), "Should find insecure settings");
+    assert!(
+        !result.scan_findings.is_empty(),
+        "Should find insecure settings"
+    );
 
     // Check for specific findings
-    let finding_ids: Vec<_> = result.scan_findings.iter()
+    let finding_ids: Vec<_> = result
+        .scan_findings
+        .iter()
         .map(|f| f.finding_id.as_str())
         .collect();
 
-    assert!(finding_ids.contains(&"ssh-permitrootlogin"), "Should flag PermitRootLogin yes");
-    assert!(finding_ids.contains(&"ssh-passwordauthentication"), "Should flag PasswordAuthentication yes");
-    assert!(finding_ids.contains(&"ssh-x11forwarding"), "Should flag X11Forwarding yes");
+    assert!(
+        finding_ids.contains(&"ssh-permitrootlogin"),
+        "Should flag PermitRootLogin yes"
+    );
+    assert!(
+        finding_ids.contains(&"ssh-passwordauthentication"),
+        "Should flag PasswordAuthentication yes"
+    );
+    assert!(
+        finding_ids.contains(&"ssh-x11forwarding"),
+        "Should flag X11Forwarding yes"
+    );
 
     // Verify severity is correct
-    let root_login = result.scan_findings.iter()
+    let root_login = result
+        .scan_findings
+        .iter()
         .find(|f| f.finding_id == "ssh-permitrootlogin")
         .unwrap();
     assert_eq!(root_login.finding_severity, Severity::Critical);
@@ -104,8 +128,7 @@ async fn test_ssh_scan_missing_config_file() {
 #[tokio::test]
 async fn test_ssh_scan_missing_directives_flagged() {
     // Config with only one directive set
-    let executor = MockExecutor::new()
-        .with_file("/etc/ssh/sshd_config", "PermitRootLogin no\n");
+    let executor = MockExecutor::new().with_file("/etc/ssh/sshd_config", "PermitRootLogin no\n");
 
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = SshHardeningPlugin::new();
@@ -115,7 +138,9 @@ async fn test_ssh_scan_missing_directives_flagged() {
     assert!(result.scan_success);
 
     // Missing directives should be flagged
-    let finding_ids: Vec<_> = result.scan_findings.iter()
+    let finding_ids: Vec<_> = result
+        .scan_findings
+        .iter()
         .map(|f| f.finding_id.as_str())
         .collect();
 
@@ -128,7 +153,9 @@ async fn test_ssh_scan_missing_directives_flagged() {
     assert!(finding_ids.contains(&"ssh-protocol"));
 
     // Verify "not set" current value
-    let password_auth = result.scan_findings.iter()
+    let password_auth = result
+        .scan_findings
+        .iter()
         .find(|f| f.finding_id == "ssh-passwordauthentication")
         .unwrap();
     assert_eq!(password_auth.finding_current_value, "not set");
@@ -136,8 +163,7 @@ async fn test_ssh_scan_missing_directives_flagged() {
 
 #[tokio::test]
 async fn test_ssh_validate_file_exists() {
-    let executor = MockExecutor::new()
-        .with_file("/etc/ssh/sshd_config", "# config");
+    let executor = MockExecutor::new().with_file("/etc/ssh/sshd_config", "# config");
 
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = SshHardeningPlugin::new();
@@ -163,12 +189,16 @@ async fn test_ssh_validate_file_missing() {
 
     // MockExecutor returns FileMetadata { exists: false, is_file: false } for missing files
     // So the first issue is "not a regular file", and the second is "Cannot read"
-    let messages: Vec<_> = result.validation_report_issues.iter()
+    let messages: Vec<_> = result
+        .validation_report_issues
+        .iter()
         .map(|i| i.validation_issue_message.as_str())
         .collect();
 
     assert!(
-        messages.iter().any(|m| m.contains("not a regular file") || m.contains("Cannot read")),
+        messages
+            .iter()
+            .any(|m| m.contains("not a regular file") || m.contains("Cannot read")),
         "Expected validation error about missing file, got: {:?}",
         messages
     );
@@ -181,8 +211,7 @@ async fn test_ssh_validate_file_missing() {
 
 #[tokio::test]
 async fn test_ssh_validate_not_regular_file() {
-    let executor = MockExecutor::new()
-        .with_directory("/etc/ssh/sshd_config"); // Directory instead of file
+    let executor = MockExecutor::new().with_directory("/etc/ssh/sshd_config"); // Directory instead of file
 
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = SshHardeningPlugin::new();
@@ -193,13 +222,16 @@ async fn test_ssh_validate_not_regular_file() {
     assert!(!result.validation_report_is_valid);
 
     let issue = &result.validation_report_issues[0];
-    assert!(issue.validation_issue_message.contains("not a regular file"));
+    assert!(
+        issue
+            .validation_issue_message
+            .contains("not a regular file")
+    );
 }
 
 #[tokio::test]
 async fn test_ssh_scan_logs_file_read() {
-    let executor = MockExecutor::new()
-        .with_file("/etc/ssh/sshd_config", "PermitRootLogin no");
+    let executor = MockExecutor::new().with_file("/etc/ssh/sshd_config", "PermitRootLogin no");
 
     let ctx = Context::with_executor(Arc::new(executor.clone()));
     let plugin = SshHardeningPlugin::new();
@@ -209,7 +241,9 @@ async fn test_ssh_scan_logs_file_read() {
     // Verify the plugin read the config file
     let log = executor.log();
     assert!(
-        log.files_read.iter().any(|p| p.to_str().unwrap() == "/etc/ssh/sshd_config"),
+        log.files_read
+            .iter()
+            .any(|p| p.to_str().unwrap() == "/etc/ssh/sshd_config"),
         "Plugin should read /etc/ssh/sshd_config"
     );
 }
@@ -223,7 +257,9 @@ async fn test_ssh_scan_compliance_mappings() {
     let result = plugin.scan(&ctx).await.unwrap();
 
     // Find PermitRootLogin finding
-    let root_login = result.scan_findings.iter()
+    let root_login = result
+        .scan_findings
+        .iter()
         .find(|f| f.finding_id == "ssh-permitrootlogin")
         .expect("Should have PermitRootLogin finding");
 
@@ -242,7 +278,10 @@ async fn test_ssh_scan_duration_recorded() {
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_duration_us > 0, "Scan duration should be recorded");
+    assert!(
+        result.scan_duration_us > 0,
+        "Scan duration should be recorded"
+    );
 }
 
 #[tokio::test]
@@ -251,7 +290,10 @@ async fn test_ssh_scan_with_remote_executor() {
     let executor = MockExecutor::new()
         .remote()
         .with_description("ssh://admin@server.example.com")
-        .with_file("/etc/ssh/sshd_config", "PermitRootLogin no\nPasswordAuthentication no\n");
+        .with_file(
+            "/etc/ssh/sshd_config",
+            "PermitRootLogin no\nPasswordAuthentication no\n",
+        );
 
     assert!(executor.is_remote());
 

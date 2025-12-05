@@ -1,3 +1,5 @@
+use crate::cli::OutputFormat;
+use crate::output;
 use anyhow::{bail, Result};
 use hardener_common::types::PluginId;
 use hardener_core::{Config, Context, SystemExecutor};
@@ -5,8 +7,6 @@ use hardener_plugins::create_plugin_registry;
 use hardener_state::{init_db, CheckpointManager, CheckpointSigner};
 use std::path::PathBuf;
 use std::sync::Arc;
-use crate::cli::OutputFormat;
-use crate::output;
 
 async fn get_checkpoint_manager() -> Result<CheckpointManager> {
     let data_dir = dirs::data_local_dir()
@@ -29,7 +29,7 @@ pub async fn run(
     dry_run: bool,
     format: OutputFormat,
     quiet: bool,
-    executor: Arc<dyn SystemExecutor>
+    executor: Arc<dyn SystemExecutor>,
 ) -> Result<()> {
     // Must be root to apply changes
     if !nix::unistd::geteuid().is_root() && !dry_run {

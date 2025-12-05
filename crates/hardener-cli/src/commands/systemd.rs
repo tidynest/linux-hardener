@@ -1,14 +1,9 @@
 //! Systemd unit file management commands.
 
 use anyhow::{bail, Context, Result};
-use hardener_scheduler::systemd::{
-    cron_to_calendar, service_name, timer_name,SystemdGenerator
-};
+use hardener_scheduler::systemd::{cron_to_calendar, service_name, timer_name, SystemdGenerator};
 use std::path::PathBuf;
-use tokio::{
-    fs,
-    process::Command,
-};
+use tokio::{fs, process::Command};
 
 /// Generates systemd unit files.
 ///
@@ -33,15 +28,18 @@ pub async fn generate(
 
     match output_dir {
         Some(dir) => {
-            fs::create_dir_all(&dir).await
+            fs::create_dir_all(&dir)
+                .await
                 .context("Failed to create output directory")?;
 
             let service_path = dir.join(service_name());
             let timer_path = dir.join(timer_name());
 
-            fs::write(&service_path, &service_content).await
+            fs::write(&service_path, &service_content)
+                .await
                 .context("Failed to write service file")?;
-            fs::write(&timer_path, &timer_content).await
+            fs::write(&timer_path, &timer_content)
+                .await
                 .context("Failed to write timer file")?;
 
             if !quiet {
@@ -85,15 +83,18 @@ pub async fn install(
         bail!("System install requires root privileges. Use --user for user install.");
     }
 
-    fs::create_dir_all(&unit_dir).await
+    fs::create_dir_all(&unit_dir)
+        .await
         .context("Failed to create unit directory")?;
 
     let service_path = unit_dir.join(service_name());
     let timer_path = unit_dir.join(timer_name());
 
-    fs::write(&service_path, generator.generate_service()).await
+    fs::write(&service_path, generator.generate_service())
+        .await
         .context("Failed to write service file")?;
-    fs::write(&timer_path, generator.generate_timer()).await
+    fs::write(&timer_path, generator.generate_timer())
+        .await
         .context("Failed to write timer file")?;
 
     if !quiet {
@@ -154,10 +155,7 @@ pub async fn uninstall(user_mode: bool, quiet: bool) -> Result<()> {
         vec!["disable", "--now", timer_name()]
     };
 
-    let _ = Command::new("systemctl")
-        .args(&stop_args)
-        .status()
-        .await;
+    let _ = Command::new("systemctl").args(&stop_args).status().await;
 
     // Remove files
     let service_path = unit_dir.join(service_name());
@@ -229,8 +227,7 @@ pub async fn status(user_mode: bool, quiet: bool) -> Result<()> {
 fn resolve_binary_path(specified: Option<PathBuf>) -> Result<PathBuf> {
     match specified {
         Some(p) => Ok(p),
-        None => std::env::current_exe()
-            .context("Failed to determine current executable path"),
+        None => std::env::current_exe().context("Failed to determine current executable path"),
     }
 }
 

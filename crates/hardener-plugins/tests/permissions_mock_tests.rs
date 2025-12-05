@@ -10,79 +10,115 @@ use std::sync::Arc;
 /// Creates a mock executor with secure file permissions.
 fn secure_permissions_executor() -> MockExecutor {
     MockExecutor::new()
-        .with_file_metadata("/root", "", FileMetadata {
-            exists: true,
-            is_file: false,
-            is_dir: true,
-            mode: 0o700,
-            size: 0,
-        })
-        .with_file_metadata("/boot", "", FileMetadata {
-            exists: true,
-            is_file: false,
-            is_dir: true,
-            mode: 0o700,
-            size: 0,
-        })
-        .with_file_metadata("/etc/ssh", "", FileMetadata {
-            exists: true,
-            is_file: false,
-            is_dir: true,
-            mode: 0o755,
-            size: 0,
-        })
-        .with_file_metadata("/etc/sudoers", "", FileMetadata {
-            exists: true,
-            is_file: true,
-            is_dir: false,
-            mode: 0o440,
-            size: 100,
-        })
-        .with_file_metadata("/etc/sudoers.d", "", FileMetadata {
-            exists: true,
-            is_file: false,
-            is_dir: true,
-            mode: 0o750,
-            size: 0,
-        })
+        .with_file_metadata(
+            "/root",
+            "",
+            FileMetadata {
+                exists: true,
+                is_file: false,
+                is_dir: true,
+                mode: 0o700,
+                size: 0,
+            },
+        )
+        .with_file_metadata(
+            "/boot",
+            "",
+            FileMetadata {
+                exists: true,
+                is_file: false,
+                is_dir: true,
+                mode: 0o700,
+                size: 0,
+            },
+        )
+        .with_file_metadata(
+            "/etc/ssh",
+            "",
+            FileMetadata {
+                exists: true,
+                is_file: false,
+                is_dir: true,
+                mode: 0o755,
+                size: 0,
+            },
+        )
+        .with_file_metadata(
+            "/etc/sudoers",
+            "",
+            FileMetadata {
+                exists: true,
+                is_file: true,
+                is_dir: false,
+                mode: 0o440,
+                size: 100,
+            },
+        )
+        .with_file_metadata(
+            "/etc/sudoers.d",
+            "",
+            FileMetadata {
+                exists: true,
+                is_file: false,
+                is_dir: true,
+                mode: 0o750,
+                size: 0,
+            },
+        )
 }
 
 /// Creates a mock executor with insecure file permissions.
 fn insecure_permissions_executor() -> MockExecutor {
     MockExecutor::new()
         // /root is world-readable
-        .with_file_metadata("/root", "", FileMetadata {
-            exists: true,
-            is_file: false,
-            is_dir: true,
-            mode: 0o755, // Too permissive
-            size: 0,
-        })
+        .with_file_metadata(
+            "/root",
+            "",
+            FileMetadata {
+                exists: true,
+                is_file: false,
+                is_dir: true,
+                mode: 0o755, // Too permissive
+                size: 0,
+            },
+        )
         // /boot is world-writable
-        .with_file_metadata("/boot", "", FileMetadata {
-            exists: true,
-            is_file: false,
-            is_dir: true,
-            mode: 0o777, // Way too permissive
-            size: 0,
-        })
+        .with_file_metadata(
+            "/boot",
+            "",
+            FileMetadata {
+                exists: true,
+                is_file: false,
+                is_dir: true,
+                mode: 0o777, // Way too permissive
+                size: 0,
+            },
+        )
         // /etc/ssh is correct
-        .with_file_metadata("/etc/ssh", "", FileMetadata {
-            exists: true,
-            is_file: false,
-            is_dir: true,
-            mode: 0o755,
-            size: 0,
-        })
+        .with_file_metadata(
+            "/etc/ssh",
+            "",
+            FileMetadata {
+                exists: true,
+                is_file: false,
+                is_dir: true,
+                mode: 0o755,
+                size: 0,
+            },
+        )
         // /etc/sudoers is world-readable
-        .with_file_metadata("/etc/sudoers", "", FileMetadata {
-            exists: true,
-            is_file: true,
-            is_dir: false,
-            mode: 0o644, // Too permissive
-            size: 100,
-        })
-        // /etc/sudoers.d is missing
+        .with_file_metadata(
+            "/etc/sudoers",
+            "",
+            FileMetadata {
+                exists: true,
+                is_file: true,
+                is_dir: false,
+                mode: 0o644, // Too permissive
+                size: 100,
+            },
+        )
+    // /etc/sudoers.d is missing
 }
 
 #[tokio::test]
@@ -94,11 +130,18 @@ async fn test_permissions_scan_secure_config_no_findings() {
     let result = plugin.scan(&ctx).await.unwrap();
 
     assert!(result.scan_success);
-    assert_eq!(result.scan_plugin_id, PluginId::new("permissions-hardening"));
+    assert_eq!(
+        result.scan_plugin_id,
+        PluginId::new("permissions-hardening")
+    );
     assert!(
         result.scan_findings.is_empty(),
         "Secure permissions should have no findings, but got: {:?}",
-        result.scan_findings.iter().map(|f| &f.finding_title).collect::<Vec<_>>()
+        result
+            .scan_findings
+            .iter()
+            .map(|f| &f.finding_title)
+            .collect::<Vec<_>>()
     );
 }
 
@@ -113,14 +156,20 @@ async fn test_permissions_scan_finds_insecure_permissions() {
     assert!(result.scan_success);
     assert!(!result.scan_findings.is_empty());
 
-    let finding_ids: Vec<_> = result.scan_findings.iter()
+    let finding_ids: Vec<_> = result
+        .scan_findings
+        .iter()
         .map(|f| f.finding_id.as_str())
         .collect();
 
     // Should find issues with /root, /boot, and /etc/sudoers
     assert!(finding_ids.iter().any(|id| id.contains("root")));
     assert!(finding_ids.iter().any(|id| id.contains("boot")));
-    assert!(finding_ids.iter().any(|id| id.contains("sudoers") && !id.contains("sudoers.d")));
+    assert!(
+        finding_ids
+            .iter()
+            .any(|id| id.contains("sudoers") && !id.contains("sudoers.d"))
+    );
 
     // /etc/ssh should NOT be in findings (it's correct)
     assert!(!finding_ids.iter().any(|id| id.contains("etc-ssh")));
@@ -128,14 +177,17 @@ async fn test_permissions_scan_finds_insecure_permissions() {
 
 #[tokio::test]
 async fn test_permissions_scan_finding_structure() {
-    let executor = MockExecutor::new()
-        .with_file_metadata("/root", "", FileMetadata {
+    let executor = MockExecutor::new().with_file_metadata(
+        "/root",
+        "",
+        FileMetadata {
             exists: true,
             is_file: false,
             is_dir: true,
             mode: 0o755, // Wrong - should be 0o700
             size: 0,
-        });
+        },
+    );
 
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PermissionsHardeningPlugin::new();
@@ -170,21 +222,26 @@ async fn test_permissions_scan_missing_paths_skipped() {
 
 #[tokio::test]
 async fn test_permissions_scan_sudoers_severity() {
-    let executor = MockExecutor::new()
-        .with_file_metadata("/etc/sudoers", "", FileMetadata {
+    let executor = MockExecutor::new().with_file_metadata(
+        "/etc/sudoers",
+        "",
+        FileMetadata {
             exists: true,
             is_file: true,
             is_dir: false,
             mode: 0o644, // Wrong - should be 0o440
             size: 100,
-        });
+        },
+    );
 
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PermissionsHardeningPlugin::new();
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    let sudoers_finding = result.scan_findings.iter()
+    let sudoers_finding = result
+        .scan_findings
+        .iter()
         .find(|f| f.finding_id.contains("sudoers"))
         .expect("Should have sudoers finding");
 
@@ -194,14 +251,17 @@ async fn test_permissions_scan_sudoers_severity() {
 
 #[tokio::test]
 async fn test_permissions_scan_logs_operations() {
-    let executor = MockExecutor::new()
-        .with_file_metadata("/root", "", FileMetadata {
+    let executor = MockExecutor::new().with_file_metadata(
+        "/root",
+        "",
+        FileMetadata {
             exists: true,
             is_file: false,
             is_dir: true,
             mode: 0o700,
             size: 0,
-        });
+        },
+    );
 
     let ctx = Context::with_executor(Arc::new(executor.clone()));
     let plugin = PermissionsHardeningPlugin::new();
@@ -251,13 +311,17 @@ async fn test_permissions_scan_with_remote_executor() {
     let executor = MockExecutor::new()
         .remote()
         .with_description("ssh://admin@server.example.com")
-        .with_file_metadata("/root", "", FileMetadata {
-            exists: true,
-            is_file: false,
-            is_dir: true,
-            mode: 0o755, // Insecure
-            size: 0,
-        });
+        .with_file_metadata(
+            "/root",
+            "",
+            FileMetadata {
+                exists: true,
+                is_file: false,
+                is_dir: true,
+                mode: 0o755, // Insecure
+                size: 0,
+            },
+        );
 
     assert!(executor.is_remote());
 

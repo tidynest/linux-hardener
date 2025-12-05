@@ -71,9 +71,7 @@ pub fn update_file_atomically(path: &Path, content: &str) -> Result<()> {
 /// File contents as String, or HardeningError on failure
 pub fn read_config_file(path: &Path) -> Result<String> {
     std::fs::read_to_string(path).map_err(|e| {
-        crate::error::HardeningError::Plugin(format!(
-            "Failed to read {}: {}", path.display(), e
-        ))
+        crate::error::HardeningError::Plugin(format!("Failed to read {}: {}", path.display(), e))
     })
 }
 
@@ -85,7 +83,9 @@ pub fn read_config_file_optional(path: &Path) -> Result<Option<String>> {
         Ok(content) => Ok(Some(content)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(crate::error::HardeningError::Plugin(format!(
-            "Failed to read {}: {}", path.display(), e
+            "Failed to read {}: {}",
+            path.display(),
+            e
         ))),
     }
 }
@@ -140,7 +140,9 @@ pub fn parse_config_value(
                 }
             }
             ConfigFormat::KeyValue => {
-                if let Some(stripped) = strip_prefix_with_case(trimmed, directive_name, case_sensitive) {
+                if let Some(stripped) =
+                    strip_prefix_with_case(trimmed, directive_name, case_sensitive)
+                {
                     let remainder = stripped.trim();
                     // Handle "key = value" format
                     if let Some(value) = remainder.strip_prefix('=') {
@@ -154,10 +156,20 @@ pub fn parse_config_value(
             }
             ConfigFormat::Auto => {
                 // Try space-separated first, then key-value
-                if let Some(v) = parse_config_value(content, directive_name, ConfigFormat::SpaceSeparated, case_sensitive) {
+                if let Some(v) = parse_config_value(
+                    content,
+                    directive_name,
+                    ConfigFormat::SpaceSeparated,
+                    case_sensitive,
+                ) {
                     return Some(v);
                 }
-                return parse_config_value(content, directive_name, ConfigFormat::KeyValue, case_sensitive);
+                return parse_config_value(
+                    content,
+                    directive_name,
+                    ConfigFormat::KeyValue,
+                    case_sensitive,
+                );
             }
         }
     }
@@ -250,20 +262,14 @@ pub fn create_timestamped_backup(path: &Path) -> Result<PathBuf> {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|e| {
-            crate::error::HardeningError::Plugin(format!(
-                "Failed to get system time: {}",
-                e
-            ))
+            crate::error::HardeningError::Plugin(format!("Failed to get system time: {}", e))
         })?
         .as_secs();
 
     let backup_path = PathBuf::from(format!("{}.backup.{}", path.display(), timestamp));
 
     std::fs::copy(path, &backup_path).map_err(|e| {
-        crate::error::HardeningError::Plugin(format!(
-            "Failed to get system time: {}",
-            e
-        ))
+        crate::error::HardeningError::Plugin(format!("Failed to get system time: {}", e))
     })?;
 
     Ok(backup_path)

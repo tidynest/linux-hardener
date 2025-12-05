@@ -142,70 +142,70 @@ fn ReportCard(report: ComplianceReport) -> impl IntoView {
     };
 
     view! {
-          <article class="report-card">
-              <header class="report-card-header">
-                  <h2>{framework_name}</h2>
-                  <span class=format!("compliance-score {}", score_class)>
-                      {format!("{:.0}%", score)}
-                  </span>
-              </header>
+        <article class="report-card">
+            <header class="report-card-header">
+                <h2>{framework_name}</h2>
+                <span class=format!("compliance-score {}", score_class)>
+                    {format!("{:.0}%", score)}
+                </span>
+            </header>
 
-              <div class="report-summary">
-                  <div class="summary-stat summary-pass">
-                      <span class="stat-value">{summary.summary_passing}</span>
-                      <span class="stat-label">"Passing"</span>
-                  </div>
-                  <div class="summary-stat summary-fail">
-                      <span class="stat-value">{summary.summary_failing}</span>
-                      <span class="stat-label">"Failing"</span>
-                  </div>
-                  <div class="summary-stat summary-manual">
-                      <span class="stat-value">{summary.summary_manual_review}</span>
-                      <span class="stat-label">"Manual Review"</span>
-                  </div>
-                  <div class="summary-stat summary-na">
-                      <span class="stat-value">{summary.summary_not_applicable}</span>
-                      <span class="stat-label">"N/A"</span>
-                  </div>
-              </div>
+            <div class="report-summary">
+                <div class="summary-stat summary-pass">
+                    <span class="stat-value">{summary.summary_passing}</span>
+                    <span class="stat-label">"Passing"</span>
+                </div>
+                <div class="summary-stat summary-fail">
+                    <span class="stat-value">{summary.summary_failing}</span>
+                    <span class="stat-label">"Failing"</span>
+                </div>
+                <div class="summary-stat summary-manual">
+                    <span class="stat-value">{summary.summary_manual_review}</span>
+                    <span class="stat-label">"Manual Review"</span>
+                </div>
+                <div class="summary-stat summary-na">
+                    <span class="stat-value">{summary.summary_not_applicable}</span>
+                    <span class="stat-label">"N/A"</span>
+                </div>
+            </div>
 
-              <details class="report-controls">
-                  <summary>"View Controls ("{report.report_controls.len()}" total)"</summary>
-                  <table class="controls-table">
-                      <thead>
-                          <tr>
-                              <th>"Control"</th>
-                              <th>"Status"</th>
-                              <th>"Title"</th>
-                          </tr>
-                      </thead>
-                      <tbody>
-                          {report.report_controls.iter().map(|control| {
-                              let status_class = match control.control_status {
-                                  ControlStatus::Pass => "status-pass",
-                                  ControlStatus::Fail => "status-fail",
-                                  ControlStatus::ManualReview => "status-manual",
-                                  ControlStatus::NotApplicable => "status-na",
-                              };
-                              let status_text = match control.control_status {
-                                  ControlStatus::Pass => "PASS",
-                                  ControlStatus::Fail => "FAIL",
-                                  ControlStatus::ManualReview => "REVIEW",
-                                  ControlStatus::NotApplicable => "N/A",
-                              };
-                              view! {
-                                  <tr>
-                                      <td class="control-id">{control.control_id.clone()}</td>
-                                      <td class=format!("control-status {}", status_class)>
-                                          {status_text}
-                                      </td>
-                                      <td class="control-title">{control.control_title.clone()}</td>
-                                  </tr>
-                              }
-                          }).collect::<Vec<_>>()}
-                      </tbody>
-                  </table>
-              </details>
-          </article>
-      }
+            <details class="report-controls">
+                <summary>"View Controls ("{report.report_controls.len()}" total)"</summary>
+                <table class="controls-table">
+                    <thead>
+                        <tr>
+                            <th>"Control"</th>
+                            <th>"Status"</th>
+                            <th>"Title"</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {report.report_controls.iter().map(|control| {
+                            let status_class = match control.control_status {
+                                ControlStatus::Pass => "status-pass",
+                                ControlStatus::Fail => "status-fail",
+                                ControlStatus::ManualReview => "status-manual",
+                                ControlStatus::NotApplicable => "status-na",
+                            };
+                            let status_text = match control.control_status {
+                                ControlStatus::Pass => "PASS",
+                                ControlStatus::Fail => "FAIL",
+                                ControlStatus::ManualReview => "REVIEW",
+                                ControlStatus::NotApplicable => "N/A",
+                            };
+                            view! {
+                                <tr>
+                                    <td class="control-id">{control.control_id.clone()}</td>
+                                    <td class=format!("control-status {}", status_class)>
+                                        {status_text}
+                                    </td>
+                                    <td class="control-title">{control.control_title.clone()}</td>
+                                </tr>
+                            }
+                        }).collect::<Vec<_>>()}
+                    </tbody>
+                </table>
+            </details>
+        </article>
+    }
 }

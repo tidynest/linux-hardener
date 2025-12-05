@@ -70,6 +70,3 @@ pub trait SystemExecutor: Send + Sync {
     /// Checks if a command exists on the system.
     async fn command_exists(&self, program: &str) -> Result<bool>;
 }
-
-
-

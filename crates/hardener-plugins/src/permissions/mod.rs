@@ -215,7 +215,8 @@ async fn apply_path_permissions(ctx: &Context, directive: &PermissionDirective) 
 
     // Apply new permissions using chmod command
     let mode_str = format!("{:04o}", directive.permission_mode);
-    let result = ctx.executor()
+    let result = ctx
+        .executor()
         .execute_command("chmod", &[&mode_str, directive.permission_path])
         .await;
 
@@ -232,28 +233,24 @@ async fn apply_path_permissions(ctx: &Context, directive: &PermissionDirective) 
                 change_error: None,
             })
         }
-        Ok(output) => {
-            Some(Change {
-                change_description: format!(
-                    "Failed to change permissions on {}",
-                    directive.permission_path
-                ),
-                change_type: ChangeType::Permissions,
-                change_success: false,
-                change_error: Some(output.stderr),
-            })
-        }
-        Err(e) => {
-            Some(Change {
-                change_description: format!(
-                    "Failed to change permissions on {}",
-                    directive.permission_path
-                ),
-                change_type: ChangeType::Permissions,
-                change_success: false,
-                change_error: Some(e.to_string()),
-            })
-        }
+        Ok(output) => Some(Change {
+            change_description: format!(
+                "Failed to change permissions on {}",
+                directive.permission_path
+            ),
+            change_type: ChangeType::Permissions,
+            change_success: false,
+            change_error: Some(output.stderr),
+        }),
+        Err(e) => Some(Change {
+            change_description: format!(
+                "Failed to change permissions on {}",
+                directive.permission_path
+            ),
+            change_type: ChangeType::Permissions,
+            change_success: false,
+            change_error: Some(e.to_string()),
+        }),
     }
 }
 

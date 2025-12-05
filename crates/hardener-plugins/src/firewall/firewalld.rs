@@ -180,7 +180,10 @@ impl FirewallBackend for FirewalldBackend {
             // Handle drop/default deny rules (set zone target)
             if rule.rule_action == "drop" && rule.rule_port == "any" {
                 match self
-                    .execute_firewall_cmd(ctx, &["--permanent", "--zone", &zone, "--set-target=DROP"])
+                    .execute_firewall_cmd(
+                        ctx,
+                        &["--permanent", "--zone", &zone, "--set-target=DROP"],
+                    )
                     .await
                 {
                     Ok(_) => {

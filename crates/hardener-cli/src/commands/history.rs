@@ -138,8 +138,7 @@ pub async fn export(
     // Determine output path
     let path = output_path.unwrap_or_else(|| {
         let short_id = &session.id[..8.min(session.id.len())];
-        PathBuf::from(format!(
-        "session-{}.json", short_id))
+        PathBuf::from(format!("session-{}.json", short_id))
     });
 
     std::fs::write(&path, &json)?;
@@ -185,13 +184,16 @@ async fn open_database() -> Result<ScanHistoryManager> {
 /// Formats a Unix timestamp as local datetime string.
 fn format_timestamp(timestamp: i64) -> String {
     DateTime::from_timestamp(timestamp, 0)
-        .map(|dt: DateTime<Utc>| dt.with_timezone(&Local).format("%Y-%m-%d %H:%M:%S").to_string())
+        .map(|dt: DateTime<Utc>| {
+            dt.with_timezone(&Local)
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string()
+        })
         .unwrap_or_else(|| "Unknown".to_string())
 }
 
 /// Prints session details in human-readable format.
-fn print_session_detail(session: &ScanSession, findings: &[ScanFindingRow], quiet:
-bool) {
+fn print_session_detail(session: &ScanSession, findings: &[ScanFindingRow], quiet: bool) {
     println!("Session: {}", session.id);
     println!("  Host:     {}", session.host_identifier);
     println!("  Status:   {}", session.status);
@@ -227,10 +229,7 @@ bool) {
     // Show findings
     if !findings.is_empty() && !quiet {
         println!("\nFindings ({}):", findings.len());
-        println!(
-            "{:<10}  {:<20}  {:<10}  Title",
-            "Severity", "Plugin", "ID",
-        );
+        println!("{:<10}  {:<20}  {:<10}  Title", "Severity", "Plugin", "ID",);
         println!("{}", "-".repeat(80));
 
         for finding in findings {

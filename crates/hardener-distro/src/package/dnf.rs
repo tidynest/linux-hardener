@@ -67,11 +67,14 @@ impl PackageManager for DnfPackageManager {
     }
 
     fn list_installed(&self) -> Result<Vec<Package>> {
-        let output = super::execute_command("rpm", &[
-            "-qa",
-            "--queryformat",
-            "%{NAME}\t%{VERSION}-%{RELEASE}\t%{ARCH}\n",
-        ])?;
+        let output = super::execute_command(
+            "rpm",
+            &[
+                "-qa",
+                "--queryformat",
+                "%{NAME}\t%{VERSION}-%{RELEASE}\t%{ARCH}\n",
+            ],
+        )?;
         Ok(super::parse_rpm_package_list(&output))
     }
 

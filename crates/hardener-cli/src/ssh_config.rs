@@ -1,9 +1,6 @@
 //! SSH configuration parsing and validation.
 
-use std::{
-    path::PathBuf,
-    time::Duration,
-};
+use std::{path::PathBuf, time::Duration};
 
 /// Parsed SSH connection configuration.
 #[derive(Clone, Debug)]
@@ -59,7 +56,10 @@ impl SshConnectionConfig {
             host: self.host.clone(),
             port: self.port,
             user: self.user.clone(),
-            identity_file: self.identity_file.as_ref().map(|p| p.to_string_lossy().to_string()),
+            identity_file: self
+                .identity_file
+                .as_ref()
+                .map(|p| p.to_string_lossy().to_string()),
             known_hosts: if self.strict_host_key_checking {
                 KnownHosts::Strict
             } else {

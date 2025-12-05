@@ -4,8 +4,8 @@
 
 use crate::types::{ApplyResult, ScanResult};
 
-use wasm_bindgen::prelude::*;
 use hardener_compliance::ComplianceReport;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 extern "C" {
@@ -54,4 +54,3 @@ pub async fn invoke_generate_report(
     serde_wasm_bindgen::from_value(result)
         .map_err(|e| format!("Failed to deserialise generate compliance reports: {}", e))
 }
-

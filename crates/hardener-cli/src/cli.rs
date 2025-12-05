@@ -191,12 +191,11 @@ pub enum SystemdAction {
         binary: Option<std::path::PathBuf>,
 
         /// Schedule in systemd calendar format (e.g., "daily", "*-*-* 02:00:00").
-          #[arg(short, long, default_value = "daily")]
-          schedule: String,
+        #[arg(short, long, default_value = "daily")]
+        schedule: String,
     },
 
     /// Install unit files to systemd (requires root for system install).
-
     Install {
         /// Install as user service instead of system service.
         #[arg(long)]
@@ -255,7 +254,6 @@ pub enum HistoryAction {
         output: Option<std::path::PathBuf>,
     },
 }
-
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum ReportFormat {
@@ -458,8 +456,7 @@ mod tests {
 
     #[test]
     fn test_cli_parse_history_list_with_limit() {
-        let cli = Cli::parse_from(["hardener", "history", "list", "--limit",
-            "50"]);
+        let cli = Cli::parse_from(["hardener", "history", "list", "--limit", "50"]);
         if let Command::History { action } = cli.command {
             if let HistoryAction::List { limit, .. } = action {
                 assert_eq!(limit, 50);
@@ -474,9 +471,13 @@ mod tests {
     #[test]
     fn test_cli_parse_history_list_with_filters() {
         let cli = Cli::parse_from([
-            "hardener", "history", "list",
-            "--host", "server1",
-            "--status", "completed",
+            "hardener",
+            "history",
+            "list",
+            "--host",
+            "server1",
+            "--status",
+            "completed",
         ]);
         if let Command::History { action } = cli.command {
             if let HistoryAction::List { host, status, .. } = action {
@@ -522,14 +523,17 @@ mod tests {
     #[test]
     fn test_cli_parse_history_export_with_output() {
         let cli = Cli::parse_from([
-            "hardener", "history", "export", "abc-123",
-            "--output", "/tmp/export.json",
+            "hardener",
+            "history",
+            "export",
+            "abc-123",
+            "--output",
+            "/tmp/export.json",
         ]);
         if let Command::History { action } = cli.command {
             if let HistoryAction::Export { session_id, output } = action {
                 assert_eq!(session_id, "abc-123");
-                assert_eq!(output,
-                           Some(std::path::PathBuf::from("/tmp/export.json")));
+                assert_eq!(output, Some(std::path::PathBuf::from("/tmp/export.json")));
             } else {
                 panic!("Expected Export action");
             }

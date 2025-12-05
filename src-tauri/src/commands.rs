@@ -146,7 +146,9 @@ pub async fn get_checkpoints() -> Result<Vec<CheckpointInfo>, String> {
 ///
 /// Takes a list of framework names and returns compliance reports.
 #[tauri::command]
-pub async fn generate_compliance_report(frameworks: Vec<String>) -> Result<Vec<ComplianceReport>, String> {
+pub async fn generate_compliance_report(
+    frameworks: Vec<String>,
+) -> Result<Vec<ComplianceReport>, String> {
     // First run a scan to get findings
     let ctx = Context::new();
     let registry = create_plugin_registry();
@@ -189,6 +191,3 @@ pub async fn generate_compliance_report(frameworks: Vec<String>) -> Result<Vec<C
 
     Ok(reports)
 }
-
-
-

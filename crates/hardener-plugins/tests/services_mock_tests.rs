@@ -3,7 +3,9 @@
 //! These tests verify plugin behavior without touching real systemd services.
 
 use hardener_common::types::{PluginId, Severity};
-use hardener_core::{CommandOutput, Context, MockExecutor, SystemExecutor, plugin::HardeningPlugin};
+use hardener_core::{
+    CommandOutput, Context, MockExecutor, SystemExecutor, plugin::HardeningPlugin,
+};
 use hardener_plugins::ServicesHardeningPlugin;
 use std::sync::Arc;
 
@@ -11,26 +13,42 @@ use std::sync::Arc;
 fn clean_system_executor() -> MockExecutor {
     MockExecutor::new()
         // systemctl list-unit-files shows no matching services
-        .with_command("systemctl", &["list-unit-files", "bluetooth"], CommandOutput {
-            stdout: String::new(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
-        .with_command("systemctl", &["list-unit-files", "cups"], CommandOutput {
-            stdout: String::new(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
-        .with_command("systemctl", &["list-unit-files", "avahi-daemon"], CommandOutput {
-            stdout: String::new(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
-        .with_command("systemctl", &["list-unit-files", "ModemManager"], CommandOutput {
-            stdout: String::new(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
+        .with_command(
+            "systemctl",
+            &["list-unit-files", "bluetooth"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["list-unit-files", "cups"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["list-unit-files", "avahi-daemon"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["list-unit-files", "ModemManager"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
         .with_command_exists("systemctl", true)
 }
 
@@ -39,65 +57,104 @@ fn insecure_services_executor() -> MockExecutor {
     MockExecutor::new()
         .with_command_exists("systemctl", true)
         // Bluetooth - exists, enabled, and active
-        .with_command("systemctl", &["list-unit-files", "bluetooth"], CommandOutput {
-            stdout: "bluetooth.service enabled enabled\n".to_string(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
-        .with_command("systemctl", &["is-enabled", "bluetooth"], CommandOutput {
-            stdout: "enabled\n".to_string(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
-        .with_command("systemctl", &["is-active", "bluetooth"], CommandOutput {
-            stdout: "active\n".to_string(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
+        .with_command(
+            "systemctl",
+            &["list-unit-files", "bluetooth"],
+            CommandOutput {
+                stdout: "bluetooth.service enabled enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-enabled", "bluetooth"],
+            CommandOutput {
+                stdout: "enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-active", "bluetooth"],
+            CommandOutput {
+                stdout: "active\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
         // CUPS - exists and enabled but not active
-        .with_command("systemctl", &["list-unit-files", "cups"], CommandOutput {
-            stdout: "cups.service enabled enabled\n".to_string(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
-        .with_command("systemctl", &["is-enabled", "cups"], CommandOutput {
-            stdout: "enabled\n".to_string(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
-        .with_command("systemctl", &["is-active", "cups"], CommandOutput {
-            stdout: "inactive\n".to_string(),
-            stderr: String::new(),
-            exit_code: 3, // Not active
-        })
+        .with_command(
+            "systemctl",
+            &["list-unit-files", "cups"],
+            CommandOutput {
+                stdout: "cups.service enabled enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-enabled", "cups"],
+            CommandOutput {
+                stdout: "enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-active", "cups"],
+            CommandOutput {
+                stdout: "inactive\n".to_string(),
+                stderr: String::new(),
+                exit_code: 3, // Not active
+            },
+        )
         // Avahi - does not exist on this system
-        .with_command("systemctl", &["list-unit-files", "avahi-daemon"], CommandOutput {
-            stdout: String::new(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
+        .with_command(
+            "systemctl",
+            &["list-unit-files", "avahi-daemon"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
         // ModemManager - exists but disabled
-        .with_command("systemctl", &["list-unit-files", "ModemManager"], CommandOutput {
-            stdout: "ModemManager.service disabled disabled\n".to_string(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
-        .with_command("systemctl", &["is-enabled", "ModemManager"], CommandOutput {
-            stdout: "disabled\n".to_string(),
-            stderr: String::new(),
-            exit_code: 1,
-        })
-        .with_command("systemctl", &["is-active", "ModemManager"], CommandOutput {
-            stdout: "inactive\n".to_string(),
-            stderr: String::new(),
-            exit_code: 3,
-        })
+        .with_command(
+            "systemctl",
+            &["list-unit-files", "ModemManager"],
+            CommandOutput {
+                stdout: "ModemManager.service disabled disabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-enabled", "ModemManager"],
+            CommandOutput {
+                stdout: "disabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 1,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-active", "ModemManager"],
+            CommandOutput {
+                stdout: "inactive\n".to_string(),
+                stderr: String::new(),
+                exit_code: 3,
+            },
+        )
 }
 
 /// Creates a mock executor without systemctl (non-systemd system).
 fn no_systemd_executor() -> MockExecutor {
-    MockExecutor::new()
-        .with_command_exists("systemctl", false)
+    MockExecutor::new().with_command_exists("systemctl", false)
 }
 
 #[tokio::test]
@@ -113,7 +170,11 @@ async fn test_services_scan_clean_system_no_findings() {
     assert!(
         result.scan_findings.is_empty(),
         "Clean system should have no findings, but got: {:?}",
-        result.scan_findings.iter().map(|f| &f.finding_title).collect::<Vec<_>>()
+        result
+            .scan_findings
+            .iter()
+            .map(|f| &f.finding_title)
+            .collect::<Vec<_>>()
     );
 }
 
@@ -128,7 +189,9 @@ async fn test_services_scan_finds_enabled_services() {
     assert!(result.scan_success);
 
     // Should find bluetooth (enabled and active) and cups (enabled)
-    let finding_ids: Vec<_> = result.scan_findings.iter()
+    let finding_ids: Vec<_> = result
+        .scan_findings
+        .iter()
         .map(|f| f.finding_id.as_str())
         .collect();
 
@@ -161,7 +224,9 @@ async fn test_services_scan_finding_structure() {
     let result = plugin.scan(&ctx).await.unwrap();
 
     // Find bluetooth finding
-    let bt_finding = result.scan_findings.iter()
+    let bt_finding = result
+        .scan_findings
+        .iter()
         .find(|f| f.finding_id == "service_bluetooth")
         .expect("Should have bluetooth finding");
 
@@ -172,7 +237,9 @@ async fn test_services_scan_finding_structure() {
     assert!(!bt_finding.finding_remediation_steps.is_empty());
 
     // Check remediation steps
-    let steps: Vec<_> = bt_finding.finding_remediation_steps.iter()
+    let steps: Vec<_> = bt_finding
+        .finding_remediation_steps
+        .iter()
         .map(|s| s.as_str())
         .collect();
     assert!(steps.iter().any(|s| s.contains("systemctl stop")));
@@ -189,7 +256,9 @@ async fn test_services_scan_cups_enabled_only() {
     let result = plugin.scan(&ctx).await.unwrap();
 
     // Find CUPS finding - enabled but not active
-    let cups_finding = result.scan_findings.iter()
+    let cups_finding = result
+        .scan_findings
+        .iter()
         .find(|f| f.finding_id == "service_cups")
         .expect("Should have cups finding");
 
@@ -249,15 +318,17 @@ async fn test_services_scan_logs_commands() {
 
     // Should have executed systemctl commands
     assert!(
-        log.commands_executed.iter().any(|(cmd, _)| cmd == "systemctl"),
+        log.commands_executed
+            .iter()
+            .any(|(cmd, _)| cmd == "systemctl"),
         "Should execute systemctl commands"
     );
 
     // Should check list-unit-files for each service
     assert!(
-        log.commands_executed.iter().any(|(_, args)|
-            args.contains(&"list-unit-files".to_string())
-        ),
+        log.commands_executed
+            .iter()
+            .any(|(_, args)| args.contains(&"list-unit-files".to_string())),
         "Should check list-unit-files"
     );
 }
@@ -270,7 +341,10 @@ async fn test_services_scan_duration_recorded() {
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_duration_us > 0, "Scan duration should be recorded");
+    assert!(
+        result.scan_duration_us > 0,
+        "Scan duration should be recorded"
+    );
 }
 
 #[tokio::test]
@@ -290,36 +364,60 @@ async fn test_services_scan_with_remote_executor() {
         .remote()
         .with_description("ssh://admin@server.example.com")
         .with_command_exists("systemctl", true)
-        .with_command("systemctl", &["list-unit-files", "bluetooth"], CommandOutput {
-            stdout: "bluetooth.service enabled enabled\n".to_string(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
-        .with_command("systemctl", &["is-enabled", "bluetooth"], CommandOutput {
-            stdout: "enabled\n".to_string(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
-        .with_command("systemctl", &["is-active", "bluetooth"], CommandOutput {
-            stdout: "active\n".to_string(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
-        .with_command("systemctl", &["list-unit-files", "cups"], CommandOutput {
-            stdout: String::new(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
-        .with_command("systemctl", &["list-unit-files", "avahi-daemon"], CommandOutput {
-            stdout: String::new(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
-        .with_command("systemctl", &["list-unit-files", "ModemManager"], CommandOutput {
-            stdout: String::new(),
-            stderr: String::new(),
-            exit_code: 0,
-        });
+        .with_command(
+            "systemctl",
+            &["list-unit-files", "bluetooth"],
+            CommandOutput {
+                stdout: "bluetooth.service enabled enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-enabled", "bluetooth"],
+            CommandOutput {
+                stdout: "enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-active", "bluetooth"],
+            CommandOutput {
+                stdout: "active\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["list-unit-files", "cups"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["list-unit-files", "avahi-daemon"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["list-unit-files", "ModemManager"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        );
 
     assert!(executor.is_remote());
 
@@ -330,7 +428,12 @@ async fn test_services_scan_with_remote_executor() {
 
     assert!(result.scan_success);
     // Should find bluetooth on remote system
-    assert!(result.scan_findings.iter().any(|f| f.finding_id == "service_bluetooth"));
+    assert!(
+        result
+            .scan_findings
+            .iter()
+            .any(|f| f.finding_id == "service_bluetooth")
+    );
 }
 
 #[tokio::test]
@@ -338,46 +441,78 @@ async fn test_services_compliance_mappings() {
     // Create executor with cups and avahi enabled to test compliance mappings
     let executor = MockExecutor::new()
         .with_command_exists("systemctl", true)
-        .with_command("systemctl", &["list-unit-files", "bluetooth"], CommandOutput {
-            stdout: String::new(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
-        .with_command("systemctl", &["list-unit-files", "cups"], CommandOutput {
-            stdout: "cups.service enabled enabled\n".to_string(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
-        .with_command("systemctl", &["is-enabled", "cups"], CommandOutput {
-            stdout: "enabled\n".to_string(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
-        .with_command("systemctl", &["is-active", "cups"], CommandOutput {
-            stdout: "active\n".to_string(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
-        .with_command("systemctl", &["list-unit-files", "avahi-daemon"], CommandOutput {
-            stdout: "avahi-daemon.service enabled enabled\n".to_string(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
-        .with_command("systemctl", &["is-enabled", "avahi-daemon"], CommandOutput {
-            stdout: "enabled\n".to_string(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
-        .with_command("systemctl", &["is-active", "avahi-daemon"], CommandOutput {
-            stdout: "active\n".to_string(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
-        .with_command("systemctl", &["list-unit-files", "ModemManager"], CommandOutput {
-            stdout: String::new(),
-            stderr: String::new(),
-            exit_code: 0,
-        });
+        .with_command(
+            "systemctl",
+            &["list-unit-files", "bluetooth"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["list-unit-files", "cups"],
+            CommandOutput {
+                stdout: "cups.service enabled enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-enabled", "cups"],
+            CommandOutput {
+                stdout: "enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-active", "cups"],
+            CommandOutput {
+                stdout: "active\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["list-unit-files", "avahi-daemon"],
+            CommandOutput {
+                stdout: "avahi-daemon.service enabled enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-enabled", "avahi-daemon"],
+            CommandOutput {
+                stdout: "enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-active", "avahi-daemon"],
+            CommandOutput {
+                stdout: "active\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["list-unit-files", "ModemManager"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        );
 
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = ServicesHardeningPlugin::new();
@@ -385,16 +520,26 @@ async fn test_services_compliance_mappings() {
     let result = plugin.scan(&ctx).await.unwrap();
 
     // CUPS should have CIS 2.2.4 mapping
-    let cups_finding = result.scan_findings.iter()
+    let cups_finding = result
+        .scan_findings
+        .iter()
         .find(|f| f.finding_id == "service_cups")
         .expect("Should have cups finding");
     assert!(!cups_finding.finding_compliance.is_empty());
-    assert_eq!(cups_finding.finding_compliance[0].compliance_control_id, "2.2.4");
+    assert_eq!(
+        cups_finding.finding_compliance[0].compliance_control_id,
+        "2.2.4"
+    );
 
     // Avahi should have CIS 2.2.3 mapping
-    let avahi_finding = result.scan_findings.iter()
+    let avahi_finding = result
+        .scan_findings
+        .iter()
         .find(|f| f.finding_id == "service_avahi_daemon")
         .expect("Should have avahi finding");
     assert!(!avahi_finding.finding_compliance.is_empty());
-    assert_eq!(avahi_finding.finding_compliance[0].compliance_control_id, "2.2.3");
+    assert_eq!(
+        avahi_finding.finding_compliance[0].compliance_control_id,
+        "2.2.3"
+    );
 }

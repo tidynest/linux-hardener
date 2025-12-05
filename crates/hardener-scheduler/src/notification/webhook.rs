@@ -196,7 +196,8 @@ impl Notifier for WebhookNotifier {
     async fn send(&self, summary: &ScanSummary) -> NotificationResult {
         let payload = self.build_payload(summary);
 
-        let mut request = self.client
+        let mut request = self
+            .client
             .post(&self.endpoint.url)
             .header("Content-Type", "application/json");
 
@@ -218,10 +219,7 @@ impl Notifier for WebhookNotifier {
                         "Webhook '{}' returned {}: {}",
                         self.endpoint.name, status, body
                     );
-                    NotificationResult::failed(
-                        self.channel(),
-                        format!("HTTP {}: {}", status, body),
-                    )
+                    NotificationResult::failed(self.channel(), format!("HTTP {}: {}", status, body))
                 }
             }
             Err(e) => {
@@ -335,8 +333,7 @@ mod tests {
     }
 
     /// Helper to create a test summary.
-    fn make_test_summary(critical: usize, high: usize, medium: usize, low:
-    usize) -> ScanSummary {
+    fn make_test_summary(critical: usize, high: usize, medium: usize, low: usize) -> ScanSummary {
         ScanSummary {
             session_id: "test".to_string(),
             host: "testhost".to_string(),

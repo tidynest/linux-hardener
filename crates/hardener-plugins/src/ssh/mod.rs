@@ -14,7 +14,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use hardener_common::{
     error::Result,
-    file_utils::{parse_config_value, set_config_directive, ConfigFormat},
+    file_utils::{ConfigFormat, parse_config_value, set_config_directive},
     types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
@@ -250,13 +250,12 @@ impl HardeningPlugin for SshHardeningPlugin {
 
         // Check each SSH directive
         for directive in SSH_DIRECTIVES {
-            let current_value =
-                parse_config_value(
-                    &config_content,
-                    directive.ssh_directive_name,
-                    ConfigFormat::SpaceSeparated,
-                    false
-                );
+            let current_value = parse_config_value(
+                &config_content,
+                directive.ssh_directive_name,
+                ConfigFormat::SpaceSeparated,
+                false,
+            );
 
             let is_insecure = match current_value {
                 Some(ref value) => value != directive.ssh_secure_value,
@@ -379,13 +378,12 @@ impl HardeningPlugin for SshHardeningPlugin {
 
         // Step 3: Apply each directive.
         for directive in SSH_DIRECTIVES {
-            let original_value =
-                parse_config_value(
-                    &config_content,
-                    directive.ssh_directive_name,
-                    ConfigFormat::SpaceSeparated,
-                    false
-                );
+            let original_value = parse_config_value(
+                &config_content,
+                directive.ssh_directive_name,
+                ConfigFormat::SpaceSeparated,
+                false,
+            );
 
             // Check if change is needed.
             let needs_change = match &original_value {
@@ -541,11 +539,7 @@ impl HardeningPlugin for SshHardeningPlugin {
         if let Err(e) = ctx.executor().read_file(config_path).await {
             issues.push(ValidationIssue {
                 validation_issue_severity: Severity::Critical,
-                validation_issue_message: format!(
-                    "Cannot read {}: {}",
-                    config_path.display(),
-                    e
-                ),
+                validation_issue_message: format!("Cannot read {}: {}", config_path.display(), e),
                 validation_issue_config_key: None,
             });
         }

@@ -1,0 +1,11 @@
+# Audit configuration for cargo-audit
+# This file documents known vulnerabilities that are accepted risks
+
+[advisories]
+# RUSTSEC-2023-0071: Marvin Attack on RSA timing sidechannels
+# Status: No fix available
+# Risk assessment: The rsa crate is pulled in transitively through sqlx-mysql,
+# but this project only uses SQLite (sqlx with sqlite feature). The vulnerable
+# code path is not exercised. Additionally, this tool does not expose an RSA
+# server that would be susceptible to network timing attacks.
+ignore = ["RUSTSEC-2023-0071"]

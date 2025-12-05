@@ -2,6 +2,7 @@
 //!
 //! Provides a guided CLI experience for generating compliance reports.
 
+use super::report::run_scan;
 use anyhow::{anyhow, Result};
 use chrono::Local;
 use colored::Colorize;
@@ -12,12 +13,11 @@ use hardener_compliance::{
     JsonFormatter, OutputFormat, ReportConfig, ReportFormatter, ReportGenerator, Scenario,
     TextFormatter,
 };
+use hardener_core::{LocalExecutor, SystemExecutor};
 use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
-use hardener_core::{LocalExecutor, SystemExecutor};
-use super::report::run_scan;
 
 /// Wizard state tracking user selections.
 #[derive(Debug, Default)]

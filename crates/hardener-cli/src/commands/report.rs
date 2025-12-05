@@ -8,17 +8,9 @@ use hardener_compliance::{
     JsonFormatter, OutputFormat, ReportConfig, ReportFormatter, ReportGenerator, Scenario,
     TextFormatter,
 };
-use hardener_core::{
-    Context,
-    executor::SystemExecutor,
-};
+use hardener_core::{executor::SystemExecutor, Context};
 use hardener_plugins::*;
-use std::{
-    io,
-    io::Write,
-    fs,
-    sync::Arc,
-};
+use std::{fs, io, io::Write, sync::Arc};
 
 pub async fn run(
     scenario: Option<String>,
@@ -145,7 +137,8 @@ pub async fn run(
 }
 
 pub async fn run_scan(
-    quiet: bool, executor: Arc<dyn SystemExecutor>
+    quiet: bool,
+    executor: Arc<dyn SystemExecutor>,
 ) -> Result<Vec<hardener_core::plugin::Finding>> {
     let registry = create_plugin_registry();
     let ctx = Context::with_executor(executor);

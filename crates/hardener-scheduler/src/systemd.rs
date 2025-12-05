@@ -157,24 +157,21 @@ pub fn cron_to_calendar(cron: &str) -> Option<String> {
     // Convert day field
     let day_part = match day {
         "*" => "*".to_string(),
-        d if d.parse::<u8>().is_ok() => format!("{:02}",
-                                                d.parse::<u8>().unwrap()),
+        d if d.parse::<u8>().is_ok() => format!("{:02}", d.parse::<u8>().unwrap()),
         _ => return None,
     };
 
     // Convert hour field
     let hour_part = match hour {
         "*" => "*".to_string(),
-        h if h.parse::<u8>().is_ok() => format!("{:02}",
-                                                h.parse::<u8>().unwrap()),
+        h if h.parse::<u8>().is_ok() => format!("{:02}", h.parse::<u8>().unwrap()),
         _ => return None,
     };
 
     // Convert minute field
     let minute_part = match minute {
         "*" => "*".to_string(),
-        m if m.parse::<u8>().is_ok() => format!("{:02}",
-                                                m.parse::<u8>().unwrap()),
+        m if m.parse::<u8>().is_ok() => format!("{:02}", m.parse::<u8>().unwrap()),
         _ => return None,
     };
 
@@ -222,9 +219,8 @@ mod tests {
 
     #[test]
     fn generate_service_with_config() {
-        let gen =
-            SystemdGenerator::new(PathBuf::from("/usr/bin/hardener"), "daily")
-                .with_config(PathBuf::from("/etc/hardener/config.toml"));
+        let gen = SystemdGenerator::new(PathBuf::from("/usr/bin/hardener"), "daily")
+            .with_config(PathBuf::from("/etc/hardener/config.toml"));
         let service = gen.generate_service();
 
         assert!(service.contains("--config /etc/hardener/config.toml"));

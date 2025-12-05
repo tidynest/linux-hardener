@@ -1,16 +1,13 @@
 //! SSH-based system executor for remote hosts.
 
+use super::{CommandOutput, FileMetadata, SystemExecutor};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use openssh::{KnownHosts, Session, SessionBuilder};
-use std::{
-    path::Path,
-    time::Duration,
-};
-use super::{CommandOutput, FileMetadata, SystemExecutor};
+use std::{path::Path, time::Duration};
 
 /// SSH executor configuration.
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub struct SshConfig {
     pub host: String,
     pub port: u16,

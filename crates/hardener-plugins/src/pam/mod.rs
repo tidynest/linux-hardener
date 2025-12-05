@@ -6,6 +6,7 @@
 //! - Password ageing policies (expiry, reuse prevention)
 
 use async_trait::async_trait;
+use hardener_common::file_utils::{ConfigFormat, parse_config_value};
 use hardener_common::{
     error::{HardeningError, Result},
     file_utils::update_file_atomically,
@@ -18,7 +19,6 @@ use hardener_core::{
         ValidationReport,
     },
 };
-use hardener_common::file_utils::{parse_config_value, ConfigFormat};
 use std::path::Path;
 use std::time::Instant;
 use tracing::{debug, info, warn};
@@ -110,22 +110,18 @@ impl HardeningPlugin for PamHardeningPlugin {
         // Check each PAM directive.
         for directive in PAM_DIRECTIVES {
             let current_value = match directive.pam_config_file {
-                PamConfigFile::PwQuality => {
-                    parse_config_value(
-                        &pwquality_content,
-                        directive.pam_directive_name,
-                        ConfigFormat::Auto,
-                        true,
-                    )
-                }
-                PamConfigFile::LoginDefs => {
-                    parse_config_value(
-                        &login_defs_content,
-                        directive.pam_directive_name,
-                        ConfigFormat::Auto,
-                        true,
-                    )
-                }
+                PamConfigFile::PwQuality => parse_config_value(
+                    &pwquality_content,
+                    directive.pam_directive_name,
+                    ConfigFormat::Auto,
+                    true,
+                ),
+                PamConfigFile::LoginDefs => parse_config_value(
+                    &login_defs_content,
+                    directive.pam_directive_name,
+                    ConfigFormat::Auto,
+                    true,
+                ),
                 PamConfigFile::PamAuth => {
                     // PAM module configuration - skip for now, implement during phase 2.
                     debug!(
@@ -219,7 +215,8 @@ impl HardeningPlugin for PamHardeningPlugin {
         }
 
         // Step 1: Create backups (legacy, in addition to checkpoint)
-        let pwquality_backup = match create_config_backup(ctx, "/etc/security/pwquality.conf").await {
+        let pwquality_backup = match create_config_backup(ctx, "/etc/security/pwquality.conf").await
+        {
             Ok(path) => {
                 changes.push(Change {
                     change_type: ChangeType::ConfigFile,
@@ -417,7 +414,11 @@ impl HardeningPlugin for PamHardeningPlugin {
         let mut issues = Vec::new();
 
         // Check pwquality.conf
-        match ctx.executor().file_metadata(Path::new("/etc/security/pwquality.conf")).await {
+        match ctx
+            .executor()
+            .file_metadata(Path::new("/etc/security/pwquality.conf"))
+            .await
+        {
             Ok(metadata) => {
                 if !metadata.is_file {
                     issues.push(ValidationIssue {
@@ -440,7 +441,11 @@ impl HardeningPlugin for PamHardeningPlugin {
         }
 
         // Check login.defs
-        match ctx.executor().file_metadata(Path::new("/etc/login.defs")).await {
+        match ctx
+            .executor()
+            .file_metadata(Path::new("/etc/login.defs"))
+            .await
+        {
             Ok(metadata) => {
                 if !metadata.is_file {
                     issues.push(ValidationIssue {

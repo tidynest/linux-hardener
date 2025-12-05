@@ -37,9 +37,9 @@ pub use context::{Context, PluginAuditEntry, SystemInfo};
 
 // Re-export executor types
 pub use executor::{
-    {CommandOutput, FileMetadata, SystemExecutor},
     local::LocalExecutor,
     mock::MockExecutor,
+    {CommandOutput, FileMetadata, SystemExecutor},
 };
 
 #[cfg(feature = "system")]
@@ -50,4 +50,3 @@ pub use plugin_manager::PluginManager;
 
 #[cfg(feature = "system")]
 pub use registry::PluginRegistry;
-

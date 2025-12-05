@@ -24,11 +24,11 @@ async fn main() -> Result<()> {
             cli.ssh_timeout,
             cli.ssh_no_verify,
         );
-        
+
         if !cli.quiet {
             eprint!("Connecting to {}...", ssh_config.display());
         }
-        
+
         let core_config = ssh_config.to_core_config();
         match SshExecutor::connect(core_config).await {
             Ok(executor) => Arc::new(executor),
@@ -37,10 +37,10 @@ async fn main() -> Result<()> {
                 std::process::exit(1);
             }
         }
-    } else { 
+    } else {
         Arc::new(LocalExecutor::new())
     };
-    
+
     let result = match cli.command {
         Command::Scan {
             plugin,
@@ -66,13 +66,19 @@ async fn main() -> Result<()> {
             plugin,
             all,
             dry_run,
-        } => commands::apply::run(
-            &plugin, all, dry_run, cli.format, cli.quiet, executor.clone()
-        ).await,
+        } => {
+            commands::apply::run(
+                &plugin,
+                all,
+                dry_run,
+                cli.format,
+                cli.quiet,
+                executor.clone(),
+            )
+            .await
+        }
         Command::Rollback { checkpoint_id } => {
-            commands::checkpoint::rollback(
-                &checkpoint_id, cli.format, cli.quiet
-            ).await
+            commands::checkpoint::rollback(&checkpoint_id, cli.format, cli.quiet).await
         }
         Command::Checkpoint { action } => match action {
             CheckpointAction::List => commands::checkpoint::list(cli.format, cli.quiet).await,
@@ -117,23 +123,25 @@ async fn main() -> Result<()> {
             }
         },
         Command::Systemd { action } => match action {
-            SystemdAction::Generate { output, binary, schedule } => {
-                commands::systemd::generate(output, binary, schedule, cli.config, cli.quiet).await
-            }
+            SystemdAction::Generate {
+                output,
+                binary,
+                schedule,
+            } => commands::systemd::generate(output, binary, schedule, cli.config, cli.quiet).await,
             SystemdAction::Install { user, schedule } => {
                 commands::systemd::install(user, schedule, cli.config, cli.quiet).await
             }
             SystemdAction::Uninstall { user } => {
                 commands::systemd::uninstall(user, cli.quiet).await
             }
-            SystemdAction::Status { user } => {
-                commands::systemd::status(user, cli.quiet).await
-            }
+            SystemdAction::Status { user } => commands::systemd::status(user, cli.quiet).await,
         },
         Command::History { action } => match action {
-            HistoryAction::List { limit, host, status } => {
-                commands::history::list(cli.format, cli.quiet, limit, host, status).await
-            }
+            HistoryAction::List {
+                limit,
+                host,
+                status,
+            } => commands::history::list(cli.format, cli.quiet, limit, host, status).await,
             HistoryAction::Show { session_id } => {
                 commands::history::show(&session_id, cli.format, cli.quiet).await
             }

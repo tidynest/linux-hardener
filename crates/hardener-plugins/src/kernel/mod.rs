@@ -293,7 +293,11 @@ impl HardeningPlugin for KernelHardeningPlugin {
         for (param_name, expected_value, param_description) in KERNEL_PARAMS {
             let path = format!("/proc/sys/{}", param_name.replace('.', "/"));
 
-            match ctx.executor().write_file(Path::new(&path), expected_value).await {
+            match ctx
+                .executor()
+                .write_file(Path::new(&path), expected_value)
+                .await
+            {
                 Ok(_) => {
                     apply_changes.push(Change {
                         change_description: format!(
@@ -359,12 +363,18 @@ impl HardeningPlugin for KernelHardeningPlugin {
         info!("Kernel configuration files restored from checkpoint");
 
         // Reload sysctl settings from restored config files
-        let reload_result = ctx.executor().execute_command("sysctl", &["--system"]).await?;
+        let reload_result = ctx
+            .executor()
+            .execute_command("sysctl", &["--system"])
+            .await?;
 
         if reload_result.success() {
             info!("Kernel parameters reloaded successfully");
         } else {
-            warn!("sysctl --system returned non-zero: {}", reload_result.stderr);
+            warn!(
+                "sysctl --system returned non-zero: {}",
+                reload_result.stderr
+            );
         }
 
         Ok(())

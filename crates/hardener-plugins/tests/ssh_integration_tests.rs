@@ -41,11 +41,7 @@ use hardener_core::{
     executor::ssh::{SshConfig, SshExecutor},
     plugin::HardeningPlugin,
 };
-use hardener_plugins::{
-    SshHardeningPlugin,
-    KernelHardeningPlugin,
-    ServicesHardeningPlugin,
-};
+use hardener_plugins::{KernelHardeningPlugin, ServicesHardeningPlugin, SshHardeningPlugin};
 use std::env;
 use std::sync::Arc;
 use std::time::Duration;
@@ -92,18 +88,27 @@ async fn test_kernel_plugin_scan_over_ssh() {
 
     let result = plugin.scan(&ctx).await;
 
-    assert!(result.is_ok(), "Kernel scan should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Kernel scan should succeed: {:?}",
+        result.err()
+    );
 
     let scan_result = result.unwrap();
     assert!(scan_result.scan_success, "Scan should report success");
-    assert!(scan_result.scan_duration_us > 0, "Duration should be recorded");
+    assert!(
+        scan_result.scan_duration_us > 0,
+        "Duration should be recorded"
+    );
 
-    println!("Kernel scan found {} findings over SSH", scan_result.scan_findings.len());
+    println!(
+        "Kernel scan found {} findings over SSH",
+        scan_result.scan_findings.len()
+    );
     for finding in &scan_result.scan_findings {
-        println!("  - {}: {} (current: {})",
-            finding.finding_id,
-            finding.finding_title,
-            finding.finding_current_value
+        println!(
+            "  - {}: {} (current: {})",
+            finding.finding_id, finding.finding_title, finding.finding_current_value
         );
     }
 }
@@ -117,13 +122,20 @@ async fn test_kernel_plugin_validate_over_ssh() {
 
     let result = plugin.validate(&ctx, &config).await;
 
-    assert!(result.is_ok(), "Kernel validate should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Kernel validate should succeed: {:?}",
+        result.err()
+    );
 
     let report = result.unwrap();
     println!("Kernel validation over SSH:");
     println!("  Valid: {}", report.validation_report_is_valid);
     println!("  Issues: {}", report.validation_report_issues.len());
-    println!("  Estimated changes: {}", report.validation_report_estimated_changes.len());
+    println!(
+        "  Estimated changes: {}",
+        report.validation_report_estimated_changes.len()
+    );
 }
 
 // =============================================================================
@@ -138,7 +150,11 @@ async fn test_ssh_plugin_scan_over_ssh() {
 
     let result = plugin.scan(&ctx).await;
 
-    assert!(result.is_ok(), "SSH plugin scan should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "SSH plugin scan should succeed: {:?}",
+        result.err()
+    );
 
     let scan_result = result.unwrap();
     // Note: scan might fail if sshd_config doesn't exist on target
@@ -146,9 +162,15 @@ async fn test_ssh_plugin_scan_over_ssh() {
 
     println!("SSH scan success: {}", scan_result.scan_success);
     if let Some(ref error) = scan_result.scan_error {
-        println!("SSH scan error (expected if sshd not configured): {}", error);
+        println!(
+            "SSH scan error (expected if sshd not configured): {}",
+            error
+        );
     }
-    println!("SSH scan found {} findings over SSH", scan_result.scan_findings.len());
+    println!(
+        "SSH scan found {} findings over SSH",
+        scan_result.scan_findings.len()
+    );
 }
 
 // =============================================================================
@@ -163,14 +185,24 @@ async fn test_services_plugin_scan_over_ssh() {
 
     let result = plugin.scan(&ctx).await;
 
-    assert!(result.is_ok(), "Services scan should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Services scan should succeed: {:?}",
+        result.err()
+    );
 
     let scan_result = result.unwrap();
     assert!(scan_result.scan_success, "Scan should report success");
 
-    println!("Services scan found {} findings over SSH", scan_result.scan_findings.len());
+    println!(
+        "Services scan found {} findings over SSH",
+        scan_result.scan_findings.len()
+    );
     for finding in &scan_result.scan_findings {
-        println!("  - {}: {}", finding.finding_id, finding.finding_current_value);
+        println!(
+            "  - {}: {}",
+            finding.finding_id, finding.finding_current_value
+        );
     }
 }
 
@@ -183,10 +215,17 @@ async fn test_services_plugin_validate_over_ssh() {
 
     let result = plugin.validate(&ctx, &config).await;
 
-    assert!(result.is_ok(), "Services validate should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Services validate should succeed: {:?}",
+        result.err()
+    );
 
     let report = result.unwrap();
-    println!("Services validation over SSH: valid={}", report.validation_report_is_valid);
+    println!(
+        "Services validation over SSH: valid={}",
+        report.validation_report_is_valid
+    );
 }
 
 // =============================================================================
@@ -210,12 +249,18 @@ async fn test_multiple_plugins_sequential_over_ssh() {
         println!("Scanning {} over SSH...", metadata.plugin_name);
 
         let result = plugin.scan(&ctx).await;
-        assert!(result.is_ok(), "{} scan failed: {:?}", metadata.plugin_name, result.err());
+        assert!(
+            result.is_ok(),
+            "{} scan failed: {:?}",
+            metadata.plugin_name,
+            result.err()
+        );
 
         let scan_result = result.unwrap();
         total_findings += scan_result.scan_findings.len();
 
-        println!("  {} findings, {}µs",
+        println!(
+            "  {} findings, {}µs",
             scan_result.scan_findings.len(),
             scan_result.scan_duration_us
         );
@@ -234,19 +279,28 @@ async fn test_executor_error_handling_over_ssh() {
     let ctx = create_ssh_context().await;
 
     // Try to read a file that definitely doesn't exist
-    let result = ctx.executor().read_file(
-        std::path::Path::new("/this/path/definitely/does/not/exist/anywhere")
-    ).await;
+    let result = ctx
+        .executor()
+        .read_file(std::path::Path::new(
+            "/this/path/definitely/does/not/exist/anywhere",
+        ))
+        .await;
 
     assert!(result.is_err(), "Reading non-existent file should fail");
 
     // read_file_optional should return None instead of error
-    let result = ctx.executor().read_file_optional(
-        std::path::Path::new("/this/path/definitely/does/not/exist/anywhere")
-    ).await;
+    let result = ctx
+        .executor()
+        .read_file_optional(std::path::Path::new(
+            "/this/path/definitely/does/not/exist/anywhere",
+        ))
+        .await;
 
     assert!(result.is_ok(), "read_file_optional should succeed");
-    assert!(result.unwrap().is_none(), "Should return None for missing file");
+    assert!(
+        result.unwrap().is_none(),
+        "Should return None for missing file"
+    );
 }
 
 #[tokio::test]
@@ -254,7 +308,10 @@ async fn test_executor_error_handling_over_ssh() {
 async fn test_command_not_found_over_ssh() {
     let ctx = create_ssh_context().await;
 
-    let exists = ctx.executor().command_exists("this_command_definitely_does_not_exist").await;
+    let exists = ctx
+        .executor()
+        .command_exists("this_command_definitely_does_not_exist")
+        .await;
     assert!(exists.is_ok());
     assert!(!exists.unwrap(), "Non-existent command should return false");
 }

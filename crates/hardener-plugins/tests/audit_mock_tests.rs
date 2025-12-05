@@ -3,7 +3,9 @@
 //! These tests verify plugin behavior without touching real auditd.
 
 use hardener_common::types::{PluginId, Severity};
-use hardener_core::{CommandOutput, Context, MockExecutor, SystemExecutor, plugin::HardeningPlugin};
+use hardener_core::{
+    CommandOutput, Context, MockExecutor, SystemExecutor, plugin::HardeningPlugin,
+};
 use hardener_plugins::AuditHardeningPlugin;
 use std::sync::Arc;
 
@@ -11,19 +13,30 @@ use std::sync::Arc;
 fn fully_configured_audit_executor() -> MockExecutor {
     MockExecutor::new()
         .with_command_exists("auditd", true)
-        .with_command("systemctl", &["is-enabled", "auditd"], CommandOutput {
-            stdout: "enabled\n".to_string(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
-        .with_command("systemctl", &["is-active", "auditd"], CommandOutput {
-            stdout: "active\n".to_string(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
+        .with_command(
+            "systemctl",
+            &["is-enabled", "auditd"],
+            CommandOutput {
+                stdout: "enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-active", "auditd"],
+            CommandOutput {
+                stdout: "active\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
         // All rules are configured
-        .with_command("auditctl", &["-l"], CommandOutput {
-            stdout: r#"-a always,exit -F arch=b64 -S adjtimex -S settimeofday -k time-change
+        .with_command(
+            "auditctl",
+            &["-l"],
+            CommandOutput {
+                stdout: r#"-a always,exit -F arch=b64 -S adjtimex -S settimeofday -k time-change
 -w /etc/passwd -p wa -k identity
 -w /etc/shadow -p wa -k identity
 -w /etc/group -p wa -k identity
@@ -39,61 +52,87 @@ fn fully_configured_audit_executor() -> MockExecutor {
 -w /sbin/insmod -p x -k modules
 -w /sbin/rmmod -p x -k modules
 -w /sbin/modprobe -p x -k modules
-"#.to_string(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
+"#
+                .to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
 }
 
 /// Creates a mock executor where auditd is not installed.
 fn no_auditd_executor() -> MockExecutor {
-    MockExecutor::new()
-        .with_command_exists("auditd", false)
+    MockExecutor::new().with_command_exists("auditd", false)
 }
 
 /// Creates a mock executor where auditd is installed but not enabled/running.
 fn auditd_disabled_executor() -> MockExecutor {
     MockExecutor::new()
         .with_command_exists("auditd", true)
-        .with_command("systemctl", &["is-enabled", "auditd"], CommandOutput {
-            stdout: "disabled\n".to_string(),
-            stderr: String::new(),
-            exit_code: 1,
-        })
-        .with_command("systemctl", &["is-active", "auditd"], CommandOutput {
-            stdout: "inactive\n".to_string(),
-            stderr: String::new(),
-            exit_code: 3,
-        })
-        .with_command("auditctl", &["-l"], CommandOutput {
-            stdout: "No rules\n".to_string(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
+        .with_command(
+            "systemctl",
+            &["is-enabled", "auditd"],
+            CommandOutput {
+                stdout: "disabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 1,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-active", "auditd"],
+            CommandOutput {
+                stdout: "inactive\n".to_string(),
+                stderr: String::new(),
+                exit_code: 3,
+            },
+        )
+        .with_command(
+            "auditctl",
+            &["-l"],
+            CommandOutput {
+                stdout: "No rules\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
 }
 
 /// Creates a mock executor with auditd running but missing some rules.
 fn partial_rules_executor() -> MockExecutor {
     MockExecutor::new()
         .with_command_exists("auditd", true)
-        .with_command("systemctl", &["is-enabled", "auditd"], CommandOutput {
-            stdout: "enabled\n".to_string(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
-        .with_command("systemctl", &["is-active", "auditd"], CommandOutput {
-            stdout: "active\n".to_string(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
+        .with_command(
+            "systemctl",
+            &["is-enabled", "auditd"],
+            CommandOutput {
+                stdout: "enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-active", "auditd"],
+            CommandOutput {
+                stdout: "active\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
         // Only identity rules configured, missing others
-        .with_command("auditctl", &["-l"], CommandOutput {
-            stdout: r#"-w /etc/passwd -p wa -k identity
+        .with_command(
+            "auditctl",
+            &["-l"],
+            CommandOutput {
+                stdout: r#"-w /etc/passwd -p wa -k identity
 -w /etc/shadow -p wa -k identity
-"#.to_string(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
+"#
+                .to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
 }
 
 #[tokio::test]
@@ -109,7 +148,11 @@ async fn test_audit_scan_fully_configured_no_findings() {
     assert!(
         result.scan_findings.is_empty(),
         "Fully configured audit should have no findings, but got: {:?}",
-        result.scan_findings.iter().map(|f| &f.finding_title).collect::<Vec<_>>()
+        result
+            .scan_findings
+            .iter()
+            .map(|f| &f.finding_title)
+            .collect::<Vec<_>>()
     );
 }
 
@@ -140,7 +183,9 @@ async fn test_audit_scan_disabled_and_stopped() {
 
     assert!(result.scan_success);
 
-    let finding_ids: Vec<_> = result.scan_findings.iter()
+    let finding_ids: Vec<_> = result
+        .scan_findings
+        .iter()
         .map(|f| f.finding_id.as_str())
         .collect();
 
@@ -149,7 +194,9 @@ async fn test_audit_scan_disabled_and_stopped() {
     assert!(finding_ids.contains(&"auditd_not_running"));
 
     // Check severities
-    let not_enabled = result.scan_findings.iter()
+    let not_enabled = result
+        .scan_findings
+        .iter()
         .find(|f| f.finding_id == "audit_not_enabled")
         .unwrap();
     assert_eq!(not_enabled.finding_severity, Severity::High);
@@ -165,7 +212,9 @@ async fn test_audit_scan_missing_rules() {
 
     assert!(result.scan_success);
 
-    let finding_ids: Vec<_> = result.scan_findings.iter()
+    let finding_ids: Vec<_> = result
+        .scan_findings
+        .iter()
         .map(|f| f.finding_id.as_str())
         .collect();
 
@@ -201,7 +250,10 @@ async fn test_audit_scan_finding_structure() {
 
     assert_eq!(finding.finding_id, "audit_not_installed");
     assert!(!finding.finding_compliance.is_empty());
-    assert_eq!(finding.finding_compliance[0].compliance_control_id, "4.1.1.1");
+    assert_eq!(
+        finding.finding_compliance[0].compliance_control_id,
+        "4.1.1.1"
+    );
     assert!(!finding.finding_remediation_steps.is_empty());
 }
 
@@ -259,11 +311,15 @@ async fn test_audit_scan_logs_commands() {
 
     // Should have executed systemctl and auditctl commands
     assert!(
-        log.commands_executed.iter().any(|(cmd, _)| cmd == "systemctl"),
+        log.commands_executed
+            .iter()
+            .any(|(cmd, _)| cmd == "systemctl"),
         "Should execute systemctl"
     );
     assert!(
-        log.commands_executed.iter().any(|(cmd, _)| cmd == "auditctl"),
+        log.commands_executed
+            .iter()
+            .any(|(cmd, _)| cmd == "auditctl"),
         "Should execute auditctl"
     );
 }
@@ -283,21 +339,33 @@ async fn test_audit_scan_with_remote_executor() {
         .remote()
         .with_description("ssh://admin@server.example.com")
         .with_command_exists("auditd", true)
-        .with_command("systemctl", &["is-enabled", "auditd"], CommandOutput {
-            stdout: "enabled\n".to_string(),
-            stderr: String::new(),
-            exit_code: 0,
-        })
-        .with_command("systemctl", &["is-active", "auditd"], CommandOutput {
-            stdout: "inactive\n".to_string(), // Not running on remote
-            stderr: String::new(),
-            exit_code: 3,
-        })
-        .with_command("auditctl", &["-l"], CommandOutput {
-            stdout: "No rules\n".to_string(),
-            stderr: String::new(),
-            exit_code: 0,
-        });
+        .with_command(
+            "systemctl",
+            &["is-enabled", "auditd"],
+            CommandOutput {
+                stdout: "enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-active", "auditd"],
+            CommandOutput {
+                stdout: "inactive\n".to_string(), // Not running on remote
+                stderr: String::new(),
+                exit_code: 3,
+            },
+        )
+        .with_command(
+            "auditctl",
+            &["-l"],
+            CommandOutput {
+                stdout: "No rules\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        );
 
     assert!(executor.is_remote());
 
@@ -308,5 +376,10 @@ async fn test_audit_scan_with_remote_executor() {
 
     assert!(result.scan_success);
     // Should find auditd not running on remote
-    assert!(result.scan_findings.iter().any(|f| f.finding_id == "auditd_not_running"));
+    assert!(
+        result
+            .scan_findings
+            .iter()
+            .any(|f| f.finding_id == "auditd_not_running")
+    );
 }

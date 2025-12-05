@@ -301,5 +301,4 @@ mod tests {
         let formatted = format_severity(&Severity::Info);
         assert!(formatted.to_string().contains("INFO"));
     }
-
 }

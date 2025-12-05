@@ -19,10 +19,9 @@ impl ScanHistoryManager {
     pub async fn new(db_path: &Path) -> Result<ScanHistoryManager> {
         // Ensure parent directory exists
         if let Some(parent) = db_path.parent() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_err(|e| HardeningError::Database(format!(
-                    "Failed to create directory: {}", e)))?;
+            tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                HardeningError::Database(format!("Failed to create directory: {}", e))
+            })?;
         }
 
         let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
@@ -55,8 +54,8 @@ impl ScanHistoryManager {
     ) -> Result<String> {
         let id = uuid::Uuid::new_v4().to_string();
         let now = Utc::now().timestamp();
-        let plugins_json = serde_json::to_string(plugins)
-            .map_err(|e| HardeningError::Database(e.to_string()))?;
+        let plugins_json =
+            serde_json::to_string(plugins).map_err(|e| HardeningError::Database(e.to_string()))?;
 
         sqlx::query(
             "INSERT INTO scan_sessions (id, started_at, status, trigger_type, host_identifier, plugins_scanned)
@@ -133,8 +132,7 @@ impl ScanHistoryManager {
     }
 
     /// Retrieves a session by ID.
-    pub async fn get_session(&self, session_id: &str) ->
-    Result<Option<ScanSession>> {
+    pub async fn get_session(&self, session_id: &str) -> Result<Option<ScanSession>> {
         sqlx::query_as::<_, ScanSession>("SELECT * FROM scan_sessions WHERE id = ?")
             .bind(session_id)
             .fetch_optional(&self.pool)
@@ -244,10 +242,11 @@ impl ScanHistoryManager {
                 .rows_affected()
         } else if retention_count > 0 {
             // Keep only the most recent N sessions
-            sqlx::query("DELETE FROM scan_sessions WHERE id NOT IN (
+            sqlx::query(
+                "DELETE FROM scan_sessions WHERE id NOT IN (
                 SELECT id FROM scan_sessions ORDER BY started_at DESC LIMIT ?
             )",
-        )
+            )
             .bind(retention_count)
             .execute(&self.pool)
             .await
@@ -273,19 +272,19 @@ impl ScanHistoryManager {
                 current_value, recommended_value, category, compliance_mappings)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
-            .bind(session_id)
-            .bind(&finding.plugin_id)
-            .bind(&finding.finding_id)
-            .bind(&finding.severity)
-            .bind(&finding.title)
-            .bind(&finding.description)
-            .bind(&finding.current_value)
-            .bind(&finding.recommended_value)
-            .bind(&finding.category)
-            .bind(&compliance_json)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| HardeningError::Database(e.to_string()))?;
+        .bind(session_id)
+        .bind(&finding.plugin_id)
+        .bind(&finding.finding_id)
+        .bind(&finding.severity)
+        .bind(&finding.title)
+        .bind(&finding.description)
+        .bind(&finding.current_value)
+        .bind(&finding.recommended_value)
+        .bind(&finding.category)
+        .bind(&compliance_json)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| HardeningError::Database(e.to_string()))?;
         Ok(())
     }
 }
@@ -378,7 +377,8 @@ impl ScanSession {
 
     /// Returns the session completion time as a DateTime, if completed.
     pub fn completed_at_utc(&self) -> Option<DateTime<Utc>> {
-        self.completed_at.and_then(|ts| DateTime::from_timestamp(ts, 0))
+        self.completed_at
+            .and_then(|ts| DateTime::from_timestamp(ts, 0))
     }
 
     /// Returns the list of scanned plugins.
@@ -469,8 +469,7 @@ mod tests {
         let manager = ScanHistoryManager::new(&db_path).await.unwrap();
 
         let id = manager
-            .create_session("daemon", "localhost", &["kernel".into(),
-                "ssh".into()])
+            .create_session("daemon", "localhost", &["kernel".into(), "ssh".into()])
             .await
             .unwrap();
 
@@ -517,8 +516,7 @@ mod tests {
         ];
 
         manager
-            .complete_session(&id, &findings, Some("/tmp/scan.json"),
-                              None)
+            .complete_session(&id, &findings, Some("/tmp/scan.json"), None)
             .await
             .unwrap();
 
