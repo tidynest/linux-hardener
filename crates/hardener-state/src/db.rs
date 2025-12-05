@@ -33,6 +33,48 @@ const SCHEMA: &str = r#"
 
     CREATE INDEX IF NOT EXISTS idx_checkpoint_timestamp ON checkpoints(timestamp);
     CREATE INDEX IF NOT EXISTS idx_file_states_checkpoint ON file_states(checkpoint_id);
+
+    -- GUI scan history tables (separate from CLI, which remains stateless)
+    CREATE TABLE IF NOT EXISTS scan_sessions (
+        id TEXT PRIMARY KEY,
+        started_at INTEGER NOT NULL,
+        completed_at INTEGER,
+        total_findings INTEGER NOT NULL DEFAULT 0,
+        total_plugins INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'running'
+    );
+
+    CREATE TABLE IF NOT EXISTS scan_results (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        plugin_id TEXT NOT NULL,
+        success INTEGER NOT NULL,
+        duration_us INTEGER NOT NULL,
+        error_message TEXT,
+        FOREIGN KEY(session_id) REFERENCES scan_sessions(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS scan_findings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        result_id INTEGER NOT NULL,
+        finding_id TEXT NOT NULL,
+        category TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        explanation TEXT NOT NULL,
+        impact TEXT NOT NULL,
+        current_value TEXT NOT NULL,
+        recommended_value TEXT NOT NULL,
+        remediation_steps TEXT NOT NULL,
+        compliance_mappings TEXT NOT NULL,
+        policy_exception TEXT,
+        FOREIGN KEY(result_id) REFERENCES scan_results(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_scan_sessions_started ON scan_sessions(started_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_scan_results_session ON scan_results(session_id);
+    CREATE INDEX IF NOT EXISTS idx_scan_findings_result ON scan_findings(result_id);
     "#;
 
 /// Initialises the database connection pool.

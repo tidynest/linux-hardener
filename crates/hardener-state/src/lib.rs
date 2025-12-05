@@ -5,6 +5,8 @@ pub mod checkpoint;
 pub mod db;
 pub mod hash_chain;
 pub mod manager;
+pub mod scan_history;
+pub mod scan_manager;
 pub mod signing;
 
 pub use audit::{ActionResult, ActionType, AuditEntry, AuditLogger};
@@ -12,6 +14,8 @@ pub use checkpoint::{Checkpoint, CheckpointId, FileState};
 pub use db::init_db;
 pub use hash_chain::HashChain;
 pub use manager::CheckpointManager;
+pub use scan_history::{ScanSession, ScanSessionId, ScanStatus};
+pub use scan_manager::ScanHistoryManager;
 pub use signing::CheckpointSigner;
 
 pub fn add(left: u64, right: u64) -> u64 {

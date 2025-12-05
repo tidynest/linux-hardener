@@ -22,11 +22,28 @@ pub use types::*;
 /// - Application state (AppState) available to all child components via context
 /// - Router with five routes: Checkpoints, Configuration, Dashboard, Results, Scanner
 /// - Navigation bar for moving between pages
+/// - Automatic loading of persisted scan results on mount
 #[component]
 pub fn App() -> impl IntoView {
     // Create application state and make it available to all child components
     let app_state = AppState::default();
     provide_context(app_state);
+
+    // Load persisted scan results from database on app mount
+    leptos::task::spawn_local(async move {
+        match tauri_bindings::invoke_get_latest_scan().await {
+            Ok(Some(results)) => {
+                app_state.scan_results.set(results);
+            }
+            Ok(None) => {
+                // No persisted scan results - that's fine, leave state empty
+            }
+            Err(e) => {
+                // Log error but don't crash - user can still run a new scan
+                web_sys::console::warn_1(&format!("Failed to load scan history: {}", e).into());
+            }
+        }
+    });
 
     view! {
         <Router>

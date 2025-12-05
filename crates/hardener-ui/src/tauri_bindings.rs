@@ -52,3 +52,14 @@ pub async fn invoke_generate_report(
     serde_wasm_bindgen::from_value(result)
         .map_err(|e| format!("Failed to deserialise generate compliance reports: {}", e))
 }
+
+/// Invokes the get_latest_scan Tauri command.
+///
+/// Retrieves the most recent persisted scan results from the database.
+/// Returns None if no completed scans exist.
+pub async fn invoke_get_latest_scan() -> Result<Option<Vec<ScanResult>>, String> {
+    let result = tauri_invoke("get_latest_scan", JsValue::NULL).await;
+
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to deserialise latest scan: {}", e))
+}

@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 # Internal dependencies
 hardener-common = { workspace = true }
+hardener-types = { workspace = true }
 
 # Database
 sqlx = { workspace = true }

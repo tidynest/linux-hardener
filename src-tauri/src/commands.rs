@@ -4,7 +4,7 @@ use hardener_compliance::{
 };
 use hardener_core::{ApplyResult, Context, ScanResult};
 use hardener_plugins::create_plugin_registry;
-use hardener_state::{init_db, CheckpointId, CheckpointManager};
+use hardener_state::{init_db, CheckpointId, CheckpointManager, ScanHistoryManager, ScanStatus};
 use serde::Serialize;
 use tracing::error;
 
@@ -26,15 +26,19 @@ fn format_timestamp(timestamp: i64) -> String {
     format!("{:?}", datetime)
 }
 
+/// Returns the path to the user-local database.
+fn get_db_path() -> std::path::PathBuf {
+    dirs::data_local_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("linux-hardener")
+        .join("checkpoints.db")
+}
+
 /// Creates a CheckpointManager with database connection.
 ///
 /// Uses a user-local database path to avoid requiring root for reads.
 async fn create_checkpoint_manager() -> Result<CheckpointManager, String> {
-    // Use user-local path for the database
-    let db_path = dirs::data_local_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("linux-hardener")
-        .join("checkpoints.db");
+    let db_path = get_db_path();
 
     let pool = init_db(Some(db_path.as_path()))
         .await
@@ -43,11 +47,34 @@ async fn create_checkpoint_manager() -> Result<CheckpointManager, String> {
     CheckpointManager::new(pool).map_err(|e| e.to_string())
 }
 
+/// Creates a ScanHistoryManager with database connection.
+///
+/// Uses the same database as checkpoints for scan history persistence.
+async fn create_scan_history_manager() -> Result<ScanHistoryManager, String> {
+    let db_path = get_db_path();
+
+    let pool = init_db(Some(db_path.as_path()))
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(ScanHistoryManager::new(pool))
+}
+
 /// Executes a security scan across all enabled plugins.
 ///
+/// Persists results to the database for GUI state restoration.
 /// Returns a vector of scan results, one per plugin.
 #[tauri::command]
 pub async fn run_scan() -> Result<Vec<ScanResult>, String> {
+    // Create scan history manager for persistence
+    let history_manager = create_scan_history_manager().await?;
+
+    // Start a new scan session
+    let session_id = history_manager
+        .start_session()
+        .await
+        .map_err(|e| e.to_string())?;
+
     let ctx = Context::new();
     let registry = create_plugin_registry();
 
@@ -66,6 +93,24 @@ pub async fn run_scan() -> Result<Vec<ScanResult>, String> {
                 }
             }
         }
+    }
+
+    // Calculate totals for the session
+    let total_findings: i32 = results.iter().map(|r| r.scan_findings.len() as i32).sum();
+    let total_plugins = results.len() as i32;
+
+    // Persist results to database
+    if let Err(e) = history_manager.store_results(&session_id, &results).await {
+        error!("Failed to persist scan results: {}", e);
+        // Continue anyway - return results even if persistence fails
+    }
+
+    // Complete the session
+    if let Err(e) = history_manager
+        .complete_session(&session_id, ScanStatus::Completed, total_findings, total_plugins)
+        .await
+    {
+        error!("Failed to complete scan session: {}", e);
     }
 
     Ok(results)
@@ -190,4 +235,19 @@ pub async fn generate_compliance_report(
     let reports = generator.generate(&all_findings);
 
     Ok(reports)
+}
+
+/// Retrieves the most recent scan results from the database.
+///
+/// Used to restore GUI state on app startup or page refresh.
+/// Returns None if no completed scans exist.
+#[tauri::command]
+pub async fn get_latest_scan() -> Result<Option<Vec<ScanResult>>, String> {
+    let history_manager = create_scan_history_manager().await?;
+
+    match history_manager.get_latest_scan().await {
+        Ok(Some((_, results))) => Ok(Some(results)),
+        Ok(None) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
 }
