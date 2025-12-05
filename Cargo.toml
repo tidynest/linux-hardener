@@ -9,6 +9,7 @@ members = [
     "crates/hardener-plugins",
     "crates/hardener-scheduler",
     "crates/hardener-state",
+    "crates/hardener-types",
     "crates/hardener-ui",
     "src-tauri",
 ]
@@ -38,11 +39,12 @@ toml = "0.9.8"
 # Internal workspace crates
 hardener-common = { path = "crates/hardener-common" }
 hardener-compliance = { path = "crates/hardener-compliance" }
-hardener-core = { path = "crates/hardener-core" }
+hardener-core = { path = "crates/hardener-core", default-features = false }
 hardener-distro = { path = "crates/hardener-distro" }
 hardener-plugins = { path = "crates/hardener-plugins" }
 hardener-scheduler = { path = "crates/hardener-scheduler"}
 hardener-state = { path = "crates/hardener-state" }
+hardener-types = { path = "crates/hardener-types" }
 hardener-ui = { path = "crates/hardener-ui" }
 
 # Logging

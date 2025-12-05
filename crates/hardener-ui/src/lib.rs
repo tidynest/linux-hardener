@@ -63,3 +63,13 @@ pub fn App() -> impl IntoView {
         </Router>
     }
 }
+
+use wasm_bindgen::prelude::wasm_bindgen;
+
+/// Entry point for the WASM application.
+/// Trunk calls this function to start the app.
+#[wasm_bindgen(start)]
+pub fn main() {
+    // Mount the App component to the element with id="app"
+    leptos::mount::mount_to_body(App);
+}

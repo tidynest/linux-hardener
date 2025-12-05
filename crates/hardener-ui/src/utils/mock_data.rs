@@ -1,5 +1,4 @@
-use hardener_common::types::{FindingCategory, PluginId, Severity};
-use hardener_core::plugin::{Finding, ScanResult};
+use crate::types::{Finding, FindingCategory, PluginId, ScanResult, Severity};
 
 /// Creates mock scan results for UI testing and development.
 ///

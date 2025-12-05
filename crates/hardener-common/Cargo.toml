@@ -7,6 +7,7 @@ version.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+hardener-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
@@ -16,3 +17,4 @@ tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+tempfile = { workspace = true }

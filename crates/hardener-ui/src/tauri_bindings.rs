@@ -2,9 +2,7 @@
 //!
 //! These bindings use wasm-bindgen to call Tauri's JavaScript invoke API.
 
-use crate::types::{ApplyResult, ScanResult};
-
-use hardener_compliance::ComplianceReport;
+use crate::types::{ApplyResult, ComplianceReport, ScanResult};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]

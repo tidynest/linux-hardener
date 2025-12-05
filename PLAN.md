@@ -59,7 +59,7 @@ This document tracks the development progress and planned features for Linux Sys
 |---------|-------------|----------|--------|
 | Remote scanning via SSH | Scan remote hosts without installing | High | ✅ Complete |
 | Scheduled scanning | Cron-like scheduled security checks | Medium | ✅ Complete |
-| CI/CD integration | Exit codes and machine-readable output | Medium | Pending |
+| CI/CD integration | Exit codes and machine-readable output | Medium | ✅ Complete |
 | Ansible/Puppet modules | Integration with config management | Low | Pending |
 
 **v0.3.0 Progress - SSH Remote Scanning:**
@@ -120,6 +120,38 @@ This document tracks the development progress and planned features for Linux Sys
   - `hardener history list` - list recent scan sessions with filtering
   - `hardener history show <id>` - display session details and findings
   - `hardener history export <id>` - export session to JSON file
+
+### v0.3.1 - GUI Polish & Testing
+
+| Feature | Description | Priority |
+|---------|-------------|----------|
+| Fix "Loading..." text | Remove loading placeholder after app mounts | High |
+| GUI styling/CSS | Improve visual design and user experience | High |
+| GUI functional testing | Verify all GUI features work correctly | High |
+| CLI functional testing | Verify all CLI commands work correctly | High |
+| Safe testing environment | Test in VM/container to avoid system changes | Critical |
+
+**Testing Requirements:**
+- All testing MUST be done in a safe, isolated environment (VM or container)
+- Tests must not modify the host system
+- Both CLI and GUI (Desktop + Browser) need verification
+- Arch Linux (LTS) specific: Ensure scan findings are relevant to Arch, not false positives from other distro-specific checks
+
+### v0.3.2 - Distribution-Specific Validation
+
+| Feature | Description | Priority |
+|---------|-------------|----------|
+| Arch Linux validation | Verify all plugins work correctly on Arch (LTS) | High |
+| Debian/Ubuntu validation | Verify all plugins work correctly on Debian family | High |
+| RHEL/Fedora validation | Verify all plugins work correctly on Red Hat family | High |
+| openSUSE validation | Verify all plugins work correctly on SUSE family | Medium |
+
+**Validation Requirements:**
+- Each distro family requires dedicated testing sessions
+- Scan findings must be accurate for the target distro
+- No false positives from distro-specific files/settings that don't exist
+- Package manager integration must work correctly per distro
+- Service management must use correct init system commands
 
 ### v0.4.0 - Web Interface
 

@@ -1,7 +1,7 @@
-use hardener_common::types::Severity;
+use crate::state::AppState;
+use crate::types::Severity;
 use leptos::prelude::*;
 
-use crate::state::AppState;
 
 /// Displays the calculated security score based on scan findings.
 ///

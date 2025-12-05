@@ -1,4 +1,4 @@
-use hardener_common::types::Severity;
+use crate::types::Severity;
 use leptos::prelude::*;
 
 /// Displays a severity level with colour-coded badge.

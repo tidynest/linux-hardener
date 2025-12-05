@@ -5,12 +5,14 @@
 pub mod csv;
 pub mod html;
 pub mod json;
+#[cfg(feature = "pdf")]
 pub mod pdf;
 pub mod text;
 
 pub use csv::CsvFormatter;
 pub use html::HtmlFormatter;
 pub use json::JsonFormatter;
+#[cfg(feature = "pdf")]
 pub use pdf::PdfFormatter;
 pub use text::TextFormatter;
 

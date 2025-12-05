@@ -10,6 +10,7 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 hardener-common = { workspace = true }
 hardener-state = { path = "../hardener-state", optional = true }
+hardener-types = { workspace = true }
 hostname = { workspace = true, optional = true }
 nix = { workspace = true, optional = true }
 openssh = { workspace = true, optional = true }
