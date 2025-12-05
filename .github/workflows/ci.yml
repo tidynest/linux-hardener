@@ -9,6 +9,8 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # Exclude GUI crates that require GTK/system libraries
+  WORKSPACE_EXCLUDE: --exclude linux-hardener-desktop --exclude hardener-ui
 
 jobs:
   check:
@@ -32,7 +34,7 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Run cargo check
-        run: cargo check --workspace --all-features
+        run: cargo check --workspace $WORKSPACE_EXCLUDE
 
   test:
     name: Test
@@ -55,7 +57,7 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Run tests
-        run: cargo test --workspace
+        run: cargo test --workspace $WORKSPACE_EXCLUDE
 
   clippy:
     name: Clippy
@@ -80,7 +82,7 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Run clippy
-        run: cargo clippy --workspace --all-features -- -D warnings
+        run: cargo clippy --workspace $WORKSPACE_EXCLUDE -- -D warnings
 
   fmt:
     name: Format
