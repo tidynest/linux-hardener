@@ -307,12 +307,12 @@ CREATE TABLE audit_log (
 
 | Framework | Controls | Description |
 |-----------|----------|-------------|
-| CIS | 35+ | Center for Internet Security Benchmarks |
-| STIG | 20+ | DISA Security Technical Implementation Guides |
-| NIST 800-53 | 20+ | US Federal security controls |
-| PCI-DSS | 20+ | Payment Card Industry standards |
-| HIPAA | 15+ | Healthcare security requirements |
-| GDPR | 12+ | EU data protection (Article 32) |
+| CIS | 38 | Center for Internet Security Benchmarks |
+| STIG | 20 | DISA Security Technical Implementation Guides |
+| NIST 800-53 | 20 | US Federal security controls |
+| PCI-DSS | 22 | Payment Card Industry standards |
+| HIPAA | 14 | Healthcare security requirements |
+| GDPR | 12 | EU data protection (Article 32) |
 
 ---
 
@@ -409,4 +409,4 @@ Both `main` and `master` branches are kept in sync on GitHub and GitLab. The rel
 - `PLAN.md` - Development roadmap
 - `README.md` - User documentation
 
-**Last Updated**: 2025-12-05
+**Last Updated**: 2025-12-06

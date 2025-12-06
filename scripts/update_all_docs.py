@@ -141,9 +141,28 @@ class DocumentationUpdater:
                 if "/tests/" not in str(f) and "/target/" not in str(f):
                     source_files.add(str(f.relative_to(self.root)))
 
-        # Find documented files
-        documented = set(re.findall(r'`(crates/[^`]+\.rs)`', content))
+        # Find documented files - check for various path formats
+        # Match: `crates/...` or `src/...` (with or without full path)
+        documented = set()
+
+        # Full paths with backticks: `crates/hardener-core/src/lib.rs`
+        documented.update(re.findall(r'`(crates/[^`]+\.rs)`', content))
         documented.update(re.findall(r'`(src-tauri/[^`]+\.rs)`', content))
+
+        # Short paths: `src/lib.rs` within a crate section
+        # We need to expand these based on context
+        for crate_match in re.finditer(r'## (hardener-\w+|src-tauri)[^\n]*\n(.*?)(?=\n## |\Z)', content, re.DOTALL):
+            crate_name = crate_match.group(1)
+            section = crate_match.group(2)
+
+            # Find short paths like `src/lib.rs`
+            short_paths = re.findall(r'`(src/[^`]+\.rs)`', section)
+            for short_path in short_paths:
+                if crate_name == "src-tauri":
+                    full_path = f"src-tauri/{short_path}"
+                else:
+                    full_path = f"crates/{crate_name}/{short_path}"
+                documented.add(full_path)
 
         missing = source_files - documented
 
@@ -163,13 +182,28 @@ class DocumentationUpdater:
                     self.log_update("file_map", f"Added stub for {f}")
 
             if self.apply and stubs:
-                # Append stubs before the last section
-                insert_marker = "\n## Configuration Files"
-                if insert_marker in content:
-                    stub_text = "\n## New Files (TODO: Categorise)\n\n| File | Purpose | Key Items |\n|------|---------|----------|\n"
-                    stub_text += "\n".join(stubs) + "\n"
-                    content = content.replace(insert_marker, stub_text + insert_marker)
-                    file_map.write_text(content)
+                # Check if "New Files (TODO)" section already exists
+                if "## New Files (TODO: Categorise)" in content:
+                    # Append to existing section
+                    pattern = r'(## New Files \(TODO: Categorise\)\n\n\| File \| Purpose \| Key Items \|\n\|[^\n]+\|\n)(.*?)(\n## |\Z)'
+                    match = re.search(pattern, content, re.DOTALL)
+                    if match:
+                        existing = match.group(2).strip()
+                        existing_files = set(re.findall(r'`([^`]+)`', existing))
+                        # Only add files not already in the section
+                        new_stubs = [s for s in stubs if not any(f in s for f in existing_files)]
+                        if new_stubs:
+                            new_content = match.group(1) + existing + "\n" + "\n".join(new_stubs) + "\n" + match.group(3)
+                            content = content[:match.start()] + new_content + content[match.end():]
+                            file_map.write_text(content)
+                else:
+                    # Create new section before Configuration Files
+                    insert_marker = "\n## Configuration Files"
+                    if insert_marker in content:
+                        stub_text = "\n## New Files (TODO: Categorise)\n\n| File | Purpose | Key Items |\n|------|---------|----------|\n"
+                        stub_text += "\n".join(stubs) + "\n"
+                        content = content.replace(insert_marker, stub_text + insert_marker)
+                        file_map.write_text(content)
 
     # -------------------------------------------------------------------------
     # 3. Compliance Framework Counts

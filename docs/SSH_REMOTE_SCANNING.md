@@ -304,4 +304,4 @@ Planned for future releases:
 - Remote checkpoint storage option
 - GUI SSH support
 
-**Last Updated**: 2025-12-03
+**Last Updated**: 2025-12-06
