@@ -1,0 +1,1 @@
+export function is_tauri_available() { return typeof window.__TAURI__ !== 'undefined'; }

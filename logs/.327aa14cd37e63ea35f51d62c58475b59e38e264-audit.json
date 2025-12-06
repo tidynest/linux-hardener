@@ -1,0 +1,20 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 14
+    },
+    "auditLog": "/home/bakri/RustroverProjects/linux-system-hardener/logs/.327aa14cd37e63ea35f51d62c58475b59e38e264-audit.json",
+    "files": [
+        {
+            "date": 1764959235013,
+            "name": "/home/bakri/RustroverProjects/linux-system-hardener/logs/mcp-puppeteer-2025-12-05.log",
+            "hash": "7a57beaa328df5783a61573747dc7b5818143aaff900baddb7d1dfb7f5e4165e"
+        },
+        {
+            "date": 1764977174889,
+            "name": "/home/bakri/RustroverProjects/linux-system-hardener/logs/mcp-puppeteer-2025-12-06.log",
+            "hash": "db8eed5d80b547c0a89ef9d03e4b903811e905e6c4a3cabdc86badfb1257f7a1"
+        }
+    ],
+    "hashType": "sha256"
+}

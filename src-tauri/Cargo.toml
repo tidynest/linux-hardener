@@ -1,9 +1,10 @@
 [package]
 name = "linux-hardener-desktop"
-version = "0.1.0"
+version.workspace = true
 description = "Linux System Hardening Desktop Application"
-authors = ["Eric Jingryd"]
-edition = "2021"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
 
 [build-dependencies]
 tauri-build = { version = "2.5.2", features = [] }
@@ -19,4 +20,5 @@ serde_json = "1.0.145"
 tauri = { version = "2.9.3", features = [] }
 tokio = { version = "1.48.0", features = ["full"] }
 tracing = "0.1.41"
+tracing-subscriber = "0.3"
 dirs = "6.0.0"

@@ -42,6 +42,9 @@
       <w>opasswd</w>
       <w>pcidss</w>
       <w>petgraph</w>
+      <w>pkexec</w>
+      <w>policykit</w>
+      <w>polkit</w>
       <w>pwquality</w>
       <w>queryformat</w>
       <w>renameat</w>
@@ -59,6 +62,8 @@
       <w>sgid</w>
       <w>showformat</w>
       <w>syncookies</w>
+      <w>tablist</w>
+      <w>tabpanel</w>
       <w>testhost</w>
       <w>testuser</w>
       <w>ucredit</w>

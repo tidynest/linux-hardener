@@ -102,12 +102,17 @@ Use the release script:
 ```
 
 The release script automatically:
-- Runs tests and clippy
-- Updates version in `Cargo.toml`
-- Updates `CHANGELOG.md`
-- Creates git commit and tag
-- Pushes to both `main` and `master` branches on GitHub and GitLab
-- Pushes the release tag to both remotes
+1. Runs tests and clippy
+2. Auto-updates documentation (`update_all_docs.py --apply`)
+3. Validates documentation (`validate_all.py --quick`)
+4. Updates version in `Cargo.toml` and documentation files
+5. Updates test count in `README.md`
+6. Updates `CHANGELOG.md`
+7. Creates git commit and tag
+8. Pushes to both `main` and `master` branches on GitHub and GitLab
+9. Pushes the release tag to both remotes
+
+If documentation validation fails, you'll be prompted to continue or abort the release.
 
 ### Manual Release
 
@@ -332,3 +337,5 @@ For release issues:
 2. Verify all prerequisites are met
 3. Consult this document
 4. Open an issue if needed
+
+**Last Updated**: 2025-12-05

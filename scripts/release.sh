@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Release script for Linux System Hardener
 # Usage: ./scripts/release.sh [patch|minor|major] [--dry-run]
+#        ./scripts/release.sh --verify
 
 set -euo pipefail
 
@@ -14,6 +15,45 @@ NC='\033[0m' # No Colour
 # Default values
 DRY_RUN=false
 BUMP_TYPE=""
+VERIFY_ONLY=false
+
+# Function to verify all version references match
+verify_versions() {
+    echo -e "${BLUE}Verifying version consistency...${NC}"
+
+    # Get version from Cargo.toml workspace.package
+    local cargo_version
+    cargo_version=$(grep -A1 '^\[workspace\.package\]' Cargo.toml | grep 'version' | sed 's/.*"\(.*\)".*/\1/')
+
+    local all_match=true
+    local mismatches=()
+
+    # Check docs/ARCHITECTURE.md
+    if [[ -f "docs/ARCHITECTURE.md" ]]; then
+        local arch_version
+        arch_version=$(grep '^\*\*Version:\*\*' docs/ARCHITECTURE.md | sed 's/.*\*\* \([0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/' || echo "NOT_FOUND")
+        if [[ "$arch_version" != "$cargo_version" ]]; then
+            all_match=false
+            mismatches+=("docs/ARCHITECTURE.md: $arch_version")
+        fi
+    fi
+
+    # Report results
+    echo -e "  Cargo.toml (workspace): ${GREEN}${cargo_version}${NC}"
+
+    if $all_match; then
+        echo -e "  docs/ARCHITECTURE.md:   ${GREEN}${cargo_version}${NC}"
+        echo -e "\n${GREEN}✓ All version references match${NC}"
+        return 0
+    else
+        for mismatch in "${mismatches[@]}"; do
+            echo -e "  ${RED}✗ ${mismatch}${NC}"
+        done
+        echo -e "\n${RED}Version mismatch detected!${NC}"
+        echo "Run './scripts/release.sh patch|minor|major' to synchronise versions."
+        return 1
+    fi
+}
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -26,8 +66,13 @@ while [[ $# -gt 0 ]]; do
             DRY_RUN=true
             shift
             ;;
+        --verify)
+            VERIFY_ONLY=true
+            shift
+            ;;
         -h|--help)
             echo "Usage: $0 [patch|minor|major] [--dry-run]"
+            echo "       $0 --verify"
             echo ""
             echo "Arguments:"
             echo "  patch     Bump patch version (0.1.0 -> 0.1.1)"
@@ -35,6 +80,7 @@ while [[ $# -gt 0 ]]; do
             echo "  major     Bump major version (0.1.0 -> 1.0.0)"
             echo ""
             echo "Options:"
+            echo "  --verify   Check that all version references match (no changes)"
             echo "  --dry-run  Show what would be done without making changes"
             echo "  -h, --help Show this help message"
             exit 0
@@ -45,6 +91,12 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Handle --verify mode
+if $VERIFY_ONLY; then
+    verify_versions
+    exit $?
+fi
 
 # Validate bump type
 if [[ -z "$BUMP_TYPE" ]]; then
@@ -100,12 +152,18 @@ if $DRY_RUN; then
     echo -e "\n${YELLOW}=== DRY RUN - No changes will be made ===${NC}\n"
 fi
 
-# Step 1: Run tests
+# Step 1: Run tests (and capture test count for README update)
 echo -e "\n${BLUE}Step 1: Running tests...${NC}"
+TEST_COUNT=0
 if $DRY_RUN; then
     echo "Would run: cargo test --workspace"
+    TEST_COUNT="(dry-run)"
 else
-    cargo test --workspace
+    TEST_OUTPUT=$(cargo test --workspace 2>&1)
+    echo "$TEST_OUTPUT"
+    # Extract total test count from "test result:" lines
+    TEST_COUNT=$(echo "$TEST_OUTPUT" | grep -E "^test result:" | awk '{sum += $4} END {print sum}')
+    echo -e "\n${GREEN}Total tests passed: ${TEST_COUNT}${NC}"
 fi
 
 # Step 2: Run clippy
@@ -116,12 +174,77 @@ else
     cargo clippy --workspace || true  # Don't fail on warnings
 fi
 
-# Step 3: Update version in Cargo.toml
+# Step 2b: Auto-update documentation
+echo -e "\n${BLUE}Step 2b: Auto-updating documentation...${NC}"
+SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "${SCRIPTS_DIR}/update_all_docs.py" ]]; then
+    if $DRY_RUN; then
+        echo "Would run: python3 ${SCRIPTS_DIR}/update_all_docs.py --apply"
+        python3 "${SCRIPTS_DIR}/update_all_docs.py" || true
+    else
+        python3 "${SCRIPTS_DIR}/update_all_docs.py" --apply || true
+    fi
+else
+    echo -e "${YELLOW}Warning: update_all_docs.py not found, skipping auto-update${NC}"
+fi
+
+# Step 2c: Validate documentation
+echo -e "\n${BLUE}Step 2c: Validating documentation...${NC}"
+if [[ -f "${SCRIPTS_DIR}/validate_all.py" ]]; then
+    if ! python3 "${SCRIPTS_DIR}/validate_all.py" --quick; then
+        echo -e "\n${YELLOW}Warning: Some documentation validations failed.${NC}"
+        echo "These may require manual fixes before release."
+        read -p "Continue with release anyway? (y/N) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo -e "${RED}Release aborted.${NC}"
+            exit 1
+        fi
+    fi
+else
+    echo -e "${YELLOW}Warning: validate_all.py not found, skipping validation${NC}"
+fi
+
+# Step 3: Update version in Cargo.toml (workspace.package.version)
 echo -e "\n${BLUE}Step 3: Updating version in Cargo.toml...${NC}"
 if $DRY_RUN; then
-    echo "Would update version from ${CURRENT_VERSION} to ${NEW_VERSION}"
+    echo "Would update workspace version from ${CURRENT_VERSION} to ${NEW_VERSION}"
 else
-    sed -i "s/^version = \"${CURRENT_VERSION}\"/version = \"${NEW_VERSION}\"/" Cargo.toml
+    # Update the workspace.package version (not a top-level version)
+    sed -i "s/^\[workspace\.package\]$/[workspace.package]\nVERSION_MARKER/" Cargo.toml
+    sed -i "/VERSION_MARKER/{n;s/version = \"${CURRENT_VERSION}\"/version = \"${NEW_VERSION}\"/}" Cargo.toml
+    sed -i "/VERSION_MARKER/d" Cargo.toml
+fi
+
+# Step 3b: Update version in documentation files
+echo -e "\n${BLUE}Step 3b: Updating version in documentation...${NC}"
+DOC_FILES=(
+    "docs/ARCHITECTURE.md"
+)
+for doc_file in "${DOC_FILES[@]}"; do
+    if [[ -f "$doc_file" ]]; then
+        if $DRY_RUN; then
+            echo "Would update version in $doc_file"
+        else
+            # Update "**Version:** X.Y.Z" pattern
+            sed -i "s/^\*\*Version:\*\* [0-9]\+\.[0-9]\+\.[0-9]\+/**Version:** ${NEW_VERSION}/" "$doc_file"
+            echo "  Updated $doc_file"
+        fi
+    fi
+done
+
+# Step 3c: Update test count in README.md
+echo -e "\n${BLUE}Step 3c: Updating test count in README.md...${NC}"
+if $DRY_RUN; then
+    echo "Would update test count to ${TEST_COUNT}+ in README.md"
+else
+    if [[ "$TEST_COUNT" =~ ^[0-9]+$ ]]; then
+        # Update "Total Tests: XXX+ passing" line
+        sed -i "s/^Total Tests: [0-9]\+/Total Tests: ${TEST_COUNT}/" README.md
+        echo "  Updated test count to ${TEST_COUNT}+"
+    else
+        echo -e "  ${YELLOW}Skipped: Could not determine test count${NC}"
+    fi
 fi
 
 # Step 4: Update CHANGELOG.md
@@ -147,7 +270,10 @@ echo -e "\n${BLUE}Step 6: Creating version bump commit...${NC}"
 if $DRY_RUN; then
     echo "Would commit with message: chore(release): bump version to ${NEW_VERSION}"
 else
-    git add Cargo.toml Cargo.lock CHANGELOG.md
+    # Add all potentially modified documentation files
+    git add Cargo.toml Cargo.lock CHANGELOG.md README.md
+    git add docs/*.md 2>/dev/null || true
+    git add scripts/README.md 2>/dev/null || true
     git commit -m "chore(release): bump version to ${NEW_VERSION}"
 fi
 

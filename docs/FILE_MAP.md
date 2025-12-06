@@ -1,6 +1,6 @@
 # Linux System Hardener - File Map
 
-**Last Updated:** 2025-12-05
+**Last Updated:** 2025-12-06
 
 This document lists all source files with their purpose and key exports.
 
@@ -34,7 +34,7 @@ pub struct Finding { finding_id, finding_title, finding_severity, ... }
 
 // Compliance report types
 pub struct ComplianceReport { report_framework, report_generated_at, report_controls, report_summary }
-pub struct ControlResult { control_id, control_name, control_status, control_findings }
+pub struct ControlResult { control_id, control_title, control_section, control_status, control_findings }
 pub struct ComplianceSummary { summary_total_controls, summary_passing, summary_failing, ... }
 ```
 
@@ -164,6 +164,8 @@ const KERNEL_PARAMS: &[(&str, &str, &str)] = &[
 | `src/hash_chain.rs` | Tamper detection | `HashChain` |
 | `src/signing.rs` | Cryptographic signing | `CheckpointSigner` |
 | `src/db.rs` | Database schema | `init_database()` |
+| `src/scan_history.rs` | GUI scan session types | `ScanSessionId`, `ScanStatus`, `ScanSession` |
+| `src/scan_manager.rs` | GUI scan persistence | `ScanHistoryManager` |
 
 ### Key Structures
 
@@ -388,23 +390,64 @@ pub struct ScanRunner {
 | File | Purpose | Key Exports |
 |------|---------|-------------|
 | `index.html` | Entry HTML with font links | `#app` mount point |
-| `styles.css` | Dark terminal theme CSS | CSS Variables, navigation, score gauge, buttons, tables, forms |
+| `styles.css` | Dark terminal theme CSS | CSS Variables, tabs, navigation, score gauge, buttons, tables, forms |
 | `src/lib.rs` | Main App component, WASM entry point | `App`, `#[wasm_bindgen(start)] main()` |
 | `src/types.rs` | Re-exports from hardener-types | `pub use hardener_types::*`, `CheckpointInfo` |
 | `src/state/mod.rs` | Reactive state | `AppState` |
-| `src/pages/dashboard_page.rs` | Dashboard view | `DashboardPage` |
-| `src/pages/scanner_page.rs` | Scan interface | `ScannerPage` |
-| `src/pages/configuration_page.rs` | Config UI | `ConfigurationPage` |
-| `src/pages/compliance_page.rs` | Compliance reports | `CompliancePage`, `ReportCard` |
-| `src/pages/results_page.rs` | Results view | `ResultsPage` |
-| `src/pages/checkpoints_page.rs` | Checkpoint management | `CheckpointsPage` |
-| `src/components/findings_grid.rs` | Findings display | `FindingsGrid` |
-| `src/components/checkpoint_list.rs` | Checkpoint list | `CheckpointList` |
-| `src/components/apply_results.rs` | Apply results | `ApplyResults` |
-| `src/tauri_bindings.rs` | Tauri command bindings | `invoke_*` functions |
+| `src/tauri_bindings.rs` | Tauri command bindings | `tauri_available`, `invoke_scan`, `invoke_apply`, `invoke_generate_report`, `invoke_get_latest_scan`, `invoke_get_checkpoints`, `invoke_rollback` |
+| `src/utils/mod.rs` | Utils module exports | Re-exports (mock_data) |
 | `src/utils/mock_data.rs` | Development mocks | Mock data generators |
+| `src/pages/mod.rs` | Pages module exports | `DashboardPage`, `AnalysisPage`, `HardeningPage` |
+| `src/components/mod.rs` | Components module exports | All component re-exports |
+
+### Pages (3-page architecture)
+
+| File | Purpose | Key Exports |
+|------|---------|-------------|
+| `src/pages/dashboard_page.rs` | Dashboard with security score and quick actions | `DashboardPage` |
+| `src/pages/analysis_page.rs` | Tabbed interface for findings and compliance | `AnalysisPage` |
+| `src/pages/hardening_page.rs` | Sectioned interface for configuration and history | `HardeningPage` |
+
+### Components
+
+| File | Purpose | Key Exports |
+|------|---------|-------------|
+| `src/components/security_score.rs` | Main security score gauge | `SecurityScore` |
+| `src/components/mini_security_score.rs` | Compact score for headers | `MiniSecurityScore` |
+| `src/components/quick_actions.rs` | Dashboard quick action buttons | `QuickActions` |
+| `src/components/recent_activity.rs` | Recent scan/apply activity summary | `RecentActivity` |
+| `src/components/tabs.rs` | Reusable tab bar and panel components | `TabBar`, `TabDef`, `TabPanel` |
+| `src/components/findings_grid.rs` | Findings table display | `FindingsGrid` |
+| `src/components/finding_detail.rs` | Individual finding details panel | `FindingDetail` |
+| `src/components/findings_tab.rs` | Findings tab wrapper for Analysis page | `FindingsTab` |
+| `src/components/compliance_tab.rs` | Compliance framework selection and reports | `ComplianceTab` |
+| `src/components/configure_section.rs` | Profile selection and plugin toggles | `ConfigureSection` |
+| `src/components/history_section.rs` | Apply results and checkpoint management | `HistorySection` |
+| `src/components/severity_badge.rs` | Severity level badge display | `SeverityBadge` |
 
 **Note**: This crate depends only on `hardener-types` to ensure WASM compatibility. All types are re-exported from hardener-types.
+
+### Tauri Bindings (tauri_bindings.rs)
+
+```rust
+/// Check if Tauri runtime is available (desktop app vs browser).
+#[wasm_bindgen(inline_js = "export function is_tauri_available() { return typeof window.__TAURI__ !== 'undefined'; }")]
+extern "C" {
+    fn is_tauri_available() -> bool;
+}
+
+/// Returns true if running inside Tauri desktop app, false if in browser.
+pub fn tauri_available() -> bool;
+
+/// All invoke_* functions check tauri_available() first.
+/// In browser mode, they return Err("Tauri not available (running in browser mode)").
+pub async fn invoke_scan() -> Result<Vec<ScanResult>, String>;
+pub async fn invoke_apply(plugin_ids: Vec<String>) -> Result<Vec<ApplyResult>, String>;
+pub async fn invoke_generate_report(frameworks: Vec<String>) -> Result<Vec<ComplianceReport>, String>;
+pub async fn invoke_get_latest_scan() -> Result<Option<Vec<ScanResult>>, String>;
+pub async fn invoke_get_checkpoints() -> Result<Vec<CheckpointInfo>, String>;
+pub async fn invoke_rollback(checkpoint_id: String) -> Result<(), String>;
+```
 
 ---
 
@@ -413,25 +456,28 @@ pub struct ScanRunner {
 | File | Purpose | Key Exports |
 |------|---------|-------------|
 | `src/main.rs` | Tauri app entry | `main()` |
-| `src/commands.rs` | Tauri invoke handlers | `run_scan`, `run_apply`, `run_rollback`, `get_checkpoints`, `generate_compliance_report` |
+| `src/commands.rs` | Tauri invoke handlers | `run_scan`, `run_apply`, `run_rollback`, `get_checkpoints`, `get_latest_scan`, `generate_compliance_report` |
 
 ### Tauri Commands
 
 ```rust
 #[tauri::command]
-pub fn run_scan(plugin: Option<String>) -> Result<Vec<ScanResult>, String>
+pub async fn run_scan() -> Result<Vec<ScanResult>, String>
 
 #[tauri::command]
-pub fn run_apply(plugins: Vec<String>) -> Result<Vec<ApplyResult>, String>
+pub async fn run_apply(plugin_ids: Vec<String>) -> Result<Vec<ApplyResult>, String>
 
 #[tauri::command]
-pub fn run_rollback(checkpoint_id: String) -> Result<(), String>
+pub async fn run_rollback(checkpoint_id: String) -> Result<bool, String>
 
 #[tauri::command]
-pub fn get_checkpoints() -> Result<Vec<Checkpoint>, String>
+pub async fn get_checkpoints() -> Result<Vec<CheckpointInfo>, String>
 
 #[tauri::command]
-pub fn generate_compliance_report(frameworks: Vec<String>) -> Result<Vec<ComplianceReport>, String>
+pub async fn get_latest_scan() -> Result<Option<Vec<ScanResult>>, String>
+
+#[tauri::command]
+pub async fn generate_compliance_report(frameworks: Vec<String>) -> Result<Vec<ComplianceReport>, String>
 ```
 
 ---
@@ -526,3 +572,5 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | `hardener-core/src/config_loader.rs` | Config loading and merging from multiple sources |
 | `hardener-common/src/types.rs` | Added `FindingPolicyException` struct |
 | `hardener-cli/src/cli.rs` | Added `--config`, `--audit`, `--compliance`, `--exit-code` flags, `ScanMode` enum |
+
+**Last Updated**: 2025-12-06

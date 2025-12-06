@@ -1,7 +1,7 @@
 # Linux System Hardener - Architecture Documentation
 
-**Last Updated:** 2025-12-05
-**Version:** 0.3.1 (GUI Polish)
+**Last Updated:** 2025-12-06
+**Version:** 0.3.2 (GUI Consolidation)
 
 ---
 
@@ -25,10 +25,9 @@ Linux System Hardener is a modular security hardening tool for Linux systems, pr
 │  CLI (hardener-cli)│  GUI (src-tauri)     │  Programmatic API   │
 │   └─ Scan          │   └─ Leptos + Tauri  │   └─ hardener-core  │
 │   └─ Apply         │   └─ Dashboard       │   └─ hardener-state │
-│   └─ Rollback      │   └─ Scanner Page    │                     │
-│   └─ Checkpoint    │   └─ Configuration   │                     │
-│   └─ Report        │   └─ Compliance      │                     │
-│                    │   └─ Checkpoints     │                     │
+│   └─ Rollback      │   └─ Analysis        │                     │
+│   └─ Checkpoint    │   └─ Hardening       │                     │
+│   └─ Report        │                      │                     │
 └────────────────────┴──────────────────────┴─────────────────────┘
                               │
                               ▼
@@ -125,8 +124,58 @@ Linux System Hardener is a modular security hardening tool for Linux systems, pr
 | `hardener-distro` | Distribution detection | `Distribution`, `DistroFamily` |
 | `hardener-scheduler` | Scheduled scanning daemon | `SchedulerConfig`, `ScanHistoryManager`, `JsonStore`, `ScanRunner`, `ScanSummary`, `TriggerType`, `Daemon`, `Notifier`, `EmailNotifier`, `WebhookNotifier`, `NotificationDispatcher`, `SystemdGenerator` |
 | `hardener-cli` | Command-line interface | Binary entry point |
-| `hardener-ui` | Leptos WASM frontend | Frontend components, dark terminal CSS theme (depends only on hardener-types) |
+| `hardener-ui` | Leptos WASM frontend | 3-page architecture (Dashboard, Analysis, Hardening), dark terminal CSS theme (depends only on hardener-types) |
 | `src-tauri` | Desktop app backend | Tauri commands |
+
+### Tauri 2.x Integration Notes
+
+**Critical:** When calling Tauri commands from WASM, argument keys must use **camelCase**:
+
+```rust
+// CORRECT - Tauri 2.x expects camelCase
+let args = serde_json::json!({ "pluginIds": plugin_ids });
+
+// WRONG - snake_case will cause silent failures
+let args = serde_json::json!({ "plugin_ids": plugin_ids });
+```
+
+**Error Handling:** The `wasm-bindgen` extern binding for Tauri invoke must include the `catch` attribute:
+
+```rust
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"], js_name = invoke, catch)]
+    async fn tauri_invoke(cmd: &str, args: JsValue) -> Result<JsValue, JsValue>;
+}
+```
+
+Without `catch`, Promise rejections cause WASM panics instead of returning errors.
+
+### Browser Mode (Web App without Tauri)
+
+The UI can run in browser mode via `trunk serve` without the Tauri desktop wrapper. This is useful for UI development and testing.
+
+**Tauri Availability Check:**
+
+```rust
+// In tauri_bindings.rs
+#[wasm_bindgen(inline_js = "export function is_tauri_available() { return typeof window.__TAURI__ !== 'undefined'; }")]
+extern "C" {
+    fn is_tauri_available() -> bool;
+}
+
+pub fn tauri_available() -> bool {
+    is_tauri_available()
+}
+```
+
+All Tauri command wrappers check `tauri_available()` before calling `tauri_invoke()`. In browser mode, commands return `Err("Tauri not available (running in browser mode)")` gracefully.
+
+**Browser Mode Limitations:**
+- Scanning, applying, and rollback operations are unavailable
+- Compliance report generation is unavailable
+- All navigation and UI rendering works normally
+- Empty states display with helpful messages (e.g., "Run a scan to see results")
 
 ---
 
@@ -359,3 +408,5 @@ Both `main` and `master` branches are kept in sync on GitHub and GitLab. The rel
 - `docs/RELEASING.md` - Versioning and release process
 - `PLAN.md` - Development roadmap
 - `README.md` - User documentation
+
+**Last Updated**: 2025-12-05

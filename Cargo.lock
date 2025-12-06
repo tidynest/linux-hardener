@@ -2011,7 +2011,7 @@ checksum = "17e2ac29387b1aa07a1e448f7bb4f35b500787971e965b02842b900afa5c8f6f"
 
 [[package]]
 name = "hardener-cli"
-version = "0.1.0"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2035,7 +2035,7 @@ dependencies = [
 
 [[package]]
 name = "hardener-common"
-version = "0.1.0"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "hardener-types",
@@ -2049,7 +2049,7 @@ dependencies = [
 
 [[package]]
 name = "hardener-compliance"
-version = "0.1.0"
+version = "0.3.2"
 dependencies = [
  "chrono",
  "clap",
@@ -2063,7 +2063,7 @@ dependencies = [
 
 [[package]]
 name = "hardener-core"
-version = "0.1.0"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2085,7 +2085,7 @@ dependencies = [
 
 [[package]]
 name = "hardener-distro"
-version = "0.1.0"
+version = "0.3.2"
 dependencies = [
  "hardener-common",
  "serde",
@@ -2093,7 +2093,7 @@ dependencies = [
 
 [[package]]
 name = "hardener-plugins"
-version = "0.1.0"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2108,7 +2108,7 @@ dependencies = [
 
 [[package]]
 name = "hardener-scheduler"
-version = "0.1.0"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2136,7 +2136,7 @@ dependencies = [
 
 [[package]]
 name = "hardener-state"
-version = "0.1.0"
+version = "0.3.2"
 dependencies = [
  "chrono",
  "ed25519-dalek",
@@ -2155,7 +2155,7 @@ dependencies = [
 
 [[package]]
 name = "hardener-types"
-version = "0.1.0"
+version = "0.3.2"
 dependencies = [
  "chrono",
  "serde",
@@ -2163,7 +2163,7 @@ dependencies = [
 
 [[package]]
 name = "hardener-ui"
-version = "0.1.0"
+version = "0.3.2"
 dependencies = [
  "hardener-types",
  "js-sys",
@@ -3083,7 +3083,7 @@ checksum = "bfae20f6b19ad527b550c223fddc3077a547fc70cda94b9b566575423fd303ee"
 
 [[package]]
 name = "linux-hardener-desktop"
-version = "0.1.0"
+version = "0.3.2"
 dependencies = [
  "dirs",
  "hardener-common",
@@ -3097,6 +3097,7 @@ dependencies = [
  "tauri-build",
  "tokio",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

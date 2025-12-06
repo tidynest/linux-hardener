@@ -207,8 +207,8 @@ mod tests {
 
     #[test]
     fn generate_service_basic() {
-        let gen = SystemdGenerator::new(PathBuf::from("/usr/bin/hardener"), "daily");
-        let service = gen.generate_service();
+        let generator = SystemdGenerator::new(PathBuf::from("/usr/bin/hardener"), "daily");
+        let service = generator.generate_service();
 
         assert!(service.contains("[Unit]"));
         assert!(service.contains("[Service]"));
@@ -219,17 +219,17 @@ mod tests {
 
     #[test]
     fn generate_service_with_config() {
-        let gen = SystemdGenerator::new(PathBuf::from("/usr/bin/hardener"), "daily")
+        let generator = SystemdGenerator::new(PathBuf::from("/usr/bin/hardener"), "daily")
             .with_config(PathBuf::from("/etc/hardener/config.toml"));
-        let service = gen.generate_service();
+        let service = generator.generate_service();
 
         assert!(service.contains("--config /etc/hardener/config.toml"));
     }
 
     #[test]
     fn generate_timer_basic() {
-        let gen = SystemdGenerator::new(PathBuf::from("/usr/bin/hardener"), "*-*-* 02:00:00");
-        let timer = gen.generate_timer();
+        let generator = SystemdGenerator::new(PathBuf::from("/usr/bin/hardener"), "*-*-* 02:00:00");
+        let timer = generator.generate_timer();
 
         assert!(timer.contains("[Timer]"));
         assert!(timer.contains("OnCalendar=*-*-* 02:00:00"));

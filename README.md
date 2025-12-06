@@ -30,11 +30,11 @@ The tool is designed for system administrators, DevOps engineers, and security p
 | **Kernel Hardening** | sysctl security parameters (ASLR, ptrace, etc.) | Complete |
 | **SSH Hardening** | OpenSSH configuration security | Complete |
 | **Firewall Hardening** | nftables/firewalld/ufw rule management | Complete |
-| **PAM Hardening** | Pluggable Authentication Modules | Complete |
-| **Services Minimisation** | Disable unnecessary services | Complete |
-| **Audit Hardening** | auditd rules and configuration | Complete |
-| **Permissions Hardening** | File permission security | Complete |
-| **MAC Hardening** | SELinux/AppArmor configuration | Complete |
+| **PAM Authentication Hardening** | Pluggable Authentication Modules | Complete |
+| **Service Minimisation** | Disable unnecessary services | Complete |
+| **Audit Rules Hardening** | auditd rules and configuration | Complete |
+| **File Permissions Hardening** | File permission security | Complete |
+| **MAC System Hardening** | SELinux/AppArmor configuration | Complete |
 
 ### Core Infrastructure
 
@@ -153,12 +153,52 @@ cargo tauri build
 rustup target add wasm32-unknown-unknown
 cargo install trunk
 
-# Run desktop app in development mode
+# Run desktop app in development mode (requires polkit for privilege escalation)
 cargo tauri dev
 
-# Run web UI in development mode (browser)
+# On Wayland (Hyprland, Sway, etc.), use this workaround:
+WEBKIT_DISABLE_COMPOSITING_MODE=1 cargo tauri dev
+
+# Run web UI in development mode (browser - no Tauri required)
 cd crates/hardener-ui && trunk serve --port 1420
+# Open http://127.0.0.1:1420/ in your browser
 ```
+
+### Development Workflow Commands
+
+```bash
+# Validate documentation is in sync with code
+./scripts/validate_all.py           # Full validation
+./scripts/validate_all.py --quick   # Fast check (skips slow validators)
+
+# Auto-fix documentation (safe, idempotent)
+./scripts/update_all_docs.py        # Preview changes
+./scripts/update_all_docs.py --apply # Apply changes
+
+# Check naming conventions
+./scripts/validate_naming.py
+
+# Release workflow
+./scripts/release.sh --verify       # Check version consistency
+./scripts/release.sh patch --dry-run # Preview release
+./scripts/release.sh patch          # Actual release
+```
+
+See [scripts/README.md](scripts/README.md) for complete script documentation.
+
+#### Web App vs Desktop App
+
+The web app runs in any browser without needing Tauri installed:
+
+| Feature | Web App (Browser) | Desktop App (Tauri) |
+|---------|-------------------|---------------------|
+| Run security scans | ❌ UI only | ✅ Full functionality |
+| Apply hardening | ❌ UI only | ✅ With pkexec |
+| Generate reports | ❌ UI only | ✅ Full functionality |
+| Navigate pages | ✅ Works | ✅ Works |
+| Dark terminal theme | ✅ Works | ✅ Works |
+
+The web app is useful for UI development and testing. All pages render with proper empty states.
 
 ---
 
@@ -398,6 +438,7 @@ See [PLAN.md](PLAN.md) for detailed implementation plans for upcoming features.
 - [x] Systemd timer generation (`hardener systemd generate/install/uninstall/status`)
 - [x] WASM compilation fix (hardener-types crate for WASM-safe dependencies)
 - [x] GUI dark terminal theme with CSS styling
+- [x] Browser mode support (Web UI works without Tauri desktop wrapper)
 - [ ] CI/CD GitHub Actions integration (workflows exist, not connected)
 
 ### v1.0.0 (Future)
@@ -425,3 +466,5 @@ This project draws inspiration from established security tools including:
 **Author**: Eric Jingryd
 **Contact**: tidynest@proton.me
 **Repository**: https://github.com/tidynest/linux-system-hardener
+
+**Last Updated**: 2025-12-05

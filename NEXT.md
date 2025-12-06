@@ -381,12 +381,28 @@ cargo test -p hardener-scheduler
 # Run desktop app (Wayland workaround)
 WEBKIT_DISABLE_COMPOSITING_MODE=1 cargo tauri dev
 
+# Run web app in browser (no Tauri required)
+cd crates/hardener-ui && trunk serve --port 1420
+# Open http://127.0.0.1:1420/ in browser
+
 # Build WASM frontend only
 cd crates/hardener-ui && trunk build
 
 # Verify WASM compilation
 cargo check -p hardener-ui --target wasm32-unknown-unknown
 ```
+
+### Web App vs Desktop App
+
+| Feature | Web App (Browser) | Desktop App (Tauri) |
+|---------|-------------------|---------------------|
+| Run scans | ❌ No backend | ✅ Full functionality |
+| Apply hardening | ❌ No backend | ✅ With pkexec |
+| View compliance | ❌ No backend | ✅ Full functionality |
+| Navigate pages | ✅ Works | ✅ Works |
+| Dark terminal theme | ✅ Works | ✅ Works |
+
+The web app is useful for UI development and testing without needing Tauri. All pages render correctly, but Tauri commands (scan, apply, etc.) return errors gracefully with "Tauri not available" messages.
 
 ---
 
@@ -420,17 +436,26 @@ cargo check -p hardener-ui --target wasm32-unknown-unknown
    - Added `#[wasm_bindgen(start)]` entry point for Leptos app
    - GUI now compiles to `wasm32-unknown-unknown` and runs in browser/Tauri
 
-5. **Next Tasks**:
+5. **Completed**: Browser Mode Fix ✅
+   - **Problem**: Web UI (browser mode) failed to render page content
+   - **Root cause**: `tauri_bindings.rs` called `window.__TAURI__.core.invoke` without checking if Tauri was available, causing JavaScript errors that crashed Leptos reactivity
+   - **Solution**: Added `is_tauri_available()` inline JS function and `tauri_available()` Rust wrapper
+   - All Tauri commands now return early with error if running in browser mode
+   - Web UI fully functional: Dashboard, Analysis (Findings/Compliance tabs), Hardening (Configure/History tabs)
+
+6. **Next Tasks**:
    - v0.3.1: GUI Polish & Testing (see PLAN.md) - **IN PROGRESS**
    - v0.3.2: GUI Major Redesign & Comprehensive Testing
    - v0.3.3: Distribution-Specific Validation
    - v0.4.0 Web Interface planning
 
-6. **Known Issues** (v0.3.1 scope):
+7. **Known Issues** (v0.3.1 scope):
    - ~~GUI: "Loading..." text stays visible after app mounts~~ ✅ **FIXED (2025-12-05)**
    - ~~GUI: Styling needs significant improvement~~ ✅ **FIXED (2025-12-05)** - Dark terminal theme implemented
-   - **CRITICAL: GUI State persistence bug** - Changes lost when navigating between pages; "Applying []" feedback appears but changes are not actually applied
-   - GUI: Timestamp display on Checkpoints page shows raw numbers (needs formatting)
+   - ~~CRITICAL: GUI State persistence bug~~ ✅ **FIXED (2025-12-05)** - SQLite storage implemented
+   - ~~GUI: pkexec integration not working~~ ✅ **FIXED (2025-12-06)** - Tauri 2.x camelCase args fix
+   - ~~GUI: Browser mode not rendering pages~~ ✅ **FIXED (2025-12-06)** - Added Tauri availability check
+   - ~~GUI: Timestamp display on Checkpoints page shows raw numbers~~ ✅ **FIXED (2025-12-05)** - Human-readable formatting
    - GUI: Background colour could be more personable (currently #0d1117)
    - GUI: Responsive layout needed for varying screen resolutions
    - GUI: Page navigation structure needs redesign (reduce 6 pages to 3-4)
@@ -438,7 +463,7 @@ cargo check -p hardener-ui --target wasm32-unknown-unknown
    - GUI: Needs intuitive user guidance/help text on every page
    - Wayland: Requires `WEBKIT_DISABLE_COMPOSITING_MODE=1` environment variable
 
-7. **Always Remember**:
+8. **Always Remember**:
    - Update documentation after changes
    - Follow naming conventions strictly
    - No AI attributions
@@ -461,3 +486,5 @@ Treat the user as a trainee you're guiding through the project. Explain connecti
 ---
 
 *This document was prepared for continuity between development sessions.*
+
+**Last Updated**: 2025-12-06

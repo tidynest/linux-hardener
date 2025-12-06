@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use leptos_router::{
     StaticSegment,
-    components::{Route, Router, Routes},
+    components::{A, Route, Router, Routes},
 };
 
 mod components;
@@ -11,8 +11,7 @@ mod tauri_bindings;
 mod types;
 mod utils;
 
-use components::{ApplyResults, CheckpointList};
-use pages::{CompliancePage, ConfigurationPage, DashboardPage, ScannerPage};
+use pages::{AnalysisPage, DashboardPage, HardeningPage};
 use state::AppState;
 pub use types::*;
 
@@ -20,7 +19,7 @@ pub use types::*;
 ///
 /// This sets up:
 /// - Application state (AppState) available to all child components via context
-/// - Router with five routes: Checkpoints, Configuration, Dashboard, Results, Scanner
+/// - Router with three routes: Dashboard, Analysis, Hardening
 /// - Navigation bar for moving between pages
 /// - Automatic loading of persisted scan results on mount
 #[component]
@@ -51,12 +50,9 @@ pub fn App() -> impl IntoView {
                 <nav class="navigation">
                     <h1>"Linux System Hardener"</h1>
                     <ul class="nav-links">
-                        <li><a href="/">"Dashboard"</a></li>
-                        <li><a href="/scan">"Scanner"</a></li>
-                        <li><a href="/config">"Configuration"</a></li>
-                        <li><a href="/compliance">"Compliance"</a></li>
-                        <li><a href="/results">"Results"</a></li>
-                        <li><a href="/checkpoints">"Checkpoints"</a></li>
+                        <li><A href="/">"Dashboard"</A></li>
+                        <li><A href="/analysis">"Analysis"</A></li>
+                        <li><A href="/hardening">"Hardening"</A></li>
                     </ul>
                 </nav>
             </header>
@@ -70,11 +66,8 @@ pub fn App() -> impl IntoView {
                     </article>
                 }>
                     <Route path=StaticSegment("") view=DashboardPage/>
-                    <Route path=StaticSegment("checkpoints") view=CheckpointList/>
-                    <Route path=StaticSegment("config") view=ConfigurationPage/>
-                    <Route path=StaticSegment("compliance") view=CompliancePage/>
-                    <Route path=StaticSegment("results") view=ApplyResults/>
-                    <Route path=StaticSegment("scan") view=ScannerPage/>
+                    <Route path=StaticSegment("analysis") view=AnalysisPage/>
+                    <Route path=StaticSegment("hardening") view=HardeningPage/>
                 </Routes>
             </main>
         </Router>

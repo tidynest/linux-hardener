@@ -1,21 +1,54 @@
 //! Tauri command bindings for invoking backend functions from WASM.
 //!
 //! These bindings use wasm-bindgen to call Tauri's JavaScript invoke API.
+//! In browser mode (without Tauri), all commands return errors gracefully.
 
-use crate::types::{ApplyResult, ComplianceReport, ScanResult};
+use crate::types::{ApplyResult, CheckpointInfo, ComplianceReport, ScanResult};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 extern "C" {
-    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"], js_name = invoke)]
-    async fn tauri_invoke(cmd: &str, args: JsValue) -> JsValue;
+    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"], js_name = invoke, catch)]
+    async fn tauri_invoke(cmd: &str, args: JsValue) -> Result<JsValue, JsValue>;
+}
+
+/// Check if Tauri runtime is available (running in desktop app vs browser).
+#[wasm_bindgen(inline_js = "export function is_tauri_available() { return typeof window.__TAURI__ !== 'undefined'; }")]
+extern "C" {
+    fn is_tauri_available() -> bool;
+}
+
+/// Returns true if running inside Tauri desktop app, false if in browser.
+pub fn tauri_available() -> bool {
+    is_tauri_available()
+}
+
+/// Helper to invoke Tauri commands with proper error handling.
+/// Returns an error immediately if Tauri is not available.
+async fn invoke_command(cmd: &str, args: JsValue) -> Result<JsValue, String> {
+    if !tauri_available() {
+        return Err("Tauri not available (running in browser mode)".to_string());
+    }
+
+    match tauri_invoke(cmd, args).await {
+        Ok(result) => Ok(result),
+        Err(err) => {
+            // Extract error message from JsValue
+            let error_msg = if let Some(s) = err.as_string() {
+                s
+            } else {
+                format!("{:?}", err)
+            };
+            Err(format!("Tauri command '{}' failed: {}", cmd, error_msg))
+        }
+    }
 }
 
 /// Invokes the run_scan Tauri command.
 ///
 /// Returns scan results from all registered plugins.
 pub async fn invoke_scan() -> Result<Vec<ScanResult>, String> {
-    let result = tauri_invoke("run_scan", JsValue::NULL).await;
+    let result = invoke_command("run_scan", JsValue::NULL).await?;
 
     serde_wasm_bindgen::from_value(result)
         .map_err(|e| format!("Failed to deserialise scan result: {}", e))
@@ -26,11 +59,11 @@ pub async fn invoke_scan() -> Result<Vec<ScanResult>, String> {
 /// Applies hardening changes for the specified plugins.
 pub async fn invoke_apply(plugin_ids: Vec<String>) -> Result<Vec<ApplyResult>, String> {
     let args = serde_wasm_bindgen::to_value(&serde_json::json!({
-        "plugin_ids": plugin_ids,
+        "pluginIds": plugin_ids,
     }))
     .map_err(|e| format!("Failed to serialise arguments: {}", e))?;
 
-    let result = tauri_invoke("run_apply", args).await;
+    let result = invoke_command("run_apply", args).await?;
 
     serde_wasm_bindgen::from_value(result)
         .map_err(|e| format!("Failed to deserialise apply results: {}", e))
@@ -47,7 +80,7 @@ pub async fn invoke_generate_report(
     }))
     .map_err(|e| format!("Failed to serialise arguments: {}", e))?;
 
-    let result = tauri_invoke("generate_compliance_report", args).await;
+    let result = invoke_command("generate_compliance_report", args).await?;
 
     serde_wasm_bindgen::from_value(result)
         .map_err(|e| format!("Failed to deserialise generate compliance reports: {}", e))
@@ -58,8 +91,31 @@ pub async fn invoke_generate_report(
 /// Retrieves the most recent persisted scan results from the database.
 /// Returns None if no completed scans exist.
 pub async fn invoke_get_latest_scan() -> Result<Option<Vec<ScanResult>>, String> {
-    let result = tauri_invoke("get_latest_scan", JsValue::NULL).await;
+    let result = invoke_command("get_latest_scan", JsValue::NULL).await?;
 
     serde_wasm_bindgen::from_value(result)
         .map_err(|e| format!("Failed to deserialise latest scan: {}", e))
+}
+
+/// Invokes the get_checkpoints Tauri command.
+///
+/// Retrieves all available system checkpoints for rollback.
+pub async fn invoke_get_checkpoints() -> Result<Vec<CheckpointInfo>, String> {
+    let result = invoke_command("get_checkpoints", JsValue::NULL).await?;
+
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to deserialise checkpoints: {}", e))
+}
+
+/// Invokes the run_rollback Tauri command.
+///
+/// Restores system state to the specified checkpoint.
+pub async fn invoke_rollback(checkpoint_id: String) -> Result<(), String> {
+    let args = serde_wasm_bindgen::to_value(&serde_json::json!({
+        "checkpointId": checkpoint_id,
+    }))
+    .map_err(|e| format!("Failed to serialise arguments: {}", e))?;
+
+    invoke_command("run_rollback", args).await?;
+    Ok(())
 }

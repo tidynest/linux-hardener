@@ -1,11 +1,14 @@
-use hardener_common::types::{ComplianceFramework, PluginId};
+use hardener_common::types::ComplianceFramework;
 use hardener_compliance::{
     ComplianceReport, OutputFormat, ReportConfig, ReportGenerator, Scenario,
 };
 use hardener_core::{ApplyResult, Context, ScanResult};
 use hardener_plugins::create_plugin_registry;
-use hardener_state::{init_db, CheckpointId, CheckpointManager, ScanHistoryManager, ScanStatus};
+use hardener_state::{init_db, CheckpointManager, ScanHistoryManager, ScanStatus};
 use serde::Serialize;
+use serde_json;
+use std::process::Command as StdCommand;
+use tokio::process::Command;
 use tracing::error;
 
 /// Checkpoint information returned to the frontend.
@@ -24,6 +27,129 @@ fn format_timestamp(timestamp: i64) -> String {
     let datetime = UNIX_EPOCH + Duration::from_secs(timestamp as u64);
     // Simple ISO-like format
     format!("{:?}", datetime)
+}
+
+/// Returns the path to the hardener CLI binary,
+///
+/// In development, uses the debug build. In production, expects
+/// the binary in standard locations or PATH.
+fn get_hardener_binary_path() -> Result<String, String> {
+    // Development: use target/debug/hardener relative to the Tauri app
+    let dev_path = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        .map(|p| p.join("hardener"));
+
+    if let Some(path) = dev_path {
+        if path.exists() {
+            return Ok(path.to_string_lossy().to_string());
+        }
+    }
+
+    // Try PATH
+    if StdCommand::new("which")
+        .arg("hardener")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
+        return Ok("hardener".to_string());
+    }
+
+    Err("Could not find hardener binary. Ensure it is built or installed".to_string())
+}
+
+/// Error types for privileged command execution.
+#[derive(Debug)]
+enum PrivilegedCommandError {
+    /// Polkit is not running.
+    PolkitNotRunning,
+    /// No polkit authentication agent available.
+    NoAuthAgent,
+    /// User cancelled the authentication agent available.
+    AuthCancelled,
+    /// Command execution failed.
+    ExecutionFailed(String),
+    /// Failed to parse command output.
+    ParseError(String),
+}
+
+impl std::fmt::Display for PrivilegedCommandError {
+    fn fmt(
+        &self, f: &mut std::fmt::Formatter
+    ) -> std::fmt::Result {
+        match self {
+            Self::PolkitNotRunning => write!(
+                f,
+                "Polkit is required but not running.\n\n\
+                Install with:\n  \
+                Arch: sudo pacman -S polkit\n  \
+                Debian: sudo apt install policykit-1\n  \
+                Fedora: sudo dnf install polkit\n\n\
+                Then restart your session."
+            ),
+            Self::NoAuthAgent => write!(
+                f,
+                "No Polkit authentication agent found.\n\n\
+                Install one with:\n  \
+                Arch: sudo pacman -S polkit-gnome\n  \
+                Debian: sudo apt install policykit-1-gnome\n  \
+                Fedora: sudo dnf install polkit-gnome\n\n\
+                Then add to your window manager startup:\n  \
+                exec /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1"
+            ),
+            Self::AuthCancelled => write!(
+                f,
+                "Authentication cancelled. Root privileges are required for this operation."
+            ),
+            Self::ExecutionFailed(msg) => write!(f, "Command failed: {}", msg),
+            Self::ParseError(msg) => write!(f, "Failed to parse output: {}", msg),
+        }
+    }
+}
+
+/// Executes a command with root privileges via pkexec.
+///
+/// Returns the command's stdout on success, or an appropriate error.
+async fn run_privileged_command(args: &[&str]) -> Result<String, PrivilegedCommandError> {
+    let binary = get_hardener_binary_path()
+        .map_err(|e| PrivilegedCommandError::ExecutionFailed(e))?;
+
+    tracing::info!("=== Running pkexec {} {:?} ===", binary, args);
+
+    let output = Command::new("pkexec")
+        .arg(&binary)
+        .args(args)
+        .output()
+        .await
+        .map_err(|e| PrivilegedCommandError::ExecutionFailed(e.to_string()))?;
+
+    // Check exit codes
+    match output.status.code() {
+        Some(0) => {
+            // Success
+            String::from_utf8(output.stdout)
+                .map_err(|e| PrivilegedCommandError::ParseError(e.to_string()))
+        }
+        Some(126) => {
+            // pkexec: not authorised or auth dialog dismissed
+            Err(PrivilegedCommandError::AuthCancelled)
+        }
+        Some(127) => {
+            // Command not found (pkexec or hardener)
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if stderr.contains("polkit") || stderr.contains("authority") {
+                Err(PrivilegedCommandError::NoAuthAgent)
+            } else {
+                Err(PrivilegedCommandError::ExecutionFailed(stderr.to_string()))
+            }
+        }
+        _ => {
+            // Other error
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(PrivilegedCommandError::ExecutionFailed(stderr.to_string()))
+        }
+    }
 }
 
 /// Returns the path to the user-local database.
@@ -116,53 +242,51 @@ pub async fn run_scan() -> Result<Vec<ScanResult>, String> {
     Ok(results)
 }
 
-/// Applies hardening changes for the specified plugins
+/// Applies hardening changes for the specified plugins.
 ///
-/// Takes a list of plugin IDs to apply and returns the results
+/// Uses pkexec to run the CLI with root privileges.
+/// The user will be prompted for their password via the polkit agent.
 #[tauri::command]
 pub async fn run_apply(plugin_ids: Vec<String>) -> Result<Vec<ApplyResult>, String> {
-    let mut ctx = Context::new();
-    let registry = create_plugin_registry();
-    let config = hardener_core::Config;
+    tracing::info!("=== run_apply called with plugins: {:?} ===", plugin_ids);
 
-    let mut results = Vec::new();
+    // Build CLI arguments
+    let mut args: Vec<&str> = vec!["apply", "--format", "json"];
 
-    for plugin_id_str in plugin_ids {
-        let plugin_id = PluginId::new(&plugin_id_str);
+    // Convert plugin_ids to &str for the args
+    let plugin_args: Vec<String> = plugin_ids
+        .iter()
+        .flat_map(|id| vec!["--plugin".to_string(), id.clone()])
+        .collect();
 
-        if let Ok(Some(plugin)) = registry.get(&plugin_id) {
-            match plugin.apply(&mut ctx, &config).await {
-                Ok(result) => results.push(result),
-                Err(e) => {
-                    error!("Apply failed for plugin {}: {}", plugin_id_str, e);
+    let plugin_refs: Vec<&str> = plugin_args.iter().map(|s| s.as_str()).collect();
+    args.extend(plugin_refs);
 
-                    results.push(ApplyResult {
-                        apply_plugin_id: plugin_id,
-                        apply_success: false,
-                        apply_changes: vec![],
-                        apply_checkpoint_id: None,
-                        apply_error: Some(e.to_string()),
-                    });
-                }
-            }
-        }
-    }
+    // Execute with root privileges
+    let output = run_privileged_command(&args).await.map_err(|e| e.to_string())?;
+
+    // Parse JSON output from CLI
+    let results: Vec<ApplyResult> = serde_json::from_str(&output)
+        .map_err(|e| format!("Failed to parse apply results: {}", e))?;
 
     Ok(results)
 }
 
 /// Rolls back to a previous checkpoint.
 ///
+/// Uses pkexec to run the CLI with root privileges.
 /// Takes a checkpoint ID and restores the system state to that point.
 #[tauri::command]
 pub async fn run_rollback(checkpoint_id: String) -> Result<bool, String> {
-    let manager = create_checkpoint_manager().await?;
-    let id = CheckpointId::new(checkpoint_id);
+    // Build CLI arguments
+    let args = vec!["rollback", "--format", "json", &checkpoint_id];
 
-    manager.rollback(&id).await.map_err(|e| e.to_string())?;
+    // Execute with root privileges
+    run_privileged_command(&args).await.map_err(|e| e.to_string())?;
 
     Ok(true)
 }
+
 
 /// Retrieves a list of all available checkpoints.
 ///

@@ -1,9 +1,7 @@
-pub mod compliance_page;
-pub mod configuration_page;
+pub mod analysis_page;
 pub mod dashboard_page;
-pub mod scanner_page;
+pub mod hardening_page;
 
-pub use compliance_page::CompliancePage;
-pub use configuration_page::ConfigurationPage;
+pub use analysis_page::AnalysisPage;
 pub use dashboard_page::DashboardPage;
-pub use scanner_page::ScannerPage;
+pub use hardening_page::HardeningPage;

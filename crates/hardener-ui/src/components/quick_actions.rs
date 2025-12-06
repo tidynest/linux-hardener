@@ -2,32 +2,42 @@ use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
 
 use crate::state::AppState;
-use crate::utils::create_mock_scan_results;
+use crate::tauri_bindings::invoke_scan;
 
 /// Quick action buttons for common tasks.
 ///
 /// Provides:
-/// - "Run Scan" button - Triggers a system scan (currently uses mock data)
-/// - "View Findings" button - Navigates to the scanner page to see all findings
+/// - "Run Scan" button - Triggers a system scan via Tauri backend
+/// - "View Analysis" button - Navigates to the Analysis page
+/// - "Configure Hardening" button - Navigates to the Hardening page
 #[component]
 pub fn QuickActions() -> impl IntoView {
     let app_state = expect_context::<AppState>();
     let navigate = use_navigate();
+    let navigate_hardening = use_navigate();
 
     let on_run_scan = move |_| {
-        // Set scanning state to true
         app_state.is_scanning.set(true);
 
-        // TODO: Replace with real Tauri backend call
-        let mock_results = create_mock_scan_results();
-        app_state.scan_results.set(mock_results);
-
-        // Set scanning state to false
-        app_state.is_scanning.set(false);
+        leptos::task::spawn_local(async move {
+            match invoke_scan().await {
+                Ok(results) => {
+                    app_state.scan_results.set(results);
+                }
+                Err(e) => {
+                    web_sys::console::error_1(&format!("Scan failed: {}", e).into());
+                }
+            }
+            app_state.is_scanning.set(false);
+        });
     };
 
-    let on_view_findings = move |_| {
-        navigate("/scan", Default::default());
+    let on_view_analysis = move |_| {
+        navigate("/analysis", Default::default());
+    };
+
+    let on_configure_hardening = move |_| {
+        navigate_hardening("/hardening", Default::default());
     };
 
     view! {
@@ -48,9 +58,16 @@ pub fn QuickActions() -> impl IntoView {
 
                 <button
                     class="btn btn-secondary"
-                    on:click=on_view_findings
+                    on:click=on_view_analysis
                 >
-                    "View Findings"
+                    "View Analysis"
+                </button>
+
+                <button
+                    class="btn btn-secondary"
+                    on:click=on_configure_hardening
+                >
+                    "Configure Hardening"
                 </button>
             </nav>
         </section>

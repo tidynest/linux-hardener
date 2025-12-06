@@ -1,12 +1,13 @@
 use leptos::prelude::*;
 
-use crate::components::{QuickActions, SecurityScore};
+use crate::components::{QuickActions, RecentActivity, SecurityScore};
 
 /// Dashboard page showing system security overview.
 ///
 /// This is the main landing page displaying:
 /// - Security score calculated from all findings
 /// - Quick action buttons for common tasks
+/// - Recent activity summary
 /// - Overall system security status
 #[component]
 pub fn DashboardPage() -> impl IntoView {
@@ -27,9 +28,11 @@ pub fn DashboardPage() -> impl IntoView {
                 </section>
             </section>
 
+            <RecentActivity/>
+
             <footer class="dashboard-footer">
                 <p class="help-text">
-                    "Click 'Run Scan' to analyse your system security. Results will appear in the Scanner page."
+                    "Click 'Run Scan' to analyse your system security. Results will appear in the Analysis page."
                 </p>
             </footer>
         </article>

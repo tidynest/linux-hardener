@@ -143,8 +143,9 @@ See [docs/WASM_FIX_PLAN.md](docs/WASM_FIX_PLAN.md) for implementation details.
 | GUI styling/CSS | Improve visual design and user experience | High | ✅ Complete |
 | Fix security score default | Show "--/100" before scan instead of "100/100" | High | ✅ Complete |
 | Fix View Findings button | Use button instead of hyperlink styling | Medium | ✅ Complete |
-| **State persistence bug** | Changes lost when navigating between pages - "Applying []" shows but no actual effect | Critical | Pending |
-| Timestamp formatting | Format raw timestamp numbers on Checkpoints page | Medium | Pending |
+| **State persistence bug** | Scan results now persist across navigation and app restarts via SQLite | Critical | ✅ Complete |
+| **Browser mode fix** | Web UI now renders correctly without Tauri (added `tauri_available()` check) | Critical | ✅ Complete |
+| Timestamp formatting | Format raw timestamp numbers on Checkpoints page | Medium | ✅ Complete |
 | Background personalisation | Make background colour more personable/warm | Low | Pending |
 | Responsive layout | Support varying screen/browser resolutions | Medium | Pending |
 | Navigation restructure | Evaluate merging Configuration/Compliance into Scanner | Low | Pending |
@@ -152,16 +153,22 @@ See [docs/WASM_FIX_PLAN.md](docs/WASM_FIX_PLAN.md) for implementation details.
 | CLI functional testing | Verify all CLI commands work correctly | High | Pending |
 | Safe testing environment | Test in VM/container to avoid system changes | Critical | Pending |
 
-**v0.3.1 Completed Items (2025-12-05):**
+**v0.3.1 Completed Items (2025-12-05/06):**
 - Fixed "Loading..." text persistence by mounting app to `#app` element
 - Added dark terminal theme with CSS Variables, JetBrains Mono + Inter fonts
 - Security score now shows "--/100" before scan with "Run a scan to see your score"
 - "View Findings" now uses styled button with programmatic navigation
 - All 6 pages styled: Dashboard, Scanner, Configuration, Compliance, Results, Checkpoints
+- Timestamp formatting: Checkpoints page now shows human-readable dates
+- **(2025-12-06)** Browser mode fix: Added `tauri_available()` check in `tauri_bindings.rs`
+  - Web UI now renders all pages correctly without Tauri desktop wrapper
+  - Commands return graceful errors in browser mode instead of crashing Leptos
 
-**Known Bugs (2025-12-05):**
-- State persistence: Configuration/settings changes are lost when navigating to another page
-- "Applying []" feedback messages appear but changes may not actually be applied to the system
+**Completed (2025-12-05):**
+- State persistence: Scan results now persist via `scan_sessions`, `scan_results`, `scan_findings` tables
+- GUI loads latest scan results on mount via `get_latest_scan` Tauri command
+- 4 unit tests for `ScanHistoryManager` all passing
+- Full integration test passed (8/8 Web UI tests, database verification complete)
 
 **Testing Requirements:**
 - All testing MUST be done in a safe, isolated environment (VM or container)
@@ -175,21 +182,50 @@ This version focuses on making the GUI fully functional, intuitive, and thorough
 
 #### A. Page Architecture Redesign
 
-| Feature | Description | Priority |
-|---------|-------------|----------|
-| Page consolidation | Reduce 6 pages to 3-4 logical sections | High |
-| Workflow-oriented design | Guide users through scan → configure → apply → verify flow | High |
-| State management overhaul | Ensure all changes persist across navigation | Critical |
-| Backend integration | Connect GUI actions to actual Tauri commands | Critical |
+| Feature | Description | Priority | Status |
+|---------|-------------|----------|--------|
+| Page consolidation | Reduce 6 pages to 3 logical sections | High | In Progress |
+| Workflow-oriented design | Guide users through scan → configure → apply → verify flow | High | In Progress |
+| State management overhaul | Ensure all changes persist across navigation | Critical | Pending |
+| Backend integration | Connect GUI actions to actual Tauri commands | Critical | ✅ Complete |
 
-**Proposed Page Structure:**
+**Final Page Structure (3 Pages):**
 
-| Page | Purpose | Contains |
-|------|---------|----------|
-| **Dashboard** | Overview & quick start | Security score, quick actions, recent activity, system status |
-| **Hardening** | Main workflow page | Scan controls, findings list, configuration options, apply actions (tabbed or accordion layout) |
-| **History** | Audit trail & recovery | Results history, checkpoints, rollback options |
-| **Settings** | App configuration | Notification settings, scan scheduling, theme preferences |
+| Page | Route | Purpose | Contains |
+|------|-------|---------|----------|
+| **Dashboard** | `/` | Overview & quick start | SecurityScore, QuickActions, RecentActivity |
+| **Analysis** | `/analysis` | Scan & compliance (tabbed) | [Findings] tab + [Compliance] tab with shared header |
+| **Hardening** | `/hardening` | Configure & history (sectioned) | [Configure] + [History] sections with apply/rollback |
+
+**Analysis Page Tabs:**
+- **Findings Tab**: FindingsGrid + FindingDetail (from ScannerPage)
+- **Compliance Tab**: Framework selection + ReportCard (from CompliancePage)
+- Shared header with MiniSecurityScore and unified "Run Scan" button
+- Animated tab transitions with gradient underline indicator
+
+**Hardening Page Sections:**
+- **Configure Section**: Profile presets, plugin toggles, apply button
+- **History Section**: Apply results summary + checkpoint table with rollback
+
+**Implementation Phases:**
+
+| Phase | Components | Status |
+|-------|------------|--------|
+| Phase 1 | tabs.rs, mini_security_score.rs, recent_activity.rs | Pending |
+| Phase 2 | findings_tab.rs, compliance_tab.rs, analysis_page.rs | Pending |
+| Phase 3 | configure_section.rs, history_section.rs, hardening_page.rs | Pending |
+| Phase 4 | Update router (lib.rs) and state (state/mod.rs) | Pending |
+| Phase 5 | CSS additions for tabs/sections | ✅ Complete |
+| Phase 6 | Delete old files (scanner_page, compliance_page, etc.) | Pending |
+
+**State Updates Required:**
+```rust
+// Add to AppState
+pub analysis_active_tab: RwSignal<usize>,      // 0=Findings, 1=Compliance
+pub hardening_active_section: RwSignal<usize>, // 0=Configure, 1=History
+pub checkpoints: RwSignal<Vec<CheckpointInfo>>,
+pub is_loading_checkpoints: RwSignal<bool>,
+```
 
 #### B. User Guidance & UX
 
@@ -241,6 +277,128 @@ This version focuses on making the GUI fully functional, intuitive, and thorough
 | Rollback functionality | Connect rollback to Tauri rollback command | Critical |
 | Real-time progress | WebSocket or polling for scan/apply progress | High |
 | Error propagation | Surface backend errors to UI properly | High |
+
+#### E. Root Privilege Escalation for GUI
+
+Security scans and hardening operations require root privileges to access system files and configurations. The GUI apps (both Web and Desktop) need a mechanism to execute privileged operations safely.
+
+**Privilege Requirements by Operation:**
+
+| Operation | Requires Root | Reason |
+|-----------|---------------|--------|
+| Scanning | Partial | Most scans work without root; some checks (e.g., `/etc/shadow`) need elevated access |
+| Apply hardening | Yes | Modifies system config files (`/etc/sysctl.conf`, `/etc/ssh/sshd_config`, etc.) |
+| Rollback | Yes | Restores system config files from checkpoints |
+| Delete checkpoint | No | Checkpoints stored in user-local database |
+
+**Approach Comparison:**
+
+| Approach | Description | Pros | Cons |
+|----------|-------------|------|------|
+| **Polkit integration** | Use `pkexec` to prompt for password and run privileged operations | Standard Linux privilege escalation, user-friendly prompts | Requires polkit agent running, may not work in all DEs |
+| **Privileged daemon** | Separate systemd service running as root, GUI communicates via Unix socket | Most secure, persistent connection, can enforce authorization policies | More complex architecture, needs IPC implementation |
+| **Sudo wrapper** | Call `sudo` or `pkexec` for individual operations | Simple implementation | Prompts for each operation, may time out |
+| **Capabilities-based** | Grant specific Linux capabilities (e.g., `CAP_DAC_READ_SEARCH`) to binary | Fine-grained permissions, no password prompts | Complex capability management, not all operations supported |
+
+**Chosen Approach**: pkexec with graceful error handling
+
+##### Implementation Architecture
+
+```
+User clicks "Apply"
+        │
+        ▼
+┌───────────────────────┐
+│ Tauri command         │
+│ run_apply_privileged  │
+└───────────┬───────────┘
+            │
+            ▼
+┌───────────────────────┐
+│ Spawn pkexec process: │
+│ pkexec /path/hardener │
+│   apply --plugin X    │
+│   --output json       │
+└───────────┬───────────┘
+            │
+            ▼
+┌───────────────────────────────────────┐
+│ Polkit auth agent shows password      │
+│ dialog (polkit-gnome, kde-agent, etc) │
+└───────────┬───────────────────────────┘
+            │
+     ┌──────┴──────┬────────────┐
+     │             │            │
+     ▼             ▼            ▼
+  Success      Cancelled    No Agent
+     │             │            │
+     ▼             ▼            ▼
+  Parse JSON    Show msg    Show install
+  results       "Cancelled"  instructions
+     │
+     ▼
+  Update GUI
+```
+
+##### Error Handling & User Guidance
+
+**If polkitd not running:**
+```
+Polkit is required for privilege escalation but isn't running.
+
+Install with:
+  Arch:   sudo pacman -S polkit
+  Debian: sudo apt install policykit-1
+  Fedora: sudo dnf install polkit
+
+Then restart your session.
+```
+
+**If no auth agent running:**
+```
+A Polkit authentication agent is required to show the password prompt.
+
+Install one with:
+  Arch:   sudo pacman -S polkit-gnome
+  Debian: sudo apt install policykit-1-gnome
+  Fedora: sudo dnf install polkit-gnome
+
+Then add to your window manager startup:
+  exec /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1
+```
+
+**If user cancels password dialog:**
+```
+Authentication cancelled. Root privileges are required to apply hardening changes.
+```
+
+##### Dependency Handling
+
+**Development/Manual Installs:**
+- Detect missing polkit components at runtime
+- Show clear installation instructions per distro
+- Optionally offer to open terminal with install command
+
+**Package Distribution (AUR, deb, rpm):**
+- Declare `polkit` as package dependency
+- Recommend `polkit-gnome` or equivalent as optional dependency
+- Package manager handles installation automatically
+
+##### Implementation Tasks
+
+- [x] Add `check_polkit_availability()` function in Tauri commands ✅ **DONE (2025-12-06)**
+- [x] Create `run_privileged_command()` helper that wraps pkexec ✅ **DONE (2025-12-06)**
+- [x] Modify `run_apply` to use pkexec + CLI instead of in-process execution ✅ **DONE (2025-12-06)**
+- [x] Modify `run_rollback` to use pkexec + CLI ✅ **DONE (2025-12-06)**
+- [x] Add JSON output mode to CLI `apply` command (for machine-readable results) ✅ (already existed)
+- [ ] Add JSON output mode to CLI `checkpoint rollback` command
+- [x] Create user-friendly error messages for polkit failures ✅ **DONE (2025-12-06)**
+- [x] Test on Hyprland (with polkit-gnome) ✅ **DONE (2025-12-06)**
+- [ ] Test on GNOME, KDE, XFCE desktop environments
+- [ ] (Optional) Create polkit policy file for nicer dialog text
+- [ ] (Future) Add to AUR/deb/rpm package dependencies
+
+**Tauri 2.x Critical Note:** Frontend argument keys MUST use camelCase (e.g., `pluginIds` not `plugin_ids`) to match Tauri 2.x's default serde configuration. The `wasm-bindgen` extern binding must include the `catch` attribute for proper Promise rejection handling.
 
 ### v0.3.3 - Distribution-Specific Validation
 
@@ -394,3 +552,5 @@ When working on new features:
 5. Submit PR for review
 
 **Legend**: ⬜ Pending | 🔄 In Progress | ✅ Complete
+
+**Last Updated**: 2025-12-06

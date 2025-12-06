@@ -199,3 +199,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 [Unreleased]: https://github.com/tidynest/linux-system-hardener/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/tidynest/linux-system-hardener/releases/tag/v0.1.0
+
+**Last Updated**: 2025-12-05

@@ -34,6 +34,26 @@ cargo clippy --all-targets --all-features
 cargo fmt
 ```
 
+### Development Scripts
+
+The `scripts/` directory contains automation tools for development:
+
+```bash
+# Validate all documentation is in sync with code
+./scripts/validate_all.py
+
+# Auto-fix documentation (dates, counts, stubs)
+./scripts/update_all_docs.py --apply
+
+# Check naming conventions
+./scripts/validate_naming.py
+
+# Release a new version (dry-run first!)
+./scripts/release.sh patch --dry-run
+```
+
+See [scripts/README.md](scripts/README.md) for complete documentation of all scripts.
+
 ## Coding Standards
 
 ### Rust Conventions
@@ -235,3 +255,5 @@ By contributing, you agree that your contributions will be licensed under the Ap
 - **Issues**: [GitHub Issues](https://github.com/tidynest/linux-system-hardener/issues)
 
 Thank you for contributing to Linux System Hardener!
+
+**Last Updated**: 2025-12-05

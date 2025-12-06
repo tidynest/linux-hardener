@@ -246,20 +246,28 @@ mod tests {
 
     #[test]
     fn expand_env_vars_single_var() {
-        std::env::set_var("TEST_WEBHOOK_VAR", "secret123");
+        // SAFETY: Test runs single-threaded; no concurrent env access
+        unsafe { std::env::set_var("TEST_WEBHOOK_VAR", "secret123") };
         let result = WebhookNotifier::expand_env_vars("Bearer ${TEST_WEBHOOK_VAR}");
         assert_eq!(result, "Bearer secret123");
-        std::env::remove_var("TEST_WEBHOOK_VAR");
+        // SAFETY: Test runs single-threaded; no concurrent env access
+        unsafe { std::env::remove_var("TEST_WEBHOOK_VAR") };
     }
 
     #[test]
     fn expand_env_vars_multiple_vars() {
-        std::env::set_var("TEST_VAR_A", "alpha");
-        std::env::set_var("TEST_VAR_B", "beta");
+        // SAFETY: Test runs single-threaded; no concurrent env access
+        unsafe {
+            std::env::set_var("TEST_VAR_A", "alpha");
+            std::env::set_var("TEST_VAR_B", "beta");
+        }
         let result = WebhookNotifier::expand_env_vars("${TEST_VAR_A}-${TEST_VAR_B}");
         assert_eq!(result, "alpha-beta");
-        std::env::remove_var("TEST_VAR_A");
-        std::env::remove_var("TEST_VAR_B");
+        // SAFETY: Test runs single-threaded; no concurrent env access
+        unsafe {
+            std::env::remove_var("TEST_VAR_A");
+            std::env::remove_var("TEST_VAR_B");
+        }
     }
 
     #[test]

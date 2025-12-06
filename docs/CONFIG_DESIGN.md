@@ -484,3 +484,5 @@ This design ensures:
 6. **Safe defaults** - works securely out-of-box without config
 
 The key insight: **config is for policy management, not security filtering**.
+
+**Last Updated**: 2025-12-03

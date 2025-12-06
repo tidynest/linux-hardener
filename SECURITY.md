@@ -164,3 +164,5 @@ The advisory can be safely dismissed as it does not affect this project's securi
 For security concerns: **tidynest@proton.me**
 
 For general issues: [GitHub Issues](https://github.com/tidynest/linux-system-hardener/issues)
+
+**Last Updated**: 2025-12-03

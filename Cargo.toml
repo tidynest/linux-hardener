@@ -15,9 +15,9 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.3.2"
 authors = ["Eric Jingryd"]
-edition = "2021"
+edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/tidynest/linux-system-hardener"
 

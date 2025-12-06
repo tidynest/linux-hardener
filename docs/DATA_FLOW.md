@@ -967,3 +967,5 @@ pub struct Daemon {
 |------|---------|
 | `linux-hardener.service` | Runs `hardener daemon run-once` (Type=oneshot) |
 | `linux-hardener.timer` | Triggers service on schedule |
+
+**Last Updated**: 2025-12-05
