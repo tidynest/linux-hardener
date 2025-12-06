@@ -4,10 +4,10 @@
 
 use crate::cli::OutputFormat;
 use crate::output;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use hardener_core::{ConfigLoader, Context, PluginManager};
 use hardener_scheduler::{
-    db::SessionFilter, Daemon, JsonStore, ScanHistoryManager, SchedulerConfig, TriggerType,
+    Daemon, JsonStore, ScanHistoryManager, SchedulerConfig, TriggerType, db::SessionFilter,
 };
 use serde::Deserialize;
 use std::sync::Arc;

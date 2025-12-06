@@ -1,7 +1,7 @@
 //! Systemd unit file management commands.
 
-use anyhow::{bail, Context, Result};
-use hardener_scheduler::systemd::{cron_to_calendar, service_name, timer_name, SystemdGenerator};
+use anyhow::{Context, Result, bail};
+use hardener_scheduler::systemd::{SystemdGenerator, cron_to_calendar, service_name, timer_name};
 use std::path::PathBuf;
 use tokio::{fs, process::Command};
 

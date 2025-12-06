@@ -14,7 +14,6 @@ use hardener_core::{
     plugin::{Config, HardeningPlugin},
 };
 use hardener_plugins::FirewallHardeningPlugin;
-use tokio;
 
 #[test]
 fn test_firewall_plugin_metadata() {
@@ -23,7 +22,7 @@ fn test_firewall_plugin_metadata() {
 
     assert_eq!(metadata.plugin_id.as_str(), "firewall-hardening");
     assert_eq!(metadata.plugin_name, "Firewall Hardening");
-    assert_eq!(metadata.plugin_version, "0.1.0");
+    assert_eq!(metadata.plugin_version, env!("CARGO_PKG_VERSION"));
     assert_eq!(metadata.plugin_category, FindingCategory::Network);
     assert!(metadata.plugin_description.contains("firewall"));
 }
@@ -64,7 +63,7 @@ async fn test_firewall_scan_detects_backend() {
 async fn test_firewall_validate_checks_backend() {
     let plugin = FirewallHardeningPlugin::new();
     let ctx = Context::new();
-    let config = Config::default();
+    let config = Config;
 
     let result = plugin.validate(&ctx, &config).await;
 
@@ -76,7 +75,7 @@ async fn test_firewall_validate_checks_backend() {
         validation_report.validation_report_plugin_id.as_str(),
         "firewall-hardening"
     );
-    assert_eq!(validation_report.validation_report_is_valid, true);
+    assert!(validation_report.validation_report_is_valid);
 }
 
 #[tokio::test]
@@ -84,7 +83,7 @@ async fn test_firewall_validate_checks_backend() {
 async fn test_firewall_apply_requires_root() {
     let plugin = FirewallHardeningPlugin::new();
     let mut ctx = Context::new();
-    let config = Config::default();
+    let config = Config;
 
     // This test should only be run with root privileges
     // Run with: sudo cargo test --package hardener-plugins test_firewall_apply_requires_root -- --ignored --nocapture

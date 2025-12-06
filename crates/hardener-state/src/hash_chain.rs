@@ -1,4 +1,4 @@
-use ring::digest::{digest, SHA256};
+use ring::digest::{SHA256, digest};
 use serde::{Deserialize, Serialize};
 
 /// Maintains a cryptographic hash chain for tamper-proof audit logging.

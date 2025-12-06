@@ -4,9 +4,8 @@ use hardener_compliance::{
 };
 use hardener_core::{ApplyResult, Context, ScanResult};
 use hardener_plugins::create_plugin_registry;
-use hardener_state::{init_db, CheckpointManager, ScanHistoryManager, ScanStatus};
+use hardener_state::{CheckpointManager, ScanHistoryManager, ScanStatus, init_db};
 use serde::Serialize;
-use serde_json;
 use std::process::Command as StdCommand;
 use tokio::process::Command;
 use tracing::error;
@@ -40,10 +39,10 @@ fn get_hardener_binary_path() -> Result<String, String> {
         .and_then(|p| p.parent().map(|p| p.to_path_buf()))
         .map(|p| p.join("hardener"));
 
-    if let Some(path) = dev_path {
-        if path.exists() {
-            return Ok(path.to_string_lossy().to_string());
-        }
+    if let Some(path) = dev_path
+        && path.exists()
+    {
+        return Ok(path.to_string_lossy().to_string());
     }
 
     // Try PATH
@@ -62,11 +61,9 @@ fn get_hardener_binary_path() -> Result<String, String> {
 /// Error types for privileged command execution.
 #[derive(Debug)]
 enum PrivilegedCommandError {
-    /// Polkit is not running.
-    PolkitNotRunning,
     /// No polkit authentication agent available.
     NoAuthAgent,
-    /// User cancelled the authentication agent available.
+    /// User cancelled the authentication.
     AuthCancelled,
     /// Command execution failed.
     ExecutionFailed(String),
@@ -75,19 +72,8 @@ enum PrivilegedCommandError {
 }
 
 impl std::fmt::Display for PrivilegedCommandError {
-    fn fmt(
-        &self, f: &mut std::fmt::Formatter
-    ) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Self::PolkitNotRunning => write!(
-                f,
-                "Polkit is required but not running.\n\n\
-                Install with:\n  \
-                Arch: sudo pacman -S polkit\n  \
-                Debian: sudo apt install policykit-1\n  \
-                Fedora: sudo dnf install polkit\n\n\
-                Then restart your session."
-            ),
             Self::NoAuthAgent => write!(
                 f,
                 "No Polkit authentication agent found.\n\n\
@@ -112,8 +98,7 @@ impl std::fmt::Display for PrivilegedCommandError {
 ///
 /// Returns the command's stdout on success, or an appropriate error.
 async fn run_privileged_command(args: &[&str]) -> Result<String, PrivilegedCommandError> {
-    let binary = get_hardener_binary_path()
-        .map_err(|e| PrivilegedCommandError::ExecutionFailed(e))?;
+    let binary = get_hardener_binary_path().map_err(PrivilegedCommandError::ExecutionFailed)?;
 
     tracing::info!("=== Running pkexec {} {:?} ===", binary, args);
 
@@ -233,7 +218,12 @@ pub async fn run_scan() -> Result<Vec<ScanResult>, String> {
 
     // Complete the session
     if let Err(e) = history_manager
-        .complete_session(&session_id, ScanStatus::Completed, total_findings, total_plugins)
+        .complete_session(
+            &session_id,
+            ScanStatus::Completed,
+            total_findings,
+            total_plugins,
+        )
         .await
     {
         error!("Failed to complete scan session: {}", e);
@@ -263,7 +253,9 @@ pub async fn run_apply(plugin_ids: Vec<String>) -> Result<Vec<ApplyResult>, Stri
     args.extend(plugin_refs);
 
     // Execute with root privileges
-    let output = run_privileged_command(&args).await.map_err(|e| e.to_string())?;
+    let output = run_privileged_command(&args)
+        .await
+        .map_err(|e| e.to_string())?;
 
     // Parse JSON output from CLI
     let results: Vec<ApplyResult> = serde_json::from_str(&output)
@@ -282,11 +274,12 @@ pub async fn run_rollback(checkpoint_id: String) -> Result<bool, String> {
     let args = vec!["rollback", "--format", "json", &checkpoint_id];
 
     // Execute with root privileges
-    run_privileged_command(&args).await.map_err(|e| e.to_string())?;
+    run_privileged_command(&args)
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(true)
 }
-
 
 /// Retrieves a list of all available checkpoints.
 ///
@@ -326,10 +319,10 @@ pub async fn generate_compliance_report(
     let plugin_list = registry.list().map_err(|e| e.to_string())?;
 
     for metadata in plugin_list {
-        if let Ok(Some(plugin)) = registry.get(&metadata.plugin_id) {
-            if let Ok(result) = plugin.scan(&ctx).await {
-                all_findings.extend(result.scan_findings);
-            }
+        if let Ok(Some(plugin)) = registry.get(&metadata.plugin_id)
+            && let Ok(result) = plugin.scan(&ctx).await
+        {
+            all_findings.extend(result.scan_findings);
         }
     }
 

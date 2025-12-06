@@ -100,8 +100,7 @@ impl fmt::Display for FindingCategory {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             FindingCategory::Audit => write!(f, "Audit"),
-            FindingCategory::Authentication => write!(f,
-                                                      "Authentication"),
+            FindingCategory::Authentication => write!(f, "Authentication"),
             FindingCategory::Cryptography => write!(f, "Cryptography"),
             FindingCategory::FileSystem => write!(f, "File System"),
             FindingCategory::Kernel => write!(f, "Kernel"),
@@ -430,8 +429,7 @@ pub struct ComplianceSummary {
 
 impl ComplianceSummary {
     /// Creates a new summary by calculating statistics from control results.
-    pub fn from_controls(controls: &[ControlResult]) ->
-    ComplianceSummary {
+    pub fn from_controls(controls: &[ControlResult]) -> ComplianceSummary {
         let total = controls.len();
         let passing = controls
             .iter()

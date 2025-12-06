@@ -50,20 +50,18 @@ use std::time::Duration;
 fn get_ssh_config() -> Option<SshConfig> {
     let host = env::var("SSH_TEST_HOST").ok()?;
 
-    // Start with default and override
-    let mut config = SshConfig::default();
-    config.host = host;
-    config.port = env::var("SSH_TEST_PORT")
-        .ok()
-        .and_then(|p| p.parse().ok())
-        .unwrap_or(22);
-    config.user = env::var("SSH_TEST_USER").ok();
-    config.identity_file = env::var("SSH_TEST_KEY").ok();
-    config.connect_timeout = Duration::from_secs(15);
-    // Note: known_hosts stays as default (Strict) for security
-    // For testing, set SSH_TEST_HOST to a known host
-
-    Some(config)
+    Some(SshConfig {
+        host,
+        port: env::var("SSH_TEST_PORT")
+            .ok()
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(22),
+        user: env::var("SSH_TEST_USER").ok(),
+        identity_file: env::var("SSH_TEST_KEY").ok(),
+        connect_timeout: Duration::from_secs(15),
+        // Note: known_hosts stays as default (Strict) for security
+        ..Default::default()
+    })
 }
 
 /// Helper to create a Context with SSH executor.
@@ -118,7 +116,7 @@ async fn test_kernel_plugin_scan_over_ssh() {
 async fn test_kernel_plugin_validate_over_ssh() {
     let ctx = create_ssh_context().await;
     let plugin = KernelHardeningPlugin::new();
-    let config = hardener_core::Config::default();
+    let config = hardener_core::Config;
 
     let result = plugin.validate(&ctx, &config).await;
 
@@ -211,7 +209,7 @@ async fn test_services_plugin_scan_over_ssh() {
 async fn test_services_plugin_validate_over_ssh() {
     let ctx = create_ssh_context().await;
     let plugin = ServicesHardeningPlugin::new();
-    let config = hardener_core::Config::default();
+    let config = hardener_core::Config;
 
     let result = plugin.validate(&ctx, &config).await;
 
@@ -323,11 +321,13 @@ async fn test_command_not_found_over_ssh() {
 #[tokio::test]
 async fn test_ssh_connection_failure() {
     // Try to connect to a host that doesn't exist
-    let mut config = SshConfig::default();
-    config.host = "192.0.2.1".to_string(); // TEST-NET-1, guaranteed not to route
-    config.port = 22;
-    config.user = Some("test".to_string());
-    config.connect_timeout = Duration::from_secs(2); // Short timeout
+    let config = SshConfig {
+        host: "192.0.2.1".to_string(), // TEST-NET-1, guaranteed not to route
+        port: 22,
+        user: Some("test".to_string()),
+        connect_timeout: Duration::from_secs(2), // Short timeout
+        ..Default::default()
+    };
 
     let result = SshExecutor::connect(config).await;
 
@@ -340,11 +340,13 @@ async fn test_ssh_connection_failure() {
 async fn test_ssh_connection_wrong_port() {
     let host = env::var("SSH_TEST_HOST").unwrap_or_else(|_| "localhost".to_string());
 
-    let mut config = SshConfig::default();
-    config.host = host;
-    config.port = 65534; // Almost certainly not an SSH server
-    config.user = Some("test".to_string());
-    config.connect_timeout = Duration::from_secs(2);
+    let config = SshConfig {
+        host,
+        port: 65534, // Almost certainly not an SSH server
+        user: Some("test".to_string()),
+        connect_timeout: Duration::from_secs(2),
+        ..Default::default()
+    };
 
     let result = SshExecutor::connect(config).await;
 

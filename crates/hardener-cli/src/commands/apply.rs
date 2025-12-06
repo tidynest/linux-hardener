@@ -1,10 +1,10 @@
 use crate::cli::OutputFormat;
 use crate::output;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use hardener_common::types::PluginId;
 use hardener_core::{Config, Context, SystemExecutor};
 use hardener_plugins::create_plugin_registry;
-use hardener_state::{init_db, CheckpointManager, CheckpointSigner};
+use hardener_state::{CheckpointManager, CheckpointSigner, init_db};
 use std::path::PathBuf;
 use std::sync::Arc;
 

@@ -3,15 +3,15 @@
 //! Provides a guided CLI experience for generating compliance reports.
 
 use super::report::run_scan;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use chrono::Local;
 use colored::Colorize;
-use dialoguer::{theme::ColorfulTheme, Confirm, MultiSelect, Select};
+use dialoguer::{Confirm, MultiSelect, Select, theme::ColorfulTheme};
 use hardener_common::types::ComplianceFramework;
 use hardener_compliance::{
-    output::{CsvFormatter, HtmlFormatter, PdfFormatter},
     JsonFormatter, OutputFormat, ReportConfig, ReportFormatter, ReportGenerator, Scenario,
     TextFormatter,
+    output::{CsvFormatter, HtmlFormatter, PdfFormatter},
 };
 use hardener_core::{LocalExecutor, SystemExecutor};
 use std::fs;
@@ -463,10 +463,10 @@ fn output_reports(
                 };
 
                 // Create parent directory if needed
-                if let Some(parent) = path.parent() {
-                    if !parent.exists() {
-                        fs::create_dir_all(parent)?;
-                    }
+                if let Some(parent) = path.parent()
+                    && !parent.exists()
+                {
+                    fs::create_dir_all(parent)?;
                 }
 
                 if *format == OutputFormat::Pdf {

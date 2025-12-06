@@ -12,7 +12,7 @@ use crate::{
     PluginRegistry,
     ScanResult,
 };
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use hardener_common::types::PluginId;
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::Topo;

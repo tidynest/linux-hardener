@@ -12,8 +12,8 @@ use crate::{
 use hardener_common::error::{HardeningError, Result};
 use hardener_core::{Context, PluginManager};
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Arc,
+    atomic::{AtomicBool, Ordering},
 };
 use tokio::sync::broadcast;
 use tokio_cron_scheduler::JobScheduler;
@@ -232,7 +232,7 @@ impl Daemon {
     /// Listens for SIGTERM and SIGINT, then sends shutdown signal
     /// to the broadcast channel.
     async fn signal_handler(shutdown_tx: broadcast::Sender<()>) {
-        use tokio::signal::unix::{signal, SignalKind};
+        use tokio::signal::unix::{SignalKind, signal};
 
         let mut sigterm = match signal(SignalKind::terminate()) {
             Ok(s) => s,

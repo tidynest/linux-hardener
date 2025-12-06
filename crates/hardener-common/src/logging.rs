@@ -3,7 +3,7 @@
 //! Provides initialisation and configuration for the tracing-based
 //! logging system used throughout the application
 
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt};
 
 /// Initialises the logging system with sensible defaults.
 ///

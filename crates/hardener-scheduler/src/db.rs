@@ -6,7 +6,7 @@
 use chrono::{DateTime, Utc};
 use hardener_common::error::{HardeningError, Result};
 use serde::{Deserialize, Serialize};
-use sqlx::{query_as, sqlite::SqlitePoolOptions, FromRow, SqlitePool};
+use sqlx::{FromRow, SqlitePool, query_as, sqlite::SqlitePoolOptions};
 use std::path::Path;
 
 /// Manages scan history persistence in SQLite.

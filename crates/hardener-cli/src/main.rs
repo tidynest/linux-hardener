@@ -7,7 +7,7 @@ use anyhow::Result;
 use clap::Parser;
 use cli::{CheckpointAction, Cli, Command, DaemonAction, HistoryAction, SystemdAction};
 use commands::scan::ScanOptions;
-use hardener_core::{executor::SystemExecutor, LocalExecutor, SshExecutor};
+use hardener_core::{LocalExecutor, SshExecutor, executor::SystemExecutor};
 use ssh_config::SshConnectionConfig;
 use std::sync::Arc;
 

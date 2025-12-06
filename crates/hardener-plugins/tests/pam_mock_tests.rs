@@ -282,7 +282,7 @@ async fn test_pam_validate() {
 
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PamHardeningPlugin::new();
-    let config = hardener_core::Config::default();
+    let config = hardener_core::Config;
 
     let result = plugin.validate(&ctx, &config).await.unwrap();
 

@@ -4,8 +4,8 @@
 //! and logs all notification attempts to the database.
 
 use super::{
-    email::EmailNotifier, meets_severity_threshold, parse_severity, webhook::WebhookNotifier,
-    NotificationResult, Notifier,
+    NotificationResult, Notifier, email::EmailNotifier, meets_severity_threshold, parse_severity,
+    webhook::WebhookNotifier,
 };
 use crate::config::NotificationConfig;
 use crate::db::ScanHistoryManager;

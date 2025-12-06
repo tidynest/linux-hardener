@@ -226,7 +226,7 @@ async fn test_kernel_validate_writable_params() {
 
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = KernelHardeningPlugin::new();
-    let config = hardener_core::Config::default();
+    let config = hardener_core::Config;
 
     let result = plugin.validate(&ctx, &config).await.unwrap();
 
@@ -251,7 +251,7 @@ async fn test_kernel_validate_readonly_params() {
 
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = KernelHardeningPlugin::new();
-    let config = hardener_core::Config::default();
+    let config = hardener_core::Config;
 
     let result = plugin.validate(&ctx, &config).await.unwrap();
 
@@ -272,7 +272,7 @@ async fn test_kernel_validate_missing_params() {
     let executor = MockExecutor::new(); // Empty - no params
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = KernelHardeningPlugin::new();
-    let config = hardener_core::Config::default();
+    let config = hardener_core::Config;
 
     let result = plugin.validate(&ctx, &config).await.unwrap();
 

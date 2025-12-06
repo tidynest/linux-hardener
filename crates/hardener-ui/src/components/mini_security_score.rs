@@ -35,13 +35,11 @@ pub fn MiniSecurityScore() -> impl IntoView {
     };
 
     // Determine color class based on score
-    let score_class = move || {
-        match score() {
-            None => "score-pending",
-            Some(s) if s >= 71 => "score-good",
-            Some(s) if s >= 41 => "score-warning",
-            Some(_) => "score-critical",
-        }
+    let score_class = move || match score() {
+        None => "score-pending",
+        Some(s) if s >= 71 => "score-good",
+        Some(s) if s >= 41 => "score-warning",
+        Some(_) => "score-critical",
     };
 
     view! {

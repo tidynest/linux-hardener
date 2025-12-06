@@ -201,7 +201,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
                 "Manages firewall configuration across nftables, firewalld, and ufw".to_string(),
             plugin_id: PluginId::new("firewall-hardening"),
             plugin_name: "Firewall Hardening".to_string(),
-            plugin_version: "0.1.0".to_string(),
+            plugin_version: env!("CARGO_PKG_VERSION").to_string(),
         }
     }
 

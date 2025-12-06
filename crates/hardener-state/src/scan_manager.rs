@@ -172,7 +172,7 @@ impl ScanHistoryManager {
             session_completed_at: session_row.get("completed_at"),
             session_total_findings: session_row.get("total_findings"),
             session_total_plugins: session_row.get("total_plugins"),
-            session_status: ScanStatus::from_str(session_row.get("status")),
+            session_status: ScanStatus::parse(session_row.get("status")),
         };
 
         // Get all results for this session
@@ -278,7 +278,7 @@ impl ScanHistoryManager {
                 session_completed_at: row.get("completed_at"),
                 session_total_findings: row.get("total_findings"),
                 session_total_plugins: row.get("total_plugins"),
-                session_status: ScanStatus::from_str(row.get("status")),
+                session_status: ScanStatus::parse(row.get("status")),
             });
         }
 
@@ -312,10 +312,7 @@ impl ScanHistoryManager {
         let in_clause = placeholders.join(", ");
 
         // Delete sessions not in keep list (CASCADE will delete results and findings)
-        let query = format!(
-            "DELETE FROM scan_sessions WHERE id NOT IN ({})",
-            in_clause
-        );
+        let query = format!("DELETE FROM scan_sessions WHERE id NOT IN ({})", in_clause);
 
         let mut query_builder = sqlx::query(&query);
         for id in &keep_ids {
@@ -457,10 +454,7 @@ mod tests {
         assert_eq!(session.session_total_findings, 1);
         assert_eq!(retrieved_results.len(), 1);
         assert_eq!(retrieved_results[0].scan_findings.len(), 1);
-        assert_eq!(
-            retrieved_results[0].scan_findings[0].finding_id,
-            "TEST-001"
-        );
+        assert_eq!(retrieved_results[0].scan_findings[0].finding_id, "TEST-001");
     }
 
     #[tokio::test]

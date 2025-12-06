@@ -2,7 +2,6 @@
 
 use hardener_core::{Config, Context, plugin::HardeningPlugin};
 use hardener_plugins::PamHardeningPlugin;
-use tokio;
 
 #[test]
 fn test_pam_plugin_metadata() {
@@ -11,7 +10,7 @@ fn test_pam_plugin_metadata() {
 
     assert_eq!(metadata.plugin_id.to_string(), "pam-hardening");
     assert_eq!(metadata.plugin_name, "PAM Authentication Hardening");
-    assert_eq!(metadata.plugin_version, "1.0.0");
+    assert_eq!(metadata.plugin_version, env!("CARGO_PKG_VERSION"));
     assert!(metadata.plugin_description.contains("PAM"));
 }
 
@@ -63,7 +62,7 @@ async fn test_pam_scan_reads_configuration() {
 async fn test_pam_validate_checks_config_files() {
     let plugin = PamHardeningPlugin::new();
     let context = Context::new();
-    let config = Config::default();
+    let config = Config;
 
     // Run validation
     let result = plugin.validate(&context, &config).await;
@@ -107,7 +106,7 @@ async fn test_pam_validate_checks_config_files() {
 async fn test_pam_apply_requires_root() {
     let plugin = PamHardeningPlugin::new();
     let mut context = Context::new();
-    let config = Config::default();
+    let config = Config;
 
     // This will fail without root, or succeed with root
     let result = plugin.apply(&mut context, &config).await;

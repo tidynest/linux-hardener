@@ -13,7 +13,9 @@ extern "C" {
 }
 
 /// Check if Tauri runtime is available (running in desktop app vs browser).
-#[wasm_bindgen(inline_js = "export function is_tauri_available() { return typeof window.__TAURI__ !== 'undefined'; }")]
+#[wasm_bindgen(
+    inline_js = "export function is_tauri_available() { return typeof window.__TAURI__ !== 'undefined'; }"
+)]
 extern "C" {
     fn is_tauri_available() -> bool;
 }

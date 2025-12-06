@@ -2,7 +2,6 @@
 
 use hardener_core::{Config, Context, plugin::HardeningPlugin};
 use hardener_plugins::PermissionsHardeningPlugin;
-use tokio;
 
 #[test]
 fn test_permissions_plugin_metadata() {
@@ -11,7 +10,7 @@ fn test_permissions_plugin_metadata() {
 
     assert_eq!(metadata.plugin_id.to_string(), "permissions-hardening");
     assert_eq!(metadata.plugin_name, "File Permissions Hardening");
-    assert_eq!(metadata.plugin_version, "0.1.0");
+    assert_eq!(metadata.plugin_version, env!("CARGO_PKG_VERSION"));
     assert!(metadata.plugin_description.contains("permissions"));
 }
 
@@ -85,7 +84,7 @@ async fn test_permissions_scan_checks_paths() {
 async fn test_permissions_validate() {
     let plugin = PermissionsHardeningPlugin::new();
     let context = Context::new();
-    let config = Config::default();
+    let config = Config;
 
     // Run validation
     let result = plugin.validate(&context, &config).await;
@@ -131,7 +130,7 @@ async fn test_permissions_validate() {
 async fn test_permissions_apply_requires_root() {
     let plugin = PermissionsHardeningPlugin::new();
     let mut context = Context::new();
-    let config = Config::default();
+    let config = Config;
 
     // This will fail without root, or succeed with root
     let result = plugin.apply(&mut context, &config).await;

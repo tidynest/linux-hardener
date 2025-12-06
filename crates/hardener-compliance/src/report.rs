@@ -7,8 +7,8 @@ pub use hardener_types::{ComplianceReport, ComplianceSummary, ControlResult};
 
 #[cfg(test)]
 mod tests {
-    use chrono::Utc;
     use super::*;
+    use chrono::Utc;
     use hardener_types::{ComplianceFramework, ControlStatus};
 
     fn make_control(id: &str, status: ControlStatus) -> ControlResult {

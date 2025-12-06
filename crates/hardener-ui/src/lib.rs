@@ -74,8 +74,8 @@ pub fn App() -> impl IntoView {
     }
 }
 
-use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::prelude::wasm_bindgen;
 use web_sys::HtmlElement;
 
 /// Entry point for the WASM application.

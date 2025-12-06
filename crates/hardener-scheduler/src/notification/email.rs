@@ -8,9 +8,9 @@ use crate::config::EmailConfig;
 use crate::runner::ScanSummary;
 use async_trait::async_trait;
 use lettre::{
-    message::{header::ContentType, Mailbox},
-    transport::smtp::authentication::Credentials,
     AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,
+    message::{Mailbox, header::ContentType},
+    transport::smtp::authentication::Credentials,
 };
 use std::env;
 use tracing::{debug, error};
@@ -145,7 +145,7 @@ impl Notifier for EmailNotifier {
                 return NotificationResult::failed(
                     self.channel(),
                     format!("Invalid from address: {}", e),
-                )
+                );
             }
         };
 
@@ -174,7 +174,7 @@ impl Notifier for EmailNotifier {
                     return NotificationResult::failed(
                         self.channel(),
                         format!("Failed to build message: {}", e),
-                    )
+                    );
                 }
             };
 

@@ -1,7 +1,6 @@
 use hardener_common::types::{FindingCategory, PluginId};
 use hardener_core::{Config, context::Context, plugin::HardeningPlugin};
 use hardener_plugins::ssh::SshHardeningPlugin;
-use tokio;
 
 #[test]
 fn test_ssh_plugin_metadata() {
@@ -10,7 +9,7 @@ fn test_ssh_plugin_metadata() {
 
     assert_eq!(metadata.plugin_id, PluginId::new("ssh-hardening"));
     assert_eq!(metadata.plugin_name, "SSH Hardening");
-    assert_eq!(metadata.plugin_version, "0.1.0");
+    assert_eq!(metadata.plugin_version, env!("CARGO_PKG_VERSION"));
     assert_eq!(metadata.plugin_category, FindingCategory::Network);
 
     assert!(!metadata.plugin_description.is_empty());
@@ -72,7 +71,7 @@ async fn test_ssh_scan_reads_configuration() {
 async fn test_ssh_validate_checks_config_file() {
     let plugin = SshHardeningPlugin::new();
     let ctx = Context::new();
-    let config = Config::default();
+    let config = Config;
 
     let result = plugin.validate(&ctx, &config).await;
 
@@ -114,7 +113,7 @@ async fn test_ssh_validate_checks_config_file() {
 async fn test_ssh_apply_requires_root() {
     let plugin = SshHardeningPlugin::new();
     let mut ctx = Context::new();
-    let config = Config::default();
+    let config = Config;
 
     println!("\n=== Testing SSH Apply (requires root) ===");
     println!("This test will:");

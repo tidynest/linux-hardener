@@ -2,7 +2,6 @@
 
 use hardener_core::{Config, Context, plugin::HardeningPlugin};
 use hardener_plugins::MacHardeningPlugin;
-use tokio;
 
 #[test]
 fn test_mac_plugin_metadata() {
@@ -11,7 +10,7 @@ fn test_mac_plugin_metadata() {
 
     assert_eq!(metadata.plugin_id.to_string(), "mac-hardening");
     assert_eq!(metadata.plugin_name, "MAC System Hardening");
-    assert_eq!(metadata.plugin_version, "0.1.0");
+    assert_eq!(metadata.plugin_version, env!("CARGO_PKG_VERSION"));
     assert!(metadata.plugin_description.contains("SELinux"));
     assert!(metadata.plugin_description.contains("AppArmor"));
 }
@@ -90,7 +89,7 @@ async fn test_mac_scan_detects_system() {
 async fn test_mac_validate() {
     let plugin = MacHardeningPlugin::new();
     let context = Context::new();
-    let config = Config::default();
+    let config = Config;
 
     // Run validation
     let result = plugin.validate(&context, &config).await;
@@ -136,7 +135,7 @@ async fn test_mac_validate() {
 async fn test_mac_apply_requires_root() {
     let plugin = MacHardeningPlugin::new();
     let mut context = Context::new();
-    let config = Config::default();
+    let config = Config;
 
     // This will fail without root, or succeed with root
     let result = plugin.apply(&mut context, &config).await;

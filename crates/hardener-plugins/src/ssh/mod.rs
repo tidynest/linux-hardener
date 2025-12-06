@@ -214,7 +214,7 @@ impl HardeningPlugin for SshHardeningPlugin {
             plugin_description: "Hardens OpenSSH server configuration".to_string(),
             plugin_id: PluginId::new("ssh-hardening"),
             plugin_name: "SSH Hardening".to_string(),
-            plugin_version: "0.1.0".to_string(),
+            plugin_version: env!("CARGO_PKG_VERSION").to_string(),
         }
     }
 

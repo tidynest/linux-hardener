@@ -2,7 +2,6 @@
 
 use hardener_core::{Config, Context, plugin::HardeningPlugin};
 use hardener_plugins::ServicesHardeningPlugin;
-use tokio;
 
 #[test]
 fn test_services_plugin_metadata() {
@@ -11,7 +10,7 @@ fn test_services_plugin_metadata() {
 
     assert_eq!(metadata.plugin_id.to_string(), "service-minimisation");
     assert_eq!(metadata.plugin_name, "Service Minimisation");
-    assert_eq!(metadata.plugin_version, "0.1.0");
+    assert_eq!(metadata.plugin_version, env!("CARGO_PKG_VERSION"));
     assert!(metadata.plugin_description.contains("systemd services"));
 }
 
@@ -91,7 +90,7 @@ async fn test_services_scan_detects_services() {
 async fn test_services_validate_checks_systemctl() {
     let plugin = ServicesHardeningPlugin::new();
     let context = Context::new();
-    let config = Config::default();
+    let config = Config;
 
     // Run validation
     let result = plugin.validate(&context, &config).await;
@@ -153,7 +152,7 @@ async fn test_services_validate_checks_systemctl() {
 async fn test_services_apply_requires_root() {
     let plugin = ServicesHardeningPlugin::new();
     let mut context = Context::new();
-    let config = Config::default();
+    let config = Config;
 
     // This will fail without root, or succeed with root
     let result = plugin.apply(&mut context, &config).await;

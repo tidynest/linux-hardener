@@ -1,5 +1,5 @@
-use anyhow::{bail, Result};
-use hardener_state::{init_db, CheckpointId, CheckpointManager, CheckpointSigner};
+use anyhow::{Result, bail};
+use hardener_state::{CheckpointId, CheckpointManager, CheckpointSigner, init_db};
 use std::path::PathBuf;
 
 use crate::cli::OutputFormat;

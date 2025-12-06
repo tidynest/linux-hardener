@@ -3,7 +3,7 @@
 //! Provides system information, state management, and audit logging
 //! that plugins use during their lifecycle.
 
-use crate::executor::{local::LocalExecutor, SystemExecutor};
+use crate::executor::{SystemExecutor, local::LocalExecutor};
 use hardener_common::{error::Result, types::PluginId};
 use hardener_state::CheckpointManager;
 use hostname;

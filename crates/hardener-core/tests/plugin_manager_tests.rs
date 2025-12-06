@@ -270,7 +270,7 @@ async fn test_execute_apply_workflow() {
 
     // Create context and config
     let mut ctx = Context::new();
-    let config = Config::default();
+    let config = Config;
 
     // Execute apply on all plugins (empty vec = all plugins)
     let results = manager.execute_apply(&mut ctx, &config, &[]).await.unwrap();

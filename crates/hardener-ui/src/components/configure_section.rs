@@ -13,14 +13,38 @@ struct PluginDef {
 }
 
 const PLUGINS: &[PluginDef] = &[
-    PluginDef { id: "kernel", name: "Kernel Hardening" },
-    PluginDef { id: "ssh", name: "SSH Hardening" },
-    PluginDef { id: "firewall", name: "Firewall" },
-    PluginDef { id: "pam", name: "PAM Authentication" },
-    PluginDef { id: "services", name: "Service Minimisation" },
-    PluginDef { id: "audit", name: "Audit Rules" },
-    PluginDef { id: "permissions", name: "File Permissions" },
-    PluginDef { id: "mac", name: "MAC System" },
+    PluginDef {
+        id: "kernel",
+        name: "Kernel Hardening",
+    },
+    PluginDef {
+        id: "ssh",
+        name: "SSH Hardening",
+    },
+    PluginDef {
+        id: "firewall",
+        name: "Firewall",
+    },
+    PluginDef {
+        id: "pam",
+        name: "PAM Authentication",
+    },
+    PluginDef {
+        id: "services",
+        name: "Service Minimisation",
+    },
+    PluginDef {
+        id: "audit",
+        name: "Audit Rules",
+    },
+    PluginDef {
+        id: "permissions",
+        name: "File Permissions",
+    },
+    PluginDef {
+        id: "mac",
+        name: "MAC System",
+    },
 ];
 
 /// Configure section with profiles and plugin toggles.

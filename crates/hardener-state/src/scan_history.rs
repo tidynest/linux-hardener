@@ -69,7 +69,7 @@ impl ScanStatus {
     }
 
     /// Parses status from database string.
-    pub fn from_str(s: &str) -> ScanStatus {
+    pub fn parse(s: &str) -> ScanStatus {
         match s {
             "completed" => ScanStatus::Completed,
             "failed" => ScanStatus::Failed,

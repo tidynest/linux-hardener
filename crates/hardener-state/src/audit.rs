@@ -185,38 +185,38 @@ impl QueryFilter {
     /// Checks if an entry matches this filter.
     fn matches(&self, entry: &AuditEntry) -> bool {
         // Check action type filter
-        if let Some(action_type) = self.filter_action_type {
-            if entry.entry_action_type != action_type {
-                return false;
-            }
+        if let Some(action_type) = self.filter_action_type
+            && entry.entry_action_type != action_type
+        {
+            return false;
         }
 
         // Check user filter
-        if let Some(ref user) = self.filter_user {
-            if &entry.entry_user != user {
-                return false;
-            }
+        if let Some(ref user) = self.filter_user
+            && &entry.entry_user != user
+        {
+            return false;
         }
 
         // Check start time filter
-        if let Some(start) = self.filter_start_time {
-            if entry.entry_timestamp < start {
-                return false;
-            }
+        if let Some(start) = self.filter_start_time
+            && entry.entry_timestamp < start
+        {
+            return false;
         }
 
         // Check end time filter
-        if let Some(end) = self.filter_end_time {
-            if entry.entry_timestamp > end {
-                return false;
-            }
+        if let Some(end) = self.filter_end_time
+            && entry.entry_timestamp > end
+        {
+            return false;
         }
 
         // Check result filter
-        if let Some(result) = self.filter_result {
-            if entry.entry_result != result {
-                return false;
-            }
+        if let Some(result) = self.filter_result
+            && entry.entry_result != result
+        {
+            return false;
         }
 
         true
@@ -610,9 +610,11 @@ mod tests {
 
         // Should have exactly 2 Scan entries
         assert_eq!(scan_entries.len(), 2);
-        assert!(scan_entries
-            .iter()
-            .all(|e| e.entry_action_type == ActionType::Scan));
+        assert!(
+            scan_entries
+                .iter()
+                .all(|e| e.entry_action_type == ActionType::Scan)
+        );
 
         // Query only Apply actions
         let apply_filter = QueryFilter::new().with_action_type(ActionType::Apply);
@@ -744,9 +746,11 @@ mod tests {
 
         // Should have exactly 2 successful entries
         assert_eq!(success_entries.len(), 2);
-        assert!(success_entries
-            .iter()
-            .all(|e| e.entry_result == ActionResult::Success));
+        assert!(
+            success_entries
+                .iter()
+                .all(|e| e.entry_result == ActionResult::Success)
+        );
 
         // Query only failed actions
         let failure_filter = QueryFilter::new().with_result(ActionResult::Failure);
@@ -754,9 +758,11 @@ mod tests {
 
         // Should have exactly 2 failed entries
         assert_eq!(failure_entries.len(), 2);
-        assert!(failure_entries
-            .iter()
-            .all(|e| e.entry_result == ActionResult::Failure));
+        assert!(
+            failure_entries
+                .iter()
+                .all(|e| e.entry_result == ActionResult::Failure)
+        );
 
         // Verify error messages are present in failures
         assert!(failure_entries[0].entry_details.contains_key("error"));

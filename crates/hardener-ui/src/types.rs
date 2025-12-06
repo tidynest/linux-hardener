@@ -4,12 +4,9 @@
 
 // Re-export all types from hardener-types
 pub use hardener_types::{
-    ApplyResult, Change, ChangeType, ComplianceFramework,
-    ComplianceMapping, ComplianceReport,
-    ComplianceSummary, ControlResult, ControlStatus, Finding,
-    FindingCategory,
-    FindingPolicyException, PluginId, PluginMetadata, ScanResult,
-    Severity, ValidationIssue,
+    ApplyResult, Change, ChangeType, ComplianceFramework, ComplianceMapping, ComplianceReport,
+    ComplianceSummary, ControlResult, ControlStatus, Finding, FindingCategory,
+    FindingPolicyException, PluginId, PluginMetadata, ScanResult, Severity, ValidationIssue,
     ValidationReport,
 };
 

@@ -289,7 +289,7 @@ async fn test_permissions_validate_always_valid() {
     let executor = MockExecutor::new();
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PermissionsHardeningPlugin::new();
-    let config = hardener_core::Config::default();
+    let config = hardener_core::Config;
 
     let result = plugin.validate(&ctx, &config).await.unwrap();
 

@@ -1,14 +1,14 @@
 //! Compliance report generation command.
 
 use crate::cli::OutputFormat as CliOutputFormat;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use chrono::Local;
 use hardener_common::types::ComplianceFramework;
 use hardener_compliance::{
     JsonFormatter, OutputFormat, ReportConfig, ReportFormatter, ReportGenerator, Scenario,
     TextFormatter,
 };
-use hardener_core::{executor::SystemExecutor, Context};
+use hardener_core::{Context, executor::SystemExecutor};
 use hardener_plugins::*;
 use std::{fs, io, io::Write, sync::Arc};
 
@@ -49,7 +49,7 @@ pub async fn run(
             return Err(anyhow!(
                 "Unsupported format '{}'. Use 'TEXT', 'JSON', 'CSV', 'HTML' or 'PDF'.",
                 report_format
-            ))
+            ));
         }
     };
 
@@ -182,7 +182,8 @@ fn parse_scenario(s: &str) -> Result<Scenario> {
         "gdpr" => Ok(Scenario::Gdpr),
         "all" => Ok(Scenario::All),
         _ => Err(anyhow!(
-            "Unknown scenario '{}'. Valid options: server, workstation, government, healthcare, financial, gdpr, all", s
+            "Unknown scenario '{}'. Valid options: server, workstation, government, healthcare, financial, gdpr, all",
+            s
         )),
     }
 }

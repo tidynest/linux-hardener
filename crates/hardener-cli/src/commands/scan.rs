@@ -2,7 +2,7 @@ use crate::cli::{OutputFormat, ScanMode, SeverityFilter};
 use crate::output;
 use anyhow::Result;
 use hardener_common::types::Severity;
-use hardener_core::{executor::SystemExecutor, ConfigLoader, Context, HardenerConfig};
+use hardener_core::{ConfigLoader, Context, HardenerConfig, executor::SystemExecutor};
 use std::{path::PathBuf, sync::Arc};
 
 pub struct ScanOptions<'a> {

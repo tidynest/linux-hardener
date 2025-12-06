@@ -50,19 +50,19 @@ impl ConfigLoader {
 
         if !self.skip_default_locations {
             // Load system config if it exists
-            if let Some(system_path) = Self::system_config_path() {
-                if system_path.exists() {
-                    let system_config = Self::load_from_file(&system_path)?;
-                    config = Self::merge_configs(config, system_config);
-                }
+            if let Some(system_path) = Self::system_config_path()
+                && system_path.exists()
+            {
+                let system_config = Self::load_from_file(&system_path)?;
+                config = Self::merge_configs(config, system_config);
             }
 
             // Load user config if it exists
-            if let Some(user_path) = Self::user_config_path() {
-                if user_path.exists() {
-                    let user_config = Self::load_from_file(&user_path)?;
-                    config = Self::merge_configs(config, user_config);
-                }
+            if let Some(user_path) = Self::user_config_path()
+                && user_path.exists()
+            {
+                let user_config = Self::load_from_file(&user_path)?;
+                config = Self::merge_configs(config, user_config);
             }
         }
 

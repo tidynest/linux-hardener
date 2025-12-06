@@ -114,27 +114,27 @@ impl PackageManager for DnfPackageManager {
                 let package_full = parts[parts.len() - 1];
 
                 // Try to split package name from version.arch
-                if let Some(last_dash) = package_full.rfind('-') {
-                    if let Some(second_last_dash) = package_full[..last_dash].rfind('-') {
-                        let package_name = package_full[..second_last_dash].to_string();
-                        let version_arch = &package_full[second_last_dash + 1..];
+                if let Some(last_dash) = package_full.rfind('-')
+                    && let Some(second_last_dash) = package_full[..last_dash].rfind('-')
+                {
+                    let package_name = package_full[..second_last_dash].to_string();
+                    let version_arch = &package_full[second_last_dash + 1..];
 
-                        // Split version from architecture
-                        let (version, arch) = if let Some(dot_pos) = version_arch.rfind('.') {
-                            let arch_part = &version_arch[dot_pos + 1..];
-                            let version_part = &version_arch[..dot_pos];
-                            (version_part.to_string(), arch_part.to_string())
-                        } else {
-                            (version_arch.to_string(), "unknown".to_string())
-                        };
+                    // Split version from architecture
+                    let (version, arch) = if let Some(dot_pos) = version_arch.rfind('.') {
+                        let arch_part = &version_arch[dot_pos + 1..];
+                        let version_part = &version_arch[..dot_pos];
+                        (version_part.to_string(), arch_part.to_string())
+                    } else {
+                        (version_arch.to_string(), "unknown".to_string())
+                    };
 
-                        packages.push(Package {
-                            package_name,
-                            package_version: version,
-                            package_architecture: arch,
-                            package_is_security_update: true,
-                        });
-                    }
+                    packages.push(Package {
+                        package_name,
+                        package_version: version,
+                        package_architecture: arch,
+                        package_is_security_update: true,
+                    });
                 }
             }
         }

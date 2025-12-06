@@ -222,7 +222,7 @@ impl HardeningPlugin for MacHardeningPlugin {
             plugin_description: "Manages SELinux and AppArmor MAC system configuration".to_string(),
             plugin_id: PluginId::new("mac-hardening"),
             plugin_name: "MAC System Hardening".to_string(),
-            plugin_version: "0.1.0".to_string(),
+            plugin_version: env!("CARGO_PKG_VERSION").to_string(),
         }
     }
 

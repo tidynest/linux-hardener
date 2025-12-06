@@ -151,32 +151,29 @@ impl PackageManager for AptPackageManager {
                     // Check if this is a security update (contains "-security" in the line)
                     let is_security = line.contains("-security") || line.contains("security");
 
-                    if is_security {
-                        // Extract version - it is in parentheses
-                        if let Some(version_start) = line.find('(') {
-                            if let Some(version_end) = line[version_start..].find(' ') {
-                                let version = line[version_start + 1..version_start + version_end]
-                                    .to_string();
+                    // Extract version - it is in parentheses
+                    if is_security
+                        && let Some(version_start) = line.find('(')
+                        && let Some(version_end) = line[version_start..].find(' ')
+                    {
+                        let version =
+                            line[version_start + 1..version_start + version_end].to_string();
 
-                                // Extract architecture if present
-                                let arch = if let Some(arch_start) = line.rfind('[') {
-                                    if let Some(arch_end) = line[arch_start..].find(']') {
-                                        line[arch_start + 1..arch_start + arch_end].to_string()
-                                    } else {
-                                        "unknown".to_string()
-                                    }
-                                } else {
-                                    "unknown".to_string()
-                                };
+                        // Extract architecture if present
+                        let arch = if let Some(arch_start) = line.rfind('[')
+                            && let Some(arch_end) = line[arch_start..].find(']')
+                        {
+                            line[arch_start + 1..arch_start + arch_end].to_string()
+                        } else {
+                            "unknown".to_string()
+                        };
 
-                                packages.push(Package {
-                                    package_name,
-                                    package_version: version,
-                                    package_architecture: arch,
-                                    package_is_security_update: true,
-                                });
-                            }
-                        }
+                        packages.push(Package {
+                            package_name,
+                            package_version: version,
+                            package_architecture: arch,
+                            package_is_security_update: true,
+                        });
                     }
                 }
             }

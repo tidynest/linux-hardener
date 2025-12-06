@@ -37,8 +37,8 @@
 //!     cargo test -p hardener-core --test ssh_executor_tests -- --ignored
 //! ```
 
-use hardener_core::executor::ssh::{SshConfig, SshExecutor};
 use hardener_core::SystemExecutor;
+use hardener_core::executor::ssh::{SshConfig, SshExecutor};
 use openssh::KnownHosts;
 use std::env;
 use std::path::Path;
@@ -185,16 +185,20 @@ async fn test_ssh_executor_path_exists() {
 
     // Should exist
     assert!(executor.path_exists(Path::new("/etc")).await.unwrap());
-    assert!(executor
-        .path_exists(Path::new("/etc/passwd"))
-        .await
-        .unwrap());
+    assert!(
+        executor
+            .path_exists(Path::new("/etc/passwd"))
+            .await
+            .unwrap()
+    );
 
     // Should not exist
-    assert!(!executor
-        .path_exists(Path::new("/nonexistent"))
-        .await
-        .unwrap());
+    assert!(
+        !executor
+            .path_exists(Path::new("/nonexistent"))
+            .await
+            .unwrap()
+    );
 }
 
 #[tokio::test]
@@ -266,10 +270,12 @@ async fn test_ssh_executor_command_exists() {
     assert!(executor.command_exists("ls").await.unwrap());
 
     // Should not exist
-    assert!(!executor
-        .command_exists("definitely_not_a_real_command_xyz")
-        .await
-        .unwrap());
+    assert!(
+        !executor
+            .command_exists("definitely_not_a_real_command_xyz")
+            .await
+            .unwrap()
+    );
 }
 
 #[tokio::test]

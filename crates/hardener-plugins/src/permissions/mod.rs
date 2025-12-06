@@ -263,7 +263,7 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
                 .to_string(),
             plugin_id: PluginId::new("permissions-hardening"),
             plugin_name: "File Permissions Hardening".to_string(),
-            plugin_version: "0.1.0".to_string(),
+            plugin_version: env!("CARGO_PKG_VERSION").to_string(),
         }
     }
 

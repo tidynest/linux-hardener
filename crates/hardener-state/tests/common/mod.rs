@@ -1,6 +1,6 @@
 //! Shared test utilities for checkpoint system tests.
 
-use hardener_state::{init_db, CheckpointManager};
+use hardener_state::{CheckpointManager, init_db};
 use sqlx::SqlitePool;
 use std::fs::Permissions;
 use std::path::{Path, PathBuf};

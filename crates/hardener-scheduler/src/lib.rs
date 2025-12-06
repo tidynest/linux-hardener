@@ -21,4 +21,4 @@ pub use db::ScanHistoryManager;
 pub use json_store::JsonStore;
 pub use notification::dispatcher::NotificationDispatcher;
 pub use runner::{ScanRunner, ScanSummary, TriggerType};
-pub use systemd::{cron_to_calendar, SystemdGenerator};
+pub use systemd::{SystemdGenerator, cron_to_calendar};

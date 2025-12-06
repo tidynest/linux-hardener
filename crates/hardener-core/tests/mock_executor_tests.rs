@@ -92,15 +92,19 @@ async fn test_mock_executor_path_exists() {
         .with_file("/etc/exists.conf", "")
         .with_directory("/etc/mydir");
 
-    assert!(executor
-        .path_exists(Path::new("/etc/exists.conf"))
-        .await
-        .unwrap());
+    assert!(
+        executor
+            .path_exists(Path::new("/etc/exists.conf"))
+            .await
+            .unwrap()
+    );
     assert!(executor.path_exists(Path::new("/etc/mydir")).await.unwrap());
-    assert!(!executor
-        .path_exists(Path::new("/etc/missing"))
-        .await
-        .unwrap());
+    assert!(
+        !executor
+            .path_exists(Path::new("/etc/missing"))
+            .await
+            .unwrap()
+    );
 }
 
 #[tokio::test]
@@ -191,10 +195,12 @@ async fn test_mock_executor_command_not_registered() {
 
     let result = executor.execute_command("unknown", &["arg"]).await;
     assert!(result.is_err());
-    assert!(result
-        .unwrap_err()
-        .to_string()
-        .contains("command not registered"));
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("command not registered")
+    );
 }
 
 #[tokio::test]

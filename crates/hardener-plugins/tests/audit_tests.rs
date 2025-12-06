@@ -2,7 +2,6 @@
 
 use hardener_core::{Config, Context, plugin::HardeningPlugin};
 use hardener_plugins::AuditHardeningPlugin;
-use tokio;
 
 #[test]
 fn test_audit_plugin_metadata() {
@@ -11,7 +10,7 @@ fn test_audit_plugin_metadata() {
 
     assert_eq!(metadata.plugin_id.to_string(), "audit-hardening");
     assert_eq!(metadata.plugin_name, "Audit Rules Hardening");
-    assert_eq!(metadata.plugin_version, "0.1.0");
+    assert_eq!(metadata.plugin_version, env!("CARGO_PKG_VERSION"));
     assert!(metadata.plugin_description.contains("auditd"));
 }
 
@@ -82,7 +81,7 @@ async fn test_audit_scan_detects_configuration() {
 async fn test_audit_validate_checks_auditd() {
     let plugin = AuditHardeningPlugin::new();
     let context = Context::new();
-    let config = Config::default();
+    let config = Config;
 
     // Run validation
     let result = plugin.validate(&context, &config).await;
@@ -143,7 +142,7 @@ async fn test_audit_validate_checks_auditd() {
 async fn test_audit_apply_requires_root() {
     let plugin = AuditHardeningPlugin::new();
     let mut context = Context::new();
-    let config = Config::default();
+    let config = Config;
 
     // This will fail without root, or succeed with root
     let result = plugin.apply(&mut context, &config).await;

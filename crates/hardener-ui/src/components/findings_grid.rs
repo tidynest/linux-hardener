@@ -1,6 +1,6 @@
-use crate::types::Finding;
 use crate::components::SeverityBadge;
 use crate::state::AppState;
+use crate::types::Finding;
 use leptos::prelude::*;
 
 /// Displays a table of security findings with sortable columns.

@@ -111,27 +111,41 @@ fn test_compliance_framework_full_name() {
 
 #[test]
 fn test_compliance_framework_description() {
-    assert!(ComplianceFramework::CIS
-        .description()
-        .contains("Center for Internet Security"));
-    assert!(ComplianceFramework::HIPAA
-        .description()
-        .contains("Health Insurance"));
-    assert!(ComplianceFramework::ISO27001
-        .description()
-        .contains("International Organisation"));
-    assert!(ComplianceFramework::NIST
-        .description()
-        .contains("National Institute"));
-    assert!(ComplianceFramework::PCIDSS
-        .description()
-        .contains("Payment Card"));
-    assert!(ComplianceFramework::STIG
-        .description()
-        .contains("Defense Information"));
-    assert!(ComplianceFramework::GDPR
-        .description()
-        .contains("General Data Protection"));
+    assert!(
+        ComplianceFramework::CIS
+            .description()
+            .contains("Center for Internet Security")
+    );
+    assert!(
+        ComplianceFramework::HIPAA
+            .description()
+            .contains("Health Insurance")
+    );
+    assert!(
+        ComplianceFramework::ISO27001
+            .description()
+            .contains("International Organisation")
+    );
+    assert!(
+        ComplianceFramework::NIST
+            .description()
+            .contains("National Institute")
+    );
+    assert!(
+        ComplianceFramework::PCIDSS
+            .description()
+            .contains("Payment Card")
+    );
+    assert!(
+        ComplianceFramework::STIG
+            .description()
+            .contains("Defense Information")
+    );
+    assert!(
+        ComplianceFramework::GDPR
+            .description()
+            .contains("General Data Protection")
+    );
 }
 
 #[test]

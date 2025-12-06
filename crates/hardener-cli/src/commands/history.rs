@@ -4,11 +4,11 @@
 
 use crate::cli::OutputFormat;
 use crate::commands::daemon::load_scheduler_config;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use chrono::{DateTime, Local, Utc};
 use hardener_scheduler::{
-    db::{ScanFindingRow, ScanSession, SessionFilter},
     ScanHistoryManager,
+    db::{ScanFindingRow, ScanSession, SessionFilter},
 };
 use serde::Serialize;
 use std::path::PathBuf;

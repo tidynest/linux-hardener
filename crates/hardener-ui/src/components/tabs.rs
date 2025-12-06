@@ -18,10 +18,7 @@ pub struct TabDef {
 /// * `tabs` - List of tab definitions
 /// * `active_tab` - Signal tracking the currently active tab index
 #[component]
-pub fn TabBar(
-    tabs: Vec<TabDef>,
-    active_tab: RwSignal<usize>,
-) -> impl IntoView {
+pub fn TabBar(tabs: Vec<TabDef>, active_tab: RwSignal<usize>) -> impl IntoView {
     view! {
         <nav class="tab-bar" role="tablist">
             {tabs.into_iter().enumerate().map(|(idx, tab)| {
@@ -61,11 +58,7 @@ pub fn TabBar(
 /// * `active_tab` - Signal tracking the currently active tab
 /// * `children` - The panel content
 #[component]
-pub fn TabPanel(
-    index: usize,
-    active_tab: RwSignal<usize>,
-    children: Children,
-) -> impl IntoView {
+pub fn TabPanel(index: usize, active_tab: RwSignal<usize>, children: Children) -> impl IntoView {
     let is_visible = move || active_tab.get() == index;
 
     view! {

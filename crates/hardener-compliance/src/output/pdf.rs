@@ -10,7 +10,7 @@ use krilla::num::NormalizedF32;
 use krilla::page::PageSettings;
 use krilla::paint::{Fill, FillRule};
 use krilla::text::{Font, TextDirection};
-use krilla::{color, Document};
+use krilla::{Document, color};
 use std::collections::BTreeMap;
 
 /// Embedded font data (NotoSans).
@@ -690,6 +690,6 @@ mod tests {
 
     #[test]
     fn test_pdf_formatter_default() {
-        let _formatter = PdfFormatter::default();
+        let _formatter = PdfFormatter;
     }
 }

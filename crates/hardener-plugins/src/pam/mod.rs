@@ -82,7 +82,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                     .to_string(),
             plugin_id: PluginId::from("pam-hardening"),
             plugin_name: "PAM Authentication Hardening".to_string(),
-            plugin_version: "1.0.0".to_string(),
+            plugin_version: env!("CARGO_PKG_VERSION").to_string(),
         }
     }
 
