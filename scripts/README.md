@@ -6,6 +6,7 @@ This directory contains utility scripts for the Linux Hardening Tool project.
 
 | Task | Command |
 |------|---------|
+| **Start Tauri dev** | `./scripts/tauri-dev.sh` |
 | **Validate all docs** | `./scripts/validate_all.py` |
 | **Quick validation** | `./scripts/validate_all.py --quick` |
 | **Auto-fix docs** | `./scripts/update_all_docs.py --apply` |
@@ -13,6 +14,62 @@ This directory contains utility scripts for the Linux Hardening Tool project.
 | **Verify versions** | `./scripts/release.sh --verify` |
 | **Dry-run release** | `./scripts/release.sh patch --dry-run` |
 | **Actual release** | `./scripts/release.sh patch` |
+
+---
+
+## Tauri Development Launcher
+
+**Script**: `tauri-dev.sh`
+
+**Purpose**: Bulletproof Tauri dev server launcher for Arch Linux + Hyprland + NVIDIA. Automatically detects session type and applies WebKitGTK workarounds to prevent blank windows and crashes.
+
+**Usage**:
+```bash
+# Standard launch
+./scripts/tauri-dev.sh
+
+# Pass additional arguments to cargo tauri dev
+./scripts/tauri-dev.sh --release
+```
+
+**What It Does**:
+
+1. **Session Detection**: Identifies Wayland/X11/Hyprland environment
+2. **NVIDIA Workaround**: Sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` if NVIDIA GPU detected
+3. **Hyprland Workaround**: Sets `WEBKIT_DISABLE_COMPOSITING_MODE=1` for Hyprland sessions
+4. **Pre-flight Checks**:
+   - Verifies `webkit2gtk-4.1` and `librsvg` packages installed
+   - Ensures `wasm32-unknown-unknown` target available
+   - Kills existing processes on port 1420
+   - Terminates lingering app processes
+
+**Environment Variables Set**:
+| Variable | Condition | Purpose |
+|----------|-----------|---------|
+| `WEBKIT_DISABLE_DMABUF_RENDERER=1` | NVIDIA GPU detected | Fixes blank window on NVIDIA+Wayland |
+| `WEBKIT_DISABLE_COMPOSITING_MODE=1` | Hyprland session | Fixes resize crashes in Hyprland |
+| `RUST_BACKTRACE=1` | Always | Better error messages |
+| `RUST_LOG=info` | Default (overridable) | Logging level |
+
+**When To Use**:
+- Always use this script instead of raw `cargo tauri dev` on Wayland systems
+- Essential for NVIDIA GPU users on Wayland
+- Required for Hyprland window manager
+
+**Manual Alternative** (if script unavailable):
+```bash
+WEBKIT_DISABLE_COMPOSITING_MODE=1 cargo tauri dev
+```
+
+**Exit Codes**:
+- `0`: Dev server exited normally
+- `1`: Pre-flight check failed (missing package, etc.)
+
+**Dependencies**:
+- Bash
+- `lspci` or `nvidia-smi` (for GPU detection)
+- `pacman` (for package verification)
+- `lsof` (for port conflict detection)
 
 ---
 
@@ -152,7 +209,6 @@ This script can be added to CI/CD pipeline to enforce naming conventions.
 
 Example GitHub Actions workflow:
 ```yaml
-# Future integration (Phase 5, Week 27)
 - name: Validate Naming Conventions
   run: ./scripts/validate_naming.py
 ```
@@ -733,4 +789,4 @@ Additional utility scripts can be added here:
 
 ---
 
-**Last Updated**: 2025-12-06
+**Last Updated**: 2025-12-07

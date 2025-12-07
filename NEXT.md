@@ -12,7 +12,7 @@
 - **8 Security Plugins**: Kernel, SSH, Firewall, PAM, Services, Audit, Permissions, MAC
 - **378+ Passing Tests**
 - **Multi-Distribution Support**: Ubuntu, Debian, Fedora, RHEL, Arch, openSUSE
-- **Current Version**: 0.3.0 (Development Release)
+- **Current Version**: 0.3.2 (Development Release)
 - **WASM Support**: GUI frontend compiles to `wasm32-unknown-unknown`
 
 ---
@@ -385,6 +385,11 @@ WEBKIT_DISABLE_COMPOSITING_MODE=1 cargo tauri dev
 cd crates/hardener-ui && trunk serve --port 1420
 # Open http://127.0.0.1:1420/ in browser
 
+# Browser automation via Playwright MCP (recommended for UI testing)
+# Configure playwright-brave in .mcp.json, then use mcp__playwright-brave__browser_navigate
+# IMPORTANT: Close any existing dev browser windows before starting automation
+# See docs/browser-automation.md for complete setup instructions
+
 # Build WASM frontend only
 cd crates/hardener-ui && trunk build
 
@@ -445,30 +450,201 @@ The web app is useful for UI development and testing without needing Tauri. All 
 
 6. **Next Tasks**:
    - v0.3.1: GUI Polish & Testing (see PLAN.md) - **IN PROGRESS**
-   - v0.3.2: GUI Major Redesign & Comprehensive Testing
+   - v0.3.2: Frontend Layout & Accessibility - See [docs/FRONTEND_LAYOUT_PLAN.md](docs/FRONTEND_LAYOUT_PLAN.md) for detailed session breakdown:
+     - ✅ Session 1: Critical overflow fixes (`min-width: 0`, grid templates, skip links, ARIA) - COMPLETE (2025-12-07)
+     - 🔄 Session 2: Responsive layout - **IN PROGRESS (2025-12-08)**
+       - ✅ Spacing scale (`--space-xs` to `--space-2xl`)
+       - ✅ Utility classes (`.flex`, `.flex-col`, `.grid`, `.gap-*`, `.items-*`, `.justify-*`)
+       - ✅ Viewport testing (320px, 640px, 1920px)
+       - ✅ Touch targets (44px min via `@media (pointer: coarse)`)
+       - 🔄 Card component standardisation (planned, pending decision)
+     - Session 3: Theme & accessibility (contrast audit, theme switching)
+     - Session 4+: Polish & E2E testing
    - v0.3.3: Distribution-Specific Validation
    - v0.4.0 Web Interface planning
 
-7. **Known Issues** (v0.3.1 scope):
+7. **Known Issues** (v0.3.2 scope - see [docs/FRONTEND_LAYOUT_PLAN.md](docs/FRONTEND_LAYOUT_PLAN.md)):
    - ~~GUI: "Loading..." text stays visible after app mounts~~ ✅ **FIXED (2025-12-05)**
    - ~~GUI: Styling needs significant improvement~~ ✅ **FIXED (2025-12-05)** - Dark terminal theme implemented
    - ~~CRITICAL: GUI State persistence bug~~ ✅ **FIXED (2025-12-05)** - SQLite storage implemented
    - ~~GUI: pkexec integration not working~~ ✅ **FIXED (2025-12-06)** - Tauri 2.x camelCase args fix
    - ~~GUI: Browser mode not rendering pages~~ ✅ **FIXED (2025-12-06)** - Added Tauri availability check
    - ~~GUI: Timestamp display on Checkpoints page shows raw numbers~~ ✅ **FIXED (2025-12-05)** - Human-readable formatting
-   - GUI: Background colour could be more personable (currently #0d1117)
-   - GUI: Responsive layout needed for varying screen resolutions
-   - GUI: Page navigation structure needs redesign (reduce 6 pages to 3-4)
-   - GUI: Needs comprehensive E2E testing for both Web and Desktop apps
-   - GUI: Needs intuitive user guidance/help text on every page
+   - ~~GUI: Background colour could be more personable~~ ✅ **ADDRESSED (2025-12-07)** - Created 5 security-focused themes
+   - ~~GUI: Page navigation structure~~ ✅ **FIXED** - Consolidated to 3 pages (Dashboard, Analysis, Hardening)
+   - ~~**Session 1 (Critical)**~~ ✅ **COMPLETE (2025-12-07)** - Flex/grid overflow fixes, skip link, tab ARIA attributes
+   - **Session 2**: 🔄 **IN PROGRESS (2025-12-08)** - Utility classes added, viewport testing complete, Card component pending
+   - **Session 3**: Colour contrast audit, theme switching UI, focus state improvements
+   - **Session 4+**: E2E testing (Web + Desktop), animations, error states
    - Wayland: Requires `WEBKIT_DISABLE_COMPOSITING_MODE=1` environment variable
 
-8. **Always Remember**:
+8. **Theme System (2025-12-07)**:
+   - Created 5 new themes based on security psychology in `crates/hardener-ui/themes/`:
+     - **Fortress** (`fortress.css`): Deep slate-blue with gold accents - vault-like, enterprise feel
+     - **Sentinel** (`sentinel.css`): Warm charcoal with amber - vigilant, cozy
+     - **Command** (`command.css`): Deep navy with ice-blue - military precision, high-tech
+     - **Guardian** (`guardian.css`): Forest black with emerald - natural protection, calming
+     - **Daywatch** (`daywatch.css`): Warm off-white with teal - light mode for daytime
+   - All themes tested via Playwright MCP in browser mode
+   - **TODO**: Implement theme selection UI (see Session 3 in FRONTEND_LAYOUT_PLAN.md)
+   - **TODO**: Add High Contrast theme for WCAG AAA accessibility
+
+9. **Always Remember**:
    - Update documentation after changes
    - Follow naming conventions strictly
    - No AI attributions
    - British English
    - Code must pass clippy
+
+---
+
+## Development Workflow
+
+### Pre-Flight Checks Protocol
+
+Before starting any development operation, verify the system state to prevent duplicate processes and port conflicts.
+
+#### Before Starting Development Server
+
+```bash
+# Step 1: Check if Trunk/dev server already running
+lsof -i :1420 2>/dev/null && echo "STOP: Port 1420 in use" || echo "Port 1420 available"
+
+# Step 2: Check for existing Tauri processes
+pgrep -f "tauri" && echo "STOP: Tauri already running" || echo "No Tauri process"
+
+# Step 3: Kill existing processes if needed
+lsof -ti:1420 | xargs kill -9 2>/dev/null
+pkill -f "linux-system-hardener" 2>/dev/null
+```
+
+**Rule**: IF port 1420 in use → MUST kill existing process before proceeding.
+
+#### Before Opening Browser Windows
+
+1. Check if browser window already exists for this URL
+2. IF window exists → reuse existing window, DO NOT open new one
+3. IF no window → proceed with opening single instance
+
+```bash
+# Check for existing debug browser
+curl -s http://localhost:9222/json/version >/dev/null 2>&1 && echo "Browser debug port active" || echo "No debug browser"
+```
+
+#### Before Taking Screenshots
+
+1. Verify viewport is exactly 1920x1080
+2. Wait for page to reach network idle state
+3. Confirm no loading spinners or skeleton states visible
+4. IF viewport wrong → reset to 1920x1080 before capture
+
+### Development Server Launch
+
+**Always use the launch script** for reliable Tauri development:
+
+```bash
+# Recommended: Use the bulletproof launch script
+./scripts/tauri-dev.sh
+
+# Or with verbose output
+./scripts/tauri-dev.sh -v
+```
+
+The script automatically:
+- Detects Wayland/Hyprland session
+- Sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` for NVIDIA GPUs
+- Sets `WEBKIT_DISABLE_COMPOSITING_MODE=1` for Hyprland
+- Verifies required packages are installed
+- Checks for wasm32 target
+
+**Manual launch** (if script unavailable):
+```bash
+WEBKIT_DISABLE_COMPOSITING_MODE=1 cargo tauri dev
+```
+
+### Verification That Launch Succeeded
+
+1. Console shows "Compiling hardener-ui" followed by "Finished dev"
+2. Console shows Trunk serving on port 1420
+3. App window appears with rendered content
+4. NO "Waiting for your frontend dev server" messages looping
+
+### What NOT To Do
+
+- DO NOT run `trunk serve` separately (Tauri runs it via `beforeDevCommand`)
+- DO NOT run `cargo tauri dev` without Wayland environment variables
+- DO NOT start multiple instances without killing previous
+- DO NOT change viewport size during screenshot sessions
+
+### Error Handling Guidelines
+
+#### When Commands Fail
+
+1. Read full error message, identify root cause
+2. Check if error is recoverable (port conflict, missing dep)
+3. IF recoverable → attempt single automatic fix
+4. IF fix fails OR error unclear → STOP and explain to user
+
+**Rule 0**: When anything fails unexpectedly, STOP. Explain what happened. Wait for user guidance.
+
+#### Automatic Retry Scenarios
+
+| Error | Recovery Action |
+|-------|-----------------|
+| Port conflict | Kill existing process, retry once |
+| Missing wasm32 target | Run `rustup target add wasm32-unknown-unknown`, retry |
+| Trunk not found | Run `cargo install trunk`, retry |
+| Network timeout | Wait 5 seconds, retry once |
+
+#### DO NOT Auto-Retry
+
+- Compilation errors (require code changes)
+- Permission denied errors (require user intervention)
+- Configuration errors (require manual review)
+- Any error that occurred twice already
+
+### Session Cleanup
+
+When ending a session or before switching contexts:
+
+```bash
+# Kill development processes
+pkill -f "trunk serve" 2>/dev/null
+pkill -f "tauri" 2>/dev/null
+pkill -f "linux-system-hardener" 2>/dev/null
+
+# Kill debug browsers
+pkill -f "remote-debugging-port=9222" 2>/dev/null
+
+# Verify ports released
+lsof -i :1420 2>/dev/null || echo "Port 1420 released"
+lsof -i :9222 2>/dev/null || echo "Port 9222 released"
+```
+
+### Screenshot Workflow
+
+#### When To Take Screenshots
+
+- After visual changes to confirm rendering
+- Before/after fixing visual bugs
+- When iterating on design implementation
+- To verify component placement matches specifications
+
+#### When NOT To Take Screenshots
+
+- After pure Rust/logic changes with no UI impact
+- During build/compile phases
+- Rapid iteration loops (batch screenshots at natural breakpoints)
+- When previous screenshot shows correct state
+
+#### Screenshot Capture Process
+
+1. Wait for network idle (no pending requests)
+2. Verify no loading states visible
+3. Confirm viewport is 1920x1080
+4. Capture screenshot
+5. Verify captured content matches expected view
+6. IF content incorrect → wait 2 seconds, retry once
 
 ---
 
@@ -487,4 +663,4 @@ Treat the user as a trainee you're guiding through the project. Explain connecti
 
 *This document was prepared for continuity between development sessions.*
 
-**Last Updated**: 2025-12-06
+**Last Updated**: 2025-12-08

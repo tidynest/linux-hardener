@@ -225,8 +225,8 @@ linux-system-hardener/
 ├── src-tauri/                # Desktop app backend
 ├── scripts/                  # Development utilities
 ├── docs/                     # Documentation
-├── .github/workflows/        # GitHub Actions CI/CD
-└── .gitlab-ci.yml            # GitLab CI/CD
+├── .github/workflows/        # GitHub Actions CI/CD (connected and functional)
+└── .gitlab-ci.yml            # GitLab CI/CD (also functional)
 ```
 
 ## Releasing
@@ -256,4 +256,4 @@ By contributing, you agree that your contributions will be licensed under the Ap
 
 Thank you for contributing to Linux System Hardener!
 
-**Last Updated**: 2025-12-06
+**Last Updated**: 2025-12-08

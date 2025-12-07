@@ -162,6 +162,10 @@ WEBKIT_DISABLE_COMPOSITING_MODE=1 cargo tauri dev
 # Run web UI in development mode (browser - no Tauri required)
 cd crates/hardener-ui && trunk serve --port 1420
 # Open http://127.0.0.1:1420/ in your browser
+
+# Browser automation via Playwright MCP (recommended for UI testing)
+# Configure playwright-brave in .mcp.json, then use mcp__playwright-brave__browser_navigate
+# See docs/browser-automation.md for complete setup instructions
 ```
 
 ### Development Workflow Commands
@@ -260,7 +264,21 @@ hardener checkpoint list
 hardener checkpoint show <checkpoint-id>
 
 # Rollback to a previous checkpoint
-sudo hardener checkpoint rollback <checkpoint-id>
+sudo hardener rollback <checkpoint-id>
+
+# View scan history (list recent sessions)
+hardener history list
+
+# View history with filters
+hardener history list --limit 50 --status completed
+hardener history list --host server1
+
+# Show details of a specific scan session
+hardener history show <session-id>
+
+# Export scan session to JSON file
+hardener history export <session-id>
+hardener history export <session-id> --output /path/to/export.json
 
 # Start the scheduled scanning daemon
 hardener daemon start
@@ -416,7 +434,7 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 
 See [PLAN.md](PLAN.md) for detailed implementation plans for upcoming features.
 
-### v0.2.0 (In Progress)
+### v0.2.0 (Complete)
 - [x] Config file support (`~/.config/linux-hardener/`)
 - [x] CLI flags: `--config`, `--audit`, `--compliance`, `--exit-code`
 - [x] Policy exception system with audit trail
@@ -425,7 +443,7 @@ See [PLAN.md](PLAN.md) for detailed implementation plans for upcoming features.
 - [x] PDF report formatter with automatic timestamped filenames and colour-coded badges
 - [x] GUI compliance report page
 
-### v0.3.0 (In Progress)
+### v0.3.0 (Complete)
 - [x] SystemExecutor abstraction layer for local/remote operations
 - [x] Remote scanning via SSH
 - [x] SSH CLI flags: `--ssh`, `--ssh-key`, `--ssh-port`, `--ssh-timeout`, `--ssh-no-verify`
@@ -436,15 +454,56 @@ See [PLAN.md](PLAN.md) for detailed implementation plans for upcoming features.
 - [x] CLI daemon commands: `start`, `run-once`, `status`
 - [x] Notifications (email via SMTP, webhooks for Slack/Discord/generic)
 - [x] Systemd timer generation (`hardener systemd generate/install/uninstall/status`)
+- [x] History CLI commands (`hardener history list/show/export`)
 - [x] WASM compilation fix (hardener-types crate for WASM-safe dependencies)
 - [x] GUI dark terminal theme with CSS styling
 - [x] Browser mode support (Web UI works without Tauri desktop wrapper)
-- [ ] CI/CD GitHub Actions integration (workflows exist, not connected)
+- [x] CI/CD GitHub Actions integration
+- [x] Ansible/Puppet modules
 
-### v1.0.0 (Future)
-- [ ] Production-ready release
+### v0.3.1 - GUI Polish & Testing (In Progress)
+- [x] Fix "Loading..." text persistence
+- [x] GUI dark terminal theme with CSS Variables
+- [x] Security score shows "--/100" before scan
+- [x] Fix View Findings button styling
+- [x] State persistence via SQLite storage
+- [x] Browser mode fix (Tauri availability check)
+- [x] Timestamp formatting on Checkpoints page
+- [ ] Background colour personalisation
+- [ ] Responsive layout for varying screen resolutions
+- [ ] Navigation restructure (evaluate page consolidation)
+- [ ] GUI functional testing
+- [ ] CLI functional testing
+- [ ] Safe testing environment (VM/container)
+
+### v0.3.2 - GUI Major Redesign (In Progress)
+- [x] Page consolidation (6 pages → 3 logical sections: Dashboard, Analysis, Hardening)
+- [x] Session 1: Overflow fixes, skip link, tab ARIA accessibility
+- [x] Session 2: CSS utility classes (flex/grid/gap), responsive testing (320-1920px)
+- [ ] Session 2: Card component standardisation (planned)
+- [ ] Session 3: Colour contrast audit, theme switching UI
+- [x] Backend integration (Tauri commands connected)
+- [x] Root privilege escalation via pkexec
+- [ ] Comprehensive E2E testing (Web and Desktop)
+- [ ] Test on GNOME, KDE, XFCE desktop environments
+
+### v0.3.3 - Distribution Validation (Planned)
+- [ ] Arch Linux validation
+- [ ] Debian/Ubuntu validation
+- [ ] RHEL/Fedora validation
+- [ ] openSUSE validation
+
+### v0.4.0 - Web Interface (Future)
+- [ ] Web dashboard for browser-based management
+- [ ] Multi-host management from single UI
+- [ ] Historical security trends
+- [ ] Alert notifications on security regressions
+
+### v1.0.0 - Production Release (Future)
 - [ ] Security audit completed
 - [ ] Package distribution (deb, rpm, AUR)
+- [ ] Comprehensive user documentation
+- [ ] Performance optimisation
 
 ---
 
@@ -467,4 +526,4 @@ This project draws inspiration from established security tools including:
 **Contact**: tidynest@proton.me
 **Repository**: https://github.com/tidynest/linux-system-hardener
 
-**Last Updated**: 2025-12-06
+**Last Updated**: 2025-12-08

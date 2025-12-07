@@ -119,6 +119,12 @@ pub fn ConfigureSection() -> impl IntoView {
 
     view! {
         <div class="configure-section">
+            <p class="section-guidance">
+                "Select a security profile below, or toggle individual plugins. "
+                "Higher security profiles may affect system usability. "
+                "A checkpoint is created before changes are applied, allowing rollback if needed."
+            </p>
+
             <section class="profile-selector">
                 <h2>"Security Profile"</h2>
                 <fieldset>

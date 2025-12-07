@@ -28,12 +28,37 @@ Thumbs.db
 .idea/dictionaries/
 .vscode/settings.json
 
-# WASM build artifacts
-crates/hardener-ui/dist/*.js
-crates/hardener-ui/dist/*.wasm
+# MCP configuration (personal/machine-specific)
+.mcp.json
+
+# WASM build artifacts (entire dist/ is Trunk-generated)
+crates/hardener-ui/dist/
+
+# Theme experiments (future feature, not yet ready for distribution)
+crates/hardener-ui/themes/
 
 # Internal development documents (not for public repositories)
 SSH_CLI_IMPLEMENTATION.md
 docs/HANDOFF.md
 docs/SSH_REMOTE_PLAN.md
+docs/DOCUMENTATION_AUDIT.md
+docs/FRONTEND_LAYOUT_PLAN.md
+docs/GUI_V031_TEST_PLAN.md
+docs/browser-automation.md
+docs/claude-code-configuration.md
+docs/css-architecture.md
+docs/tauri-plus-leptos-development-on-arch-linux-with-hyprland.md
+MCP_INSTRUCTIONS.md
+
+# Local development logs
+logs/
+
+# Playwright MCP artifacts
+.playwright-mcp/
+
+# Debug screenshots
+pics-debug/
+
+# Claude Code settings (user-specific)
+.claude/
 

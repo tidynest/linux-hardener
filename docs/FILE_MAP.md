@@ -1,6 +1,6 @@
 # Linux System Hardener - File Map
 
-**Last Updated:** 2025-12-06
+**Last Updated:** 2025-12-07
 
 This document lists all source files with their purpose and key exports.
 
@@ -390,7 +390,7 @@ pub struct ScanRunner {
 | File | Purpose | Key Exports |
 |------|---------|-------------|
 | `index.html` | Entry HTML with font links | `#app` mount point |
-| `styles.css` | Dark terminal theme CSS | CSS Variables, tabs, navigation, score gauge, buttons, tables, forms |
+| `styles.css` | Dark terminal theme CSS | CSS Variables, utility classes (.truncate, .sr-only, .skip-link), tabs, navigation, score gauge, buttons, tables, forms |
 | `src/lib.rs` | Main App component, WASM entry point | `App`, `#[wasm_bindgen(start)] main()` |
 | `src/types.rs` | Re-exports from hardener-types | `pub use hardener_types::*`, `CheckpointInfo` |
 | `src/state/mod.rs` | Reactive state | `AppState` |
@@ -416,7 +416,7 @@ pub struct ScanRunner {
 | `src/components/mini_security_score.rs` | Compact score for headers | `MiniSecurityScore` |
 | `src/components/quick_actions.rs` | Dashboard quick action buttons | `QuickActions` |
 | `src/components/recent_activity.rs` | Recent scan/apply activity summary | `RecentActivity` |
-| `src/components/tabs.rs` | Reusable tab bar and panel components | `TabBar`, `TabDef`, `TabPanel` |
+| `src/components/tabs.rs` | Reusable tab bar and panel with WAI-ARIA | `TabBar`, `TabDef` (id, label, badge), `TabPanel` (id, index, active_tab) |
 | `src/components/findings_grid.rs` | Findings table display | `FindingsGrid` |
 | `src/components/finding_detail.rs` | Individual finding details panel | `FindingDetail` |
 | `src/components/findings_tab.rs` | Findings tab wrapper for Analysis page | `FindingsTab` |
@@ -573,4 +573,4 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | `hardener-common/src/types.rs` | Added `FindingPolicyException` struct |
 | `hardener-cli/src/cli.rs` | Added `--config`, `--audit`, `--compliance`, `--exit-code` flags, `ScanMode` enum |
 
-**Last Updated**: 2025-12-06
+**Last Updated**: 2025-12-07

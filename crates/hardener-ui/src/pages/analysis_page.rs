@@ -46,6 +46,7 @@ pub fn AnalysisPage() -> impl IntoView {
     let tabs = move || {
         vec![
             TabDef {
+                id: "findings",
                 label: "Findings",
                 badge: {
                     let count = finding_count();
@@ -53,6 +54,7 @@ pub fn AnalysisPage() -> impl IntoView {
                 },
             },
             TabDef {
+                id: "compliance",
                 label: "Compliance",
                 badge: None,
             },
@@ -88,13 +90,13 @@ pub fn AnalysisPage() -> impl IntoView {
                 </div>
             </header>
 
-            <TabBar tabs=tabs() active_tab=active_tab />
+            <TabBar tabs=tabs() active_tab=active_tab aria_label="Analysis options" />
 
             <div class="tab-content">
-                <TabPanel index=0 active_tab=active_tab>
+                <TabPanel id="findings" index=0 active_tab=active_tab>
                     <FindingsTab />
                 </TabPanel>
-                <TabPanel index=1 active_tab=active_tab>
+                <TabPanel id="compliance" index=1 active_tab=active_tab>
                     <ComplianceTab />
                 </TabPanel>
             </div>

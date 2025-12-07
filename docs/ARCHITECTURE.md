@@ -1,7 +1,7 @@
 # Linux System Hardener - Architecture Documentation
 
-**Last Updated:** 2025-12-06
-**Version:** 0.3.2 (GUI Consolidation)
+**Last Updated:** 2025-12-07
+**Version:** 0.3.2 (GUI Consolidation + Accessibility)
 
 ---
 
@@ -176,6 +176,56 @@ All Tauri command wrappers check `tauri_available()` before calling `tauri_invok
 - Compliance report generation is unavailable
 - All navigation and UI rendering works normally
 - Empty states display with helpful messages (e.g., "Run a scan to see results")
+
+**Responsive CSS Design:**
+
+The UI uses a mobile-first responsive approach with CSS custom properties:
+
+| Breakpoint | Target | Layout Behaviour |
+|------------|--------|------------------|
+| < 480px | Mobile | Single column, stacked navigation |
+| 480-768px | Tablet | 2-column grids, adapted spacing |
+| 768-1024px | Small desktop | Full layouts, scanner sidebar |
+| > 1024px | Desktop | Full 2-column scanner layout |
+| > 1600px | Ultra-wide | Content constrained to 1600px max-width, centred |
+
+Key CSS defensive measures:
+- `.main-content`: `max-width: var(--content-max-width)` prevents ultra-wide stretching
+- `.value-cell`: Overflow handling with `text-overflow: ellipsis` for long paths
+- `#app`: `min-width: 320px` prevents layout collapse at extreme narrow widths
+- `min-width: 0` on flex children (`.navigation`, `.nav-links`, `.header-content`) prevents overflow
+- `minmax(0, 1fr)` in grid templates (`.dashboard-grid`, `.scanner-layout`) prevents content blowout
+
+**Accessibility Features (WCAG 2.1 AA):**
+- Skip link as first focusable element (`<a class="skip-link">Skip to main content</a>`)
+- `<main id="main-content" tabindex="-1">` for skip link target
+- Tab components with full WAI-ARIA pattern (`aria-controls`, `aria-labelledby`, `tabindex`)
+- Utility classes: `.sr-only` (screen reader only), `.truncate`, `.line-clamp-*`
+- Visible focus states via `:focus-visible` with accent colour ring
+- Touch targets minimum 44x44px via `@media (pointer: coarse)`
+
+**Playwright MCP Integration:**
+
+Browser mode enables automated UI testing via Playwright MCP. Configure `playwright-brave` in `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "playwright-brave": {
+      "command": "npx",
+      "args": [
+        "@playwright/mcp@latest",
+        "--browser", "chromium",
+        "--executable-path", "/usr/bin/brave",
+        "--user-data-dir", "/tmp/playwright-brave-profile",
+        "--viewport-size", "1920x1080"
+      ]
+    }
+  }
+}
+```
+
+See [browser-automation.md](browser-automation.md) for complete setup and troubleshooting guide.
 
 ---
 
@@ -374,9 +424,9 @@ pub struct PolicyException {
 | `ci.yml` | Push/PR to main/master | Tests, clippy, fmt, security audit, build |
 | `release.yml` | Tag `v*` | Multi-target builds, GitHub releases |
 
-> **Note:** GitHub Actions CI/CD is not currently connected to this repository.
-> Until resolved, releases should be done manually using `./scripts/release.sh`.
-> The workflow files exist but require GitHub repository integration setup.
+> **Note:** GitHub Actions CI/CD is connected and functional. Workflows trigger on
+> push/PR to main/master branches, running check, test, clippy, fmt, security audit,
+> and multi-platform builds.
 
 ### GitLab CI
 
@@ -409,4 +459,4 @@ Both `main` and `master` branches are kept in sync on GitHub and GitLab. The rel
 - `PLAN.md` - Development roadmap
 - `README.md` - User documentation
 
-**Last Updated**: 2025-12-06
+**Last Updated**: 2025-12-07

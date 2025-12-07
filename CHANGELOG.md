@@ -9,13 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **GUI Dark Terminal Theme**: Complete CSS styling with professional dark aesthetic
+- **Fluid Typography**: Score ring text uses `clamp()` for proportional scaling across viewport widths
+
+### Changed
+- **Responsive Dashboard Layout**: Improved single-column mode with compact sections and proper stacking order (Score → Actions → Activity)
+- **Score Ring Sizing**: Changed from fixed 160px to proportional `min(160px, 45vw)` with `aspect-ratio: 1` for smooth scaling
+- **RECENT ACTIVITY Section**: Added `min-height: 150px` to ensure visibility in single-column mode
+- **No Minimum Width**: Removed 320px minimum width constraint; content now shrinks/wraps at any viewport width
+- **Puppeteer MCP Documentation**: Added `docs/MCP_INSTRUCTIONS.md` with detailed instructions for automated UI testing
+- **Accessibility: Skip Link**: Added keyboard-accessible skip link for screen reader users (`lib.rs`)
+- **Accessibility: Tab ARIA**: Full WAI-ARIA tabs pattern with `aria-controls`, `aria-labelledby`, `tabindex` management
+- **CSS Utility Classes**: Added `.truncate`, `.line-clamp-2`, `.line-clamp-3`, `.sr-only`, `.min-w-0`, `.skip-link`
+- **CSS Flex/Grid Utilities (Session 2)**: Added `.flex`, `.flex-col`, `.flex-wrap`, `.flex-1`, `.items-center`, `.items-start`, `.justify-center`, `.justify-between`, `.grid`, `.gap-xs`, `.gap-sm`, `.gap-md`, `.gap-lg`, `.gap-xl`
+- **CSS Variables**: Extended spacing scale (`--space-xs` to `--space-2xl`), border radius scale, z-index scale
+- **Responsive Testing**: Verified layouts at 320px, 640px, 1920px viewports
+
+### Fixed
+- **GUI Responsive Layout (Ultra-Wide)**: Content now constrained to 1600px max-width and centred on ultra-wide screens (4K)
+- **GUI Value Cell Overflow**: Long file paths in tables now truncate with ellipsis instead of breaking layout
+- **GUI Minimum Width Floor**: Added 320px minimum width to prevent layout collapse at extreme narrow widths
+- **Flex Container Overflow**: Added `min-width: 0` to flex children (`.navigation`, `.nav-links`, `.header-content`, `.activity-content`)
+- **Grid Container Overflow**: Updated grid templates to use `minmax(0, 1fr)` pattern (`.dashboard-grid`, `.scanner-layout`, `.report-summary`)
+- **Auto-fill Grid Overflow**: Used `minmax(min(Xpx, 100%), 1fr)` for `.plugin-grid` and `.framework-grid` to prevent narrow viewport overflow
+
+### Added (continued)
   - CSS Variables for consistent theming (colours, typography, spacing)
   - JetBrains Mono for data/code, Inter for UI text
   - Colour-coded security states (green/amber/red for good/warning/critical)
   - Horizontal navigation bar with hover effects
   - Security score circular gauge with glow effects
   - Styled buttons, tables, forms, badges, and empty states
-  - Foundation styles for all 6 pages: Dashboard, Scanner, Configuration, Compliance, Results, Checkpoints
+  - Foundation styles for 3-page architecture: Dashboard, Analysis (tabbed), Hardening (sectioned)
 - **WASM-Compatible Types Crate**: New `hardener-types` crate for shared type definitions
   - Extracted all shared types (PluginId, Severity, Finding, ScanResult, etc.) to dedicated crate
   - WASM-safe dependencies only (serde, chrono)
@@ -111,8 +135,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `docs/SSH_REMOTE_SCANNING.md` - comprehensive user guide for SSH remote scanning
 
 ### CI/CD Status
-- GitHub Actions CI/CD workflows exist but are not currently connected to repository
-- Manual releases recommended via `./scripts/release.sh` until resolved
+- GitHub Actions CI/CD workflows connected and functional
+- Runs on push/PR to main/master: check, test, clippy, fmt, security audit, multi-platform builds
+- GitLab CI also functional for builds and releases
 
 ## [0.1.0] - 2025-11-25
 
@@ -200,4 +225,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [Unreleased]: https://github.com/tidynest/linux-system-hardener/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/tidynest/linux-system-hardener/releases/tag/v0.1.0
 
-**Last Updated**: 2025-12-06
+**Last Updated**: 2025-12-08

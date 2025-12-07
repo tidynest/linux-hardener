@@ -103,7 +103,11 @@ Use the release script:
 
 The release script automatically:
 1. Runs tests and clippy
-2. Auto-updates documentation (`update_all_docs.py --apply`)
+2. Auto-updates documentation (`update_all_docs.py --apply`):
+   - Syncs "Last Updated" dates to git commit dates
+   - Adds stub entries to FILE_MAP.md for new source files
+   - Updates compliance framework control counts
+   - Syncs version references to Cargo.toml
 3. Validates documentation (`validate_all.py --quick`)
 4. Updates version in `Cargo.toml` and documentation files
 5. Updates test count in `README.md`
@@ -172,9 +176,9 @@ cargo release major --execute
 | `ci.yml` | Push/PR to main/master | Tests, clippy, fmt, build |
 | `release.yml` | Tag `v*` | Build binaries, create release |
 
-> **Note:** GitHub Actions CI/CD is not currently connected to this repository.
-> Until resolved, releases should be done manually using `./scripts/release.sh`.
-> The workflow files exist but require GitHub repository integration setup.
+> **Note:** GitHub Actions CI/CD is connected and functional. Workflows trigger on
+> push/PR to main/master branches for continuous integration. For releases, you can
+> either push a version tag to trigger automated builds or use `./scripts/release.sh`.
 
 ### GitLab CI
 

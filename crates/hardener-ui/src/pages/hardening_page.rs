@@ -3,19 +3,29 @@
 //! Provides a sectioned interface for configuring and applying hardening.
 
 use crate::components::{ConfigureSection, HistorySection};
+use crate::state::AppState;
 use leptos::prelude::*;
 
 /// Hardening page with Configure and History sections.
 #[component]
 pub fn HardeningPage() -> impl IntoView {
+    // Access global app state
+    let state = expect_context::<AppState>();
+
     // Section state: 0 = Configure, 1 = History
     let active_section = RwSignal::new(0_usize);
+
+    // Show indicator only when there are apply results to review
+    let has_history = move || !state.apply_results.get().is_empty();
 
     view! {
         <article class="hardening-page">
             <header class="hardening-header">
                 <h1>"System Hardening"</h1>
-                <p>"Configure security settings and apply hardening measures."</p>
+                <p class="page-description">
+                    "Configure and apply security hardening to your system. "
+                    "Choose a security profile, customise plugin selection, then apply changes."
+                </p>
             </header>
 
             <nav class="section-toggle" role="tablist">
@@ -42,7 +52,9 @@ pub fn HardeningPage() -> impl IntoView {
                     on:click=move |_| active_section.set(1)
                 >
                     "History"
-                    <span class="history-indicator"></span>
+                    <Show when=has_history>
+                        <span class="history-indicator"></span>
+                    </Show>
                 </button>
             </nav>
 

@@ -50,6 +50,11 @@ pub fn HistorySection() -> impl IntoView {
 
     view! {
         <div class="history-section">
+            <p class="section-guidance">
+                "Review past hardening operations and restore previous configurations. "
+                "Checkpoints preserve your system state before each change, enabling safe rollback."
+            </p>
+
             // Latest Apply Result
             <section class="apply-results-summary">
                 <h2>"Latest Apply Operation"</h2>

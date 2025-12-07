@@ -146,9 +146,9 @@ See [docs/WASM_FIX_PLAN.md](docs/WASM_FIX_PLAN.md) for implementation details.
 | **State persistence bug** | Scan results now persist across navigation and app restarts via SQLite | Critical | ✅ Complete |
 | **Browser mode fix** | Web UI now renders correctly without Tauri (added `tauri_available()` check) | Critical | ✅ Complete |
 | Timestamp formatting | Format raw timestamp numbers on Checkpoints page | Medium | ✅ Complete |
-| Background personalisation | Make background colour more personable/warm | Low | Pending |
-| Responsive layout | Support varying screen/browser resolutions | Medium | Pending |
-| Navigation restructure | Evaluate merging Configuration/Compliance into Scanner | Low | Pending |
+| Background personalisation | 5 security-focused themes created (Fortress, Sentinel, Command, Guardian, Daywatch) | Low | ✅ Complete |
+| Responsive layout | See [FRONTEND_LAYOUT_PLAN.md](docs/FRONTEND_LAYOUT_PLAN.md) Session 2 | Medium | Pending |
+| Navigation restructure | Consolidated to 3 pages (Dashboard, Analysis, Hardening) | Low | ✅ Complete |
 | GUI functional testing | Verify all GUI features work correctly | High | In Progress |
 | CLI functional testing | Verify all CLI commands work correctly | High | Pending |
 | Safe testing environment | Test in VM/container to avoid system changes | Critical | Pending |
@@ -158,7 +158,7 @@ See [docs/WASM_FIX_PLAN.md](docs/WASM_FIX_PLAN.md) for implementation details.
 - Added dark terminal theme with CSS Variables, JetBrains Mono + Inter fonts
 - Security score now shows "--/100" before scan with "Run a scan to see your score"
 - "View Findings" now uses styled button with programmatic navigation
-- All 6 pages styled: Dashboard, Scanner, Configuration, Compliance, Results, Checkpoints
+- All 3 pages styled: Dashboard, Analysis (tabbed), Hardening (sectioned)
 - Timestamp formatting: Checkpoints page now shows human-readable dates
 - **(2025-12-06)** Browser mode fix: Added `tauri_available()` check in `tauri_bindings.rs`
   - Web UI now renders all pages correctly without Tauri desktop wrapper
@@ -176,111 +176,97 @@ See [docs/WASM_FIX_PLAN.md](docs/WASM_FIX_PLAN.md) for implementation details.
 - Both CLI and GUI (Desktop + Browser) need verification
 - Arch Linux (LTS) specific: Ensure scan findings are relevant to Arch, not false positives from other distro-specific checks
 
-### v0.3.2 - GUI Major Redesign & Comprehensive Testing
+### v0.3.2 - Frontend Layout & Accessibility
 
-This version focuses on making the GUI fully functional, intuitive, and thoroughly tested.
+This version focuses on fixing layout issues, improving accessibility, and enhancing the theme system.
 
-#### A. Page Architecture Redesign
+> **Implementation Guide**: See [docs/FRONTEND_LAYOUT_PLAN.md](docs/FRONTEND_LAYOUT_PLAN.md) for detailed session-by-session breakdown.
+
+#### A. Layout Fixes (Session 1 - Critical) ✅
 
 | Feature | Description | Priority | Status |
 |---------|-------------|----------|--------|
-| Page consolidation | Reduce 6 pages to 3 logical sections | High | In Progress |
-| Workflow-oriented design | Guide users through scan → configure → apply → verify flow | High | In Progress |
-| State management overhaul | Ensure all changes persist across navigation | Critical | Pending |
-| Backend integration | Connect GUI actions to actual Tauri commands | Critical | ✅ Complete |
+| Flex overflow fix | Add `min-width: 0` to all flex children | Critical | ✅ Complete |
+| Grid overflow fix | Use `minmax(0, 1fr)` in grid templates | Critical | ✅ Complete |
+| Text truncation | Add `.truncate` class to long text elements | High | ✅ Complete |
+| Skip link | Implement skip link in `lib.rs` for accessibility | High | ✅ Complete |
+| Tab ARIA | Add ARIA attributes to tab components | High | ✅ Complete |
 
-**Final Page Structure (3 Pages):**
+**Session 1 Completed (2025-12-07):**
+- Added `min-width: 0` to `.navigation`, `.nav-links`, `.header-content`, `.activity-content`
+- Updated grid templates: `.dashboard-grid`, `.scanner-layout`, `.detail-values dl`, `.report-summary`
+- Added utility classes: `.truncate`, `.line-clamp-2`, `.line-clamp-3`, `.sr-only`, `.min-w-0`, `.skip-link`
+- Skip link as first focusable element with `<main id="main-content" tabindex="-1">`
+- Tab components: `aria-controls`, `aria-labelledby`, `tabindex` management, unique IDs
 
-| Page | Route | Purpose | Contains |
-|------|-------|---------|----------|
-| **Dashboard** | `/` | Overview & quick start | SecurityScore, QuickActions, RecentActivity |
-| **Analysis** | `/analysis` | Scan & compliance (tabbed) | [Findings] tab + [Compliance] tab with shared header |
-| **Hardening** | `/hardening` | Configure & history (sectioned) | [Configure] + [History] sections with apply/rollback |
+#### B. Responsive Layout (Session 2) - In Progress
 
-**Analysis Page Tabs:**
-- **Findings Tab**: FindingsGrid + FindingDetail (from ScannerPage)
-- **Compliance Tab**: Framework selection + ReportCard (from CompliancePage)
-- Shared header with MiniSecurityScore and unified "Run Scan" button
-- Animated tab transitions with gradient underline indicator
+| Feature | Description | Priority | Status |
+|---------|-------------|----------|--------|
+| CSS spacing scale | Add `--space-xs` through `--space-2xl` variables | High | ✅ Complete |
+| Utility classes | Add `.flex`, `.grid`, `.gap-*`, `.items-*`, `.justify-*` utilities | High | ✅ Complete |
+| Card standardisation | Reusable `Card` component with consistent styling | Medium | 🔄 Planned |
+| Mobile-first breakpoints | Test at 320px, 640px, 1024px, 1440px | Medium | ✅ Complete |
+| Touch targets | Minimum 44px touch targets for interactive elements | Medium | ✅ Complete |
 
-**Hardening Page Sections:**
-- **Configure Section**: Profile presets, plugin toggles, apply button
-- **History Section**: Apply results summary + checkpoint table with rollback
+**Session 2 Progress (2025-12-08):**
+- Spacing scale already in place: `--space-xs` to `--space-2xl` in `:root`
+- Added utility classes to `styles.css` (lines 181-206):
+  - Flex: `.flex`, `.flex-col`, `.flex-wrap`, `.flex-1`
+  - Alignment: `.items-center`, `.items-start`, `.justify-center`, `.justify-between`
+  - Grid: `.grid`
+  - Gap: `.gap-xs`, `.gap-sm`, `.gap-md`, `.gap-lg`, `.gap-xl`
+- Viewport testing complete: 320px, 640px, 1920px - all responsive layouts working
+- Touch targets: 44px minimum via `@media (pointer: coarse)` already in place
 
-**Implementation Phases:**
-
-| Phase | Components | Status |
-|-------|------------|--------|
-| Phase 1 | tabs.rs, mini_security_score.rs, recent_activity.rs | Pending |
-| Phase 2 | findings_tab.rs, compliance_tab.rs, analysis_page.rs | Pending |
-| Phase 3 | configure_section.rs, history_section.rs, hardening_page.rs | Pending |
-| Phase 4 | Update router (lib.rs) and state (state/mod.rs) | Pending |
-| Phase 5 | CSS additions for tabs/sections | ✅ Complete |
-| Phase 6 | Delete old files (scanner_page, compliance_page, etc.) | Pending |
-
-**State Updates Required:**
+**Card Component (Pending Decision):**
+A reusable `Card` component is ready for implementation. Design:
 ```rust
-// Add to AppState
-pub analysis_active_tab: RwSignal<usize>,      // 0=Findings, 1=Compliance
-pub hardening_active_section: RwSignal<usize>, // 0=Configure, 1=History
-pub checkpoints: RwSignal<Vec<CheckpointInfo>>,
-pub is_loading_checkpoints: RwSignal<bool>,
+#[component]
+pub fn Card(
+    #[prop(into, optional)] title: Option<String>,
+    #[prop(into, optional)] class: Option<String>,
+    children: Children,
+) -> impl IntoView
 ```
+CSS: `.card`, `.card-title`, `.card-content` with `bg-secondary`, `border`, `border-radius`, `padding`.
+Decision pending on whether to refactor existing sections (`.dashboard-section`, `.apply-results-summary`, etc.) to use `<Card>`.
 
-#### B. User Guidance & UX
+#### C. Theme & Accessibility (Session 3)
 
-| Feature | Description | Priority |
-|---------|-------------|----------|
-| Contextual help text | Short, friendly explanations on every page section | High |
-| Workflow indicators | Visual cues showing recommended order of actions | High |
-| Tooltips & info icons | Hover explanations for technical terms and settings | Medium |
-| Empty state guidance | Helpful prompts when no data exists (e.g., "Run your first scan") | Medium |
-| Progress indicators | Clear feedback during scans, applies, and other operations | High |
-| Error messages | User-friendly error text with suggested fixes | High |
+| Feature | Description | Priority | Status |
+|---------|-------------|----------|--------|
+| Colour contrast audit | Verify WCAG AA (4.5:1 for text, 3:1 for UI) | High | Pending |
+| `data-theme` attribute | CSS-only theme switching via `[data-theme="..."]` | Medium | Pending |
+| Focus state improvements | Consistent `:focus-visible` ring colour | Medium | Pending |
+| Theme toggle component | Dropdown to switch between themes | Low | Pending |
+| High Contrast theme | WCAG AAA accessibility theme option | Low | Pending |
 
-**User Guidance Principles:**
-- Every page section should have a brief, friendly heading explaining what it does
-- Users should understand "what to do next" at a glance
-- Technical jargon should be minimised or explained inline
-- Recommended settings should be clearly indicated
-- Dangerous actions should have clear warnings and confirmations
+#### D. Polish & Testing (Session 4+)
 
-#### C. Comprehensive GUI Testing
+| Feature | Description | Priority | Status |
+|---------|-------------|----------|--------|
+| Animations | Subtle hover effects, page transitions, loading states | Low | Pending |
+| Error states | Empty state designs, error message styling | Medium | Pending |
+| Responsive typography | Fluid font sizes with `clamp()` | Low | Pending |
+| E2E tests (Web) | Playwright tests for browser UI | High | Pending |
+| E2E tests (Desktop) | Tauri test harness for desktop app | High | Pending |
 
-| Test Category | Description | Priority |
-|---------------|-------------|----------|
-| **Unit tests** | Test individual components in isolation | High |
-| **Integration tests** | Test component interactions and state flow | High |
-| **E2E tests (Web)** | Puppeteer/Playwright tests for browser UI | Critical |
-| **E2E tests (Desktop)** | Tauri test harness for desktop app | Critical |
-| **State persistence tests** | Verify data survives navigation and refresh | Critical |
-| **Backend communication tests** | Verify Tauri commands execute correctly | Critical |
-| **Error handling tests** | Verify graceful degradation on failures | High |
-| **Responsive layout tests** | Verify UI works at various resolutions | Medium |
-| **Accessibility tests** | Keyboard navigation, screen reader compatibility | Medium |
+#### E. Backend Integration (Complete)
 
-**Testing Infrastructure Needs:**
-- Leptos component testing framework setup
-- Puppeteer/Playwright test suite for Web UI
-- Tauri test mode for Desktop app
-- Mock backend for isolated frontend testing
-- CI/CD integration for automated test runs
-- Test coverage reporting
+| Feature | Status |
+|---------|--------|
+| Scan execution | ✅ Complete |
+| Apply hardening | ✅ Complete (via pkexec) |
+| Checkpoint creation | ✅ Complete |
+| Rollback functionality | ✅ Complete |
+| Error propagation | ✅ Complete |
 
-#### D. Backend Integration
+#### F. Root Privilege Escalation (Reference - Complete)
 
-| Feature | Description | Priority |
-|---------|-------------|----------|
-| Scan execution | Connect "Run Scan" to actual Tauri scan command | Critical |
-| Apply hardening | Connect "Apply" buttons to Tauri apply command | Critical |
-| Checkpoint creation | Create checkpoints before applying changes | Critical |
-| Rollback functionality | Connect rollback to Tauri rollback command | Critical |
-| Real-time progress | WebSocket or polling for scan/apply progress | High |
-| Error propagation | Surface backend errors to UI properly | High |
+> **Status**: ✅ Implementation complete. This section retained for reference.
 
-#### E. Root Privilege Escalation for GUI
-
-Security scans and hardening operations require root privileges to access system files and configurations. The GUI apps (both Web and Desktop) need a mechanism to execute privileged operations safely.
+Security scans and hardening operations require root privileges. The GUI uses pkexec for privilege escalation.
 
 **Privilege Requirements by Operation:**
 
@@ -532,12 +518,12 @@ The compliance module (`hardener-compliance`) is designed for reuse:
 
 | Framework | Controls | Description |
 |-----------|----------|-------------|
-| CIS | 35+ | Center for Internet Security Benchmarks |
-| STIG | 20+ | DISA Security Technical Implementation Guides |
-| NIST 800-53 | 20+ | US Federal security controls |
-| PCI-DSS | 20+ | Payment Card Industry standards |
-| HIPAA | 15+ | Healthcare security requirements |
-| GDPR | 12+ | EU data protection (Article 32) |
+| CIS | 38 | Center for Internet Security Benchmarks |
+| STIG | 20 | DISA Security Technical Implementation Guides |
+| NIST 800-53 | 20 | US Federal security controls |
+| PCI-DSS | 22 | Payment Card Industry standards |
+| HIPAA | 14 | Healthcare security requirements |
+| GDPR | 12 | EU data protection (Article 32) |
 
 ---
 
@@ -553,4 +539,4 @@ When working on new features:
 
 **Legend**: ⬜ Pending | 🔄 In Progress | ✅ Complete
 
-**Last Updated**: 2025-12-06
+**Last Updated**: 2025-12-08

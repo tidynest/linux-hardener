@@ -46,8 +46,11 @@ pub fn App() -> impl IntoView {
 
     view! {
         <Router>
-            <header>
-                <nav class="navigation">
+            // Skip link for keyboard/screen reader users - appears on focus
+            <a href="#main-content" class="skip-link">"Skip to main content"</a>
+
+            <header class="nav-header">
+                <nav class="navigation" aria-label="Main navigation">
                     <h1>"Linux System Hardener"</h1>
                     <ul class="nav-links">
                         <li><A href="/">"Dashboard"</A></li>
@@ -57,7 +60,7 @@ pub fn App() -> impl IntoView {
                 </nav>
             </header>
 
-            <main class="main-content">
+            <main id="main-content" class="main-content" tabindex="-1">
                 <Routes fallback=|| view! {
                     <article class="error-page">
                         <h1>"404 - Page Not Found"</h1>

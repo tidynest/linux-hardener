@@ -1,7 +1,7 @@
 # Linux System Hardener - Data Flow Documentation
 
-**Last Updated:** 2025-12-05
-**Version:** 0.3.0
+**Last Updated:** 2025-12-06
+**Version:** 0.3.2
 
 This document describes the data flow for all major operations in the system.
 
@@ -469,7 +469,7 @@ struct Finding {
          ▼
 ┌──────────────────────────────────────────────────────────────┐
 │  Leptos Frontend (hardener-ui)                               │
-│  ├─ scanner_page.rs handles button click                     │
+│  ├─ analysis_page.rs handles button click                    │
 │  ├─ Calls Tauri invoke("run_scan")                           │
 │  └─ Updates loading state                                    │
 └────────┬─────────────────────────────────────────────────────┘
