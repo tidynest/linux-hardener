@@ -19,13 +19,8 @@ pub fn DashboardPage() -> impl IntoView {
             </p>
 
             <section class="dashboard-grid">
-                <section class="dashboard-section">
-                    <SecurityScore/>
-                </section>
-
-                <section class="dashboard-section">
-                    <QuickActions/>
-                </section>
+                <SecurityScore/>
+                <QuickActions/>
             </section>
 
             <RecentActivity/>

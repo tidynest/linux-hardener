@@ -535,13 +535,53 @@ impl HardeningPlugin for SshHardeningPlugin {
             }
         }
 
-        // Try to read the configuration using executor.
-        if let Err(e) = ctx.executor().read_file(config_path).await {
-            issues.push(ValidationIssue {
-                validation_issue_severity: Severity::Critical,
-                validation_issue_message: format!("Cannot read {}: {}", config_path.display(), e),
-                validation_issue_config_key: None,
-            });
+        // Try to read the configuration and check which directives need changing.
+        let mut estimated_changes = Vec::new();
+
+        match ctx.executor().read_file(config_path).await {
+            Ok(content) => {
+                // Check each directive to see if it needs updating.
+                for directive in SSH_DIRECTIVES {
+                    // SSHD config is space-separated and case-insensitive.
+                    let current_value = parse_config_value(
+                        &content,
+                        directive.ssh_directive_name,
+                        ConfigFormat::SpaceSeparated,
+                        false, // case-insensitive
+                    );
+
+                    match current_value {
+                        Some(val) if val == directive.ssh_secure_value => {
+                            // Already set to secure value - no change needed.
+                        }
+                        Some(val) => {
+                            // Value exists but is insecure.
+                            estimated_changes.push(format!(
+                                "{}: {} → {}",
+                                directive.ssh_directive_name, val, directive.ssh_secure_value
+                            ));
+                        }
+                        None => {
+                            // Directive not set - will add it.
+                            estimated_changes.push(format!(
+                                "{}: (not set) → {}",
+                                directive.ssh_directive_name, directive.ssh_secure_value
+                            ));
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                issues.push(ValidationIssue {
+                    validation_issue_severity: Severity::Critical,
+                    validation_issue_message: format!(
+                        "Cannot read {}: {}",
+                        config_path.display(),
+                        e
+                    ),
+                    validation_issue_config_key: None,
+                });
+            }
         }
 
         let valid = issues.is_empty();
@@ -549,7 +589,7 @@ impl HardeningPlugin for SshHardeningPlugin {
             validation_report_plugin_id: plugin_id,
             validation_report_is_valid: valid,
             validation_report_issues: issues,
-            validation_report_estimated_changes: vec![],
+            validation_report_estimated_changes: estimated_changes,
         })
     }
 }

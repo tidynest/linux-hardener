@@ -1,7 +1,7 @@
 # Linux System Hardener - Architecture Documentation
 
-**Last Updated:** 2025-12-07
-**Version:** 0.3.2 (GUI Consolidation + Accessibility)
+**Last Updated:** 2025-12-09
+**Version:** 0.3.2 (GUI Bug Fixes + Dual Database Pattern)
 
 ---
 
@@ -176,6 +176,73 @@ All Tauri command wrappers check `tauri_available()` before calling `tauri_invok
 - Compliance report generation is unavailable
 - All navigation and UI rendering works normally
 - Empty states display with helpful messages (e.g., "Run a scan to see results")
+
+### Dual Database Pattern for Checkpoints
+
+The GUI needs to display checkpoints created by both user-run and privileged (pkexec) operations:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│ User clicks "Apply Hardening"                                          │
+└────────────────────────┬───────────────────────────────────────────────┘
+                         │
+                         ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ GUI runs: pkexec hardener apply --plugin kernel                        │
+└────────────────────────┬───────────────────────────────────────────────┘
+                         │
+                         ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ CLI runs as ROOT, writes checkpoint to:                                │
+│   /var/lib/linux-hardener/checkpoints.db (system database)             │
+└────────────────────────┬───────────────────────────────────────────────┘
+                         │
+                         ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ GUI's get_checkpoints() reads from BOTH:                               │
+│   - ~/.local/share/linux-hardener/checkpoints.db (user database)       │
+│   - /var/lib/linux-hardener/checkpoints.db (system database)           │
+│                                                                        │
+│ Results are merged, deduplicated by ID, sorted by timestamp descending │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+**Why this pattern?**
+
+| Operation | Runs As | Writes To |
+|-----------|---------|-----------|
+| `hardener apply` (no pkexec) | User | User database |
+| `pkexec hardener apply` | Root | System database |
+| GUI scan (no root) | User | User database |
+
+Without dual-database reading, checkpoints created via `pkexec` would be invisible to the GUI.
+
+**Implementation** (`src-tauri/src/commands.rs`):
+
+```rust
+fn get_user_db_path() -> PathBuf {
+    dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("linux-hardener/checkpoints.db")
+}
+
+fn get_system_db_path() -> PathBuf {
+    PathBuf::from("/var/lib/linux-hardener/checkpoints.db")
+}
+
+pub async fn get_checkpoints() -> Result<Vec<CheckpointInfo>, String> {
+    let mut all = Vec::new();
+    // Read from user database
+    if let Ok(cp) = read_checkpoints(get_user_db_path()).await { all.extend(cp); }
+    // Read from system database (if exists and readable)
+    if let Ok(cp) = read_checkpoints(get_system_db_path()).await {
+        // Deduplicate by ID
+        for c in cp { if !all.iter().any(|x| x.id == c.id) { all.push(c); } }
+    }
+    all.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    Ok(all)
+}
+```
 
 **Responsive CSS Design:**
 

@@ -274,10 +274,15 @@ impl HardeningPlugin for KernelHardeningPlugin {
         use std::path::Path;
 
         let mut apply_changes = Vec::new();
+        let hardener_sysctl_path = Path::new("/etc/sysctl.d/99-hardener.conf");
 
-        // Create checkpoint to capture sysctl config files before changes
-        let sysctl_paths: Vec<&Path> =
-            vec![Path::new("/etc/sysctl.conf"), Path::new("/etc/sysctl.d")];
+        // Create checkpoint to capture sysctl config files before changes.
+        // Include our hardener file if it exists.
+        let sysctl_paths: Vec<&Path> = vec![
+            Path::new("/etc/sysctl.conf"),
+            Path::new("/etc/sysctl.d"),
+            hardener_sysctl_path,
+        ];
         let checkpoint_id =
             crate::create_checkpoint_for_apply(ctx, "kernel-hardening-pre-apply", &sysctl_paths)?;
 
@@ -290,9 +295,23 @@ impl HardeningPlugin for KernelHardeningPlugin {
             });
         }
 
+        // Build sysctl.d config file content for persistence.
+        let mut sysctl_config_content = String::from(
+            "# Kernel hardening settings applied by Linux Hardener\n\
+             # This file is managed automatically - manual edits will be overwritten\n\n",
+        );
+
+        // Apply each parameter to runtime AND build config file content.
         for (param_name, expected_value, param_description) in KERNEL_PARAMS {
             let path = format!("/proc/sys/{}", param_name.replace('.', "/"));
 
+            // Add to persistent config file.
+            sysctl_config_content.push_str(&format!(
+                "# {}\n{} = {}\n\n",
+                param_description, param_name, expected_value
+            ));
+
+            // Apply immediately to runtime.
             match ctx
                 .executor()
                 .write_file(Path::new(&path), expected_value)
@@ -319,6 +338,32 @@ impl HardeningPlugin for KernelHardeningPlugin {
                     });
                     warn!("Failed to apply {}: {}", param_name, e);
                 }
+            }
+        }
+
+        // Write persistent config file so changes survive reboot AND rollback works.
+        match ctx
+            .executor()
+            .write_file(hardener_sysctl_path, &sysctl_config_content)
+            .await
+        {
+            Ok(_) => {
+                apply_changes.push(Change {
+                    change_description: "Created persistent sysctl config".to_string(),
+                    change_type: ChangeType::ConfigFile,
+                    change_success: true,
+                    change_error: None,
+                });
+                info!("Created {}", hardener_sysctl_path.display());
+            }
+            Err(e) => {
+                apply_changes.push(Change {
+                    change_description: "Failed to create persistent sysctl config".to_string(),
+                    change_type: ChangeType::ConfigFile,
+                    change_success: false,
+                    change_error: Some(e.to_string()),
+                });
+                warn!("Failed to create {}: {}", hardener_sysctl_path.display(), e);
             }
         }
 

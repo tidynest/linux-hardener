@@ -144,13 +144,39 @@ impl FirewallBackend for UfwBackend {
     }
 
     async fn is_enabled(&self, ctx: &Context) -> Result<()> {
-        // Run 'ufw status' and check if it says "Status: active".
-        let output = self.execute_ufw(ctx, &["status"]).await?;
+        // Try systemctl first - doesn't require root privileges.
+        // This prevents false positives when running as non-root user.
+        let systemctl_result = ctx
+            .executor()
+            .execute_command("systemctl", &["is-active", "ufw"])
+            .await;
 
-        if output.contains("Status: active") {
-            Ok(())
-        } else {
-            Err(HardeningError::Plugin("UFW is not enabled".to_string()))
+        if let Ok(output) = systemctl_result {
+            if output.stdout.trim() == "active" {
+                return Ok(());
+            }
+            // systemctl says inactive - firewall is genuinely disabled
+            if output.stdout.trim() == "inactive" {
+                return Err(HardeningError::Plugin("UFW is not enabled".to_string()));
+            }
+        }
+
+        // Fall back to ufw status (may fail without root).
+        match self.execute_ufw(ctx, &["status"]).await {
+            Ok(output) => {
+                if output.contains("Status: active") {
+                    Ok(())
+                } else {
+                    Err(HardeningError::Plugin("UFW is not enabled".to_string()))
+                }
+            }
+            Err(_) => {
+                // Cannot determine status - likely permission denied.
+                // Return error but don't claim it's disabled.
+                Err(HardeningError::Plugin(
+                    "Unable to determine UFW status (permission denied)".to_string(),
+                ))
+            }
         }
     }
 

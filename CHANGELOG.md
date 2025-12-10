@@ -7,12 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (Bug Fix Session 2025-12-09)
+- **Security Score Calculation (A-C)**: Redesigned from findings-based to compliance-based weighted scoring
+  - Pass = 100pts, Critical fail = 0pts, High = 25pts, Medium = 50pts, Low = 75pts
+  - Overall score = average of framework weighted scores
+  - Added expandable "Framework Breakdown" showing per-framework scores
+- **UFW False Positive (D)**: Firewall plugin now uses `systemctl is-active ufw` first (no root needed)
+  - Falls back to `ufw status` only when systemctl unavailable
+- **Audit Rules False Positives (E)**: Added `AuditRulesResult` enum to distinguish permission denied from missing rules
+  - No longer reports 25 false positives when running without root
+- **Empty validate() Stubs (F)**: Implemented proper validate() for permissions, SSH, and firewall plugins
+  - Now reports estimated changes like "PermitRootLogin: yes → no"
+- **Kernel Rollback Gap (G)**: apply() now creates `/etc/sysctl.d/99-hardener.conf`
+  - Kernel hardening persists across reboot
+  - Rollback properly removes config and reloads sysctl
+
+### Fixed (GUI Issues 2025-12-09)
+- **Theme Selector Unreadable (L)**: Added `appearance: none` CSS reset for cross-browser styling
+  - Custom SVG dropdown arrow for dark and light themes
+  - WebKit now respects CSS colours instead of native controls
+- **Generate Reports No Feedback (J)**: Added status message display for report generation
+  - Shows success message with report count after generation
+  - Shows error message if generation fails
+- **Checkpoints Not Visible After Apply (K)**: Now reads from both user and system databases
+  - GUI reads from `~/.local/share/linux-hardener/checkpoints.db` (user) AND `/var/lib/linux-hardener/checkpoints.db` (system)
+  - Added refresh button to checkpoint list
+  - Checkpoints from privileged apply operations (pkexec) now visible
+- **Score Mismatch Dashboard vs Analysis (H)**: Unified score calculation
+  - `MiniSecurityScore` component now uses shared `calculate_all_scores()` function
+  - Both pages display identical compliance-based weighted scores
+
 ### Added
 - **GUI Dark Terminal Theme**: Complete CSS styling with professional dark aesthetic
 - **Fluid Typography**: Score ring text uses `clamp()` for proportional scaling across viewport widths
+- **Card Component**: Reusable `Card` component in `card.rs` with `CardVariant` (Default, Compact, Empty) and `HeadingLevel` (H2, H3, H4) props for consistent section styling
+- **CSS Transitions (Session 4)**: Added transition variables (`--transition-fast`, `--transition-normal`, `--transition-slow`) for smooth hover animations
+- **Empty State Icons (Session 4)**: Consistent empty states with contextual icons across all pages: 📋 (activity), 🔍 (findings), 📊 (compliance), ⚡ (apply operations), 💾 (checkpoints)
+- **Button Hover Effects (Session 4)**: Subtle `translateY(-1px)` lift effect with box-shadow on hover for action buttons
+- **E2E Test Cases (Session 4)**: Added TC-11 to TC-14 covering empty states, animations, themes, and responsive layout
 
 ### Changed
 - **Responsive Dashboard Layout**: Improved single-column mode with compact sections and proper stacking order (Score → Actions → Activity)
+- **Refactored Section Containers**: All page sections now use the `Card` component instead of raw `<section>` tags for consistent styling
 - **Score Ring Sizing**: Changed from fixed 160px to proportional `min(160px, 45vw)` with `aspect-ratio: 1` for smooth scaling
 - **RECENT ACTIVITY Section**: Added `min-height: 150px` to ensure visibility in single-column mode
 - **No Minimum Width**: Removed 320px minimum width constraint; content now shrinks/wraps at any viewport width
@@ -25,6 +61,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Responsive Testing**: Verified layouts at 320px, 640px, 1920px viewports
 
 ### Fixed
+- **WCAG AA Text Contrast**: Brightened `--text-secondary` (#a1aebe → #a8b8c8) and `--text-muted` (#7a8a9e → #8a9aae) to meet 4.5:1 contrast ratio
+- **Theme Select Dropdown**: Added `!important` rules for option styling to override browser defaults in all themes
+- **Section Header Readability**: Increased section headers (Security-Score, Quick Actions, Recent Activity) from 0.875rem to 0.9375rem
+- **CSS Cleanup**: Removed redundant container styles (`.dashboard-section`, `.profile-selector`, `.plugin-toggles`, `.apply-controls`, `.framework-selection`) - Card component now provides these styles
 - **GUI Responsive Layout (Ultra-Wide)**: Content now constrained to 1600px max-width and centred on ultra-wide screens (4K)
 - **GUI Value Cell Overflow**: Long file paths in tables now truncate with ellipsis instead of breaking layout
 - **GUI Minimum Width Floor**: Added 320px minimum width to prevent layout collapse at extreme narrow widths
@@ -225,4 +265,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [Unreleased]: https://github.com/tidynest/linux-system-hardener/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/tidynest/linux-system-hardener/releases/tag/v0.1.0
 
-**Last Updated**: 2025-12-08
+**Last Updated**: 2025-12-09

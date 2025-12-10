@@ -32,6 +32,7 @@ pub fn FindingsTab() -> impl IntoView {
                 when=has_findings
                 fallback=|| view! {
                     <div class="empty-state">
+                        <div class="empty-state-icon">"🔍"</div>
                         <p class="empty-state-title">"No findings yet"</p>
                         <p class="empty-state-hint">
                             "Click 'Run Security Scan' above to analyse your system. "

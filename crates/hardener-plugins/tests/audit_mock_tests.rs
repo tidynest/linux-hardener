@@ -383,3 +383,90 @@ async fn test_audit_scan_with_remote_executor() {
             .any(|f| f.finding_id == "auditd_not_running")
     );
 }
+
+/// Creates a mock executor simulating permission denied when running `auditctl -l`.
+/// This is Bug E: auditctl requires root to list rules.
+fn auditctl_permission_denied_executor() -> MockExecutor {
+    MockExecutor::new()
+        .with_command_exists("auditd", true)
+        .with_command(
+            "systemctl",
+            &["is-enabled", "auditd"],
+            CommandOutput {
+                stdout: "enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-active", "auditd"],
+            CommandOutput {
+                stdout: "active\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        // auditctl -l fails with permission denied (needs root)
+        .with_command(
+            "auditctl",
+            &["-l"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: "You must be root to run this program.\n".to_string(),
+                exit_code: 1,
+            },
+        )
+}
+
+/// BUG E TEST: This test exposes the false positive bug.
+///
+/// When `auditctl -l` fails due to permission denied, the plugin should NOT
+/// report all 25 rules as "not configured" - it should either:
+/// 1. Report "Unable to verify audit rules (permission denied)"
+/// 2. Return scan_success=false with appropriate error
+/// 3. Mark findings as "unknown" status instead of "not configured"
+///
+/// Currently this test will FAIL because the plugin incorrectly reports
+/// all audit rules as missing when it can't check them due to permissions.
+#[tokio::test]
+async fn test_audit_scan_permission_denied_should_not_report_missing_rules() {
+    let executor = auditctl_permission_denied_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = AuditHardeningPlugin::new();
+
+    let result = plugin.scan(&ctx).await.unwrap();
+
+    // auditd is installed, enabled, and running
+    // But auditctl -l failed with permission denied
+
+    // We should NOT have 25 "rule not configured" findings
+    // because we don't actually know if the rules are configured or not
+    let rule_findings: Vec<_> = result
+        .scan_findings
+        .iter()
+        .filter(|f| {
+            f.finding_id.contains("rule_") || f.finding_description.contains("not configured")
+        })
+        .collect();
+
+    // BUG E: Currently this incorrectly reports ~25 findings for missing rules
+    // The correct behaviour would be:
+    // A) No rule findings (because we don't know the actual state)
+    // B) scan_success = false with permission error
+    // C) Findings that say "Unable to verify" (not "not configured")
+
+    // This assertion documents the EXPECTED behaviour
+    assert!(
+        rule_findings.is_empty(),
+        "BUG E: Permission denied on auditctl should NOT result in 'rule not configured' findings. \
+         We cannot verify rules without root access. \
+         Got {} findings: {:?}",
+        rule_findings.len(),
+        rule_findings
+            .iter()
+            .take(5)
+            .map(|f| &f.finding_id)
+            .collect::<Vec<_>>()
+    );
+}

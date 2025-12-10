@@ -350,12 +350,53 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
         Ok(())
     }
 
-    async fn validate(&self, _ctx: &Context, _config: &Config) -> Result<ValidationReport> {
+    async fn validate(&self, ctx: &Context, _config: &Config) -> Result<ValidationReport> {
+        let mut issues = Vec::new();
+        let mut estimated_changes = Vec::new();
+
+        for directive in CRITICAL_PERMISSIONS {
+            let path = Path::new(directive.permission_path);
+
+            // Check if path exists
+            if !ctx.executor().path_exists(path).await.unwrap_or(false) {
+                // Path doesn't exist - not an error, just skip
+                continue;
+            }
+
+            // Get current permissions
+            match ctx.executor().file_metadata(path).await {
+                Ok(metadata) => {
+                    let current_mode = metadata.mode & 0o777;
+
+                    // Check if permissions need changing
+                    if current_mode != directive.permission_mode {
+                        estimated_changes.push(format!(
+                            "{}: {:04o} → {:04o}",
+                            directive.permission_path, current_mode, directive.permission_mode
+                        ));
+                    }
+                }
+                Err(e) => {
+                    // Cannot read metadata - might not have permission
+                    issues.push(hardener_core::ValidationIssue {
+                        validation_issue_severity: Severity::High,
+                        validation_issue_message: format!(
+                            "Cannot read {}: {}",
+                            directive.permission_path, e
+                        ),
+                        validation_issue_config_key: Some(directive.permission_path.to_string()),
+                    });
+                }
+            }
+        }
+
         Ok(ValidationReport {
             validation_report_plugin_id: self.metadata().plugin_id,
-            validation_report_is_valid: true,
-            validation_report_issues: vec![],
-            validation_report_estimated_changes: vec![],
+            validation_report_is_valid: issues
+                .iter()
+                .all(|i| i.validation_issue_severity != Severity::High),
+            validation_report_issues: issues,
+            validation_report_estimated_changes: estimated_changes,
         })
     }
 }

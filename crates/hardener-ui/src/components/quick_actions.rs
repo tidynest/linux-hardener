@@ -1,8 +1,9 @@
 use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
 
+use crate::components::{Card, HeadingLevel};
 use crate::state::AppState;
-use crate::tauri_bindings::invoke_scan;
+use crate::tauri_bindings::{invoke_generate_report, invoke_scan};
 
 /// Quick action buttons for common tasks.
 ///
@@ -23,6 +24,27 @@ pub fn QuickActions() -> impl IntoView {
             match invoke_scan().await {
                 Ok(results) => {
                     app_state.scan_results.set(results);
+
+                    // Generate compliance reports for all frameworks after scan.
+                    // This populates the data needed for the Security Score calculation.
+                    let frameworks = vec![
+                        "CIS".to_string(),
+                        "STIG".to_string(),
+                        "NIST".to_string(),
+                        "PCIDSS".to_string(),
+                        "HIPAA".to_string(),
+                        "GDPR".to_string(),
+                    ];
+                    match invoke_generate_report(frameworks).await {
+                        Ok(reports) => {
+                            app_state.compliance_reports.set(reports);
+                        }
+                        Err(e) => {
+                            web_sys::console::warn_1(
+                                &format!("Compliance generation failed: {}", e).into(),
+                            );
+                        }
+                    }
                 }
                 Err(e) => {
                     web_sys::console::error_1(&format!("Scan failed: {}", e).into());
@@ -41,8 +63,7 @@ pub fn QuickActions() -> impl IntoView {
     };
 
     view! {
-        <section class="quick-actions">
-            <h2>"Quick Actions"</h2>
+        <Card title="Quick Actions" title_level=HeadingLevel::H2 class="quick-actions">
             <nav class="action-buttons">
                 <button
                     class="btn btn-primary"
@@ -70,6 +91,6 @@ pub fn QuickActions() -> impl IntoView {
                     "Configure Hardening"
                 </button>
             </nav>
-        </section>
+        </Card>
     }
 }

@@ -2,6 +2,7 @@
 //!
 //! Contains framework selection and report generation.
 
+use crate::components::{Card, HeadingLevel};
 use crate::state::AppState;
 use crate::tauri_bindings::invoke_generate_report;
 use leptos::prelude::*;
@@ -24,6 +25,9 @@ pub fn ComplianceTab() -> impl IntoView {
     // Track selected frameworks
     let selected_frameworks = RwSignal::new(vec!["cis".to_string()]);
 
+    // Status message for user feedback
+    let status_message = RwSignal::new(Option::<(String, bool)>::None);
+
     // Toggle framework selection
     let toggle_framework = move |framework: &str| {
         let framework = framework.to_string();
@@ -44,14 +48,24 @@ pub fn ComplianceTab() -> impl IntoView {
         }
 
         app_state.is_generating_report.set(true);
+        status_message.set(None);
 
         leptos::task::spawn_local(async move {
             match invoke_generate_report(frameworks).await {
                 Ok(reports) => {
+                    let count = reports.len();
                     app_state.compliance_reports.set(reports);
+                    status_message.set(Some((
+                        format!("Generated {} compliance report{}", count, if count == 1 { "" } else { "s" }),
+                        true,
+                    )));
                 }
                 Err(e) => {
                     web_sys::console::error_1(&format!("Report generation failed: {}", e).into());
+                    status_message.set(Some((
+                        format!("Failed: {}", e),
+                        false,
+                    )));
                 }
             }
             app_state.is_generating_report.set(false);
@@ -60,8 +74,7 @@ pub fn ComplianceTab() -> impl IntoView {
 
     view! {
         <div class="compliance-tab">
-            <section class="framework-selection">
-                <h3>"Select Compliance Frameworks"</h3>
+            <Card title="Select Compliance Frameworks" title_level=HeadingLevel::H2 class="framework-selection">
                 <div class="framework-grid">
                     {frameworks.into_iter().map(|(id, label)| {
                         let id_str = id.to_string();
@@ -81,27 +94,38 @@ pub fn ComplianceTab() -> impl IntoView {
                     }).collect::<Vec<_>>()}
                 </div>
 
-                <button
-                    class="btn btn-primary"
-                    on:click=on_generate
-                    disabled=move || {
-                        selected_frameworks.get().is_empty() || app_state.is_generating_report.get()
-                    }
-                >
-                    {move || if app_state.is_generating_report.get() {
-                        "Generating..."
-                    } else {
-                        "Generate Reports"
-                    }}
-                </button>
-            </section>
+                <div class="generate-actions">
+                    <button
+                        class="btn btn-primary"
+                        on:click=on_generate
+                        disabled=move || {
+                            selected_frameworks.get().is_empty() || app_state.is_generating_report.get()
+                        }
+                    >
+                        {move || if app_state.is_generating_report.get() {
+                            "Generating..."
+                        } else {
+                            "Generate Reports"
+                        }}
+                    </button>
 
-            <section class="compliance-results">
+                    {move || status_message.get().map(|(msg, is_success)| {
+                        let class = if is_success { "status-success" } else { "status-error" };
+                        view! {
+                            <span class=format!("status-message {}", class)>{msg}</span>
+                        }
+                    })}
+                </div>
+            </Card>
+
+            <Card class="compliance-results">
                 <Show
                     when=move || !app_state.compliance_reports.get().is_empty()
                     fallback=|| view! {
                         <div class="empty-state">
-                            <p>"Select frameworks and generate reports to see compliance status."</p>
+                            <div class="empty-state-icon">"📊"</div>
+                            <p class="empty-state-title">"No reports generated yet"</p>
+                            <p class="empty-state-hint">"Select frameworks and generate reports to see compliance status."</p>
                         </div>
                     }
                 >
@@ -152,7 +176,7 @@ pub fn ComplianceTab() -> impl IntoView {
                         }
                     }).collect::<Vec<_>>()}
                 </Show>
-            </section>
+            </Card>
         </div>
     }
 }

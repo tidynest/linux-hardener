@@ -2,6 +2,7 @@
 //!
 //! Displays a summary of the last scan and apply operations.
 
+use crate::components::{Card, HeadingLevel};
 use crate::state::AppState;
 use leptos::prelude::*;
 
@@ -48,13 +49,15 @@ pub fn RecentActivity() -> impl IntoView {
     };
 
     view! {
-        <section class="dashboard-section recent-activity">
-            <h2>"Recent Activity"</h2>
-
+        <Card title="Recent Activity" title_level=HeadingLevel::H2 class="recent-activity">
             <Show
                 when=move || has_scan() || has_apply()
                 fallback=|| view! {
-                    <p class="empty-state">"No activity yet. Run a scan to get started."</p>
+                    <div class="empty-state">
+                        <div class="empty-state-icon">"📋"</div>
+                        <p class="empty-state-title">"No activity yet"</p>
+                        <p class="empty-state-hint">"Run a scan to get started."</p>
+                    </div>
                 }
             >
                 <div class="activity-list">
@@ -89,6 +92,6 @@ pub fn RecentActivity() -> impl IntoView {
                     </Show>
                 </div>
             </Show>
-        </section>
+        </Card>
     }
 }

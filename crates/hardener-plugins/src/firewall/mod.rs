@@ -231,24 +231,42 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         };
 
         // Check if firewall is enabled.
-        if backend.is_enabled(ctx).await.is_err() {
-            findings.push(Finding {
-                finding_category: FindingCategory::Network,
-                finding_current_value: "disabled".to_string(),
-                finding_description: format!("{} firewall is not enabled", backend.backend_name()),
-                finding_explanation: "A firewall provides essential network protection".to_string(),
-                finding_id: format!("{}-disabled", backend.backend_name()),
-                finding_impact: "System exposed to network attacks".to_string(),
-                finding_recommended_value: "enabled".to_string(),
-                finding_remediation_steps: vec![format!(
-                    "Enable {} firewall",
-                    backend.backend_name()
-                )],
-                finding_severity: Severity::High,
-                finding_title: "Firewall disabled".to_string(),
-                finding_compliance: get_firewall_compliance_mappings(),
-                finding_policy_exception: None,
-            });
+        if let Err(e) = backend.is_enabled(ctx).await {
+            let error_msg = e.to_string();
+
+            // Distinguish between "disabled" and "permission denied".
+            // Only report "disabled" if we're certain it's actually disabled.
+            if error_msg.contains("permission denied") || error_msg.contains("Permission denied") {
+                // Cannot determine status - log warning but don't create false finding.
+                warn!(
+                    "Cannot verify {} firewall status: {}",
+                    backend.backend_name(),
+                    error_msg
+                );
+            } else {
+                // Firewall is genuinely disabled.
+                findings.push(Finding {
+                    finding_category: FindingCategory::Network,
+                    finding_current_value: "disabled".to_string(),
+                    finding_description: format!(
+                        "{} firewall is not enabled",
+                        backend.backend_name()
+                    ),
+                    finding_explanation: "A firewall provides essential network protection"
+                        .to_string(),
+                    finding_id: format!("{}-disabled", backend.backend_name()),
+                    finding_impact: "System exposed to network attacks".to_string(),
+                    finding_recommended_value: "enabled".to_string(),
+                    finding_remediation_steps: vec![format!(
+                        "Enable {} firewall",
+                        backend.backend_name()
+                    )],
+                    finding_severity: Severity::High,
+                    finding_title: "Firewall disabled".to_string(),
+                    finding_compliance: get_firewall_compliance_mappings(),
+                    finding_policy_exception: None,
+                });
+            }
         }
 
         let duration_us = start_time.elapsed().as_micros() as u64;
@@ -347,17 +365,55 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         Ok(())
     }
 
-    async fn validate(&self, _ctx: &Context, _config: &Config) -> Result<ValidationReport> {
+    async fn validate(&self, ctx: &Context, _config: &Config) -> Result<ValidationReport> {
         let validation_plugin_id = PluginId::new("firewall-hardening");
+        let mut issues = Vec::new();
+        let mut estimated_changes = Vec::new();
 
-        // Stub implementation - will be completed after backends are implemented
-        warn!("Firewall validate() method not yet fully implemented");
+        // Detect backend.
+        match self.detect_backend(ctx).await {
+            Ok(backend) => {
+                // Check if firewall is enabled.
+                if let Err(e) = backend.is_enabled(ctx).await {
+                    let error_msg = e.to_string();
+                    if error_msg.contains("permission denied")
+                        || error_msg.contains("Permission denied")
+                    {
+                        issues.push(hardener_core::ValidationIssue {
+                            validation_issue_severity: Severity::Medium,
+                            validation_issue_message:
+                                "Cannot verify firewall status (permission denied)".to_string(),
+                            validation_issue_config_key: None,
+                        });
+                    } else {
+                        // Firewall is disabled - will be enabled.
+                        estimated_changes
+                            .push(format!("Enable {} firewall", backend.backend_name()));
+                    }
+                }
+
+                // Get default rules that would be applied.
+                let rules = backend.get_default_rules();
+                if !rules.is_empty() {
+                    estimated_changes.push(format!("Apply {} baseline firewall rules", rules.len()));
+                }
+            }
+            Err(e) => {
+                issues.push(hardener_core::ValidationIssue {
+                    validation_issue_severity: Severity::Critical,
+                    validation_issue_message: format!("No firewall backend available: {}", e),
+                    validation_issue_config_key: None,
+                });
+            }
+        }
 
         Ok(ValidationReport {
             validation_report_plugin_id: validation_plugin_id,
-            validation_report_is_valid: true,
-            validation_report_issues: vec![],
-            validation_report_estimated_changes: vec![],
+            validation_report_is_valid: issues
+                .iter()
+                .all(|i| i.validation_issue_severity != Severity::Critical),
+            validation_report_issues: issues,
+            validation_report_estimated_changes: estimated_changes,
         })
     }
 }

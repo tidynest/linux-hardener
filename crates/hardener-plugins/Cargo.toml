@@ -7,9 +7,7 @@ edition.workspace = true
 hardener-common = { path = "../hardener-common" }
 hardener-core   = { path = "../hardener-core" }
 log = "0.4.28"
-tempfile = { workspace = true }
 tokio = { workspace = true }
 tracing = "0.1.41"
-anyhow = "1.0.100"
 async-trait = { workspace = true }
 chrono = "0.4.42"

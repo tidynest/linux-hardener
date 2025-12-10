@@ -398,7 +398,7 @@ pub struct ScanRunner {
 | `src/utils/mod.rs` | Utils module exports | Re-exports (mock_data) |
 | `src/utils/mock_data.rs` | Development mocks | Mock data generators |
 | `src/pages/mod.rs` | Pages module exports | `DashboardPage`, `AnalysisPage`, `HardeningPage` |
-| `src/components/mod.rs` | Components module exports | All component re-exports |
+| `src/components/mod.rs` | Components module exports | All component re-exports, `Card`, `CardVariant`, `HeadingLevel` |
 
 ### Pages (3-page architecture)
 
@@ -412,7 +412,7 @@ pub struct ScanRunner {
 
 | File | Purpose | Key Exports |
 |------|---------|-------------|
-| `src/components/security_score.rs` | Main security score gauge | `SecurityScore` |
+| `src/components/security_score.rs` | Main security score gauge with compliance-based calculation | `SecurityScore`, `calculate_all_scores()`, `FrameworkScore` |
 | `src/components/mini_security_score.rs` | Compact score for headers | `MiniSecurityScore` |
 | `src/components/quick_actions.rs` | Dashboard quick action buttons | `QuickActions` |
 | `src/components/recent_activity.rs` | Recent scan/apply activity summary | `RecentActivity` |
@@ -420,10 +420,12 @@ pub struct ScanRunner {
 | `src/components/findings_grid.rs` | Findings table display | `FindingsGrid` |
 | `src/components/finding_detail.rs` | Individual finding details panel | `FindingDetail` |
 | `src/components/findings_tab.rs` | Findings tab wrapper for Analysis page | `FindingsTab` |
-| `src/components/compliance_tab.rs` | Compliance framework selection and reports | `ComplianceTab` |
+| `src/components/compliance_tab.rs` | Compliance framework selection and reports with status feedback | `ComplianceTab` |
 | `src/components/configure_section.rs` | Profile selection and plugin toggles | `ConfigureSection` |
-| `src/components/history_section.rs` | Apply results and checkpoint management | `HistorySection` |
+| `src/components/history_section.rs` | Apply results and checkpoint management with refresh button | `HistorySection` |
 | `src/components/severity_badge.rs` | Severity level badge display | `SeverityBadge` |
+| `src/components/card.rs` | Reusable card container component | `Card`, `CardVariant`, `HeadingLevel` |
+| `src/components/theme_toggle.rs` | Theme selector dropdown component | `ThemeToggle` |
 
 **Note**: This crate depends only on `hardener-types` to ensure WASM compatibility. All types are re-exported from hardener-types.
 
@@ -472,6 +474,9 @@ pub async fn run_rollback(checkpoint_id: String) -> Result<bool, String>
 
 #[tauri::command]
 pub async fn get_checkpoints() -> Result<Vec<CheckpointInfo>, String>
+// Note: Reads from BOTH user (~/.local/share/linux-hardener/checkpoints.db) AND
+// system (/var/lib/linux-hardener/checkpoints.db) databases to merge checkpoints
+// from privileged (pkexec) and non-privileged operations
 
 #[tauri::command]
 pub async fn get_latest_scan() -> Result<Option<Vec<ScanResult>>, String>
@@ -534,6 +539,7 @@ pub async fn generate_compliance_report(frameworks: Vec<String>) -> Result<Vec<C
 | `docs/RELEASING.md` | Versioning and release process |
 | `docs/SSH_REMOTE_SCANNING.md` | SSH remote scanning user guide |
 | `docs/SSH_REMOTE_PLAN.md` | SSH implementation plan (internal) |
+| `docs/THEME_DESIGN_GUIDE.md` | GUI theming system documentation |
 | `docs/WASM_FIX_PLAN.md` | WASM compilation fix implementation |
 
 ---
@@ -573,4 +579,4 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | `hardener-common/src/types.rs` | Added `FindingPolicyException` struct |
 | `hardener-cli/src/cli.rs` | Added `--config`, `--audit`, `--compliance`, `--exit-code` flags, `ScanMode` enum |
 
-**Last Updated**: 2025-12-07
+**Last Updated**: 2025-12-09

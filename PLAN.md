@@ -147,9 +147,9 @@ See [docs/WASM_FIX_PLAN.md](docs/WASM_FIX_PLAN.md) for implementation details.
 | **Browser mode fix** | Web UI now renders correctly without Tauri (added `tauri_available()` check) | Critical | ✅ Complete |
 | Timestamp formatting | Format raw timestamp numbers on Checkpoints page | Medium | ✅ Complete |
 | Background personalisation | 5 security-focused themes created (Fortress, Sentinel, Command, Guardian, Daywatch) | Low | ✅ Complete |
-| Responsive layout | See [FRONTEND_LAYOUT_PLAN.md](docs/FRONTEND_LAYOUT_PLAN.md) Session 2 | Medium | Pending |
+| Responsive layout | See [FRONTEND_LAYOUT_PLAN.md](docs/FRONTEND_LAYOUT_PLAN.md) Session 2 | Medium | ✅ Complete |
 | Navigation restructure | Consolidated to 3 pages (Dashboard, Analysis, Hardening) | Low | ✅ Complete |
-| GUI functional testing | Verify all GUI features work correctly | High | In Progress |
+| GUI functional testing | Verify all GUI features work correctly | High | ✅ Complete |
 | CLI functional testing | Verify all CLI commands work correctly | High | Pending |
 | Safe testing environment | Test in VM/container to avoid system changes | Critical | Pending |
 
@@ -199,58 +199,76 @@ This version focuses on fixing layout issues, improving accessibility, and enhan
 - Skip link as first focusable element with `<main id="main-content" tabindex="-1">`
 - Tab components: `aria-controls`, `aria-labelledby`, `tabindex` management, unique IDs
 
-#### B. Responsive Layout (Session 2) - In Progress
+#### B. Responsive Layout (Session 2) ✅ COMPLETE
 
 | Feature | Description | Priority | Status |
 |---------|-------------|----------|--------|
 | CSS spacing scale | Add `--space-xs` through `--space-2xl` variables | High | ✅ Complete |
 | Utility classes | Add `.flex`, `.grid`, `.gap-*`, `.items-*`, `.justify-*` utilities | High | ✅ Complete |
-| Card standardisation | Reusable `Card` component with consistent styling | Medium | 🔄 Planned |
+| Card standardisation | Reusable `Card` component with consistent styling | Medium | ✅ Complete |
 | Mobile-first breakpoints | Test at 320px, 640px, 1024px, 1440px | Medium | ✅ Complete |
 | Touch targets | Minimum 44px touch targets for interactive elements | Medium | ✅ Complete |
 
-**Session 2 Progress (2025-12-08):**
-- Spacing scale already in place: `--space-xs` to `--space-2xl` in `:root`
-- Added utility classes to `styles.css` (lines 181-206):
-  - Flex: `.flex`, `.flex-col`, `.flex-wrap`, `.flex-1`
-  - Alignment: `.items-center`, `.items-start`, `.justify-center`, `.justify-between`
-  - Grid: `.grid`
-  - Gap: `.gap-xs`, `.gap-sm`, `.gap-md`, `.gap-lg`, `.gap-xl`
-- Viewport testing complete: 320px, 640px, 1920px - all responsive layouts working
-- Touch targets: 44px minimum via `@media (pointer: coarse)` already in place
+**Session 2 Completed (2025-12-08):**
+- Spacing scale: `--space-xs` to `--space-2xl` in `:root`
+- Utility classes in `styles.css`: `.flex`, `.flex-col`, `.grid`, `.gap-*`, `.items-*`, `.justify-*`
+- Viewport testing complete: 320px, 640px, 1920px
+- Touch targets: 44px minimum via `@media (pointer: coarse)`
+- Card component in `card.rs` with `Card`, `CardVariant`, `HeadingLevel`
+- All section components refactored to use Card component
 
-**Card Component (Pending Decision):**
-A reusable `Card` component is ready for implementation. Design:
-```rust
-#[component]
-pub fn Card(
-    #[prop(into, optional)] title: Option<String>,
-    #[prop(into, optional)] class: Option<String>,
-    children: Children,
-) -> impl IntoView
-```
-CSS: `.card`, `.card-title`, `.card-content` with `bg-secondary`, `border`, `border-radius`, `padding`.
-Decision pending on whether to refactor existing sections (`.dashboard-section`, `.apply-results-summary`, etc.) to use `<Card>`.
-
-#### C. Theme & Accessibility (Session 3)
+#### C. Theme & Accessibility (Session 3) ✅ COMPLETE
 
 | Feature | Description | Priority | Status |
 |---------|-------------|----------|--------|
-| Colour contrast audit | Verify WCAG AA (4.5:1 for text, 3:1 for UI) | High | Pending |
-| `data-theme` attribute | CSS-only theme switching via `[data-theme="..."]` | Medium | Pending |
-| Focus state improvements | Consistent `:focus-visible` ring colour | Medium | Pending |
-| Theme toggle component | Dropdown to switch between themes | Low | Pending |
+| Colour contrast audit | Adjusted `--text-secondary` (#a1aebe) and `--text-muted` (#7a8a9e) for WCAG AA | High | ✅ Complete |
+| `data-theme` attribute | CSS-only theme switching via `[data-theme="..."]` for all 5 themes | Medium | ✅ Complete |
+| Focus state improvements | Consistent 0.125rem outline ring for accessibility | Medium | ✅ Complete |
+| Theme toggle component | ThemeToggle dropdown with localStorage persistence | Low | ✅ Complete |
 | High Contrast theme | WCAG AAA accessibility theme option | Low | Pending |
 
-#### D. Polish & Testing (Session 4+)
+**Session 3 Completed (2025-12-08):**
+- Colour contrast audit: Brightened `--text-secondary` and `--text-muted` to meet WCAG AA 4.5:1 ratio
+- CSS `[data-theme="..."]` selectors for Fortress, Sentinel, Command, Guardian, Daywatch themes
+- ThemeToggle component in `theme_toggle.rs` with dropdown UI
+- Theme persistence via localStorage, applies on page load
+- Added "Storage" feature to web-sys in Cargo.toml for localStorage access
+- Visual testing completed for all themes via Playwright MCP
+
+#### D. Polish & Testing (Session 4)
 
 | Feature | Description | Priority | Status |
 |---------|-------------|----------|--------|
-| Animations | Subtle hover effects, page transitions, loading states | Low | Pending |
-| Error states | Empty state designs, error message styling | Medium | Pending |
-| Responsive typography | Fluid font sizes with `clamp()` | Low | Pending |
-| E2E tests (Web) | Playwright tests for browser UI | High | Pending |
-| E2E tests (Desktop) | Tauri test harness for desktop app | High | Pending |
+| Animations | Subtle hover effects, page transitions, loading states | Low | ✅ Complete |
+| Error states | Empty state designs, error message styling | Medium | ✅ Complete |
+| Responsive typography | Fluid font sizes with `clamp()` | Low | ✅ Complete (Session 2) |
+| E2E tests (Web) | Playwright tests for browser UI | High | ✅ Complete |
+| E2E tests (Desktop) | Tauri test harness for desktop app | Medium | Deferred to v0.4.0 |
+
+**Session 4 Completed (2025-12-08):**
+- Empty state styling with icons: 📋 (activity), 🔍 (findings), 📊 (compliance), ⚡ (apply), 💾 (checkpoints)
+- CSS transition variables: `--transition-fast` (150ms), `--transition-normal` (250ms), `--transition-slow` (350ms)
+- Button hover effects: `translateY(-1px)` lift with `box-shadow`
+- Card hover: border colour transition
+- Table row hover: smooth background transition
+- Severity badge hover: subtle `scale(1.05)`
+- Score display: slow transition for state changes
+- Filter select: focus ring with accent colour
+- E2E tests: TC-11 to TC-14 all passed (see `docs/GUI_V031_TEST_PLAN.md`)
+
+**Session 5 Completed (2025-12-09) - Final Polish:**
+- Tab animation reduced from 250ms to 120ms for snappier switching
+- Tab transform reduced from 8px to 4px for subtler motion
+- Navigation title now uses `--color-accent` (adapts to each theme's identity colour)
+- Created `docs/THEME_DESIGN_GUIDE.md` with comprehensive theme creation documentation
+
+**Session 6 Completed (2025-12-09) - GUI Bug Fixes:**
+- ✅ **Issue H**: Score mismatch Dashboard vs Analysis - unified `calculate_all_scores()` function
+- ✅ **Issue J**: Generate Reports no feedback - added status message display with success/error styling
+- ✅ **Issue K**: Checkpoints not visible after Apply - `get_checkpoints()` now reads both user + system databases
+- ✅ **Issue L**: Theme selector unreadable - CSS `appearance: none` reset with custom SVG dropdown arrow
+- Added Refresh button to checkpoint section for manual reload
+- MiniSecurityScore now shares compliance-based scoring algorithm with SecurityScore
 
 #### E. Backend Integration (Complete)
 
@@ -539,4 +557,4 @@ When working on new features:
 
 **Legend**: ⬜ Pending | 🔄 In Progress | ✅ Complete
 
-**Last Updated**: 2025-12-08
+**Last Updated**: 2025-12-09

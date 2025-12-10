@@ -452,14 +452,27 @@ The web app is useful for UI development and testing without needing Tauri. All 
    - v0.3.1: GUI Polish & Testing (see PLAN.md) - **IN PROGRESS**
    - v0.3.2: Frontend Layout & Accessibility - See [docs/FRONTEND_LAYOUT_PLAN.md](docs/FRONTEND_LAYOUT_PLAN.md) for detailed session breakdown:
      - ✅ Session 1: Critical overflow fixes (`min-width: 0`, grid templates, skip links, ARIA) - COMPLETE (2025-12-07)
-     - 🔄 Session 2: Responsive layout - **IN PROGRESS (2025-12-08)**
+     - ✅ Session 2: Responsive layout - **COMPLETE (2025-12-08)**
        - ✅ Spacing scale (`--space-xs` to `--space-2xl`)
        - ✅ Utility classes (`.flex`, `.flex-col`, `.grid`, `.gap-*`, `.items-*`, `.justify-*`)
        - ✅ Viewport testing (320px, 640px, 1920px)
        - ✅ Touch targets (44px min via `@media (pointer: coarse)`)
-       - 🔄 Card component standardisation (planned, pending decision)
-     - Session 3: Theme & accessibility (contrast audit, theme switching)
-     - Session 4+: Polish & E2E testing
+       - ✅ Card component refactoring complete (2025-12-08):
+         - Created `card.rs` with `Card`, `CardVariant`, `HeadingLevel`
+         - Refactored all section containers to use Card component
+         - CSS cleanup: removed redundant container styles
+         - Visual testing verified via Playwright MCP
+     - ✅ Session 3: Theme & Accessibility - **COMPLETE (2025-12-08)**
+       - ✅ Colour contrast audit: Adjusted `--text-secondary` and `--text-muted` for WCAG AA
+       - ✅ `data-theme` CSS attribute selectors for all 5 themes
+       - ✅ ThemeToggle dropdown component with localStorage persistence
+       - ✅ Focus state improvements: 0.125rem outline for accessibility
+     - ✅ Session 4: Polish & E2E testing - **COMPLETE (2025-12-08)**
+       - ✅ Empty state styling with icons (📋, 🔍, 📊, ⚡, 💾)
+       - ✅ CSS transitions: `--transition-fast/normal/slow`
+       - ✅ Button hover lift effects with `translateY(-1px)`
+       - ✅ Card/table/badge hover transitions
+       - ✅ E2E tests: TC-11 to TC-14 passed
    - v0.3.3: Distribution-Specific Validation
    - v0.4.0 Web Interface planning
 
@@ -473,12 +486,13 @@ The web app is useful for UI development and testing without needing Tauri. All 
    - ~~GUI: Background colour could be more personable~~ ✅ **ADDRESSED (2025-12-07)** - Created 5 security-focused themes
    - ~~GUI: Page navigation structure~~ ✅ **FIXED** - Consolidated to 3 pages (Dashboard, Analysis, Hardening)
    - ~~**Session 1 (Critical)**~~ ✅ **COMPLETE (2025-12-07)** - Flex/grid overflow fixes, skip link, tab ARIA attributes
-   - **Session 2**: 🔄 **IN PROGRESS (2025-12-08)** - Utility classes added, viewport testing complete, Card component pending
-   - **Session 3**: Colour contrast audit, theme switching UI, focus state improvements
-   - **Session 4+**: E2E testing (Web + Desktop), animations, error states
+   - **Session 2**: ✅ **COMPLETE (2025-12-08)** - Utility classes, viewport testing, Card component refactoring
+   - **Session 3**: ✅ **COMPLETE (2025-12-08)** - Colour contrast audit (WCAG AA), theme switching UI (ThemeToggle component), focus state improvements
+     - ✅ Additional fixes (2025-12-08): Text contrast brightened, select dropdown option styling, section header size increased
+   - **Session 4**: ✅ **COMPLETE (2025-12-08)** - Empty states with icons, CSS transitions, hover animations, E2E tests passed
    - Wayland: Requires `WEBKIT_DISABLE_COMPOSITING_MODE=1` environment variable
 
-8. **Theme System (2025-12-07)**:
+8. **Theme System (2025-12-07, updated 2025-12-09)**:
    - Created 5 new themes based on security psychology in `crates/hardener-ui/themes/`:
      - **Fortress** (`fortress.css`): Deep slate-blue with gold accents - vault-like, enterprise feel
      - **Sentinel** (`sentinel.css`): Warm charcoal with amber - vigilant, cozy
@@ -486,15 +500,114 @@ The web app is useful for UI development and testing without needing Tauri. All 
      - **Guardian** (`guardian.css`): Forest black with emerald - natural protection, calming
      - **Daywatch** (`daywatch.css`): Warm off-white with teal - light mode for daytime
    - All themes tested via Playwright MCP in browser mode
-   - **TODO**: Implement theme selection UI (see Session 3 in FRONTEND_LAYOUT_PLAN.md)
+   - ✅ Theme selection UI implemented (ThemeToggle dropdown in navigation)
+   - ✅ Title colour now uses `--color-accent` (adapts to each theme's identity colour) (2025-12-09)
+   - ✅ Tab animation reduced from 250ms to 120ms for snappier feel (2025-12-09)
+   - ✅ Theme Design Guide created: `docs/THEME_DESIGN_GUIDE.md` (2025-12-09)
    - **TODO**: Add High Contrast theme for WCAG AAA accessibility
 
-9. **Always Remember**:
-   - Update documentation after changes
-   - Follow naming conventions strictly
-   - No AI attributions
-   - British English
-   - Code must pass clippy
+9. **FIXED: Security Score vs Compliance Mismatch (2025-12-09)**:
+   - ✅ **Issues A-C FIXED**: Completely redesigned Security Score calculation
+   - **New Algorithm**:
+     - Based on compliance framework control pass/fail with severity weighting
+     - Pass = 100pts, Critical fail = 0pts, High = 25pts, Medium = 50pts, Low = 75pts, Info = 90pts
+     - Overall score = average of all framework weighted scores
+   - **Files Changed**:
+     - `security_score.rs` - New `calculate_framework_score()` and `calculate_all_scores()` functions
+     - `quick_actions.rs` - Now generates compliance reports after scan for all 6 frameworks
+     - `styles.css` - Added `.score-breakdown` styles for framework detail display
+   - **New UI Features**:
+     - Expandable "Framework Breakdown" showing per-framework scores (CIS, STIG, NIST, etc.)
+     - Each framework shows weighted score + pass/total count
+     - Color-coded by score level (green/yellow/red)
+   - **Expected Result**: System with 82% CIS compliance now scores ~75-85 (accurate, severity-weighted)
+
+10. **FIXED: False Positives When Not Running as Root (2025-12-09)**:
+    - ✅ **Bug D FIXED**: UFW false positive - now uses `systemctl is-active ufw` first (doesn't need root)
+      - Changed `crates/hardener-plugins/src/firewall/ufw.rs:146-181`
+      - Changed `crates/hardener-plugins/src/firewall/mod.rs:233-270` (distinguishes permission error from disabled)
+    - ✅ **Bug E FIXED**: Audit rules false positives - now detects permission denied from `auditctl -l`
+      - Added `AuditRulesResult` enum in `crates/hardener-plugins/src/audit/mod.rs:267-300`
+      - Scan now skips rule findings when permission denied instead of reporting 25 false positives
+    - **Still pending**:
+      - `nft list ruleset` (nftables) - may still need similar fix
+    - **Plan file**: `/home/bakri/.claude/plans/jaunty-wondering-donut.md`
+
+11. **CLI Verification Summary (2025-12-09, updated after fixes)**:
+    | Category | Count | Accuracy |
+    |----------|-------|----------|
+    | Kernel | 4 | ✅ All correct |
+    | FileSystem | 2 | ✅ All correct |
+    | Authentication | 8 | ✅ All correct |
+    | Network | 0-1 | ✅ Fixed - no false positive when permission denied |
+    | Audit | 0-25 | ✅ Fixed - no false positives when permission denied |
+
+12. **FIXED: Stub validate() Methods (2025-12-09)**:
+    - ✅ **Bug F FIXED**: All three validate() stubs now properly report estimated changes
+      - `permissions/mod.rs:353-401` - Now shows permission changes like "/root: 0755 → 0700"
+      - `ssh/mod.rs:538-590` - Now shows directive changes like "PermitRootLogin: yes → no"
+      - `firewall/mod.rs:368-418` - Now shows "Enable UFW firewall" and rule count
+
+13. **FIXED: Kernel Rollback Gap (2025-12-09)**:
+    - ✅ **Bug G FIXED**: apply() now creates `/etc/sysctl.d/99-hardener.conf` during apply
+      - Changed `kernel/mod.rs:273-379`
+      - Writes all hardening parameters to persistent config file
+      - Rollback now properly removes this file and `sysctl --system` resets to pre-hardening state
+      - Bonus: Kernel hardening now survives reboot automatically
+
+14. **TESTS: Bug-Exposing Tests Added (2025-12-09)**:
+    - Added `firewall_mock_tests.rs` with `test_firewall_scan_permission_denied_should_not_report_disabled`
+      - ✅ **PASSING** - Bug D fixed (2025-12-09)
+    - Added to `audit_mock_tests.rs`: `test_audit_scan_permission_denied_should_not_report_missing_rules`
+      - ✅ **PASSING** - Bug E fixed (2025-12-09)
+    - All bug-exposing tests now pass: `cargo test --package hardener-plugins`
+
+15. **GUI ISSUES FIXED (2025-12-09)**:
+    These issues were found during GUI testing after fixing bugs D, E, F, G, A-C:
+
+    | Issue | Description | Priority | Status |
+    |-------|-------------|----------|--------|
+    | H | Score mismatch Dashboard vs Analysis pages | Medium | ✅ FIXED |
+    | I | 11 findings - PAM false positives (pwquality.conf missing on Arch) | Low | Deferred (not a bug) |
+    | J | "Generate Reports" button gives no visual feedback | Medium | ✅ FIXED |
+    | K | Checkpoints not visible in UI after Apply Hardening | Medium | ✅ FIXED |
+    | L | Theme selector text unreadable (same color as background) | High | ✅ FIXED |
+
+    **Issue H Fix**: Unified `calculate_all_scores()` function shared between `SecurityScore` and `MiniSecurityScore` components.
+
+    **Issue J Fix**: Added `status_message` reactive signal with success/error display styling.
+
+    **Issue K Fix**: `get_checkpoints()` in `commands.rs` now reads from both user (`~/.local/share/linux-hardener/checkpoints.db`) and system (`/var/lib/linux-hardener/checkpoints.db`) databases and merges results.
+
+    **Issue L Fix**: Added `appearance: none` CSS reset with custom SVG dropdown arrow for WebKit compatibility.
+
+    **Issue I Details**: PAM findings are valid on Ubuntu/Debian but not actionable on Arch Linux where `pwquality.conf` doesn't exist by default. Not a bug - Arch uses `pam_unix` not `pam_pwquality`. May add distribution-specific handling in future.
+
+    **Files Changed**:
+    - `src-tauri/src/commands.rs` - Dual database reading for checkpoints
+    - `crates/hardener-ui/src/components/mini_security_score.rs` - Use shared scoring
+    - `crates/hardener-ui/src/components/security_score.rs` - Export `calculate_all_scores()`
+    - `crates/hardener-ui/src/components/compliance_tab.rs` - Status message feedback
+    - `crates/hardener-ui/src/components/history_section.rs` - Refresh button
+    - `crates/hardener-ui/styles.css` - Theme selector CSS, status messages
+
+16. **ROOT TESTS VERIFIED (2025-12-09)**:
+    All apply operations tested with sudo on main system:
+
+    | Test | Result | Details |
+    |------|--------|---------|
+    | Kernel apply | ✅ Pass | 13 changes, `/etc/sysctl.d/99-hardener.conf` created |
+    | Firewall apply | ✅ Pass | 2 rules added, UFW enabled |
+    | SSH apply | ✅ Pass | Backup + config + sshd restart |
+
+    **Recovery backup**: `/tmp/pre-test-backup-20251209-0203.tar.gz`
+
+17. **Always Remember**:
+    - Update documentation after changes
+    - Follow naming conventions strictly
+    - No AI attributions
+    - British English
+    - Code must pass clippy
 
 ---
 
@@ -663,4 +776,4 @@ Treat the user as a trainee you're guiding through the project. Explain connecti
 
 *This document was prepared for continuity between development sessions.*
 
-**Last Updated**: 2025-12-08
+**Last Updated**: 2025-12-09

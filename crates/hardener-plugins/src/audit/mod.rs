@@ -264,12 +264,30 @@ async fn is_auditd_running(ctx: &Context) -> Result<bool> {
     Ok(output.success())
 }
 
-/// Reads current audit rules from the system using auditctl.
-async fn read_current_audit_rules(ctx: &Context) -> Result<Vec<String>> {
-    let output = ctx.executor().execute_command("auditctl", &["-l"]).await?;
+/// Result of reading audit rules - distinguishes success from permission error.
+enum AuditRulesResult {
+    /// Successfully read rules (may be empty if no rules configured).
+    Rules(Vec<String>),
+    /// Permission denied - cannot determine rule state.
+    PermissionDenied,
+}
 
+/// Reads current audit rules from the system using auditctl.
+///
+/// Returns `AuditRulesResult` to distinguish between "no rules" and "permission denied".
+async fn read_current_audit_rules(ctx: &Context) -> AuditRulesResult {
+    let output = match ctx.executor().execute_command("auditctl", &["-l"]).await {
+        Ok(output) => output,
+        Err(_) => return AuditRulesResult::PermissionDenied,
+    };
+
+    // Check for permission denied in stderr or non-zero exit.
     if !output.success() {
-        return Ok(Vec::new());
+        if output.stderr.contains("root") || output.stderr.contains("permission") {
+            return AuditRulesResult::PermissionDenied;
+        }
+        // Other failure - treat as empty rules (conservative).
+        return AuditRulesResult::Rules(Vec::new());
     }
 
     let rules = output
@@ -279,7 +297,7 @@ async fn read_current_audit_rules(ctx: &Context) -> Result<Vec<String>> {
         .filter(|s| !s.is_empty() && !s.starts_with("No rules"))
         .collect();
 
-    Ok(rules)
+    AuditRulesResult::Rules(rules)
 }
 
 /// Writes audit rules to the hardening rules file with backup.
@@ -451,41 +469,55 @@ impl HardeningPlugin for AuditHardeningPlugin {
             });
         }
 
-        // Check current audit rules
-        if let Ok(current_rules) = read_current_audit_rules(ctx).await {
-            // Check each required rule
-            for rule in AUDIT_RULES {
-                // Check if this rule category is present in current rules
-                let rule_exists = current_rules.iter().any(|current_rule| {
-                    current_rule.contains(rule.audit_rule_category) && current_rule.contains("-k")
-                });
-
-                if !rule_exists {
-                    findings.push(Finding {
-                        finding_category: FindingCategory::Audit,
-                        finding_current_value: "not configured".to_string(),
-                        finding_description: rule.audit_rule_description.to_string(),
-                        finding_explanation: format!(
-                            "Audit rule for {} is not configured. This rule monitors: {}",
-                            rule.audit_rule_category, rule.audit_rule_description
-                        ),
-                        finding_id: format!(
-                            "audit_rule_{}",
-                            rule.audit_rule_category.replace("-", "_")
-                        ),
-                        finding_impact: "Security events in this category are not being audited"
-                            .to_string(),
-                        finding_recommended_value: rule.audit_rule_content.to_string(),
-                        finding_remediation_steps: vec![
-                            format!("Add rule: {}", rule.audit_rule_content),
-                            "Restart auditd: systemctl restart auditd".to_string(),
-                        ],
-                        finding_severity: rule.audit_rule_severity,
-                        finding_title: format!("Missing audit rule: {}", rule.audit_rule_category),
-                        finding_compliance: get_audit_compliance_mappings("rules"),
-                        finding_policy_exception: None,
+        // Check current audit rules.
+        // Handle permission denied separately to avoid false positives.
+        match read_current_audit_rules(ctx).await {
+            AuditRulesResult::Rules(current_rules) => {
+                // Successfully read rules - check each required rule.
+                for rule in AUDIT_RULES {
+                    // Check if this rule category is present in current rules.
+                    let rule_exists = current_rules.iter().any(|current_rule| {
+                        current_rule.contains(rule.audit_rule_category)
+                            && current_rule.contains("-k")
                     });
+
+                    if !rule_exists {
+                        findings.push(Finding {
+                            finding_category: FindingCategory::Audit,
+                            finding_current_value: "not configured".to_string(),
+                            finding_description: rule.audit_rule_description.to_string(),
+                            finding_explanation: format!(
+                                "Audit rule for {} is not configured. This rule monitors: {}",
+                                rule.audit_rule_category, rule.audit_rule_description
+                            ),
+                            finding_id: format!(
+                                "audit_rule_{}",
+                                rule.audit_rule_category.replace("-", "_")
+                            ),
+                            finding_impact:
+                                "Security events in this category are not being audited"
+                                    .to_string(),
+                            finding_recommended_value: rule.audit_rule_content.to_string(),
+                            finding_remediation_steps: vec![
+                                format!("Add rule: {}", rule.audit_rule_content),
+                                "Restart auditd: systemctl restart auditd".to_string(),
+                            ],
+                            finding_severity: rule.audit_rule_severity,
+                            finding_title: format!(
+                                "Missing audit rule: {}",
+                                rule.audit_rule_category
+                            ),
+                            finding_compliance: get_audit_compliance_mappings("rules"),
+                            finding_policy_exception: None,
+                        });
+                    }
                 }
+            }
+            AuditRulesResult::PermissionDenied => {
+                // Cannot verify rules - log warning, don't create false findings.
+                warn!(
+                    "Cannot verify audit rules: permission denied (requires root)"
+                );
             }
         }
         Ok(ScanResult {
@@ -719,7 +751,9 @@ impl HardeningPlugin for AuditHardeningPlugin {
                 }
 
                 // Estimate rule changes
-                if let Ok(current_rules) = read_current_audit_rules(ctx).await {
+                if let AuditRulesResult::Rules(current_rules) =
+                    read_current_audit_rules(ctx).await
+                {
                     let missing_rules = AUDIT_RULES
                         .iter()
                         .filter(|rule| {

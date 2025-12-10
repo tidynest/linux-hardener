@@ -2,6 +2,7 @@
 //!
 //! Contains profile selection, plugin toggles, and apply controls.
 
+use crate::components::{Card, HeadingLevel};
 use crate::state::AppState;
 use crate::tauri_bindings::invoke_apply;
 use leptos::prelude::*;
@@ -125,8 +126,7 @@ pub fn ConfigureSection() -> impl IntoView {
                 "A checkpoint is created before changes are applied, allowing rollback if needed."
             </p>
 
-            <section class="profile-selector">
-                <h2>"Security Profile"</h2>
+            <Card title="Security Profile" title_level=HeadingLevel::H2 class="profile-selector">
                 <fieldset>
                     <legend>"Choose a preset configuration"</legend>
 
@@ -172,10 +172,9 @@ pub fn ConfigureSection() -> impl IntoView {
                         "High Security (All 8 plugins)"
                     </label>
                 </fieldset>
-            </section>
+            </Card>
 
-            <section class="plugin-toggles">
-                <h2>"Plugin Control"</h2>
+            <Card title="Plugin Control" title_level=HeadingLevel::H2 class="plugin-toggles">
                 <div class="plugin-grid">
                     {plugin_states.iter().enumerate().map(|(i, (_, signal))| {
                         let plugin = &PLUGINS[i];
@@ -197,9 +196,9 @@ pub fn ConfigureSection() -> impl IntoView {
                         }
                     }).collect::<Vec<_>>()}
                 </div>
-            </section>
+            </Card>
 
-            <section class="apply-controls">
+            <Card class="apply-controls">
                 <button
                     class="btn btn-primary btn-large apply-button"
                     on:click=on_apply
@@ -211,7 +210,7 @@ pub fn ConfigureSection() -> impl IntoView {
                         "Apply Hardening"
                     }}
                 </button>
-            </section>
+            </Card>
         </div>
     }
 }

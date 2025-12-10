@@ -138,20 +138,23 @@ async fn run_privileged_command(args: &[&str]) -> Result<String, PrivilegedComma
 }
 
 /// Returns the path to the user-local database.
-fn get_db_path() -> std::path::PathBuf {
+fn get_user_db_path() -> std::path::PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("linux-hardener")
         .join("checkpoints.db")
 }
 
+/// Returns the path to the system-wide database (used by privileged CLI).
+fn get_system_db_path() -> std::path::PathBuf {
+    std::path::PathBuf::from("/var/lib/linux-hardener/checkpoints.db")
+}
+
 /// Creates a CheckpointManager with database connection.
 ///
 /// Uses a user-local database path to avoid requiring root for reads.
-async fn create_checkpoint_manager() -> Result<CheckpointManager, String> {
-    let db_path = get_db_path();
-
-    let pool = init_db(Some(db_path.as_path()))
+async fn create_checkpoint_manager(db_path: &std::path::Path) -> Result<CheckpointManager, String> {
+    let pool = init_db(Some(db_path))
         .await
         .map_err(|e| e.to_string())?;
 
@@ -160,9 +163,9 @@ async fn create_checkpoint_manager() -> Result<CheckpointManager, String> {
 
 /// Creates a ScanHistoryManager with database connection.
 ///
-/// Uses the same database as checkpoints for scan history persistence.
+/// Uses the user-local database for scan history persistence.
 async fn create_scan_history_manager() -> Result<ScanHistoryManager, String> {
-    let db_path = get_db_path();
+    let db_path = get_user_db_path();
 
     let pool = init_db(Some(db_path.as_path()))
         .await
@@ -281,19 +284,44 @@ pub async fn run_rollback(checkpoint_id: String) -> Result<bool, String> {
     Ok(true)
 }
 
-/// Retrieves a list of all available checkpoints.
+/// Retrieves a list of all available checkpoints from both user and system databases.
 ///
-/// Returns checkpoint information for display in the UI.
+/// Checkpoints created by the GUI are in the user database, while checkpoints
+/// created by privileged CLI operations (via pkexec) are in the system database.
+/// This function merges both sources for a complete view.
 #[tauri::command]
 pub async fn get_checkpoints() -> Result<Vec<CheckpointInfo>, String> {
-    let manager = create_checkpoint_manager().await?;
+    let mut all_checkpoints = Vec::new();
 
-    let checkpoints = manager
-        .list_checkpoints()
-        .await
-        .map_err(|e| e.to_string())?;
+    // Try user database first
+    let user_db = get_user_db_path();
+    if user_db.exists() {
+        if let Ok(manager) = create_checkpoint_manager(&user_db).await {
+            if let Ok(checkpoints) = manager.list_checkpoints().await {
+                all_checkpoints.extend(checkpoints);
+            }
+        }
+    }
 
-    Ok(checkpoints
+    // Try system database (checkpoints from pkexec apply operations)
+    let system_db = get_system_db_path();
+    if system_db.exists() {
+        if let Ok(manager) = create_checkpoint_manager(&system_db).await {
+            if let Ok(checkpoints) = manager.list_checkpoints().await {
+                // Add only checkpoints not already in the list (by ID)
+                for cp in checkpoints {
+                    if !all_checkpoints.iter().any(|c| c.checkpoint_id == cp.checkpoint_id) {
+                        all_checkpoints.push(cp);
+                    }
+                }
+            }
+        }
+    }
+
+    // Sort by timestamp descending (newest first)
+    all_checkpoints.sort_by(|a, b| b.checkpoint_timestamp.cmp(&a.checkpoint_timestamp));
+
+    Ok(all_checkpoints
         .into_iter()
         .map(|cp| CheckpointInfo {
             checkpoint_id: cp.checkpoint_id.as_str().to_string(),

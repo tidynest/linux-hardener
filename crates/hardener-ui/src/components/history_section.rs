@@ -2,6 +2,7 @@
 //!
 //! Displays apply results and checkpoint management.
 
+use crate::components::{Card, HeadingLevel};
 use crate::state::AppState;
 use crate::tauri_bindings::{invoke_get_checkpoints, invoke_rollback};
 use crate::types::CheckpointInfo;
@@ -16,17 +17,22 @@ pub fn HistorySection() -> impl IntoView {
     let checkpoints = RwSignal::new(Vec::<CheckpointInfo>::new());
     let is_loading = RwSignal::new(false);
 
-    // Load checkpoints on mount
-    leptos::task::spawn_local(async move {
-        is_loading.set(true);
-        match invoke_get_checkpoints().await {
-            Ok(cp) => checkpoints.set(cp),
-            Err(e) => {
-                web_sys::console::error_1(&format!("Failed to load checkpoints: {}", e).into());
+    // Function to load checkpoints
+    let load_checkpoints = move || {
+        leptos::task::spawn_local(async move {
+            is_loading.set(true);
+            match invoke_get_checkpoints().await {
+                Ok(cp) => checkpoints.set(cp),
+                Err(e) => {
+                    web_sys::console::error_1(&format!("Failed to load checkpoints: {}", e).into());
+                }
             }
-        }
-        is_loading.set(false);
-    });
+            is_loading.set(false);
+        });
+    };
+
+    // Load checkpoints on mount
+    load_checkpoints();
 
     // Rollback handler
     let handle_rollback = move |checkpoint_id: String| {
@@ -56,12 +62,15 @@ pub fn HistorySection() -> impl IntoView {
             </p>
 
             // Latest Apply Result
-            <section class="apply-results-summary">
-                <h2>"Latest Apply Operation"</h2>
+            <Card title="Latest Apply Operation" title_level=HeadingLevel::H2 class="apply-results-summary">
                 <Show
                     when=move || app_state.apply_results.get().last().is_some()
                     fallback=|| view! {
-                        <p class="empty-state">"No apply operations performed yet."</p>
+                        <div class="empty-state">
+                            <div class="empty-state-icon">"⚡"</div>
+                            <p class="empty-state-title">"No apply operations yet"</p>
+                            <p class="empty-state-hint">"Apply hardening to see results here."</p>
+                        </div>
                     }
                 >
                     {move || {
@@ -103,19 +112,36 @@ pub fn HistorySection() -> impl IntoView {
                         }
                     }}
                 </Show>
-            </section>
+            </Card>
 
             // Checkpoints Table
-            <section class="checkpoints-section">
-                <h2>"System Checkpoints"</h2>
+            <Card title="System Checkpoints" title_level=HeadingLevel::H2 class="checkpoints-section">
+                <div class="checkpoint-header">
+                    <button
+                        class="btn btn-secondary btn-small"
+                        on:click=move |_| load_checkpoints()
+                        disabled=move || is_loading.get()
+                    >
+                        {move || if is_loading.get() { "Refreshing..." } else { "Refresh" }}
+                    </button>
+                </div>
                 <Show
                     when=move || !checkpoints.get().is_empty()
                     fallback=move || {
                         if is_loading.get() {
-                            view! { <p>"Loading checkpoints..."</p> }.into_any()
+                            view! {
+                                <div class="empty-state">
+                                    <div class="empty-state-icon">"⏳"</div>
+                                    <p class="empty-state-title">"Loading checkpoints..."</p>
+                                </div>
+                            }.into_any()
                         } else {
                             view! {
-                                <p class="empty-state">"No checkpoints available. Checkpoints are created automatically when applying changes."</p>
+                                <div class="empty-state">
+                                    <div class="empty-state-icon">"💾"</div>
+                                    <p class="empty-state-title">"No checkpoints available"</p>
+                                    <p class="empty-state-hint">"Checkpoints are created automatically when applying changes."</p>
+                                </div>
                             }.into_any()
                         }
                     }
@@ -155,7 +181,7 @@ pub fn HistorySection() -> impl IntoView {
                         </tbody>
                     </table>
                 </Show>
-            </section>
+            </Card>
         </div>
     }
 }

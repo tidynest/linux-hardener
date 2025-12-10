@@ -1,45 +1,41 @@
 //! Compact security score display for page headers.
 
+use crate::components::calculate_all_scores;
 use crate::state::AppState;
 use leptos::prelude::*;
 
 /// Compact security score badge for headers.
 ///
 /// Displays a smaller version of the security score with color coding.
-/// Used in the Analysis page header alongside the scan button.
+/// Uses the same compliance-based calculation as the main SecurityScore component.
 #[component]
 pub fn MiniSecurityScore() -> impl IntoView {
     let app_state = expect_context::<AppState>();
 
-    // Calculate score from scan results (same logic as SecurityScore)
+    // Check if we have compliance data
+    let has_data = move || !app_state.compliance_reports.get().is_empty();
+
+    // Calculate score using the shared compliance-based algorithm
     let score = move || {
-        let results = app_state.scan_results.get();
-        if results.is_empty() {
+        let reports = app_state.compliance_reports.get();
+        if reports.is_empty() {
             return None;
         }
-
-        let mut total = 100i32;
-        for result in &results {
-            for finding in &result.scan_findings {
-                let deduction = match finding.finding_severity {
-                    hardener_types::Severity::Critical => 10,
-                    hardener_types::Severity::High => 5,
-                    hardener_types::Severity::Medium => 2,
-                    hardener_types::Severity::Low => 1,
-                    hardener_types::Severity::Info => 0,
-                };
-                total -= deduction;
-            }
-        }
-        Some(total.max(0))
+        let (overall_score, _) = calculate_all_scores(&reports);
+        Some(overall_score)
     };
 
     // Determine color class based on score
-    let score_class = move || match score() {
-        None => "score-pending",
-        Some(s) if s >= 71 => "score-good",
-        Some(s) if s >= 41 => "score-warning",
-        Some(_) => "score-critical",
+    let score_class = move || {
+        if !has_data() {
+            return "score-pending";
+        }
+        match score() {
+            None => "score-pending",
+            Some(s) if s >= 71 => "score-good",
+            Some(s) if s >= 41 => "score-warning",
+            Some(_) => "score-critical",
+        }
     };
 
     view! {

@@ -11,6 +11,7 @@ mod tauri_bindings;
 mod types;
 mod utils;
 
+use components::ThemeToggle;
 use pages::{AnalysisPage, DashboardPage, HardeningPage};
 use state::AppState;
 pub use types::*;
@@ -57,15 +58,17 @@ pub fn App() -> impl IntoView {
                         <li><A href="/analysis">"Analysis"</A></li>
                         <li><A href="/hardening">"Hardening"</A></li>
                     </ul>
+                    <ThemeToggle/>
                 </nav>
             </header>
 
             <main id="main-content" class="main-content" tabindex="-1">
                 <Routes fallback=|| view! {
                     <article class="error-page">
+                        <div class="error-page-icon">"⚠"</div>
                         <h1>"404 - Page Not Found"</h1>
                         <p>"The requested page does not exist."</p>
-                        <a href="/">"Return to Dashboard"</a>
+                        <a href="/">"← Return to Dashboard"</a>
                     </article>
                 }>
                     <Route path=StaticSegment("") view=DashboardPage/>
