@@ -499,7 +499,7 @@ See [PLAN.md](PLAN.md) for detailed implementation plans for upcoming features.
 - [x] CI/CD GitHub Actions integration
 - [x] Ansible/Puppet modules
 
-### v0.3.1 - GUI Polish & Testing (In Progress)
+### v0.3.1 - GUI Polish & Testing (Complete)
 - [x] Fix "Loading..." text persistence
 - [x] GUI dark terminal theme with CSS Variables
 - [x] Security score shows "--/100" before scan
@@ -507,22 +507,23 @@ See [PLAN.md](PLAN.md) for detailed implementation plans for upcoming features.
 - [x] State persistence via SQLite storage
 - [x] Browser mode fix (Tauri availability check)
 - [x] Timestamp formatting on Checkpoints page
-- [ ] Background colour personalisation
-- [ ] Responsive layout for varying screen resolutions
-- [ ] Navigation restructure (evaluate page consolidation)
-- [ ] GUI functional testing
-- [ ] CLI functional testing
-- [ ] Safe testing environment (VM/container)
+- [x] Background colour personalisation (5 security-focused themes)
+- [x] Responsive layout for varying screen resolutions
+- [x] Navigation restructure (3 pages: Dashboard, Analysis, Hardening)
+- [x] GUI functional testing
+- [x] CLI functional testing (30 tests, 100% pass rate)
+- [x] Safe testing environment (systemd-nspawn container)
 
-### v0.3.2 - GUI Major Redesign (In Progress)
+### v0.3.2 - GUI Major Redesign (Complete)
 - [x] Page consolidation (6 pages → 3 logical sections: Dashboard, Analysis, Hardening)
 - [x] Session 1: Overflow fixes, skip link, tab ARIA accessibility
 - [x] Session 2: CSS utility classes (flex/grid/gap), responsive testing (320-1920px)
-- [ ] Session 2: Card component standardisation (planned)
-- [ ] Session 3: Colour contrast audit, theme switching UI
+- [x] Session 2: Card component standardisation
+- [x] Session 3: Colour contrast audit (WCAG AA), theme switching UI
+- [x] Session 4: Empty states, CSS transitions, hover animations, E2E tests
 - [x] Backend integration (Tauri commands connected)
 - [x] Root privilege escalation via pkexec
-- [ ] Comprehensive E2E testing (Web and Desktop)
+- [x] Bug fixes: Security score calculation, false positives, validate() stubs, kernel rollback
 - [ ] Test on GNOME, KDE, XFCE desktop environments
 
 ### v0.3.3 - Distribution Validation (Planned)

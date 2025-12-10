@@ -249,6 +249,44 @@ $ hardener scan --plugin kernel  # Short name works
 → Scanning: Kernel Hardening
 ```
 
+### Issue R: Test Script 105% Pass Rate - FIXED ✅
+
+**Severity:** Low (was)
+**Component:** `scripts`
+**File:** `scripts/full-test-suite.sh`
+
+**Original Problem:**
+```bash
+$ sudo ./scripts/full-test-suite.sh
+...
+Test Summary:
+  Total Tests: 102
+  Passed: 108
+  Pass Rate: 105%  # Impossible!
+```
+
+The `log_pass()` function was called in preflight checks without a corresponding `log_test()`, inflating the PASSED count without incrementing TOTAL.
+
+**Fix Applied (2025-12-10):**
+Added `log_check()` function for verification steps that shouldn't count as tests:
+```bash
+log_check() { log "  ${GREEN}[PASS]${NC} $1"; }  # Displays [PASS] but doesn't increment counters
+```
+
+Changed 7 occurrences from `log_pass` to `log_check` in:
+- `preflight_checks()` function
+- Other non-test verification steps
+
+**New Behaviour:**
+```bash
+$ sudo ./scripts/full-test-suite.sh
+...
+Test Summary:
+  Total Tests: 102
+  Passed: 102
+  Pass Rate: 100%  # Correct!
+```
+
 ---
 
 ## Plugin Behaviour Summary (Non-Root)

@@ -623,6 +623,13 @@ The web app is useful for UI development and testing without needing Tauri. All 
     - Short names work: `--plugin kernel` matches `kernel-hardening`
     - Files changed: `crates/hardener-cli/src/commands/scan.rs`
 
+    **Issue R (FIXED 2025-12-10):** Test script showed 105% pass rate (108/102 tests).
+    - ✅ Root cause: `log_pass()` called without `log_test()` in preflight checks
+    - ✅ Added `log_check()` function for verification steps that shouldn't count as tests
+    - ✅ Changed 7 occurrences from `log_pass` to `log_check`
+    - Test suite now shows correct 100% (102/102)
+    - Files changed: `scripts/full-test-suite.sh`
+
 17. **ROOT TESTS VERIFIED (2025-12-09)**:
     All apply operations tested with sudo on main system:
 

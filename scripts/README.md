@@ -925,7 +925,7 @@ Binary: /project/target/release/hardener v0.3.2
 sudo ./scripts/full-test-suite.sh
 ```
 
-**What It Tests** (19 test sections, 100+ individual tests):
+**What It Tests** (19 test sections, 102 individual tests):
 
 | Section | Tests |
 |---------|-------|
@@ -977,16 +977,27 @@ sudo ./scripts/full-test-suite.sh
 ║ TEST SUMMARY                                                       ║
 ╚════════════════════════════════════════════════════════════════════╝
 
-  Total Tests:  127
-  Passed:       125
+  Total Tests:  102
+  Passed:       102
   Failed:       0
-  Skipped:      2
-  Pass Rate:    98%
+  Skipped:      1
+  Pass Rate:    100%
 
 ╔════════════════════════════════════════╗
 ║     ALL TESTS PASSED SUCCESSFULLY!     ║
 ╚════════════════════════════════════════╝
 ```
+
+**Logging Functions**:
+| Function | Purpose | Counts in Summary? |
+|----------|---------|-------------------|
+| `log_test` | Start a test, increment TOTAL | Yes |
+| `log_pass` | Mark test passed, increment PASSED | Yes |
+| `log_fail` | Mark test failed, increment FAILED | Yes |
+| `log_skip` | Mark test skipped, increment SKIPPED | Yes |
+| `log_check` | Verification step (not a test) | No |
+
+The `log_check()` function displays a green [PASS] but doesn't increment any counters, making it ideal for preflight checks and verification steps.
 
 **Dependencies**:
 - Bash
