@@ -63,14 +63,13 @@ pub fn ThemeToggle() -> impl IntoView {
 /// Apply theme by setting data-theme attribute on <html>.
 fn apply_theme(theme: &str) {
     if let Some(document) = web_sys::window().and_then(|w| w.document())
+        && let Some(root) = document.document_element()
     {
-        if let Some(root) = document.document_element() {
-            if theme == "default" {
-                // Remove attribute to use base :root styles
-                let _ = root.remove_attribute("data-theme");
-            } else {
-                let _ = root.set_attribute("data-theme", theme);
-            }
+        if theme == "default" {
+            // Remove attribute to use base :root styles
+            let _ = root.remove_attribute("data-theme");
+        } else {
+            let _ = root.set_attribute("data-theme", theme);
         }
     }
 }
@@ -84,9 +83,7 @@ fn get_stored_theme() -> Option<String> {
 
 /// Save theme to localStorage.
 fn store_theme(theme: &str) {
-    if let Some(storage) = web_sys::window()
-        .and_then(|w| w.local_storage().ok().flatten())
-    {
+    if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
         let _ = storage.set_item("theme", theme);
     }
 }

@@ -64,12 +64,10 @@ pub fn Card(
         None => format!("card {}", variant_class),
     };
 
-    let title_view = title.map(|t| {
-        match title_level {
-            HeadingLevel::H2 => view! { <h2 class="card-title">{t}</h2>}.into_any(),
-            HeadingLevel::H3 => view! { <h3 class="card-title">{t}</h3>}.into_any(),
-            HeadingLevel::H4 => view! { <h4 class="card-title">{t}</h4>}.into_any(),
-        }
+    let title_view = title.map(|t| match title_level {
+        HeadingLevel::H2 => view! { <h2 class="card-title">{t}</h2>}.into_any(),
+        HeadingLevel::H3 => view! { <h3 class="card-title">{t}</h3>}.into_any(),
+        HeadingLevel::H4 => view! { <h4 class="card-title">{t}</h4>}.into_any(),
     });
 
     view! {
@@ -79,4 +77,3 @@ pub fn Card(
         </section>
     }
 }
-

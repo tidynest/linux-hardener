@@ -75,11 +75,7 @@ impl ConfigLoader {
     /// Helper to merge a configuration source if it exists.
     ///
     /// If `required` is true, returns an error if the file is missing.
-    fn merge_source(
-        base: HardenerConfig,
-        path: &Path,
-        required: bool,
-    ) -> Result<HardenerConfig> {
+    fn merge_source(base: HardenerConfig, path: &Path, required: bool) -> Result<HardenerConfig> {
         if !path.exists() {
             if required {
                 return Err(HardeningError::Config(format!(

@@ -515,9 +515,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
             }
             AuditRulesResult::PermissionDenied => {
                 // Cannot verify rules - log warning, don't create false findings.
-                warn!(
-                    "Cannot verify audit rules: permission denied (requires root)"
-                );
+                warn!("Cannot verify audit rules: permission denied (requires root)");
             }
         }
         Ok(ScanResult {
@@ -752,8 +750,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
                 }
 
                 // Estimate rule changes
-                if let AuditRulesResult::Rules(current_rules) =
-                    read_current_audit_rules(ctx).await
+                if let AuditRulesResult::Rules(current_rules) = read_current_audit_rules(ctx).await
                 {
                     let missing_rules = AUDIT_RULES
                         .iter()

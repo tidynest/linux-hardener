@@ -396,7 +396,8 @@ impl HardeningPlugin for FirewallHardeningPlugin {
                 // Get default rules that would be applied.
                 let rules = backend.get_default_rules();
                 if !rules.is_empty() {
-                    estimated_changes.push(format!("Apply {} baseline firewall rules", rules.len()));
+                    estimated_changes
+                        .push(format!("Apply {} baseline firewall rules", rules.len()));
                 }
             }
             Err(e) => {

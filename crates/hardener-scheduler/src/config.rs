@@ -177,14 +177,18 @@ mod tests {
         let storage = StorageConfig::default();
         // Path depends on whether running as root or user
         // Just verify the filename is correct and retention is set
-        assert!(storage
-            .database_path
-            .file_name()
-            .is_some_and(|n| n == "scheduler.db"));
-        assert!(storage
-            .json_output_dir
-            .file_name()
-            .is_some_and(|n| n == "scans"));
+        assert!(
+            storage
+                .database_path
+                .file_name()
+                .is_some_and(|n| n == "scheduler.db")
+        );
+        assert!(
+            storage
+                .json_output_dir
+                .file_name()
+                .is_some_and(|n| n == "scans")
+        );
         assert_eq!(storage.retention_count, 90);
     }
 
@@ -192,9 +196,7 @@ mod tests {
     fn default_data_dir_returns_valid_path() {
         let dir = default_data_dir();
         // Should end with "linux-hardener"
-        assert!(dir
-            .file_name()
-            .is_some_and(|n| n == "linux-hardener"));
+        assert!(dir.file_name().is_some_and(|n| n == "linux-hardener"));
     }
 
     #[test]

@@ -144,7 +144,7 @@ fn validate_plugin_filter(
 
 /// Checks if a filter entry matches a valid plugin (full ID or short name).
 fn is_valid_plugin_name(name: &str, valid_ids: &[&str]) -> bool {
-    valid_ids.iter().any(|id| {
-        *id == name || id.starts_with(&format!("{}-", name))
-    })
+    valid_ids
+        .iter()
+        .any(|id| *id == name || id.starts_with(&format!("{}-", name)))
 }

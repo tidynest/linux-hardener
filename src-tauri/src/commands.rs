@@ -28,7 +28,7 @@ fn format_timestamp(timestamp: i64) -> String {
     format!("{:?}", datetime)
 }
 
-/// Returns the path to the hardener CLI binary,
+/// Returns the path to the hardener CLI binary.
 ///
 /// In development, uses the debug build. In production, expects
 /// the binary in standard locations or PATH.
@@ -96,7 +96,7 @@ impl std::fmt::Display for PrivilegedCommandError {
 
 /// Executes a command with root privileges via pkexec.
 ///
-/// Returns the command's stdout on success, or an appropriate error.
+/// Returns the command's stdout on success or an appropriate error.
 async fn run_privileged_command(args: &[&str]) -> Result<String, PrivilegedCommandError> {
     let binary = get_hardener_binary_path().map_err(PrivilegedCommandError::ExecutionFailed)?;
 
@@ -117,7 +117,7 @@ async fn run_privileged_command(args: &[&str]) -> Result<String, PrivilegedComma
                 .map_err(|e| PrivilegedCommandError::ParseError(e.to_string()))
         }
         Some(126) => {
-            // pkexec: not authorised or auth dialog dismissed
+            // pkexec: not authorised or auth dialogue dismissed
             Err(PrivilegedCommandError::AuthCancelled)
         }
         Some(127) => {
@@ -154,9 +154,7 @@ fn get_system_db_path() -> std::path::PathBuf {
 ///
 /// Uses a user-local database path to avoid requiring root for reads.
 async fn create_checkpoint_manager(db_path: &std::path::Path) -> Result<CheckpointManager, String> {
-    let pool = init_db(Some(db_path))
-        .await
-        .map_err(|e| e.to_string())?;
+    let pool = init_db(Some(db_path)).await.map_err(|e| e.to_string())?;
 
     CheckpointManager::new(pool).map_err(|e| e.to_string())
 }
@@ -295,25 +293,26 @@ pub async fn get_checkpoints() -> Result<Vec<CheckpointInfo>, String> {
 
     // Try user database first
     let user_db = get_user_db_path();
-    if user_db.exists() {
-        if let Ok(manager) = create_checkpoint_manager(&user_db).await {
-            if let Ok(checkpoints) = manager.list_checkpoints().await {
-                all_checkpoints.extend(checkpoints);
-            }
-        }
+    if user_db.exists()
+        && let Ok(manager) = create_checkpoint_manager(&user_db).await
+        && let Ok(checkpoints) = manager.list_checkpoints().await
+    {
+        all_checkpoints.extend(checkpoints);
     }
 
     // Try system database (checkpoints from pkexec apply operations)
     let system_db = get_system_db_path();
-    if system_db.exists() {
-        if let Ok(manager) = create_checkpoint_manager(&system_db).await {
-            if let Ok(checkpoints) = manager.list_checkpoints().await {
-                // Add only checkpoints not already in the list (by ID)
-                for cp in checkpoints {
-                    if !all_checkpoints.iter().any(|c| c.checkpoint_id == cp.checkpoint_id) {
-                        all_checkpoints.push(cp);
-                    }
-                }
+    if system_db.exists()
+        && let Ok(manager) = create_checkpoint_manager(&system_db).await
+        && let Ok(checkpoints) = manager.list_checkpoints().await
+    {
+        // Add only checkpoints not already in the list (by ID)
+        for cp in checkpoints {
+            if !all_checkpoints
+                .iter()
+                .any(|c| c.checkpoint_id == cp.checkpoint_id)
+            {
+                all_checkpoints.push(cp);
             }
         }
     }

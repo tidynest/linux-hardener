@@ -13,9 +13,9 @@ mod severity_badge;
 mod tabs;
 mod theme_toggle;
 
-pub use card::{Card, HeadingLevel};
 #[allow(unused_imports)]
 pub use card::CardVariant;
+pub use card::{Card, HeadingLevel};
 pub use compliance_tab::ComplianceTab;
 pub use configure_section::ConfigureSection;
 pub use finding_detail::FindingDetail;
@@ -25,7 +25,7 @@ pub use history_section::HistorySection;
 pub use mini_security_score::MiniSecurityScore;
 pub use quick_actions::QuickActions;
 pub use recent_activity::RecentActivity;
-pub use security_score::{calculate_all_scores, SecurityScore};
+pub use security_score::{SecurityScore, calculate_all_scores};
 pub use severity_badge::SeverityBadge;
 pub use tabs::{TabBar, TabDef, TabPanel};
 pub use theme_toggle::ThemeToggle;

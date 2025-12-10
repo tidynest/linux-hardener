@@ -244,12 +244,9 @@ impl HardeningPlugin for ServicesHardeningPlugin {
             Path::new("/etc/systemd/system"),
             Path::new("/usr/lib/systemd/system"),
         ];
-        let checkpoint_id = crate::create_checkpoint_for_apply(
-            ctx,
-            "services-hardening-pre-apply",
-            &service_paths,
-        )
-        .await?;
+        let checkpoint_id =
+            crate::create_checkpoint_for_apply(ctx, "services-hardening-pre-apply", &service_paths)
+                .await?;
 
         if checkpoint_id.is_some() {
             changes.push(Change {

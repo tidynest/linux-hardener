@@ -56,16 +56,17 @@ pub fn ComplianceTab() -> impl IntoView {
                     let count = reports.len();
                     app_state.compliance_reports.set(reports);
                     status_message.set(Some((
-                        format!("Generated {} compliance report{}", count, if count == 1 { "" } else { "s" }),
+                        format!(
+                            "Generated {} compliance report{}",
+                            count,
+                            if count == 1 { "" } else { "s" }
+                        ),
                         true,
                     )));
                 }
                 Err(e) => {
                     web_sys::console::error_1(&format!("Report generation failed: {}", e).into());
-                    status_message.set(Some((
-                        format!("Failed: {}", e),
-                        false,
-                    )));
+                    status_message.set(Some((format!("Failed: {}", e), false)));
                 }
             }
             app_state.is_generating_report.set(false);
