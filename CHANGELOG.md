@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (Bug Fix Session 2025-12-10)
+- **Invalid Plugin Name Accepted Silently (Q)**: `--plugin nonexistent` now returns error with valid plugin list
+  - Added `validate_plugin_filter()` in scan.rs to check plugin names before scanning
+  - Supports both full IDs (`kernel-hardening`) and short names (`kernel`)
+  - Exit code 1 for invalid plugins, enabling proper CI/CD error detection
+- **Test Script 105% Pass Rate (R)**: Fixed test counter bug in `full-test-suite.sh`
+  - Preflight checks were incrementing PASSED without incrementing TOTAL
+  - Added `log_check()` function for non-test verification steps
+
 ### Fixed (Bug Fix Session 2025-12-09)
 - **Security Score Calculation (A-C)**: Redesigned from findings-based to compliance-based weighted scoring
   - Pass = 100pts, Critical fail = 0pts, High = 25pts, Medium = 50pts, Low = 75pts
@@ -265,4 +274,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [Unreleased]: https://github.com/tidynest/linux-system-hardener/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/tidynest/linux-system-hardener/releases/tag/v0.1.0
 
-**Last Updated**: 2025-12-09
+**Last Updated**: 2025-12-10

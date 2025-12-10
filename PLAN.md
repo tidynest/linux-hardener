@@ -150,8 +150,8 @@ See [docs/WASM_FIX_PLAN.md](docs/WASM_FIX_PLAN.md) for implementation details.
 | Responsive layout | See [FRONTEND_LAYOUT_PLAN.md](docs/FRONTEND_LAYOUT_PLAN.md) Session 2 | Medium | ✅ Complete |
 | Navigation restructure | Consolidated to 3 pages (Dashboard, Analysis, Hardening) | Low | ✅ Complete |
 | GUI functional testing | Verify all GUI features work correctly | High | ✅ Complete |
-| CLI functional testing | Verify all CLI commands work correctly | High | Pending |
-| Safe testing environment | Test in VM/container to avoid system changes | Critical | Pending |
+| CLI functional testing | Verify all CLI commands work correctly (27/27 tests pass) | High | ✅ Complete |
+| Safe testing environment | systemd-nspawn container with test scripts | Critical | ✅ Complete |
 
 **v0.3.1 Completed Items (2025-12-05/06):**
 - Fixed "Loading..." text persistence by mounting app to `#app` element
@@ -170,11 +170,36 @@ See [docs/WASM_FIX_PLAN.md](docs/WASM_FIX_PLAN.md) for implementation details.
 - 4 unit tests for `ScanHistoryManager` all passing
 - Full integration test passed (8/8 Web UI tests, database verification complete)
 
-**Testing Requirements:**
-- All testing MUST be done in a safe, isolated environment (VM or container)
-- Tests must not modify the host system
-- Both CLI and GUI (Desktop + Browser) need verification
-- Arch Linux (LTS) specific: Ensure scan findings are relevant to Arch, not false positives from other distro-specific checks
+**Testing Infrastructure (2025-12-10):**
+- ✅ Safe testing environment implemented using systemd-nspawn container
+- ✅ CLI functional test results: 27/27 tests pass ([docs/CLI_V032_TEST_RESULTS.md](docs/CLI_V032_TEST_RESULTS.md))
+- ✅ Root functional test results: 35/36 tests pass (1 skip is test script pattern matching)
+- ✅ Bug M fixed: Scheduler database now uses user path for non-root users
+
+**Root Test Highlights:**
+- **47 findings** as root (vs 11 as non-root) - plugins now have full access
+- **26 audit findings** visible with root access
+- Kernel apply: ✅ Changes applied, `kptr_restrict=2` verified
+- All 6 compliance frameworks: ✅ Reports generated
+- PDF generation: ✅ 30KB PDF created
+
+**Testing Scripts:**
+| Script | Purpose |
+|--------|---------|
+| `scripts/create-test-container.sh` | Create/manage Arch Linux container |
+| `scripts/root-test-suite.sh` | Comprehensive root test suite |
+
+**Usage:**
+```bash
+sudo ./scripts/create-test-container.sh        # Create container
+sudo ./scripts/create-test-container.sh enter  # Enter container
+# Inside container (binary built on host is bind-mounted):
+cd /project
+sudo ./scripts/root-test-suite.sh              # Safe tests (read-only)
+sudo ./scripts/root-test-suite.sh --apply      # Full tests (apply + rollback)
+```
+
+**Note on `--apply` flag:** Destructive tests (apply hardening, rollback) require explicit `--apply` flag. This is a safety feature to prevent accidentally running tests that modify configs. Inside the container, both modes are completely safe since it's isolated from the host system.
 
 ### v0.3.2 - Frontend Layout & Accessibility
 

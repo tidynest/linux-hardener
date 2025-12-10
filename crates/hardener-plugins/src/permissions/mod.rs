@@ -304,7 +304,8 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
             ctx,
             "permissions-hardening-pre-apply",
             &permission_paths,
-        )?;
+        )
+        .await?;
 
         if checkpoint_id.is_some() {
             changes.push(Change {

@@ -203,7 +203,7 @@ impl HardeningPlugin for PamHardeningPlugin {
             Path::new("/etc/pam.d"),
         ];
         let checkpoint_id =
-            crate::create_checkpoint_for_apply(ctx, "pam-hardening-pre-apply", &pam_paths)?;
+            crate::create_checkpoint_for_apply(ctx, "pam-hardening-pre-apply", &pam_paths).await?;
 
         if checkpoint_id.is_some() {
             changes.push(Change {

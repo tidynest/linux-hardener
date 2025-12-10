@@ -251,6 +251,18 @@ impl Context {
         ctx
     }
 
+    /// Creates a new Context with both a custom executor and checkpoint manager.
+    ///
+    /// Use this when you need both remote execution and checkpoint/rollback functionality.
+    pub fn with_executor_and_checkpoint(
+        executor: Arc<dyn SystemExecutor>,
+        checkpoint_manager: CheckpointManager,
+    ) -> Context {
+        let mut ctx = Self::with_executor(executor);
+        ctx.checkpoint_manager = Some(Arc::new(checkpoint_manager));
+        ctx
+    }
+
     /// Sets the checkpoint manager for this context.
     pub fn set_checkpoint_manager(&mut self, checkpoint_manager: CheckpointManager) {
         self.checkpoint_manager = Some(Arc::new(checkpoint_manager));

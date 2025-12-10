@@ -46,6 +46,8 @@ This document describes the data flow for all major operations in the system.
 │  │   └─ Merge: defaults → /etc/ → ~/.config/ → CLI → env     │
 │  ├─ Create PluginRegistry                                    │
 │  │   └─ Register all 8 plugins                               │
+│  ├─ Validate plugin filter (if --plugin specified)           │
+│  │   └─ Error if invalid plugin name, accepts short names    │
 │  ├─ Create Executor (Local or SSH based on --ssh flag)       │
 │  │   └─ LocalExecutor: std::fs + std::process::Command       │
 │  │   └─ SshExecutor: openssh crate for remote operations     │

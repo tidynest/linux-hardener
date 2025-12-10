@@ -2,7 +2,9 @@
 //!
 //! Defines the HardeningPlugin trait that all security plugins must implement.
 
+#[cfg(feature = "system")]
 use async_trait::async_trait;
+#[cfg(feature = "system")]
 use hardener_common::error::Result;
 
 // Re-export types from hardener-types for backwards compatibility

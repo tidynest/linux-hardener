@@ -449,7 +449,9 @@ The web app is useful for UI development and testing without needing Tauri. All 
    - Web UI fully functional: Dashboard, Analysis (Findings/Compliance tabs), Hardening (Configure/History tabs)
 
 6. **Next Tasks**:
-   - v0.3.1: GUI Polish & Testing (see PLAN.md) - **IN PROGRESS**
+   - v0.3.1: GUI Polish & Testing (see PLAN.md) - **MOSTLY COMPLETE**
+     - ✅ CLI functional testing complete (27/27 tests pass)
+     - ✅ Safe testing environment created (systemd-nspawn container)
    - v0.3.2: Frontend Layout & Accessibility - See [docs/FRONTEND_LAYOUT_PLAN.md](docs/FRONTEND_LAYOUT_PLAN.md) for detailed session breakdown:
      - ✅ Session 1: Critical overflow fixes (`min-width: 0`, grid templates, skip links, ARIA) - COMPLETE (2025-12-07)
      - ✅ Session 2: Responsive layout - **COMPLETE (2025-12-08)**
@@ -591,7 +593,37 @@ The web app is useful for UI development and testing without needing Tauri. All 
     - `crates/hardener-ui/src/components/history_section.rs` - Refresh button
     - `crates/hardener-ui/styles.css` - Theme selector CSS, status messages
 
-16. **ROOT TESTS VERIFIED (2025-12-09)**:
+16. **CLI FUNCTIONAL TESTING (2025-12-10)** - ✅ **COMPLETE**:
+    Full CLI test results documented in `docs/CLI_V032_TEST_RESULTS.md`.
+
+    **Non-Root Tests (Host):**
+    | Category | Pass | Fail | Notes |
+    |----------|------|------|-------|
+    | Basic commands | 5/5 | 0 | All working |
+    | Scan operations | 6/6 | 0 | Severity filter, exit code work |
+    | Report generation | 10/10 | 0 | All 6 frameworks, all formats |
+    | Apply/dry-run | 5/5 | 0 | Estimated changes shown (Bug F fixed) |
+    | Checkpoint | 1/1 | 0 | List works |
+    | Daemon/History | 2/2 | 0 | ✅ Fixed - user dir fallback |
+    | Systemd | 2/2 | 0 | Generate/status work |
+    | SSH remote | 1/1 | 0 | Error handling works |
+    | **Total** | **27/27** | **0** | 100% pass rate |
+
+    **Issue M (FIXED 2025-12-10):** Scheduler database path was hardcoded to `/var/lib/linux-hardener/scheduler.db`.
+    - ✅ Added `default_data_dir()` helper that returns user path for non-root users
+    - Root: `/var/lib/linux-hardener/scheduler.db`
+    - User: `~/.local/share/linux-hardener/scheduler.db`
+    - Files changed: `crates/hardener-scheduler/src/config.rs`, `Cargo.toml` (added `dirs`, `libc`)
+    - Also fixed: `hardener-core` feature gating for `testing` module, clippy warning in `config_loader.rs`
+
+    **Issue Q (FIXED 2025-12-10):** Invalid plugin name accepted silently - `--plugin nonexistent` returned `[]` with exit 0.
+    - ✅ Added `validate_plugin_filter()` in `scan.rs` to validate plugin names before scanning
+    - ✅ Added `is_valid_plugin_name()` helper supporting both full IDs and short names
+    - Now returns error with valid plugin list and exit code 1
+    - Short names work: `--plugin kernel` matches `kernel-hardening`
+    - Files changed: `crates/hardener-cli/src/commands/scan.rs`
+
+17. **ROOT TESTS VERIFIED (2025-12-09)**:
     All apply operations tested with sudo on main system:
 
     | Test | Result | Details |
@@ -602,7 +634,97 @@ The web app is useful for UI development and testing without needing Tauri. All 
 
     **Recovery backup**: `/tmp/pre-test-backup-20251209-0203.tar.gz`
 
-17. **Always Remember**:
+18. **SAFE ROOT TESTING INFRASTRUCTURE (2025-12-10)**:
+    Two scripts added for comprehensive root testing in an isolated container:
+
+    | Script | Purpose |
+    |--------|---------|
+    | `scripts/create-test-container.sh` | Create/manage systemd-nspawn container |
+    | `scripts/root-test-suite.sh` | Run comprehensive root tests |
+
+    **Test Results (2025-12-10):**
+    ```
+    ━━━ Test Summary ━━━
+    Total tests: 36
+    Passed: 35
+    Failed: 0
+    Skipped: 1 (test script pattern matching)
+    ```
+
+    **Key Results:**
+    - **47 findings** detected as root (vs 11 as non-root)
+    - **26 audit findings** now visible with root access
+    - Kernel apply: ✅ Changes applied, `kptr_restrict=2` verified
+    - All 6 compliance frameworks: ✅ Reports generated
+    - PDF generation: ✅ 30KB PDF created
+    - Daemon root path: ✅ `/var/lib/linux-hardener/scheduler.db` correct
+
+    **Quick Start:**
+    ```bash
+    # Create container (one-time)
+    sudo ./scripts/create-test-container.sh
+
+    # Enter container
+    sudo ./scripts/create-test-container.sh enter
+
+    # Inside container (binary already built on host via bind mount):
+    cd /project
+    sudo ./scripts/root-test-suite.sh           # Safe tests only
+    sudo ./scripts/root-test-suite.sh --apply   # Full tests (apply + rollback)
+    ```
+
+    **Why `--apply` is opt-in:** The flag explicitly enables destructive tests (apply hardening, rollback). Without it, only read-only tests run. Inside the container, both modes are safe since it's completely isolated from your real system. The separation prevents accidentally running destructive tests.
+
+    **Container features:**
+    - Full systemd support (needed for service/firewall testing)
+    - Pre-installed: openssh, audit, ufw, nftables
+    - Project bind-mounted at `/project` (no cargo needed in container)
+    - Root: `test` / User: `testuser:test`
+    - Complete isolation from host system
+
+19. **BUGS FIXED: Checkpoint System (2025-12-10)**:
+    Two critical bugs were discovered and fixed during iterative testing:
+
+    | Bug | Description | Severity | Status |
+    |-----|-------------|----------|--------|
+    | O | Checkpoint not created during apply | Critical | ✅ FIXED |
+    | P | Nested tokio runtime panic when checkpoint manager present | Critical | ✅ FIXED |
+
+    **Bug O Root Cause**: In `apply.rs`, the context was created with executor, but checkpoint manager was assigned to a NEW context that was discarded:
+    ```rust
+    // BROKEN:
+    let mut ctx = Context::with_executor(executor);
+    if !dry_run {
+        Context::with_checkpoint_manager(manager)  // Discarded!
+    };
+    ```
+
+    **Bug O Fix**: Proper context creation with both executor and checkpoint manager:
+    ```rust
+    // FIXED:
+    let mut ctx = if !dry_run {
+        Context::with_executor_and_checkpoint(executor, manager)
+    } else {
+        Context::with_executor(executor)
+    };
+    ```
+
+    **Bug P Root Cause**: `create_checkpoint_for_apply()` used `Runtime::new().block_on()` but was called from async `apply()` methods, causing "Cannot start a runtime from within a runtime" panic.
+
+    **Bug P Fix**: Made `create_checkpoint_for_apply()` async and updated all 8 plugin call sites to use `.await`.
+
+    **Files Changed**:
+    - `crates/hardener-cli/src/commands/apply.rs` - Context creation fix
+    - `crates/hardener-core/src/context.rs` - Added `with_executor_and_checkpoint()` method
+    - `crates/hardener-plugins/src/lib.rs` - Made `create_checkpoint_for_apply` async
+    - `crates/hardener-plugins/src/*/mod.rs` - Added `.await` to all 8 plugin apply methods
+
+    **Verification**: Full iterative test cycle passed in container:
+    - Checkpoint created: `cp_1765400837958_f5471c7d`
+    - Rollback successful: `/etc/sysctl.d/99-hardener.conf` removed
+    - All operations verified with evidence
+
+20. **Always Remember**:
     - Update documentation after changes
     - Follow naming conventions strictly
     - No AI attributions
@@ -776,4 +898,4 @@ Treat the user as a trainee you're guiding through the project. Explain connecti
 
 *This document was prepared for continuity between development sessions.*
 
-**Last Updated**: 2025-12-09
+**Last Updated**: 2025-12-10

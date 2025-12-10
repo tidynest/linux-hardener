@@ -538,7 +538,8 @@ impl HardeningPlugin for AuditHardeningPlugin {
             Path::new("/etc/audit/rules.d"),
         ];
         let checkpoint_id =
-            crate::create_checkpoint_for_apply(ctx, "audit-hardening-pre-apply", &audit_paths)?;
+            crate::create_checkpoint_for_apply(ctx, "audit-hardening-pre-apply", &audit_paths)
+                .await?;
 
         if checkpoint_id.is_some() {
             changes.push(Change {

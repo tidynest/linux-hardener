@@ -2110,11 +2110,13 @@ version = "0.3.2"
 dependencies = [
  "async-trait",
  "chrono",
+ "dirs",
  "hardener-common",
  "hardener-core",
  "hex",
  "hostname",
  "lettre",
+ "libc",
  "reqwest",
  "ring",
  "serde",

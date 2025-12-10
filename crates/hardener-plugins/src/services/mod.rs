@@ -248,7 +248,8 @@ impl HardeningPlugin for ServicesHardeningPlugin {
             ctx,
             "services-hardening-pre-apply",
             &service_paths,
-        )?;
+        )
+        .await?;
 
         if checkpoint_id.is_some() {
             changes.push(Change {

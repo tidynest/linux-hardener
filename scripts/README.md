@@ -14,6 +14,12 @@ This directory contains utility scripts for the Linux Hardening Tool project.
 | **Verify versions** | `./scripts/release.sh --verify` |
 | **Dry-run release** | `./scripts/release.sh patch --dry-run` |
 | **Actual release** | `./scripts/release.sh patch` |
+| **Create test container** | `sudo ./scripts/create-test-container.sh` |
+| **Enter test container** | `sudo ./scripts/create-test-container.sh enter` |
+| **Run root tests** | `sudo ./scripts/root-test-suite.sh` |
+| **Run root tests (full)** | `sudo ./scripts/root-test-suite.sh --apply` |
+| **Full test suite** | `sudo ./scripts/full-test-suite.sh` |
+| **Manual verification** | `sudo ./scripts/manual-verification-test.sh` |
 
 ---
 
@@ -779,6 +785,274 @@ Run with --fix to update stale dates automatically
 
 ---
 
+## Safe Root Testing Infrastructure
+
+Three scripts for comprehensive root-level testing in isolated containers.
+
+### Why Isolated Testing?
+
+The hardener modifies critical system files (`/etc/sysctl.conf`, `/etc/ssh/sshd_config`, firewall rules, etc.). Testing these operations on a real system risks:
+- Breaking SSH access
+- Locking yourself out
+- Misconfiguring services
+
+**Solution**: Use a systemd-nspawn container that provides complete isolation with full systemd support.
+
+---
+
+### Test Container Creator
+
+**Script**: `create-test-container.sh`
+
+**Purpose**: Creates and manages an isolated Arch Linux systemd-nspawn container for safe root testing.
+
+**Usage**:
+```bash
+# Create container (one-time, ~2-3 minutes)
+sudo ./scripts/create-test-container.sh
+
+# Enter existing container
+sudo ./scripts/create-test-container.sh enter
+
+# Clean up container
+sudo ./scripts/create-test-container.sh clean
+```
+
+**What It Does**:
+1. Creates an Arch Linux rootfs at `/var/lib/machines/hardener-test`
+2. Installs required packages (`openssh`, `audit`, `ufw`, `nftables`)
+3. Configures test users (`root:test`, `testuser:test` with passwordless sudo)
+4. Bind-mounts project at `/project` for testing pre-built binaries
+
+**Container Features**:
+| Feature | Value |
+|---------|-------|
+| Location | `/var/lib/machines/hardener-test` |
+| Root password | `test` |
+| Test user | `testuser` / `test` |
+| Project mount | `/project` (read-write) |
+| Systemd | Full support (unlike Docker) |
+
+**Exit Codes**:
+- `0`: Operation completed successfully
+- `1`: Error (missing permissions, package install failed)
+
+**Dependencies**:
+- `systemd-nspawn` (part of systemd)
+- `pacstrap` (Arch Linux only)
+- Root privileges
+
+---
+
+### Root Test Suite
+
+**Script**: `root-test-suite.sh`
+
+**Purpose**: Comprehensive automated test suite for root operations. Runs 36 tests covering all CLI functionality.
+
+**Usage**:
+```bash
+# Inside container: run safe tests (read-only + dry-run)
+sudo ./scripts/root-test-suite.sh
+
+# Run full tests INCLUDING apply + rollback
+sudo ./scripts/root-test-suite.sh --apply
+```
+
+**Test Categories**:
+| Category | Tests | Description |
+|----------|-------|-------------|
+| Environment | 4 | Container detection, binary exists |
+| Basic commands | 2 | Version, help, plugins |
+| Scan (root) | 9 | All 8 plugins with root access |
+| Reports | 8 | All 6 frameworks + JSON + PDF |
+| Dry-run | 5 | All plugins show estimated changes |
+| Daemon/History | 2 | Database path, scan history |
+| Systemd | 2 | Generate, status commands |
+| Checkpoint | 1 | List checkpoints |
+| Apply + Rollback | 3 | Actual hardening + verification (with `--apply`) |
+
+**Test Modes**:
+| Test | Without `--apply` | With `--apply` |
+|------|-------------------|----------------|
+| Read-only operations | ✅ Runs | ✅ Runs |
+| Dry-run validation | ✅ Runs | ✅ Runs |
+| **Apply hardening** | ⏭️ Skipped | ✅ Runs |
+| **Rollback** | ⏭️ Skipped | ✅ Runs |
+
+**Safety Features**:
+1. **Container detection**: Warns if not running in container
+2. **Explicit opt-in**: Destructive tests require `--apply` flag
+3. **Pre-flight checks**: Verifies binary exists and is executable
+
+**Exit Codes**:
+- `0`: All tests passed
+- `1`: One or more tests failed
+
+**Example Output**:
+```
+============================================================
+  Linux System Hardener - Root Test Suite
+============================================================
+Environment: systemd-nspawn container
+Binary: /project/target/release/hardener v0.3.2
+============================================================
+
+[1/36] Checking container environment...                    [PASS]
+[2/36] Verifying root privileges...                         [PASS]
+...
+============================================================
+  Results: 35/36 passed, 0 failed, 1 skipped
+============================================================
+```
+
+**Dependencies**:
+- Bash
+- Pre-built binary at `/project/target/release/hardener`
+- Root privileges
+
+---
+
+### Full Test Suite
+
+**Script**: `full-test-suite.sh`
+
+**Purpose**: Comprehensive non-interactive test that exercises **every single capability** of the hardener in one automated run. Tests all commands, all 8 plugins, all 6 frameworks, all output formats, and all apply/rollback operations.
+
+**Usage**:
+```bash
+# Inside container as root
+sudo ./scripts/full-test-suite.sh
+```
+
+**What It Tests** (19 test sections, 100+ individual tests):
+
+| Section | Tests |
+|---------|-------|
+| 1. Basic Commands | --version, --help, all subcommand help |
+| 2. Scan All Plugins | Individual scan for all 8 plugins |
+| 3. Scan Filters | All 5 severity levels, --audit, --compliance, --exit-code |
+| 4. Scan Output Formats | text, json, csv, html |
+| 5. Reports All Frameworks | cis, stig, nist, pcidss, hipaa, gdpr |
+| 6. Reports All Scenarios | server, workstation, government, healthcare, financial, gdpr, all |
+| 7. Report Output Formats | text, json, csv, html, pdf (generates PDFs for all frameworks) |
+| 8. Dry-Run All Plugins | --dry-run for all 8 plugins |
+| 9. Checkpoint Operations | list, create, show, delete |
+| 10. Daemon Commands | status, run-once |
+| 11. History Commands | list, show, export |
+| 12. Systemd Commands | generate, install, status, uninstall |
+| 13. Apply Kernel | Apply kernel hardening + verify changes |
+| 14. Apply Other Plugins | Apply all 8 plugins individually |
+| 15. Apply --all | Apply all plugins at once |
+| 16. Rollback | Rollback to checkpoint, verify restoration |
+| 17. Global --format Flag | Test global format flag with various commands |
+| 18. Error Handling | Invalid plugin, framework, checkpoint ID |
+| 19. Post-Apply Verification | Final scan + compliance report |
+
+**Output**:
+- Detailed test log: `/tmp/hardener-full-test-TIMESTAMP.log`
+- Generated reports: `/tmp/hardener-test-reports/`
+- PDF reports for all 6 compliance frameworks
+
+**Exit Codes**:
+- `0`: All tests passed
+- `1`: One or more tests failed
+
+**Example Output**:
+```
+╔══════════════════════════════════════════════════════════════════════════╗
+║   LINUX SYSTEM HARDENER - FULL TEST SUITE                               ║
+║   Tests EVERYTHING: all commands, plugins, formats, apply & rollback    ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+╔════════════════════════════════════════════════════════════════════╗
+║ 1. BASIC COMMANDS                                                  ║
+╚════════════════════════════════════════════════════════════════════╝
+
+  [TEST] hardener --version
+  [PASS] hardener --version
+  ...
+
+╔════════════════════════════════════════════════════════════════════╗
+║ TEST SUMMARY                                                       ║
+╚════════════════════════════════════════════════════════════════════╝
+
+  Total Tests:  127
+  Passed:       125
+  Failed:       0
+  Skipped:      2
+  Pass Rate:    98%
+
+╔════════════════════════════════════════╗
+║     ALL TESTS PASSED SUCCESSFULLY!     ║
+╚════════════════════════════════════════╝
+```
+
+**Dependencies**:
+- Bash
+- Pre-built binary at `/project/target/release/hardener`
+- Root privileges
+- Container environment (recommended)
+
+---
+
+### Manual Verification Test
+
+**Script**: `manual-verification-test.sh`
+
+**Purpose**: Step-by-step interactive test with visible evidence for each operation. Ideal for verifying scan, apply, and rollback actually work correctly.
+
+**Usage**:
+```bash
+# Inside container
+sudo ./scripts/manual-verification-test.sh
+```
+
+**Test Cycles**:
+| Cycle | Purpose |
+|-------|---------|
+| 1. Scan | Record BEFORE state, run scan, review findings |
+| 2. Apply | Dry-run preview, apply changes, verify AFTER state |
+| 3. Rollback | Get checkpoint ID, rollback, verify restoration |
+| 4. Re-scan | Confirm final security state |
+
+**Interactive Features**:
+- Pauses after each step for review
+- Shows actual `/proc/sys/` values before and after
+- Displays config file contents
+- Extracts checkpoint ID automatically for rollback
+
+**Evidence Displayed**:
+```
+[EVIDENCE] Current kernel parameter values:
+  kernel.kptr_restrict    = 1
+  kernel.dmesg_restrict   = 0
+  kernel.randomize_va_space = 2
+  ...
+
+[EVIDENCE] Contents of /etc/sysctl.d/99-hardener.conf:
+  kernel.kptr_restrict = 2
+  kernel.dmesg_restrict = 1
+  ...
+```
+
+**Exit Codes**:
+- `0`: Test completed (review evidence manually)
+- `1`: Pre-flight check failed
+
+**When to Use**:
+- Verifying the checkpoint/rollback system works
+- Debugging apply operations
+- Demonstrating hardener functionality
+- Learning what each operation does
+
+**Dependencies**:
+- Bash
+- Pre-built binary at `/project/target/release/hardener`
+- Root privileges
+
+---
+
 ## Future Scripts
 
 Additional utility scripts can be added here:
@@ -789,4 +1063,4 @@ Additional utility scripts can be added here:
 
 ---
 
-**Last Updated**: 2025-12-07
+**Last Updated**: 2025-12-10

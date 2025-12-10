@@ -313,7 +313,8 @@ impl HardeningPlugin for SshHardeningPlugin {
             ctx,
             "ssh-hardening-pre-apply",
             &[Path::new(config_path)],
-        )?;
+        )
+        .await?;
 
         if checkpoint_id.is_some() {
             changes.push(Change {

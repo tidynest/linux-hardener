@@ -43,12 +43,11 @@ pub async fn run(
     let registry = create_plugin_registry();
 
     // Create context with checkpoint manager for automatic rollback support
-    let mut ctx = Context::with_executor(executor);
-    if !dry_run {
+    let mut ctx = if !dry_run {
         let manager = get_checkpoint_manager().await?;
-        Context::with_checkpoint_manager(manager)
+        Context::with_executor_and_checkpoint(executor, manager)
     } else {
-        Context::new()
+        Context::with_executor(executor)
     };
 
     let config = Config;

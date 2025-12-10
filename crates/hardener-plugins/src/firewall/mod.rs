@@ -294,7 +294,8 @@ impl HardeningPlugin for FirewallHardeningPlugin {
             ctx,
             "firewall-hardening-pre-apply",
             &firewall_paths,
-        )?;
+        )
+        .await?;
 
         // Detect backend.
         let backend = match self.detect_backend(ctx).await {

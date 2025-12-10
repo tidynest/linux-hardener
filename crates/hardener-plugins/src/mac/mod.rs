@@ -362,7 +362,7 @@ impl HardeningPlugin for MacHardeningPlugin {
             Path::new("/etc/apparmor.d"),
         ];
         let checkpoint_id =
-            crate::create_checkpoint_for_apply(ctx, "mac-hardening-pre-apply", &mac_paths)?;
+            crate::create_checkpoint_for_apply(ctx, "mac-hardening-pre-apply", &mac_paths).await?;
 
         if checkpoint_id.is_some() {
             apply_changes.push(Change {

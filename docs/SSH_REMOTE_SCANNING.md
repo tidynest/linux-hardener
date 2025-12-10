@@ -125,8 +125,8 @@ Scan a Single Host
 # Full scan with all plugins
 hardener --ssh root@webserver scan
 
-# Scan specific plugins only
-hardener --ssh root@webserver scan --plugins kernel,ssh,firewall
+# Scan specific plugins only (short names or full IDs work)
+hardener --ssh root@webserver scan --plugin kernel --plugin ssh --plugin firewall
 
 Generate Compliance Report
 
@@ -146,8 +146,8 @@ Apply Hardening Remotely
 # Apply all recommended hardening
 hardener --ssh root@server apply --all
 
-# Apply specific plugins
-hardener --ssh root@server apply --plugins kernel,ssh
+# Apply specific plugins (short names work)
+hardener --ssh root@server apply --plugin kernel --plugin ssh
 
 # Dry-run to see what would change
 hardener --ssh root@server apply --all --dry-run

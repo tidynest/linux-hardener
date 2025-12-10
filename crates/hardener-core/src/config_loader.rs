@@ -18,10 +18,14 @@ pub struct ConfigLoader {
     /// Optional CLI-specified config path.
     cli_config_path: Option<PathBuf>,
     /// Skip loading from default locations (for testing).
-    skip_default_locations: bool,
+    skip_defaults: bool,
 }
 
 impl ConfigLoader {
+    const SYSTEM_CONFIG_PATH: &'static str = "/etc/linux-hardener/config.toml";
+    const ENV_DISABLED_PLUGINS: &'static str = "HARDENER_DISABLED_PLUGINS";
+    const ENV_ENABLED_PLUGINS: &'static str = "HARDENER_ENABLED_PLUGINS";
+
     /// Create a new ConfigLoader.
     pub fn new() -> Self {
         Self::default()
@@ -37,7 +41,7 @@ impl ConfigLoader {
     /// Skip loading from default locations (useful for testing).
     #[must_use]
     pub fn skip_defaults(mut self) -> Self {
-        self.skip_default_locations = true;
+        self.skip_defaults = true;
         self
     }
 
@@ -45,48 +49,54 @@ impl ConfigLoader {
     ///
     /// Returns the merged configuration with later sources overriding earlier ones.
     pub fn load(&self) -> Result<HardenerConfig> {
-        // Start with defaults
+        // 1. Start with defaults
         let mut config = HardenerConfig::default();
 
-        if !self.skip_default_locations {
-            // Load system config if it exists
-            if let Some(system_path) = Self::system_config_path()
-                && system_path.exists()
-            {
-                let system_config = Self::load_from_file(&system_path)?;
-                config = Self::merge_configs(config, system_config);
+        if !self.skip_defaults {
+            // 2. Load system config if it exists
+            if let Some(path) = Self::system_config_path() {
+                config = Self::merge_source(config, &path, false)?;
             }
-
-            // Load user config if it exists
-            if let Some(user_path) = Self::user_config_path()
-                && user_path.exists()
-            {
-                let user_config = Self::load_from_file(&user_path)?;
-                config = Self::merge_configs(config, user_config);
+            // 3. Load user config if it exists
+            if let Some(path) = Self::user_config_path() {
+                config = Self::merge_source(config, &path, false)?;
             }
         }
 
-        // Load CLI-specified config (required if specified)
-        if let Some(cli_path) = &self.cli_config_path {
-            if !cli_path.exists() {
+        // 4. Load CLI-specified config (required if specified)
+        if let Some(path) = &self.cli_config_path {
+            config = Self::merge_source(config, path, true)?;
+        }
+
+        // 5. Apply environment variable overrides
+        Ok(Self::apply_env_overrides(config))
+    }
+
+    /// Helper to merge a configuration source if it exists.
+    ///
+    /// If `required` is true, returns an error if the file is missing.
+    fn merge_source(
+        base: HardenerConfig,
+        path: &Path,
+        required: bool,
+    ) -> Result<HardenerConfig> {
+        if !path.exists() {
+            if required {
                 return Err(HardeningError::Config(format!(
                     "Config file not found: {}",
-                    cli_path.display()
+                    path.display()
                 )));
             }
-            let cli_config = Self::load_from_file(cli_path)?;
-            config = Self::merge_configs(config, cli_config);
+            return Ok(base);
         }
 
-        // Apply environment variable overrides
-        config = Self::apply_env_overrides(config);
-
-        Ok(config)
+        let overlay = Self::load_from_file(path)?;
+        Ok(Self::merge_configs(base, overlay))
     }
 
     /// Get the system config path.
     pub fn system_config_path() -> Option<PathBuf> {
-        Some(PathBuf::from("/etc/linux-hardener/config.toml"))
+        Some(PathBuf::from(Self::SYSTEM_CONFIG_PATH))
     }
 
     /// Get the user config path.
@@ -149,10 +159,8 @@ impl ConfigLoader {
     fn merge_plugin(base: PluginConfig, overlay: PluginConfig) -> PluginConfig {
         let mut directives = base.directives;
         directives.extend(overlay.directives);
-
         let mut custom_directives = base.custom_directives;
         custom_directives.extend(overlay.custom_directives);
-
         let mut exceptions = base.exceptions;
         exceptions.extend(overlay.exceptions);
 
@@ -166,25 +174,21 @@ impl ConfigLoader {
 
     /// Apply environment variable overrides.
     fn apply_env_overrides(mut config: HardenerConfig) -> HardenerConfig {
-        // HARDENER_DISABLED_PLUGINS=ssh-hardening,kernel-hardening
-        if let Ok(disabled) = std::env::var("HARDENER_DISABLED_PLUGINS") {
-            config.global.disabled_plugins = disabled
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect();
+        if let Ok(disabled) = std::env::var(Self::ENV_DISABLED_PLUGINS) {
+            config.global.disabled_plugins = Self::parse_env_list(&disabled);
         }
-
-        // HARDENER_ENABLED_PLUGINS=ssh-hardening
-        if let Ok(enabled) = std::env::var("HARDENER_ENABLED_PLUGINS") {
-            config.global.enabled_plugins = enabled
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect();
+        if let Ok(enabled) = std::env::var(Self::ENV_ENABLED_PLUGINS) {
+            config.global.enabled_plugins = Self::parse_env_list(&enabled);
         }
-
         config
+    }
+
+    fn parse_env_list(input: &str) -> Vec<String> {
+        input
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
     }
 }
 

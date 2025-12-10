@@ -48,7 +48,7 @@ pub fn rollback_files_from_checkpoint(
 /// * `ctx` - Execution context containing the checkpoint manager
 /// * `checkpoint_name` - Human-readable name for the checkpoint
 /// * `file_paths` - List of file paths to capture in the checkpoint
-pub fn create_checkpoint_for_apply(
+pub async fn create_checkpoint_for_apply(
     ctx: &hardener_core::Context,
     checkpoint_name: &str,
     file_paths: &[&std::path::Path],
@@ -62,15 +62,7 @@ pub fn create_checkpoint_for_apply(
         }
     };
 
-    let rt = tokio::runtime::Runtime::new().map_err(|e| {
-        hardener_common::error::HardeningError::State(format!(
-            "Failed to create tokio runtime: {}",
-            e
-        ))
-    })?;
-
-    let checkpoint_id =
-        rt.block_on(async { manager.create_checkpoint(checkpoint_name, file_paths).await })?;
+    let checkpoint_id = manager.create_checkpoint(checkpoint_name, file_paths).await?;
 
     tracing::info!("Created checkpoint: {}", checkpoint_id.as_str());
 

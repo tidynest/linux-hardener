@@ -10,7 +10,7 @@ description = "Scheduled scanning daemon for Linux System Hardener"
 [dependencies]
 # Workspace crates
 hardener-common  = { workspace = true }
-hardener-core    = { workspace = true }
+hardener-core    = { workspace = true, features = ["system"] }
 
 # Async runtime
 async-trait = { workspace = true }
@@ -41,6 +41,10 @@ tracing = { workspace = true }
 
 # System
 hostname = { workspace = true }
+dirs = "6.0.0"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 # UUID for session IDs
 uuid = { version = "1.19.0", features = ["v4"] }

@@ -33,6 +33,7 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
     let ctx = Context::with_executor(opts.executor.clone());
 
     let plugins = registry.list()?;
+    validate_plugin_filter(opts.plugin_filter, &plugins)?;
     let min_severity = severity_filter_to_severity(&opts.severity_filter);
 
     let mut all_results = Vec::new();
@@ -43,7 +44,7 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
             && !opts
                 .plugin_filter
                 .iter()
-                .any(|p| p == metadata.plugin_id.as_str())
+                .any(|p| is_valid_plugin_name(p, &[metadata.plugin_id.as_str()]))
         {
             continue;
         }
@@ -110,4 +111,40 @@ fn severity_filter_to_severity(filter: &SeverityFilter) -> Severity {
         SeverityFilter::High => Severity::High,
         SeverityFilter::Critical => Severity::Critical,
     }
+}
+
+/// Validates plugin filter entries and returns error if any are invalid.
+/// Accepts both full IDs (e.g., "kernel-hardening") and short names (e.g., "kernel").
+fn validate_plugin_filter(
+    filter: &[String],
+    valid_plugins: &[hardener_core::PluginMetadata],
+) -> Result<()> {
+    if filter.is_empty() {
+        return Ok(());
+    }
+
+    let valid_ids: Vec<&str> = valid_plugins.iter().map(|p| p.plugin_id.as_str()).collect();
+
+    let invalid: Vec<&str> = filter
+        .iter()
+        .filter(|f| !is_valid_plugin_name(f, &valid_ids))
+        .map(|s| s.as_str())
+        .collect();
+
+    if invalid.is_empty() {
+        Ok(())
+    } else {
+        anyhow::bail!(
+            "Unknown plugin(s): {}. Valid plugins: {}",
+            invalid.join(", "),
+            valid_ids.join(", ")
+        )
+    }
+}
+
+/// Checks if a filter entry matches a valid plugin (full ID or short name).
+fn is_valid_plugin_name(name: &str, valid_ids: &[&str]) -> bool {
+    valid_ids.iter().any(|id| {
+        *id == name || id.starts_with(&format!("{}-", name))
+    })
 }

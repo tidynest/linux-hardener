@@ -190,6 +190,43 @@ cd crates/hardener-ui && trunk serve --port 1420
 
 See [scripts/README.md](scripts/README.md) for complete script documentation.
 
+### Safe Root Testing
+
+The hardener modifies critical system files. For safe testing with root privileges, use the provided container scripts:
+
+```bash
+# 1. Create isolated Arch Linux container (systemd-nspawn)
+sudo ./scripts/create-test-container.sh
+
+# 2. Enter container (project mounted at /project)
+sudo ./scripts/create-test-container.sh enter
+
+# 3. Inside container: build and run tests
+cd /project
+cargo build --release
+
+# Run safe tests (read-only + dry-run)
+sudo ./scripts/root-test-suite.sh
+
+# Run full tests INCLUDING apply + rollback
+sudo ./scripts/root-test-suite.sh --apply
+
+# 4. Exit and clean up
+poweroff                                       # Exit container
+sudo ./scripts/create-test-container.sh clean  # Remove container
+```
+
+**Why two test modes?**
+
+| Test | Without `--apply` | With `--apply` |
+|------|-------------------|----------------|
+| Scans, reports, daemon, history | ✅ Runs | ✅ Runs |
+| Apply hardening + rollback | ⏭️ Skipped | ✅ Runs |
+
+The `--apply` flag explicitly enables destructive tests. Without it, only read-only tests run. This prevents accidentally modifying configs. **Inside the container, both modes are completely safe** since it's isolated from your host system.
+
+See [docs/CLI_V032_TEST_RESULTS.md](docs/CLI_V032_TEST_RESULTS.md) for full test documentation.
+
 #### Web App vs Desktop App
 
 The web app runs in any browser without needing Tauri installed:
@@ -220,8 +257,9 @@ hardener scan
 # Scan with severity filter (critical, high, medium, low, info)
 hardener scan --severity high
 
-# Scan specific plugins only
+# Scan specific plugins only (full ID or short name)
 hardener scan --plugin kernel-hardening --plugin ssh-hardening
+hardener scan --plugin kernel --plugin ssh  # Short names also work
 
 # Output as JSON
 hardener scan --format json
@@ -526,4 +564,4 @@ This project draws inspiration from established security tools including:
 **Contact**: tidynest@proton.me
 **Repository**: https://github.com/tidynest/linux-system-hardener
 
-**Last Updated**: 2025-12-08
+**Last Updated**: 2025-12-10

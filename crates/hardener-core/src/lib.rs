@@ -11,6 +11,7 @@ pub mod executor;
 pub mod plugin_manager;
 #[cfg(feature = "system")]
 pub mod registry;
+#[cfg(feature = "system")]
 pub mod testing;
 
 // Re-export commonly used types (always available)
@@ -23,8 +24,8 @@ pub use plugin::{
 pub use config::{GlobalConfig, HardenerConfig, PluginConfig, PolicyException};
 pub use config_loader::ConfigLoader;
 
-// Re-export testing (always available
-#[cfg(any(test, feature = "testing"))]
+// Re-export testing (requires system feature)
+#[cfg(all(feature = "system", any(test, feature = "testing")))]
 pub use testing::MockPlugin;
 
 // Re-export system-specific plugin types

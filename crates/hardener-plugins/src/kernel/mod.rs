@@ -284,7 +284,8 @@ impl HardeningPlugin for KernelHardeningPlugin {
             hardener_sysctl_path,
         ];
         let checkpoint_id =
-            crate::create_checkpoint_for_apply(ctx, "kernel-hardening-pre-apply", &sysctl_paths)?;
+            crate::create_checkpoint_for_apply(ctx, "kernel-hardening-pre-apply", &sysctl_paths)
+                .await?;
 
         if checkpoint_id.is_some() {
             apply_changes.push(Change {

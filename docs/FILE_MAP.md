@@ -48,7 +48,7 @@ pub struct ComplianceSummary { summary_total_controls, summary_passing, summary_
 | `src/cli.rs` | Clap argument definitions | `Cli`, `Command`, `DaemonAction`, `HistoryAction`, `SystemdAction`, `OutputFormat` |
 | `src/output.rs` | Output formatting utilities | `format_findings()`, `format_json()` |
 | `src/commands/mod.rs` | Command module exports | - |
-| `src/commands/scan.rs` | Scan command implementation | `run()` |
+| `src/commands/scan.rs` | Scan command implementation | `run()`, `validate_plugin_filter()`, `is_valid_plugin_name()` |
 | `src/commands/apply.rs` | Apply command implementation | `run()` |
 | `src/commands/checkpoint.rs` | Checkpoint management | `list()`, `create()`, `show()`, `delete()` |
 | `src/commands/plugins.rs` | List plugins command | `run()` |

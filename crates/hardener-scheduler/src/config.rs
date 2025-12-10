@@ -6,6 +6,28 @@
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf};
 
+/// Returns the appropriate base directory for scheduler data.
+///
+/// - Root user (uid 0): `/var/lib/linux-hardener/`
+/// - Regular user: `~/.local/share/linux-hardener/`
+fn default_data_dir() -> PathBuf {
+    // Check if running as root
+    #[cfg(unix)]
+    {
+        if unsafe { libc::geteuid() } == 0 {
+            return PathBuf::from("/var/lib/linux-hardener");
+        }
+    }
+
+    // For non-root users, use XDG data directory
+    dirs::data_local_dir()
+        .map(|p| p.join("linux-hardener"))
+        .unwrap_or_else(|| {
+            // Fallback if home directory cannot be determined
+            PathBuf::from("/var/lib/linux-hardener")
+        })
+}
+
 /// Root scheduler configuration.
 ///
 /// Loaded from `[scheduler]` section in config.toml
@@ -54,9 +76,10 @@ pub struct StorageConfig {
 
 impl Default for StorageConfig {
     fn default() -> Self {
+        let base = default_data_dir();
         Self {
-            database_path: PathBuf::from("/var/lib/linux-hardener/scheduler.db"),
-            json_output_dir: PathBuf::from("/var/lib/linux-hardener/scans"),
+            database_path: base.join("scheduler.db"),
+            json_output_dir: base.join("scans"),
             retention_count: 90,
             retention_days: 0,
         }
@@ -150,13 +173,28 @@ mod tests {
     }
 
     #[test]
-    fn storage_defaults_to_var_lib() {
+    fn storage_defaults_to_appropriate_dir() {
         let storage = StorageConfig::default();
-        assert_eq!(
-            storage.database_path,
-            PathBuf::from("/var/lib/linux-hardener/scheduler.db")
-        );
+        // Path depends on whether running as root or user
+        // Just verify the filename is correct and retention is set
+        assert!(storage
+            .database_path
+            .file_name()
+            .is_some_and(|n| n == "scheduler.db"));
+        assert!(storage
+            .json_output_dir
+            .file_name()
+            .is_some_and(|n| n == "scans"));
         assert_eq!(storage.retention_count, 90);
+    }
+
+    #[test]
+    fn default_data_dir_returns_valid_path() {
+        let dir = default_data_dir();
+        // Should end with "linux-hardener"
+        assert!(dir
+            .file_name()
+            .is_some_and(|n| n == "linux-hardener"));
     }
 
     #[test]
