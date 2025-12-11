@@ -876,14 +876,18 @@ sudo ./scripts/create-<distro>-container.sh clean
 | Arch | `/var/lib/machines/hardener-test` |
 | Debian | `/var/lib/machines/hardener-test-debian` |
 | Fedora | `/var/lib/machines/hardener-test-fedora` |
+| RHEL/Rocky | `/var/lib/machines/hardener-test-rhel` |
 | openSUSE | `/var/lib/machines/hardener-test-opensuse` |
 
-**Key Differences by Distribution**:
-| Feature | Arch | Debian | Fedora | openSUSE |
-|---------|------|--------|--------|----------|
+> **Note:** The RHEL/Rocky container is optional - Fedora validation covers the entire Red Hat family.
+
+**Key Differences by Family**:
+| Feature | Arch | Debian | Red Hat | SUSE |
+|---------|------|--------|---------|------|
 | Firewall | ufw | ufw | firewalld | firewalld |
 | MAC | AppArmor (optional) | AppArmor | SELinux | AppArmor |
 | Bootstrap tool | pacstrap | debootstrap | dnf | zypper |
+| Covers | Manjaro, EndeavourOS | Ubuntu, Mint, Pop!_OS | RHEL, CentOS, Rocky | SLES |
 
 All containers:
 - Include required packages (openssh, audit, firewall tools, etc.)

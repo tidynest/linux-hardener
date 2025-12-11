@@ -1,7 +1,7 @@
 # Linux System Hardener - Architecture Documentation
 
-**Last Updated:** 2025-12-09
-**Version:** 0.3.2 (GUI Bug Fixes + Dual Database Pattern)
+**Last Updated:** 2025-12-11
+**Version:** 0.3.3 (Distribution Validation Complete)
 
 ---
 

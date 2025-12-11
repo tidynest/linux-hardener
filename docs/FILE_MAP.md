@@ -1,6 +1,6 @@
 # Linux System Hardener - File Map
 
-**Last Updated:** 2025-12-07
+**Last Updated:** 2025-12-11
 
 This document lists all source files with their purpose and key exports.
 
@@ -222,10 +222,10 @@ pub struct FileState {
 | `src/lib.rs` | Module exports | Re-exports |
 | `src/adapter.rs` | Distribution adapter | `DistributionAdapter`, `Distribution`, `DistroFamily` |
 | `src/package/mod.rs` | Package manager abstraction | `PackageManager` trait |
-| `src/package/apt.rs` | Debian/Ubuntu | `AptPackageManager` |
-| `src/package/dnf.rs` | RHEL/Fedora | `DnfPackageManager` |
-| `src/package/pacman.rs` | Arch Linux | `PacmanPackageManager` |
-| `src/package/zypper.rs` | openSUSE | `ZypperPackageManager` |
+| `src/package/apt.rs` | Debian family | `AptPackageManager` |
+| `src/package/dnf.rs` | Red Hat family | `DnfPackageManager` |
+| `src/package/pacman.rs` | Arch family | `PacmanPackageManager` |
+| `src/package/zypper.rs` | SUSE family | `ZypperPackageManager` |
 
 ---
 
@@ -427,7 +427,22 @@ pub struct ScanRunner {
 | `src/components/card.rs` | Reusable card container component | `Card`, `CardVariant`, `HeadingLevel` |
 | `src/components/theme_toggle.rs` | Theme selector dropdown component | `ThemeToggle` |
 
-**Note**: This crate depends only on `hardener-types` to ensure WASM compatibility. All types are re-exported from hardener-types.
+**Note**: This crate depends only on `hardener-types` for shared types to ensure WASM compatibility. External dependencies include Leptos (WASM framework), wasm-bindgen, and web-sys for browser APIs.
+
+### Theme Files (crates/hardener-ui/themes/)
+
+| File | Purpose |
+|------|---------|
+| `themes/README.md` | Theme system documentation |
+| `themes/fortress.css` | Deep slate-blue with gold accents |
+| `themes/sentinel.css` | Warm charcoal with amber accents |
+| `themes/command.css` | Navy with ice-blue accents |
+| `themes/guardian.css` | Forest black with emerald accents |
+| `themes/daywatch.css` | Light mode with warm off-white |
+| `themes/github-dark.css` | GitHub-inspired dark theme |
+| `themes/midnight-teal.css` | Deep teal dark theme |
+
+**Note**: Active theme definitions are in `styles.css` using `[data-theme="..."]` selectors. Individual theme files serve as reference and documentation.
 
 ### Tauri Bindings (tauri_bindings.rs)
 
@@ -493,11 +508,16 @@ pub async fn generate_compliance_report(frameworks: Vec<String>) -> Result<Vec<C
 |------|---------|
 | `Cargo.toml` | Workspace definition |
 | `.cargo/config.toml` | WASM rustflags (getrandom backend) |
+| `.cargo/audit.toml` | Cargo audit configuration |
 | `rustfmt.toml` | Rust formatting config |
-| `tauri.conf.json` | Tauri app config |
+| `deny.toml` | Cargo deny (dependency policy) configuration |
 | `release.toml` | cargo-release configuration |
 | `cliff.toml` | git-cliff changelog generation |
 | `.gitignore` | Git ignore rules |
+| `src-tauri/tauri.conf.json` | Tauri app configuration |
+| `src-tauri/build.rs` | Tauri build script |
+| `crates/hardener-ui/Trunk.toml` | Trunk WASM build configuration |
+| `crates/hardener-ui/index.html` | WASM app entry HTML |
 
 ---
 
@@ -515,9 +535,25 @@ pub async fn generate_compliance_report(frameworks: Vec<String>) -> Result<Vec<C
 
 | File | Purpose |
 |------|---------|
+| `scripts/README.md` | Comprehensive script documentation |
 | `scripts/validate_naming.py` | Naming convention validator |
+| `scripts/validate_all.py` | Master validation orchestrator |
+| `scripts/validate_cli_docs.py` | CLI command documentation validator |
+| `scripts/validate_compliance_docs.py` | Compliance framework documentation validator |
+| `scripts/validate_file_map.py` | FILE_MAP.md accuracy validator |
+| `scripts/validate_last_updated.py` | Last Updated timestamp validator |
+| `scripts/validate_plugin_docs.py` | Plugin documentation validator |
+| `scripts/validate_tauri_docs.py` | Tauri integration documentation validator |
+| `scripts/update_all_docs.py` | Batch documentation updater |
 | `scripts/release.sh` | Automated version bumping and release |
-| `.git/hooks/pre-commit` | Pre-commit naming convention check |
+| `scripts/tauri-dev.sh` | Tauri development launcher |
+| `scripts/full-test-suite.sh` | Complete 102-test validation suite |
+| `scripts/root-test-suite.sh` | 36 root-level privilege tests |
+| `scripts/manual-verification-test.sh` | Interactive verification tests |
+| `scripts/create-test-container.sh` | Arch Linux systemd-nspawn container |
+| `scripts/create-debian-container.sh` | Debian 12 test container |
+| `scripts/create-fedora-container.sh` | Fedora 41 test container |
+| `scripts/create-opensuse-container.sh` | openSUSE Leap test container |
 
 ---
 
@@ -527,18 +563,27 @@ pub async fn generate_compliance_report(frameworks: Vec<String>) -> Result<Vec<C
 |------|---------|
 | `README.md` | User documentation |
 | `PLAN.md` | Development roadmap |
+| `NEXT.md` | Next steps and bug tracking |
 | `CHANGELOG.md` | Version history |
 | `CONTRIBUTING.md` | Contribution guidelines |
 | `SECURITY.md` | Security policy |
+| `LICENSE` | Apache-2.0 licence |
+| `MCP_INSTRUCTIONS.md` | MCP configuration instructions |
 | `docs/ARCHITECTURE.md` | Architecture overview |
-| `docs/DATA_FLOW.md` | Data flow diagrams |
+| `docs/CLI_V032_TEST_RESULTS.md` | CLI v0.3.2 validation results |
 | `docs/CONFIG_DESIGN.md` | Config system security design |
-| `docs/HANDOFF.md` | Developer handoff |
+| `docs/css-architecture.md` | CSS architecture and patterns |
+| `docs/DATA_FLOW.md` | Data flow diagrams |
+| `docs/DEPENDENCY_AUDIT_2025-12-08.md` | Dependency security audit |
+| `docs/DISTRIBUTION_VALIDATION.md` | Multi-distro validation results |
+| `docs/DOCUMENTATION_AUDIT.md` | Documentation completeness audit |
 | `docs/FILE_MAP.md` | This file |
+| `docs/FRONTEND_LAYOUT_PLAN.md` | GUI layout implementation plan |
+| `docs/GUI_V031_TEST_PLAN.md` | GUI v0.3.1 test plan |
 | `docs/NAMING_CONVENTIONS.md` | Naming standards |
 | `docs/RELEASING.md` | Versioning and release process |
 | `docs/SSH_REMOTE_SCANNING.md` | SSH remote scanning user guide |
-| `docs/SSH_REMOTE_PLAN.md` | SSH implementation plan (internal) |
+| `docs/tauri-plus-leptos-development-on-arch-linux-with-hyprland.md` | Tauri + Leptos dev guide |
 | `docs/THEME_DESIGN_GUIDE.md` | GUI theming system documentation |
 | `docs/WASM_FIX_PLAN.md` | WASM compilation fix implementation |
 
@@ -579,4 +624,4 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | `hardener-common/src/types.rs` | Added `FindingPolicyException` struct |
 | `hardener-cli/src/cli.rs` | Added `--config`, `--audit`, `--compliance`, `--exit-code` flags, `ScanMode` enum |
 
-**Last Updated**: 2025-12-09
+**Last Updated**: 2025-12-11

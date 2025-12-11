@@ -10,7 +10,7 @@ This project adheres to a code of conduct that all contributors are expected to 
 
 ### Prerequisites
 
-- Rust 1.75 or later
+- Rust 1.85 or later
 - Linux system (for full functionality testing)
 - Git
 

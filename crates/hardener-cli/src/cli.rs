@@ -108,7 +108,7 @@ pub enum Command {
 
     /// Generate compliance reports.
     Report {
-        /// Yse case scenario (server, workstation, government, healthcare, financial, gdpr, all).
+        /// Use case scenario (server, workstation, government, healthcare, financial, gdpr, all).
         #[arg(short, long)]
         scenario: Option<String>,
 

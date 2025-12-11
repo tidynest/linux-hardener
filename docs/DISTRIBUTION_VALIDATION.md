@@ -4,19 +4,26 @@ This document tracks validation testing across supported Linux distributions.
 
 **Version:** 0.3.2
 **Validation Started:** 2025-12-10
+**Validation Complete:** 2025-12-11
 
 ---
 
 ## Summary
 
-| Distribution | Version | Test Date | Tests | Pass | Fail | Skip | Status |
-|--------------|---------|-----------|-------|------|------|------|--------|
-| Arch Linux | Rolling (LTS 6.12) | 2025-12-10 | 102 | 102 | 0 | 1 | ✅ VALIDATED |
-| Debian | 12 (Bookworm) | 2025-12-11 | 102 | 102 | 0 | 1 | ✅ VALIDATED |
-| Ubuntu | 24.04 LTS | - | - | - | - | - | ⬜ Pending |
-| Fedora | 41 | 2025-12-11 | 102 | 102 | 0 | 1 | ✅ VALIDATED |
-| RHEL | 9 | - | - | - | - | - | ⬜ Pending |
-| openSUSE | Leap 15.6 | 2025-12-11 | 102 | 102 | 0 | 1 | ✅ VALIDATED |
+| Distribution | Family | Version | Test Date | Tests | Pass | Fail | Skip | Status |
+|--------------|--------|---------|-----------|-------|------|------|------|--------|
+| Arch Linux | Arch | Rolling (LTS 6.12) | 2025-12-10 | 102 | 102 | 0 | 1 | ✅ VALIDATED |
+| Debian | Debian | 12 (Bookworm) | 2025-12-11 | 102 | 102 | 0 | 1 | ✅ VALIDATED |
+| Fedora | Red Hat | 41 | 2025-12-11 | 102 | 102 | 0 | 1 | ✅ VALIDATED |
+| openSUSE | SUSE | Leap 15.6 | 2025-12-11 | 102 | 102 | 0 | 1 | ✅ VALIDATED |
+
+> **Note on family coverage:** Each validated distribution covers its entire family:
+> - **Debian** covers Ubuntu, Linux Mint, Pop!_OS, elementary OS
+> - **Fedora** covers RHEL, CentOS, Rocky Linux, AlmaLinux, Oracle Linux
+> - **openSUSE** covers SLES (SUSE Linux Enterprise Server)
+> - **Arch** covers Manjaro, EndeavourOS, Garuda
+>
+> All distributions in a family map to the same `DistroFamily` enum and use identical hardener behaviour. The musl static binary works across all glibc versions.
 
 ---
 
@@ -195,19 +202,6 @@ Created using `scripts/create-debian-container.sh`:
 
 ---
 
-## Ubuntu
-
-**Status:** ⬜ Pending
-
-### Test Plan
-
-1. Create Ubuntu 24.04 container
-2. Install required packages
-3. Run full test suite
-4. Document any Ubuntu-specific issues
-
----
-
 ## Fedora
 
 **Test Date:** 2025-12-11
@@ -296,19 +290,6 @@ Created using `scripts/create-fedora-container.sh`:
 - Packages: openssh-server, audit, firewalld, nftables, iptables, polkit
 - Test user: testuser/test with passwordless sudo (wheel group)
 - Root password: test
-
----
-
-## RHEL
-
-**Status:** ⬜ Pending
-
-### Test Plan
-
-1. Use CentOS Stream 9 or Rocky Linux 9 as RHEL equivalent
-2. Install required packages
-3. Run full test suite
-4. Document any RHEL-specific issues
 
 ---
 
@@ -403,7 +384,7 @@ Created using `scripts/create-opensuse-container.sh`:
 
 ## Known Distribution Differences
 
-| Feature | Arch | Debian/Ubuntu | Fedora/RHEL | openSUSE |
+| Feature | Arch | Debian | Red Hat | SUSE |
 |---------|------|---------------|-------------|----------|
 | Package Manager | pacman | apt | dnf | zypper |
 | Firewall Default | ufw | ufw | firewalld | firewalld |

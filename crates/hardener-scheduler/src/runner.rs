@@ -21,9 +21,9 @@ use tracing::{debug, error, info, warn};
 /// Trigger source for a scan session.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TriggerType {
-    /// Triggered byt the cron scheduler daemon.
+    /// Triggered by the cron scheduler daemon.
     Scheduled,
-    /// Triggered manually cia CLI command.
+    /// Triggered manually via CLI command.
     Manual,
     /// Triggered by systemd user.
     Systemd,

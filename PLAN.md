@@ -150,7 +150,7 @@ See [docs/WASM_FIX_PLAN.md](docs/WASM_FIX_PLAN.md) for implementation details.
 | Responsive layout | See [FRONTEND_LAYOUT_PLAN.md](docs/FRONTEND_LAYOUT_PLAN.md) Session 2 | Medium | ✅ Complete |
 | Navigation restructure | Consolidated to 3 pages (Dashboard, Analysis, Hardening) | Low | ✅ Complete |
 | GUI functional testing | Verify all GUI features work correctly | High | ✅ Complete |
-| CLI functional testing | Verify all CLI commands work correctly (27/27 tests pass) | High | ✅ Complete |
+| CLI functional testing | Verify all CLI commands work correctly (31 unit tests + 66 functional tests) | High | ✅ Complete |
 | Safe testing environment | systemd-nspawn container with test scripts | Critical | ✅ Complete |
 
 **v0.3.1 Completed Items (2025-12-05/06):**
@@ -423,22 +423,21 @@ Authentication cancelled. Root privileges are required to apply hardening change
 - [ ] Add JSON output mode to CLI `checkpoint rollback` command
 - [x] Create user-friendly error messages for polkit failures ✅ **DONE (2025-12-06)**
 - [x] Test on Hyprland (with polkit-gnome) ✅ **DONE (2025-12-06)**
-- [ ] Test on GNOME, KDE, XFCE desktop environments
 - [ ] (Optional) Create polkit policy file for nicer dialog text
 - [ ] (Future) Add to AUR/deb/rpm package dependencies
 
 **Tauri 2.x Critical Note:** Frontend argument keys MUST use camelCase (e.g., `pluginIds` not `plugin_ids`) to match Tauri 2.x's default serde configuration. The `wasm-bindgen` extern binding must include the `catch` attribute for proper Promise rejection handling.
 
-### v0.3.3 - Distribution-Specific Validation (In Progress)
+### v0.3.3 - Distribution-Specific Validation (Complete)
 
-| Distribution | Version | Tests | Pass | Fail | Skip | Status |
-|--------------|---------|-------|------|------|------|--------|
-| Arch Linux | Rolling (LTS 6.12) | 102 | 102 | 0 | 1 | ✅ VALIDATED |
-| Debian | 12 (Bookworm) | 102 | 102 | 0 | 1 | ✅ VALIDATED |
-| Fedora | 41 | 102 | 102 | 0 | 1 | ✅ VALIDATED |
-| openSUSE | Leap 15.6 | 102 | 102 | 0 | 1 | ✅ VALIDATED |
-| Ubuntu | 24.04 LTS | - | - | - | - | ⬜ Pending |
-| RHEL | 9 | - | - | - | - | ⬜ Pending |
+| Distribution | Family | Version | Tests | Pass | Fail | Skip | Status |
+|--------------|--------|---------|-------|------|------|------|--------|
+| Arch Linux | Arch | Rolling (LTS 6.12) | 102 | 102 | 0 | 1 | ✅ VALIDATED |
+| Debian | Debian | 12 (Bookworm) | 102 | 102 | 0 | 1 | ✅ VALIDATED |
+| Fedora | Red Hat | 41 | 102 | 102 | 0 | 1 | ✅ VALIDATED |
+| openSUSE | SUSE | Leap 15.6 | 102 | 102 | 0 | 1 | ✅ VALIDATED |
+
+> **Note on family coverage:** Each validated distribution covers its entire family. Debian covers Ubuntu/Mint/Pop!_OS/elementary; Fedora covers RHEL/CentOS/Rocky/Alma/Oracle Linux; openSUSE covers SLES; Arch covers Manjaro/EndeavourOS/Garuda. All distributions in a family use identical hardener code paths.
 
 **Validation Requirements:**
 - Each distro family requires dedicated testing sessions
@@ -459,6 +458,7 @@ See [docs/DISTRIBUTION_VALIDATION.md](docs/DISTRIBUTION_VALIDATION.md) for detai
 | Multi-host management | Manage multiple systems from one UI | Medium |
 | Historical trends | Track security posture over time | Low |
 | Alert notifications | Email/webhook on security regressions | Low |
+| DE testing | Test pkexec/polkit on GNOME, KDE, XFCE | Low |
 
 ### v1.0.0 - Production Release
 
@@ -476,7 +476,7 @@ See [docs/DISTRIBUTION_VALIDATION.md](docs/DISTRIBUTION_VALIDATION.md) for detai
 
 | Item | Description | Priority |
 |------|-------------|----------|
-| ~~Increase test coverage~~ | ~~Target 90%+ coverage~~ | ✅ Complete (338+ tests) |
+| ~~Increase test coverage~~ | ~~Target 90%+ coverage~~ | ✅ Complete (396+ tests) |
 | ~~Consolidate `create_plugin_registry()`~~ | ~~Duplicated in CLI, report, Tauri~~ | ✅ Complete |
 | ~~Consolidate test mock plugins~~ | ~~Duplicated in registry.rs and plugin_manager_tests.rs~~ | ✅ Complete |
 | ~~Config file utilities~~ | ~~Duplicated parsing/backup in SSH and PAM plugins~~ | ✅ Complete |

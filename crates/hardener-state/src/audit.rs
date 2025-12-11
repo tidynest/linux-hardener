@@ -131,7 +131,7 @@ impl AuditEntry {
     }
 }
 
-/// Filter criteria fir querying audit logs.
+/// Filter criteria for querying audit logs.
 #[derive(Clone, Debug, Default)]
 pub struct QueryFilter {
     /// Filter by action type (None means no filter)

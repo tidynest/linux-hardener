@@ -15,7 +15,7 @@ impl CheckpointId {
         Self(id.into())
     }
 
-    /// Returns the string representation of the checkpount ID.
+    /// Returns the string representation of the checkpoint ID.
     pub fn as_str(&self) -> &str {
         &self.0
     }

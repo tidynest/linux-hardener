@@ -37,7 +37,7 @@ pub struct Daemon {
 }
 
 impl Daemon {
-    /// Creates a new Daemon instance form configuration.
+    /// Creates a new Daemon instance from configuration.
     ///
     /// # Arguments
     /// * `config` - Scheduler configuration with cron expression and settings

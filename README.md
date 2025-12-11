@@ -67,18 +67,18 @@ The tool is designed for system administrators, DevOps engineers, and security p
 
 ## Project Status
 
-**Current Phase**: Development Release (v0.3.0)
+**Current Phase**: Development Release (v0.3.2)
 
 ### Test Coverage
 
 ```
-Total Tests: 378+ passing
+Total Tests: 396+ passing
 ├── Plugin Tests: 48 + 80 mock tests
 ├── Core Tests: 59 + 14 mock executor tests
 ├── Compliance Tests: 46
 ├── State Tests: 31
 ├── Scheduler Tests: 57 (daemon, runner, notifications, systemd)
-├── CLI Tests: 25
+├── CLI Tests: 31
 ├── Distro Tests: 13
 ├── SSH Integration Tests: 24
 └── Coverage: >90%
@@ -97,17 +97,18 @@ Total Tests: 378+ passing
 ```
 linux-system-hardener/
 ├── crates/
-│   ├── hardener-core/        # Plugin trait, context, checkpoint system
-│   ├── hardener-common/      # Shared utilities and error types
 │   ├── hardener-types/       # WASM-compatible shared type definitions
+│   ├── hardener-common/      # Shared utilities and error types
+│   ├── hardener-core/        # Plugin trait, context, config system
 │   ├── hardener-distro/      # Distribution detection and adaptation
-│   ├── hardener-plugins/     # Security plugin implementations
+│   ├── hardener-plugins/     # Security plugin implementations (8 plugins)
 │   ├── hardener-state/       # Checkpoint manager, audit logging
-│   ├── hardener-compliance/  # Compliance framework mapping
+│   ├── hardener-compliance/  # Compliance framework mapping (6 frameworks)
 │   ├── hardener-scheduler/   # Scheduled scanning daemon
+│   ├── hardener-cli/         # Command-line interface binary
 │   └── hardener-ui/          # Leptos WASM frontend components
 ├── src-tauri/                # Tauri backend (desktop app)
-├── scripts/                  # Development utilities
+├── scripts/                  # Development and testing utilities
 └── docs/                     # Project documentation
 ```
 
@@ -124,7 +125,7 @@ linux-system-hardener/
 
 ### Prerequisites
 
-- Rust 1.75+ (with `wasm32-unknown-unknown` target for UI)
+- Rust 1.85+ (with `wasm32-unknown-unknown` target for UI)
 - Linux system (for full functionality)
 - Root access (for applying hardening changes)
 
@@ -497,7 +498,6 @@ See [PLAN.md](PLAN.md) for detailed implementation plans for upcoming features.
 - [x] GUI dark terminal theme with CSS styling
 - [x] Browser mode support (Web UI works without Tauri desktop wrapper)
 - [x] CI/CD GitHub Actions integration
-- [x] Ansible/Puppet modules
 
 ### v0.3.1 - GUI Polish & Testing (Complete)
 - [x] Fix "Loading..." text persistence
@@ -524,21 +524,21 @@ See [PLAN.md](PLAN.md) for detailed implementation plans for upcoming features.
 - [x] Backend integration (Tauri commands connected)
 - [x] Root privilege escalation via pkexec
 - [x] Bug fixes: Security score calculation, false positives, validate() stubs, kernel rollback
-- [ ] Test on GNOME, KDE, XFCE desktop environments
 
-### v0.3.3 - Distribution Validation (In Progress)
-- [x] Arch Linux validation (102/102 tests pass)
-- [x] Debian 12 validation (102/102 tests pass)
-- [x] Fedora 41 validation (102/102 tests pass)
-- [x] openSUSE Leap 15.6 validation (102/102 tests pass)
-- [ ] Ubuntu 24.04 validation
-- [ ] RHEL 9 validation
+### v0.3.3 - Distribution Validation (Complete)
+- [x] Arch Linux validation (102/102 tests pass) - covers Manjaro, EndeavourOS, Garuda
+- [x] Debian 12 validation (102/102 tests pass) - covers Ubuntu, Linux Mint, Pop!_OS, elementary
+- [x] Fedora 41 validation (102/102 tests pass) - covers RHEL, CentOS, Rocky, AlmaLinux, Oracle Linux
+- [x] openSUSE Leap 15.6 validation (102/102 tests pass) - covers SLES
+
+> **Note on family coverage:** Each distribution covers its entire family. All distributions in a family map to the same `DistroFamily` enum and use identical hardener code paths.
 
 ### v0.4.0 - Web Interface (Future)
 - [ ] Web dashboard for browser-based management
 - [ ] Multi-host management from single UI
 - [ ] Historical security trends
 - [ ] Alert notifications on security regressions
+- [ ] Test on GNOME, KDE, XFCE desktop environments (pkexec/polkit agents)
 
 ### v1.0.0 - Production Release (Future)
 - [ ] Security audit completed

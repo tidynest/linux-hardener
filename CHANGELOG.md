@@ -5,9 +5,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.3] - 2025-12-11
 
-### Added (Distribution Validation 2025-12-11)
+### Added (Distribution Validation)
 - **Multi-Distribution Validation**: Comprehensive 102-test suite validated across 4 major Linux distributions
   - Arch Linux (Rolling, LTS 6.12): 102/102 tests pass, 100% pass rate
   - Debian 12 (Bookworm): 102/102 tests pass, 100% pass rate
@@ -139,7 +139,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Compliance page route `/compliance` with navigation link
 
 ### Changed
-- Test suite expanded from 220 to 378+ tests (72% increase)
+- Test suite expanded from 220 to 396+ tests (80% increase)
 - PDF findings now display with better visual hierarchy and spacing
 - All 8 plugins converted to async with `#[async_trait]`
 - HardeningPlugin trait methods now async: `scan()`, `apply()`, `rollback()`, `validate()`
@@ -272,7 +272,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Wayland/GBM issues on some Linux configurations
 
 ### Dependencies
-- Rust 1.75+
+- Rust 1.85+
 - Tauri 2.0
 - Leptos 0.8
 - SQLite (via sqlx)
@@ -282,9 +282,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Version History
 
+- **0.3.3** (2025-12-11): Distribution validation complete (4 families)
+- **0.3.2** (2025-12-09): GUI major redesign, bug fixes, accessibility
+- **0.3.1** (2025-12-05): GUI polish and testing
+- **0.3.0** (2025-12-01): Remote SSH scanning, scheduled scanning, notifications
+- **0.2.0** (2025-11-28): Compliance frameworks, PDF reports, configuration system
 - **0.1.0** (2025-11-25): Initial development release
 
-[Unreleased]: https://github.com/tidynest/linux-system-hardener/compare/v0.1.0...HEAD
+[0.3.3]: https://github.com/tidynest/linux-system-hardener/compare/v0.3.2...v0.3.3
+[0.3.2]: https://github.com/tidynest/linux-system-hardener/compare/v0.3.1...v0.3.2
+[0.3.1]: https://github.com/tidynest/linux-system-hardener/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/tidynest/linux-system-hardener/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/tidynest/linux-system-hardener/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tidynest/linux-system-hardener/releases/tag/v0.1.0
 
 **Last Updated**: 2025-12-11

@@ -51,7 +51,7 @@ impl HashChain {
         self.previous_hash = new_hash;
     }
 
-    /// Verifies that a hash was correctly comuted from previous hash and data.
+    /// Verifies that a hash was correctly computed from previous hash and data.
     ///
     /// # Arguments
     /// * `previous_hash` - The hash from the previous entry

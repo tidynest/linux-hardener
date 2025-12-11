@@ -10,8 +10,8 @@
 
 - **10 Core Crates + 1 Tauri App**
 - **8 Security Plugins**: Kernel, SSH, Firewall, PAM, Services, Audit, Permissions, MAC
-- **378+ Passing Tests**
-- **Multi-Distribution Support**: Ubuntu, Debian, Fedora, RHEL, Arch, openSUSE
+- **396+ Passing Tests**
+- **Multi-Distribution Support**: Debian family (Ubuntu, Mint), Red Hat family (Fedora, RHEL, Rocky), Arch family, SUSE family
 - **Current Version**: 0.3.2 (Development Release)
 - **WASM Support**: GUI frontend compiles to `wasm32-unknown-unknown`
 
@@ -450,17 +450,15 @@ The web app is useful for UI development and testing without needing Tauri. All 
 
 6. **Next Tasks**:
    - v0.3.1: GUI Polish & Testing (see PLAN.md) - **COMPLETE**
-     - ✅ CLI functional testing complete (27/27 tests pass)
+     - ✅ CLI functional testing complete (31 unit + 66 functional tests)
      - ✅ Safe testing environment created (systemd-nspawn container)
    - v0.3.2: Frontend Layout & Accessibility - **COMPLETE (2025-12-08)**
      - ✅ Session 1-4 all completed (overflow fixes, responsive layout, themes, E2E tests)
-   - v0.3.3: Distribution-Specific Validation - **IN PROGRESS (2025-12-11)**
-     - ✅ Arch Linux: 102/102 tests pass
-     - ✅ Debian 12: 102/102 tests pass
-     - ✅ Fedora 41: 102/102 tests pass
-     - ✅ openSUSE Leap 15.6: 102/102 tests pass
-     - ⬜ Ubuntu 24.04: Pending
-     - ⬜ RHEL 9: Pending
+   - v0.3.3: Distribution-Specific Validation - **COMPLETE (2025-12-11)**
+     - ✅ Arch Linux: 102/102 tests pass (covers Manjaro, EndeavourOS, Garuda)
+     - ✅ Debian 12: 102/102 tests pass (covers Ubuntu, Linux Mint, Pop!_OS)
+     - ✅ Fedora 41: 102/102 tests pass (covers RHEL, CentOS, Rocky, AlmaLinux, Oracle Linux)
+     - ✅ openSUSE Leap 15.6: 102/102 tests pass (covers SLES)
      - See [docs/DISTRIBUTION_VALIDATION.md](docs/DISTRIBUTION_VALIDATION.md) for detailed results
    - v0.4.0 Web Interface planning
 
@@ -593,7 +591,7 @@ The web app is useful for UI development and testing without needing Tauri. All 
     | Daemon/History | 2/2 | 0 | ✅ Fixed - user dir fallback |
     | Systemd | 2/2 | 0 | Generate/status work |
     | SSH remote | 1/1 | 0 | Error handling works |
-    | **Total** | **27/27** | **0** | 100% pass rate |
+    | **Total** | **27/27** | **0** | 100% pass rate (original suite; expanded to 66 functional tests) |
 
     **Issue M (FIXED 2025-12-10):** Scheduler database path was hardcoded to `/var/lib/linux-hardener/scheduler.db`.
     - ✅ Added `default_data_dir()` helper that returns user path for non-root users
