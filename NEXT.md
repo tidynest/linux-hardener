@@ -763,7 +763,13 @@ The web app is useful for UI development and testing without needing Tauri. All 
 
 ### Next Steps
 
-1. Continue with v0.4.0 Web Interface planning
+1. **v0.4.0 GUI/CLI Feature Parity** - See [docs/GUI_CLI_PARITY_PLAN.md](docs/GUI_CLI_PARITY_PLAN.md)
+   - Phase 1: Dry-run preview (P0 - safety critical)
+   - Phase 2: Scan filtering (P0 - usability critical)
+   - Phase 3: Checkpoint management (P1)
+   - Phase 4: Report export (P1)
+   - Phase 5: Scan history (P2)
+   - Phase 6: Mode toggles (P2)
 2. Consider extracting inline tests to `tests/` directories (low priority)
 
 ---

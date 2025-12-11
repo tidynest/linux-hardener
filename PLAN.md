@@ -450,11 +450,39 @@ Authentication cancelled. Root privileges are required to apply hardening change
 
 See [docs/DISTRIBUTION_VALIDATION.md](docs/DISTRIBUTION_VALIDATION.md) for detailed test results per distribution.
 
-### v0.4.0 - Web Interface
+### v0.4.0 - GUI/CLI Feature Parity & Web Interface
+
+> **Implementation Guide**: See [docs/GUI_CLI_PARITY_PLAN.md](docs/GUI_CLI_PARITY_PLAN.md) for detailed phase-by-phase breakdown.
+
+#### GUI/CLI Parity (P0-P1 Features)
+
+| Feature | CLI Equivalent | Priority | Status |
+|---------|----------------|----------|--------|
+| Dry-run preview | `apply --dry-run` | P0 | Pending |
+| Severity filter | `scan --severity` | P0 | Pending |
+| Plugin selection on scan | `scan --plugin` | P1 | Pending |
+| Manual checkpoint create | `checkpoint create` | P1 | Pending |
+| Checkpoint delete | `checkpoint delete` | P1 | Pending |
+| Report export to file | `report --output` | P1 | Pending |
+| Report format selection | `report --report-format` | P1 | Pending |
+
+#### GUI/CLI Parity (P2-P3 Features)
+
+| Feature | CLI Equivalent | Priority | Status |
+|---------|----------------|----------|--------|
+| Scan history | `history list/show` | P2 | Pending |
+| Audit mode toggle | `scan --audit` | P2 | Pending |
+| Compliance mode toggle | `scan --compliance` | P2 | Pending |
+| Plugin listing | `plugins` command | P2 | Pending |
+| Checkpoint details | `checkpoint show` | P2 | Pending |
+| Remote scanning UI | `--ssh` flags | P3 | Pending |
+| Scheduler UI | `daemon` commands | P3 | Pending |
+| Config file picker | `--config FILE` | P3 | Pending |
+
+#### Web Interface Enhancements
 
 | Feature | Description | Priority |
 |---------|-------------|----------|
-| Web dashboard | Browser-based management interface | Medium |
 | Multi-host management | Manage multiple systems from one UI | Medium |
 | Historical trends | Track security posture over time | Low |
 | Alert notifications | Email/webhook on security regressions | Low |
