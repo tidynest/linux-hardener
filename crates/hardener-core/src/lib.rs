@@ -25,7 +25,7 @@ pub use config::{GlobalConfig, HardenerConfig, PluginConfig, PolicyException};
 pub use config_loader::ConfigLoader;
 
 // Re-export testing (requires system feature)
-#[cfg(all(feature = "system", any(test, feature = "testing")))]
+#[cfg(all(feature = "system", test))]
 pub use testing::MockPlugin;
 
 // Re-export system-specific plugin types

@@ -27,7 +27,13 @@ impl ReportFormatter for CsvFormatter {
         let mut output = String::new();
 
         // CSV Header
-        output.push_str("Framework,Control ID,Control Title,Section,Status,Finding Count\n");
+        output.push_str(
+            "Framework,Framework Name,Framework Description,Control ID,Control Title,Section,Status,Finding Count\n",
+        );
+
+        // Framework metadata
+        let framework_name = escape_csv_field(report.report_framework.full_name());
+        let framework_desc = escape_csv_field(report.report_framework.description());
 
         // Data rows
         for control in &report.report_controls {
@@ -43,8 +49,10 @@ impl ReportFormatter for CsvFormatter {
             let section_escaped = escape_csv_field(&control.control_section);
 
             output.push_str(&format!(
-                "{},{},{},{},{},{}\n",
+                "{},{},{},{},{},{},{},{}\n",
                 report.report_framework,
+                framework_name,
+                framework_desc,
                 control.control_id,
                 title_escaped,
                 section_escaped,
@@ -60,10 +68,15 @@ impl ReportFormatter for CsvFormatter {
         let mut output = String::new();
 
         // CSV Header (once)
-        output.push_str("Framework,Control ID,Control Title,Section,Status,Finding Count\n");
+        output.push_str(
+            "Framework,Framework Name,Framework Description,Control ID,Control Title,Section,Status,Finding Count\n",
+        );
 
         // Data rows from all reports
         for report in reports {
+            let framework_name = escape_csv_field(report.report_framework.full_name());
+            let framework_desc = escape_csv_field(report.report_framework.description());
+
             for control in &report.report_controls {
                 let status_str = match control.control_status {
                     ControlStatus::Pass => "PASS",
@@ -76,8 +89,10 @@ impl ReportFormatter for CsvFormatter {
                 let section_escaped = escape_csv_field(&control.control_section);
 
                 output.push_str(&format!(
-                    "{},{},{},{},{},{}\n",
+                    "{},{},{},{},{},{},{},{}\n",
                     report.report_framework,
+                    framework_name,
+                    framework_desc,
                     control.control_id,
                     title_escaped,
                     section_escaped,
@@ -141,8 +156,9 @@ mod tests {
         let formatter = CsvFormatter::new();
         let output = formatter.format(&report);
 
-        assert!(output.contains("Framework,Control ID"));
-        assert!(output.contains("CIS,1.5.1"));
+        assert!(output.contains("Framework,Framework Name,Framework Description,Control ID"));
+        assert!(output.contains("CIS,CIS Benchmark"));
+        assert!(output.contains("Center for Internet Security Benchmarks for Linux"));
         assert!(output.contains("PASS"));
         assert!(output.contains("FAIL"));
     }

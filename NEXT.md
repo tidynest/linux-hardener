@@ -724,6 +724,50 @@ The web app is useful for UI development and testing without needing Tauri. All 
 
 ---
 
+## Current Session Progress (2025-12-11)
+
+### Completed This Session
+
+1. **Removed unused `testing` feature** - User deleted the empty feature flag from `hardener-core/Cargo.toml`
+
+2. **Field Naming Convention Audit** - Comprehensive audit of all 11 crates + src-tauri using parallel agents
+
+3. **Fixed Critical Field Naming Issues** - Two true violations corrected:
+   - `MockPlugin` in `hardener-core/src/testing.rs`: Renamed `dependencies` → `plugin_dependencies`, `fail_scan` → `plugin_fail_scan`, `fail_apply` → `plugin_fail_apply`
+   - `ServiceDirective` in `hardener-plugins/src/services/mod.rs`: Renamed `service_issue_severity` → `service_severity`
+
+4. **Removed stale `testing` feature reference** - Cleaned up `#[cfg(feature = "testing")]` in `hardener-core/src/lib.rs`
+
+### Field Naming Audit Summary
+
+**Overall Status**: Audit complete, 2 true violations fixed
+
+| Category | Count | Status |
+|----------|-------|--------|
+| True violations (mixed prefixing) | 2 | ✅ Fixed |
+| Context-acceptable (DTOs/Clap structs) | 5 | No action needed |
+| Already consistent (suffix pattern `_count`) | 5 | No action needed |
+
+**Note**: Upon closer review, many "issues" from initial audit were actually consistent patterns:
+- `ScanSession`, `ScanSummary`: Use consistent `_count` suffix pattern - acceptable
+- `ScanFinding`, `ScanFindingRow`: DTOs where fields match database columns - acceptable
+- `SeverityCounts`: Struct name provides context - acceptable
+- `Cli`, `SshConnectionConfig`: Follow Clap conventions - acceptable
+
+5. **Added framework descriptions to compliance reports** - All output formats now include framework description as subtitle:
+   - Text: Displayed below title
+   - HTML: Added with `.subtitle` CSS class
+   - JSON: New `report_framework_name` and `report_framework_description` fields
+   - PDF: Rendered below title in body font
+   - CSV: New columns `Framework Name` and `Framework Description`
+
+### Next Steps
+
+1. Continue with v0.4.0 Web Interface planning
+2. Consider extracting inline tests to `tests/` directories (low priority)
+
+---
+
 ## Development Workflow
 
 ### Pre-Flight Checks Protocol

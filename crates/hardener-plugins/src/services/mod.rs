@@ -67,7 +67,7 @@ fn get_service_compliance_mappings(service_name: &str) -> Vec<ComplianceMapping>
 struct ServiceDirective {
     service_description: &'static str,
     service_name: &'static str,
-    service_issue_severity: Severity,
+    service_severity: Severity,
 }
 
 /// List of unnecessary services that should be disabled.
@@ -78,22 +78,22 @@ const UNNECESSARY_SERVICES: &[ServiceDirective] = &[
     ServiceDirective {
         service_description: "Bluetooth service - rarely needed on servers",
         service_name: "bluetooth",
-        service_issue_severity: Severity::High,
+        service_severity: Severity::High,
     },
     ServiceDirective {
         service_description: "Printing service - not needed on most servers",
         service_name: "cups",
-        service_issue_severity: Severity::Medium,
+        service_severity: Severity::Medium,
     },
     ServiceDirective {
         service_description: "Network discovery service - potential information disclosure",
         service_name: "avahi-daemon",
-        service_issue_severity: Severity::Medium,
+        service_severity: Severity::Medium,
     },
     ServiceDirective {
         service_description: "Modem management - not needed without mobile broadband",
         service_name: "ModemManager",
-        service_issue_severity: Severity::Low,
+        service_severity: Severity::Low,
     },
 ];
 
@@ -213,7 +213,7 @@ impl HardeningPlugin for ServicesHardeningPlugin {
                         format!("systemctl disable {}", directive.service_name),
                         format!("systemctl mask {}", directive.service_name),
                     ],
-                    finding_severity: directive.service_issue_severity,
+                    finding_severity: directive.service_severity,
                     finding_title: format!(
                         "Unnecessary service {} is running",
                         directive.service_name

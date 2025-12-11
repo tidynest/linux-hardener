@@ -35,6 +35,10 @@ impl ReportFormatter for HtmlFormatter {
             report.report_framework.full_name()
         ));
         html.push_str(&format!(
+            "<p class=\"subtitle\">{}</p>\n",
+            html_escape(report.report_framework.description())
+        ));
+        html.push_str(&format!(
             "<p class=\"generated\">Generated: {}</p>\n",
             report.report_generated_at.format("%Y-%m-%d %H:%M:%S UTC")
         ));
@@ -157,6 +161,13 @@ const HTML_HEADER: &str = r#"<!DOCTYPE html>
           h2 {
               color: #34495e;
               margin-top: 30px;
+          }
+          .subtitle {
+              color: #5d6d7e;
+              font-size: 1.1em;
+              font-style: italic;
+              margin-top: -10px;
+              margin-bottom: 5px;
           }
           .generated {
               color: #7f8c8d;

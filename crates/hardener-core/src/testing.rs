@@ -31,9 +31,9 @@ pub struct MockPlugin {
     plugin_name: String,
     plugin_description: String,
     plugin_category: FindingCategory,
-    dependencies: Vec<PluginId>,
-    fail_scan: bool,
-    fail_apply: bool,
+    plugin_dependencies: Vec<PluginId>,
+    plugin_fail_scan: bool,
+    plugin_fail_apply: bool,
 }
 
 impl MockPlugin {
@@ -44,9 +44,9 @@ impl MockPlugin {
             plugin_name: format!("Mock {}", plugin_id),
             plugin_description: format!("Mock plugin: {}", plugin_id),
             plugin_category: FindingCategory::Kernel,
-            dependencies: vec![],
-            fail_scan: false,
-            fail_apply: false,
+            plugin_dependencies: vec![],
+            plugin_fail_scan: false,
+            plugin_fail_apply: false,
         }
     }
 
@@ -70,19 +70,19 @@ impl MockPlugin {
 
     /// Adds dependencies to the mock plugin.
     pub fn depends_on(mut self, deps: &[&str]) -> MockPlugin {
-        self.dependencies = deps.iter().map(|d| PluginId::new(*d)).collect();
+        self.plugin_dependencies = deps.iter().map(|d| PluginId::new(*d)).collect();
         self
     }
 
     /// Configures the mock to fail on scan.
     pub fn fail_scan(mut self) -> MockPlugin {
-        self.fail_scan = true;
+        self.plugin_fail_scan = true;
         self
     }
 
     /// Configures the mock to fail on apply.
     pub fn fail_apply(mut self) -> MockPlugin {
-        self.fail_apply = true;
+        self.plugin_fail_apply = true;
         self
     }
 }
@@ -100,11 +100,11 @@ impl HardeningPlugin for MockPlugin {
     }
 
     fn dependencies(&self) -> Vec<PluginId> {
-        self.dependencies.clone()
+        self.plugin_dependencies.clone()
     }
 
     async fn scan(&self, _ctx: &Context) -> Result<ScanResult> {
-        if self.fail_scan {
+        if self.plugin_fail_scan {
             return Err(hardener_common::error::HardeningError::Plugin(
                 "Mock scan failure".to_string(),
             ));
@@ -119,7 +119,7 @@ impl HardeningPlugin for MockPlugin {
     }
 
     async fn apply(&self, _ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
-        if self.fail_apply {
+        if self.plugin_fail_apply {
             return Err(hardener_common::error::HardeningError::Plugin(
                 "Mock apply failure".to_string(),
             ));

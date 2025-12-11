@@ -187,15 +187,27 @@ fn generate_pdf(report: &ComplianceReport) -> Vec<u8> {
         false,
         TextDirection::LeftToRight,
     );
-    y.advance(TITLE_SIZE * LINE_HEIGHT + 10.0);
+    y.advance(TITLE_SIZE * LINE_HEIGHT + 5.0);
 
-    // === Generated timestamp ===
+    // === Framework description (subtitle) ===
     surface.set_fill(Some(Fill {
         paint: colour_medium_grey().into(),
         opacity: NormalizedF32::ONE,
         rule: FillRule::default(),
     }));
 
+    let description = report.report_framework.description();
+    surface.draw_text(
+        Point::from_xy(MARGIN_LEFT, y.y() + BODY_SIZE),
+        font_regular.clone(),
+        BODY_SIZE,
+        description,
+        false,
+        TextDirection::LeftToRight,
+    );
+    y.advance(BODY_SIZE * LINE_HEIGHT + 10.0);
+
+    // === Generated timestamp ===
     let generated = format!(
         "Generated: {}",
         report.report_generated_at.format("%Y-%m-%d %H:%M:%S UTC")

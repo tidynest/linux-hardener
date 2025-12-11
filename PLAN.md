@@ -483,10 +483,10 @@ See [docs/DISTRIBUTION_VALIDATION.md](docs/DISTRIBUTION_VALIDATION.md) for detai
 | ~~Refactor PAM plugin~~ | ~~Updated to use shared `file_utils` functions~~ | ✅ Complete |
 | ~~Package manager code duplication~~ | ~~Validation/execution duplicated in apt, dnf, zypper, pacman~~ | ✅ Complete |
 | ~~Remove duplicate registry in plugins.rs~~ | ~~Removed from plugins.rs and apply.rs~~ | ✅ Complete |
-| Review field naming consistency | Some structs have mixed prefix usage (see HANDOFF.md) | Low |
-| Gate or remove `testing` feature | Feature defined but not used in hardener-core | Low |
+| ~~Review field naming consistency~~ | ~~Audit complete: 2 violations fixed, rest acceptable~~ | ✅ Complete |
+| ~~Gate or remove `testing` feature~~ | ~~Removed unused feature from hardener-core~~ | ✅ Complete |
 | Extract inline tests to `tests/` dirs | Follow `hardener-plugins/tests/` pattern across all crates | Low |
-| Framework descriptions in reports | Add `description()` as subtitle in compliance reports | Low |
+| ~~Framework descriptions in reports~~ | ~~Added `description()` as subtitle in all report formats~~ | ✅ Complete |
 | SELinux/AppArmor policy management | Full policy editing, not just detection | Low |
 | ISO 27001 framework | Add ISO 27001 compliance controls | Low |
 
@@ -518,6 +518,31 @@ See [docs/DISTRIBUTION_VALIDATION.md](docs/DISTRIBUTION_VALIDATION.md) for detai
   - `parse_rpm_package_list()` - shared RPM output parser for dnf/zypper
 - All 4 package managers (apt, dnf, zypper, pacman) refactored to use shared helpers
 - Reduced ~190 lines of duplicate code
+
+### Field Naming Audit (2025-12-11) ✅
+
+Comprehensive audit of all struct field naming conventions across the codebase.
+
+**Summary**: Audit complete. 2 true violations fixed, remaining items found to be acceptable patterns.
+
+**Fixed Issues**:
+
+| Struct | Location | Fix Applied |
+|--------|----------|-------------|
+| MockPlugin | `hardener-core/src/testing.rs:29` | `dependencies` → `plugin_dependencies`, `fail_scan` → `plugin_fail_scan`, `fail_apply` → `plugin_fail_apply` |
+| ServiceDirective | `hardener-plugins/src/services/mod.rs:67` | `service_issue_severity` → `service_severity` |
+
+**Reviewed & Accepted** (consistent patterns, no change needed):
+
+| Category | Structs | Reasoning |
+|----------|---------|-----------|
+| Suffix pattern `_count` | ScanSession, ScanSummary | Consistent naming with `critical_count`, `high_count`, etc. |
+| Database DTOs | ScanFinding, ScanFindingRow | Fields match database columns - acceptable for DTO boundary |
+| Named aggregation | SeverityCounts | Struct name provides context |
+| Framework conventions | Cli, SshConnectionConfig | Clap/SSH standard conventions |
+| UI definitions | FrameworkScore, TabDef, PluginDef | Simple internal types with clear context |
+
+**Additional cleanup**: Removed stale `#[cfg(feature = "testing")]` reference from `hardener-core/src/lib.rs`
 
 ### Test Restructure (Recommended - Low Priority)
 
