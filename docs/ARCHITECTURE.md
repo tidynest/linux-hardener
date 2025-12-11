@@ -526,4 +526,4 @@ Both `main` and `master` branches are kept in sync on GitHub and GitLab. The rel
 - `PLAN.md` - Development roadmap
 - `README.md` - User documentation
 
-**Last Updated**: 2025-12-07
+**Last Updated**: 2025-12-11

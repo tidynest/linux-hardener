@@ -449,33 +449,19 @@ The web app is useful for UI development and testing without needing Tauri. All 
    - Web UI fully functional: Dashboard, Analysis (Findings/Compliance tabs), Hardening (Configure/History tabs)
 
 6. **Next Tasks**:
-   - v0.3.1: GUI Polish & Testing (see PLAN.md) - **MOSTLY COMPLETE**
+   - v0.3.1: GUI Polish & Testing (see PLAN.md) - **COMPLETE**
      - ✅ CLI functional testing complete (27/27 tests pass)
      - ✅ Safe testing environment created (systemd-nspawn container)
-   - v0.3.2: Frontend Layout & Accessibility - See [docs/FRONTEND_LAYOUT_PLAN.md](docs/FRONTEND_LAYOUT_PLAN.md) for detailed session breakdown:
-     - ✅ Session 1: Critical overflow fixes (`min-width: 0`, grid templates, skip links, ARIA) - COMPLETE (2025-12-07)
-     - ✅ Session 2: Responsive layout - **COMPLETE (2025-12-08)**
-       - ✅ Spacing scale (`--space-xs` to `--space-2xl`)
-       - ✅ Utility classes (`.flex`, `.flex-col`, `.grid`, `.gap-*`, `.items-*`, `.justify-*`)
-       - ✅ Viewport testing (320px, 640px, 1920px)
-       - ✅ Touch targets (44px min via `@media (pointer: coarse)`)
-       - ✅ Card component refactoring complete (2025-12-08):
-         - Created `card.rs` with `Card`, `CardVariant`, `HeadingLevel`
-         - Refactored all section containers to use Card component
-         - CSS cleanup: removed redundant container styles
-         - Visual testing verified via Playwright MCP
-     - ✅ Session 3: Theme & Accessibility - **COMPLETE (2025-12-08)**
-       - ✅ Colour contrast audit: Adjusted `--text-secondary` and `--text-muted` for WCAG AA
-       - ✅ `data-theme` CSS attribute selectors for all 5 themes
-       - ✅ ThemeToggle dropdown component with localStorage persistence
-       - ✅ Focus state improvements: 0.125rem outline for accessibility
-     - ✅ Session 4: Polish & E2E testing - **COMPLETE (2025-12-08)**
-       - ✅ Empty state styling with icons (📋, 🔍, 📊, ⚡, 💾)
-       - ✅ CSS transitions: `--transition-fast/normal/slow`
-       - ✅ Button hover lift effects with `translateY(-1px)`
-       - ✅ Card/table/badge hover transitions
-       - ✅ E2E tests: TC-11 to TC-14 passed
-   - v0.3.3: Distribution-Specific Validation
+   - v0.3.2: Frontend Layout & Accessibility - **COMPLETE (2025-12-08)**
+     - ✅ Session 1-4 all completed (overflow fixes, responsive layout, themes, E2E tests)
+   - v0.3.3: Distribution-Specific Validation - **IN PROGRESS (2025-12-11)**
+     - ✅ Arch Linux: 102/102 tests pass
+     - ✅ Debian 12: 102/102 tests pass
+     - ✅ Fedora 41: 102/102 tests pass
+     - ✅ openSUSE Leap 15.6: 102/102 tests pass
+     - ⬜ Ubuntu 24.04: Pending
+     - ⬜ RHEL 9: Pending
+     - See [docs/DISTRIBUTION_VALIDATION.md](docs/DISTRIBUTION_VALIDATION.md) for detailed results
    - v0.4.0 Web Interface planning
 
 7. **Known Issues** (v0.3.2 scope - see [docs/FRONTEND_LAYOUT_PLAN.md](docs/FRONTEND_LAYOUT_PLAN.md)):
@@ -905,4 +891,4 @@ Treat the user as a trainee you're guiding through the project. Explain connecti
 
 *This document was prepared for continuity between development sessions.*
 
-**Last Updated**: 2025-12-10
+**Last Updated**: 2025-12-11

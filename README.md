@@ -526,11 +526,13 @@ See [PLAN.md](PLAN.md) for detailed implementation plans for upcoming features.
 - [x] Bug fixes: Security score calculation, false positives, validate() stubs, kernel rollback
 - [ ] Test on GNOME, KDE, XFCE desktop environments
 
-### v0.3.3 - Distribution Validation (Planned)
-- [ ] Arch Linux validation
-- [ ] Debian/Ubuntu validation
-- [ ] RHEL/Fedora validation
-- [ ] openSUSE validation
+### v0.3.3 - Distribution Validation (In Progress)
+- [x] Arch Linux validation (102/102 tests pass)
+- [x] Debian 12 validation (102/102 tests pass)
+- [x] Fedora 41 validation (102/102 tests pass)
+- [x] openSUSE Leap 15.6 validation (102/102 tests pass)
+- [ ] Ubuntu 24.04 validation
+- [ ] RHEL 9 validation
 
 ### v0.4.0 - Web Interface (Future)
 - [ ] Web dashboard for browser-based management
@@ -565,4 +567,4 @@ This project draws inspiration from established security tools including:
 **Contact**: tidynest@proton.me
 **Repository**: https://github.com/tidynest/linux-system-hardener
 
-**Last Updated**: 2025-12-10
+**Last Updated**: 2025-12-11

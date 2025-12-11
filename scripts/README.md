@@ -16,6 +16,9 @@ This directory contains utility scripts for the Linux Hardening Tool project.
 | **Actual release** | `./scripts/release.sh patch` |
 | **Create test container** | `sudo ./scripts/create-test-container.sh` |
 | **Enter test container** | `sudo ./scripts/create-test-container.sh enter` |
+| **Create Debian container** | `sudo ./scripts/create-debian-container.sh` |
+| **Create Fedora container** | `sudo ./scripts/create-fedora-container.sh` |
+| **Create openSUSE container** | `sudo ./scripts/create-opensuse-container.sh` |
 | **Run root tests** | `sudo ./scripts/root-test-suite.sh` |
 | **Run root tests (full)** | `sudo ./scripts/root-test-suite.sh --apply` |
 | **Full test suite** | `sudo ./scripts/full-test-suite.sh` |
@@ -844,6 +847,52 @@ sudo ./scripts/create-test-container.sh clean
 
 ---
 
+### Distribution Container Scripts
+
+In addition to the Arch Linux container, there are distribution-specific container scripts for cross-distribution validation:
+
+| Script | Distribution | Package Manager |
+|--------|--------------|-----------------|
+| `create-test-container.sh` | Arch Linux | pacman |
+| `create-debian-container.sh` | Debian 12 (Bookworm) | apt/debootstrap |
+| `create-fedora-container.sh` | Fedora 41 | dnf |
+| `create-opensuse-container.sh` | openSUSE Leap 15.6 | zypper |
+
+**Usage** (same pattern for all):
+```bash
+# Create container
+sudo ./scripts/create-<distro>-container.sh
+
+# Enter container
+sudo ./scripts/create-<distro>-container.sh enter
+
+# Clean up
+sudo ./scripts/create-<distro>-container.sh clean
+```
+
+**Container Locations**:
+| Distribution | Location |
+|--------------|----------|
+| Arch | `/var/lib/machines/hardener-test` |
+| Debian | `/var/lib/machines/hardener-test-debian` |
+| Fedora | `/var/lib/machines/hardener-test-fedora` |
+| openSUSE | `/var/lib/machines/hardener-test-opensuse` |
+
+**Key Differences by Distribution**:
+| Feature | Arch | Debian | Fedora | openSUSE |
+|---------|------|--------|--------|----------|
+| Firewall | ufw | ufw | firewalld | firewalld |
+| MAC | AppArmor (optional) | AppArmor | SELinux | AppArmor |
+| Bootstrap tool | pacstrap | debootstrap | dnf | zypper |
+
+All containers:
+- Include required packages (openssh, audit, firewall tools, etc.)
+- Have test users configured (`root:test`, `testuser:test`)
+- Bind-mount project at `/project`
+- Provide full systemd support
+
+---
+
 ### Root Test Suite
 
 **Script**: `root-test-suite.sh`
@@ -1074,4 +1123,4 @@ Additional utility scripts can be added here:
 
 ---
 
-**Last Updated**: 2025-12-10
+**Last Updated**: 2025-12-11

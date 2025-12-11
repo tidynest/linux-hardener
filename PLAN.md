@@ -429,14 +429,16 @@ Authentication cancelled. Root privileges are required to apply hardening change
 
 **Tauri 2.x Critical Note:** Frontend argument keys MUST use camelCase (e.g., `pluginIds` not `plugin_ids`) to match Tauri 2.x's default serde configuration. The `wasm-bindgen` extern binding must include the `catch` attribute for proper Promise rejection handling.
 
-### v0.3.3 - Distribution-Specific Validation
+### v0.3.3 - Distribution-Specific Validation (In Progress)
 
-| Feature | Description | Priority |
-|---------|-------------|----------|
-| Arch Linux validation | Verify all plugins work correctly on Arch (LTS) | High |
-| Debian/Ubuntu validation | Verify all plugins work correctly on Debian family | High |
-| RHEL/Fedora validation | Verify all plugins work correctly on Red Hat family | High |
-| openSUSE validation | Verify all plugins work correctly on SUSE family | Medium |
+| Distribution | Version | Tests | Pass | Fail | Skip | Status |
+|--------------|---------|-------|------|------|------|--------|
+| Arch Linux | Rolling (LTS 6.12) | 102 | 102 | 0 | 1 | ✅ VALIDATED |
+| Debian | 12 (Bookworm) | 102 | 102 | 0 | 1 | ✅ VALIDATED |
+| Fedora | 41 | 102 | 102 | 0 | 1 | ✅ VALIDATED |
+| openSUSE | Leap 15.6 | 102 | 102 | 0 | 1 | ✅ VALIDATED |
+| Ubuntu | 24.04 LTS | - | - | - | - | ⬜ Pending |
+| RHEL | 9 | - | - | - | - | ⬜ Pending |
 
 **Validation Requirements:**
 - Each distro family requires dedicated testing sessions
@@ -444,6 +446,10 @@ Authentication cancelled. Root privileges are required to apply hardening change
 - No false positives from distro-specific files/settings that don't exist
 - Package manager integration must work correctly per distro
 - Service management must use correct init system commands
+
+**Test Environment:** systemd-nspawn containers with bind-mounted project directory. Container scripts in `scripts/create-*-container.sh`.
+
+See [docs/DISTRIBUTION_VALIDATION.md](docs/DISTRIBUTION_VALIDATION.md) for detailed test results per distribution.
 
 ### v0.4.0 - Web Interface
 
@@ -582,4 +588,4 @@ When working on new features:
 
 **Legend**: ⬜ Pending | 🔄 In Progress | ✅ Complete
 
-**Last Updated**: 2025-12-10
+**Last Updated**: 2025-12-11
