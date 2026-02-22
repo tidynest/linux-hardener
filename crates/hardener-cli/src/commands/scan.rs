@@ -1,8 +1,11 @@
 use crate::cli::{OutputFormat, ScanMode, SeverityFilter};
+use crate::commands::daemon::load_scheduler_config;
 use crate::output;
 use anyhow::Result;
 use hardener_common::types::Severity;
-use hardener_core::{ConfigLoader, Context, HardenerConfig, executor::SystemExecutor};
+use hardener_core::{ConfigLoader, Context, HardenerConfig, PluginMetadata, executor::SystemExecutor, plugin::Finding};
+use hardener_scheduler::ScanHistoryManager;
+use hardener_scheduler::db::ScanFinding;
 use std::{path::PathBuf, sync::Arc};
 
 pub struct ScanOptions<'a> {
@@ -77,6 +80,9 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
 
     output::scan_results(&opts.format, &all_results, mode);
 
+    // Persist scan session to history database
+    persist_scan_session(&all_results).await;
+
     // Handle exit code flag
     if opts.exit_code {
         let has_findings = all_results.iter().any(|(_, findings)| !findings.is_empty());
@@ -147,4 +153,67 @@ fn is_valid_plugin_name(name: &str, valid_ids: &[&str]) -> bool {
     valid_ids
         .iter()
         .any(|id| *id == name || id.starts_with(&format!("{}-", name)))
+}
+
+/// Persists scan results to the history database.
+///
+/// Failures are logged but do not propagate — scan output is already displayed,
+/// so history persistence is best-effort.
+async fn persist_scan_session(results: &[(PluginMetadata, Vec<Finding>)]) {
+    let db = match open_history_db().await {
+        Ok(db) => db,
+        Err(_) => return,
+    };
+
+    let plugins: Vec<String> = results.iter().map(|(m, _)| m.plugin_id.to_string()).collect();
+    let hostname = std::fs::read_to_string("/etc/hostname")
+        .map(|h| h.trim().to_string())
+        .unwrap_or_else(|_| "localhost".to_string());
+
+    let session_id = match db.create_session("cli", &hostname, &plugins).await {
+        Ok(id) => id,
+        Err(_) => return,
+    };
+
+    let findings: Vec<ScanFinding> = results
+        .iter()
+        .flat_map(|(meta, findings): &(PluginMetadata, Vec<Finding>)| {
+            findings.iter().map(move |f| finding_to_scan_finding(meta, f))
+        })
+        .collect();
+
+    let _ = db.complete_session(&session_id, &findings, None, None).await;
+}
+
+/// Opens the scan history database using scheduler config paths.
+async fn open_history_db() -> Result<ScanHistoryManager> {
+    let config = load_scheduler_config()?;
+    ScanHistoryManager::new(&config.storage.database_path)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to open history database: {}", e))
+}
+
+/// Converts a core `Finding` + plugin metadata into a scheduler `ScanFinding`.
+fn finding_to_scan_finding(meta: &PluginMetadata, finding: &Finding) -> ScanFinding {
+    ScanFinding {
+        plugin_id: meta.plugin_id.to_string(),
+        finding_id: finding.finding_id.clone(),
+        severity: format!("{:?}", finding.finding_severity),
+        title: finding.finding_title.clone(),
+        description: Some(finding.finding_description.clone()),
+        current_value: Some(finding.finding_current_value.clone()),
+        recommended_value: Some(finding.finding_recommended_value.clone()),
+        category: Some(format!("{:?}", finding.finding_category)),
+        compliance_mappings: if finding.finding_compliance.is_empty() {
+            None
+        } else {
+            Some(
+                finding
+                    .finding_compliance
+                    .iter()
+                    .map(|c| format!("{} {}", c.compliance_framework, c.compliance_control_id))
+                    .collect(),
+            )
+        },
+    }
 }
