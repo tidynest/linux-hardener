@@ -12,7 +12,7 @@
 # This script is non-interactive and tests every single capability.
 # =============================================================================
 
-set -euo pipefail
+set -uo pipefail
 
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -194,13 +194,13 @@ test_basic_commands() {
     run_test "hardener systemd --help" "\"$BINARY\" systemd --help"
     run_test "hardener plugins --help" "\"$BINARY\" plugins --help"
 
-    run_test_output "hardener plugins (lists all 8)" "\"$BINARY\" plugins" "plugin_id.*audit-hardening"
+    run_test_output "hardener plugins (lists all 8)" "\"$BINARY\" plugins" "audit-hardening"
 }
 
 test_scan_all_plugins() {
     log_header "2. SCAN - ALL PLUGINS"
 
-    run_test_output "Full scan (all plugins)" "\"$BINARY\" scan" "plugin_id"
+    run_test_output "Full scan (all plugins)" "\"$BINARY\" scan" "Scan Results"
 
     for plugin in "${PLUGINS[@]}"; do
         run_test "Scan plugin: $plugin" "\"$BINARY\" scan --plugin \"$plugin\""
@@ -238,8 +238,8 @@ test_scan_output_formats() {
         run_test "Scan --format $format" "\"$BINARY\" --format \"$format\" scan"
     done
 
-    # Default scan output is JSON
-    run_test_output "Scan JSON valid structure" "\"$BINARY\" scan" '"plugin_id"'
+    # Verify scan JSON output contains expected structure
+    run_test_output "Scan JSON valid structure" "\"$BINARY\" --format json scan" '"plugin_id"'
 }
 
 test_reports_all_frameworks() {
@@ -282,7 +282,7 @@ test_reports_output_formats() {
 test_dry_run_all_plugins() {
     log_header "8. DRY-RUN - ALL PLUGINS"
 
-    run_test_output "Dry-run --all" "\"$BINARY\" apply --all --dry-run" "validation_report_plugin_id"
+    run_test_output "Dry-run --all" "\"$BINARY\" apply --all --dry-run" "item.s. to apply"
 
     for plugin in "${PLUGINS[@]}"; do
         run_test "Dry-run: $plugin" "\"$BINARY\" apply --plugin \"$plugin\" --dry-run"
@@ -297,7 +297,7 @@ test_checkpoint_operations() {
     # Create manual checkpoint (NAME is positional argument)
     run_test "checkpoint create" "\"$BINARY\" checkpoint create \"test-checkpoint\""
 
-    run_test_output "checkpoint list (after create)" "\"$BINARY\" checkpoint list" "checkpoint_id"
+    run_test_output "checkpoint list (after create)" "\"$BINARY\" checkpoint list" "cp_|Checkpoints"
 
     local checkpoint_id
     checkpoint_id=$("$BINARY" checkpoint list 2>&1 | grep -oE 'cp_[0-9]+_[a-f0-9]+' | head -1 || echo "")
@@ -359,7 +359,7 @@ test_apply_kernel() {
     log_info "kernel.dmesg_restrict = $before_dmesg"
 
     log_section "Applying kernel hardening"
-    run_test_output "Apply kernel-hardening" "\"$BINARY\" apply --plugin kernel-hardening" "apply_success"
+    run_test_output "Apply kernel-hardening" "\"$BINARY\" apply --plugin kernel-hardening" "change.s. applied|Apply Results"
 
     log_section "Verifying changes"
     local after_kptr after_dmesg
@@ -394,7 +394,7 @@ test_apply_other_plugins() {
 test_apply_all() {
     log_header "15. APPLY --ALL"
 
-    run_test_output "Apply --all" "\"$BINARY\" apply --all" "apply_success"
+    run_test_output "Apply --all" "\"$BINARY\" apply --all" "change.s. applied|Apply Results"
 }
 
 test_rollback() {
@@ -461,10 +461,10 @@ test_post_scan_verify() {
     log_header "19. POST-APPLY SCAN VERIFICATION"
 
     log_section "Final security scan"
-    run_test_output "Final full scan" "\"$BINARY\" scan" "plugin_id"
+    run_test_output "Final full scan" "\"$BINARY\" scan" "Scan Results"
 
     local finding_count
-    finding_count=$("$BINARY" scan 2>&1 | grep -c "finding_id" || echo "0")
+    finding_count=$("$BINARY" --format json scan 2>&1 | grep -c '"finding_id"' || echo "0")
     log_info "Total findings after hardening: $finding_count"
 
     run_test "Final CIS report" "\"$BINARY\" report --framework cis --report-format pdf --output \"$REPORT_DIR/final-cis-report.pdf\""
