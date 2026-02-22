@@ -541,7 +541,7 @@ CLI documentation validation failed
 
 **What It Checks**:
 - Control counts in docs/ARCHITECTURE.md framework table
-- Control counts in PLAN.md framework table
+- Control counts in ROADMAP.md framework table
 - All frameworks in source are documented
 
 **Exit Codes**:
@@ -765,7 +765,7 @@ Current files (2):
 
 Files without 'Last Updated' date (13):
   - README.md
-  - PLAN.md
+  - ROADMAP.md
   ...
 
 Warning: 13 file(s) missing 'Last Updated' date

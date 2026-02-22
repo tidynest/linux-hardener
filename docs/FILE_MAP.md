@@ -562,8 +562,8 @@ pub async fn generate_compliance_report(frameworks: Vec<String>) -> Result<Vec<C
 | File | Purpose |
 |------|---------|
 | `README.md` | User documentation |
-| `PLAN.md` | Development roadmap |
-| `NEXT.md` | Next steps and bug tracking |
+| `ROADMAP.md` | Development roadmap |
+| `NEXT.md` | Session handoff and current state |
 | `CHANGELOG.md` | Version history |
 | `CONTRIBUTING.md` | Contribution guidelines |
 | `SECURITY.md` | Security policy |

@@ -11,7 +11,7 @@ Exit codes:
 
 Checks:
     - docs/ARCHITECTURE.md framework table
-    - PLAN.md framework table
+    - ROADMAP.md framework table
 """
 
 import re
@@ -91,7 +91,7 @@ def parse_documented_counts(root: Path) -> dict[str, dict[str, str]]:
 
     files_to_check = [
         ("docs/ARCHITECTURE.md", "ARCHITECTURE.md"),
-        ("PLAN.md", "PLAN.md"),
+        ("ROADMAP.md", "ROADMAP.md"),
     ]
 
     for filepath, name in files_to_check:

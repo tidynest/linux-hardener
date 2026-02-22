@@ -523,7 +523,7 @@ Both `main` and `master` branches are kept in sync on GitHub and GitLab. The rel
 - `docs/DATA_FLOW.md` - Detailed data flow diagrams
 - `docs/CONFIG_DESIGN.md` - Configuration system security design
 - `docs/RELEASING.md` - Versioning and release process
-- `PLAN.md` - Development roadmap
+- `ROADMAP.md` - Development roadmap
 - `README.md` - User documentation
 
 **Last Updated**: 2025-12-11

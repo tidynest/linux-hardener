@@ -405,7 +405,7 @@ User clicks "Apply"
 
 | Feature | CLI Equivalent | Priority | Status |
 |---------|----------------|----------|--------|
-| Dry-run preview | `apply --dry-run` | P0 | ⬜ Pending |
+| Dry-run preview | `apply --dry-run` | P0 | ✅ Complete |
 | Severity filter | `scan --severity` | P0 | ⬜ Pending |
 | Plugin selection on scan | `scan --plugin` | P1 | ⬜ Pending |
 | Manual checkpoint create | `checkpoint create` | P1 | ⬜ Pending |
@@ -610,11 +610,11 @@ The compliance module (`hardener-compliance`) is designed for reuse:
 When working on new features:
 
 1. Create a feature branch from `master`
-2. Update this PLAN.md with your progress
+2. Update ROADMAP.md with your progress
 3. Ensure all tests pass (`cargo test`)
 4. Run `cargo clippy` with no warnings
 5. Submit PR for review
 
 ---
 
-**Last Updated**: 2025-12-12
+**Last Updated**: 2026-02-22

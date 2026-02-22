@@ -471,7 +471,7 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 
 ## Roadmap
 
-See [PLAN.md](PLAN.md) for detailed implementation plans for upcoming features.
+See [ROADMAP.md](ROADMAP.md) for detailed implementation plans for upcoming features.
 
 ### v0.2.0 (Complete)
 - [x] Config file support (`~/.config/linux-hardener/`)

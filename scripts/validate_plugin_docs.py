@@ -11,7 +11,7 @@ Exit codes:
 
 Checks:
     - README.md plugin table
-    - PLAN.md plugin checklist
+    - ROADMAP.md plugin checklist
     - docs/ARCHITECTURE.md plugin table
 """
 
