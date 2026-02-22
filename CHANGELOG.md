@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.3] - 2025-12-11
 
+### Added (GUI/CLI Feature Parity - Phase 1)
+- **Preview & Apply Flow**: Users can now preview changes before applying hardening
+  - "Preview Changes" button runs dry-run and displays estimated changes
+  - Preview panel shows changes grouped by plugin with Cancel/Confirm actions
+  - "Confirm & Apply" triggers actual apply with pkexec authentication
+  - Safer workflow prevents accidental system modifications
+- **`run_apply_dry_run` Tauri Command**: Backend support for dry-run preview
+  - Calls CLI with `--dry-run --format json` without pkexec (read-only operation)
+  - Returns `Vec<ValidationReport>` with estimated changes per plugin
+- **Preview State Signals**: Leptos reactive state for preview workflow
+  - `preview_results`, `is_previewing`, `show_preview` signals in AppState
+- **Short Plugin Name Support for Apply**: `apply --plugin kernel` now works
+  - Expands short names to full IDs (e.g., "kernel" → "kernel-hardening")
+  - Consistent with scan command behaviour
+
+### Fixed (GUI/CLI Feature Parity - Phase 1)
+- **CLI Output Format Inverted**: Fixed 7 functions in `output.rs` where `--format json` outputted text
+  - `scan_results`, `apply_results`, `plugin_list`, `checkpoint_list`, `checkpoint_created`, `checkpoint_details`, `validation_reports`
+- **Dry-run JSON Not Array**: Changed from per-plugin JSON objects to single array output
+  - Added `validation_reports()` function for proper array formatting
+
 ### Added (Distribution Validation)
 - **Multi-Distribution Validation**: Comprehensive 102-test suite validated across 4 major Linux distributions
   - Arch Linux (Rolling, LTS 6.12): 102/102 tests pass, 100% pass rate

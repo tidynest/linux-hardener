@@ -30,7 +30,7 @@ pub struct Rule {
     pub rule_description: String,
     /// Protocol (tcp, udp, icmp, all).
     pub rule_protocol: String,
-    /// Port or port range (e.g., "22", "80:443", "any").
+    /// Port or port range (e.g. "22", "80:443", "any").
     pub rule_port: String,
     /// Source address (CIDR notation or "any").
     pub rule_source: String,
@@ -87,8 +87,7 @@ fn get_firewall_compliance_mappings() -> Vec<ComplianceMapping> {
     vec![ComplianceMapping {
         compliance_framework: ComplianceFramework::CIS,
         compliance_control_id: "3.4.1.2".to_string(),
-        compliance_control_title: "Ensure firewall service is enabled and
-  running"
+        compliance_control_title: "Ensure firewall service is enabled and running"
             .to_string(),
         compliance_section: Some("Network Configuration".to_string()),
     }]
@@ -334,7 +333,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
 
         Ok(ApplyResult {
             apply_plugin_id,
-            apply_success: true,
+            apply_success: apply_changes.iter().all(|c| c.change_success),
             apply_changes,
             apply_checkpoint_id: checkpoint_id,
             apply_error: None,

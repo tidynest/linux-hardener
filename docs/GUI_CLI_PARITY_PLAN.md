@@ -59,7 +59,7 @@ Features that can be deferred to later versions.
 
 ## Implementation Phases
 
-### Phase 1: Apply Safety (P0) - STARTING HERE
+### Phase 1: Apply Safety (P0) - ✅ COMPLETE (2025-12-11)
 **Goal:** Users can preview changes before applying with combined "Preview & Apply" flow
 
 **Files to Modify:**
@@ -245,8 +245,8 @@ pub struct AppState {
 ## Recommended Implementation Order
 
 ```
-Phase 1 (Dry-run Preview) - CRITICAL SAFETY FEATURE
-Phase 2 (Scan Filtering) - CRITICAL USABILITY
+Phase 1 (Dry-run Preview) - ✅ COMPLETE (2025-12-11)
+Phase 2 (Scan Filtering) - CRITICAL USABILITY ← NEXT
 Phase 3 (Checkpoint Management)
 Phase 4 (Report Export)
 Phase 5 (Scan History)
@@ -311,7 +311,7 @@ This keeps you in control while learning the architecture.
 | `get_latest_scan()` | Load saved scan results | For state restoration |
 
 **Commands to Add (from this plan):**
-- `run_apply_dry_run(plugin_ids)` - Phase 1
+- `run_apply_dry_run(plugin_ids)` - Phase 1 ✅ COMPLETE
 - `run_scan_with_options(options)` - Phase 2
 - `create_checkpoint(name)` - Phase 3
 - `delete_checkpoint(id)` - Phase 3

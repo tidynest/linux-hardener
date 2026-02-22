@@ -1,7 +1,8 @@
 mod commands;
 
 use commands::{
-    generate_compliance_report, get_checkpoints, get_latest_scan, run_apply, run_rollback, run_scan,
+    generate_compliance_report, get_checkpoints, get_latest_scan, run_apply,
+    run_apply_dry_run, run_rollback, run_scan,
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -17,6 +18,7 @@ fn main() {
             get_checkpoints,
             get_latest_scan,
             run_apply,
+            run_apply_dry_run,
             run_rollback,
             run_scan,
         ])

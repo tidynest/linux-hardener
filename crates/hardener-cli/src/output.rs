@@ -37,6 +37,19 @@ pub fn scan_results(
 ) {
     match format {
         OutputFormat::Json => {
+            let json_results: Vec<_> = results
+                .iter()
+                .map(|(m, f)| {
+                    serde_json::json!({
+                        "plugin_id": m.plugin_id.as_str(),
+                        "plugin_name": m.plugin_name,
+                        "findings": f,
+                    })
+                })
+                .collect();
+            println!("{}", serde_json::to_string_pretty(&json_results).unwrap());
+        }
+        _ => {
             println!("\n{}", "═══ Scan Results ═══".bold());
 
             let mut total_findings = 0;
@@ -79,25 +92,15 @@ pub fn scan_results(
                 results.len()
             );
         }
-        _ => {
-            let json_results: Vec<_> = results
-                .iter()
-                .map(|(m, f)| {
-                    serde_json::json!({
-                        "plugin_id": m.plugin_id.as_str(),
-                        "plugin_name": m.plugin_name,
-                        "findings": f,
-                    })
-                })
-                .collect();
-            println!("{}", serde_json::to_string_pretty(&json_results).unwrap());
-        }
     }
 }
 
 pub fn apply_results(format: &OutputFormat, results: &[(PluginMetadata, ApplyResult)]) {
     match format {
         OutputFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(&results).unwrap());
+        }
+        _ => {
             println!("\n{}", "═══ Apply Results ═══".bold());
 
             for (metadata, result) in results {
@@ -126,15 +129,15 @@ pub fn apply_results(format: &OutputFormat, results: &[(PluginMetadata, ApplyRes
                 }
             }
         }
-        _ => {
-            println!("{}", serde_json::to_string_pretty(&results).unwrap());
-        }
     }
 }
 
 pub fn plugin_list(format: &OutputFormat, plugins: &[PluginMetadata]) {
     match format {
         OutputFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(&plugins).unwrap());
+        }
+        _ => {
             println!("{}", "Available Plugins".bold());
             println!("{}", "─".repeat(60));
             for plugin in plugins {
@@ -147,15 +150,15 @@ pub fn plugin_list(format: &OutputFormat, plugins: &[PluginMetadata]) {
                 println!("  {}", plugin.plugin_description.dimmed());
             }
         }
-        _ => {
-            println!("{}", serde_json::to_string_pretty(&plugins).unwrap());
-        }
     }
 }
 
 pub fn checkpoint_list(format: &OutputFormat, checkpoints: &[Checkpoint]) {
     match format {
         OutputFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(&checkpoints).unwrap());
+        }
+        _ => {
             if checkpoints.is_empty() {
                 println!("No checkpoints found.");
                 return;
@@ -172,19 +175,16 @@ pub fn checkpoint_list(format: &OutputFormat, checkpoints: &[Checkpoint]) {
                 );
             }
         }
-        _ => {
-            println!("{}", serde_json::to_string_pretty(&checkpoints).unwrap());
-        }
     }
 }
 
 pub fn checkpoint_created(format: &OutputFormat, id: &hardener_state::CheckpointId) {
     match format {
         OutputFormat::Json => {
-            println!("{} Checkpoint created: {}", "✓".green(), id.as_str().cyan());
+            println!("{}", serde_json::json!({ "checkpoint_id": id.as_str() }));
         }
         _ => {
-            println!("{}", serde_json::json!({ "checkpoint_id": id.as_str() }));
+            println!("{} Checkpoint created: {}", "✓".green(), id.as_str().cyan());
         }
     }
 }
@@ -192,6 +192,15 @@ pub fn checkpoint_created(format: &OutputFormat, id: &hardener_state::Checkpoint
 pub fn checkpoint_details(format: &OutputFormat, checkpoint: &Checkpoint, files: &[FileState]) {
     match format {
         OutputFormat::Json => {
+            println!(
+                "{}",
+                serde_json::json!({
+                    "checkpoint": checkpoint,
+                    "files": files
+                })
+            );
+        }
+        _ => {
             println!("{}", "Checkpoint Details".bold());
             println!("{}", "─".repeat(60));
             println!("ID:        {}", checkpoint.checkpoint_id.as_str().cyan());
@@ -210,37 +219,26 @@ pub fn checkpoint_details(format: &OutputFormat, checkpoint: &Checkpoint, files:
                 }
             }
         }
-        _ => {
-            println!(
-                "{}",
-                serde_json::json!({
-                    "checkpoint": checkpoint,
-                    "files": files
-                })
-            );
-        }
     }
 }
 
-pub fn validation_report(
-    format: &OutputFormat,
-    metadata: &PluginMetadata,
-    report: &ValidationReport,
-) {
+pub fn validation_reports(format: &OutputFormat, reports: &[ValidationReport]) {
     match format {
         OutputFormat::Json => {
-            println!(
-                "{} {} - {} item(s) to apply",
-                "○".blue(),
-                metadata.plugin_name,
-                report.validation_report_estimated_changes.len()
-            );
-            for item in &report.validation_report_estimated_changes {
-                println!("  {} {}", "•".dimmed(), item);
-            }
+            println!("{}", serde_json::to_string_pretty(&reports).unwrap());
         }
         _ => {
-            println!("{}", serde_json::to_string_pretty(&report).unwrap());
+            for report in reports {
+                println!(
+                    "{} {} - {} item(s) to apply",
+                    "○".blue(),
+                    report.validation_report_plugin_id.as_str(),
+                    report.validation_report_estimated_changes.len(),
+                );
+                for item in &report.validation_report_estimated_changes {
+                    println!("  {} {}", "•".dimmed(), item);
+                }
+            }
         }
     }
 }

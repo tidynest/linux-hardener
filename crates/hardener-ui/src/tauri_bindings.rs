@@ -5,6 +5,7 @@
 
 use crate::types::{ApplyResult, CheckpointInfo, ComplianceReport, ScanResult};
 use wasm_bindgen::prelude::*;
+use hardener_types::ValidationReport;
 
 #[wasm_bindgen]
 extern "C" {
@@ -61,7 +62,7 @@ pub async fn invoke_scan() -> Result<Vec<ScanResult>, String> {
 /// Applies hardening changes for the specified plugins.
 pub async fn invoke_apply(plugin_ids: Vec<String>) -> Result<Vec<ApplyResult>, String> {
     let args = serde_wasm_bindgen::to_value(&serde_json::json!({
-        "pluginIds": plugin_ids,
+        "plugin_ids": plugin_ids,
     }))
     .map_err(|e| format!("Failed to serialise arguments: {}", e))?;
 
@@ -69,6 +70,23 @@ pub async fn invoke_apply(plugin_ids: Vec<String>) -> Result<Vec<ApplyResult>, S
 
     serde_wasm_bindgen::from_value(result)
         .map_err(|e| format!("Failed to deserialise apply results: {}", e))
+}
+
+/// Invokes the run_apply_dry_run Tauri command.
+///
+/// Performs a dry-run preview of hardening changes without modifying the system.
+pub async fn invoke_apply_dry_run(
+    plugin_ids: Vec<String>
+) -> Result<Vec<ValidationReport>, String> {
+    let args = serde_wasm_bindgen::to_value(&serde_json::json!({
+        "plugin_ids": plugin_ids,
+    }))
+    .map_err(|e| format!("Failed to serialise arguments: {}", e))?;
+
+    let result = invoke_command("run_apply_dry_run", args).await?;
+
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to deserialise arguments: {}", e))
 }
 
 /// Invokes the generate_compliance_report Tauri command
@@ -114,7 +132,7 @@ pub async fn invoke_get_checkpoints() -> Result<Vec<CheckpointInfo>, String> {
 /// Restores system state to the specified checkpoint.
 pub async fn invoke_rollback(checkpoint_id: String) -> Result<(), String> {
     let args = serde_wasm_bindgen::to_value(&serde_json::json!({
-        "checkpointId": checkpoint_id,
+        "checkpoint_id": checkpoint_id,
     }))
     .map_err(|e| format!("Failed to serialise arguments: {}", e))?;
 

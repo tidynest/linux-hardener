@@ -92,7 +92,7 @@ impl UfwBackend {
         let mut args = Vec::new();
 
         // Action: allow, deny, reject.
-        let ufw_action = match rule.rule_description.as_str() {
+        let ufw_action = match rule.rule_action.as_str() {
             "accept" => "allow",
             "drop" => "deny",
             "reject" => "reject",

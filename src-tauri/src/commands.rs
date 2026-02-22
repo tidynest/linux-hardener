@@ -2,7 +2,7 @@ use hardener_common::types::ComplianceFramework;
 use hardener_compliance::{
     ComplianceReport, OutputFormat, ReportConfig, ReportGenerator, Scenario,
 };
-use hardener_core::{ApplyResult, Context, ScanResult};
+use hardener_core::{ApplyResult, Context, PluginMetadata, ScanResult, ValidationReport};
 use hardener_plugins::create_plugin_registry;
 use hardener_state::{CheckpointManager, ScanHistoryManager, ScanStatus, init_db};
 use serde::Serialize;
@@ -259,8 +259,60 @@ pub async fn run_apply(plugin_ids: Vec<String>) -> Result<Vec<ApplyResult>, Stri
         .map_err(|e| e.to_string())?;
 
     // Parse JSON output from CLI
-    let results: Vec<ApplyResult> = serde_json::from_str(&output)
+    let parsed: Vec<(PluginMetadata, ApplyResult)> = serde_json::from_str(&output)
         .map_err(|e| format!("Failed to parse apply results: {}", e))?;
+    let results: Vec<ApplyResult> = parsed.into_iter().map(|(_, r)| r).collect();
+
+
+    Ok(results)
+}
+
+/// Performs a dry-run of hardening changes for preview.
+///
+/// Unlike run_apply, this does NOT use pkexec because dry-run doesn't
+/// modify the system. Returns estimated changes for user review.
+#[tauri::command]
+pub async fn run_apply_dry_run(
+    plugin_ids: Vec<String>,
+) -> Result<Vec<ValidationReport>, String> {
+    tracing::info!(
+        "=== run_apply_dry_run called with plugins: {:?} ===",
+        plugin_ids
+    );
+
+    let binary = get_hardener_binary_path()?;
+
+    // Build CLI arguments - no pkexec needed for dry-run
+    let mut args = vec!["apply", "--dry-run", "--format", "json"];
+
+    // Add plugin arguments
+    for id in &plugin_ids {
+        args.push("--plugin");
+        args.push(id);
+    }
+
+    // Execute without root privileges (dry-run is read-only)
+    let output = Command::new(&binary)
+        .args(&args)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute dry-run: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Dry-run failed: {}", stderr));
+    }
+
+    let stdout = String::from_utf8(output.stdout)
+        .map_err(|e| format!("Invalid UTF-8 in output: {}", e))?;
+
+    // Find the JSON array in output (skip any info lines)
+    let json_start = stdout.find('[').ok_or("No JSON array found in output")?;
+    let json_str = &stdout[json_start..];
+
+    // Parse JSON array
+    let results: Vec<ValidationReport> = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse dry-run results: {}", e))?;
 
     Ok(results)
 }

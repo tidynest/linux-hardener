@@ -761,11 +761,21 @@ The web app is useful for UI development and testing without needing Tauri. All 
    - PDF: Rendered below title in body font
    - CSV: New columns `Framework Name` and `Framework Description`
 
+6. **Phase 1: Preview & Apply Flow** - ✅ **COMPLETE (2025-12-11)**
+   - Added `run_apply_dry_run` Tauri command (runs CLI without pkexec for read-only preview)
+   - Added `invoke_apply_dry_run` frontend binding returning `Vec<ValidationReport>`
+   - Added preview state signals: `preview_results`, `is_previewing`, `show_preview`
+   - Replaced "Apply Hardening" button with "Preview Changes" in ConfigureSection
+   - Preview panel shows estimated changes grouped by plugin with Cancel/Confirm actions
+   - Fixed plugin ID mismatch: `apply.rs` now expands short names (e.g., "kernel" → "kernel-hardening")
+   - Fixed CLI output.rs inverted match arms (Json outputting text, text outputting Json)
+   - Added `validation_reports()` function for array JSON output
+
 ### Next Steps
 
 1. **v0.4.0 GUI/CLI Feature Parity** - See [docs/GUI_CLI_PARITY_PLAN.md](docs/GUI_CLI_PARITY_PLAN.md)
-   - Phase 1: Dry-run preview (P0 - safety critical)
-   - Phase 2: Scan filtering (P0 - usability critical)
+   - Phase 1: Dry-run preview (P0 - safety critical) ✅ **COMPLETE (2025-12-11)**
+   - Phase 2: Scan filtering (P0 - usability critical) ← NEXT
    - Phase 3: Checkpoint management (P1)
    - Phase 4: Report export (P1)
    - Phase 5: Scan history (P2)

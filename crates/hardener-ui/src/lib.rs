@@ -62,6 +62,22 @@ pub fn App() -> impl IntoView {
                 </nav>
             </header>
 
+            // Global error notification banner
+            <Show when=move || app_state.error_message.get().is_some()>
+                <div class="error-banner" role="alert">
+                    <span class="error-banner-message">
+                        {move || app_state.error_message.get().unwrap_or_default()}
+                    </span>
+                    <button
+                        class="error-banner-dismiss"
+                        aria-label="Dismiss error"
+                        on:click=move |_| app_state.error_message.set(None)
+                    >
+                        "✕"
+                    </button>
+                </div>
+            </Show>
+
             <main id="main-content" class="main-content" tabindex="-1">
                 <Routes fallback=|| view! {
                     <article class="error-page">

@@ -2,7 +2,7 @@ use crate::cli::OutputFormat;
 use crate::output;
 use anyhow::{Result, bail};
 use hardener_common::types::PluginId;
-use hardener_core::{Config, Context, SystemExecutor};
+use hardener_core::{Config, ConfigLoader, Context, HardenerConfig, SystemExecutor};
 use hardener_plugins::create_plugin_registry;
 use hardener_state::{CheckpointManager, CheckpointSigner, init_db};
 use std::path::PathBuf;
@@ -51,12 +51,27 @@ pub async fn run(
     };
 
     let config = Config;
+    let hardener_config = ConfigLoader::new()
+        .load()
+        .unwrap_or_else(|_| HardenerConfig::default());
 
     let plugins = registry.list()?;
     let plugin_ids: Vec<PluginId> = if all {
         plugins.iter().map(|m| m.plugin_id.clone()).collect()
     } else {
-        plugin_filter.iter().map(PluginId::new).collect()
+        // Expand short names to full plugin IDs (e.g., "kernel" -> "kernel-hardening")
+        plugin_filter
+            .iter()
+            .filter_map(|filter| {
+                plugins
+                    .iter()
+                    .find(|p| {
+                        p.plugin_id.as_str() == filter
+                            || p.plugin_id.as_str().starts_with(&format!("{}-", filter))
+                    })
+                    .map(|p| p.plugin_id.clone())
+            })
+            .collect()
     };
 
     if dry_run {
@@ -64,9 +79,21 @@ pub async fn run(
     }
 
     let mut results = Vec::new();
+    let mut validation_reports = Vec::new();
+    let mut had_failure = false;
 
     for plugin_id in &plugin_ids {
         if let Ok(Some(plugin)) = registry.get(plugin_id) {
+            // Skip disabled plugins
+            let id_str = plugin_id.as_str();
+            if !hardener_config.global.disabled_plugins.is_empty()
+                && hardener_config.global.disabled_plugins.iter().any(|d| d == id_str)
+            {
+                if !quiet {
+                    output::status(&format, &format!("Skipping (disabled): {}", id_str));
+                }
+                continue;
+            }
             let metadata = plugin.metadata();
 
             if !quiet {
@@ -77,9 +104,10 @@ pub async fn run(
                 // Just validate without applying
                 match plugin.validate(&ctx, &config).await {
                     Ok(report) => {
-                        output::validation_report(&format, &metadata, &report);
+                        validation_reports.push(report);
                     }
                     Err(e) => {
+                        had_failure = true;
                         output::error(
                             &format,
                             &format!("Validation failed for {}: {}", metadata.plugin_name, e),
@@ -92,6 +120,7 @@ pub async fn run(
                         results.push((metadata, result));
                     }
                     Err(e) => {
+                        had_failure = true;
                         output::error(
                             &format,
                             &format!("Failed to apply {}: {e}", metadata.plugin_name),
@@ -100,6 +129,7 @@ pub async fn run(
                 }
             }
         } else {
+            had_failure = true;
             output::error(
                 &format,
                 &format!("Plugin not found: {}", plugin_id.as_str()),
@@ -107,8 +137,18 @@ pub async fn run(
         }
     }
 
-    if !dry_run {
+    if results.iter().any(|(_, r)| !r.apply_success) {
+        had_failure = true;
+    }
+
+    if dry_run {
+        output::validation_reports(&format, &validation_reports);
+    } else {
         output::apply_results(&format, &results);
+    }
+
+    if had_failure {
+        bail!("One or more plugins failed to apply");
     }
 
     Ok(())
