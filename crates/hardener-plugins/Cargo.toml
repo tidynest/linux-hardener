@@ -6,8 +6,7 @@ edition.workspace = true
 [dependencies]
 hardener-common = { path = "../hardener-common" }
 hardener-core   = { path = "../hardener-core" }
-log = "0.4.28"
 tokio = { workspace = true }
-tracing = "0.1.41"
+tracing = { workspace = true }
 async-trait = { workspace = true }
-chrono = "0.4.42"
+chrono = { workspace = true }

@@ -4,8 +4,8 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-chrono = { version = "0.4.42", features = ["serde"] }
-clap = { version = "4.5.53", features = ["derive"] }
+chrono = { workspace = true, features = ["serde"] }
+clap = { workspace = true }
 hardener-common = { workspace = true }
 hardener-core = { workspace = true, default-features = false }
 hardener-types = { workspace = true }

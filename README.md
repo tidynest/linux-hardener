@@ -1,7 +1,7 @@
 # Linux System Hardener
 
 **Author**: Eric Jingryd
-**Version**: 0.3.2 (Development Release)
+**Version**: 0.3.3 (Development Release)
 **License**: Apache-2.0
 
 A comprehensive Linux security automation tool with multi-distribution support, built in Rust. Provides automated security scanning, hardening, and compliance reporting with full rollback capabilities.
@@ -67,7 +67,7 @@ The tool is designed for system administrators, DevOps engineers, and security p
 
 ## Project Status
 
-**Current Phase**: Development Release (v0.3.2)
+**Current Phase**: Development Release (v0.3.3)
 
 ### Test Coverage
 
