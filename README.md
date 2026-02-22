@@ -226,7 +226,7 @@ sudo ./scripts/create-test-container.sh clean  # Remove container
 
 The `--apply` flag explicitly enables destructive tests. Without it, only read-only tests run. This prevents accidentally modifying configs. **Inside the container, both modes are completely safe** since it's isolated from your host system.
 
-See [docs/CLI_V032_TEST_RESULTS.md](docs/CLI_V032_TEST_RESULTS.md) for full test documentation.
+See [docs/DISTRIBUTION_VALIDATION.md](docs/DISTRIBUTION_VALIDATION.md) for full test documentation.
 
 #### Web App vs Desktop App
 

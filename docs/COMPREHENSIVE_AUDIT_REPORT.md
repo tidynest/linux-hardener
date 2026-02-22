@@ -289,7 +289,7 @@ or disk failure would lose everything.
 ### INFRA-02: SSH Authentication Failing to GitHub and GitLab
 
 **Severity**: HIGH
-**Source**: `docs/PENDING_TASKS.md`, `docs/REPO_COMPARISON.md`
+**Source**: Repository sync analysis (resolved — see git history)
 
 Both remotes are failing SSH auth. Two local commits (`a1dbdc6`, `300d454`) are not pushed.
 Two remote commits (Dependabot RSA security update) are not pulled.

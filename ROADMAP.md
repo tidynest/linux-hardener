@@ -140,7 +140,7 @@ This document tracks the development progress and planned features for Linux Sys
 - [x] Added `#[wasm_bindgen(start)]` entry point for Leptos app mounting
 - [x] GUI compiles to `wasm32-unknown-unknown` and runs in Tauri
 
-> **Implementation Details**: See [docs/WASM_FIX_PLAN.md](docs/WASM_FIX_PLAN.md)
+> **Implementation Details**: WASM compilation fix completed (see git history)
 
 ---
 
@@ -188,7 +188,7 @@ This document tracks the development progress and planned features for Linux Sys
 - [x] Root functional test results: 35/36 tests pass (1 skip is test script pattern matching)
 - [x] Bug M fixed: Scheduler database now uses user path for non-root users
 
-> **Test Results**: See [docs/CLI_V032_TEST_RESULTS.md](docs/CLI_V032_TEST_RESULTS.md)
+> **Test Results**: See [docs/DISTRIBUTION_VALIDATION.md](docs/DISTRIBUTION_VALIDATION.md)
 
 **Root Test Highlights**:
 - 47 findings as root (vs 11 as non-root) — plugins now have full access

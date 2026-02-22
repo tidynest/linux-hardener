@@ -59,6 +59,9 @@ logs/
 # Debug screenshots
 pics-debug/
 
+# Python virtual environments
+.venv/
+
 # Claude Code settings (user-specific)
 .claude/
 
