@@ -95,7 +95,7 @@ pub async fn rollback(checkpoint_id: &str, format: OutputFormat, quiet: bool) ->
 fn collect_config_paths() -> Vec<&'static std::path::Path> {
     use std::path::Path;
     vec![
-        Path::new("/etc/ssh/sshd.config"),
+        Path::new("/etc/ssh/sshd_config"),
         Path::new("/etc/sysctl.conf"),
         Path::new("/etc/sysctl.d"),
         Path::new("/etc/pam.d"),

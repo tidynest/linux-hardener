@@ -21,11 +21,9 @@ pub struct CheckpointInfo {
 
 /// Formats a Unix timestamp as a human-readable string.
 fn format_timestamp(timestamp: i64) -> String {
-    use std::time::{Duration, UNIX_EPOCH};
-
-    let datetime = UNIX_EPOCH + Duration::from_secs(timestamp as u64);
-    // Simple ISO-like format
-    format!("{:?}", datetime)
+    chrono::DateTime::from_timestamp(timestamp, 0)
+        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+        .unwrap_or_else(|| format!("Invalid timestamp: {}", timestamp))
 }
 
 /// Returns the path to the hardener CLI binary.
