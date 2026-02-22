@@ -6,6 +6,8 @@
 use async_trait::async_trait;
 #[cfg(feature = "system")]
 use hardener_common::error::Result;
+#[cfg(feature = "system")]
+use crate::config::PluginConfig;
 
 // Re-export types from hardener-types for backwards compatibility
 pub use hardener_types::{
@@ -25,10 +27,6 @@ pub(crate) use crate::context::Context;
 // Re-export checkpoint types from hardener-state
 #[cfg(feature = "system")]
 pub use hardener_state::{Checkpoint, CheckpointId, CheckpointManager};
-
-#[cfg(feature = "system")]
-#[derive(Default)]
-pub struct Config;
 
 /// Core trait that all hardening plugins must implement.
 ///
@@ -73,13 +71,13 @@ pub trait HardeningPlugin: Send + Sync {
     /// Applies hardening changes based on the provided configuration.
     ///
     /// Should create a checkpoint before making changes.
-    async fn apply(&self, ctx: &mut Context, config: &Config) -> Result<ApplyResult>;
+    async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult>;
 
     /// Rolls back changes to a previous checkpoint
     async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()>;
 
     /// Validates configuration without applying changes (dry-run).
-    async fn validate(&self, ctx: &Context, config: &Config) -> Result<ValidationReport>;
+    async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport>;
 }
 
 #[cfg(test)]

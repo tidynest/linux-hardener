@@ -7,8 +7,8 @@
 use crate::{
     ApplyResult,
     // Checkpoint,
-    Config,
     Context,
+    HardenerConfig,
     PluginRegistry,
     ScanResult,
 };
@@ -247,18 +247,18 @@ impl PluginManager {
     ///
     /// # Example
     /// ```ignore
-    /// # use hardener_core::{PluginManager, PluginRegistry, Context, Config};
+    /// # use hardener_core::{PluginManager, PluginRegistry, Context, HardenerConfig};
     /// let mut manager = PluginManager::new(PluginRegistry::new());
     /// manager.resolve_dependencies()?;
     /// let mut ctx = Context::new();
-    /// let config = Config::default();
+    /// let config = HardenerConfig::default();
     /// let results = manager.execute_apply(&mut ctx, &config, &[]).await?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
     pub async fn execute_apply(
         &self,
         ctx: &mut Context,
-        config: &Config,
+        config: &HardenerConfig,
         plugin_ids: &[PluginId],
     ) -> Result<Vec<ApplyResult>> {
         info!("Starting apply execution");
@@ -292,7 +292,8 @@ impl PluginManager {
 
             info!("Executing apply for plugin: {}", plugin_id);
 
-            match plugin.apply(ctx, config).await {
+            let plugin_config = config.get_plugin_config(plugin_id.as_str());
+            match plugin.apply(ctx, plugin_config).await {
                 Ok(result) => {
                     if result.apply_success {
                         debug!(

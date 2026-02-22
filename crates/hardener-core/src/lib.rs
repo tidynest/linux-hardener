@@ -30,7 +30,7 @@ pub use testing::MockPlugin;
 
 // Re-export system-specific plugin types
 #[cfg(feature = "system")]
-pub use plugin::{Checkpoint, CheckpointId, CheckpointManager, Config, HardeningPlugin};
+pub use plugin::{Checkpoint, CheckpointId, CheckpointManager, HardeningPlugin};
 
 // Re-export system-specific types only when feature is enabled
 #[cfg(feature = "system")]

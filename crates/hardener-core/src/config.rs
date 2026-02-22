@@ -66,6 +66,13 @@ impl Default for PluginConfig {
     }
 }
 
+impl PluginConfig {
+    /// Returns a valid, non-expired exception for the given key, if one exists.
+    pub fn has_valid_exception(&self, key: &str) -> Option<&PolicyException> {
+        self.exceptions.get(key).filter(|e| e.is_valid())
+    }
+}
+
 /// A policy exception that allows a value deviating from secure baseline.
 ///
 /// Policy exceptions provide an audit trail for intentional deviations
@@ -238,5 +245,42 @@ mod tests {
         let toml_str = toml::to_string(&config).unwrap();
         let parsed: HardenerConfig = toml::from_str(&toml_str).unwrap();
         assert_eq!(config.ssh.enabled, parsed.ssh.enabled);
+    }
+
+    #[test]
+    fn test_has_valid_exception_found() {
+        let mut plugin = PluginConfig::default();
+        plugin.exceptions.insert(
+            "PermitRootLogin".to_string(),
+            PolicyException {
+                value: "yes".to_string(),
+                allowed: true,
+                reason: "Legacy server".to_string(),
+                approved_by: None,
+                approved_date: None,
+                ticket: None,
+                expires: None,
+            },
+        );
+        assert!(plugin.has_valid_exception("PermitRootLogin").is_some());
+        assert!(plugin.has_valid_exception("X11Forwarding").is_none());
+    }
+
+    #[test]
+    fn test_has_valid_exception_expired() {
+        let mut plugin = PluginConfig::default();
+        plugin.exceptions.insert(
+            "PermitRootLogin".to_string(),
+            PolicyException {
+                value: "yes".to_string(),
+                allowed: true,
+                reason: "Temporary".to_string(),
+                approved_by: None,
+                approved_date: None,
+                ticket: None,
+                expires: Some("2020-01-01".to_string()),
+            },
+        );
+        assert!(plugin.has_valid_exception("PermitRootLogin").is_none());
     }
 }
