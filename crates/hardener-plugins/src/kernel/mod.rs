@@ -16,7 +16,7 @@ use hardener_common::{
     types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
-    Change, ChangeType, Checkpoint, Config, ValidationIssue, ValidationReport,
+    Change, ChangeType, Checkpoint, PluginConfig, ValidationIssue, ValidationReport,
     context::Context,
     plugin::{ApplyResult, Finding, HardeningPlugin, PluginMetadata, ScanResult},
 };
@@ -270,7 +270,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
     /// # Arguments
     /// * `ctx`    - Execution context with checkpoint manager
     /// * `config` - Configuration (unused for now, applies all hardening)
-    async fn apply(&self, ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
+    async fn apply(&self, ctx: &mut Context, _config: &PluginConfig) -> Result<ApplyResult> {
         use std::path::Path;
 
         let mut apply_changes = Vec::new();
@@ -433,7 +433,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
     ///
     /// # Arguments
     /// * `config` - Configuration to validate (unused for now)
-    async fn validate(&self, ctx: &Context, _config: &Config) -> Result<ValidationReport> {
+    async fn validate(&self, ctx: &Context, _config: &PluginConfig) -> Result<ValidationReport> {
         let mut issues = Vec::new();
         let mut estimated_changes = Vec::new();
 

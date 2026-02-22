@@ -12,7 +12,7 @@ use hardener_common::{
     types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
-    Change, ChangeType, Checkpoint, Config, Context,
+    Change, ChangeType, Checkpoint, Context, PluginConfig,
     plugin::{
         ApplyResult, Finding, HardeningPlugin, PluginMetadata, ScanResult, ValidationIssue,
         ValidationReport,
@@ -188,7 +188,7 @@ impl HardeningPlugin for PamHardeningPlugin {
         })
     }
 
-    async fn apply(&self, ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
+    async fn apply(&self, ctx: &mut Context, _config: &PluginConfig) -> Result<ApplyResult> {
         let start = Instant::now();
         info!("Starting PAM authentication hardening apply");
 
@@ -415,7 +415,7 @@ impl HardeningPlugin for PamHardeningPlugin {
         Ok(())
     }
 
-    async fn validate(&self, ctx: &Context, _config: &Config) -> Result<ValidationReport> {
+    async fn validate(&self, ctx: &Context, _config: &PluginConfig) -> Result<ValidationReport> {
         info!("Validating PAM configuration files");
 
         let mut issues = Vec::new();

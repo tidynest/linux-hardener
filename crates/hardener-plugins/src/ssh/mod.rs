@@ -18,7 +18,7 @@ use hardener_common::{
     types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
-    ApplyResult, Change, ChangeType, Checkpoint, Config, ValidationIssue, ValidationReport,
+    ApplyResult, Change, ChangeType, Checkpoint, PluginConfig, ValidationIssue, ValidationReport,
     context::Context,
     plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult},
 };
@@ -303,7 +303,7 @@ impl HardeningPlugin for SshHardeningPlugin {
         })
     }
 
-    async fn apply(&self, ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
+    async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult> {
         let plugin_id = PluginId::new("ssh-hardening");
         let mut changes = Vec::new();
         let config_path = "/etc/ssh/sshd_config";
@@ -379,6 +379,31 @@ impl HardeningPlugin for SshHardeningPlugin {
 
         // Step 3: Apply each directive.
         for directive in SSH_DIRECTIVES {
+            // Check for a valid exception — skip this directive if exempted
+            if let Some(exception) = config.has_valid_exception(directive.ssh_directive_name) {
+                info!(
+                    "Skipping {} — exception: {}",
+                    directive.ssh_directive_name, exception.reason
+                );
+                changes.push(Change {
+                    change_description: format!(
+                        "{}: skipped (exception: {})",
+                        directive.ssh_directive_name, exception.reason
+                    ),
+                    change_type: ChangeType::ConfigFile,
+                    change_success: true,
+                    change_error: None,
+                });
+                continue;
+            }
+
+            // Determine target value: user directive override or hardcoded baseline
+            let target_value = config
+                .directives
+                .get(directive.ssh_directive_name)
+                .map(|s| s.as_str())
+                .unwrap_or(directive.ssh_secure_value);
+
             let original_value = parse_config_value(
                 &config_content,
                 directive.ssh_directive_name,
@@ -386,9 +411,8 @@ impl HardeningPlugin for SshHardeningPlugin {
                 false,
             );
 
-            // Check if change is needed.
             let needs_change = match &original_value {
-                Some(value) => value != directive.ssh_secure_value,
+                Some(value) => value != target_value,
                 None => true,
             };
 
@@ -396,17 +420,17 @@ impl HardeningPlugin for SshHardeningPlugin {
                 config_content = set_config_directive(
                     &config_content,
                     directive.ssh_directive_name,
-                    directive.ssh_secure_value,
+                    target_value,
                     ConfigFormat::SpaceSeparated,
                     false,
                 );
 
                 changes.push(Change {
                     change_description: format!(
-                        "{}: {} → {}",
+                        "{}: {} -> {}",
                         directive.ssh_directive_name,
                         original_value.unwrap_or_else(|| "not set".to_string()),
-                        directive.ssh_secure_value
+                        target_value
                     ),
                     change_type: ChangeType::ConfigFile,
                     change_success: true,
@@ -415,7 +439,7 @@ impl HardeningPlugin for SshHardeningPlugin {
 
                 info!(
                     "Applied SSH directive: {} = {}",
-                    directive.ssh_directive_name, directive.ssh_secure_value
+                    directive.ssh_directive_name, target_value
                 );
             }
         }
@@ -503,7 +527,7 @@ impl HardeningPlugin for SshHardeningPlugin {
         Ok(())
     }
 
-    async fn validate(&self, ctx: &Context, _config: &Config) -> Result<ValidationReport> {
+    async fn validate(&self, ctx: &Context, _config: &PluginConfig) -> Result<ValidationReport> {
         let mut issues = Vec::new();
         let plugin_id = PluginId::new("ssh-hardening");
         let config_path = Path::new("/etc/ssh/sshd_config");

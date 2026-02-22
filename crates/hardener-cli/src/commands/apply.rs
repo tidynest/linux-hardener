@@ -2,7 +2,7 @@ use crate::cli::OutputFormat;
 use crate::output;
 use anyhow::{Result, bail};
 use hardener_common::types::PluginId;
-use hardener_core::{Config, ConfigLoader, Context, HardenerConfig, SystemExecutor};
+use hardener_core::{ConfigLoader, Context, HardenerConfig, SystemExecutor};
 use hardener_plugins::create_plugin_registry;
 use hardener_state::{CheckpointManager, CheckpointSigner, init_db};
 use std::path::PathBuf;
@@ -54,7 +54,6 @@ pub async fn run(
         Context::with_executor(executor)
     };
 
-    let config = Config;
     let hardener_config = ConfigLoader::new()
         .load()
         .unwrap_or_else(|_| HardenerConfig::default());
@@ -98,6 +97,7 @@ pub async fn run(
                 }
                 continue;
             }
+            let plugin_config = hardener_config.get_plugin_config(id_str);
             let metadata = plugin.metadata();
 
             if !quiet {
@@ -106,7 +106,7 @@ pub async fn run(
 
             if dry_run {
                 // Just validate without applying
-                match plugin.validate(&ctx, &config).await {
+                match plugin.validate(&ctx, plugin_config).await {
                     Ok(report) => {
                         validation_reports.push(report);
                     }
@@ -119,7 +119,7 @@ pub async fn run(
                     }
                 }
             } else {
-                match plugin.apply(&mut ctx, &config).await {
+                match plugin.apply(&mut ctx, plugin_config).await {
                     Ok(result) => {
                         results.push((metadata, result));
                     }

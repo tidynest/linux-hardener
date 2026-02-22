@@ -56,7 +56,7 @@ macro_rules! define_plugin {
             async fn apply(
                 &self,
                 _ctx: &mut $crate::hardener_core::Context,
-                _config: &$crate::hardener_core::plugin::Config,
+                _config: &$crate::hardener_core::PluginConfig,
             ) -> $crate::hardener_common::error::Result<$crate::hardener_core::plugin::ApplyResult> {
                 todo!("Implement apply() for {}", stringify!($plugin_name))
             }
@@ -72,7 +72,7 @@ macro_rules! define_plugin {
             async fn validate(
                 &self,
                 _ctx: &$crate::hardener_core::Context,
-                _config: &$crate::hardener_core::plugin::Config,
+                _config: &$crate::hardener_core::PluginConfig,
             ) -> $crate::hardener_common::error::Result<$crate::hardener_core::plugin::ValidationReport> {
                 todo!("Implement validate() for {}", stringify!($plugin_name))
             }

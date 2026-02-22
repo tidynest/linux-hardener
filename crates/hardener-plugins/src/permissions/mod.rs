@@ -16,7 +16,7 @@ use hardener_common::{
     types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
-    ApplyResult, Change, ChangeType, Checkpoint, Config, ValidationReport,
+    ApplyResult, Change, ChangeType, Checkpoint, PluginConfig, ValidationReport,
     context::Context,
     plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult},
 };
@@ -291,7 +291,7 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
         })
     }
 
-    async fn apply(&self, ctx: &mut Context, _config: &Config) -> Result<ApplyResult> {
+    async fn apply(&self, ctx: &mut Context, _config: &PluginConfig) -> Result<ApplyResult> {
         let mut changes = Vec::new();
 
         // Collect paths to checkpoint
@@ -351,7 +351,7 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
         Ok(())
     }
 
-    async fn validate(&self, ctx: &Context, _config: &Config) -> Result<ValidationReport> {
+    async fn validate(&self, ctx: &Context, _config: &PluginConfig) -> Result<ValidationReport> {
         let mut issues = Vec::new();
         let mut estimated_changes = Vec::new();
 
