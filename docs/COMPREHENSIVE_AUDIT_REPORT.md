@@ -26,9 +26,9 @@ The issues fall into three categories:
 
 ## TIER 1: CRITICAL BUGS (Hardening Broken)
 
-### BUG-01: JSON Deserialization Mismatch - GUI Apply Always Fails
+### BUG-01: JSON Deserialization Mismatch - GUI Apply Always Fails — FIXED
 
-**Severity**: CRITICAL
+**Severity**: CRITICAL | **Status**: Fixed (commit b9ce945)
 **Files**:
 - `crates/hardener-cli/src/output.rs:98-102`
 - `src-tauri/src/commands.rs:257-263`
@@ -46,9 +46,9 @@ deserialise `Vec<(PluginMetadata, ApplyResult)>` and extract the results.
 
 ---
 
-### BUG-02: Tauri Parameter Name Mismatch (camelCase vs snake_case)
+### BUG-02: Tauri Parameter Name Mismatch (camelCase vs snake_case) — FIXED
 
-**Severity**: CRITICAL
+**Severity**: CRITICAL | **Status**: Fixed (commit b9ce945)
 **Files**:
 - `crates/hardener-ui/src/tauri_bindings.rs:64-66`
 - `src-tauri/src/commands.rs:241`
@@ -70,9 +70,9 @@ with "Specify plugins with --plugin or use --all", and nothing happens.
 
 ---
 
-### BUG-03: All GUI Errors Are Invisible to the User
+### BUG-03: All GUI Errors Are Invisible to the User — FIXED
 
-**Severity**: CRITICAL
+**Severity**: CRITICAL | **Status**: Fixed (commit b9ce945)
 **Files**:
 - `crates/hardener-ui/src/components/configure_section.rs:144-146`
 - `crates/hardener-ui/src/components/quick_actions.rs:49-51`
@@ -91,9 +91,9 @@ error notification component. Set it in every error handler.
 
 ---
 
-### BUG-04: UFW Firewall Backend Applies Wrong Rules
+### BUG-04: UFW Firewall Backend Applies Wrong Rules — FIXED
 
-**Severity**: CRITICAL
+**Severity**: CRITICAL | **Status**: Fixed (commit b9ce945)
 **File**: `crates/hardener-plugins/src/firewall/ufw.rs:95-101`
 
 **Problem**: The `build_ufw_rule_args()` method matches against `rule.rule_description`
@@ -109,9 +109,9 @@ This is a dangerous silent logic bug.
 
 ---
 
-### BUG-05: Firewall Plugin Hardcodes `apply_success: true`
+### BUG-05: Firewall Plugin Hardcodes `apply_success: true` — FIXED
 
-**Severity**: HIGH
+**Severity**: HIGH | **Status**: Fixed (commit b9ce945)
 **File**: `crates/hardener-plugins/src/firewall/mod.rs:335-341`
 
 **Problem**: The firewall plugin's `apply()` returns `apply_success: true` regardless of
@@ -127,9 +127,9 @@ were applied as deny instead of allow.
 
 ---
 
-### BUG-06: CLI Apply Always Exits 0, Even on Total Failure
+### BUG-06: CLI Apply Always Exits 0, Even on Total Failure — FIXED
 
-**Severity**: HIGH
+**Severity**: HIGH | **Status**: Fixed (commit b9ce945)
 **File**: `crates/hardener-cli/src/commands/apply.rs:81-129`
 
 **Problem**: The apply command loop catches per-plugin errors with `output::error(...)` but
@@ -146,9 +146,9 @@ success.
 
 ## TIER 2: MAJOR BUGS (Functionality Broken)
 
-### BUG-07: `Config` Struct Is Empty - No Configuration Loading for Apply
+### BUG-07: `Config` Struct Is Empty - No Configuration Loading for Apply — FIXED
 
-**Severity**: HIGH
+**Severity**: HIGH | **Status**: Fixed (commit b9ce945)
 **Files**:
 - `crates/hardener-cli/src/commands/apply.rs:53`
 - `crates/hardener-core/src/plugin.rs:29-31`
@@ -165,9 +165,9 @@ it to plugins.
 
 ---
 
-### BUG-08: Rollback Panics with Nested Tokio Runtime
+### BUG-08: Rollback Panics with Nested Tokio Runtime — FIXED
 
-**Severity**: HIGH
+**Severity**: HIGH | **Status**: Fixed (prior session, commit bb124a5)
 **File**: `crates/hardener-plugins/src/lib.rs:29-37`
 
 **Problem**: `rollback_files_from_checkpoint()` creates a new `tokio::runtime::Runtime` and
@@ -219,9 +219,9 @@ write fails if not root, leaving the system in an inconsistent state.
 
 ---
 
-### BUG-11: Checkpoint Database Path Divergence
+### BUG-11: Checkpoint Database Path Divergence — PARTIALLY FIXED
 
-**Severity**: MEDIUM
+**Severity**: MEDIUM | **Status**: Partially fixed (prior session — GUI reads both DBs)
 **File**: `src-tauri/src/commands.rs:141-151`
 
 **Problem**: When the CLI runs under pkexec (as root), `dirs::data_local_dir()` resolves to
@@ -236,9 +236,9 @@ no checkpoints after a successful apply.
 
 ---
 
-### BUG-12: `sshd.config` Typo in Checkpoint Path
+### BUG-12: `sshd.config` Typo in Checkpoint Path — FIXED
 
-**Severity**: MEDIUM
+**Severity**: MEDIUM | **Status**: Fixed (commit 0d55037)
 **File**: `crates/hardener-cli/src/commands/checkpoint.rs:98`
 
 **Problem**: The manual checkpoint path list uses `/etc/ssh/sshd.config` (with a dot) instead
@@ -251,9 +251,9 @@ configuration file. Plugin-created checkpoints are unaffected (they use their ow
 
 ---
 
-### BUG-13: Timestamp Formatting Uses Debug Format
+### BUG-13: Timestamp Formatting Uses Debug Format — FIXED
 
-**Severity**: LOW
+**Severity**: LOW | **Status**: Fixed (commit 0d55037)
 **File**: `src-tauri/src/commands.rs:23-28`
 
 **Problem**: `format!("{:?}", datetime)` on a `SystemTime` produces
@@ -374,31 +374,31 @@ Several crates declare dependencies locally instead of using `workspace = true`:
 
 ### Phase 0: Triage & Safety (Do First)
 
-1. **Commit all uncommitted work** to a feature branch immediately
+1. ✅ **Commit all uncommitted work** — committed as b9ce945, 0d55037
 2. **Fix SSH auth** or switch remotes to HTTPS
 3. **Pull Dependabot RSA security update** from remote
 
 ### Phase 1: Make CLI Apply Actually Work (Critical Path)
 
-4. **BUG-04**: Fix UFW `rule_description` -> `rule_action` (1 line change)
-5. **BUG-05**: Fix firewall hardcoded `apply_success: true` (1 line change)
-6. **BUG-06**: Return non-zero exit code on apply failure
-7. **BUG-07**: Load `HardenerConfig` in apply command (copy pattern from scan)
-8. **BUG-12**: Fix `sshd.config` typo to `sshd_config`
+4. ✅ **BUG-04**: Fix UFW `rule_description` -> `rule_action` (commit b9ce945)
+5. ✅ **BUG-05**: Fix firewall hardcoded `apply_success: true` (commit b9ce945)
+6. ✅ **BUG-06**: Return non-zero exit code on apply failure (commit b9ce945)
+7. ✅ **BUG-07**: Load `HardenerConfig` in apply command (commit b9ce945)
+8. ✅ **BUG-12**: Fix `sshd.config` typo to `sshd_config` (commit 0d55037)
 
 ### Phase 2: Make GUI Apply Pipeline Work
 
-9. **BUG-02**: Fix camelCase parameter names in `tauri_bindings.rs`
-10. **BUG-01**: Fix JSON type mismatch between CLI output and Tauri parsing
-11. **BUG-03**: Add visible error UI (add error_message signal + notification component)
+9. ✅ **BUG-02**: Fix camelCase parameter names in `tauri_bindings.rs` (commit b9ce945)
+10. ✅ **BUG-01**: Fix JSON type mismatch between CLI output and Tauri parsing (commit b9ce945)
+11. ✅ **BUG-03**: Add visible error UI (commit b9ce945)
 12. **BUG-09**: Improve binary discovery for development builds
-13. **BUG-13**: Fix timestamp formatting
+13. ✅ **BUG-13**: Fix timestamp formatting (commit 0d55037)
 
 ### Phase 3: Fix Remaining Functionality
 
-14. **BUG-08**: Fix rollback nested runtime panic (make function async)
+14. ✅ **BUG-08**: Fix rollback nested runtime panic (prior session, commit bb124a5)
 15. **BUG-10**: Fix PAM plugin to use executor abstraction
-16. **BUG-11**: Unify checkpoint database paths
+16. ⚡ **BUG-11**: Partially fixed — GUI reads both user and system DBs
 
 ### Phase 4: Infrastructure Cleanup
 
