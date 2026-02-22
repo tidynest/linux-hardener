@@ -9,7 +9,6 @@ use async_trait::async_trait;
 use hardener_common::file_utils::{ConfigFormat, parse_config_value};
 use hardener_common::{
     error::{HardeningError, Result},
-    file_utils::update_file_atomically,
     types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
@@ -323,12 +322,16 @@ impl HardeningPlugin for PamHardeningPlugin {
 
         // Step 4: Write modified configuration files back to disk atomically
         if pwquality_backup.is_some() {
-            match update_file_atomically(
-                Path::new("/etc/security/pwquality.conf"),
-                &pwquality_content,
-            ) {
+            match ctx
+                .executor()
+                .write_file(
+                    Path::new("/etc/security/pwquality.conf"),
+                    &pwquality_content,
+                )
+                .await
+            {
                 Ok(_) => {
-                    info!("Successfully wrote /etc/security/pwquality.conf (atomic write)");
+                    info!("Successfully wrote /etc/security/pwquality.conf");
                     changes.push(Change {
                         change_type: ChangeType::ConfigFile,
                         change_description: "Wrote modified pwquality.conf".to_string(),
@@ -350,9 +353,13 @@ impl HardeningPlugin for PamHardeningPlugin {
         }
 
         if login_defs_backup.is_some() {
-            match update_file_atomically(Path::new("/etc/login.defs"), &login_defs_content) {
+            match ctx
+                .executor()
+                .write_file(Path::new("/etc/login.defs"), &login_defs_content)
+                .await
+            {
                 Ok(_) => {
-                    info!("Successfully wrote /etc/login.defs (atomic write)");
+                    info!("Successfully wrote /etc/login.defs");
                     changes.push(Change {
                         change_type: ChangeType::ConfigFile,
                         change_description: "Wrote modified login.defs".to_string(),
