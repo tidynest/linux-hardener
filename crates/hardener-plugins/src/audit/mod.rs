@@ -336,8 +336,27 @@ async fn write_audit_rules_file(ctx: &Context, content: &str) -> Result<String> 
     Ok(backup_path)
 }
 
-/// Restarts the auditd service to load new rules.
-async fn restart_auditd_service(ctx: &Context) -> Result<()> {
+/// Reloads audit rules into the running daemon.
+///
+/// Tries `augenrules --load` first (merges rules and loads them without
+/// restarting auditd). Falls back to `systemctl restart auditd` if
+/// augenrules is unavailable. On many distributions (including Arch),
+/// auditd ignores SIGTERM from systemd so a direct restart will fail —
+/// augenrules is the supported mechanism.
+async fn reload_audit_rules(ctx: &Context) -> Result<()> {
+    // Preferred: augenrules merges /etc/audit/rules.d/*.rules and loads them
+    if ctx.executor().command_exists("augenrules").await.unwrap_or(false) {
+        let output = ctx
+            .executor()
+            .execute_command("augenrules", &["--load"])
+            .await?;
+
+        if output.success() {
+            return Ok(());
+        }
+    }
+
+    // Fallback: systemctl restart (works on some distros)
     let output = ctx
         .executor()
         .execute_command("systemctl", &["restart", "auditd"])
@@ -345,7 +364,8 @@ async fn restart_auditd_service(ctx: &Context) -> Result<()> {
 
     if !output.success() {
         return Err(hardener_common::error::HardeningError::Plugin(
-            "Failed to restart auditd service".to_string(),
+            "Failed to reload audit rules (augenrules --load and systemctl restart both failed)"
+                .to_string(),
         ));
     }
 
@@ -664,12 +684,12 @@ impl HardeningPlugin for AuditHardeningPlugin {
             }
         }
 
-        // Restart auditd to load new rules
-        match restart_auditd_service(ctx).await {
+        // Reload audit rules into running daemon
+        match reload_audit_rules(ctx).await {
             Ok(_) => {
                 changes.push(Change {
                     change_type: ChangeType::Service,
-                    change_description: "Restarted auditd service to load new rules".to_string(),
+                    change_description: "Loaded audit rules into running daemon".to_string(),
                     change_error: None,
                     change_success: true,
                 });
@@ -677,7 +697,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
             Err(e) => {
                 changes.push(Change {
                     change_type: ChangeType::Service,
-                    change_description: "Failed to restart auditd service".to_string(),
+                    change_description: "Failed to reload audit rules".to_string(),
                     change_error: Some(e.to_string()),
                     change_success: false,
                 });
@@ -711,22 +731,10 @@ impl HardeningPlugin for AuditHardeningPlugin {
 
         info!("Audit configuration files restored from checkpoint");
 
-        // Restart auditd to apply restored rules
-        let restart_result = ctx
-            .executor()
-            .execute_command("systemctl", &["restart", "auditd"])
-            .await;
-
-        match restart_result {
-            Ok(output) if output.success() => {
-                info!("Audit daemon restarted successfully");
-            }
-            Ok(output) => {
-                warn!("Failed to restart auditd: {}", output.stderr);
-            }
-            Err(e) => {
-                warn!("Failed to restart audit daemon: {}", e);
-            }
+        // Reload audit rules after restoring config
+        match reload_audit_rules(ctx).await {
+            Ok(_) => info!("Audit rules reloaded successfully"),
+            Err(e) => warn!("Failed to reload audit rules: {}", e),
         }
 
         Ok(())
