@@ -6,9 +6,13 @@ use crate::cli::OutputFormat;
 use crate::output;
 
 async fn get_checkpoint_manager() -> Result<CheckpointManager> {
-    let data_dir = dirs::data_local_dir()
-        .map(|p| p.join("linux-hardener"))
-        .unwrap_or_else(|| PathBuf::from(".linux-hardener"));
+    let data_dir = if nix::unistd::geteuid().is_root() {
+        PathBuf::from("/var/lib/linux-hardener")
+    } else {
+        dirs::data_local_dir()
+            .map(|p| p.join("linux-hardener"))
+            .unwrap_or_else(|| PathBuf::from(".linux-hardener"))
+    };
 
     // Ensure directory exists
     std::fs::create_dir_all(&data_dir)?;
