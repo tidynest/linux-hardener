@@ -262,7 +262,7 @@ async fn test_audit_validate_with_auditd() {
     let executor = partial_rules_executor();
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = AuditHardeningPlugin::new();
-    let config = hardener_core::Config;
+    let config = hardener_core::PluginConfig::default();
 
     let result = plugin.validate(&ctx, &config).await.unwrap();
 
@@ -276,7 +276,7 @@ async fn test_audit_validate_no_auditd() {
     let executor = no_auditd_executor();
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = AuditHardeningPlugin::new();
-    let config = hardener_core::Config;
+    let config = hardener_core::PluginConfig::default();
 
     let result = plugin.validate(&ctx, &config).await.unwrap();
 

@@ -10,8 +10,9 @@
 
 use hardener_common::types::FindingCategory;
 use hardener_core::{
+    PluginConfig,
     context::Context,
-    plugin::{Config, HardeningPlugin},
+    plugin::HardeningPlugin,
 };
 use hardener_plugins::FirewallHardeningPlugin;
 
@@ -63,7 +64,7 @@ async fn test_firewall_scan_detects_backend() {
 async fn test_firewall_validate_checks_backend() {
     let plugin = FirewallHardeningPlugin::new();
     let ctx = Context::new();
-    let config = Config;
+    let config = PluginConfig::default();
 
     let result = plugin.validate(&ctx, &config).await;
 
@@ -83,7 +84,7 @@ async fn test_firewall_validate_checks_backend() {
 async fn test_firewall_apply_requires_root() {
     let plugin = FirewallHardeningPlugin::new();
     let mut ctx = Context::new();
-    let config = Config;
+    let config = PluginConfig::default();
 
     // This test should only be run with root privileges
     // Run with: sudo cargo test --package hardener-plugins test_firewall_apply_requires_root -- --ignored --nocapture

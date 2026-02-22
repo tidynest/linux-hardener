@@ -1,6 +1,6 @@
 //! Integration tests for Service Minimisation plugin
 
-use hardener_core::{Config, Context, plugin::HardeningPlugin};
+use hardener_core::{PluginConfig, Context, plugin::HardeningPlugin};
 use hardener_plugins::ServicesHardeningPlugin;
 
 #[test]
@@ -90,7 +90,7 @@ async fn test_services_scan_detects_services() {
 async fn test_services_validate_checks_systemctl() {
     let plugin = ServicesHardeningPlugin::new();
     let context = Context::new();
-    let config = Config;
+    let config = PluginConfig::default();
 
     // Run validation
     let result = plugin.validate(&context, &config).await;
@@ -152,7 +152,7 @@ async fn test_services_validate_checks_systemctl() {
 async fn test_services_apply_requires_root() {
     let plugin = ServicesHardeningPlugin::new();
     let mut context = Context::new();
-    let config = Config;
+    let config = PluginConfig::default();
 
     // This will fail without root, or succeed with root
     let result = plugin.apply(&mut context, &config).await;

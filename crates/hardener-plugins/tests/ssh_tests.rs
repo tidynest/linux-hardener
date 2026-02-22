@@ -1,5 +1,5 @@
 use hardener_common::types::{FindingCategory, PluginId};
-use hardener_core::{Config, context::Context, plugin::HardeningPlugin};
+use hardener_core::{PluginConfig, context::Context, plugin::HardeningPlugin};
 use hardener_plugins::ssh::SshHardeningPlugin;
 
 #[test]
@@ -71,7 +71,7 @@ async fn test_ssh_scan_reads_configuration() {
 async fn test_ssh_validate_checks_config_file() {
     let plugin = SshHardeningPlugin::new();
     let ctx = Context::new();
-    let config = Config;
+    let config = PluginConfig::default();
 
     let result = plugin.validate(&ctx, &config).await;
 
@@ -113,7 +113,7 @@ async fn test_ssh_validate_checks_config_file() {
 async fn test_ssh_apply_requires_root() {
     let plugin = SshHardeningPlugin::new();
     let mut ctx = Context::new();
-    let config = Config;
+    let config = PluginConfig::default();
 
     println!("\n=== Testing SSH Apply (requires root) ===");
     println!("This test will:");

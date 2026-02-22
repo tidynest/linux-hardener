@@ -272,7 +272,7 @@ async fn test_services_validate_with_systemctl() {
     let executor = insecure_services_executor();
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = ServicesHardeningPlugin::new();
-    let config = hardener_core::Config;
+    let config = hardener_core::PluginConfig::default();
 
     let result = plugin.validate(&ctx, &config).await.unwrap();
 
@@ -292,7 +292,7 @@ async fn test_services_validate_no_systemctl() {
     let executor = no_systemd_executor();
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = ServicesHardeningPlugin::new();
-    let config = hardener_core::Config;
+    let config = hardener_core::PluginConfig::default();
 
     let result = plugin.validate(&ctx, &config).await.unwrap();
 

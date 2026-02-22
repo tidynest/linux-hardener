@@ -1,6 +1,6 @@
 //! Integration tests for Audit Hardening plugin
 
-use hardener_core::{Config, Context, plugin::HardeningPlugin};
+use hardener_core::{PluginConfig, Context, plugin::HardeningPlugin};
 use hardener_plugins::AuditHardeningPlugin;
 
 #[test]
@@ -81,7 +81,7 @@ async fn test_audit_scan_detects_configuration() {
 async fn test_audit_validate_checks_auditd() {
     let plugin = AuditHardeningPlugin::new();
     let context = Context::new();
-    let config = Config;
+    let config = PluginConfig::default();
 
     // Run validation
     let result = plugin.validate(&context, &config).await;
@@ -142,7 +142,7 @@ async fn test_audit_validate_checks_auditd() {
 async fn test_audit_apply_requires_root() {
     let plugin = AuditHardeningPlugin::new();
     let mut context = Context::new();
-    let config = Config;
+    let config = PluginConfig::default();
 
     // This will fail without root, or succeed with root
     let result = plugin.apply(&mut context, &config).await;

@@ -1,6 +1,6 @@
 //! Integration tests for MAC (Mandatory Access Control) Hardening plugin
 
-use hardener_core::{Config, Context, plugin::HardeningPlugin};
+use hardener_core::{PluginConfig, Context, plugin::HardeningPlugin};
 use hardener_plugins::MacHardeningPlugin;
 
 #[test]
@@ -89,7 +89,7 @@ async fn test_mac_scan_detects_system() {
 async fn test_mac_validate() {
     let plugin = MacHardeningPlugin::new();
     let context = Context::new();
-    let config = Config;
+    let config = PluginConfig::default();
 
     // Run validation
     let result = plugin.validate(&context, &config).await;
@@ -135,7 +135,7 @@ async fn test_mac_validate() {
 async fn test_mac_apply_requires_root() {
     let plugin = MacHardeningPlugin::new();
     let mut context = Context::new();
-    let config = Config;
+    let config = PluginConfig::default();
 
     // This will fail without root, or succeed with root
     let result = plugin.apply(&mut context, &config).await;

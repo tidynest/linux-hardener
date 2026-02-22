@@ -116,7 +116,7 @@ async fn test_kernel_plugin_scan_over_ssh() {
 async fn test_kernel_plugin_validate_over_ssh() {
     let ctx = create_ssh_context().await;
     let plugin = KernelHardeningPlugin::new();
-    let config = hardener_core::Config;
+    let config = hardener_core::PluginConfig::default();
 
     let result = plugin.validate(&ctx, &config).await;
 
@@ -209,7 +209,7 @@ async fn test_services_plugin_scan_over_ssh() {
 async fn test_services_plugin_validate_over_ssh() {
     let ctx = create_ssh_context().await;
     let plugin = ServicesHardeningPlugin::new();
-    let config = hardener_core::Config;
+    let config = hardener_core::PluginConfig::default();
 
     let result = plugin.validate(&ctx, &config).await;
 

@@ -301,7 +301,7 @@ async fn test_mac_validate_with_selinux() {
     let executor = selinux_enforcing_executor();
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = MacHardeningPlugin::new();
-    let config = hardener_core::Config;
+    let config = hardener_core::PluginConfig::default();
 
     let result = plugin.validate(&ctx, &config).await.unwrap();
 
@@ -313,7 +313,7 @@ async fn test_mac_validate_no_mac() {
     let executor = no_mac_executor();
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = MacHardeningPlugin::new();
-    let config = hardener_core::Config;
+    let config = hardener_core::PluginConfig::default();
 
     let result = plugin.validate(&ctx, &config).await.unwrap();
 

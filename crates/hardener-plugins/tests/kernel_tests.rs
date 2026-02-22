@@ -1,5 +1,5 @@
 use hardener_common::types::FindingCategory;
-use hardener_core::{Config, Context, plugin::HardeningPlugin};
+use hardener_core::{PluginConfig, Context, plugin::HardeningPlugin};
 use hardener_plugins::KernelHardeningPlugin;
 
 #[test]
@@ -65,7 +65,7 @@ async fn test_kernel_scan_reads_parameters() {
 async fn test_kernel_validate_checks_parameters() {
     let plugin = KernelHardeningPlugin::new();
     let ctx = Context::new();
-    let config = Config;
+    let config = PluginConfig::default();
 
     let result = plugin.validate(&ctx, &config).await;
     assert!(result.is_ok(), "Validation should succeed");
@@ -106,7 +106,7 @@ async fn test_kernel_validate_checks_parameters() {
 async fn test_kernel_apply_requires_root() {
     let plugin = KernelHardeningPlugin::new();
     let mut ctx = Context::new();
-    let config = Config;
+    let config = PluginConfig::default();
 
     let result = plugin.apply(&mut ctx, &config).await;
 

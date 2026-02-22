@@ -1,6 +1,6 @@
 //! Integration tests for PAM hardening plugin
 
-use hardener_core::{Config, Context, plugin::HardeningPlugin};
+use hardener_core::{PluginConfig, Context, plugin::HardeningPlugin};
 use hardener_plugins::PamHardeningPlugin;
 
 #[test]
@@ -62,7 +62,7 @@ async fn test_pam_scan_reads_configuration() {
 async fn test_pam_validate_checks_config_files() {
     let plugin = PamHardeningPlugin::new();
     let context = Context::new();
-    let config = Config;
+    let config = PluginConfig::default();
 
     // Run validation
     let result = plugin.validate(&context, &config).await;
@@ -106,7 +106,7 @@ async fn test_pam_validate_checks_config_files() {
 async fn test_pam_apply_requires_root() {
     let plugin = PamHardeningPlugin::new();
     let mut context = Context::new();
-    let config = Config;
+    let config = PluginConfig::default();
 
     // This will fail without root, or succeed with root
     let result = plugin.apply(&mut context, &config).await;

@@ -3,7 +3,7 @@
 //! Tests dependency resolution, execution order, and plugin workflows.
 
 use hardener_core::testing::MockPlugin;
-use hardener_core::{Config, Context, PluginManager, PluginRegistry};
+use hardener_core::{Context, HardenerConfig, PluginManager, PluginRegistry};
 
 /// Tests basic dependency resolution with a valid chain: A → B → C.
 ///
@@ -270,7 +270,7 @@ async fn test_execute_apply_workflow() {
 
     // Create context and config
     let mut ctx = Context::new();
-    let config = Config;
+    let config = HardenerConfig::default();
 
     // Execute apply on all plugins (empty vec = all plugins)
     let results = manager.execute_apply(&mut ctx, &config, &[]).await.unwrap();
