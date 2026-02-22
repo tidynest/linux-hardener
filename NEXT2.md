@@ -6,36 +6,77 @@
 
 ---
 
-## What happened last session (2026-02-22)
+## What happened this session (2026-02-22)
 
-We fixed 7 critical/high bugs from the comprehensive audit (`docs/COMPREHENSIVE_AUDIT_REPORT.md`). These were the bugs that made the entire GUI→CLI apply pipeline broken. Fixes are in the working tree but **not committed**.
+All 13 bugs from the comprehensive audit (`docs/COMPREHENSIVE_AUDIT_REPORT.md`) are now **fully fixed and committed**. The entire GUI→CLI apply pipeline is working. Build is clean.
 
-### Bugs fixed (BUG-01 through BUG-07):
-- **BUG-04**: UFW firewall applied all rules as `deny` (matched wrong field)
-- **BUG-05**: Firewall hardcoded `apply_success: true` regardless of result
-- **BUG-07**: Apply command used empty `Config` struct — now loads `HardenerConfig` and skips disabled plugins
-- **BUG-06**: CLI apply always exited 0 — now tracks failures and returns non-zero exit code
-- **BUG-01**: JSON shape mismatch between CLI output and Tauri parsing (tuple vs flat array)
-- **BUG-02**: Frontend sent camelCase params (`pluginIds`) but Tauri expected snake_case (`plugin_ids`)
-- **BUG-03**: All GUI errors were invisible (console only) — added error banner component with dismiss button
+### Commits this session:
+```
+2eb1b3c fix(cli): use system checkpoint path when running as root        ← BUG-11
+64d9f74 fix(plugins): use executor abstraction for PAM file writes       ← BUG-10
+037d0c4 fix(tauri): improve CLI binary discovery for development builds  ← BUG-09
+8757db5 docs: update audit report with fix status markers
+0d55037 fix(cli,tauri): fix sshd_config typo and timestamp formatting    ← BUG-12, BUG-13
+b9ce945 fix(core,ui): repair GUI apply pipeline and add preview flow     ← BUG-01–07
+```
+
+### All 13 bugs fixed:
+| Bug | Summary | Commit |
+|-----|---------|--------|
+| BUG-01 | JSON shape mismatch CLI↔Tauri (tuple vs flat array) | `b9ce945` |
+| BUG-02 | camelCase→snake_case param names in Tauri bindings | `b9ce945` |
+| BUG-03 | GUI errors invisible — added error banner component | `b9ce945` |
+| BUG-04 | UFW matched `rule_description` instead of `rule_action` | `b9ce945` |
+| BUG-05 | Firewall hardcoded `apply_success: true` | `b9ce945` |
+| BUG-06 | CLI apply always exited 0 — now tracks failures | `b9ce945` |
+| BUG-07 | Apply used empty `Config` — now loads `HardenerConfig` | `b9ce945` |
+| BUG-08 | Nested tokio runtime panic in rollback | `bb124a5` (prior) |
+| BUG-09 | Binary discovery — added `CARGO_MANIFEST_DIR` fallback | `037d0c4` |
+| BUG-10 | PAM bypassed executor — now uses `ctx.executor().write_file()` | `64d9f74` |
+| BUG-11 | Checkpoint path divergence — root uses `/var/lib`, GUI reads both | `2eb1b3c` |
+| BUG-12 | `sshd.config` typo → `sshd_config` | `0d55037` |
+| BUG-13 | Timestamp Debug format → chrono human-readable | `0d55037` |
+
+### Working tree state:
+- `docs/COMPREHENSIVE_AUDIT_REPORT.md` — modified (BUG-09, BUG-10, BUG-11 status markers need committing)
+- `docs/FULL_AUDIT_REPORT.md` — untracked (redundant draft, can be deleted)
+- `docs/audit-agent-outputs/` — untracked (raw agent output, skip)
 
 **Build status**: `cargo check`, `cargo check -p hardener-ui --target wasm32-unknown-unknown`, `cargo test`, and `cargo clippy` all pass clean.
 
-### Still remaining (not started):
-- **BUG-09** (Medium): Binary discovery fails in dev — `src-tauri/src/commands.rs:35-58`
-- **BUG-10** (Medium): PAM plugin bypasses executor — `pam/mod.rs:326` uses `update_file_atomically()`
-- **BUG-12** (Medium): `sshd.config` typo should be `sshd_config` — `checkpoint.rs:98`
-- **BUG-13** (Low): Timestamp uses Debug format — `commands.rs:28`
-- **INFRA-01 through INFRA-07**: Version mismatch, CI gaps, doc consolidation, etc.
-- **Trait refactor**: `HardeningPlugin::apply()` accepts empty `Config` unit struct — should accept `HardenerConfig` so plugins can read per-plugin directives. Requires updating all 8 plugin implementations.
-
-### Uncommitted changes include both:
-1. Prior session work (Phase 1 GUI/CLI parity, field naming, etc.)
-2. This session's 7 bug fixes
-
-These should be committed before anything else.
-
 ---
+
+## What's next (priority order)
+
+### 1. ⬜ Commit remaining doc update
+`docs/COMPREHENSIVE_AUDIT_REPORT.md` has updated status markers for BUG-09/10/11 — needs a quick `git add && git commit`.
+
+### 2. ⬜ Infrastructure issues (INFRA-01 through INFRA-07)
+See `docs/COMPREHENSIVE_AUDIT_REPORT.md` § TIER 3 for full details.
+
+| Issue | Description | Complexity |
+|-------|-------------|------------|
+| INFRA-01 | ✅ All uncommitted work now committed | Done |
+| INFRA-02 | SSH auth failing to GitHub/GitLab remotes | Config fix |
+| INFRA-03 | Version mismatch (0.3.2 vs 0.3.3 across files) | Find & replace |
+| INFRA-04 | GUI/Tauri crates excluded from CI | `.github/workflows/ci.yml` |
+| INFRA-05 | Four overlapping planning docs (NEXT/NEXT2/PLAN/PLAN2) | Consolidation |
+| INFRA-06 | Tauri CSP disabled, no capabilities file | `tauri.conf.json` |
+| INFRA-07 | Workspace dependency inconsistencies | `Cargo.toml` files |
+
+### 3. ⬜ Trait refactor: `Config` → `HardenerConfig`
+`HardeningPlugin::apply()` and `validate()` accept an empty `Config` unit struct. Should accept `HardenerConfig` so plugins can read per-plugin directives (enabled/disabled, custom settings, policy exceptions). Requires updating:
+- `crates/hardener-core/src/plugin.rs` — trait definition
+- All 8 plugin implementations in `crates/hardener-plugins/src/*/mod.rs`
+- `crates/hardener-cli/src/commands/apply.rs` — pass `HardenerConfig` instead of `Config`
+
+### 4. ⬜ GUI/CLI Feature Parity (Phase 2+)
+See `docs/GUI_CLI_PARITY_PLAN.md` — Phase 1 (preview & apply) is complete.
+- Phase 2: Scan filtering (severity dropdown, plugin selection) ← **next GUI work**
+- Phase 3: Checkpoint management (create/delete)
+- Phase 4: Report export (format selection, file save)
+- Phase 5: Scan history tab
+- Phase 6: Audit/compliance mode toggles
 
 ---
 

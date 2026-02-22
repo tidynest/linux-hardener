@@ -184,9 +184,9 @@ Verify the current state of this file.
 
 ---
 
-### BUG-09: Binary Discovery Fails in Development
+### BUG-09: Binary Discovery Fails in Development — FIXED
 
-**Severity**: HIGH
+**Severity**: HIGH | **Status**: Fixed (commit 037d0c4)
 **File**: `src-tauri/src/commands.rs:35-58`
 
 **Problem**: `get_hardener_binary_path()` looks for `hardener` in the same directory as the
@@ -203,9 +203,9 @@ together in the workspace.
 
 ---
 
-### BUG-10: PAM Plugin Bypasses the Executor Abstraction
+### BUG-10: PAM Plugin Bypasses the Executor Abstraction — FIXED
 
-**Severity**: MEDIUM
+**Severity**: MEDIUM | **Status**: Fixed (commit 64d9f74)
 **File**: `crates/hardener-plugins/src/pam/mod.rs:324-352`
 
 **Problem**: The PAM plugin uses `update_file_atomically()` (direct `std::fs::write`) instead
@@ -219,9 +219,9 @@ write fails if not root, leaving the system in an inconsistent state.
 
 ---
 
-### BUG-11: Checkpoint Database Path Divergence — PARTIALLY FIXED
+### BUG-11: Checkpoint Database Path Divergence — FIXED
 
-**Severity**: MEDIUM | **Status**: Partially fixed (prior session — GUI reads both DBs)
+**Severity**: MEDIUM | **Status**: Fixed (GUI reads both DBs + CLI uses /var/lib when root, commit 2eb1b3c)
 **File**: `src-tauri/src/commands.rs:141-151`
 
 **Problem**: When the CLI runs under pkexec (as root), `dirs::data_local_dir()` resolves to
@@ -391,14 +391,14 @@ Several crates declare dependencies locally instead of using `workspace = true`:
 9. ✅ **BUG-02**: Fix camelCase parameter names in `tauri_bindings.rs` (commit b9ce945)
 10. ✅ **BUG-01**: Fix JSON type mismatch between CLI output and Tauri parsing (commit b9ce945)
 11. ✅ **BUG-03**: Add visible error UI (commit b9ce945)
-12. **BUG-09**: Improve binary discovery for development builds
+12. ✅ **BUG-09**: Improve binary discovery for development builds (commit 037d0c4)
 13. ✅ **BUG-13**: Fix timestamp formatting (commit 0d55037)
 
 ### Phase 3: Fix Remaining Functionality
 
 14. ✅ **BUG-08**: Fix rollback nested runtime panic (prior session, commit bb124a5)
-15. **BUG-10**: Fix PAM plugin to use executor abstraction
-16. ⚡ **BUG-11**: Partially fixed — GUI reads both user and system DBs
+15. ✅ **BUG-10**: Fix PAM plugin to use executor abstraction (commit 64d9f74)
+16. ✅ **BUG-11**: CLI uses system path when root, GUI reads both (commit 2eb1b3c)
 
 ### Phase 4: Infrastructure Cleanup
 
