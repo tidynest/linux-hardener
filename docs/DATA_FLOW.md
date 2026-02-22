@@ -1,6 +1,6 @@
 # Linux System Hardener - Data Flow Documentation
 
-**Last Updated:** 2025-12-06
+**Last Updated:** 2026-02-22
 **Version:** 0.3.3
 
 This document describes the data flow for all major operations in the system.
@@ -970,4 +970,4 @@ pub struct Daemon {
 | `linux-hardener.service` | Runs `hardener daemon run-once` (Type=oneshot) |
 | `linux-hardener.timer` | Triggers service on schedule |
 
-**Last Updated**: 2025-12-06
+**Last Updated**: 2026-02-22

@@ -567,4 +567,4 @@ This project draws inspiration from established security tools including:
 **Contact**: tidynest@proton.me
 **Repository**: https://github.com/tidynest/linux-system-hardener
 
-**Last Updated**: 2025-12-11
+**Last Updated**: 2026-02-22

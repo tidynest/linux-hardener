@@ -321,4 +321,4 @@ This keeps you in control while learning the architecture.
 
 ---
 
-**Last Updated**: 2025-12-11
+**Last Updated**: 2026-02-22

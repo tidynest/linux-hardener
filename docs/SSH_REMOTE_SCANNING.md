@@ -302,4 +302,4 @@ Planned for future releases:
 - Remote checkpoint storage option
 - GUI SSH support
 
-**Last Updated**: 2025-12-06
+**Last Updated**: 2026-02-22
