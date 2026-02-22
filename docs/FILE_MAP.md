@@ -1,6 +1,6 @@
 # Linux System Hardener - File Map
 
-**Last Updated:** 2025-12-11
+**Last Updated:** 2026-02-22
 
 This document lists all source files with their purpose and key exports.
 
@@ -66,7 +66,7 @@ pub struct ComplianceSummary { summary_total_controls, summary_passing, summary_
 | File | Purpose | Key Exports |
 |------|---------|-------------|
 | `src/lib.rs` | Module exports, feature flags | Re-exports all public types |
-| `src/plugin.rs` | Core plugin trait and types | `HardeningPlugin`, `Finding`, `ScanResult`, `ApplyResult`, `Config` |
+| `src/plugin.rs` | Core plugin trait and types | `HardeningPlugin`, `Finding`, `ScanResult`, `ApplyResult` |
 | `src/context.rs` | Execution context | `Context`, `SystemInfo` |
 | `src/plugin_manager.rs` | Plugin orchestration | `PluginManager` |
 | `src/registry.rs` | Plugin registration | `PluginRegistry` |
@@ -86,9 +86,9 @@ pub trait HardeningPlugin: Send + Sync {
     fn metadata(&self) -> PluginMetadata;
     fn dependencies(&self) -> Vec<PluginId>;
     async fn scan(&self, ctx: &Context) -> Result<ScanResult>;
-    async fn apply(&self, ctx: &mut Context, config: &Config) -> Result<ApplyResult>;
+    async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult>;
     async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()>;
-    async fn validate(&self, ctx: &Context, config: &Config) -> Result<ValidationReport>;
+    async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport>;
 }
 ```
 
@@ -570,7 +570,10 @@ pub async fn generate_compliance_report(frameworks: Vec<String>) -> Result<Vec<C
 | `LICENSE` | Apache-2.0 licence |
 | `MCP_INSTRUCTIONS.md` | MCP configuration instructions |
 | `docs/ARCHITECTURE.md` | Architecture overview |
+| `docs/browser-automation.md` | Playwright MCP browser automation setup and troubleshooting |
+| `docs/claude-code-configuration.md` | Claude Code MCP configuration reference |
 | `docs/CLI_V032_TEST_RESULTS.md` | CLI v0.3.2 validation results |
+| `docs/COMPREHENSIVE_AUDIT_REPORT.md` | Full project audit: 13 bugs found and fixed |
 | `docs/CONFIG_DESIGN.md` | Config system security design |
 | `docs/css-architecture.md` | CSS architecture and patterns |
 | `docs/DATA_FLOW.md` | Data flow diagrams |
@@ -579,13 +582,18 @@ pub async fn generate_compliance_report(frameworks: Vec<String>) -> Result<Vec<C
 | `docs/DOCUMENTATION_AUDIT.md` | Documentation completeness audit |
 | `docs/FILE_MAP.md` | This file |
 | `docs/FRONTEND_LAYOUT_PLAN.md` | GUI layout implementation plan |
+| `docs/GUI_CLI_PARITY_PLAN.md` | GUI-CLI feature parity plan |
 | `docs/GUI_V031_TEST_PLAN.md` | GUI v0.3.1 test plan |
 | `docs/NAMING_CONVENTIONS.md` | Naming standards |
+| `docs/PENDING_TASKS.md` | Tracked pending tasks and follow-ups |
 | `docs/RELEASING.md` | Versioning and release process |
+| `docs/REPO_COMPARISON.md` | Repository structure comparison |
 | `docs/SSH_REMOTE_SCANNING.md` | SSH remote scanning user guide |
 | `docs/tauri-plus-leptos-development-on-arch-linux-with-hyprland.md` | Tauri + Leptos dev guide |
 | `docs/THEME_DESIGN_GUIDE.md` | GUI theming system documentation |
 | `docs/WASM_FIX_PLAN.md` | WASM compilation fix implementation |
+| `docs/plans/2026-02-22-trait-refactor.md` | Trait refactor execution log |
+| `docs/plans/2026-02-22-trait-refactor-design.md` | Trait refactor design document |
 
 ---
 
@@ -624,4 +632,4 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | `hardener-common/src/types.rs` | Added `FindingPolicyException` struct |
 | `hardener-cli/src/cli.rs` | Added `--config`, `--audit`, `--compliance`, `--exit-code` flags, `ScanMode` enum |
 
-**Last Updated**: 2025-12-11
+**Last Updated**: 2026-02-22

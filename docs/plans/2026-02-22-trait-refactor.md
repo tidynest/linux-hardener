@@ -1,6 +1,6 @@
 # Trait Refactor: Config to PluginConfig — Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+**Status:** Implemented (2026-02-22) — commits `81c13ad`, `d029629`, `b87fb1c`
 
 **Goal:** Replace the empty `Config` unit struct with `PluginConfig` in the `HardeningPlugin` trait, and wire SSH as a proof-of-concept that consumes directives and exceptions.
 

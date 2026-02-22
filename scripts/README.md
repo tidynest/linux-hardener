@@ -257,7 +257,7 @@ $ git commit -m "Add PAM plugin structure"
 
 ✅ All pre-commit checks passed!
 
-[master a1b2c3d] Add PAM plugin structure
+[main a1b2c3d] Add PAM plugin structure
  3 files changed, 150 insertions(+)
 ```
 
@@ -334,7 +334,7 @@ Edit `.git/hooks/pre-commit` to add more checks.
 ```
 
 **What It Does**:
-1. Validates you're on main/master branch with clean working directory
+1. Validates you're on the `main` branch with clean working directory
 2. Runs cargo test and clippy
 3. Updates version in Cargo.toml
 4. Updates CHANGELOG.md with new version section
@@ -948,7 +948,7 @@ sudo ./scripts/root-test-suite.sh --apply
   Linux System Hardener - Root Test Suite
 ============================================================
 Environment: systemd-nspawn container
-Binary: /project/target/release/hardener v0.3.2
+Binary: /project/target/release/hardener v0.3.3
 ============================================================
 
 [1/36] Checking container environment...                    [PASS]

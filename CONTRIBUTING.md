@@ -92,15 +92,14 @@ This project uses British English for all documentation, comments, and user-faci
 
 ### Branching Strategy
 
-- `main` - stable release branch
-- `master` - development branch (default)
+- `main` - primary development branch (default)
 - Feature branches: `feature/description`
 - Bug fixes: `fix/description`
 
 ### Making Changes
 
 1. Fork the repository
-2. Create a feature branch from `master`
+2. Create a feature branch from `main`
 3. Make your changes
 4. Write/update tests
 5. Run the full test suite

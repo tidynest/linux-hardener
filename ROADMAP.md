@@ -73,7 +73,7 @@ This document tracks the development progress and planned features for Linux Sys
 - [x] LocalExecutor implementation (wraps current behaviour)
 - [x] SshExecutor implementation (remote operations via SSH)
 - [x] Context integration with executor
-- [x] CLI flags (`--ssh`, `--ssh-key`, `--ssh-port`, `--ssh-timeout`, `--ssh-no-verify`)
+- [x] CLI flags (`--ssh`, `--ssh-key`, `--port`, `--ssh-timeout`, `--ssh-no-verify`)
 - [x] Async plugin trait (`HardeningPlugin` with `#[async_trait]`)
 - [x] All 8 plugins converted to async
 - [x] Plugin tests converted to async (`#[tokio::test]`)
@@ -609,7 +609,7 @@ The compliance module (`hardener-compliance`) is designed for reuse:
 
 When working on new features:
 
-1. Create a feature branch from `master`
+1. Create a feature branch from `main`
 2. Update ROADMAP.md with your progress
 3. Ensure all tests pass (`cargo test`)
 4. Run `cargo clippy` with no warnings

@@ -566,7 +566,7 @@ If any entry is modified, the hash chain breaks and tampering is detected.
          ▼
 ┌──────────────────────────────────────────────────────────────┐
 │  hardener-cli/src/main.rs                                    │
-│  ├─ Parse SSH args (--ssh, --ssh-key, --ssh-port, etc.)     │
+│  ├─ Parse SSH args (--ssh, --ssh-key, --port, etc.)         │
 │  └─ Create SshConnectionConfig from CLI args                 │
 └────────┬─────────────────────────────────────────────────────┘
          │

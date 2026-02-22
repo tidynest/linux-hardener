@@ -1,6 +1,6 @@
 # Linux System Hardener - Architecture Documentation
 
-**Last Updated:** 2025-12-11
+**Last Updated:** 2026-02-22
 **Version:** 0.3.3 (Distribution Validation Complete)
 
 ---
@@ -308,9 +308,9 @@ pub trait HardeningPlugin: Send + Sync {
     fn metadata(&self) -> PluginMetadata;
     fn dependencies(&self) -> Vec<PluginId>;
     async fn scan(&self, ctx: &Context) -> Result<ScanResult>;
-    async fn apply(&self, ctx: &mut Context, config: &Config) -> Result<ApplyResult>;
+    async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult>;
     async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()>;
-    async fn validate(&self, ctx: &Context, config: &Config) -> Result<ValidationReport>;
+    async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport>;
 }
 ```
 
@@ -343,13 +343,14 @@ Implementations:
 Abstraction for different firewall systems:
 
 ```rust
+#[async_trait]
 pub trait FirewallBackend: Send + Sync {
     fn backend_name(&self) -> &str;
-    fn detect(&self) -> Result<bool>;
-    fn is_enabled(&self) -> Result<()>;
-    fn enable(&self) -> Result<()>;
-    fn list_rules(&self) -> Result<Vec<Rule>>;
-    fn apply_rules(&self, rules: &[Rule]) -> Result<Vec<Change>>;
+    async fn detect(&self, ctx: &Context) -> Result<bool>;
+    async fn is_enabled(&self, ctx: &Context) -> Result<()>;
+    async fn enable(&self, ctx: &Context) -> Result<()>;
+    async fn list_rules(&self, ctx: &Context) -> Result<Vec<Rule>>;
+    async fn apply_rules(&self, ctx: &Context, rules: &[Rule]) -> Result<Vec<Change>>;
     fn get_default_rules(&self) -> Vec<Rule>;
 }
 ```
@@ -458,14 +459,26 @@ The configuration system follows a security-first design where **configuration a
 ```rust
 pub struct HardenerConfig {
     pub global: GlobalConfig,
-    pub plugins: HashMap<String, PluginConfig>,
+    pub ssh: PluginConfig,
+    pub kernel: PluginConfig,
+    pub firewall: PluginConfig,
+    pub pam: PluginConfig,
+    pub audit: PluginConfig,
+    pub mac: PluginConfig,
+    pub permissions: PluginConfig,
+    pub services: PluginConfig,
 }
 
 pub struct PolicyException {
-    pub exception_allowed_value: String,
-    pub exception_reason: String,
-    pub exception_approved_by: Option<String>,
-    pub exception_expires: Option<String>,
+    pub value: String,
+    pub allowed: bool,
+    pub reason: String,
+    pub approved_by: Option<String>,
+    pub approved_date: Option<String>,
+    pub ticket: Option<String>,
+    pub expires: Option<String>,
+    // Computed: is_expired() method, NOT a stored field
+    // Computed: is_valid() — returns allowed && !is_expired()
 }
 ```
 
@@ -488,11 +501,11 @@ pub struct PolicyException {
 
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
-| `ci.yml` | Push/PR to main/master | Tests, clippy, fmt, security audit, build |
+| `ci.yml` | Push/PR to `main` | Tests, clippy, fmt, security audit, build |
 | `release.yml` | Tag `v*` | Multi-target builds, GitHub releases |
 
 > **Note:** GitHub Actions CI/CD is connected and functional. Workflows trigger on
-> push/PR to main/master branches, running check, test, clippy, fmt, security audit,
+> push/PR to the `main` branch, running check, test, clippy, fmt, security audit,
 > and multi-platform builds.
 
 ### GitLab CI
@@ -514,7 +527,7 @@ pub struct PolicyException {
 
 ### Branch Strategy
 
-Both `main` and `master` branches are kept in sync on GitHub and GitLab. The release script (`scripts/release.sh`) automatically syncs both branches on both remotes.
+The `main` branch is kept in sync on GitHub and GitLab. The release script (`scripts/release.sh`) automatically pushes to both remotes.
 
 ---
 
@@ -526,4 +539,4 @@ Both `main` and `master` branches are kept in sync on GitHub and GitLab. The rel
 - `ROADMAP.md` - Development roadmap
 - `README.md` - User documentation
 
-**Last Updated**: 2025-12-11
+**Last Updated**: 2026-02-22

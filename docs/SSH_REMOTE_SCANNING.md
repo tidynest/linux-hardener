@@ -42,7 +42,7 @@ hardener --ssh user@hostname scan
 hardener --ssh admin@192.168.1.100 --ssh-key ~/.ssh/id_ed25519 scan
 
 # Generate a compliance report from remote host
-hardener --ssh root@server.example.com report --framework cis --format pdf
+hardener --ssh root@server.example.com report --framework cis --report-format pdf
 
 CLI Reference
 
@@ -52,7 +52,7 @@ SSH Connection Options
 |--------------------|----------------------------------------------------|---------|
 | --ssh HOST         | Remote host to connect to (user@host or just host) |    -    |
 |--------------------|----------------------------------------------------|---------|
-| --ssh-port PORT    | SSH port number                                    |   22    |
+| --port PORT        | SSH port number                                    |   22    |
 |--------------------|----------------------------------------------------|---------|
 | --ssh-key FILE     | Path to SSH private key                            |    -    |
 |--------------------|----------------------------------------------------|---------| 
@@ -131,15 +131,13 @@ hardener --ssh root@webserver scan --plugin kernel --plugin ssh --plugin firewal
 Generate Compliance Report
 
 # CIS Benchmark report in PDF format
-hardener --ssh root@server report --framework cis --format pdf --output
-server-cis.pdf
+hardener --ssh root@server report --framework cis --report-format pdf --output server-cis.pdf
 
 # NIST 800-53 report in JSON for automation
-hardener --ssh root@server report --framework nist --format json --output
-report.json
+hardener --ssh root@server report --framework nist --report-format json --output report.json
 
 # Multiple frameworks
-hardener --ssh root@server report --framework cis,stig --format html
+hardener --ssh root@server report --framework cis,stig --report-format html
 
 Apply Hardening Remotely
 
@@ -155,10 +153,10 @@ hardener --ssh root@server apply --all --dry-run
 Rollback Changes
 
 # List available checkpoints
-hardener --ssh root@server rollback --list
+hardener --ssh root@server checkpoint list
 
 # Rollback to a specific checkpoint
-hardener --ssh root@server rollback --checkpoint abc123
+hardener --ssh root@server rollback abc123
 
 Batch Scanning Multiple Hosts
 
@@ -169,7 +167,7 @@ HOSTS="web1 web2 db1 db2"
 
 for host in $HOSTS; do
     echo "=== Scanning $host ==="
-    hardener --ssh root@$host scan --output json > "scan-$host.json"
+    hardener --ssh root@$host --format json scan > "scan-$host.json"
 done
 
 Or generate reports for a fleet:
@@ -178,7 +176,7 @@ Or generate reports for a fleet:
 for host in $(cat hosts.txt); do
     hardener --ssh root@$host report \
         --framework cis \
-        --format pdf \
+        --report-format pdf \
         --output "reports/${host}-cis.pdf"
 done
 
@@ -196,7 +194,7 @@ Causes:
 Solutions:
 - Verify SSH is running: ssh user@host manually
 - Check firewall rules on remote host
-- Use --ssh-port if SSH runs on non-standard port
+- Use --port if SSH runs on non-standard port
 
 Permission Denied
 

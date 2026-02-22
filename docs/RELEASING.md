@@ -113,7 +113,7 @@ The release script automatically:
 5. Updates test count in `README.md`
 6. Updates `CHANGELOG.md`
 7. Creates git commit and tag
-8. Pushes to both `main` and `master` branches on GitHub and GitLab
+8. Pushes to `main` on GitHub and GitLab
 9. Pushes the release tag to both remotes
 
 If documentation validation fails, you'll be prompted to continue or abort the release.
@@ -173,11 +173,11 @@ cargo release major --execute
 
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
-| `ci.yml` | Push/PR to main/master | Tests, clippy, fmt, build |
+| `ci.yml` | Push/PR to `main` | Tests, clippy, fmt, build |
 | `release.yml` | Tag `v*` | Build binaries, create release |
 
 > **Note:** GitHub Actions CI/CD is connected and functional. Workflows trigger on
-> push/PR to main/master branches for continuous integration. For releases, you can
+> push/PR to the `main` branch for continuous integration. For releases, you can
 > either push a version tag to trigger automated builds or use `./scripts/release.sh`.
 
 ### GitLab CI
@@ -201,15 +201,14 @@ Releases produce these artifacts:
 
 ### Branch Synchronisation
 
-Both `main` and `master` branches are kept in sync on both GitHub and GitLab. The release script handles this automatically:
+The `main` branch is kept in sync on both GitHub and GitLab. The release script handles this automatically:
 
 ```
 origin (GitHub)     gitlab (GitLab)
-├── main    <──────>  main
-└── master  <──────>  master
+└── main    <──────>  main
 ```
 
-When releasing from either branch, the script pushes to both branches on both remotes.
+When releasing, the script pushes to `main` on both remotes.
 
 ---
 
@@ -303,7 +302,7 @@ Before any release:
 - [ ] Documentation is current
 - [ ] Security audit passes (`cargo audit`)
 - [ ] Working directory is clean
-- [ ] On main/master branch
+- [ ] On `main` branch
 
 ---
 

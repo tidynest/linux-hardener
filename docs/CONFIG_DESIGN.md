@@ -181,7 +181,7 @@ hardener scan --audit --format html > security-audit-q4.html
 **Usage:**
 ```bash
 # Generate compliance report
-hardener report --framework cis --format pdf
+hardener report --framework cis --report-format pdf
 
 # Check if policy exceptions are documented
 hardener scan --format json | jq '.findings[] | select(.has_exception)'
@@ -291,20 +291,22 @@ pub struct Finding {
 }
 
 pub struct PolicyException {
-    pub allowed_value: String,
+    pub value: String,
+    pub allowed: bool,
     pub reason: String,
     pub approved_by: Option<String>,
     pub approved_date: Option<String>,
     pub ticket: Option<String>,
     pub expires: Option<String>,
-    pub is_expired: bool,
+    // Computed: is_expired() method, NOT a stored field
+    // Computed: is_valid() — returns allowed && !is_expired()
 }
 ```
 
 ### Scan Logic
 
 ```rust
-fn scan_with_config(&self, ctx: &Context, config: &HardenerConfig) -> Result<ScanResult> {
+fn scan_with_config(&self, ctx: &Context, config: &PluginConfig) -> Result<ScanResult> {
     // 1. Always check against SECURE BASELINE (hardcoded)
     let baseline_value = get_secure_baseline(check_id);
     let current_value = get_current_value(check_id);
@@ -313,16 +315,10 @@ fn scan_with_config(&self, ctx: &Context, config: &HardenerConfig) -> Result<Sca
     if current_value != baseline_value {
         let mut finding = Finding::new(/* ... */);
 
-        // 3. Check if policy exception exists
-        if let Some(exception) = config.get_exception(check_id) {
-            if exception.allowed && current_value == exception.value {
-                finding.finding_policy_exception = Some(PolicyException {
-                    allowed_value: exception.value,
-                    reason: exception.reason,
-                    approved_by: exception.approved_by,
-                    // ...
-                    is_expired: is_exception_expired(&exception),
-                });
+        // 3. Check if policy exception exists via PluginConfig method
+        if let Some(exception) = config.has_valid_exception(check_id) {
+            if current_value == exception.value {
+                finding.finding_policy_exception = Some(exception.clone());
             }
         }
 
@@ -485,4 +481,4 @@ This design ensures:
 
 The key insight: **config is for policy management, not security filtering**.
 
-**Last Updated**: 2025-12-06
+**Last Updated**: 2026-02-22

@@ -1,7 +1,7 @@
 # Naming Conventions Reference
 
 **Author**: Eric Jingryd
-**Last Updated**: 2025-12-11
+**Last Updated**: 2026-02-22
 **Purpose**: Complete and authoritative naming standards for all identifiers in the project
 
 ---
@@ -532,9 +532,9 @@ pub fn sysctl(&self, p: &str, v: &str) { }        // Unclear action, abbreviatio
 
 // ✅ GOOD (Plugin trait methods):
 fn scan(&self, ctx: &Context) -> Result<ScanResult> { }
-fn apply(&self, ctx: &mut Context, config: &Config) -> Result<ApplyResult> { }
+fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult> { }
 fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> { }
-fn validate(&self, config: &Config) -> Result<ValidationReport> { }
+fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> { }
 
 // ✅ GOOD (Supporting methods):
 fn read_sysctl_param(param: &str) -> Result<String> { }
@@ -757,7 +757,7 @@ pub struct Container<TYPE> {    // All caps (use T or Type)
 ```rust
 // ✅ GOOD (single lifetime):
 pub struct Context<'a> {
-    config: &'a Config,
+    config: &'a PluginConfig,
 }
 
 // ✅ GOOD (multiple lifetimes):
@@ -772,7 +772,7 @@ pub struct Parser<'input> {
 
 // ❌ BAD:
 pub struct Context<'A> {        // Should be lowercase
-    config: &'A Config,
+    config: &'A PluginConfig,
 }
 ```
 
@@ -1063,9 +1063,9 @@ impl HardeningPlugin for KernelHardeningPlugin {
     fn metadata(&self) -> PluginMetadata { }
     fn dependencies(&self) -> Vec<PluginId> { }
     fn scan(&self, ctx: &Context) -> Result<ScanResult> { }
-    fn apply(&self, ctx: &mut Context, config: &Config) -> Result<ApplyResult> { }
+    fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult> { }
     fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> { }
-    fn validate(&self, config: &Config) -> Result<ValidationReport> { }
+    fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> { }
 }
 
 // Helper functions:
@@ -1301,38 +1301,41 @@ fn mask_service(service_name: &str) -> Result<()> { }
 ### Configuration Domain
 
 ```rust
-// Main Config Struct:
+// Root Config Struct:
 pub struct HardenerConfig {
     pub global: GlobalConfig,
-    pub ssh: SshConfig,
-    pub kernel: KernelConfig,
-    pub firewall: FirewallConfig,
-    pub pam: PamConfig,
-    pub audit: AuditConfig,
-    pub mac: MacConfig,
-    pub permissions: PermissionsConfig,
-    pub services: ServicesConfig,
+    pub ssh: PluginConfig,
+    pub kernel: PluginConfig,
+    pub firewall: PluginConfig,
+    pub pam: PluginConfig,
+    pub audit: PluginConfig,
+    pub mac: PluginConfig,
+    pub permissions: PluginConfig,
+    pub services: PluginConfig,
 }
 
-// Plugin-Specific Config Structs:
-// Pattern: <Domain>Config
+// Global Config (non-plugin settings):
 pub struct GlobalConfig {
     pub enabled_plugins: Vec<String>,
     pub disabled_plugins: Vec<String>,
 }
 
-pub struct SshConfig {
+// Per-Plugin Config (uniform for all plugins):
+pub struct PluginConfig {
     pub enabled: bool,
     pub directives: HashMap<String, String>,
     pub custom_directives: HashMap<String, String>,
     pub exceptions: HashMap<String, PolicyException>,
 }
 
-pub struct KernelConfig {
-    pub enabled: bool,
-    pub params: HashMap<String, String>,
-    pub custom_params: HashMap<String, String>,
-    pub exceptions: HashMap<String, PolicyException>,
+// Methods:
+impl PluginConfig {
+    pub fn has_valid_exception(&self, key: &str) -> Option<&PolicyException> { }
+}
+
+impl HardenerConfig {
+    pub fn is_plugin_enabled(&self, plugin_id: &str) -> bool { }
+    pub fn get_plugin_config(&self, plugin_id: &str) -> &PluginConfig { }
 }
 
 // Policy Exception Struct:
@@ -1344,6 +1347,12 @@ pub struct PolicyException {
     pub approved_date: Option<String>,
     pub ticket: Option<String>,
     pub expires: Option<String>,
+}
+
+// Methods:
+impl PolicyException {
+    pub fn is_expired(&self) -> bool { }
+    pub fn is_valid(&self) -> bool { }
 }
 
 // Finding Policy Exception (attached to Finding):
@@ -1371,7 +1380,6 @@ impl ConfigLoader {
 
 // Helper functions:
 fn user_config_path() -> Option<PathBuf> { }
-fn is_exception_expired(exception: &PolicyException) -> bool { }
 
 // Constants:
 const SYSTEM_CONFIG_PATH: &str = "/etc/linux-hardener/config.toml";
@@ -1591,7 +1599,7 @@ When naming any identifier in this project, verify:
 
 ---
 
-**Last Updated**: 2025-12-11
+**Last Updated**: 2026-02-22
 
 ### 2025-12-05 (GUI Styling)
 

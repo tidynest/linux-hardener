@@ -173,7 +173,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `LocalExecutor` implementation (wraps std::fs and std::process)
 - `SshExecutor` implementation (uses openssh crate for remote operations)
 - `MockExecutor` implementation for unit testing without filesystem access
-- CLI SSH flags: `--ssh`, `--ssh-key`, `--ssh-port`, `--ssh-timeout`, `--ssh-no-verify`
+- CLI SSH flags: `--ssh`, `--ssh-key`, `--port`, `--ssh-timeout`, `--ssh-no-verify`
 - `SshConnectionConfig` helper for CLI argument parsing
 - SSH remote scanning user guide (`docs/SSH_REMOTE_SCANNING.md`)
 - Context now holds executor via `ctx.executor()` accessor
@@ -219,7 +219,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### CI/CD Status
 - GitHub Actions CI/CD workflows connected and functional
-- Runs on push/PR to main/master: check, test, clippy, fmt, security audit, multi-platform builds
+- Runs on push/PR to `main`: check, test, clippy, fmt, security audit, multi-platform builds
 - GitLab CI also functional for builds and releases
 
 ## [0.1.0] - 2025-11-25

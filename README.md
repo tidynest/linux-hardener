@@ -326,7 +326,7 @@ hardener daemon start
 hardener daemon run-once
 
 # Show scheduler status and scan history
-hardener daemon status
+hardener daemon status 10
 
 # Generate systemd unit files (outputs to stdout)
 hardener systemd generate
@@ -358,7 +358,7 @@ hardener --ssh admin@192.168.1.100 --ssh-key ~/.ssh/id_ed25519 scan
 sudo hardener --ssh root@server apply --all
 
 # Generate compliance report from remote host
-hardener --ssh root@server report --framework cis --format pdf
+hardener --ssh root@server report --framework cis --report-format pdf
 ```
 
 See [docs/SSH_REMOTE_SCANNING.md](docs/SSH_REMOTE_SCANNING.md) for complete SSH documentation.
@@ -485,7 +485,7 @@ See [ROADMAP.md](ROADMAP.md) for detailed implementation plans for upcoming feat
 ### v0.3.0 (Complete)
 - [x] SystemExecutor abstraction layer for local/remote operations
 - [x] Remote scanning via SSH
-- [x] SSH CLI flags: `--ssh`, `--ssh-key`, `--ssh-port`, `--ssh-timeout`, `--ssh-no-verify`
+- [x] SSH CLI flags: `--ssh`, `--ssh-key`, `--port`, `--ssh-timeout`, `--ssh-no-verify`
 - [x] MockExecutor for unit testing
 - [x] All plugins converted to async
 - [x] SSH remote scanning documentation
