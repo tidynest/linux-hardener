@@ -222,16 +222,36 @@ async fn apply_path_permissions(ctx: &Context, directive: &PermissionDirective) 
 
     match result {
         Ok(output) if output.success() => {
-            // Return successful change
-            Some(Change {
-                change_description: format!(
-                    "Changed permissions on {} from {:04o} to {:04o}",
-                    directive.permission_path, current_mode, directive.permission_mode
-                ),
-                change_type: ChangeType::Permissions,
-                change_success: true,
-                change_error: None,
-            })
+            // Verify the change actually took effect (chmod silently no-ops on vfat/FAT32)
+            let verified = ctx
+                .executor()
+                .file_metadata(path)
+                .await
+                .map(|m| m.mode & 0o777 == directive.permission_mode)
+                .unwrap_or(false);
+
+            if verified {
+                Some(Change {
+                    change_description: format!(
+                        "Changed permissions on {} from {:04o} to {:04o}",
+                        directive.permission_path, current_mode, directive.permission_mode
+                    ),
+                    change_type: ChangeType::Permissions,
+                    change_success: true,
+                    change_error: None,
+                })
+            } else {
+                Some(Change {
+                    change_description: format!(
+                        "Permissions on {} unchanged (filesystem may not support chmod — \
+                         e.g. vfat/FAT32 uses mount options fmask/dmask instead)",
+                        directive.permission_path
+                    ),
+                    change_type: ChangeType::Permissions,
+                    change_success: false,
+                    change_error: None,
+                })
+            }
         }
         Ok(output) => Some(Change {
             change_description: format!(
@@ -300,7 +320,7 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
             .map(|d| Path::new(d.permission_path))
             .collect();
 
-        let checkpoint_id = crate::create_checkpoint_for_apply(
+        let checkpoint_id = crate::create_checkpoint_metadata_only_for_apply(
             ctx,
             "permissions-hardening-pre-apply",
             &permission_paths,

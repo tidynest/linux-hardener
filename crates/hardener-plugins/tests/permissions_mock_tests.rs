@@ -3,7 +3,9 @@
 //! These tests verify plugin behavior without touching real file permissions.
 
 use hardener_common::types::{PluginId, Severity};
-use hardener_core::{Context, FileMetadata, MockExecutor, SystemExecutor, plugin::HardeningPlugin};
+use hardener_core::{
+    CommandOutput, Context, FileMetadata, MockExecutor, SystemExecutor, plugin::HardeningPlugin,
+};
 use hardener_plugins::PermissionsHardeningPlugin;
 use std::sync::Arc;
 
@@ -332,4 +334,57 @@ async fn test_permissions_scan_with_remote_executor() {
 
     assert!(result.scan_success);
     assert!(!result.scan_findings.is_empty());
+}
+
+/// Tests that chmod returning success but not actually changing mode is detected.
+///
+/// Simulates vfat/FAT32 behaviour where chmod exits 0 but the filesystem
+/// ignores the request (permissions are governed by mount options).
+#[tokio::test]
+async fn test_permissions_apply_detects_vfat_noop() {
+    // /boot at 0o755 — chmod will "succeed" but mode stays 0o755
+    let executor = MockExecutor::new()
+        .with_file_metadata(
+            "/boot",
+            "",
+            FileMetadata {
+                exists: true,
+                is_file: false,
+                is_dir: true,
+                mode: 0o755,
+                size: 0,
+            },
+        )
+        .with_command(
+            "chmod",
+            &["0700", "/boot"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        );
+
+    let mut ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PermissionsHardeningPlugin::new();
+    let config = hardener_core::PluginConfig::default();
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    // Find the /boot change
+    let boot_change = result
+        .apply_changes
+        .iter()
+        .find(|c| c.change_description.contains("/boot"))
+        .expect("Should have a change for /boot");
+
+    assert!(
+        !boot_change.change_success,
+        "chmod on vfat should report failure"
+    );
+    assert!(
+        boot_change.change_description.contains("unchanged"),
+        "Should explain permissions were unchanged, got: {}",
+        boot_change.change_description
+    );
 }

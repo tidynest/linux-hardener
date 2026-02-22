@@ -65,6 +65,17 @@ impl TestFixture {
         file_path
     }
 
+    /// Creates a test directory with specific permissions.
+    pub fn create_test_dir_with_permissions(&self, name: &str, mode: u32) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir_path = self.fixture_temp_dir.path().join(name);
+        std::fs::create_dir_all(&dir_path).expect("Failed to create directory");
+        std::fs::set_permissions(&dir_path, Permissions::from_mode(mode))
+            .expect("Failed to set directory permissions");
+        dir_path
+    }
+
     /// Reads the content of a file as a string.
     pub fn read_file(&self, path: &Path) -> String {
         std::fs::read_to_string(path).expect("Failed to read file")

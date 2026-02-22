@@ -104,28 +104,30 @@ pub fn apply_results(format: &OutputFormat, results: &[(PluginMetadata, ApplyRes
             println!("\n{}", "═══ Apply Results ═══".bold());
 
             for (metadata, result) in results {
-                if result.apply_success {
+                let icon = if result.apply_success {
+                    "✓".green()
+                } else {
+                    "✗".red()
+                };
+
+                if let Some(err) = &result.apply_error {
+                    println!("{} {} - {}", icon, metadata.plugin_name, err);
+                } else {
                     println!(
                         "{} {} - {} change(s) applied",
-                        "✓".green(),
+                        icon,
                         metadata.plugin_name,
                         result.apply_changes.len()
                     );
-                    for change in &result.apply_changes {
-                        let status = if change.change_success {
-                            "✓".green()
-                        } else {
-                            "✗".red()
-                        };
-                        println!("  {} {}", status, change.change_description);
-                    }
-                } else {
-                    println!(
-                        "{} {} - {}",
-                        "✗".red(),
-                        metadata.plugin_name,
-                        result.apply_error.as_deref().unwrap_or("Unknown error")
-                    );
+                }
+
+                for change in &result.apply_changes {
+                    let status = if change.change_success {
+                        "✓".green()
+                    } else {
+                        "✗".red()
+                    };
+                    println!("  {} {}", status, change.change_description);
                 }
             }
         }

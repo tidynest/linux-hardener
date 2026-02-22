@@ -219,3 +219,112 @@ async fn test_delete_checkpoint() {
         "Expected error when retrieving deleted checkpoint"
     );
 }
+
+/// Tests that directory permissions are captured and restored during rollback.
+///
+/// Verifies that:
+/// - Directory metadata (permissions) is captured without reading file contents
+/// - Rollback restores directory permissions to their original state
+/// - Files inside the directory are unaffected by directory-level rollback
+#[tokio::test]
+async fn test_checkpoint_captures_and_restores_directory_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let fixture = TestFixture::new().await;
+
+    // Create directory at 0o755 with a file inside
+    let dir_path = fixture.create_test_dir_with_permissions("protected_dir", 0o755);
+    let child_file = fixture.create_test_file_with_permissions(
+        "protected_dir/child.conf",
+        "child content",
+        0o644,
+    );
+
+    // Checkpoint the directory
+    let checkpoint_id = fixture
+        .fixture_checkpoint_manager
+        .create_checkpoint("dir permissions test", &[&dir_path])
+        .await
+        .expect("Failed to create checkpoint");
+
+    // Modify directory permissions (simulating hardening)
+    std::fs::set_permissions(&dir_path, std::fs::Permissions::from_mode(0o700))
+        .expect("Failed to change directory permissions");
+    assert_eq!(
+        std::fs::metadata(&dir_path).unwrap().permissions().mode() & 0o777,
+        0o700
+    );
+
+    // Rollback
+    fixture
+        .fixture_checkpoint_manager
+        .rollback(&checkpoint_id)
+        .await
+        .expect("Failed to rollback");
+
+    // Directory permissions should be restored
+    let restored_mode = std::fs::metadata(&dir_path)
+        .unwrap()
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(restored_mode, 0o755, "Directory permissions not restored");
+
+    // Child file should be unchanged
+    assert_eq!(fixture.read_file(&child_file), "child content");
+    let child_mode = std::fs::metadata(&child_file)
+        .unwrap()
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(child_mode, 0o644, "Child file permissions should be unchanged");
+}
+
+/// Tests that metadata-only checkpoints capture permissions without file contents.
+///
+/// Verifies that:
+/// - `create_checkpoint_metadata_only` stores permission/ownership data
+/// - No file content is stored (saves space for large directories like /boot)
+/// - Rollback still restores permissions correctly
+#[tokio::test]
+async fn test_metadata_only_checkpoint() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let fixture = TestFixture::new().await;
+
+    let dir_path = fixture.create_test_dir_with_permissions("metadata_dir", 0o755);
+
+    // Create metadata-only checkpoint
+    let checkpoint_id = fixture
+        .fixture_checkpoint_manager
+        .create_checkpoint_metadata_only("metadata test", &[&dir_path])
+        .await
+        .expect("Failed to create metadata-only checkpoint");
+
+    // Verify no file content was stored
+    let (_checkpoint, file_states) = fixture
+        .fixture_checkpoint_manager
+        .get_checkpoint(&checkpoint_id)
+        .await
+        .expect("Failed to retrieve checkpoint");
+
+    assert_eq!(file_states.len(), 1);
+    assert!(file_states[0].file_content.is_none(), "Metadata-only checkpoint should not store content");
+    assert_ne!(file_states[0].file_permissions, 0, "Should have real permissions");
+
+    // Modify and rollback
+    std::fs::set_permissions(&dir_path, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+    fixture
+        .fixture_checkpoint_manager
+        .rollback(&checkpoint_id)
+        .await
+        .expect("Failed to rollback metadata-only checkpoint");
+
+    let restored_mode = std::fs::metadata(&dir_path)
+        .unwrap()
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(restored_mode, 0o755, "Metadata-only rollback should restore permissions");
+}

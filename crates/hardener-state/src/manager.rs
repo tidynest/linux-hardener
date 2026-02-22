@@ -96,6 +96,37 @@ impl CheckpointManager {
         })
     }
 
+    /// Captures metadata for a directory entry without reading contents.
+    ///
+    /// Records permissions and ownership but sets `file_content` to `None`.
+    /// The directory type bit (`0o40000`) in `file_permissions` distinguishes
+    /// this from "didn't exist" entries (which have `file_permissions: 0`).
+    fn capture_directory_entry(&self, dir_path: &Path) -> Result<FileState> {
+        use std::fs;
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+        if !dir_path.exists() {
+            return Ok(FileState {
+                file_path: dir_path.to_string_lossy().to_string(),
+                file_content: None,
+                file_permissions: 0,
+                file_owner_uid: 0,
+                file_owner_gid: 0,
+            });
+        }
+
+        let metadata =
+            fs::metadata(dir_path).map_err(hardener_common::error::HardeningError::System)?;
+
+        Ok(FileState {
+            file_path: dir_path.to_string_lossy().to_string(),
+            file_content: None,
+            file_permissions: metadata.permissions().mode(),
+            file_owner_uid: metadata.uid(),
+            file_owner_gid: metadata.gid(),
+        })
+    }
+
     /// Captures the current state of a file or directory.
     ///
     /// If the path is a directory, recursively captures all files within it.
@@ -137,7 +168,7 @@ impl CheckpointManager {
     fn capture_directory_recursive(&self, dir_path: &Path) -> Result<Vec<FileState>> {
         use std::fs;
 
-        let mut file_states = Vec::new();
+        let mut file_states = vec![self.capture_directory_entry(dir_path)?];
 
         let entries =
             fs::read_dir(dir_path).map_err(hardener_common::error::HardeningError::System)?;
@@ -248,6 +279,50 @@ impl CheckpointManager {
         )?;
 
         // Store checkpoint in database
+        self.store_checkpoint(
+            &checkpoint_id,
+            checkpoint_name,
+            checkpoint_timestamp,
+            &checkpoint_username,
+            &checkpoint_signature,
+            &file_states,
+        )
+        .await?;
+
+        Ok(checkpoint_id)
+    }
+
+    /// Creates a checkpoint capturing only metadata (permissions/ownership) for each path.
+    ///
+    /// Unlike `create_checkpoint`, this does not read file contents or recurse
+    /// into directories. Suitable for plugins that only modify mode bits.
+    pub async fn create_checkpoint_metadata_only(
+        &self,
+        checkpoint_name: &str,
+        file_paths: &[&Path],
+    ) -> Result<CheckpointId> {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let checkpoint_id = Self::generate_checkpoint_id();
+        let checkpoint_timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let checkpoint_username = std::env::var("USER").unwrap_or_else(|_| "unknown".to_string());
+
+        let mut file_states = Vec::new();
+        for file_path in file_paths {
+            file_states.push(self.capture_directory_entry(file_path)?);
+        }
+
+        let checkpoint_signature = self.generate_signature(
+            &checkpoint_id,
+            checkpoint_name,
+            checkpoint_timestamp,
+            &checkpoint_username,
+            &file_states,
+        )?;
+
         self.store_checkpoint(
             &checkpoint_id,
             checkpoint_name,
@@ -470,13 +545,18 @@ impl CheckpointManager {
                 fs::write(path, content).map_err(hardener_common::error::HardeningError::System)?;
             }
             None => {
-                // File didn't exist - delete it if it exists now
-                if path.exists() {
-                    fs::remove_file(path)
-                        .map_err(hardener_common::error::HardeningError::System)?;
+                if path.is_dir() {
+                    // Directory entry — fall through to restore permissions/ownership
+                } else if file_state.file_permissions == 0 {
+                    // Path didn't exist at checkpoint time — remove if it appeared
+                    if path.exists() {
+                        fs::remove_file(path)
+                            .map_err(hardener_common::error::HardeningError::System)?;
+                    }
+                    return Ok(());
+                } else {
+                    return Ok(());
                 }
-                // If file doesn't exist, nothing to do
-                return Ok(());
             }
         }
 
