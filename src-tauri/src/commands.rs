@@ -6,7 +6,6 @@ use hardener_core::{ApplyResult, Context, PluginMetadata, ScanResult, Validation
 use hardener_plugins::create_plugin_registry;
 use hardener_state::{CheckpointManager, ScanHistoryManager, ScanStatus, init_db};
 use serde::Serialize;
-use std::process::Command as StdCommand;
 use tokio::process::Command;
 use tracing::error;
 
@@ -31,20 +30,29 @@ fn format_timestamp(timestamp: i64) -> String {
 /// In development, uses the debug build. In production, expects
 /// the binary in standard locations or PATH.
 fn get_hardener_binary_path() -> Result<String, String> {
-    // Development: use target/debug/hardener relative to the Tauri app
-    let dev_path = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-        .map(|p| p.join("hardener"));
-
-    if let Some(path) = dev_path
-        && path.exists()
-    {
-        return Ok(path.to_string_lossy().to_string());
+   // Check sibling directory of current executable (works in dev and production)
+    if let Ok(exe) = std::env::current_exe() {
+        let sibling = exe.with_file_name("hardener");
+        if sibling.exists() {
+            return Ok(sibling.to_string_lossy().to_string());
+        }
     }
 
-    // Try PATH
-    if StdCommand::new("which")
+    // In dev builds, check workspace target directory
+    #[cfg(debug_assertions)]
+    {
+        let workspace_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .map(|root| root.join("target").join("debug").join("hardener"));
+        if let Some(path) = workspace_path
+            && path.exists()
+        {
+            return Ok(path.to_string_lossy().to_string());
+        }
+    }
+
+    // Try PATH lookup
+    if std::process::Command::new("which")
         .arg("hardener")
         .output()
         .map(|o| o.status.success())
@@ -53,7 +61,10 @@ fn get_hardener_binary_path() -> Result<String, String> {
         return Ok("hardener".to_string());
     }
 
-    Err("Could not find hardener binary. Ensure it is built or installed".to_string())
+    Err("Could not find hardener CLI binary. \
+         In development, run: cargo build -p hardener-cli"
+        .to_string()
+    )
 }
 
 /// Error types for privileged command execution.
