@@ -9,11 +9,7 @@
 //! - Integration tests (requires root, marked with #[ignore])
 
 use hardener_common::types::FindingCategory;
-use hardener_core::{
-    PluginConfig,
-    context::Context,
-    plugin::HardeningPlugin,
-};
+use hardener_core::{PluginConfig, context::Context, plugin::HardeningPlugin};
 use hardener_plugins::FirewallHardeningPlugin;
 
 #[test]

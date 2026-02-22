@@ -3,8 +3,8 @@
 //! Provides MockPlugin for testing plugin-related functionality.
 
 use crate::{
-    ApplyResult, Checkpoint, Context, HardeningPlugin, PluginConfig, PluginMetadata,
-    ScanResult, ValidationReport,
+    ApplyResult, Checkpoint, Context, HardeningPlugin, PluginConfig, PluginMetadata, ScanResult,
+    ValidationReport,
 };
 use async_trait::async_trait;
 use hardener_common::{

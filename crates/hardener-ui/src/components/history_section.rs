@@ -25,7 +25,9 @@ pub fn HistorySection() -> impl IntoView {
                 Ok(cp) => checkpoints.set(cp),
                 Err(e) => {
                     web_sys::console::error_1(&format!("Failed to load checkpoints: {}", e).into());
-                    app_state.error_message.set(Some(format!("Failed to load checkpoints: {}", e)));
+                    app_state
+                        .error_message
+                        .set(Some(format!("Failed to load checkpoints: {}", e)));
                 }
             }
             is_loading.set(false);
@@ -50,7 +52,9 @@ pub fn HistorySection() -> impl IntoView {
                 }
                 Err(e) => {
                     web_sys::console::error_1(&format!("Rollback failed: {}", e).into());
-                    app_state.error_message.set(Some(format!("Rollback failed: {}", e)));
+                    app_state
+                        .error_message
+                        .set(Some(format!("Rollback failed: {}", e)));
                 }
             }
         });

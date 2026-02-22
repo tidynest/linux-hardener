@@ -1,6 +1,6 @@
 use crate::types::{ApplyResult, ComplianceReport, Finding, ScanResult};
-use leptos::prelude::*;
 use hardener_types::ValidationReport;
+use leptos::prelude::*;
 
 /// Application state container holding all reactive signals for the UI.
 ///

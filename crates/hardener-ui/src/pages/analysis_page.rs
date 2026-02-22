@@ -36,7 +36,9 @@ pub fn AnalysisPage() -> impl IntoView {
                 }
                 Err(e) => {
                     web_sys::console::error_1(&format!("Scan failed: {}", e).into());
-                    app_state.error_message.set(Some(format!("Scan failed: {}", e)));
+                    app_state
+                        .error_message
+                        .set(Some(format!("Scan failed: {}", e)));
                 }
             }
             app_state.is_scanning.set(false);

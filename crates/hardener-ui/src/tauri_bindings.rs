@@ -4,8 +4,8 @@
 //! In browser mode (without Tauri), all commands return errors gracefully.
 
 use crate::types::{ApplyResult, CheckpointInfo, ComplianceReport, ScanResult};
-use wasm_bindgen::prelude::*;
 use hardener_types::ValidationReport;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 extern "C" {
@@ -76,7 +76,7 @@ pub async fn invoke_apply(plugin_ids: Vec<String>) -> Result<Vec<ApplyResult>, S
 ///
 /// Performs a dry-run preview of hardening changes without modifying the system.
 pub async fn invoke_apply_dry_run(
-    plugin_ids: Vec<String>
+    plugin_ids: Vec<String>,
 ) -> Result<Vec<ValidationReport>, String> {
     let args = serde_wasm_bindgen::to_value(&serde_json::json!({
         "plugin_ids": plugin_ids,

@@ -30,7 +30,7 @@ fn format_timestamp(timestamp: i64) -> String {
 /// In development, uses the debug build. In production, expects
 /// the binary in standard locations or PATH.
 fn get_hardener_binary_path() -> Result<String, String> {
-   // Check sibling directory of current executable (works in dev and production)
+    // Check sibling directory of current executable (works in dev and production)
     if let Ok(exe) = std::env::current_exe() {
         let sibling = exe.with_file_name("hardener");
         if sibling.exists() {
@@ -63,8 +63,7 @@ fn get_hardener_binary_path() -> Result<String, String> {
 
     Err("Could not find hardener CLI binary. \
          In development, run: cargo build -p hardener-cli"
-        .to_string()
-    )
+        .to_string())
 }
 
 /// Error types for privileged command execution.
@@ -272,7 +271,6 @@ pub async fn run_apply(plugin_ids: Vec<String>) -> Result<Vec<ApplyResult>, Stri
         .map_err(|e| format!("Failed to parse apply results: {}", e))?;
     let results: Vec<ApplyResult> = parsed.into_iter().map(|(_, r)| r).collect();
 
-
     Ok(results)
 }
 
@@ -281,9 +279,7 @@ pub async fn run_apply(plugin_ids: Vec<String>) -> Result<Vec<ApplyResult>, Stri
 /// Unlike run_apply, this does NOT use pkexec because dry-run doesn't
 /// modify the system. Returns estimated changes for user review.
 #[tauri::command]
-pub async fn run_apply_dry_run(
-    plugin_ids: Vec<String>,
-) -> Result<Vec<ValidationReport>, String> {
+pub async fn run_apply_dry_run(plugin_ids: Vec<String>) -> Result<Vec<ValidationReport>, String> {
     tracing::info!(
         "=== run_apply_dry_run called with plugins: {:?} ===",
         plugin_ids
@@ -312,8 +308,8 @@ pub async fn run_apply_dry_run(
         return Err(format!("Dry-run failed: {}", stderr));
     }
 
-    let stdout = String::from_utf8(output.stdout)
-        .map_err(|e| format!("Invalid UTF-8 in output: {}", e))?;
+    let stdout =
+        String::from_utf8(output.stdout).map_err(|e| format!("Invalid UTF-8 in output: {}", e))?;
 
     // Find the JSON array in output (skip any info lines)
     let json_start = stdout.find('[').ok_or("No JSON array found in output")?;

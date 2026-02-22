@@ -1,5 +1,5 @@
 use hardener_common::types::FindingCategory;
-use hardener_core::{PluginConfig, Context, plugin::HardeningPlugin};
+use hardener_core::{Context, PluginConfig, plugin::HardeningPlugin};
 use hardener_plugins::KernelHardeningPlugin;
 
 #[test]

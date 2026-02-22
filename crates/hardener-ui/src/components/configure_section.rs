@@ -113,7 +113,9 @@ pub fn ConfigureSection() -> impl IntoView {
                 }
                 Err(e) => {
                     web_sys::console::error_1(&format!("Preview failed: {}", e).into());
-                    app_state.error_message.set(Some(format!("Preview failed: {}", e)));
+                    app_state
+                        .error_message
+                        .set(Some(format!("Preview failed: {}", e)));
                 }
             }
             app_state.is_previewing.set(false);
@@ -144,7 +146,9 @@ pub fn ConfigureSection() -> impl IntoView {
                 }
                 Err(e) => {
                     web_sys::console::error_1(&format!("Apply failed: {}", e).into());
-                    app_state.error_message.set(Some(format!("Apply failed: {}", e)));
+                    app_state
+                        .error_message
+                        .set(Some(format!("Apply failed: {}", e)));
                 }
             }
             app_state.is_applying.set(false);

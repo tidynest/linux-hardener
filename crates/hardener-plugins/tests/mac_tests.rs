@@ -1,6 +1,6 @@
 //! Integration tests for MAC (Mandatory Access Control) Hardening plugin
 
-use hardener_core::{PluginConfig, Context, plugin::HardeningPlugin};
+use hardener_core::{Context, PluginConfig, plugin::HardeningPlugin};
 use hardener_plugins::MacHardeningPlugin;
 
 #[test]

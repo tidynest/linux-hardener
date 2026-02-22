@@ -90,7 +90,11 @@ pub async fn run(
             // Skip disabled plugins
             let id_str = plugin_id.as_str();
             if !hardener_config.global.disabled_plugins.is_empty()
-                && hardener_config.global.disabled_plugins.iter().any(|d| d == id_str)
+                && hardener_config
+                    .global
+                    .disabled_plugins
+                    .iter()
+                    .any(|d| d == id_str)
             {
                 if !quiet {
                     output::status(&format, &format!("Skipping (disabled): {}", id_str));

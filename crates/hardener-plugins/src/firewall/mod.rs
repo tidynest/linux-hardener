@@ -87,8 +87,7 @@ fn get_firewall_compliance_mappings() -> Vec<ComplianceMapping> {
     vec![ComplianceMapping {
         compliance_framework: ComplianceFramework::CIS,
         compliance_control_id: "3.4.1.2".to_string(),
-        compliance_control_title: "Ensure firewall service is enabled and running"
-            .to_string(),
+        compliance_control_title: "Ensure firewall service is enabled and running".to_string(),
         compliance_section: Some("Network Configuration".to_string()),
     }]
 }

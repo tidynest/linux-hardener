@@ -120,7 +120,9 @@ mod tests {
 
         assert!(output.contains("\"report_framework\":\"CIS\""));
         assert!(output.contains("\"report_framework_name\":\"CIS Benchmark\""));
-        assert!(output.contains("\"report_framework_description\":\"Center for Internet Security Benchmarks for Linux\""));
+        assert!(output.contains(
+            "\"report_framework_description\":\"Center for Internet Security Benchmarks for Linux\""
+        ));
         assert!(output.contains("\"control_id\":\"1.5.1\""));
         assert!(output.contains("\"summary_score_percentage\":100.0"));
     }
