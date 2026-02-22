@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.3] - 2025-12-11
 
+### Fixed (Live Testing Session 2026-02-23)
+- **Checkpoint Directory Permissions**: Checkpoints now capture and restore directory metadata (mode/uid/gid)
+  - Added `capture_directory_entry()` to `CheckpointManager` for metadata-only directory snapshots
+  - `capture_directory_recursive()` now includes the directory entry itself, not just child files
+  - `restore_file_state()` distinguishes directories (restore permissions) from absent paths (delete)
+- **Metadata-Only Checkpoints**: Permissions plugin uses `create_checkpoint_metadata_only()` instead of recursive file snapshots
+  - Captures 5 `FileState` entries (~200 bytes) instead of recursively snapshotting entire directory trees (e.g., 156MB `/boot` ESP)
+  - Apply operations complete instantly instead of minutes
+- **FAT32/vfat chmod Detection**: Post-chmod verification detects filesystems where `chmod` is a no-op
+  - Re-reads actual permissions after `chmod` and reports failure if unchanged
+  - Clear error message explaining mount-option-governed permissions
+- **Scan History Persistence**: `hardener scan` now persists results to the history database
+  - `history list` and `history show` commands now display CLI scan results
+  - Best-effort persistence (failures silently ignored to avoid disrupting scan output)
+- **Audit Rules Reload**: Uses `augenrules --load` instead of `systemctl restart auditd`
+  - On Arch/RHEL/Fedora, auditd ignores SIGTERM from systemd; direct restart fails
+  - `augenrules --load` is the supported mechanism, with systemctl as fallback
+  - Fixed in both apply and rollback code paths
+- **CLI Apply Output**: Partial failures now show individual change status instead of blanket "Unknown error"
+
 ### Added (GUI/CLI Feature Parity - Phase 1)
 - **Preview & Apply Flow**: Users can now preview changes before applying hardening
   - "Preview Changes" button runs dry-run and displays estimated changes
@@ -317,4 +337,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.2.0]: https://github.com/tidynest/linux-system-hardener/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tidynest/linux-system-hardener/releases/tag/v0.1.0
 
-**Last Updated**: 2026-02-22
+**Last Updated**: 2026-02-23

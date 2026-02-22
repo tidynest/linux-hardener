@@ -2,9 +2,9 @@
 
 ---
 
-## Current State (as of 2026-02-22)
+## Current State (as of 2026-02-23)
 
-All major audit items are resolved. The codebase is clean and ready for feature work.
+All major audit items are resolved. Live testing session uncovered and fixed 6 additional issues.
 
 ### Completed milestones:
 
@@ -12,7 +12,8 @@ All major audit items are resolved. The codebase is clean and ready for feature 
 - **All 7 infrastructure issues resolved** (INFRA-01 through INFRA-07)
 - **Trait refactor complete** — `Config` unit struct deleted, `HardeningPlugin` trait now accepts `&PluginConfig`
 - **Cross-distro validation** — 102-test suite passes on Arch, Debian, Fedora, openSUSE
-- **381 unit tests pass**, clippy clean, native + WASM builds clean
+- **Live testing fixes** (2026-02-23) — checkpoint directory permissions, vfat detection, scan history, auditd reload
+- **381+ unit tests pass**, clippy clean, native + WASM builds clean
 
 ### Trait refactor summary (commits `81c13ad`, `d029629`, `b87fb1c`):
 
@@ -20,6 +21,14 @@ All major audit items are resolved. The codebase is clean and ready for feature 
 - All 8 plugins updated to new trait signature
 - SSH plugin is the **pilot**: fully consumes `config.directives` for overrides and `config.has_valid_exception()` for exemptions
 - 35 test locations updated across 16 test files
+
+### Live testing fixes (2026-02-23):
+
+| Commit | Fix |
+|--------|-----|
+| `06c9ab4` | Checkpoint directory permissions, metadata-only snapshots, vfat chmod detection |
+| `44ebe2f` | CLI scan persists results to history database |
+| `5edece5` | Audit plugin uses `augenrules --load` instead of `systemctl restart auditd` |
 
 ### Infrastructure issues resolved:
 
@@ -174,4 +183,4 @@ hardener-scheduler
 
 *This document is prepared for continuity between development sessions.*
 
-**Last Updated**: 2026-02-22
+**Last Updated**: 2026-02-23

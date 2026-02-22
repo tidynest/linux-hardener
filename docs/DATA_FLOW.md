@@ -1,6 +1,6 @@
 # Linux System Hardener - Data Flow Documentation
 
-**Last Updated:** 2026-02-22
+**Last Updated:** 2026-02-23
 **Version:** 0.3.3
 
 This document describes the data flow for all major operations in the system.
@@ -103,6 +103,15 @@ This document describes the data flow for all major operations in the system.
 └────────┬─────────────────────────────────────────────────────┘
          │
          ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Persist Scan Session (best-effort)                          │
+│  ├─ Open ScanHistoryManager via scheduler config             │
+│  ├─ Create session: trigger="cli", hostname, plugin list     │
+│  ├─ Convert findings → ScanFinding records                   │
+│  └─ Complete session (failures silently ignored)             │
+└────────┬─────────────────────────────────────────────────────┘
+         │
+         ▼
 ┌──────────────────┐
 │   stdout/file    │
 └──────────────────┘
@@ -178,8 +187,8 @@ struct Finding {
 │  │   • Firewall: Apply rules via backend                     │
 │  │   • PAM: Update /etc/pam.d/* files                        │
 │  │   • Services: systemctl disable/mask                      │
-│  │   • Permissions: chmod, chown                             │
-│  │   • Audit: Write audit rules, restart auditd              │
+│  │   • Permissions: chmod, chown (with post-verify for vfat) │
+│  │   • Audit: Write audit rules, augenrules --load           │
 │  │   • MAC: setenforce, aa-enforce                           │
 │  ├─ Log each change to audit trail                           │
 │  └─ Return ApplyResult with changes list                     │
@@ -247,9 +256,10 @@ struct Finding {
          │
          ▼ For each file path
 ┌──────────────────────────────────────────────────────────────┐
-│  Capture File State                                          │
-│  ├─ Read file content (or None if not exists)                │
-│  ├─ stat() for metadata:                                     │
+│  Capture File/Directory State                                │
+│  ├─ For directories: capture_directory_entry() (metadata only)│
+│  │   └─ file_content: None, permissions/uid/gid from stat()  │
+│  ├─ For files: Read content + stat() for metadata            │
 │  │   • st_mode (permissions)                                 │
 │  │   • st_uid (owner)                                        │
 │  │   • st_gid (group)                                        │
@@ -335,8 +345,10 @@ struct Finding {
          │
          ▼ For each FileState
 ┌──────────────────────────────────────────────────────────────┐
-│  Restore File                                                │
-│  ├─ If file_content is None:                                 │
+│  Restore File/Directory                                      │
+│  ├─ If file_content is None AND path is directory:           │
+│  │   └─ Restore permissions/ownership (fall through)         │
+│  ├─ If file_content is None AND permissions == 0:            │
 │  │   └─ Delete file (it didn't exist at checkpoint time)     │
 │  ├─ Else:                                                    │
 │  │   ├─ Write file_content to file_path                      │
@@ -351,7 +363,7 @@ struct Finding {
 │  ├─ SSH: systemctl restart sshd                              │
 │  ├─ Kernel: sysctl --system                                  │
 │  ├─ Firewall: firewall-cmd --reload / systemctl restart nft  │
-│  ├─ Audit: systemctl restart auditd                          │
+│  ├─ Audit: augenrules --load (fallback: systemctl restart)   │
 │  └─ Others as needed                                         │
 └────────┬─────────────────────────────────────────────────────┘
          │
@@ -970,4 +982,4 @@ pub struct Daemon {
 | `linux-hardener.service` | Runs `hardener daemon run-once` (Type=oneshot) |
 | `linux-hardener.timer` | Triggers service on schedule |
 
-**Last Updated**: 2026-02-22
+**Last Updated**: 2026-02-23

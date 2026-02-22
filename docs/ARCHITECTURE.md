@@ -1,6 +1,6 @@
 # Linux System Hardener - Architecture Documentation
 
-**Last Updated:** 2026-02-22
+**Last Updated:** 2026-02-23
 **Version:** 0.3.3 (Distribution Validation Complete)
 
 ---
@@ -490,8 +490,9 @@ pub struct PolicyException {
 2. **Hash Chain Audit Log**: SHA-256 chain makes tampering detectable
 3. **Privilege Separation**: Scan runs unprivileged, apply requires root
 4. **Atomic Operations**: File changes use atomic write patterns
-5. **Rollback Safety**: Full state restoration from any checkpoint
+5. **Rollback Safety**: Full state restoration from any checkpoint (including directory permissions)
 6. **Transparent Config**: Configuration cannot hide security findings, only annotate them
+7. **Post-Apply Verification**: Permissions plugin verifies chmod actually took effect (detects vfat/FAT32 no-ops)
 
 ---
 
@@ -539,4 +540,4 @@ The `main` branch is kept in sync on GitHub and GitLab. The release script (`scr
 - `ROADMAP.md` - Development roadmap
 - `README.md` - User documentation
 
-**Last Updated**: 2026-02-22
+**Last Updated**: 2026-02-23

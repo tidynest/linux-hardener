@@ -1,6 +1,6 @@
 # Linux System Hardener - File Map
 
-**Last Updated:** 2026-02-22
+**Last Updated:** 2026-02-23
 
 This document lists all source files with their purpose and key exports.
 
@@ -48,7 +48,7 @@ pub struct ComplianceSummary { summary_total_controls, summary_passing, summary_
 | `src/cli.rs` | Clap argument definitions | `Cli`, `Command`, `DaemonAction`, `HistoryAction`, `SystemdAction`, `OutputFormat` |
 | `src/output.rs` | Output formatting utilities | `format_findings()`, `format_json()` |
 | `src/commands/mod.rs` | Command module exports | - |
-| `src/commands/scan.rs` | Scan command implementation | `run()`, `validate_plugin_filter()`, `is_valid_plugin_name()` |
+| `src/commands/scan.rs` | Scan command implementation | `run()`, `validate_plugin_filter()`, `is_valid_plugin_name()`, `persist_scan_session()` |
 | `src/commands/apply.rs` | Apply command implementation | `run()` |
 | `src/commands/checkpoint.rs` | Checkpoint management | `list()`, `create()`, `show()`, `delete()` |
 | `src/commands/plugins.rs` | List plugins command | `run()` |
@@ -112,7 +112,7 @@ pub trait HardeningPlugin: Send + Sync {
 
 | File | Purpose | Plugin Struct |
 |------|---------|---------------|
-| `src/lib.rs` | Module exports, helpers | `create_checkpoint_for_apply()`, `rollback_files_from_checkpoint()` |
+| `src/lib.rs` | Module exports, helpers | `create_checkpoint_for_apply()`, `create_checkpoint_metadata_only_for_apply()`, `rollback_files_from_checkpoint()` |
 | `src/macros.rs` | Plugin definition macro | `define_plugin!` |
 
 ### Individual Plugins
@@ -159,7 +159,7 @@ const KERNEL_PARAMS: &[(&str, &str, &str)] = &[
 |------|---------|-------------|
 | `src/lib.rs` | Module exports | Re-exports |
 | `src/checkpoint.rs` | Checkpoint types | `Checkpoint`, `CheckpointId`, `FileState` |
-| `src/manager.rs` | Checkpoint operations | `CheckpointManager` |
+| `src/manager.rs` | Checkpoint operations | `CheckpointManager`, `create_checkpoint_metadata_only()`, `capture_directory_entry()` |
 | `src/audit.rs` | Audit logging | `AuditEntry`, `AuditLogger`, `ActionType` |
 | `src/hash_chain.rs` | Tamper detection | `HashChain` |
 | `src/signing.rs` | Cryptographic signing | `CheckpointSigner` |
@@ -619,4 +619,4 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | `hardener-common/src/types.rs` | Added `FindingPolicyException` struct |
 | `hardener-cli/src/cli.rs` | Added `--config`, `--audit`, `--compliance`, `--exit-code` flags, `ScanMode` enum |
 
-**Last Updated**: 2026-02-22
+**Last Updated**: 2026-02-23
