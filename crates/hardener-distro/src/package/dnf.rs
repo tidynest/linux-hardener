@@ -79,6 +79,8 @@ impl PackageManager for DnfPackageManager {
     }
 
     fn is_installed(&self, package: &str) -> Result<bool> {
+        super::validate_package_name(package, super::PackageNameRules::Rpm)?;
+
         let result = Command::new("rpm")
             .args(["-q", package])
             .output()

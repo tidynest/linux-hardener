@@ -90,7 +90,7 @@ impl Distribution {
     ) -> hardener_common::error::Result<String> {
         data.get(field_name).cloned().ok_or_else(|| {
             hardener_common::error::HardeningError::Config(format!(
-                "Missing config field '{}'",
+                "Missing os-release field '{}'",
                 field_name
             ))
         })

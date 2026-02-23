@@ -104,36 +104,36 @@ Daemon stability — 4 parse-twice unwraps.
 
 User-facing CLI — 5 serde unwraps.
 
-- [ ] `commands/report_wizard.rs` (589 lines)
-- [ ] `cli.rs` (544 lines)
-- [ ] `output.rs` (344 lines)
-- [ ] `commands/history.rs` (254 lines)
-- [ ] `commands/systemd.rs` (243 lines)
-- [ ] `commands/scan.rs` (229 lines)
-- [ ] `commands/daemon.rs` (221 lines)
-- [ ] `commands/report.rs` (205 lines)
-- [ ] `commands/apply.rs` (163 lines)
-- [ ] `main.rs` (160 lines)
-- [ ] `commands/checkpoint.rs` (111 lines)
-- [ ] `ssh_config.rs` (106 lines)
-- [ ] `commands/plugins.rs` (13 lines)
-- [ ] `commands/mod.rs` (9 lines)
-- [ ] `CRATE.md` assembled
-- [ ] Verification passed
+- [x] `commands/report_wizard.rs` (589 lines)
+- [x] `cli.rs` (544 lines)
+- [x] `output.rs` (344 lines)
+- [x] `commands/history.rs` (254 lines)
+- [x] `commands/systemd.rs` (243 lines)
+- [x] `commands/scan.rs` (229 lines)
+- [x] `commands/daemon.rs` (221 lines)
+- [x] `commands/report.rs` (205 lines)
+- [x] `commands/apply.rs` (163 lines)
+- [x] `main.rs` (160 lines)
+- [x] `commands/checkpoint.rs` (111 lines)
+- [x] `ssh_config.rs` (106 lines)
+- [x] `commands/plugins.rs` (13 lines)
+- [x] `commands/mod.rs` (9 lines)
+- [x] `CRATE.md` assembled
+- [x] Verification passed (400 tests, 0 failures, clippy clean)
 
 ## Session 9: hardener-distro (7 files, 1,071 lines)
 
 Package manager abstraction for multiple distros.
 
-- [ ] `package/mod.rs` (207 lines)
-- [ ] `lib.rs` (185 lines)
-- [ ] `package/apt.rs` (184 lines)
-- [ ] `package/dnf.rs` (144 lines)
-- [ ] `package/zypper.rs` (132 lines)
-- [ ] `package/pacman.rs` (112 lines)
-- [ ] `adapter.rs` (107 lines)
-- [ ] `CRATE.md` assembled
-- [ ] Verification passed
+- [x] `package/mod.rs` (207 lines)
+- [x] `lib.rs` (185 lines)
+- [x] `package/apt.rs` (184 lines)
+- [x] `package/dnf.rs` (144 lines)
+- [x] `package/zypper.rs` (132 lines)
+- [x] `package/pacman.rs` (112 lines)
+- [x] `adapter.rs` (107 lines)
+- [x] `CRATE.md` assembled
+- [x] Verification passed (400 tests, 0 failures, clippy clean)
 
 ## Session 10: hardener-compliance (17 files, 3,120 lines)
 

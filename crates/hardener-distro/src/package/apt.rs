@@ -78,6 +78,8 @@ impl PackageManager for AptPackageManager {
             return Ok(());
         }
 
+        super::validate_package_names(packages, super::PackageNameRules::Debian)?;
+
         let mut args = vec!["remove", "-y"];
         args.extend(packages);
 
@@ -112,6 +114,8 @@ impl PackageManager for AptPackageManager {
     }
 
     fn is_installed(&self, package: &str) -> Result<bool> {
+        super::validate_package_name(package, super::PackageNameRules::Debian)?;
+
         let result = Command::new("dpkg-query")
             .args(["-W", "-f=${Status}", package])
             .output()

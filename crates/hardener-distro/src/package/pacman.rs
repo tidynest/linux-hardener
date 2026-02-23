@@ -92,6 +92,8 @@ impl PackageManager for PacmanPackageManager {
     }
 
     fn is_installed(&self, package: &str) -> Result<bool> {
+        super::validate_package_name(package, super::PackageNameRules::Arch)?;
+
         let result = Command::new("pacman")
             .args(["-Q", package])
             .output()
