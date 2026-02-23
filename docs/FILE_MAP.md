@@ -547,7 +547,8 @@ pub async fn generate_compliance_report(frameworks: Vec<String>) -> Result<Vec<C
 | `scripts/update_all_docs.py` | Batch documentation updater |
 | `scripts/release.sh` | Automated version bumping and release |
 | `scripts/tauri-dev.sh` | Tauri development launcher |
-| `scripts/full-test-suite.sh` | Complete 102-test validation suite |
+| `scripts/full-test-suite.sh` | Complete 123-test validation suite (26 sections) |
+| `scripts/run-cross-distro-tests.sh` | Non-interactive cross-distro test orchestrator |
 | `scripts/root-test-suite.sh` | 36 root-level privilege tests |
 | `scripts/manual-verification-test.sh` | Interactive verification tests |
 | `scripts/create-test-container.sh` | Arch Linux systemd-nspawn container |

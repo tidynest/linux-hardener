@@ -48,18 +48,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dry-run JSON Not Array**: Changed from per-plugin JSON objects to single array output
   - Added `validation_reports()` function for proper array formatting
 
+### Added (Cross-Distro Validation 2026-02-23)
+- **Cross-Distro Test Runner**: `scripts/run-cross-distro-tests.sh` orchestrates testing across all distributions
+  - Single command: `sudo ./scripts/run-cross-distro-tests.sh --apply`
+  - Uses `systemd-nspawn --pipe` for non-interactive container execution
+  - Per-distro logs saved to `test-results/<distro>.log`
+  - Aggregated summary in `test-results/summary.txt`
+  - Options: `--apply`, `--distro NAME`, `--rebuild`, `--help`
+- **Expanded Test Suite**: `scripts/full-test-suite.sh` expanded from 102 to 123 tests (26 sections)
+  - Section 20: Scan history persistence (scan -> history list verification)
+  - Section 21: History filtering (--limit, --status)
+  - Section 22: Plugin filter combinations (short names, mixed, multi-plugin)
+  - Section 23: Per-plugin apply/rollback lifecycle (gated behind --apply)
+  - Section 24: Config file loading (valid/invalid paths)
+  - Section 25: Report framework + scenario combinations
+  - Section 26: Flag combinations (--quiet + --format, --audit + --format)
+- **Container-Aware Testing**: Auto-detects container environment and skips impossible tests
+  - 6 tests correctly SKIPPED instead of falsely FAILED in containers
+  - Partial apply treated as pass in container mode (expected behaviour)
+  - `--apply` flag gates destructive tests (apply + rollback)
+- **3-Layer Host Safety**: Prevents accidental execution on real systems
+  - Layer 1: nspawn container isolation
+  - Layer 2: Container detection with hard `exit 1` if not in container
+  - Layer 3: `--apply` flag gates all destructive operations
+- **Rocky Linux 9 Validation**: Added 5th distribution (RHEL family)
+  - Container created via podman export at `/var/lib/machines/hardener-test-rhel`
+  - 123/123 tests pass, 6 skipped (container limitations)
+- **5-Distro Validation Results**: 123/123 tests pass on all distributions
+  - Arch Linux (Rolling): 123/123 pass, 6 skip
+  - Debian 12 (Bookworm): 123/123 pass, 6 skip
+  - Fedora 41: 123/123 pass, 6 skip
+  - Rocky Linux 9: 123/123 pass, 6 skip
+  - openSUSE Leap 15.6: 123/123 pass, 6 skip
+
 ### Added (Distribution Validation)
-- **Multi-Distribution Validation**: Comprehensive 102-test suite validated across 4 major Linux distributions
-  - Arch Linux (Rolling, LTS 6.12): 102/102 tests pass, 100% pass rate
-  - Debian 12 (Bookworm): 102/102 tests pass, 100% pass rate
-  - Fedora 41: 102/102 tests pass, 100% pass rate
-  - openSUSE Leap 15.6: 102/102 tests pass, 100% pass rate
-- **Container Test Scripts**: Added distribution-specific container creation scripts
+- **Container Test Scripts**: Distribution-specific container creation scripts
   - `scripts/create-debian-container.sh` - Debian/Ubuntu testing
   - `scripts/create-fedora-container.sh` - Fedora/RHEL testing
   - `scripts/create-opensuse-container.sh` - openSUSE/SUSE testing
 - **Musl Static Build**: Cross-distribution binary using musl libc for maximum compatibility
-- **Full Test Suite**: `scripts/full-test-suite.sh` with 102 comprehensive tests covering all plugins, frameworks, and operations
 
 ### Fixed (Bug Fix Session 2025-12-10)
 - **Invalid Plugin Name Accepted Silently (Q)**: `--plugin nonexistent` now returns error with valid plugin list

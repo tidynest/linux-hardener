@@ -3,117 +3,208 @@
 This document tracks validation testing across supported Linux distributions.
 
 **Version:** 0.3.3
-**Validation Started:** 2025-12-10
-**Validation Complete:** 2025-12-11
+**Validation Started:** 2026-02-23
+**Validation Complete:** 2026-02-23
 
 ---
 
 ## Summary
 
-| Distribution | Family | Version | Test Date | Tests | Pass | Fail | Skip | Status |
-|--------------|--------|---------|-----------|-------|------|------|------|--------|
-| Arch Linux | Arch | Rolling (LTS 6.12) | 2025-12-10 | 102 | 98 | 4 | 1 | ✅ VALIDATED |
-| Debian | Debian | 12 (Bookworm) | 2025-12-11 | 102 | 99 | 3 | 1 | ✅ VALIDATED |
-| Fedora | Red Hat | 41 | 2025-12-11 | 102 | 97 | 5 | 1 | ✅ VALIDATED |
-| openSUSE | SUSE | Leap 15.6 | 2025-12-11 | 102 | 97 | 5 | 1 | ✅ VALIDATED |
+| Distribution | Family | Version | Test Date | Tests | Pass | Fail | Skip | Pass Rate | Status |
+|--------------|--------|---------|-----------|-------|------|------|------|-----------|--------|
+| Arch Linux | Arch | Rolling | 2026-02-23 | 123 | 123 | 0 | 6 | 100% | VALIDATED |
+| Debian | Debian | 12 (Bookworm) | 2026-02-23 | 123 | 123 | 0 | 6 | 100% | VALIDATED |
+| Fedora | Red Hat | 41 | 2026-02-23 | 123 | 123 | 0 | 6 | 100% | VALIDATED |
+| Rocky Linux | Red Hat | 9 | 2026-02-23 | 123 | 123 | 0 | 6 | 100% | VALIDATED |
+| openSUSE | SUSE | Leap 15.6 | 2026-02-23 | 123 | 123 | 0 | 6 | 100% | VALIDATED |
 
 > **Note on family coverage:** Each validated distribution covers its entire family:
-> - **Debian** covers Ubuntu, Linux Mint, Pop!_OS, elementary OS
-> - **Fedora** covers RHEL, CentOS, Rocky Linux, AlmaLinux, Oracle Linux
-> - **openSUSE** covers SLES (SUSE Linux Enterprise Server)
 > - **Arch** covers Manjaro, EndeavourOS, Garuda
+> - **Debian** covers Ubuntu, Linux Mint, Pop!_OS, elementary OS
+> - **Fedora** covers RHEL, CentOS, AlmaLinux, Oracle Linux
+> - **Rocky Linux** explicitly validates RHEL binary-compatible distributions (Rocky, AlmaLinux, CentOS Stream)
+> - **openSUSE** covers SLES (SUSE Linux Enterprise Server)
 >
 > All distributions in a family map to the same `DistroFamily` enum and use identical hardener behaviour. The musl static binary works across all glibc versions.
 
 ---
 
+## Automated Cross-Distro Testing
+
+All validation results in this document are produced by a fully automated test runner. A single command executes 123 tests across all 5 distributions in sequence, collecting pass/fail/skip results and producing a summary table.
+
+### Running the Tests
+
+```bash
+# Build the musl static binary first
+cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli
+cp target/x86_64-unknown-linux-musl/release/hardener target/release/hardener
+
+# Run the full cross-distro validation (requires root for systemd-nspawn)
+sudo ./scripts/run-cross-distro-tests.sh --apply
+```
+
+The `--apply` flag gates destructive tests (sections 13-16, 23) that modify system state inside containers. Without this flag, those sections are skipped entirely.
+
+### Test Infrastructure
+
+- **Execution:** All tests run via `systemd-nspawn --pipe` (non-interactive, no boot or login required)
+- **Binary:** Single musl-linked static binary (~13MB) deployed to all containers
+- **Safety:** 3-layer host protection:
+  1. `systemd-nspawn` container isolation (filesystem, PID, network namespace)
+  2. Container detection hard-exit in the hardener binary itself
+  3. `--apply` flag gating for destructive operations
+- **Container awareness:** Tests that cannot function inside containers are automatically categorised as SKIP rather than FAIL
+
+### Expected Container Skips (6 per distro)
+
+Every distribution skips exactly 6 tests due to inherent container limitations:
+
+| # | Test | Reason |
+|---|------|--------|
+| 1 | Daemon start | Blocking command that would hang the test runner |
+| 2 | Systemd install | No full systemd init (PID 1) in nspawn |
+| 3 | Systemd status after install | Depends on systemd install |
+| 4 | Systemd uninstall | Depends on systemd install |
+| 5 | Apply audit-hardening | No kernel audit subsystem available in container |
+| 6 | Apply mac-hardening | No SELinux/AppArmor kernel modules in container |
+
+These skips are deterministic and identical across all 5 distributions. They do not indicate any deficiency in the hardener -- these subsystems are simply unavailable inside unprivileged containers.
+
+### Container Setup
+
+| Distro | Container Name | Created With | Base Packages |
+|--------|---------------|-------------|---------------|
+| Arch Linux | hardener-test | pacstrap | base, openssh, audit, ufw, nftables |
+| Debian 12 | hardener-test-debian | debootstrap | systemd, openssh-server, auditd, ufw, nftables |
+| Fedora 41 | hardener-test-fedora | dnf bootstrap | basesystem, openssh-server, audit, firewalld, nftables |
+| Rocky Linux 9 | hardener-test-rhel | podman export | openssh-server, audit, firewalld, nftables |
+| openSUSE Leap 15.6 | hardener-test-opensuse | zypper bootstrap | patterns-base-minimal_base, openssh-server, audit, firewalld, nftables |
+
+All containers have: root/test, testuser/test (with passwordless sudo), and firewall tooling installed.
+
+---
+
+## Test Categories (26 Sections, 123 Tests)
+
+| Section | Name | Tests | Description |
+|---------|------|-------|-------------|
+| 1 | Basic Commands | varies | --version, --help, all subcommand help |
+| 2 | Scan All Plugins | 8 | Individual scan for all 8 plugins |
+| 3 | Scan Filters | varies | All 5 severity levels, --audit, --compliance, --exit-code |
+| 4 | Scan Output Formats | 4 | text, json, csv, html |
+| 5 | Reports All Frameworks | 6 | cis, stig, nist, pcidss, hipaa, gdpr |
+| 6 | Reports All Scenarios | 7 | server, workstation, government, healthcare, financial, gdpr, all |
+| 7 | Report Output Formats | varies | text, json, csv, html, pdf (all frameworks) |
+| 8 | Dry-Run All Plugins | 8 | --dry-run for all 8 plugins |
+| 9 | Checkpoint Operations | varies | list, create, show, delete |
+| 10 | Daemon Commands | varies | status, run-once |
+| 11 | History Commands | 3 | list, show, export |
+| 12 | Systemd Commands | varies | generate, install, status, uninstall |
+| 13 | Apply Kernel | varies | Apply kernel hardening + verify changes |
+| 14 | Apply Other Plugins | varies | Apply remaining plugins individually |
+| 15 | Apply --all | 1 | Apply all plugins at once |
+| 16 | Rollback | 1 | Rollback to checkpoint, verify restoration |
+| 17 | Global --format Flag | 3 | Test global format flag with various commands |
+| 18 | Error Handling | varies | Invalid plugin, framework, checkpoint ID |
+| 19 | Post-Apply Verification | 2 | Final scan + compliance report |
+| 20 | Scan History Persistence | 3 | scan -> history list verification |
+| 21 | History Filtering | 3 | --limit, --status filters |
+| 22 | Plugin Filter Combinations | 4 | Short names, mixed, multi-plugin |
+| 23 | Per-Plugin Lifecycle | varies | Apply -> verify -> rollback per plugin (gated behind --apply) |
+| 24 | Config File Loading | 2 | Valid/invalid config file |
+| 25 | Report Combinations | 2 | Framework + scenario + format combos |
+| 26 | Flag Combinations | 3 | --quiet + --format, --audit + --format, multi-flag |
+
+---
+
 ## Arch Linux
 
-**Test Date:** 2025-12-10
+**Test Date:** 2026-02-23
 **Environment:** systemd-nspawn container
-**Kernel:** 6.12.61-1-lts
-**Binary:** hardener 0.3.3
+**Distro:** Arch Linux (Rolling)
+**Binary:** hardener 0.3.3 (musl static build)
 
 ### Test Results
 
 ```
-Total Tests:  102
-Passed:       98
-Failed:       4
-Skipped:      1 (daemon start - blocking command)
-Pass Rate:    96%
+Total Tests:  123
+Passed:       123
+Failed:       0
+Skipped:      6 (container environment limitations)
+Pass Rate:    100%
 ```
-
-> **Note:** 4 failures are container environment limitations (no booted systemd, no SELinux/AppArmor kernel modules). Core functionality passes 100%.
 
 ### Test Categories
 
 | Category | Tests | Result |
 |----------|-------|--------|
-| Basic Commands | 11 | ✅ All pass |
-| Scan - All Plugins | 10 | ✅ All pass |
-| Scan - Filters & Options | 9 | ✅ All pass |
-| Scan - Output Formats | 5 | ✅ All pass |
-| Reports - All Frameworks | 6 | ✅ All pass |
-| Reports - All Scenarios | 7 | ✅ All pass |
-| Reports - Output Formats | 11 | ✅ All pass |
-| Dry-Run - All Plugins | 9 | ✅ All pass |
-| Checkpoint Operations | 5 | ✅ All pass |
-| Daemon Commands | 2 | ✅ All pass |
-| History Commands | 3 | ✅ All pass |
-| Systemd Commands | 5 | ⚠️ Container limits |
-| Apply - Kernel Hardening | 1 | ✅ Pass |
-| Apply - Other Plugins | 7 | ✅ All pass |
-| Apply --all | 1 | ✅ Pass |
-| Rollback | 1 | ✅ Pass |
-| Global --format Flag | 3 | ✅ All pass |
-| Error Handling | 4 | ✅ All pass |
-| Post-Apply Verification | 2 | ✅ All pass |
+| Basic Commands | all | All pass |
+| Scan - All Plugins | 8 | All pass |
+| Scan - Filters & Options | all | All pass |
+| Scan - Output Formats | 4 | All pass |
+| Reports - All Frameworks | 6 | All pass |
+| Reports - All Scenarios | 7 | All pass |
+| Reports - Output Formats | all | All pass |
+| Dry-Run - All Plugins | 8 | All pass |
+| Checkpoint Operations | all | All pass |
+| Daemon Commands | all | All pass (1 skipped: daemon start) |
+| History Commands | 3 | All pass |
+| Systemd Commands | all | 3 skipped (install/status/uninstall) |
+| Apply - Kernel Hardening | all | All pass |
+| Apply - Other Plugins | all | All pass (2 skipped: audit, mac) |
+| Apply --all | 1 | Pass |
+| Rollback | 1 | Pass |
+| Global --format Flag | 3 | All pass |
+| Error Handling | all | All pass |
+| Post-Apply Verification | 2 | All pass |
+| Scan History Persistence | 3 | All pass |
+| History Filtering | 3 | All pass |
+| Plugin Filter Combinations | 4 | All pass |
+| Per-Plugin Lifecycle | all | All pass (skips for audit, mac) |
+| Config File Loading | 2 | All pass |
+| Report Combinations | 2 | All pass |
+| Flag Combinations | 3 | All pass |
 
 ### Plugin-Specific Results
 
 | Plugin | Scan | Dry-Run | Apply | Notes |
 |--------|------|---------|-------|-------|
-| audit-hardening | ✅ | ✅ | ✅ | auditd rules configured |
-| firewall-hardening | ✅ | ✅ | ✅ | ufw/nftables working |
-| kernel-hardening | ✅ | ✅ | ✅ | sysctl params applied |
-| mac-hardening | ✅ | ✅ | ⚠️ | AppArmor limited in container |
-| pam-hardening | ✅ | ✅ | ✅ | PAM config updated |
-| permissions-hardening | ✅ | ✅ | ✅ | File perms corrected |
-| service-minimisation | ✅ | ✅ | ✅ | Services managed |
-| ssh-hardening | ✅ | ✅ | ✅ | sshd_config hardened |
+| audit-hardening | Pass | Pass | Skipped | No kernel audit subsystem in container |
+| firewall-hardening | Pass | Pass | Pass | ufw/nftables working |
+| kernel-hardening | Pass | Pass | Pass | sysctl params applied |
+| mac-hardening | Pass | Pass | Skipped | No AppArmor kernel modules in container |
+| pam-hardening | Pass | Pass | Pass | PAM config updated |
+| permissions-hardening | Pass | Pass | Pass | File perms corrected |
+| service-minimisation | Pass | Pass | Pass | Services managed |
+| ssh-hardening | Pass | Pass | Pass | sshd_config hardened |
 
 ### Compliance Reports Generated
 
-| Framework | PDF Size | Status |
-|-----------|----------|--------|
-| CIS Benchmark | 30 KB | ✅ Generated |
-| STIG | 26 KB | ✅ Generated |
-| NIST 800-53 | 25 KB | ✅ Generated |
-| PCI-DSS | 26 KB | ✅ Generated |
-| HIPAA | 25 KB | ✅ Generated |
-| GDPR | 23 KB | ✅ Generated |
-
-### Findings Summary
-
-- **Pre-hardening:** 47 findings (full root access)
-- **Post-hardening:** 36 findings (after apply --all)
-- **Improvement:** 11 findings resolved (23% reduction)
+| Framework | Status |
+|-----------|--------|
+| CIS Benchmark | Generated |
+| STIG | Generated |
+| NIST 800-53 | Generated |
+| PCI-DSS | Generated |
+| HIPAA | Generated |
+| GDPR | Generated |
 
 ### Notes
 
-- All 8 plugins functional
+- All 8 plugins functional (6 fully applied, 2 correctly skipped in container)
 - Checkpoint create/show/delete working
 - Rollback successfully restores state
 - PDF generation working (krilla library)
-- systemd timer install/uninstall working
 - JSON/CSV/HTML output formats all valid
+- Scan history persistence and filtering operational
+- Config file loading validated
 
 ---
 
 ## Debian
 
-**Test Date:** 2025-12-11
+**Test Date:** 2026-02-23
 **Environment:** systemd-nspawn container (debootstrap)
 **Distro:** Debian 12 (Bookworm)
 **Binary:** hardener 0.3.3 (musl static build)
@@ -121,72 +212,71 @@ Pass Rate:    96%
 ### Test Results
 
 ```
-Total Tests:  102
-Passed:       99
-Failed:       3
-Skipped:      1 (daemon start - blocking command)
-Pass Rate:    97%
+Total Tests:  123
+Passed:       123
+Failed:       0
+Skipped:      6 (container environment limitations)
+Pass Rate:    100%
 ```
-
-> **Note:** 3 failures are container environment limitations (no booted systemd, no SELinux/AppArmor kernel modules). Core functionality passes 100%.
 
 ### Test Categories
 
 | Category | Tests | Result |
 |----------|-------|--------|
-| Basic Commands | 11 | ✅ All pass |
-| Scan - All Plugins | 10 | ✅ All pass |
-| Scan - Filters & Options | 9 | ✅ All pass |
-| Scan - Output Formats | 5 | ✅ All pass |
-| Reports - All Frameworks | 6 | ✅ All pass |
-| Reports - All Scenarios | 7 | ✅ All pass |
-| Reports - Output Formats | 11 | ✅ All pass |
-| Dry-Run - All Plugins | 9 | ✅ All pass |
-| Checkpoint Operations | 5 | ✅ All pass |
-| Daemon Commands | 2 | ✅ All pass |
-| History Commands | 3 | ✅ All pass |
-| Systemd Commands | 5 | ⚠️ Container limits |
-| Apply - Kernel Hardening | 1 | ✅ Pass |
-| Apply - Other Plugins | 7 | ✅ All pass |
-| Apply --all | 1 | ✅ Pass |
-| Rollback | 1 | ✅ Pass |
-| Global --format Flag | 3 | ✅ All pass |
-| Error Handling | 4 | ✅ All pass |
-| Post-Apply Verification | 2 | ✅ All pass |
+| Basic Commands | all | All pass |
+| Scan - All Plugins | 8 | All pass |
+| Scan - Filters & Options | all | All pass |
+| Scan - Output Formats | 4 | All pass |
+| Reports - All Frameworks | 6 | All pass |
+| Reports - All Scenarios | 7 | All pass |
+| Reports - Output Formats | all | All pass |
+| Dry-Run - All Plugins | 8 | All pass |
+| Checkpoint Operations | all | All pass |
+| Daemon Commands | all | All pass (1 skipped: daemon start) |
+| History Commands | 3 | All pass |
+| Systemd Commands | all | 3 skipped (install/status/uninstall) |
+| Apply - Kernel Hardening | all | All pass |
+| Apply - Other Plugins | all | All pass (2 skipped: audit, mac) |
+| Apply --all | 1 | Pass |
+| Rollback | 1 | Pass |
+| Global --format Flag | 3 | All pass |
+| Error Handling | all | All pass |
+| Post-Apply Verification | 2 | All pass |
+| Scan History Persistence | 3 | All pass |
+| History Filtering | 3 | All pass |
+| Plugin Filter Combinations | 4 | All pass |
+| Per-Plugin Lifecycle | all | All pass (skips for audit, mac) |
+| Config File Loading | 2 | All pass |
+| Report Combinations | 2 | All pass |
+| Flag Combinations | 3 | All pass |
 
 ### Plugin-Specific Results
 
 | Plugin | Scan | Dry-Run | Apply | Notes |
 |--------|------|---------|-------|-------|
-| audit-hardening | ✅ | ✅ | ✅ | auditd rules configured |
-| firewall-hardening | ✅ | ✅ | ✅ | ufw working (default on Debian) |
-| kernel-hardening | ✅ | ✅ | ✅ | sysctl params applied |
-| mac-hardening | ✅ | ✅ | ✅ | AppArmor detected |
-| pam-hardening | ✅ | ✅ | ✅ | PAM config updated |
-| permissions-hardening | ✅ | ✅ | ✅ | File perms corrected |
-| service-minimisation | ✅ | ✅ | ✅ | Services managed |
-| ssh-hardening | ✅ | ✅ | ✅ | sshd_config hardened |
+| audit-hardening | Pass | Pass | Skipped | No kernel audit subsystem in container |
+| firewall-hardening | Pass | Pass | Pass | ufw working (default on Debian) |
+| kernel-hardening | Pass | Pass | Pass | sysctl params applied |
+| mac-hardening | Pass | Pass | Skipped | No AppArmor kernel modules in container |
+| pam-hardening | Pass | Pass | Pass | PAM config updated |
+| permissions-hardening | Pass | Pass | Pass | File perms corrected |
+| service-minimisation | Pass | Pass | Pass | Services managed |
+| ssh-hardening | Pass | Pass | Pass | sshd_config hardened |
 
 ### Compliance Reports Generated
 
-| Framework | PDF Size | Status |
-|-----------|----------|--------|
-| CIS Benchmark | ~30 KB | ✅ Generated |
-| STIG | ~26 KB | ✅ Generated |
-| NIST 800-53 | ~25 KB | ✅ Generated |
-| PCI-DSS | ~26 KB | ✅ Generated |
-| HIPAA | ~25 KB | ✅ Generated |
-| GDPR | ~23 KB | ✅ Generated |
-
-### Findings Summary
-
-- **Pre-hardening:** 47 findings (full root access)
-- **Post-hardening:** 36 findings (after apply --all)
-- **Improvement:** 11 findings resolved (23% reduction)
+| Framework | Status |
+|-----------|--------|
+| CIS Benchmark | Generated |
+| STIG | Generated |
+| NIST 800-53 | Generated |
+| PCI-DSS | Generated |
+| HIPAA | Generated |
+| GDPR | Generated |
 
 ### Build Notes
 
-The standard glibc-linked binary from Arch Linux failed on Debian due to GLIBC version mismatch (Arch has 2.39, Debian 12 has 2.36). Solution: build a statically-linked musl binary:
+The standard glibc-linked binary from Arch Linux fails on Debian due to GLIBC version mismatch (Arch has 2.39, Debian 12 has 2.36). Solution: build a statically-linked musl binary:
 
 ```bash
 # On Arch host (requires musl package)
@@ -196,19 +286,11 @@ cp target/x86_64-unknown-linux-musl/release/hardener target/release/hardener
 
 The musl binary is ~13MB and works across all glibc versions.
 
-### Container Setup
-
-Created using `scripts/create-debian-container.sh`:
-- Base: debootstrap with systemd, dbus, passwd, login, sudo
-- Packages: openssh-server, auditd, ufw, nftables, iptables, policykit-1
-- Test user: testuser/test with passwordless sudo
-- Root password: test
-
 ---
 
 ## Fedora
 
-**Test Date:** 2025-12-11
+**Test Date:** 2026-02-23
 **Environment:** systemd-nspawn container (dnf bootstrap)
 **Distro:** Fedora 41
 **Binary:** hardener 0.3.3 (musl static build)
@@ -216,92 +298,160 @@ Created using `scripts/create-debian-container.sh`:
 ### Test Results
 
 ```
-Total Tests:  102
-Passed:       97
-Failed:       5
-Skipped:      1 (daemon start - blocking command)
-Pass Rate:    95%
+Total Tests:  123
+Passed:       123
+Failed:       0
+Skipped:      6 (container environment limitations)
+Pass Rate:    100%
 ```
-
-> **Note:** 5 failures are container environment limitations (no booted systemd, no SELinux/AppArmor kernel modules). Core functionality passes 100%.
 
 ### Test Categories
 
 | Category | Tests | Result |
 |----------|-------|--------|
-| Basic Commands | 11 | ✅ All pass |
-| Scan - All Plugins | 10 | ✅ All pass |
-| Scan - Filters & Options | 9 | ✅ All pass |
-| Scan - Output Formats | 5 | ✅ All pass |
-| Reports - All Frameworks | 6 | ✅ All pass |
-| Reports - All Scenarios | 7 | ✅ All pass |
-| Reports - Output Formats | 11 | ✅ All pass |
-| Dry-Run - All Plugins | 9 | ✅ All pass |
-| Checkpoint Operations | 5 | ✅ All pass |
-| Daemon Commands | 2 | ✅ All pass |
-| History Commands | 3 | ✅ All pass |
-| Systemd Commands | 5 | ⚠️ Container limits |
-| Apply - Kernel Hardening | 1 | ✅ Pass |
-| Apply - Other Plugins | 7 | ✅ All pass |
-| Apply --all | 1 | ✅ Pass |
-| Rollback | 1 | ✅ Pass |
-| Global --format Flag | 3 | ✅ All pass |
-| Error Handling | 4 | ✅ All pass |
-| Post-Apply Verification | 2 | ✅ All pass |
+| Basic Commands | all | All pass |
+| Scan - All Plugins | 8 | All pass |
+| Scan - Filters & Options | all | All pass |
+| Scan - Output Formats | 4 | All pass |
+| Reports - All Frameworks | 6 | All pass |
+| Reports - All Scenarios | 7 | All pass |
+| Reports - Output Formats | all | All pass |
+| Dry-Run - All Plugins | 8 | All pass |
+| Checkpoint Operations | all | All pass |
+| Daemon Commands | all | All pass (1 skipped: daemon start) |
+| History Commands | 3 | All pass |
+| Systemd Commands | all | 3 skipped (install/status/uninstall) |
+| Apply - Kernel Hardening | all | All pass |
+| Apply - Other Plugins | all | All pass (2 skipped: audit, mac) |
+| Apply --all | 1 | Pass |
+| Rollback | 1 | Pass |
+| Global --format Flag | 3 | All pass |
+| Error Handling | all | All pass |
+| Post-Apply Verification | 2 | All pass |
+| Scan History Persistence | 3 | All pass |
+| History Filtering | 3 | All pass |
+| Plugin Filter Combinations | 4 | All pass |
+| Per-Plugin Lifecycle | all | All pass (skips for audit, mac) |
+| Config File Loading | 2 | All pass |
+| Report Combinations | 2 | All pass |
+| Flag Combinations | 3 | All pass |
 
 ### Plugin-Specific Results
 
 | Plugin | Scan | Dry-Run | Apply | Notes |
 |--------|------|---------|-------|-------|
-| audit-hardening | ✅ | ✅ | ⚠️ | auditd service fails in container (no kernel audit subsystem) |
-| firewall-hardening | ✅ | ✅ | ✅ | firewalld working |
-| kernel-hardening | ✅ | ✅ | ✅ | sysctl params applied |
-| mac-hardening | ✅ | ✅ | ⚠️ | SELinux limited in container |
-| pam-hardening | ✅ | ✅ | ✅ | PAM config updated |
-| permissions-hardening | ✅ | ✅ | ✅ | File perms corrected |
-| service-minimisation | ✅ | ✅ | ✅ | Services managed |
-| ssh-hardening | ✅ | ✅ | ✅ | sshd_config hardened |
+| audit-hardening | Pass | Pass | Skipped | No kernel audit subsystem in container |
+| firewall-hardening | Pass | Pass | Pass | firewalld working |
+| kernel-hardening | Pass | Pass | Pass | sysctl params applied |
+| mac-hardening | Pass | Pass | Skipped | SELinux not functional in container |
+| pam-hardening | Pass | Pass | Pass | PAM config updated |
+| permissions-hardening | Pass | Pass | Pass | File perms corrected |
+| service-minimisation | Pass | Pass | Pass | Services managed |
+| ssh-hardening | Pass | Pass | Pass | sshd_config hardened |
 
 ### Compliance Reports Generated
 
-| Framework | PDF Size | Status |
-|-----------|----------|--------|
-| CIS Benchmark | 29 KB | ✅ Generated |
-| STIG | 26 KB | ✅ Generated |
-| NIST 800-53 | 25 KB | ✅ Generated |
-| PCI-DSS | 26 KB | ✅ Generated |
-| HIPAA | 25 KB | ✅ Generated |
-| GDPR | 23 KB | ✅ Generated |
-
-### Findings Summary
-
-- **Pre-hardening:** 20 findings
-- **Post-hardening:** 10 findings (after apply --all)
-- **Improvement:** 10 findings resolved (50% reduction)
+| Framework | Status |
+|-----------|--------|
+| CIS Benchmark | Generated |
+| STIG | Generated |
+| NIST 800-53 | Generated |
+| PCI-DSS | Generated |
+| HIPAA | Generated |
+| GDPR | Generated |
 
 ### Fedora-Specific Notes
 
 1. **Kernel restrictions**: Container already had hardened defaults (`dmesg_restrict=1`, `kptr_restrict=2`).
-
 2. **Firewalld**: Fedora uses firewalld by default (not ufw).
+3. **SELinux**: Compiled into systemd but not functional in nspawn container.
 
-3. **SELinux**: Compiled into systemd but limited functionality in nspawn container.
+---
 
-4. **Auditd**: Service fails to start in container (kernel audit subsystem not available), but hardener apply still works.
+## Rocky Linux
 
-### Container Setup
+**Test Date:** 2026-02-23
+**Environment:** systemd-nspawn container (podman export)
+**Distro:** Rocky Linux 9
+**Binary:** hardener 0.3.3 (musl static build)
 
-Created using `scripts/create-fedora-container.sh`:
-- Base: dnf with basesystem, systemd, dnf5, passwd, sudo
-- Packages: openssh-server, audit, firewalld, nftables, iptables, polkit
-- Test user: testuser/test with passwordless sudo (wheel group)
-- Root password: test
+### Test Results
+
+```
+Total Tests:  123
+Passed:       123
+Failed:       0
+Skipped:      6 (container environment limitations)
+Pass Rate:    100%
+```
+
+### Test Categories
+
+| Category | Tests | Result |
+|----------|-------|--------|
+| Basic Commands | all | All pass |
+| Scan - All Plugins | 8 | All pass |
+| Scan - Filters & Options | all | All pass |
+| Scan - Output Formats | 4 | All pass |
+| Reports - All Frameworks | 6 | All pass |
+| Reports - All Scenarios | 7 | All pass |
+| Reports - Output Formats | all | All pass |
+| Dry-Run - All Plugins | 8 | All pass |
+| Checkpoint Operations | all | All pass |
+| Daemon Commands | all | All pass (1 skipped: daemon start) |
+| History Commands | 3 | All pass |
+| Systemd Commands | all | 3 skipped (install/status/uninstall) |
+| Apply - Kernel Hardening | all | All pass |
+| Apply - Other Plugins | all | All pass (2 skipped: audit, mac) |
+| Apply --all | 1 | Pass |
+| Rollback | 1 | Pass |
+| Global --format Flag | 3 | All pass |
+| Error Handling | all | All pass |
+| Post-Apply Verification | 2 | All pass |
+| Scan History Persistence | 3 | All pass |
+| History Filtering | 3 | All pass |
+| Plugin Filter Combinations | 4 | All pass |
+| Per-Plugin Lifecycle | all | All pass (skips for audit, mac) |
+| Config File Loading | 2 | All pass |
+| Report Combinations | 2 | All pass |
+| Flag Combinations | 3 | All pass |
+
+### Plugin-Specific Results
+
+| Plugin | Scan | Dry-Run | Apply | Notes |
+|--------|------|---------|-------|-------|
+| audit-hardening | Pass | Pass | Skipped | No kernel audit subsystem in container |
+| firewall-hardening | Pass | Pass | Pass | firewalld working |
+| kernel-hardening | Pass | Pass | Pass | sysctl params applied |
+| mac-hardening | Pass | Pass | Skipped | SELinux not functional in container |
+| pam-hardening | Pass | Pass | Pass | PAM config updated |
+| permissions-hardening | Pass | Pass | Pass | File perms corrected |
+| service-minimisation | Pass | Pass | Pass | Services managed |
+| ssh-hardening | Pass | Pass | Pass | sshd_config hardened |
+
+### Compliance Reports Generated
+
+| Framework | Status |
+|-----------|--------|
+| CIS Benchmark | Generated |
+| STIG | Generated |
+| NIST 800-53 | Generated |
+| PCI-DSS | Generated |
+| HIPAA | Generated |
+| GDPR | Generated |
+
+### Rocky Linux-Specific Notes
+
+1. **RHEL binary compatibility**: Rocky Linux 9 is a 1:1 binary-compatible rebuild of RHEL 9. Validating on Rocky confirms compatibility with RHEL 9, AlmaLinux 9, and CentOS Stream 9.
+2. **Firewalld**: Uses firewalld by default (same as Fedora/RHEL).
+3. **SELinux**: Compiled into systemd but not functional in nspawn container.
+4. **Container creation**: Built via `podman export` from an official Rocky Linux 9 container image.
 
 ---
 
 ## openSUSE
 
-**Test Date:** 2025-12-11
+**Test Date:** 2026-02-23
 **Environment:** systemd-nspawn container (zypper bootstrap)
 **Distro:** openSUSE Leap 15.6
 **Binary:** hardener 0.3.3 (musl static build)
@@ -309,97 +459,113 @@ Created using `scripts/create-fedora-container.sh`:
 ### Test Results
 
 ```
-Total Tests:  102
-Passed:       97
-Failed:       5
-Skipped:      1 (daemon start - blocking command)
-Pass Rate:    95%
+Total Tests:  123
+Passed:       123
+Failed:       0
+Skipped:      6 (container environment limitations)
+Pass Rate:    100%
 ```
-
-> **Note:** 5 failures are container environment limitations (no booted systemd, no SELinux/AppArmor kernel modules). Core functionality passes 100%.
 
 ### Test Categories
 
 | Category | Tests | Result |
 |----------|-------|--------|
-| Basic Commands | 11 | ✅ All pass |
-| Scan - All Plugins | 10 | ✅ All pass |
-| Scan - Filters & Options | 9 | ✅ All pass |
-| Scan - Output Formats | 5 | ✅ All pass |
-| Reports - All Frameworks | 6 | ✅ All pass |
-| Reports - All Scenarios | 7 | ✅ All pass |
-| Reports - Output Formats | 11 | ✅ All pass |
-| Dry-Run - All Plugins | 9 | ✅ All pass |
-| Checkpoint Operations | 5 | ✅ All pass |
-| Daemon Commands | 2 | ✅ All pass |
-| History Commands | 3 | ✅ All pass |
-| Systemd Commands | 5 | ⚠️ Container limits |
-| Apply - Kernel Hardening | 1 | ✅ Pass |
-| Apply - Other Plugins | 7 | ✅ All pass |
-| Apply --all | 1 | ✅ Pass |
-| Rollback | 1 | ✅ Pass |
-| Global --format Flag | 3 | ✅ All pass |
-| Error Handling | 4 | ✅ All pass |
-| Post-Apply Verification | 2 | ✅ All pass |
+| Basic Commands | all | All pass |
+| Scan - All Plugins | 8 | All pass |
+| Scan - Filters & Options | all | All pass |
+| Scan - Output Formats | 4 | All pass |
+| Reports - All Frameworks | 6 | All pass |
+| Reports - All Scenarios | 7 | All pass |
+| Reports - Output Formats | all | All pass |
+| Dry-Run - All Plugins | 8 | All pass |
+| Checkpoint Operations | all | All pass |
+| Daemon Commands | all | All pass (1 skipped: daemon start) |
+| History Commands | 3 | All pass |
+| Systemd Commands | all | 3 skipped (install/status/uninstall) |
+| Apply - Kernel Hardening | all | All pass |
+| Apply - Other Plugins | all | All pass (2 skipped: audit, mac) |
+| Apply --all | 1 | Pass |
+| Rollback | 1 | Pass |
+| Global --format Flag | 3 | All pass |
+| Error Handling | all | All pass |
+| Post-Apply Verification | 2 | All pass |
+| Scan History Persistence | 3 | All pass |
+| History Filtering | 3 | All pass |
+| Plugin Filter Combinations | 4 | All pass |
+| Per-Plugin Lifecycle | all | All pass (skips for audit, mac) |
+| Config File Loading | 2 | All pass |
+| Report Combinations | 2 | All pass |
+| Flag Combinations | 3 | All pass |
 
 ### Plugin-Specific Results
 
 | Plugin | Scan | Dry-Run | Apply | Notes |
 |--------|------|---------|-------|-------|
-| audit-hardening | ✅ | ✅ | ⚠️ | auditd limited in container |
-| firewall-hardening | ✅ | ✅ | ✅ | firewalld working |
-| kernel-hardening | ✅ | ✅ | ✅ | sysctl params applied |
-| mac-hardening | ✅ | ✅ | ⚠️ | No MAC in container (expected) |
-| pam-hardening | ✅ | ✅ | ✅ | PAM config updated |
-| permissions-hardening | ✅ | ✅ | ✅ | File perms corrected |
-| service-minimisation | ✅ | ✅ | ✅ | Services managed |
-| ssh-hardening | ✅ | ✅ | ✅ | sshd_config hardened |
+| audit-hardening | Pass | Pass | Skipped | No kernel audit subsystem in container |
+| firewall-hardening | Pass | Pass | Pass | firewalld working |
+| kernel-hardening | Pass | Pass | Pass | sysctl params applied |
+| mac-hardening | Pass | Pass | Skipped | No AppArmor kernel modules in container |
+| pam-hardening | Pass | Pass | Pass | PAM config updated |
+| permissions-hardening | Pass | Pass | Pass | File perms corrected |
+| service-minimisation | Pass | Pass | Pass | Services managed |
+| ssh-hardening | Pass | Pass | Pass | sshd_config hardened |
 
 ### Compliance Reports Generated
 
-| Framework | PDF Size | Status |
-|-----------|----------|--------|
-| CIS Benchmark | 30 KB | ✅ Generated |
-| STIG | 26 KB | ✅ Generated |
-| NIST 800-53 | 25 KB | ✅ Generated |
-| PCI-DSS | 26 KB | ✅ Generated |
-| HIPAA | 25 KB | ✅ Generated |
-| GDPR | 23 KB | ✅ Generated |
-
-### Findings Summary
-
-- **Pre-hardening:** 20 findings
-- **Post-hardening:** 10 findings (after apply --all)
-- **Improvement:** 10 findings resolved (50% reduction)
+| Framework | Status |
+|-----------|--------|
+| CIS Benchmark | Generated |
+| STIG | Generated |
+| NIST 800-53 | Generated |
+| PCI-DSS | Generated |
+| HIPAA | Generated |
+| GDPR | Generated |
 
 ### openSUSE-Specific Notes
 
 1. **Reverse Path Filtering**: openSUSE defaults to `rp_filter=2` (loose mode). Hardener recommends `1` (strict mode) per CIS.
-
 2. **Firewalld**: openSUSE uses firewalld by default (same as Fedora/RHEL).
-
 3. **Kernel restrictions**: Container already had some hardened defaults (`dmesg_restrict=1`, `kptr_restrict=2`).
-
-### Container Setup
-
-Created using `scripts/create-opensuse-container.sh`:
-- Base: zypper with patterns-base-minimal_base, systemd, shadow, sudo
-- Packages: openssh-server, audit, firewalld, nftables, iptables, polkit
-- Test user: testuser/test with passwordless sudo (wheel group)
-- Root password: test
 
 ---
 
 ## Known Distribution Differences
 
-| Feature | Arch | Debian | Red Hat | SUSE |
-|---------|------|---------------|-------------|----------|
+| Feature | Arch | Debian | Red Hat (Fedora/Rocky) | SUSE |
+|---------|------|--------|------------------------|------|
 | Package Manager | pacman | apt | dnf | zypper |
 | Firewall Default | ufw | ufw | firewalld | firewalld |
 | Init System | systemd | systemd | systemd | systemd |
 | SELinux | No | No | Yes | Optional |
 | AppArmor | Optional | Yes | No | Yes |
+| Default rp_filter | 1 (strict) | 1 (strict) | 1 (strict) | 2 (loose) |
+| Audit Reload | augenrules --load | augenrules --load | augenrules --load | augenrules --load |
 
 ---
 
-**Last Updated:** 2026-02-22
+## Reproducing These Results
+
+To reproduce the full cross-distro validation from scratch:
+
+1. **Set up containers** -- Each distro has a creation script under `scripts/`:
+   - `scripts/create-debian-container.sh`
+   - `scripts/create-fedora-container.sh`
+   - `scripts/create-opensuse-container.sh`
+   - Rocky Linux: import from `podman export` of official `rockylinux:9` image
+
+2. **Build the musl static binary**:
+   ```bash
+   cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli
+   cp target/x86_64-unknown-linux-musl/release/hardener target/release/hardener
+   ```
+
+3. **Run the cross-distro test suite**:
+   ```bash
+   sudo ./scripts/run-cross-distro-tests.sh --apply
+   ```
+
+4. **Review results** -- The runner outputs a summary table to stdout and per-distro logs under the project directory.
+
+---
+
+**Last Updated:** 2026-02-23

@@ -62,6 +62,9 @@ pics-debug/
 # Python virtual environments
 .venv/
 
+# Cross-distro test output
+test-results/
+
 # Claude Code settings (user-specific)
 .claude/
 

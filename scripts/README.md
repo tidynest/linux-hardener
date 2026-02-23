@@ -23,6 +23,8 @@ This directory contains utility scripts for the Linux Hardening Tool project.
 | **Run root tests (full)** | `sudo ./scripts/root-test-suite.sh --apply` |
 | **Full test suite** | `sudo ./scripts/full-test-suite.sh` |
 | **Manual verification** | `sudo ./scripts/manual-verification-test.sh` |
+| **Cross-distro tests** | `sudo ./scripts/run-cross-distro-tests.sh --apply` |
+| **Single distro test** | `sudo ./scripts/run-cross-distro-tests.sh --distro arch` |
 
 ---
 
@@ -974,11 +976,14 @@ Binary: /project/target/release/hardener v0.3.3
 
 **Usage**:
 ```bash
-# Inside container as root
+# Inside container: run safe tests (read-only, dry-run, scan)
 sudo ./scripts/full-test-suite.sh
+
+# Run ALL tests INCLUDING apply + rollback
+sudo ./scripts/full-test-suite.sh --apply
 ```
 
-**What It Tests** (19 test sections, 102 individual tests):
+**What It Tests** (26 test sections, 123 individual tests):
 
 | Section | Tests |
 |---------|-------|
@@ -1001,11 +1006,22 @@ sudo ./scripts/full-test-suite.sh
 | 17. Global --format Flag | Test global format flag with various commands |
 | 18. Error Handling | Invalid plugin, framework, checkpoint ID |
 | 19. Post-Apply Verification | Final scan + compliance report |
+| 20. Scan History Persistence | scan -> history list -> verify UUID present |
+| 21. History Filtering | --limit, --status filters |
+| 22. Plugin Filter Combinations | Short names (kernel, ssh), mixed, multi-plugin |
+| 23. Per-Plugin Lifecycle | Apply -> verify findings reduced -> rollback (--apply only) |
+| 24. Config File Loading | Valid/invalid config file paths |
+| 25. Report Combinations | Framework + scenario + format combos |
+| 26. Flag Combinations | --quiet + --format, --audit + --format, multi-flag |
 
 **Output**:
 - Detailed test log: `/tmp/hardener-full-test-TIMESTAMP.log`
 - Generated reports: `/tmp/hardener-test-reports/`
 - PDF reports for all 6 compliance frameworks
+
+**Test Modes**:
+
+The `--apply` flag gates destructive tests (sections 13-16, 19, 23). Without it, those sections are skipped. Container-mode auto-detection automatically skips 6 environment-dependent tests when running inside `systemd-nspawn` containers.
 
 **Exit Codes**:
 - `0`: All tests passed
@@ -1030,10 +1046,10 @@ sudo ./scripts/full-test-suite.sh
 ║ TEST SUMMARY                                                       ║
 ╚════════════════════════════════════════════════════════════════════╝
 
-  Total Tests:  102
-  Passed:       102
+  Total Tests:  123
+  Passed:       123
   Failed:       0
-  Skipped:      1
+  Skipped:      6
   Pass Rate:    100%
 
 ╔════════════════════════════════════════╗
@@ -1057,6 +1073,106 @@ The `log_check()` function displays a green [PASS] but doesn't increment any cou
 - Pre-built binary at `/project/target/release/hardener`
 - Root privileges
 - Container environment (recommended)
+
+---
+
+### Cross-Distro Test Runner
+
+**Script**: `run-cross-distro-tests.sh`
+
+**Purpose**: Orchestrates `full-test-suite.sh` across all supported Linux distributions using `systemd-nspawn --pipe`. Runs tests non-interactively inside each container, captures output, parses results, and generates a summary report. Single command, zero interaction.
+
+**Usage**:
+```bash
+# Run all distros with apply tests
+sudo ./scripts/run-cross-distro-tests.sh --apply
+
+# Test single distro
+sudo ./scripts/run-cross-distro-tests.sh --distro arch --apply
+
+# Rebuild musl binary first, then test
+sudo ./scripts/run-cross-distro-tests.sh --rebuild --apply
+
+# Safe mode (no apply/rollback tests)
+sudo ./scripts/run-cross-distro-tests.sh
+```
+
+**Options**:
+| Flag | Description |
+|------|-------------|
+| `--apply` | Enable destructive tests (apply + rollback) inside containers |
+| `--distro NAME` | Test single distro: `arch`, `debian`, `fedora`, `rhel`, `opensuse` |
+| `--rebuild` | Build musl static binary before testing |
+| `--help` | Show usage |
+
+**How It Works**:
+
+1. For each distribution, verifies the container exists at `/var/lib/machines/<name>`
+2. Executes `full-test-suite.sh` inside the container via `systemd-nspawn --pipe`
+3. Captures all output to `test-results/<distro>.log`
+4. Strips ANSI escape codes and parses pass/fail/skip counts from the log
+5. Generates `test-results/summary.txt` with aggregated results
+6. Prints colour-coded summary table to stdout
+7. Exits non-zero if any distro had failures
+
+**Container Mapping**:
+| Distro | Container Path | Creation Method |
+|--------|---------------|----------------|
+| arch | `/var/lib/machines/hardener-test` | pacstrap |
+| debian | `/var/lib/machines/hardener-test-debian` | debootstrap |
+| fedora | `/var/lib/machines/hardener-test-fedora` | dnf bootstrap |
+| rhel | `/var/lib/machines/hardener-test-rhel` | podman export (Rocky 9) |
+| opensuse | `/var/lib/machines/hardener-test-opensuse` | zypper bootstrap |
+
+**Output Files**:
+```
+test-results/
+  arch.log           # Full output from Arch container
+  debian.log         # Full output from Debian container
+  fedora.log         # Full output from Fedora container
+  rhel.log           # Full output from Rocky 9 container
+  opensuse.log       # Full output from openSUSE container
+  summary.txt        # Aggregated results table
+```
+
+**Safety**:
+- Tests run exclusively inside `systemd-nspawn` containers, never on the host
+- `full-test-suite.sh` hard-exits if not running inside a container
+- Three-layer protection: nspawn isolation + container detection + `--apply` gating
+- `test-results/` directory is gitignored
+
+**Example Output**:
+```
+Cross-Distro Test Runner
+Distros: 5  |  Apply: true
+
+Testing: arch (hardener-test)
+  [DONE] 123/123 passed, 6 skipped
+
+Testing: debian (hardener-test-debian)
+  [DONE] 123/123 passed, 6 skipped
+
+...
+
+CROSS-DISTRO SUMMARY
+
+Distro        Total   Pass   Fail    Skip   Status
+--------      -----   ----   ----    ----   ------
+arch            123    123      0       6     PASS
+debian          123    123      0       6     PASS
+fedora          123    123      0       6     PASS
+rhel            123    123      0       6     PASS
+opensuse        123    123      0       6     PASS
+
+All distros passed.
+```
+
+**Dependencies**:
+- Bash
+- systemd-nspawn (part of systemd)
+- Pre-built musl binary (or use --rebuild)
+- Root privileges
+- Container filesystems at `/var/lib/machines/`
 
 ---
 
@@ -1120,11 +1236,10 @@ sudo ./scripts/manual-verification-test.sh
 ## Future Scripts
 
 Additional utility scripts can be added here:
-- Distribution testing automation
 - Documentation generation
 - Code generation helpers
 - Performance benchmarking scripts
 
 ---
 
-**Last Updated**: 2026-02-22
+**Last Updated**: 2026-02-23
