@@ -1,6 +1,6 @@
 //! Checkpoint manager for creating and managing system state snapshots.
 
-use crate::checkpoint::{CheckpointId, FileState};
+use crate::checkpoint::{CheckpointId, FileRestoreResult, FileState, FileRestoreAction, RollbackResult};
 use crate::{Checkpoint, CheckpointSigner};
 use hardener_common::error::Result;
 use sqlx::{Row, SqlitePool};
@@ -519,67 +519,58 @@ impl CheckpointManager {
         Ok(())
     }
 
-    /// Restores a single file to its captured state.
-    ///
-    /// This will restore file content, permissions, and ownership.
-    /// If the file didn't exist in the checkpoint (content is None),
-    /// the file will be deleted.
-    ///
-    /// # Arguments
-    /// * `file_state` - The file state to restore
-    ///
-    /// # Security Implications
-    /// This function requires root privileges to change file ownership.
-    ///
-    /// # Errors
-    /// Returns an error if file operations fail or insufficient privileges.
-    fn restore_file_state(&self, file_state: &FileState) -> Result<()> {
+    fn restore_file_state_tracked(
+        &self, file_state: &FileState,
+    ) -> (FileRestoreAction, Result<()>) {
         use std::{fs, os::unix::fs::PermissionsExt, path::Path};
 
         let path = Path::new(&file_state.file_path);
 
-        // Handle file content: restore or delete
-        match &file_state.file_content {
-            Some(content) => {
-                // File existed - restore content
-                fs::write(path, content).map_err(hardener_common::error::HardeningError::System)?;
-            }
-            None => {
-                if path.is_dir() {
-                    // Directory entry — fall through to restore permissions/ownership
-                } else if file_state.file_permissions == 0 {
-                    // Path didn't exist at checkpoint time — remove if it appeared
-                    if path.exists() {
-                        fs::remove_file(path)
-                            .map_err(hardener_common::error::HardeningError::System)?;
-                    }
-                    return Ok(());
-                } else {
-                    return Ok(());
-                }
-            }
+        // Determine what action this file needs.
+        let action = match (&file_state.file_content, path.is_dir()) {
+            (Some(_), _) => FileRestoreAction::Restored,
+            (None, true) => FileRestoreAction::PermissionsRestored,
+            (None, false) if file_state.file_permissions == 0 && path.exists() => { FileRestoreAction::Removed }
+            (None, false) => return (FileRestoreAction::Skipped, Ok(())),
+        };
+
+        // Remove files that didn't exist at checkpoint time
+        if matches!(action, FileRestoreAction::Removed) {
+            let result = fs::remove_file(path)
+                .map_err(hardener_common::error::HardeningError::System);
+            return (action, result);
+        }
+
+        // Restore file content
+        if let Some(content) = &file_state.file_content
+            && let Err(e) = fs::write(path, content)
+        {
+            return (action, Err(hardener_common::error::HardeningError::System(e)));
         }
 
         // Restore permissions
-        let permissions = fs::Permissions::from_mode(file_state.file_permissions);
-        fs::set_permissions(path, permissions)
-            .map_err(hardener_common::error::HardeningError::System)?;
+        if let Err(e) = fs::set_permissions(
+            path,
+            fs::Permissions::from_mode(file_state.file_permissions),
+        ) {
+            return (action, Err(hardener_common::error::HardeningError::System(e)));
+        }
 
-        // Restore ownership (requires root privileges)
-        nix::unistd::chown(
+        // Restore ownership
+        let chown_result = nix::unistd::chown(
             path,
             Some(nix::unistd::Uid::from_raw(file_state.file_owner_uid)),
             Some(nix::unistd::Gid::from_raw(file_state.file_owner_gid)),
         )
         .map_err(|e| {
             hardener_common::error::HardeningError::Privilege(format!(
-                "Failed to restore ownership: {}",
-                e
+                "Failed to restore ownership: {e}"
             ))
-        })?;
+        });
 
-        Ok(())
+        (action, chown_result)
     }
+
 
     /// Restores the system to a previous checkpoint state.
     ///
@@ -598,15 +589,31 @@ impl CheckpointManager {
     /// - Checkpoint doesn't exist
     /// - File restoration fails
     /// - Insufficient privileges
-    pub async fn rollback(&self, checkpoint_id: &CheckpointId) -> Result<()> {
+    pub async fn rollback(&self, checkpoint_id: &CheckpointId) -> Result<RollbackResult> {
         // Retrieve checkpoint and all file states
-        let (_checkpoint, file_states) = self.get_checkpoint(checkpoint_id).await?;
+        let (checkpoint, file_states) = self.get_checkpoint(checkpoint_id).await?;
 
-        // Restore each file
-        for file_state in &file_states {
-            self.restore_file_state(file_state)?;
-        }
+        let mut all_ok = true;
+        let files: Vec<_> = file_states
+            .iter()
+            .map(|fs| {
+                let (action, result) = self.restore_file_state_tracked(fs);
+                let success = result.is_ok();
+                all_ok &= success;
+                FileRestoreResult {
+                    restore_path: fs.file_path.clone(),
+                    restore_action: action,
+                    restore_success: success,
+                    restore_error: result.err().map(|e| e.to_string()),
+                }
+            })
+            .collect();
 
-        Ok(())
+        Ok(RollbackResult {
+            rollback_checkpoint_id: checkpoint_id.as_str().to_owned(),
+            rollback_checkpoint_name: checkpoint.checkpoint_name,
+            rollback_success: all_ok,
+            rollback_files: files,
+        })
     }
 }

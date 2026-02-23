@@ -10,7 +10,9 @@ pub mod scan_manager;
 pub mod signing;
 
 pub use audit::{ActionResult, ActionType, AuditEntry, AuditLogger};
-pub use checkpoint::{Checkpoint, CheckpointId, FileState};
+pub use checkpoint::{
+    Checkpoint, CheckpointId, FileRestoreAction, FileRestoreResult, FileState, RollbackResult,
+};
 pub use db::init_db;
 pub use hash_chain::HashChain;
 pub use manager::CheckpointManager;

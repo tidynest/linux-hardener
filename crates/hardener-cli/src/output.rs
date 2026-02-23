@@ -1,7 +1,7 @@
 use colored::Colorize;
 use hardener_common::types::Severity;
 use hardener_core::{ApplyResult, Finding, PluginMetadata, ValidationReport};
-use hardener_state::{Checkpoint, FileState};
+use hardener_state::{Checkpoint, FileState, RollbackResult};
 
 use crate::cli::{OutputFormat, ScanMode};
 
@@ -220,6 +220,46 @@ pub fn checkpoint_details(format: &OutputFormat, checkpoint: &Checkpoint, files:
                     println!("  {}", file.file_path);
                 }
             }
+        }
+    }
+}
+
+pub fn rollback_result(format: &OutputFormat, result: &RollbackResult) {
+    use hardener_state::FileRestoreAction;
+
+    match format {
+        OutputFormat::Json => {
+            match serde_json::to_string_pretty(&result) {
+                Ok(json) => println!("{json}"),
+                Err(e) => eprintln!("{{\"error\": \"serialisation failed: {e}\"}}"),
+            }
+        }
+        _ => {
+            let icon = if result.rollback_success { "✓".green() } else { "✗".red() };
+            println!("\n{icon} Rolled back to: {} ({})",
+                result.rollback_checkpoint_name.bold(),
+                result.rollback_checkpoint_id.dimmed()
+            );
+
+            for file in &result.rollback_files {
+                let status = if file.restore_success { "✓".green() } else { "✗".red() };
+                let action = match file.restore_action {
+                    FileRestoreAction::Restored => "restored",
+                    FileRestoreAction::Removed => "removed",
+                    FileRestoreAction::PermissionsRestored => "permissions",
+                    FileRestoreAction::Skipped => "skipped",
+                };
+                println!("  {status} [{action}] {}", file.restore_path);
+                if let Some(err) = &file.restore_error {
+                    println!("    {}", err.as_str().red());
+                }
+            }
+
+            let restored = result.rollback_files.iter().filter(|f| f.restore_success).count();
+            println!(
+                "\n{} file(s) processed, {restored} restored successfully.",
+                result.rollback_files.len()
+            );
         }
     }
 }

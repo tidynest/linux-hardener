@@ -56,6 +56,45 @@ pub struct FileState {
     pub file_owner_gid: u32,
 }
 
+/// Outcome of a single file restore during rollback.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct FileRestoreResult {
+    /// Path that was restored.
+    pub restore_path: String,
+    /// What action was taken.
+    pub restore_action: FileRestoreAction,
+    /// Whether the restore succeeded.
+    pub restore_success: bool,
+    /// Where the restore failed.
+    pub restore_error: Option<String>,
+}
+
+/// The type of restore action performed on a file.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum FileRestoreAction {
+    /// File content and permissions were restored.
+    Restored,
+    /// File content was removed (it didn't exist at checkpoint time).
+    Removed,
+    /// Directory permissions were restored.
+    PermissionsRestored,
+    /// File was skipped (no action needed).
+    Skipped,
+}
+
+/// Results of a full rollback operation.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RollbackResult {
+    /// Checkpoint that was rolled back to.
+    pub rollback_checkpoint_id: String,
+    /// Name of the checkpoint.
+    pub rollback_checkpoint_name: String,
+    /// Whether all files were restored successfully.
+    pub rollback_success: bool,
+    /// Per-file restore results.
+    pub rollback_files: Vec<FileRestoreResult>,
+}
+
 impl From<&str> for CheckpointId {
     fn from(s: &str) -> CheckpointId {
         Self(s.to_string())
