@@ -11,7 +11,7 @@ use tracing_subscriber::{EnvFilter, fmt};
 /// Log levels can be controlled via the `RUST_LOG` environment variable.
 ///
 /// # Default Log Level
-/// If `RUST_LOG` is not set, defaults to ìnfo level.
+/// If `RUST_LOG` is not set, defaults to info level.
 ///
 /// # Examples
 /// ```no_run

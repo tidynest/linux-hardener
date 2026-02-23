@@ -160,7 +160,6 @@ impl SystemInfo {
         Ok(map)
     }
 
-    /// Placeholder detection methods
     fn detect_architecture() -> Result<String> {
         Ok(std::env::consts::ARCH.to_string())
     }

@@ -269,7 +269,11 @@ pub fn create_timestamped_backup(path: &Path) -> Result<PathBuf> {
     let backup_path = PathBuf::from(format!("{}.backup.{}", path.display(), timestamp));
 
     std::fs::copy(path, &backup_path).map_err(|e| {
-        crate::error::HardeningError::Plugin(format!("Failed to get system time: {}", e))
+        crate::error::HardeningError::Plugin(format!(
+            "Failed to create backup of {}: {}",
+            path.display(),
+            e
+        ))
     })?;
 
     Ok(backup_path)

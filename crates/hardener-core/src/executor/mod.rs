@@ -36,7 +36,7 @@ pub struct FileMetadata {
 
 /// Trait for abstracting file and command operations.
 ///
-/// Implementations can target local systems or remote systems vis SSH.
+/// Implementations can target local systems or remote systems via SSH.
 #[async_trait]
 pub trait SystemExecutor: Send + Sync {
     /// Returns a description of this executor (e.g., "local" or "ssh://user@host").

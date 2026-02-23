@@ -44,7 +44,7 @@ pub use hardener_state::{Checkpoint, CheckpointId, CheckpointManager};
 /// 3. **Scanning**: `scan()` is called to detect current security state
 /// 4. **Validation**: `validate()` checks configuration before changes
 /// 5. **Application**: `apply()` makes changes to harden the system
-/// 5. **Rollback**: `rollback()` restores previous state if needed
+/// 6. **Rollback**: `rollback()` restores previous state if needed
 ///
 /// # Thread Safety
 ///

@@ -1,3 +1,8 @@
+//! Core crate for the Linux system hardener.
+//!
+//! Provides the plugin trait, executor abstraction, configuration system,
+//! plugin registry, and dependency-ordered plugin manager.
+
 // Core modules that work without system dependencies
 pub mod plugin;
 
