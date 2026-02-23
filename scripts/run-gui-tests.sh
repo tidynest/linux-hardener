@@ -26,7 +26,7 @@ declare -A CONTAINERS=(
     [opensuse]="hardener-test-opensuse"
 )
 
-DISTRO_ORDER=(arch debian fedora)
+DISTRO_ORDER=(arch debian fedora rhel opensuse)
 
 # Options
 SINGLE_DISTRO=""

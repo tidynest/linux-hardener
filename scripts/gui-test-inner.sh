@@ -37,13 +37,25 @@ install_deps() {
         DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
             python3 xvfb chromium nodejs npm 2>/dev/null || true
     elif command -v dnf &>/dev/null; then
-        echo -e "${CYAN}[deps] Fedora/RHEL — installing packages...${NC}"
+        # Rocky/RHEL needs EPEL + CRB for Chromium, Xvfb, nodejs
+        if grep -qi 'rocky\|rhel\|centos\|alma' /etc/os-release 2>/dev/null; then
+            echo -e "${CYAN}[deps] RHEL/Rocky — enabling EPEL + CRB + Node 20...${NC}"
+            dnf install -y -q epel-release 2>/dev/null || true
+            dnf config-manager --set-enabled crb 2>/dev/null || true
+            dnf module reset -y -q nodejs 2>/dev/null || true
+            dnf module enable -y -q nodejs:20 2>/dev/null || true
+        else
+            echo -e "${CYAN}[deps] Fedora — installing packages...${NC}"
+        fi
         dnf install -y -q \
             python3 xorg-x11-server-Xvfb chromium-headless nodejs npm 2>/dev/null || true
     elif command -v zypper &>/dev/null; then
         echo -e "${CYAN}[deps] openSUSE — installing packages...${NC}"
+        zypper --gpg-auto-import-keys refresh 2>/dev/null || true
         zypper --non-interactive install -y \
-            python3 xorg-x11-server-Xvfb chromium nodejs20 npm20 2>/dev/null || true
+            python3 xorg-x11-server-Xvfb chromium \
+            nodejs20 npm20 nodejs-common \
+            libpango-1_0-0 libicu73_2 Mesa-libGL1 2>/dev/null || true
     else
         echo -e "${RED}[deps] Unknown distro — skipping package install${NC}"
     fi
@@ -136,6 +148,7 @@ run_playwright() {
         /usr/bin/google-chrome-stable \
         /usr/lib64/chromium-browser/headless_shell \
         /usr/lib/chromium-browser/chromium-browser \
+        /usr/lib64/chromium/chromium \
         /usr/lib/chromium/chromium; do
         if [[ -x "$candidate" ]]; then
             chromium_bin="$candidate"
@@ -185,7 +198,7 @@ trap cleanup EXIT
 
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
-echo "║  GUI TEST RUNNER (Web UI — Playwright)                      ║"
+echo "║  GUI TEST RUNNER (Web UI — Playwright)                       ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 
