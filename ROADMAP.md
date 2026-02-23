@@ -366,7 +366,7 @@ User clicks "Apply"
 - [x] Modify `run_apply` to use pkexec + CLI instead of in-process execution
 - [x] Modify `run_rollback` to use pkexec + CLI
 - [x] Add JSON output mode to CLI `apply` command (for machine-readable results)
-- [ ] Add JSON output mode to CLI `checkpoint rollback` command
+- [x] Add JSON output mode to CLI `checkpoint rollback` command
 - [x] Create user-friendly error messages for polkit failures
 - [x] Test on Hyprland (with polkit-gnome)
 - [ ] Create polkit policy file for nicer dialog text

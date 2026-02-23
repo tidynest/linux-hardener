@@ -46,7 +46,7 @@ pub struct ComplianceSummary { summary_total_controls, summary_passing, summary_
 |------|---------|----------------------|
 | `src/main.rs` | Entry point, command routing | `main()` |
 | `src/cli.rs` | Clap argument definitions | `Cli`, `Command`, `DaemonAction`, `HistoryAction`, `SystemdAction`, `OutputFormat` |
-| `src/output.rs` | Output formatting utilities | `format_findings()`, `format_json()` |
+| `src/output.rs` | Output formatting utilities | `format_findings()`, `format_json()`, `rollback_result()` |
 | `src/commands/mod.rs` | Command module exports | - |
 | `src/commands/scan.rs` | Scan command implementation | `run()`, `validate_plugin_filter()`, `is_valid_plugin_name()`, `persist_scan_session()` |
 | `src/commands/apply.rs` | Apply command implementation | `run()` |
@@ -158,7 +158,7 @@ const KERNEL_PARAMS: &[(&str, &str, &str)] = &[
 | File | Purpose | Key Exports |
 |------|---------|-------------|
 | `src/lib.rs` | Module exports | Re-exports |
-| `src/checkpoint.rs` | Checkpoint types | `Checkpoint`, `CheckpointId`, `FileState` |
+| `src/checkpoint.rs` | Checkpoint types | `Checkpoint`, `CheckpointId`, `FileState`, `RollbackResult`, `FileRestoreResult`, `FileRestoreAction` |
 | `src/manager.rs` | Checkpoint operations | `CheckpointManager`, `create_checkpoint_metadata_only()`, `capture_directory_entry()` |
 | `src/audit.rs` | Audit logging | `AuditEntry`, `AuditLogger`, `ActionType` |
 | `src/hash_chain.rs` | Tamper detection | `HashChain` |

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.3] - 2025-12-11
 
+### Added (Rollback JSON Output 2026-02-23)
+- **Structured Rollback Results**: `checkpoint rollback` now returns per-file restore status
+  - `RollbackResult` with `rollback_success`, `rollback_checkpoint_id`, `rollback_files`
+  - `FileRestoreResult` per file: path, action (Restored/Removed/PermissionsRestored/Skipped), success, error
+  - `FileRestoreAction` enum for discriminating restore types
+  - CLI outputs JSON (`--format json`) or human-readable summary with colour-coded status
+  - Non-zero exit code on partial rollback failure
+- **Extended Tauri IPC Mock**: 8 new mock handlers for GUI testing
+  - `run_scan_filtered`, `run_scan_with_options`, `create_checkpoint`, `delete_checkpoint`
+  - `export_report`, `get_scan_history`, `get_scan_session`, plus mock scan history data
+- **Severity Filter CSS**: Dropdown styling for analysis view severity filtering
+
 ### Fixed (Live Testing Session 2026-02-23)
 - **Checkpoint Directory Permissions**: Checkpoints now capture and restore directory metadata (mode/uid/gid)
   - Added `capture_directory_entry()` to `CheckpointManager` for metadata-only directory snapshots
