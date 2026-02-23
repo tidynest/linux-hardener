@@ -43,7 +43,7 @@ pub struct AuditEntry {
     pub entry_timestamp: DateTime<Utc>,
     /// Type of action performed
     pub entry_action_type: ActionType,
-    /// Use who performed the action
+    /// User who performed the action
     pub entry_user: String,
     /// Target of the action (e.g., file path, plugin name)
     pub entry_target: String,
@@ -113,22 +113,6 @@ impl AuditEntry {
         self.entry_details.insert(key, value);
     }
 
-    /// Serialises the entry data (excluding hash) for hash computation.
-    ///
-    /// This is used by the HashChain to compute the entry's hash.
-    /// We exclude the hash field itself since we're computing it.
-    pub fn serialise_for_hash(&self) -> Vec<u8> {
-        let data = (
-            self.entry_timestamp.timestamp(),
-            &self.entry_action_type,
-            &self.entry_user,
-            &self.entry_target,
-            &self.entry_result,
-            &self.entry_details,
-        );
-
-        serde_json::to_vec(&data).unwrap_or_default()
-    }
 }
 
 /// Filter criteria for querying audit logs.
@@ -136,7 +120,7 @@ impl AuditEntry {
 pub struct QueryFilter {
     /// Filter by action type (None means no filter)
     pub filter_action_type: Option<ActionType>,
-    /// Filter by minimum timestamp (inclusive)
+    /// Filter by maximum timestamp (inclusive)
     pub filter_end_time: Option<DateTime<Utc>>,
     /// Filter by action result (None means no filter)
     pub filter_result: Option<ActionResult>,

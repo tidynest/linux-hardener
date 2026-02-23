@@ -1,3 +1,8 @@
+//! SHA-256 hash chain for tamper-proof audit logging.
+//!
+//! Each entry's hash depends on the previous entry, making it computationally
+//! infeasible to modify historical entries without detection.
+
 use ring::digest::{SHA256, digest};
 use serde::{Deserialize, Serialize};
 
@@ -8,7 +13,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct HashChain {
     /// The hash of the previous entry in the chain.
-    /// For the first entry (genesis), this is a zero-filled 32-bit array.
+    /// For the first entry (genesis), this is a zero-filled 32-byte array.
     previous_hash: Vec<u8>,
 }
 

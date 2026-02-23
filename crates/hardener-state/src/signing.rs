@@ -1,6 +1,6 @@
-//! Cryptographic signing for checkpoint integrity,
+//! Cryptographic signing for checkpoint integrity.
 //!
-//! Use Ed25519 signatures to ensure checkpoints cannot be tampered with.
+//! Uses Ed25519 signatures to ensure checkpoints cannot be tampered with.
 
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier};
 use hardener_common::error::{HardeningError, Result};

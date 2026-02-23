@@ -414,7 +414,7 @@ impl CheckpointManager {
                 timestamp,
                 username,
                 signature
-            FROM checkpoints WHERE id =?",
+            FROM checkpoints WHERE id = ?",
         )
         .bind(checkpoint_id.as_str())
         .fetch_one(&self.db_pool)

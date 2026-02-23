@@ -1,6 +1,6 @@
 //! Database operations for checkpoint storage.
 //!
-//! Use SQLite to store checkpoint metadata and file states.
+//! Uses SQLite to store checkpoint metadata and file states.
 
 use hardener_common::error::{HardeningError, Result};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
@@ -22,7 +22,7 @@ const SCHEMA: &str = r#"
 
     CREATE TABLE IF NOT EXISTS file_states (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        checkpoint_id INTEGER NOT NULL,
+        checkpoint_id TEXT NOT NULL,
         file_path TEXT NOT NULL,
         content BLOB,
         permissions INTEGER,

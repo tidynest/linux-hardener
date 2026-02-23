@@ -50,17 +50,17 @@ Trait contracts, executors, config loading, plugin management.
 
 Crypto, persistence, rollback — highest security surface.
 
-- [ ] `audit.rs` (1,022 lines)
-- [ ] `manager.rs` (619 lines)
-- [ ] `scan_manager.rs` (497 lines)
-- [ ] `signing.rs` (277 lines)
-- [ ] `db.rs` (201 lines)
-- [ ] `hash_chain.rs` (129 lines)
-- [ ] `checkpoint.rs` (108 lines)
-- [ ] `scan_history.rs` (98 lines)
-- [ ] `lib.rs` (36 lines)
-- [ ] `CRATE.md` assembled
-- [ ] Verification passed
+- [x] `audit.rs` (1,022 lines)
+- [x] `manager.rs` (619 lines)
+- [x] `scan_manager.rs` (497 lines)
+- [x] `signing.rs` (277 lines)
+- [x] `db.rs` (201 lines)
+- [x] `hash_chain.rs` (129 lines)
+- [x] `checkpoint.rs` (108 lines)
+- [x] `scan_history.rs` (98 lines)
+- [x] `lib.rs` (36 lines)
+- [x] `CRATE.md` assembled
+- [x] Verification passed (400 tests, 0 failures, clippy clean)
 
 ## Session 6: hardener-plugins (13 files, 5,492 lines)
 
