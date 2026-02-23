@@ -3,7 +3,9 @@
 //! These tests verify plugin behavior without touching real PAM configuration.
 
 use hardener_common::types::{PluginId, Severity};
-use hardener_core::{Context, MockExecutor, SystemExecutor, plugin::HardeningPlugin};
+use hardener_core::{
+    Context, MockExecutor, PluginConfig, PolicyException, SystemExecutor, plugin::HardeningPlugin,
+};
 use hardener_plugins::PamHardeningPlugin;
 use std::sync::Arc;
 
@@ -395,5 +397,137 @@ PASS_WARN_AGE 7
             .iter()
             .map(|f| &f.finding_id)
             .collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn test_pam_apply_respects_directives() {
+    let executor = insecure_pam_executor();
+    let mut ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PamHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config
+        .directives
+        .insert("minlen".to_string(), "20".to_string());
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    // The directive-overridden value should appear in the change description
+    let minlen_change = result
+        .apply_changes
+        .iter()
+        .find(|c| c.change_description.contains("minlen"));
+    assert!(minlen_change.is_some(), "should have a minlen change");
+    assert!(
+        minlen_change
+            .expect("checked above")
+            .change_description
+            .contains("20"),
+        "expected directive value '20', got: {}",
+        minlen_change.expect("checked above").change_description
+    );
+
+    // Other directives should still use baseline values
+    let dcredit_change = result
+        .apply_changes
+        .iter()
+        .find(|c| c.change_description.contains("dcredit"));
+    assert!(dcredit_change.is_some(), "should have a dcredit change");
+    assert!(
+        dcredit_change
+            .expect("checked above")
+            .change_description
+            .contains("-1"),
+        "non-overridden directive should use baseline"
+    );
+}
+
+#[tokio::test]
+async fn test_pam_apply_skips_exceptions() {
+    let executor = insecure_pam_executor();
+    let mut ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PamHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "minlen".to_string(),
+        PolicyException {
+            value: "8".to_string(),
+            allowed: true,
+            reason: "Legacy application requires short passwords".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    // Should have a "skipped" change for minlen
+    let skipped = result
+        .apply_changes
+        .iter()
+        .find(|c| c.change_description.contains("skipped") && c.change_description.contains("minlen"));
+    assert!(skipped.is_some(), "should have a skipped change for minlen");
+    assert!(
+        skipped
+            .expect("checked above")
+            .change_description
+            .contains("Legacy application"),
+    );
+
+    // Should NOT have a "Set minlen" change (it was skipped)
+    assert!(
+        !result
+            .apply_changes
+            .iter()
+            .any(|c| c.change_description.contains("Set minlen")),
+        "should not have a 'Set minlen' change when excepted"
+    );
+}
+
+#[tokio::test]
+async fn test_pam_validate_skips_exceptions() {
+    let executor = MockExecutor::new()
+        .with_file("/etc/security/pwquality.conf", "minlen 8\n")
+        .with_file("/etc/login.defs", "PASS_MAX_DAYS 99999\n");
+
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PamHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "minlen".to_string(),
+        PolicyException {
+            value: "8".to_string(),
+            allowed: true,
+            reason: "Legacy application".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let report = plugin.validate(&ctx, &config).await.unwrap();
+
+    // minlen should NOT appear in estimated changes
+    assert!(
+        !report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("minlen")),
+        "excepted directive should not appear in estimated changes"
+    );
+
+    // Other directives should still appear
+    assert!(
+        report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("dcredit")),
+        "non-excepted directives should still appear"
     );
 }

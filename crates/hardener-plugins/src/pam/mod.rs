@@ -188,7 +188,7 @@ impl HardeningPlugin for PamHardeningPlugin {
         })
     }
 
-    async fn apply(&self, ctx: &mut Context, _config: &PluginConfig) -> Result<ApplyResult> {
+    async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult> {
         let start = Instant::now();
         info!("Starting PAM authentication hardening apply");
 
@@ -274,19 +274,44 @@ impl HardeningPlugin for PamHardeningPlugin {
 
         // Step 3: Apply each directive
         for directive in PAM_DIRECTIVES {
+            // Check for a valid exception — skip this directive if exempted
+            if let Some(exception) = config.has_valid_exception(directive.pam_directive_name) {
+                info!(
+                    "Skipping {} — exception: {}",
+                    directive.pam_directive_name, exception.reason
+                );
+                changes.push(Change {
+                    change_type: ChangeType::ConfigFile,
+                    change_description: format!(
+                        "{}: skipped (exception: {})",
+                        directive.pam_directive_name, exception.reason
+                    ),
+                    change_success: true,
+                    change_error: None,
+                });
+                continue;
+            }
+
+            // Determine target value: user directive override or hardcoded baseline
+            let target_value = config
+                .directives
+                .get(directive.pam_directive_name)
+                .map(|s| s.as_str())
+                .unwrap_or(directive.pam_secure_value);
+
             match directive.pam_config_file {
                 PamConfigFile::PwQuality => {
                     pwquality_content = apply_directive_to_content(
                         &pwquality_content,
                         directive.pam_directive_name,
-                        directive.pam_secure_value,
+                        target_value,
                     );
 
                     changes.push(Change {
                         change_type: ChangeType::ConfigFile,
                         change_description: format!(
                             "Set {} = {} in pwquality.conf",
-                            directive.pam_directive_name, directive.pam_secure_value,
+                            directive.pam_directive_name, target_value,
                         ),
                         change_success: true,
                         change_error: None,
@@ -296,14 +321,14 @@ impl HardeningPlugin for PamHardeningPlugin {
                     login_defs_content = apply_directive_to_content(
                         &login_defs_content,
                         directive.pam_directive_name,
-                        directive.pam_secure_value,
+                        target_value,
                     );
 
                     changes.push(Change {
                         change_type: ChangeType::ConfigFile,
                         change_description: format!(
                             "Set {} = {} in login.defs",
-                            directive.pam_directive_name, directive.pam_secure_value,
+                            directive.pam_directive_name, target_value,
                         ),
                         change_success: true,
                         change_error: None,
@@ -415,7 +440,7 @@ impl HardeningPlugin for PamHardeningPlugin {
         Ok(())
     }
 
-    async fn validate(&self, ctx: &Context, _config: &PluginConfig) -> Result<ValidationReport> {
+    async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {
         info!("Validating PAM configuration files");
 
         let mut issues = Vec::new();
@@ -473,11 +498,19 @@ impl HardeningPlugin for PamHardeningPlugin {
             }
         }
 
-        // Estimate changes based on number of directives
+        // Estimate changes based on non-excepted directives
         let estimated_changes = PAM_DIRECTIVES
             .iter()
             .filter(|d| d.pam_config_file != PamConfigFile::PamAuth)
-            .map(|d| format!("Set {} = {}", d.pam_directive_name, d.pam_secure_value))
+            .filter(|d| config.has_valid_exception(d.pam_directive_name).is_none())
+            .map(|d| {
+                let target_value = config
+                    .directives
+                    .get(d.pam_directive_name)
+                    .map(|s| s.as_str())
+                    .unwrap_or(d.pam_secure_value);
+                format!("Set {} = {}", d.pam_directive_name, target_value)
+            })
             .collect();
 
         let is_valid = issues.is_empty();
