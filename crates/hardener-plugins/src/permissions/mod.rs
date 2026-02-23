@@ -307,7 +307,7 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
         })
     }
 
-    async fn apply(&self, ctx: &mut Context, _config: &PluginConfig) -> Result<ApplyResult> {
+    async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult> {
         let mut changes = Vec::new();
 
         // Collect paths to checkpoint
@@ -334,7 +334,36 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
 
         // Apply permissions to all critical paths
         for directive in CRITICAL_PERMISSIONS {
-            if let Some(change) = apply_path_permissions(ctx, directive).await {
+            // Check for a valid exception — skip this path if exempted
+            if let Some(exception) = config.has_valid_exception(directive.permission_path) {
+                info!(
+                    "Skipping {} — exception: {}",
+                    directive.permission_path, exception.reason
+                );
+                changes.push(Change {
+                    change_description: format!(
+                        "{}: skipped (exception: {})",
+                        directive.permission_path, exception.reason
+                    ),
+                    change_type: ChangeType::Permissions,
+                    change_success: true,
+                    change_error: None,
+                });
+                continue;
+            }
+
+            // Apply directive mode override if present
+            let directive = if let Some(mode_str) = config.directives.get(directive.permission_path)
+            {
+                let mode = u32::from_str_radix(mode_str, 8).unwrap_or(directive.permission_mode);
+                let mut d = directive.clone();
+                d.permission_mode = mode;
+                d
+            } else {
+                directive.clone()
+            };
+
+            if let Some(change) = apply_path_permissions(ctx, &directive).await {
                 changes.push(change);
             }
         }
@@ -367,11 +396,23 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
         Ok(())
     }
 
-    async fn validate(&self, ctx: &Context, _config: &PluginConfig) -> Result<ValidationReport> {
+    async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {
         let mut issues = Vec::new();
         let mut estimated_changes = Vec::new();
 
         for directive in CRITICAL_PERMISSIONS {
+            // Skip paths with valid exceptions
+            if config.has_valid_exception(directive.permission_path).is_some() {
+                continue;
+            }
+
+            // Determine target mode: directive override or baseline
+            let target_mode = config
+                .directives
+                .get(directive.permission_path)
+                .and_then(|s| u32::from_str_radix(s, 8).ok())
+                .unwrap_or(directive.permission_mode);
+
             let path = Path::new(directive.permission_path);
 
             // Check if path exists
@@ -386,10 +427,10 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
                     let current_mode = metadata.mode & 0o777;
 
                     // Check if permissions need changing
-                    if current_mode != directive.permission_mode {
+                    if current_mode != target_mode {
                         estimated_changes.push(format!(
                             "{}: {:04o} → {:04o}",
-                            directive.permission_path, current_mode, directive.permission_mode
+                            directive.permission_path, current_mode, target_mode
                         ));
                     }
                 }

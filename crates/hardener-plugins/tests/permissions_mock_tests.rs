@@ -4,7 +4,8 @@
 
 use hardener_common::types::{PluginId, Severity};
 use hardener_core::{
-    CommandOutput, Context, FileMetadata, MockExecutor, SystemExecutor, plugin::HardeningPlugin,
+    CommandOutput, Context, FileMetadata, MockExecutor, PluginConfig, PolicyException,
+    SystemExecutor, plugin::HardeningPlugin,
 };
 use hardener_plugins::PermissionsHardeningPlugin;
 use std::sync::Arc;
@@ -386,5 +387,160 @@ async fn test_permissions_apply_detects_vfat_noop() {
         boot_change.change_description.contains("unchanged"),
         "Should explain permissions were unchanged, got: {}",
         boot_change.change_description
+    );
+}
+
+#[tokio::test]
+async fn test_permissions_apply_respects_directives() {
+    // /boot at 0o777 — directive overrides target to 0o755 instead of baseline 0o700
+    let executor = MockExecutor::new()
+        .with_file_metadata(
+            "/boot",
+            "",
+            FileMetadata {
+                exists: true,
+                is_file: false,
+                is_dir: true,
+                mode: 0o777,
+                size: 0,
+            },
+        )
+        .with_command(
+            "chmod",
+            &["0755", "/boot"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        );
+
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    let plugin = PermissionsHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config
+        .directives
+        .insert("/boot".to_string(), "755".to_string());
+
+    let _result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    // Verify chmod was called with 0755 (not the baseline 0700)
+    let log = executor.log();
+    let chmod_cmd = log
+        .commands_executed
+        .iter()
+        .find(|(cmd, args): &&(String, Vec<String>)| {
+            cmd == "chmod" && args.iter().any(|a| a == "/boot")
+        });
+    assert!(
+        chmod_cmd.is_some(),
+        "should have called chmod for /boot, got: {:?}",
+        log.commands_executed
+    );
+    let (_, args) = chmod_cmd.expect("checked above");
+    assert!(
+        args.iter().any(|a| a == "0755"),
+        "chmod should use directive value 0755, got: {:?}",
+        args
+    );
+}
+
+#[tokio::test]
+async fn test_permissions_apply_skips_exceptions() {
+    // /boot exists with insecure perms, but excepted
+    // NO chmod command registered — mock will error if called
+    let executor = MockExecutor::new().with_file_metadata(
+        "/boot",
+        "",
+        FileMetadata {
+            exists: true,
+            is_file: false,
+            is_dir: true,
+            mode: 0o777,
+            size: 0,
+        },
+    );
+
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    let plugin = PermissionsHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "/boot".to_string(),
+        PolicyException {
+            value: "0777".to_string(),
+            allowed: true,
+            reason: "Mounted vfat partition".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    // Should have a "skipped" change for /boot
+    let skipped = result
+        .apply_changes
+        .iter()
+        .find(|c| c.change_description.contains("skipped") && c.change_description.contains("/boot"));
+    assert!(skipped.is_some(), "should have a skipped change for /boot");
+    assert!(
+        skipped
+            .expect("checked above")
+            .change_description
+            .contains("vfat partition"),
+    );
+
+    // Verify no chmod command was issued at all
+    let log = executor.log();
+    assert!(
+        !log.commands_executed
+            .iter()
+            .any(|(cmd, _)| cmd == "chmod"),
+        "should not execute chmod for excepted path"
+    );
+}
+
+#[tokio::test]
+async fn test_permissions_validate_skips_exceptions() {
+    let executor = insecure_permissions_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PermissionsHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "/root".to_string(),
+        PolicyException {
+            value: "0755".to_string(),
+            allowed: true,
+            reason: "Shared admin access".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let report = plugin.validate(&ctx, &config).await.unwrap();
+
+    // /root should NOT appear in estimated_changes
+    assert!(
+        !report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("/root")),
+        "excepted path should not appear in estimated changes"
+    );
+
+    // /boot should still appear (not excepted, has insecure perms)
+    assert!(
+        report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("/boot")),
+        "non-excepted paths should still appear"
     );
 }
