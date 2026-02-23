@@ -69,7 +69,7 @@ impl NotificationDispatcher {
     /// Dispatches notifications for a completed scan.
     ///
     /// - Checks severity before sending
-    /// - Sends to all configured channels in parallel
+    /// - Sends to all configured channels sequentially
     /// - Logs each attempt to the database
     ///
     /// Returns results from all notification attempts.

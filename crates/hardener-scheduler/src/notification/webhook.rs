@@ -42,7 +42,7 @@ impl WebhookNotifier {
     /// Expands environment variables in header values.
     ///
     /// Replaces `${VAR_NAME}` with the value of the environment variable.
-    /// Unset variables are replace with empty strings.
+    /// Unset variables are replaced with empty strings.
     fn expand_env_vars(value: &str) -> String {
         let mut result = value.to_string();
         let mut start = 0;

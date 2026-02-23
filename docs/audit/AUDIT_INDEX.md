@@ -86,19 +86,19 @@ Largest crate — directly mutates system configuration.
 
 Daemon stability — 4 parse-twice unwraps.
 
-- [ ] `runner.rs` (616 lines)
-- [ ] `db.rs` (603 lines)
-- [ ] `daemon.rs` (382 lines)
-- [ ] `notification/webhook.rs` (360 lines)
-- [ ] `systemd.rs` (276 lines)
-- [ ] `config.rs` (258 lines)
-- [ ] `notification/mod.rs` (242 lines)
-- [ ] `json_store.rs` (205 lines)
-- [ ] `notification/email.rs` (197 lines)
-- [ ] `notification/dispatcher.rs` (142 lines)
-- [ ] `lib.rs` (24 lines)
-- [ ] `CRATE.md` assembled
-- [ ] Verification passed
+- [x] `runner.rs` (616 lines)
+- [x] `db.rs` (603 lines)
+- [x] `daemon.rs` (382 lines)
+- [x] `notification/webhook.rs` (360 lines)
+- [x] `systemd.rs` (276 lines)
+- [x] `config.rs` (258 lines)
+- [x] `notification/mod.rs` (242 lines)
+- [x] `json_store.rs` (205 lines)
+- [x] `notification/email.rs` (197 lines)
+- [x] `notification/dispatcher.rs` (142 lines)
+- [x] `lib.rs` (24 lines)
+- [x] `CRATE.md` assembled
+- [x] Verification passed (400 tests, 0 failures, clippy clean)
 
 ## Session 8: hardener-cli (14 files, 3,191 lines)
 

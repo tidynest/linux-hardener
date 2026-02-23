@@ -10,7 +10,7 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 
-/// Placeholder (!)
+/// JSON file store for scan result exports.
 pub struct JsonStore {
     output_dir: PathBuf,
 }
@@ -36,7 +36,8 @@ impl JsonStore {
         data: &T,
     ) -> Result<(String, String)> {
         let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
-        let filename = format!("scan_{}_{}.json", timestamp, &session_id[..8]);
+        let prefix = &session_id[..session_id.len().min(8)];
+        let filename = format!("scan_{}_{}.json", timestamp, prefix);
         let path = self.output_dir.join(&filename);
 
         let json = serde_json::to_string_pretty(data)

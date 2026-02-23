@@ -159,8 +159,8 @@ impl ScanHistoryManager {
 
         sql.push_str(" ORDER BY started_at DESC");
 
-        if let Some(limit) = filter.limit {
-            sql.push_str(&format!(" LIMIT {}", limit));
+        if filter.limit.is_some() {
+            sql.push_str(" LIMIT ?");
         }
 
         let mut query = query_as::<_, ScanSession>(&sql);
@@ -176,6 +176,9 @@ impl ScanHistoryManager {
         }
         if let Some(until) = filter.until {
             query = query.bind(until.timestamp());
+        }
+        if let Some(limit) = filter.limit {
+            query = query.bind(limit);
         }
 
         query
@@ -234,7 +237,7 @@ impl ScanHistoryManager {
     pub async fn cleanup(&self, retention_days: u32, retention_count: u32) -> Result<u32> {
         let deleted = if retention_days > 0 {
             let cutoff = Utc::now().timestamp() - (retention_days as i64 * 86400);
-            sqlx::query("DELETE FROM scan_sessions WHERE deleted_at < ?")
+            sqlx::query("DELETE FROM scan_sessions WHERE started_at < ?")
                 .bind(cutoff)
                 .execute(&self.pool)
                 .await

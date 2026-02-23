@@ -184,7 +184,7 @@ impl Daemon {
         let context = ctx.clone();
         let scan_flag = self.daemon_scan_in_progress.clone();
 
-        // Crate the cron job
+        // Create the cron job
         let job = tokio_cron_scheduler::Job::new_async(
             self.daemon_config.schedule.as_str(),
             move |_uuid, _lock| {
