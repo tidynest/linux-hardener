@@ -1,0 +1,416 @@
+// =============================================================================
+// TAURI IPC MOCK — Linux System Hardener GUI Tests
+// =============================================================================
+// Injected before WASM loads to simulate window.__TAURI__.core.invoke().
+// Field names match Rust struct definitions exactly (serde snake_case).
+//
+// Error mode: add ?error_mode=scan|apply|all to URL to trigger errors.
+// =============================================================================
+
+(function () {
+  'use strict';
+
+  const params = new URLSearchParams(window.location.search);
+  const errorMode = params.get('error_mode') || '';
+
+  function shouldError(cmd) {
+    if (errorMode === 'all') return true;
+    if (errorMode === 'scan' && cmd === 'run_scan') return true;
+    if (errorMode === 'apply' && (cmd === 'run_apply' || cmd === 'run_apply_dry_run')) return true;
+    if (errorMode === 'checkpoint' && cmd === 'get_checkpoints') return true;
+    return false;
+  }
+
+  // ---- State ----
+  let scanHasRun = false;
+
+  // ---- Mock Data ----
+
+  const SCAN_RESULTS = [
+    {
+      scan_plugin_id: 'kernel-hardening',
+      scan_success: true,
+      scan_findings: [
+        {
+          finding_id: 'kernel-001',
+          finding_category: 'Kernel',
+          finding_severity: 'Critical',
+          finding_title: 'ASLR not fully enabled',
+          finding_description: 'Address Space Layout Randomisation is not configured to maximum security level',
+          finding_current_value: '1',
+          finding_recommended_value: '2',
+          finding_explanation: 'ASLR randomises memory addresses to prevent exploitation. Level 2 provides full randomisation including heap and stack.',
+          finding_impact: 'Without full ASLR, attackers can more easily exploit memory corruption vulnerabilities.',
+          finding_remediation_steps: [
+            'Set kernel.randomize_va_space = 2 in /etc/sysctl.conf',
+            "Run 'sudo sysctl -p' to apply changes",
+          ],
+          finding_compliance: [],
+          finding_policy_exception: null,
+        },
+        {
+          finding_id: 'kernel-002',
+          finding_category: 'Kernel',
+          finding_severity: 'High',
+          finding_title: 'Kernel pointers exposed',
+          finding_description: 'Kernel pointers are visible to unprivileged users',
+          finding_current_value: '0',
+          finding_recommended_value: '2',
+          finding_explanation: 'Hiding kernel pointers prevents information disclosure attacks.',
+          finding_impact: 'Exposed kernel pointers aid in kernel exploitation.',
+          finding_remediation_steps: ['Set kernel.kptr_restrict = 2'],
+          finding_compliance: [],
+          finding_policy_exception: null,
+        },
+      ],
+      scan_duration_us: 1250,
+      scan_error: null,
+    },
+    {
+      scan_plugin_id: 'ssh-hardening',
+      scan_success: true,
+      scan_findings: [
+        {
+          finding_id: 'ssh-001',
+          finding_category: 'Authentication',
+          finding_severity: 'Critical',
+          finding_title: 'Root login via SSH enabled',
+          finding_description: 'SSH configuration allows direct root login',
+          finding_current_value: 'yes',
+          finding_recommended_value: 'no',
+          finding_explanation: 'Disabling root SSH login forces users to authenticate as regular users first, providing better audit trails.',
+          finding_impact: 'Direct root access increases risk of brute-force attacks and provides no audit trail.',
+          finding_remediation_steps: [
+            'Edit /etc/ssh/sshd_config',
+            'Set PermitRootLogin no',
+            'Restart SSH service: sudo systemctl restart sshd',
+          ],
+          finding_compliance: [],
+          finding_policy_exception: null,
+        },
+      ],
+      scan_duration_us: 890,
+      scan_error: null,
+    },
+    {
+      scan_plugin_id: 'firewall-hardening',
+      scan_success: true,
+      scan_findings: [
+        {
+          finding_id: 'firewall-001',
+          finding_category: 'Network',
+          finding_severity: 'High',
+          finding_title: 'Firewall not enabled',
+          finding_description: 'System firewall is not active',
+          finding_current_value: 'inactive',
+          finding_recommended_value: 'active',
+          finding_explanation: 'An active firewall blocks unauthorised network access.',
+          finding_impact: 'Without a firewall, all network services are exposed.',
+          finding_remediation_steps: [
+            'Enable firewall: sudo ufw enable',
+            'Configure default deny: sudo ufw default deny incoming',
+          ],
+          finding_compliance: [],
+          finding_policy_exception: null,
+        },
+      ],
+      scan_duration_us: 450,
+      scan_error: null,
+    },
+    {
+      scan_plugin_id: 'pam-hardening',
+      scan_success: true,
+      scan_findings: [
+        {
+          finding_id: 'pam-001',
+          finding_category: 'Authentication',
+          finding_severity: 'Medium',
+          finding_title: 'Password complexity not enforced',
+          finding_description: 'PAM password quality module is not configured',
+          finding_current_value: 'not configured',
+          finding_recommended_value: 'minlen=12 ucredit=-1 dcredit=-1',
+          finding_explanation: 'Strong password requirements reduce brute-force attack effectiveness.',
+          finding_impact: 'Weak passwords can be easily guessed or cracked.',
+          finding_remediation_steps: [
+            'Install libpam-pwquality',
+            'Configure /etc/security/pwquality.conf',
+          ],
+          finding_compliance: [],
+          finding_policy_exception: null,
+        },
+      ],
+      scan_duration_us: 320,
+      scan_error: null,
+    },
+    {
+      scan_plugin_id: 'services-hardening',
+      scan_success: true,
+      scan_findings: [
+        {
+          finding_id: 'services-001',
+          finding_category: 'Services',
+          finding_severity: 'Medium',
+          finding_title: 'Unnecessary services running',
+          finding_description: 'avahi-daemon and cups are running but may not be required',
+          finding_current_value: 'active',
+          finding_recommended_value: 'disabled',
+          finding_explanation: 'Minimising running services reduces the attack surface.',
+          finding_impact: 'Each unnecessary service is a potential entry point for attackers.',
+          finding_remediation_steps: [
+            'Review service necessity',
+            'Disable with: sudo systemctl disable --now <service>',
+          ],
+          finding_compliance: [],
+          finding_policy_exception: null,
+        },
+        {
+          finding_id: 'services-002',
+          finding_category: 'Services',
+          finding_severity: 'Low',
+          finding_title: 'Bluetooth service enabled',
+          finding_description: 'bluetooth.service is active on a potentially headless system',
+          finding_current_value: 'active',
+          finding_recommended_value: 'disabled',
+          finding_explanation: 'Bluetooth should be disabled on systems that do not require it.',
+          finding_impact: 'Bluetooth can be used for proximity-based attacks.',
+          finding_remediation_steps: [
+            'Disable with: sudo systemctl disable --now bluetooth.service',
+          ],
+          finding_compliance: [],
+          finding_policy_exception: null,
+        },
+      ],
+      scan_duration_us: 580,
+      scan_error: null,
+    },
+    {
+      scan_plugin_id: 'permissions-hardening',
+      scan_success: true,
+      scan_findings: [
+        {
+          finding_id: 'perms-001',
+          finding_category: 'FileSystem',
+          finding_severity: 'High',
+          finding_title: 'World-writable files in /etc',
+          finding_description: 'Configuration files with insecure permissions found',
+          finding_current_value: '0666',
+          finding_recommended_value: '0644',
+          finding_explanation: 'World-writable config files can be modified by any user.',
+          finding_impact: 'Attackers can modify system configuration to escalate privileges.',
+          finding_remediation_steps: [
+            'Run: sudo chmod 644 /etc/affected-file',
+            'Audit all files in /etc for correct permissions',
+          ],
+          finding_compliance: [],
+          finding_policy_exception: null,
+        },
+      ],
+      scan_duration_us: 720,
+      scan_error: null,
+    },
+  ];
+
+  const APPLY_RESULTS = [
+    {
+      apply_plugin_id: 'kernel-hardening',
+      apply_success: true,
+      apply_changes: [
+        {
+          change_description: 'Set kernel.randomize_va_space = 2',
+          change_type: 'KernelParameter',
+          change_success: true,
+          change_error: null,
+        },
+        {
+          change_description: 'Set kernel.kptr_restrict = 2',
+          change_type: 'KernelParameter',
+          change_success: true,
+          change_error: null,
+        },
+      ],
+      apply_checkpoint_id: 'chk-20260223-001',
+      apply_error: null,
+    },
+    {
+      apply_plugin_id: 'ssh-hardening',
+      apply_success: true,
+      apply_changes: [
+        {
+          change_description: 'Set PermitRootLogin no in /etc/ssh/sshd_config',
+          change_type: 'ConfigFile',
+          change_success: true,
+          change_error: null,
+        },
+      ],
+      apply_checkpoint_id: 'chk-20260223-001',
+      apply_error: null,
+    },
+  ];
+
+  const DRY_RUN_RESULTS = [
+    {
+      validation_report_plugin_id: 'kernel-hardening',
+      validation_report_is_valid: true,
+      validation_report_issues: [],
+      validation_report_estimated_changes: [
+        'Set kernel.randomize_va_space = 2',
+        'Set kernel.kptr_restrict = 2',
+      ],
+    },
+    {
+      validation_report_plugin_id: 'ssh-hardening',
+      validation_report_is_valid: true,
+      validation_report_issues: [],
+      validation_report_estimated_changes: [
+        'Set PermitRootLogin no in /etc/ssh/sshd_config',
+        'Set MaxAuthTries 3 in /etc/ssh/sshd_config',
+      ],
+    },
+    {
+      validation_report_plugin_id: 'firewall-hardening',
+      validation_report_is_valid: true,
+      validation_report_issues: [
+        {
+          validation_issue_severity: 'Low',
+          validation_issue_message: 'UFW not installed; nftables will be configured instead',
+          validation_issue_config_key: null,
+        },
+      ],
+      validation_report_estimated_changes: [
+        'Enable nftables with default deny policy',
+        'Allow established connections',
+      ],
+    },
+  ];
+
+  const CHECKPOINTS = [
+    {
+      checkpoint_id: 'chk-20260223-001',
+      checkpoint_name: 'Pre-hardening checkpoint',
+      checkpoint_created: '2026-02-23 10:30:00 UTC',
+      checkpoint_user: 'root',
+    },
+    {
+      checkpoint_id: 'chk-20260222-003',
+      checkpoint_name: 'SSH hardening rollback point',
+      checkpoint_created: '2026-02-22 15:45:00 UTC',
+      checkpoint_user: 'root',
+    },
+    {
+      checkpoint_id: 'chk-20260221-001',
+      checkpoint_name: 'Initial system state',
+      checkpoint_created: '2026-02-21 09:00:00 UTC',
+      checkpoint_user: 'root',
+    },
+  ];
+
+  function makeComplianceReport(framework, score, passing, failing, manualReview) {
+    const total = passing + failing + manualReview;
+    return {
+      report_framework: framework,
+      report_generated_at: new Date().toISOString(),
+      report_controls: [
+        {
+          control_id: `${framework}-1.1`,
+          control_title: 'Ensure filesystem integrity checking is configured',
+          control_section: '1. Initial Setup',
+          control_status: 'Pass',
+          control_findings: [],
+        },
+        {
+          control_id: `${framework}-5.2.1`,
+          control_title: 'Ensure permissions on SSH config files',
+          control_section: '5. Access Control',
+          control_status: failing > 0 ? 'Fail' : 'Pass',
+          control_findings: failing > 0 ? [SCAN_RESULTS[1].scan_findings[0]] : [],
+        },
+        {
+          control_id: `${framework}-6.1`,
+          control_title: 'System audit logging',
+          control_section: '6. Logging and Auditing',
+          control_status: manualReview > 0 ? 'ManualReview' : 'Pass',
+          control_findings: [],
+        },
+      ],
+      report_summary: {
+        summary_total_controls: total,
+        summary_passing: passing,
+        summary_failing: failing,
+        summary_manual_review: manualReview,
+        summary_not_applicable: 0,
+        summary_score_percentage: score,
+      },
+    };
+  }
+
+  const COMPLIANCE_REPORTS = {
+    CIS: makeComplianceReport('CIS', 82.5, 33, 5, 2),
+    STIG: makeComplianceReport('STIG', 71.0, 22, 8, 1),
+    NIST: makeComplianceReport('NIST', 88.0, 44, 4, 2),
+    PCIDSS: makeComplianceReport('PCIDSS', 55.0, 11, 7, 2),
+    HIPAA: makeComplianceReport('HIPAA', 65.0, 13, 5, 2),
+    GDPR: makeComplianceReport('GDPR', 78.0, 18, 4, 1),
+  };
+
+  // ---- Command Handler ----
+
+  async function handleInvoke(cmd, args) {
+    // Simulate network latency
+    await new Promise((r) => setTimeout(r, 150 + Math.random() * 200));
+
+    if (shouldError(cmd)) {
+      switch (cmd) {
+        case 'run_scan':
+          throw 'Scan failed: permission denied reading /proc/sys';
+        case 'run_apply':
+        case 'run_apply_dry_run':
+          throw 'Authentication required: pkexec agent not available';
+        case 'get_checkpoints':
+          throw 'Failed to load checkpoints: database locked';
+        default:
+          throw `Mock error for command: ${cmd}`;
+      }
+    }
+
+    switch (cmd) {
+      case 'run_scan':
+        scanHasRun = true;
+        return SCAN_RESULTS;
+
+      case 'get_latest_scan':
+        return scanHasRun ? SCAN_RESULTS : null;
+
+      case 'run_apply':
+        return APPLY_RESULTS;
+
+      case 'run_apply_dry_run':
+        return DRY_RUN_RESULTS;
+
+      case 'get_checkpoints':
+        return CHECKPOINTS;
+
+      case 'run_rollback':
+        return true;
+
+      case 'generate_compliance_report': {
+        const frameworks = (args && args.frameworks) || ['CIS'];
+        return frameworks
+          .map((f) => COMPLIANCE_REPORTS[f.toUpperCase()])
+          .filter(Boolean);
+      }
+
+      default:
+        throw `Unknown command: ${cmd}`;
+    }
+  }
+
+  // ---- Install Mock ----
+
+  window.__TAURI__ = {
+    core: {
+      invoke: handleInvoke,
+    },
+  };
+
+  console.log('[tauri-mock] Tauri IPC mock installed (error_mode: ' + (errorMode || 'none') + ')');
+})();

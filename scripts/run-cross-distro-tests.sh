@@ -10,6 +10,7 @@
 # Options:
 #   --apply           Enable destructive tests (apply + rollback)
 #   --distro NAME     Run only one distro (arch|debian|fedora|rhel|opensuse)
+#   --gui             Run GUI tests (Playwright Web UI) after CLI tests
 #   --rebuild         Build musl binary before testing
 #   --help            Show usage
 # =============================================================================
@@ -35,6 +36,7 @@ DISTRO_ORDER=(arch debian fedora rhel opensuse)
 # Options
 DO_APPLY=false
 SINGLE_DISTRO=""
+DO_GUI=false
 DO_REBUILD=false
 
 # Colours
@@ -65,6 +67,10 @@ while [[ $# -gt 0 ]]; do
             fi
             shift 2
             ;;
+        --gui)
+            DO_GUI=true
+            shift
+            ;;
         --rebuild)
             DO_REBUILD=true
             shift
@@ -78,6 +84,7 @@ Usage: sudo $0 [OPTIONS]
 Options:
   --apply           Enable destructive tests (apply + rollback)
   --distro NAME     Run only one distro (arch|debian|fedora|rhel|opensuse)
+  --gui             Run GUI tests (Playwright Web UI) after CLI tests
   --rebuild         Build musl binary before testing
   --help            Show usage
 
@@ -153,7 +160,7 @@ print_boxline() {
 echo -e "${MAGENTA}╔$(printf '═%.0s' $(seq 1 $BOX_W))╗${NC}"
 print_boxline ""
 print_boxline "   CROSS-DISTRO TEST RUNNER"
-print_boxline "   Distros: ${#DISTROS[@]}  |  Apply: $DO_APPLY"
+print_boxline "   Distros: ${#DISTROS[@]}  |  Apply: $DO_APPLY  |  GUI: $DO_GUI"
 print_boxline ""
 echo -e "${MAGENTA}╚$(printf '═%.0s' $(seq 1 $BOX_W))╝${NC}"
 echo ""
@@ -287,6 +294,30 @@ if [[ $overall_exit -eq 0 ]]; then
     echo -e "${GREEN}All distros passed.${NC}"
 else
     echo -e "${RED}Some distros had failures — check logs.${NC}"
+fi
+
+# =============================================================================
+# GUI Tests (optional)
+# =============================================================================
+
+if [[ "$DO_GUI" == "true" ]]; then
+    echo ""
+    echo -e "${MAGENTA}╔$(printf '═%.0s' $(seq 1 $BOX_W))╗${NC}"
+    print_boxline ""
+    print_boxline "   GUI TESTS (Web UI — Playwright)"
+    print_boxline ""
+    echo -e "${MAGENTA}╚$(printf '═%.0s' $(seq 1 $BOX_W))╝${NC}"
+    echo ""
+
+    gui_args=()
+    [[ -n "$SINGLE_DISTRO" ]] && gui_args+=(--distro "$SINGLE_DISTRO")
+
+    if "$SCRIPT_DIR/run-gui-tests.sh" "${gui_args[@]}"; then
+        echo -e "${GREEN}GUI tests passed.${NC}"
+    else
+        echo -e "${RED}GUI tests had failures — check test-results/gui/${NC}"
+        overall_exit=1
+    fi
 fi
 
 exit $overall_exit
