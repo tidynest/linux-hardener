@@ -4,7 +4,9 @@
 //! Includes tests for permission-denied scenarios (Bug D).
 
 use hardener_common::types::{PluginId, Severity};
-use hardener_core::{CommandOutput, Context, MockExecutor, plugin::HardeningPlugin};
+use hardener_core::{
+    CommandOutput, Context, MockExecutor, PluginConfig, PolicyException, plugin::HardeningPlugin,
+};
 use hardener_plugins::FirewallHardeningPlugin;
 use std::sync::Arc;
 
@@ -244,4 +246,191 @@ async fn test_firewall_scan_duration_recorded() {
     let result = plugin.scan(&ctx).await.unwrap();
 
     assert!(result.scan_duration_us > 0);
+}
+
+/// Helper: UFW active + all baseline rule commands registered.
+/// Accepts an optional port override for the SSH rule (default "22").
+fn ufw_apply_executor(ssh_port: &str) -> MockExecutor {
+    let ok = CommandOutput {
+        stdout: "Rule added\n".to_string(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    MockExecutor::new()
+        .with_command_exists("ufw", true)
+        .with_command_exists("firewall-cmd", false)
+        .with_command_exists("nft", false)
+        // is_enabled: systemctl returns active → skip enable
+        .with_command(
+            "systemctl",
+            &["is-active", "ufw"],
+            CommandOutput {
+                stdout: "active\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        // Baseline rule commands (UFW build_ufw_rule_args output)
+        .with_command("ufw", &["allow", "from", "127.0.0.1/8"], ok.clone())
+        .with_command("ufw", &["allow"], ok.clone())
+        .with_command(
+            "ufw",
+            &["allow", "to", "any", "port", ssh_port, "proto", "tcp"],
+            ok.clone(),
+        )
+        .with_command("ufw", &["deny"], ok)
+}
+
+#[tokio::test]
+async fn test_firewall_apply_respects_directives() {
+    let executor = ufw_apply_executor("2222");
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    let plugin = FirewallHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config
+        .directives
+        .insert("ssh.port".to_string(), "2222".to_string());
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    assert!(
+        result.apply_success,
+        "apply should succeed, errors: {:?}",
+        result
+            .apply_changes
+            .iter()
+            .filter(|c| !c.change_success)
+            .collect::<Vec<_>>()
+    );
+
+    // Verify the mock received the overridden port in the ufw command
+    let log = executor.log();
+    let ssh_cmd = log
+        .commands_executed
+        .iter()
+        .find(|(cmd, args)| cmd == "ufw" && args.iter().any(|a| a == "2222"));
+    assert!(
+        ssh_cmd.is_some(),
+        "ufw should have been called with port 2222, got: {:?}",
+        log.commands_executed
+    );
+}
+
+#[tokio::test]
+async fn test_firewall_apply_skips_exceptions() {
+    // Register commands for the 3 remaining rules (loopback, established, drop).
+    // SSH rule is excepted, so its ufw command should NOT be called.
+    let ok = CommandOutput {
+        stdout: "Rule added\n".to_string(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    let executor = MockExecutor::new()
+        .with_command_exists("ufw", true)
+        .with_command_exists("firewall-cmd", false)
+        .with_command_exists("nft", false)
+        .with_command(
+            "systemctl",
+            &["is-active", "ufw"],
+            CommandOutput {
+                stdout: "active\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command("ufw", &["allow", "from", "127.0.0.1/8"], ok.clone())
+        .with_command("ufw", &["allow"], ok.clone())
+        // No SSH rule registered — if the plugin tries to call it, the mock errors
+        .with_command("ufw", &["deny"], ok);
+
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    let plugin = FirewallHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "ssh".to_string(),
+        PolicyException {
+            value: "skip".to_string(),
+            allowed: true,
+            reason: "SSH managed externally".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    assert!(
+        result.apply_success,
+        "apply should succeed, errors: {:?}",
+        result
+            .apply_changes
+            .iter()
+            .filter(|c| !c.change_success)
+            .collect::<Vec<_>>()
+    );
+
+    // Should have a "skipped" change for the SSH rule
+    let skipped = result
+        .apply_changes
+        .iter()
+        .find(|c| c.change_description.contains("skipped"));
+    assert!(skipped.is_some(), "should have a skipped change for SSH");
+    assert!(
+        skipped
+            .expect("checked above")
+            .change_description
+            .contains("SSH managed externally"),
+    );
+
+    // Verify no ufw command was issued for SSH port
+    let log = executor.log();
+    assert!(
+        !log.commands_executed
+            .iter()
+            .any(|(cmd, args)| cmd == "ufw" && args.iter().any(|a| a == "22")),
+        "should not execute ufw command for excepted SSH rule"
+    );
+}
+
+#[tokio::test]
+async fn test_firewall_validate_skips_exceptions() {
+    let executor = ufw_active_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = FirewallHardeningPlugin::new();
+
+    // Exception on the SSH rule — should reduce baseline count from 4 to 3
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "ssh".to_string(),
+        PolicyException {
+            value: "skip".to_string(),
+            allowed: true,
+            reason: "SSH managed externally".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let report = plugin.validate(&ctx, &config).await.unwrap();
+
+    // Should say "Apply 3 baseline firewall rules" (not 4)
+    let rule_change = report
+        .validation_report_estimated_changes
+        .iter()
+        .find(|c| c.contains("baseline firewall rules"));
+    assert!(
+        rule_change.is_some(),
+        "should have estimated changes for rules"
+    );
+    assert!(
+        rule_change.expect("checked above").contains("3"),
+        "expected 3 rules after exception, got: {:?}",
+        report.validation_report_estimated_changes
+    );
 }

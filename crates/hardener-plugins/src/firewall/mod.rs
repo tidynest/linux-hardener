@@ -132,6 +132,41 @@ pub fn get_baseline_rules() -> Vec<Rule> {
     ]
 }
 
+/// Derives a short semantic identifier from a firewall rule.
+///
+/// Baseline rules get well-known ids; custom rules get a normalised slug.
+/// The ids serve as keys for config directives and exceptions.
+fn rule_id(rule: &Rule) -> String {
+    match rule.rule_description.as_str() {
+        "Allow loopback traffic" => "loopback".to_string(),
+        "Allow established and related connections" => "established".to_string(),
+        "Allow SSH to prevent lockout" => "ssh".to_string(),
+        "Drop all other inbound traffic by default" => "drop_default".to_string(),
+        other => other.to_lowercase().replace(' ', "_"),
+    }
+}
+
+/// Applies directive overrides to a single firewall rule.
+///
+/// Directives use `<rule_id>.<field>` keys:
+/// - `ssh.port` = "2222"
+/// - `ssh.source` = "10.0.0.0/8"
+fn apply_rule_directives(rule: &mut Rule, id: &str, config: &PluginConfig) {
+    if let Some(port) = config.directives.get(&format!("{id}.port")) {
+        rule.rule_port = port.clone();
+    }
+    if let Some(source) = config.directives.get(&format!("{id}.source")) {
+        rule.rule_source = source.clone();
+    }
+    if let Some(protocol) = config.directives.get(&format!("{id}.protocol")) {
+        rule.rule_protocol = protocol.clone();
+    }
+    if let Some(action) = config.directives.get(&format!("{id}.action")) {
+        rule.rule_action = action.clone();
+    }
+}
+
+
 /// Main firewall hardening plugin
 ///
 /// This plugin automatically detects and uses the appropriate firewall
@@ -277,7 +312,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         })
     }
 
-    async fn apply(&self, ctx: &mut Context, _config: &PluginConfig) -> Result<ApplyResult> {
+    async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult> {
         use std::path::Path;
 
         let apply_plugin_id = PluginId::new("firewall-hardening");
@@ -314,21 +349,45 @@ impl HardeningPlugin for FirewallHardeningPlugin {
             backend.enable(ctx).await?;
         }
 
-        // Apply default rules.
-        let rules = backend.get_default_rules();
-        let mut apply_changes = backend.apply_rules(ctx, &rules).await?;
+        // Build rule set with config filtering and directive overrides.
+        let baseline_rules = backend.get_default_rules();
+        let mut rules = Vec::with_capacity(baseline_rules.len());
+        let mut apply_changes = Vec::new();
 
         if checkpoint_id.is_some() {
-            apply_changes.insert(
-                0,
-                Change {
-                    change_description: "Created checkpoint for rollback".to_string(),
+            apply_changes.push(Change {
+                change_description: "Created checkpoint for rollback".to_string(),
+                change_type: ChangeType::FirewallRule,
+                change_success: true,
+                change_error: None,
+            });
+        }
+
+        for rule in baseline_rules {
+            let id = rule_id(&rule);
+            if let Some(exception) = config.has_valid_exception(&id) {
+                info!(
+                    "Skipping firewall rule '{}' — exception: {}",
+                    id, exception.reason
+                );
+                apply_changes.push(Change {
+                    change_description: format!(
+                        "{}: skipped (exception: {})",
+                        rule.rule_description, exception.reason
+                    ),
                     change_type: ChangeType::FirewallRule,
                     change_success: true,
                     change_error: None,
-                },
-            );
+                });
+                continue;
+            }
+            let mut rule = rule;
+            apply_rule_directives(&mut rule, &id, config);
+            rules.push(rule);
         }
+
+        let mut backend_changes = backend.apply_rules(ctx, &rules).await?;
+        apply_changes.append(&mut backend_changes);
 
         Ok(ApplyResult {
             apply_plugin_id,
@@ -364,7 +423,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         Ok(())
     }
 
-    async fn validate(&self, ctx: &Context, _config: &PluginConfig) -> Result<ValidationReport> {
+    async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {
         let validation_plugin_id = PluginId::new("firewall-hardening");
         let mut issues = Vec::new();
         let mut estimated_changes = Vec::new();
@@ -391,11 +450,15 @@ impl HardeningPlugin for FirewallHardeningPlugin {
                     }
                 }
 
-                // Get default rules that would be applied.
-                let rules = backend.get_default_rules();
-                if !rules.is_empty() {
+                // Count rules after config filtering.
+                let rule_count = backend
+                    .get_default_rules()
+                    .iter()
+                    .filter(|r| config.has_valid_exception(&rule_id(r)).is_none())
+                    .count();
+                if rule_count > 0 {
                     estimated_changes
-                        .push(format!("Apply {} baseline firewall rules", rules.len()));
+                        .push(format!("Apply {} baseline firewall rules", rule_count));
                 }
             }
             Err(e) => {
