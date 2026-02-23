@@ -586,7 +586,8 @@ In addition to CLI testing, the Web UI is validated with Playwright across all 5
 
 - **Virtual Display**: Xvfb (X virtual framebuffer) provides a headless display inside containers
 - **SPA Server**: `gui-tests/spa-server.py` -- Python HTTP server on port 8787 with client-side routing support (all non-file paths return `index.html`)
-- **Tauri IPC Mock**: `gui-tests/tauri-mock.js` -- JavaScript mock of `window.__TAURI__` injected before WASM loads, covering all 7 IPC commands (`run_scan`, `run_apply`, `run_apply_privileged`, `run_apply_dry_run`, `get_checkpoints`, `get_latest_scan`, `generate_compliance_report`)
+- **Test Index Generation**: `scripts/gui-test-inner.sh` dynamically generates the served `index.html` at test-time by reading `dist/index.html`, stripping SRI `integrity` attributes, and injecting `<script src="/tauri-mock.js"></script>` before the first `<script type="module">` tag
+- **Tauri IPC Mock**: `gui-tests/tauri-mock.js` -- JavaScript mock of `window.__TAURI__` injected before WASM loads, covering 15 IPC commands: `run_scan`, `run_scan_filtered`, `run_scan_with_options`, `get_latest_scan`, `run_apply`, `run_apply_privileged`, `run_apply_dry_run`, `get_checkpoints`, `create_checkpoint`, `delete_checkpoint`, `run_rollback`, `generate_compliance_report`, `export_report`, `get_scan_history`, `get_scan_session`
 - **Browser**: System Chromium auto-detected per distribution (no bundled browser)
 - **Test Runner**: Playwright (npm) with `gui-tests/playwright.config.js`
 

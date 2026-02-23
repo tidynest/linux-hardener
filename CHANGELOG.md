@@ -95,6 +95,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **GUI Test Runner**: `scripts/run-gui-tests.sh` orchestrates Playwright tests inside nspawn containers
 - **`--gui` flag for cross-distro runner**: `run-cross-distro-tests.sh --gui` runs GUI tests after CLI tests
 
+### Fixed (GUI Testing 2026-02-23)
+- **GUI Test HTML Generation**: `mock-index.html` removed; `gui-test-inner.sh` now generates `index.html` at
+  serve-time by reading `dist/index.html`, stripping SRI integrity attributes, and injecting `tauri-mock.js`
+  — eliminates hash drift when the WASM bundle changes
+
 ### Added (Distribution Validation)
 - **Container Test Scripts**: Distribution-specific container creation scripts
   - `scripts/create-debian-container.sh` - Debian/Ubuntu testing

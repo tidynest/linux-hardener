@@ -1280,7 +1280,7 @@ sudo ./scripts/run-cross-distro-tests.sh --gui
 
 **What It Does**:
 1. Starts Xvfb on display `:99`
-2. Launches `spa-server.py` serving `mock-index.html` (with Tauri IPC mock injected)
+2. Generates `index.html` dynamically from `dist/index.html` (SRI `integrity` attributes stripped, `tauri-mock.js` injected before the first `<script type="module">` tag) using a Python one-liner, then launches `spa-server.py` serving the modified file
 3. Auto-detects system Chromium path per distribution
 4. Runs `npx playwright test` with the detected browser
 5. Cleans up Xvfb and server on exit

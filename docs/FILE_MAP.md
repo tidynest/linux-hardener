@@ -621,8 +621,7 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 |------|---------|
 | `gui-tests/package.json` | npm dependencies (Playwright) |
 | `gui-tests/playwright.config.js` | Playwright configuration (base URL, browser, timeouts) |
-| `gui-tests/tauri-mock.js` | Tauri IPC mock (`window.__TAURI__`) covering all 7 commands |
-| `gui-tests/mock-index.html` | Modified `dist/index.html` with mock injection before WASM |
+| `gui-tests/tauri-mock.js` | Tauri IPC mock (`window.__TAURI__`) covering all 13 IPC commands |
 | `gui-tests/spa-server.py` | SPA-aware HTTP server (port 8787, client-side routing) |
 | `gui-tests/tests/helpers.js` | Shared test helpers and utilities |
 | `gui-tests/tests/dashboard.spec.js` | T-DASH-01..09 (9 tests): score, scan trigger, navigation, activity |
@@ -636,7 +635,7 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | File | Purpose |
 |------|---------|
 | `scripts/run-gui-tests.sh` | Host orchestrator for Web UI tests across all distros |
-| `scripts/gui-test-inner.sh` | Container inner script (Xvfb + SPA server + Playwright) |
+| `scripts/gui-test-inner.sh` | Container inner script (Xvfb + SPA server + Playwright); dynamically generates `index.html` at serve-time by stripping SRI `integrity` attributes and injecting `tauri-mock.js` into the built `dist/index.html` |
 | `scripts/run-tauri-gui-tests.sh` | Host orchestrator for Tauri desktop tests |
 | `scripts/tauri-gui-test-inner.sh` | Container inner script for Tauri desktop tests |
 

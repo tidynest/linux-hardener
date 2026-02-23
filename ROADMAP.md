@@ -204,7 +204,7 @@ This document tracks the development progress and planned features for Linux Sys
 | `scripts/create-test-container.sh` | Create/manage Arch Linux container |
 | `scripts/root-test-suite.sh` | Comprehensive root test suite |
 | `scripts/run-gui-tests.sh` | Web UI Playwright test orchestrator (5 distros) |
-| `scripts/gui-test-inner.sh` | Container inner script (Xvfb + HTTP + Playwright) |
+| `scripts/gui-test-inner.sh` | Container inner script (Xvfb + HTTP + Playwright; dynamically generates index.html from dist/) |
 | `scripts/run-tauri-gui-tests.sh` | Tauri desktop test orchestrator |
 | `scripts/tauri-gui-test-inner.sh` | Container inner script for Tauri desktop tests |
 
