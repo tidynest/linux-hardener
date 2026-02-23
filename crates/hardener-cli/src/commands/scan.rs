@@ -3,7 +3,10 @@ use crate::commands::daemon::load_scheduler_config;
 use crate::output;
 use anyhow::Result;
 use hardener_common::types::Severity;
-use hardener_core::{ConfigLoader, Context, HardenerConfig, PluginMetadata, executor::SystemExecutor, plugin::Finding};
+use hardener_core::{
+    ConfigLoader, Context, HardenerConfig, PluginMetadata, executor::SystemExecutor,
+    plugin::Finding,
+};
 use hardener_scheduler::ScanHistoryManager;
 use hardener_scheduler::db::ScanFinding;
 use std::{path::PathBuf, sync::Arc};
@@ -165,7 +168,10 @@ async fn persist_scan_session(results: &[(PluginMetadata, Vec<Finding>)]) {
         Err(_) => return,
     };
 
-    let plugins: Vec<String> = results.iter().map(|(m, _)| m.plugin_id.to_string()).collect();
+    let plugins: Vec<String> = results
+        .iter()
+        .map(|(m, _)| m.plugin_id.to_string())
+        .collect();
     let hostname = std::fs::read_to_string("/etc/hostname")
         .map(|h| h.trim().to_string())
         .unwrap_or_else(|_| "localhost".to_string());
@@ -178,11 +184,15 @@ async fn persist_scan_session(results: &[(PluginMetadata, Vec<Finding>)]) {
     let findings: Vec<ScanFinding> = results
         .iter()
         .flat_map(|(meta, findings): &(PluginMetadata, Vec<Finding>)| {
-            findings.iter().map(move |f| finding_to_scan_finding(meta, f))
+            findings
+                .iter()
+                .map(move |f| finding_to_scan_finding(meta, f))
         })
         .collect();
 
-    let _ = db.complete_session(&session_id, &findings, None, None).await;
+    let _ = db
+        .complete_session(&session_id, &findings, None, None)
+        .await;
 }
 
 /// Opens the scan history database using scheduler config paths.
