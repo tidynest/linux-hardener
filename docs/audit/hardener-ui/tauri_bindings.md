@@ -1,5 +1,5 @@
 # hardener-ui::tauri_bindings
-**File:** `crates/hardener-ui/src/tauri_bindings.rs` | **Lines:** 141
+**File:** `crates/hardener-ui/src/tauri_bindings.rs` | **Lines:** 145
 
 ## Purpose
 All Tauri IPC bindings. Provides async wrappers around `window.__TAURI__` invoke calls
@@ -15,7 +15,7 @@ with graceful browser-mode fallback when Tauri runtime is unavailable.
 | `invoke_generate_report` | async fn | Generate compliance report for a framework |
 | `invoke_get_latest_scan` | async fn | Fetch most recent scan results |
 | `invoke_get_checkpoints` | async fn | List all checkpoints |
-| `invoke_rollback` | async fn | Rollback to a specific checkpoint |
+| `invoke_rollback` | async fn | Rollback to a specific checkpoint, returns `RollbackResult` with per-file status |
 
 ## Internal Details
 | Item | Description |

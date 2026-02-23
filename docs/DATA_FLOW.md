@@ -520,7 +520,7 @@ struct Finding {
 |---------|------------|---------|
 | `run_scan` | `plugin: Option<String>` | `Vec<ScanResult>` |
 | `run_apply` | `plugins: Vec<String>` | `Vec<ApplyResult>` |
-| `run_rollback` | `checkpoint_id: String` | `Result<(), String>` |
+| `run_rollback` | `checkpoint_id: String` | `RollbackResult` |
 | `get_checkpoints` | None | `Vec<Checkpoint>` |
 | `generate_compliance_report` | `frameworks: Vec<String>` | `Vec<ComplianceReport>` |
 

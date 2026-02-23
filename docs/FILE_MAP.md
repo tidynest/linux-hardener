@@ -158,7 +158,7 @@ const KERNEL_PARAMS: &[(&str, &str, &str)] = &[
 | File | Purpose | Key Exports |
 |------|---------|-------------|
 | `src/lib.rs` | Module exports | Re-exports |
-| `src/checkpoint.rs` | Checkpoint types | `Checkpoint`, `CheckpointId`, `FileState`, `RollbackResult`, `FileRestoreResult`, `FileRestoreAction` |
+| `src/checkpoint.rs` | Checkpoint types | `Checkpoint`, `CheckpointId`, `FileState`; re-exports `RollbackResult`, `FileRestoreResult`, `FileRestoreAction` from `hardener-types` |
 | `src/manager.rs` | Checkpoint operations | `CheckpointManager`, `create_checkpoint_metadata_only()`, `capture_directory_entry()` |
 | `src/audit.rs` | Audit logging | `AuditEntry`, `AuditLogger`, `ActionType` |
 | `src/hash_chain.rs` | Tamper detection | `HashChain` |
@@ -463,7 +463,7 @@ pub async fn invoke_apply(plugin_ids: Vec<String>) -> Result<Vec<ApplyResult>, S
 pub async fn invoke_generate_report(frameworks: Vec<String>) -> Result<Vec<ComplianceReport>, String>;
 pub async fn invoke_get_latest_scan() -> Result<Option<Vec<ScanResult>>, String>;
 pub async fn invoke_get_checkpoints() -> Result<Vec<CheckpointInfo>, String>;
-pub async fn invoke_rollback(checkpoint_id: String) -> Result<(), String>;
+pub async fn invoke_rollback(checkpoint_id: String) -> Result<RollbackResult, String>;
 ```
 
 ---
@@ -485,7 +485,7 @@ pub async fn run_scan() -> Result<Vec<ScanResult>, String>
 pub async fn run_apply(plugin_ids: Vec<String>) -> Result<Vec<ApplyResult>, String>
 
 #[tauri::command]
-pub async fn run_rollback(checkpoint_id: String) -> Result<bool, String>
+pub async fn run_rollback(checkpoint_id: String) -> Result<RollbackResult, String>
 
 #[tauri::command]
 pub async fn get_checkpoints() -> Result<Vec<CheckpointInfo>, String>

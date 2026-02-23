@@ -305,7 +305,7 @@ sudo ./scripts/root-test-suite.sh --apply      # Full tests (apply + rollback)
 - [x] Scan execution
 - [x] Apply hardening (via pkexec)
 - [x] Checkpoint creation
-- [x] Rollback functionality
+- [x] Rollback functionality (parses `RollbackResult` JSON, displays per-file restore status)
 - [x] Error propagation
 
 #### H. Root Privilege Escalation ✅
