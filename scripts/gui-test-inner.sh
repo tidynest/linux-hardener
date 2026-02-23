@@ -76,8 +76,14 @@ prepare_serve_dir() {
     # Copy mock files
     cp "$GUI_TESTS/tauri-mock.js" "$SERVE_DIR/"
 
-    # Replace index.html with mock version (injects tauri-mock.js)
-    cp "$GUI_TESTS/mock-index.html" "$SERVE_DIR/index.html"
+    # Generate index.html: strip SRI integrity attrs + inject tauri-mock.js
+    python3 -c "
+import re, sys
+html = open(sys.argv[1]).read()
+html = re.sub(r' integrity=\"[^\"]*\"', '', html)
+html = html.replace('<script type=\"module\">', '<script src=\"/tauri-mock.js\"></script>\n<script type=\"module\">', 1)
+open(sys.argv[2], 'w').write(html)
+" "$PROJECT/crates/hardener-ui/dist/index.html" "$SERVE_DIR/index.html"
 
     echo -e "${GREEN}[setup] Serve directory ready: $SERVE_DIR${NC}"
     ls -la "$SERVE_DIR/"
@@ -126,6 +132,7 @@ start_http_server() {
         return 1
     fi
     echo -e "${GREEN}[http] HTTP server running on localhost:$HTTP_PORT (PID $HTTP_PID)${NC}"
+
 }
 
 # =============================================================================
