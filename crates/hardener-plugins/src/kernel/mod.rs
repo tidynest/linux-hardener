@@ -269,8 +269,8 @@ impl HardeningPlugin for KernelHardeningPlugin {
     ///
     /// # Arguments
     /// * `ctx`    - Execution context with checkpoint manager
-    /// * `config` - Configuration (unused for now, applies all hardening)
-    async fn apply(&self, ctx: &mut Context, _config: &PluginConfig) -> Result<ApplyResult> {
+    /// * `config` - Plugin configuration with directive overrides and policy exceptions
+    async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult> {
         let mut apply_changes = Vec::new();
         let hardener_sysctl_path = Path::new("/etc/sysctl.d/99-hardener.conf");
 
@@ -302,31 +302,57 @@ impl HardeningPlugin for KernelHardeningPlugin {
 
         // Apply each parameter to runtime AND build config file content.
         for (param_name, expected_value, param_description) in KERNEL_PARAMS {
+            // Check for a valid exception — skip this parameter if exempted
+            if let Some(exception) = config.has_valid_exception(param_name) {
+                info!("Skipping {} — exception: {}", param_name, exception.reason);
+                sysctl_config_content.push_str(&format!(
+                    "# {} — SKIPPED (exception: {})\n\n",
+                    param_name, exception.reason
+                ));
+                apply_changes.push(Change {
+                    change_description: format!(
+                        "{}: skipped (exception: {})",
+                        param_description, exception.reason
+                    ),
+                    change_type: ChangeType::KernelParameter,
+                    change_success: true,
+                    change_error: None,
+                });
+                continue;
+            }
+
+            // Determine target value: user directive override or hardcoded baseline
+            let target_value = config
+                .directives
+                .get(*param_name)
+                .map(|s| s.as_str())
+                .unwrap_or(expected_value);
+
             let path = format!("/proc/sys/{}", param_name.replace('.', "/"));
 
             // Add to persistent config file.
             sysctl_config_content.push_str(&format!(
                 "# {}\n{} = {}\n\n",
-                param_description, param_name, expected_value
+                param_description, param_name, target_value
             ));
 
             // Apply immediately to runtime.
             match ctx
                 .executor()
-                .write_file(Path::new(&path), expected_value)
+                .write_file(Path::new(&path), target_value)
                 .await
             {
                 Ok(_) => {
                     apply_changes.push(Change {
                         change_description: format!(
                             "{}: set to {}",
-                            param_description, expected_value
+                            param_description, target_value
                         ),
                         change_type: ChangeType::KernelParameter,
                         change_success: true,
                         change_error: None,
                     });
-                    info!("Applied {}: {}", param_name, expected_value);
+                    info!("Applied {}: {}", param_name, target_value);
                 }
                 Err(e) => {
                     apply_changes.push(Change {
@@ -430,12 +456,24 @@ impl HardeningPlugin for KernelHardeningPlugin {
     /// actually modifying them.
     ///
     /// # Arguments
-    /// * `config` - Configuration to validate (unused for now)
-    async fn validate(&self, ctx: &Context, _config: &PluginConfig) -> Result<ValidationReport> {
+    /// * `config` - Plugin configuration with directive overrides and policy exceptions
+    async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {
         let mut issues = Vec::new();
         let mut estimated_changes = Vec::new();
 
         for (param_name, expected_value, _expected_description) in KERNEL_PARAMS {
+            // Skip parameters with valid exceptions
+            if config.has_valid_exception(param_name).is_some() {
+                continue;
+            }
+
+            // Determine target value for preview
+            let target_value = config
+                .directives
+                .get(*param_name)
+                .map(|s| s.as_str())
+                .unwrap_or(expected_value);
+
             let path = format!("/proc/sys/{}", param_name.replace('.', "/"));
 
             // Check if parameter exists and is readable
@@ -450,7 +488,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
                         });
                     } else {
                         estimated_changes
-                            .push(format!("{} will be set to {}", param_name, expected_value));
+                            .push(format!("{} will be set to {}", param_name, target_value));
                     }
                 }
                 Err(_) => {

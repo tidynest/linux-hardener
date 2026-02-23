@@ -3,7 +3,7 @@
 //! These tests verify plugin behavior without touching the real /proc/sys filesystem.
 
 use hardener_common::types::{PluginId, Severity};
-use hardener_core::{Context, FileMetadata, MockExecutor, SystemExecutor, plugin::HardeningPlugin};
+use hardener_core::{Context, FileMetadata, MockExecutor, PluginConfig, PolicyException, SystemExecutor, plugin::HardeningPlugin};
 use hardener_plugins::KernelHardeningPlugin;
 use std::sync::Arc;
 
@@ -351,5 +351,124 @@ async fn test_kernel_scan_with_remote_executor() {
             .scan_findings
             .iter()
             .any(|f| f.finding_id == "kernel_kernel_kptr_restrict")
+    );
+}
+
+#[tokio::test]
+async fn test_kernel_apply_respects_directives() {
+    let executor = insecure_kernel_executor();
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    let plugin = KernelHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config
+        .directives
+        .insert("kernel.kptr_restrict".to_string(), "3".to_string());
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    // The directive-overridden param should report target value "3"
+    let kptr_change = result
+        .apply_changes
+        .iter()
+        .find(|c| c.change_description.contains("kernel pointers"))
+        .expect("should have a kptr_restrict change");
+    assert!(
+        kptr_change.change_description.contains("set to 3"),
+        "expected directive value '3', got: {}",
+        kptr_change.change_description
+    );
+
+    // Verify the mock executor received "3" for that path
+    let log = executor.log();
+    let kptr_write = log
+        .files_written
+        .iter()
+        .find(|(p, _)| p.to_str().unwrap().contains("kptr_restrict"))
+        .expect("should have written to kptr_restrict path");
+    assert_eq!(kptr_write.1, "3");
+}
+
+#[tokio::test]
+async fn test_kernel_apply_skips_exceptions() {
+    let executor = insecure_kernel_executor();
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    let plugin = KernelHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "kernel.randomize_va_space".to_string(),
+        PolicyException {
+            value: "0".to_string(),
+            allowed: true,
+            reason: "Legacy software compatibility".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    // Should have a "skipped" change for the excepted param
+    let skipped = result
+        .apply_changes
+        .iter()
+        .find(|c| c.change_description.contains("skipped"))
+        .expect("should have a skipped change");
+    assert!(skipped.change_description.contains("Legacy software"));
+    assert!(skipped.change_success);
+
+    // Should NOT have written to the excepted param's /proc/sys path
+    let log = executor.log();
+    assert!(
+        !log.files_written
+            .iter()
+            .any(|(p, _)| p.to_str().unwrap().contains("randomize_va_space")),
+        "should not write to excepted parameter"
+    );
+}
+
+#[tokio::test]
+async fn test_kernel_validate_skips_exceptions() {
+    let executor = MockExecutor::new().with_file_metadata(
+        "/proc/sys/kernel/randomize_va_space",
+        "0",
+        FileMetadata {
+            exists: true,
+            is_file: true,
+            is_dir: false,
+            mode: 0o644,
+            size: 2,
+        },
+    );
+
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = KernelHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "kernel.randomize_va_space".to_string(),
+        PolicyException {
+            value: "0".to_string(),
+            allowed: true,
+            reason: "Legacy software compatibility".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let report = plugin.validate(&ctx, &config).await.unwrap();
+
+    // Excepted param should NOT appear in estimated_changes
+    assert!(
+        !report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("randomize_va_space")),
+        "excepted param should not appear in estimated changes"
     );
 }
