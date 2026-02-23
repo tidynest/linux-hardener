@@ -351,7 +351,7 @@ impl HardeningPlugin for MacHardeningPlugin {
         })
     }
 
-    async fn apply(&self, ctx: &mut Context, _config: &PluginConfig) -> Result<ApplyResult> {
+    async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult> {
         let apply_plugin_id = PluginId::new("mac-hardening");
         let mut apply_changes = Vec::new();
 
@@ -376,33 +376,61 @@ impl HardeningPlugin for MacHardeningPlugin {
         // Detect which MAC system is present
         match self.detect_mac_system(ctx).await {
             Some(MacSystem::SELinux) => {
-                // Try to set SELinux to enforcing mode
-                match self.set_selinux_enforcing(ctx).await {
-                    Ok(change) => {
-                        apply_changes.push(change);
-                    }
-                    Err(e) => {
-                        return Ok(ApplyResult {
-                            apply_plugin_id,
-                            apply_success: false,
-                            apply_changes,
-                            apply_checkpoint_id: checkpoint_id,
-                            apply_error: Some(format!("Failed to set SELinux enforcing: {}", e)),
-                        });
+                // Check for exception before enforcing
+                if let Some(exception) = config.has_valid_exception("selinux-enforcing") {
+                    info!("Skipping SELinux enforcement — exception: {}", exception.reason);
+                    apply_changes.push(Change {
+                        change_description: format!(
+                            "SELinux enforcement: skipped (exception: {})",
+                            exception.reason
+                        ),
+                        change_type: ChangeType::ConfigFile,
+                        change_success: true,
+                        change_error: None,
+                    });
+                } else {
+                    // Try to set SELinux to enforcing mode
+                    match self.set_selinux_enforcing(ctx).await {
+                        Ok(change) => {
+                            apply_changes.push(change);
+                        }
+                        Err(e) => {
+                            return Ok(ApplyResult {
+                                apply_plugin_id,
+                                apply_success: false,
+                                apply_changes,
+                                apply_checkpoint_id: checkpoint_id,
+                                apply_error: Some(format!(
+                                    "Failed to set SELinux enforcing: {}",
+                                    e
+                                )),
+                            });
+                        }
                     }
                 }
             }
             Some(MacSystem::AppArmor) => {
-                // For AppArmor, we can't automatically enforce all profiles
-                // as this requires knowing which profiles should be enforced.
-                // Instead, we report what needs to be done.
-                apply_changes.push(Change {
-                    change_description: "AppArmor detected - use aa-enforce to set specific profiles to enforce mode"
-                        .to_string(),
-                    change_type: ChangeType::ConfigFile,
-                    change_success: true,
-                    change_error: None,
-                });
+                // Check for exception before AppArmor enforcement guidance
+                if let Some(exception) = config.has_valid_exception("apparmor-enforce") {
+                    info!("Skipping AppArmor enforcement — exception: {}", exception.reason);
+                    apply_changes.push(Change {
+                        change_description: format!(
+                            "AppArmor enforcement: skipped (exception: {})",
+                            exception.reason
+                        ),
+                        change_type: ChangeType::ConfigFile,
+                        change_success: true,
+                        change_error: None,
+                    });
+                } else {
+                    apply_changes.push(Change {
+                        change_description: "AppArmor detected - use aa-enforce to set specific profiles to enforce mode"
+                            .to_string(),
+                        change_type: ChangeType::ConfigFile,
+                        change_success: true,
+                        change_error: None,
+                    });
+                }
             }
             None => {
                 return Ok(ApplyResult {
@@ -465,7 +493,7 @@ impl HardeningPlugin for MacHardeningPlugin {
         Ok(())
     }
 
-    async fn validate(&self, ctx: &Context, _config: &PluginConfig) -> Result<ValidationReport> {
+    async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {
         let validation_plugin_id = PluginId::new("mac-hardening");
         let mut issues = Vec::new();
         let mut estimated_changes = Vec::new();
@@ -473,27 +501,32 @@ impl HardeningPlugin for MacHardeningPlugin {
         // Detect which MAC system is present
         match self.detect_mac_system(ctx).await {
             Some(MacSystem::SELinux) => {
-                // Check if we can read SELinux mode
-                match self.get_selinux_mode(ctx).await {
-                    Ok(mode) => {
-                        if mode != "Enforcing" {
-                            estimated_changes.push("Set SELinux to enforcing mode".to_string());
+                // Skip if SELinux enforcement is excepted
+                if config.has_valid_exception("selinux-enforcing").is_none() {
+                    match self.get_selinux_mode(ctx).await {
+                        Ok(mode) => {
+                            if mode != "Enforcing" {
+                                estimated_changes
+                                    .push("Set SELinux to enforcing mode".to_string());
+                            }
                         }
-                    }
-                    Err(_) => {
-                        issues.push(ValidationIssue {
-                            validation_issue_severity: Severity::High,
-                            validation_issue_message:
-                                "Cannot read SELinux status - getenforce may not be available"
-                                    .to_string(),
-                            validation_issue_config_key: Some("selinux.mode".to_string()),
-                        });
+                        Err(_) => {
+                            issues.push(ValidationIssue {
+                                validation_issue_severity: Severity::High,
+                                validation_issue_message:
+                                    "Cannot read SELinux status - getenforce may not be available"
+                                        .to_string(),
+                                validation_issue_config_key: Some("selinux.mode".to_string()),
+                            });
+                        }
                     }
                 }
             }
             Some(MacSystem::AppArmor) => {
-                // Check if we can read AppArmor status
-                if self.get_apparmor_status(ctx).await.is_err() {
+                // Skip if AppArmor enforcement is excepted
+                if config.has_valid_exception("apparmor-enforce").is_none()
+                    && self.get_apparmor_status(ctx).await.is_err()
+                {
                     issues.push(ValidationIssue {
                         validation_issue_severity: Severity::High,
                         validation_issue_message:

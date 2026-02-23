@@ -4,7 +4,8 @@
 
 use hardener_common::types::{PluginId, Severity};
 use hardener_core::{
-    CommandOutput, Context, FileMetadata, MockExecutor, SystemExecutor, plugin::HardeningPlugin,
+    CommandOutput, Context, FileMetadata, MockExecutor, PluginConfig, PolicyException,
+    SystemExecutor, plugin::HardeningPlugin,
 };
 use hardener_plugins::MacHardeningPlugin;
 use std::sync::Arc;
@@ -379,4 +380,83 @@ async fn test_mac_scan_with_remote_executor() {
     assert!(result.scan_success);
     // Should find SELinux not enforcing on remote
     assert!(!result.scan_findings.is_empty());
+}
+
+#[tokio::test]
+async fn test_mac_apply_skips_exceptions() {
+    // SELinux permissive — but NO setenforce command registered.
+    // If the plugin tries to call setenforce, the mock will error → test fails.
+    let executor = selinux_permissive_executor();
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    let plugin = MacHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "selinux-enforcing".to_string(),
+        PolicyException {
+            value: "Permissive".to_string(),
+            allowed: true,
+            reason: "Development environment".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    // Should have a "skipped" change for SELinux enforcement
+    let skipped = result
+        .apply_changes
+        .iter()
+        .find(|c| c.change_description.contains("skipped"));
+    assert!(skipped.is_some(), "should have a skipped change for SELinux");
+    assert!(
+        skipped
+            .expect("checked above")
+            .change_description
+            .contains("Development environment"),
+    );
+
+    // Verify no setenforce command was issued
+    let log = executor.log();
+    assert!(
+        !log.commands_executed
+            .iter()
+            .any(|(cmd, _)| cmd == "setenforce"),
+        "should not execute setenforce for excepted MAC action"
+    );
+}
+
+#[tokio::test]
+async fn test_mac_validate_skips_exceptions() {
+    let executor = selinux_permissive_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = MacHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "selinux-enforcing".to_string(),
+        PolicyException {
+            value: "Permissive".to_string(),
+            allowed: true,
+            reason: "Development environment".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let report = plugin.validate(&ctx, &config).await.unwrap();
+
+    // Excepted action should NOT appear in estimated_changes
+    assert!(
+        !report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("SELinux") || c.contains("selinux")),
+        "excepted SELinux action should not appear in estimated changes"
+    );
 }
