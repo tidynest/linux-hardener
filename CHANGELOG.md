@@ -81,6 +81,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Rocky Linux 9: 123/123 pass, 6 skip
   - openSUSE Leap 15.6: 123/123 pass, 6 skip
 
+### Added (GUI Testing 2026-02-23)
+- **Web UI Test Suite**: 84 Playwright tests covering all GUI functionality
+  - Dashboard (9 tests): score display, scan trigger, navigation, activity feed
+  - Findings (10 tests): scan, table, detail panel, finding count
+  - Compliance (8 tests): framework selection, report generation, score colours
+  - Configure (10 tests): profiles, plugin toggles, preview, cancel
+  - History (6 tests): checkpoints, rollback, apply results
+  - Themes (7 tests + 30 screenshots): all 6 themes verified
+  - Error handling (4 tests): scan/apply/checkpoint errors, dismiss
+- **Tauri IPC Mock**: JavaScript mock of `window.__TAURI__` with all 7 IPC commands
+- **Cross-Distro GUI Validation**: 84/84 tests pass on all 5 distros
+- **GUI Test Runner**: `scripts/run-gui-tests.sh` orchestrates Playwright tests inside nspawn containers
+- **`--gui` flag for cross-distro runner**: `run-cross-distro-tests.sh --gui` runs GUI tests after CLI tests
+
 ### Added (Distribution Validation)
 - **Container Test Scripts**: Distribution-specific container creation scripts
   - `scripts/create-debian-container.sh` - Debian/Ubuntu testing

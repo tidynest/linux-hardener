@@ -203,6 +203,10 @@ This document tracks the development progress and planned features for Linux Sys
 |--------|---------|
 | `scripts/create-test-container.sh` | Create/manage Arch Linux container |
 | `scripts/root-test-suite.sh` | Comprehensive root test suite |
+| `scripts/run-gui-tests.sh` | Web UI Playwright test orchestrator (5 distros) |
+| `scripts/gui-test-inner.sh` | Container inner script (Xvfb + HTTP + Playwright) |
+| `scripts/run-tauri-gui-tests.sh` | Tauri desktop test orchestrator |
+| `scripts/tauri-gui-test-inner.sh` | Container inner script for Tauri desktop tests |
 
 **Usage**:
 
@@ -392,6 +396,8 @@ User clicks "Apply"
 - [x] Service management must use correct init system commands
 
 **Test Environment**: systemd-nspawn containers with bind-mounted project directory. Container scripts in `scripts/create-*-container.sh`.
+
+**GUI Test Validation**: 84 Playwright Web UI tests pass on all 5 distros (Arch, Debian, Fedora, Rocky 9, openSUSE). Covers dashboard, findings, compliance, configure, history, themes, and error handling. Run via `sudo ./scripts/run-gui-tests.sh` or `run-cross-distro-tests.sh --gui`.
 
 > **Test Results**: See [docs/DISTRIBUTION_VALIDATION.md](docs/DISTRIBUTION_VALIDATION.md)
 

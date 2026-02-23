@@ -611,6 +611,37 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 
 ---
 
+## GUI Tests (Playwright)
+
+84 Playwright tests validate the Web UI across 5 distributions. Tests use a Tauri IPC mock to simulate backend commands without requiring the desktop app.
+
+### Test Files
+
+| File | Purpose |
+|------|---------|
+| `gui-tests/package.json` | npm dependencies (Playwright) |
+| `gui-tests/playwright.config.js` | Playwright configuration (base URL, browser, timeouts) |
+| `gui-tests/tauri-mock.js` | Tauri IPC mock (`window.__TAURI__`) covering all 7 commands |
+| `gui-tests/mock-index.html` | Modified `dist/index.html` with mock injection before WASM |
+| `gui-tests/spa-server.py` | SPA-aware HTTP server (port 8787, client-side routing) |
+| `gui-tests/tests/helpers.js` | Shared test helpers and utilities |
+| `gui-tests/tests/dashboard.spec.js` | T-DASH-01..09 (9 tests): score, scan trigger, navigation, activity |
+| `gui-tests/tests/analysis.spec.js` | T-FIND-01..10, T-COMP-01..08 (18 tests): findings + compliance |
+| `gui-tests/tests/hardening.spec.js` | T-CONF-01..10, T-HIST-01..06 (16 tests): configure + history |
+| `gui-tests/tests/themes.spec.js` | T-THEME-01..07 (7 tests + 30 screenshots): all 6 themes |
+| `gui-tests/tests/errors.spec.js` | T-ERR-01..04 (4 tests): error handling and dismiss |
+
+### Runner Scripts
+
+| File | Purpose |
+|------|---------|
+| `scripts/run-gui-tests.sh` | Host orchestrator for Web UI tests across all distros |
+| `scripts/gui-test-inner.sh` | Container inner script (Xvfb + SPA server + Playwright) |
+| `scripts/run-tauri-gui-tests.sh` | Host orchestrator for Tauri desktop tests |
+| `scripts/tauri-gui-test-inner.sh` | Container inner script for Tauri desktop tests |
+
+---
+
 ## Configuration Files (Implemented)
 
 | File | Purpose |

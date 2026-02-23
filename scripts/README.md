@@ -24,7 +24,10 @@ This directory contains utility scripts for the Linux Hardening Tool project.
 | **Full test suite** | `sudo ./scripts/full-test-suite.sh` |
 | **Manual verification** | `sudo ./scripts/manual-verification-test.sh` |
 | **Cross-distro tests** | `sudo ./scripts/run-cross-distro-tests.sh --apply` |
+| **Cross-distro + GUI** | `sudo ./scripts/run-cross-distro-tests.sh --apply --gui` |
 | **Single distro test** | `sudo ./scripts/run-cross-distro-tests.sh --distro arch` |
+| **GUI tests (Web UI)** | `sudo ./scripts/run-gui-tests.sh` |
+| **Tauri GUI tests** | `sudo ./scripts/run-tauri-gui-tests.sh` |
 
 ---
 
@@ -1101,6 +1104,7 @@ sudo ./scripts/run-cross-distro-tests.sh
 | Flag | Description |
 |------|-------------|
 | `--apply` | Enable destructive tests (apply + rollback) inside containers |
+| `--gui` | Run Playwright GUI tests after CLI tests (requires WASM build in `dist/`) |
 | `--distro NAME` | Test single distro: `arch`, `debian`, `fedora`, `rhel`, `opensuse` |
 | `--rebuild` | Build musl static binary before testing |
 | `--help` | Show usage |
@@ -1230,6 +1234,89 @@ sudo ./scripts/manual-verification-test.sh
 - Bash
 - Pre-built binary at `/project/target/release/hardener`
 - Root privileges
+
+---
+
+## GUI Test Scripts (Playwright)
+
+Four scripts orchestrate Playwright-based GUI testing of the Web UI inside nspawn containers.
+
+---
+
+### Web UI Test Runner
+
+**Script**: `run-gui-tests.sh`
+
+**Purpose**: Host orchestrator that runs 84 Playwright Web UI tests across all 5 distributions. For each distro, copies the WASM build and test files into the container, then delegates to `gui-test-inner.sh` via `systemd-nspawn --pipe`.
+
+**Usage**:
+```bash
+# Run GUI tests on all 5 distros
+sudo ./scripts/run-gui-tests.sh
+
+# Or via the cross-distro runner
+sudo ./scripts/run-cross-distro-tests.sh --gui
+```
+
+**What It Does**:
+1. Verifies WASM build exists in `crates/hardener-ui/dist/`
+2. For each distro container, copies `gui-tests/` and `dist/` into the container
+3. Executes `gui-test-inner.sh` inside the container via nspawn
+4. Captures output to `test-results/gui/<distro>-webui.log`
+5. Collects theme screenshots to `test-results/gui/screenshots/webui/`
+6. Generates `test-results/gui/gui-summary.txt`
+
+**Exit Codes**:
+- `0`: All tests passed on all distros
+- `1`: One or more tests failed
+
+---
+
+### Web UI Container Inner Script
+
+**Script**: `gui-test-inner.sh`
+
+**Purpose**: Runs inside the nspawn container. Starts Xvfb virtual display, launches the SPA Python server on port 8787, installs npm dependencies, then executes Playwright tests.
+
+**What It Does**:
+1. Starts Xvfb on display `:99`
+2. Launches `spa-server.py` serving `mock-index.html` (with Tauri IPC mock injected)
+3. Auto-detects system Chromium path per distribution
+4. Runs `npx playwright test` with the detected browser
+5. Cleans up Xvfb and server on exit
+
+**Distro-Specific Setup**:
+| Distribution | Chromium Path | Extra Setup |
+|--------------|--------------|-------------|
+| Arch | `/usr/bin/chromium` | -- |
+| Debian | `/usr/bin/chromium` | -- |
+| Fedora | `/usr/lib64/chromium-browser/headless_shell` | `chromium-headless` package |
+| Rocky 9 | `/usr/bin/chromium-browser` | EPEL + CRB repos, Node.js 20 module |
+| openSUSE | `/usr/bin/chromium` | `--gpg-auto-import-keys`, specific lib names |
+
+**Dependencies** (installed inside container):
+- Xvfb, Python 3, Node.js, npm, system Chromium
+
+---
+
+### Tauri Desktop Test Runner
+
+**Script**: `run-tauri-gui-tests.sh`
+
+**Purpose**: Host orchestrator for Tauri desktop GUI tests. Similar to `run-gui-tests.sh` but targets the Tauri desktop application instead of the Web UI.
+
+**Usage**:
+```bash
+sudo ./scripts/run-tauri-gui-tests.sh
+```
+
+---
+
+### Tauri Desktop Container Inner Script
+
+**Script**: `tauri-gui-test-inner.sh`
+
+**Purpose**: Runs inside the nspawn container for Tauri desktop tests. Starts Xvfb, launches the Tauri application, and runs Playwright tests against the desktop window.
 
 ---
 

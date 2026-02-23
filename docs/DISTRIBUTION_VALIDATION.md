@@ -568,4 +568,76 @@ To reproduce the full cross-distro validation from scratch:
 
 ---
 
+## GUI Testing (Web UI -- Playwright)
+
+In addition to CLI testing, the Web UI is validated with Playwright across all 5 distributions.
+
+### Summary
+
+| Distribution | Family | Version | Test Date | Tests | Pass | Fail | Status |
+|--------------|--------|---------|-----------|-------|------|------|--------|
+| Arch Linux | Arch | Rolling | 2026-02-23 | 84 | 84 | 0 | VALIDATED |
+| Debian | Debian | 12 (Bookworm) | 2026-02-23 | 84 | 84 | 0 | VALIDATED |
+| Fedora | Red Hat | 41 | 2026-02-23 | 84 | 84 | 0 | VALIDATED |
+| Rocky Linux | Red Hat | 9 | 2026-02-23 | 84 | 84 | 0 | VALIDATED |
+| openSUSE | SUSE | Leap 15.6 | 2026-02-23 | 84 | 84 | 0 | VALIDATED |
+
+### Test Infrastructure
+
+- **Virtual Display**: Xvfb (X virtual framebuffer) provides a headless display inside containers
+- **SPA Server**: `gui-tests/spa-server.py` -- Python HTTP server on port 8787 with client-side routing support (all non-file paths return `index.html`)
+- **Tauri IPC Mock**: `gui-tests/tauri-mock.js` -- JavaScript mock of `window.__TAURI__` injected before WASM loads, covering all 7 IPC commands (`run_scan`, `run_apply`, `run_apply_privileged`, `run_apply_dry_run`, `get_checkpoints`, `get_latest_scan`, `generate_compliance_report`)
+- **Browser**: System Chromium auto-detected per distribution (no bundled browser)
+- **Test Runner**: Playwright (npm) with `gui-tests/playwright.config.js`
+
+### Test Categories (7 Categories, 84 Tests)
+
+| Category | Test IDs | Tests | Description |
+|----------|----------|-------|-------------|
+| Dashboard | T-DASH-01..09 | 9 | Score display, scan trigger, navigation, activity feed |
+| Findings | T-FIND-01..10 | 10 | Scan, table rendering, detail panel, finding count |
+| Compliance | T-COMP-01..08 | 8 | Framework selection, report generation, score colours |
+| Configure | T-CONF-01..10 | 10 | Profiles, plugin toggles, preview, cancel |
+| History | T-HIST-01..06 | 6 | Checkpoints, rollback, apply results |
+| Themes | T-THEME-01..07 | 7 | All 6 themes verified + 30 screenshots |
+| Errors | T-ERR-01..04 | 4 | Scan/apply/checkpoint errors, dismiss |
+
+### Per-Distro Notes
+
+| Distribution | Chromium Path | Notes |
+|--------------|--------------|-------|
+| Arch Linux | `/usr/bin/chromium` | Standard package |
+| Debian 12 | `/usr/bin/chromium` | Standard package |
+| Fedora 41 | `/usr/lib64/chromium-browser/headless_shell` | Uses `chromium-headless` package |
+| Rocky Linux 9 | `/usr/bin/chromium-browser` | Requires EPEL + CRB repos, Node.js 20 module |
+| openSUSE Leap 15.6 | `/usr/bin/chromium` | Requires `--gpg-auto-import-keys` for zypper + specific lib package names |
+
+### Running GUI Tests
+
+```bash
+# Build the WASM frontend first
+cd crates/hardener-ui && trunk build --release && cd ../..
+
+# Run GUI tests across all 5 distributions
+sudo ./scripts/run-gui-tests.sh
+
+# Or via the cross-distro runner with --gui flag
+sudo ./scripts/run-cross-distro-tests.sh --gui
+```
+
+### Output Files
+
+```
+test-results/gui/
+  arch-webui.log          # Full Playwright output from Arch container
+  debian-webui.log        # Full Playwright output from Debian container
+  fedora-webui.log        # Full Playwright output from Fedora container
+  rhel-webui.log          # Full Playwright output from Rocky 9 container
+  opensuse-webui.log      # Full Playwright output from openSUSE container
+  screenshots/webui/      # Theme screenshots (30 per distro)
+  gui-summary.txt         # Aggregated pass/fail summary
+```
+
+---
+
 **Last Updated:** 2026-02-23

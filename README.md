@@ -72,7 +72,7 @@ The tool is designed for system administrators, DevOps engineers, and security p
 ### Test Coverage
 
 ```
-Total Tests: 396+ passing
+Total Tests: 396+ passing (Rust) + 84 GUI tests (Playwright)
 ├── Plugin Tests: 48 + 80 mock tests
 ├── Core Tests: 59 + 14 mock executor tests
 ├── Compliance Tests: 46
@@ -81,6 +81,7 @@ Total Tests: 396+ passing
 ├── CLI Tests: 31
 ├── Distro Tests: 13
 ├── SSH Integration Tests: 24
+├── GUI Tests: 84 Playwright (Web UI, 7 categories, 5 distros)
 └── Coverage: >90%
 ```
 
@@ -221,10 +222,20 @@ sudo ./scripts/create-test-container.sh clean  # Remove container
 
 | Test | Without `--apply` | With `--apply` |
 |------|-------------------|----------------|
-| Scans, reports, daemon, history | ✅ Runs | ✅ Runs |
-| Apply hardening + rollback | ⏭️ Skipped | ✅ Runs |
+| Scans, reports, daemon, history | Runs | Runs |
+| Apply hardening + rollback | Skipped | Runs |
 
 The `--apply` flag explicitly enables destructive tests. Without it, only read-only tests run. This prevents accidentally modifying configs. **Inside the container, both modes are completely safe** since it's isolated from your host system.
+
+**GUI tests** can be run separately or alongside CLI tests:
+
+```bash
+# Run 84 Playwright Web UI tests across all 5 distros
+sudo ./scripts/run-gui-tests.sh
+
+# Or combine with CLI tests using the --gui flag
+sudo ./scripts/run-cross-distro-tests.sh --apply --gui
+```
 
 See [docs/DISTRIBUTION_VALIDATION.md](docs/DISTRIBUTION_VALIDATION.md) for full test documentation.
 
@@ -567,4 +578,4 @@ This project draws inspiration from established security tools including:
 **Contact**: tidynest@proton.me
 **Repository**: https://github.com/tidynest/linux-system-hardener
 
-**Last Updated**: 2026-02-22
+**Last Updated**: 2026-02-23
