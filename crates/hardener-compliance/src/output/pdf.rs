@@ -161,9 +161,8 @@ fn generate_pdf(report: &ComplianceReport) -> Vec<u8> {
     // Sort sections by their first control ID (numerical order) rather than alphabetically
     let mut sections_vec: Vec<_> = sections.into_iter().collect();
     sections_vec.sort_by(|a, b| {
-        let empty = String::new();
-        let id_a = a.1.first().map(|c| c.control_id.as_str()).unwrap_or(&empty);
-        let id_b = b.1.first().map(|c| c.control_id.as_str()).unwrap_or(&empty);
+        let id_a = a.1.first().map(|c| c.control_id.as_str()).unwrap_or("");
+        let id_b = b.1.first().map(|c| c.control_id.as_str()).unwrap_or("");
         compare_control_ids(id_a, id_b)
     });
 
@@ -622,9 +621,11 @@ fn draw_horizontal_line(surface: &mut krilla::surface::Surface, y: f32, colour: 
 }
 
 /// Truncates a string to the specified length, adding ellipsis if needed.
-fn truncate_string(s: &str, max_len: usize) -> String {
-    if s.len() > max_len {
-        format!("{}...", &s[..max_len])
+fn truncate_string(s: &str, max_chars: usize) -> String {
+    let char_count = s.chars().count();
+    if char_count > max_chars {
+        let truncated: String = s.chars().take(max_chars).collect();
+        format!("{truncated}...")
     } else {
         s.to_string()
     }

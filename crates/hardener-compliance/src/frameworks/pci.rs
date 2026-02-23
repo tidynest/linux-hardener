@@ -52,7 +52,7 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
         ComplianceMapping {
             compliance_framework: ComplianceFramework::PCIDSS,
             compliance_control_id: "2.2.5".to_string(),
-            compliance_control_title: "Insecure services and protocols are notused".to_string(),
+            compliance_control_title: "Insecure services and protocols are not used".to_string(),
             compliance_section: Some("Secure Configurations".to_string()),
         },
         ComplianceMapping {

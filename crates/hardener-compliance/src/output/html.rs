@@ -80,7 +80,7 @@ impl ReportFormatter for HtmlFormatter {
 
         // Controls Table by Section
         for (section, controls) in &sections {
-            html.push_str(&format!("<h2>{}</h2>\n", section));
+            html.push_str(&format!("<h2>{}</h2>\n", html_escape(section)));
             html.push_str("<table>\n");
             html.push_str(
                 "<thead><tr><th>Control
@@ -98,7 +98,7 @@ impl ReportFormatter for HtmlFormatter {
 
                 html.push_str(&format!(
                     "<tr><td>{}</td><td>{}</td><td class=\"{}\">{}</td></tr>\n",
-                    control.control_id,
+                    html_escape(&control.control_id),
                     html_escape(&control.control_title),
                     status_class,
                     status_str

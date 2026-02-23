@@ -139,25 +139,25 @@ Package manager abstraction for multiple distros.
 
 Report generation — 1 NormalizedF32 unwrap.
 
-- [ ] `output/pdf.rs` (707 lines)
-- [ ] `output/html.rs` (283 lines)
-- [ ] `frameworks/cis.rs` (279 lines)
-- [ ] `config.rs` (221 lines)
-- [ ] `frameworks/pci.rs` (177 lines)
-- [ ] `output/csv.rs` (172 lines)
-- [ ] `output/text.rs` (171 lines)
-- [ ] `report.rs` (167 lines)
-- [ ] `generator.rs` (163 lines)
-- [ ] `frameworks/stig.rs` (156 lines)
-- [ ] `output/json.rs` (153 lines)
-- [ ] `frameworks/nist.rs` (151 lines)
-- [ ] `frameworks/hipaa.rs` (118 lines)
-- [ ] `frameworks/gdpr.rs` (105 lines)
-- [ ] `lib.rs` (37 lines)
-- [ ] `output/mod.rs` (34 lines)
-- [ ] `frameworks/mod.rs` (26 lines)
-- [ ] `CRATE.md` assembled
-- [ ] Verification passed
+- [x] `output/pdf.rs` (707 lines)
+- [x] `output/html.rs` (283 lines)
+- [x] `frameworks/cis.rs` (279 lines)
+- [x] `config.rs` (221 lines)
+- [x] `frameworks/pci.rs` (177 lines)
+- [x] `output/csv.rs` (172 lines)
+- [x] `output/text.rs` (171 lines)
+- [x] `report.rs` (167 lines)
+- [x] `generator.rs` (163 lines)
+- [x] `frameworks/stig.rs` (156 lines)
+- [x] `output/json.rs` (153 lines)
+- [x] `frameworks/nist.rs` (151 lines)
+- [x] `frameworks/hipaa.rs` (118 lines)
+- [x] `frameworks/gdpr.rs` (105 lines)
+- [x] `lib.rs` (37 lines)
+- [x] `output/mod.rs` (34 lines)
+- [x] `frameworks/mod.rs` (26 lines)
+- [x] `CRATE.md` assembled
+- [x] Verification passed (400 tests, 0 failures, clippy clean)
 
 ## Session 11: hardener-ui (25 files, 2,254 lines)
 
