@@ -92,7 +92,10 @@ pub async fn create_checkpoint_metadata_only_for_apply(
         .create_checkpoint_metadata_only(checkpoint_name, file_paths)
         .await?;
 
-    tracing::info!("Created metadata-only checkpoint: {}", checkpoint_id.as_str());
+    tracing::info!(
+        "Created metadata-only checkpoint: {}",
+        checkpoint_id.as_str()
+    );
 
     Ok(Some(checkpoint_id.as_str().to_string()))
 }

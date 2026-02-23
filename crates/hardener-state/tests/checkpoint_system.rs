@@ -263,21 +263,16 @@ async fn test_checkpoint_captures_and_restores_directory_permissions() {
         .expect("Failed to rollback");
 
     // Directory permissions should be restored
-    let restored_mode = std::fs::metadata(&dir_path)
-        .unwrap()
-        .permissions()
-        .mode()
-        & 0o777;
+    let restored_mode = std::fs::metadata(&dir_path).unwrap().permissions().mode() & 0o777;
     assert_eq!(restored_mode, 0o755, "Directory permissions not restored");
 
     // Child file should be unchanged
     assert_eq!(fixture.read_file(&child_file), "child content");
-    let child_mode = std::fs::metadata(&child_file)
-        .unwrap()
-        .permissions()
-        .mode()
-        & 0o777;
-    assert_eq!(child_mode, 0o644, "Child file permissions should be unchanged");
+    let child_mode = std::fs::metadata(&child_file).unwrap().permissions().mode() & 0o777;
+    assert_eq!(
+        child_mode, 0o644,
+        "Child file permissions should be unchanged"
+    );
 }
 
 /// Tests that metadata-only checkpoints capture permissions without file contents.
@@ -309,8 +304,14 @@ async fn test_metadata_only_checkpoint() {
         .expect("Failed to retrieve checkpoint");
 
     assert_eq!(file_states.len(), 1);
-    assert!(file_states[0].file_content.is_none(), "Metadata-only checkpoint should not store content");
-    assert_ne!(file_states[0].file_permissions, 0, "Should have real permissions");
+    assert!(
+        file_states[0].file_content.is_none(),
+        "Metadata-only checkpoint should not store content"
+    );
+    assert_ne!(
+        file_states[0].file_permissions, 0,
+        "Should have real permissions"
+    );
 
     // Modify and rollback
     std::fs::set_permissions(&dir_path, std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -321,10 +322,9 @@ async fn test_metadata_only_checkpoint() {
         .await
         .expect("Failed to rollback metadata-only checkpoint");
 
-    let restored_mode = std::fs::metadata(&dir_path)
-        .unwrap()
-        .permissions()
-        .mode()
-        & 0o777;
-    assert_eq!(restored_mode, 0o755, "Metadata-only rollback should restore permissions");
+    let restored_mode = std::fs::metadata(&dir_path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(
+        restored_mode, 0o755,
+        "Metadata-only rollback should restore permissions"
+    );
 }

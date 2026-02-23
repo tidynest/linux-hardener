@@ -345,7 +345,12 @@ async fn write_audit_rules_file(ctx: &Context, content: &str) -> Result<String> 
 /// augenrules is the supported mechanism.
 async fn reload_audit_rules(ctx: &Context) -> Result<()> {
     // Preferred: augenrules merges /etc/audit/rules.d/*.rules and loads them
-    if ctx.executor().command_exists("augenrules").await.unwrap_or(false) {
+    if ctx
+        .executor()
+        .command_exists("augenrules")
+        .await
+        .unwrap_or(false)
+    {
         let output = ctx
             .executor()
             .execute_command("augenrules", &["--load"])
