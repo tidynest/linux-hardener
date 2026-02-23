@@ -233,7 +233,7 @@ impl HardeningPlugin for ServicesHardeningPlugin {
         })
     }
 
-    async fn apply(&self, ctx: &mut Context, _config: &PluginConfig) -> Result<ApplyResult> {
+    async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult> {
         use std::path::Path;
 
         let mut changes = Vec::new();
@@ -263,6 +263,24 @@ impl HardeningPlugin for ServicesHardeningPlugin {
                 .await
                 .unwrap_or(false)
             {
+                continue;
+            }
+
+            // Check for a valid exception — skip this service if exempted
+            if let Some(exception) = config.has_valid_exception(directive.service_name) {
+                info!(
+                    "Skipping {} — exception: {}",
+                    directive.service_name, exception.reason
+                );
+                changes.push(Change {
+                    change_description: format!(
+                        "{}: skipped (exception: {})",
+                        directive.service_name, exception.reason
+                    ),
+                    change_type: ChangeType::Service,
+                    change_success: true,
+                    change_error: None,
+                });
                 continue;
             }
 
@@ -405,7 +423,7 @@ impl HardeningPlugin for ServicesHardeningPlugin {
         Ok(())
     }
 
-    async fn validate(&self, ctx: &Context, _config: &PluginConfig) -> Result<ValidationReport> {
+    async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {
         let mut estimated_changes = Vec::new();
         let mut issues = Vec::new();
 
@@ -419,6 +437,11 @@ impl HardeningPlugin for ServicesHardeningPlugin {
                     .await
                     .unwrap_or(false)
                 {
+                    // Skip services with valid exceptions
+                    if config.has_valid_exception(directive.service_name).is_some() {
+                        continue;
+                    }
+
                     let is_enabled = is_service_enabled(ctx, directive.service_name)
                         .await
                         .unwrap_or(false);

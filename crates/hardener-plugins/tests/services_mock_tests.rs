@@ -4,7 +4,8 @@
 
 use hardener_common::types::{PluginId, Severity};
 use hardener_core::{
-    CommandOutput, Context, MockExecutor, SystemExecutor, plugin::HardeningPlugin,
+    CommandOutput, Context, MockExecutor, PluginConfig, PolicyException, SystemExecutor,
+    plugin::HardeningPlugin,
 };
 use hardener_plugins::ServicesHardeningPlugin;
 use std::sync::Arc;
@@ -541,5 +542,172 @@ async fn test_services_compliance_mappings() {
     assert_eq!(
         avahi_finding.finding_compliance[0].compliance_control_id,
         "2.2.3"
+    );
+}
+
+#[tokio::test]
+async fn test_services_apply_skips_exceptions() {
+    let ok = CommandOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    // Bluetooth exists + enabled + active, but NO stop/disable/mask commands
+    // registered — if the plugin tries to call them the mock will error.
+    // CUPS has full commands so the rest of apply succeeds.
+    let executor = MockExecutor::new()
+        .with_command_exists("systemctl", true)
+        // Bluetooth: exists, enabled, active
+        .with_command(
+            "systemctl",
+            &["list-unit-files", "bluetooth"],
+            CommandOutput {
+                stdout: "bluetooth.service enabled enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        // CUPS: exists, enabled, not active — full apply path
+        .with_command(
+            "systemctl",
+            &["list-unit-files", "cups"],
+            CommandOutput {
+                stdout: "cups.service enabled enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-enabled", "cups"],
+            CommandOutput {
+                stdout: "enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-active", "cups"],
+            CommandOutput {
+                stdout: "inactive\n".to_string(),
+                stderr: String::new(),
+                exit_code: 3,
+            },
+        )
+        .with_command("systemctl", &["disable", "cups"], ok.clone())
+        .with_command("systemctl", &["mask", "cups"], ok)
+        // Avahi + ModemManager: don't exist
+        .with_command(
+            "systemctl",
+            &["list-unit-files", "avahi-daemon"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["list-unit-files", "ModemManager"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        );
+
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    let plugin = ServicesHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "bluetooth".to_string(),
+        PolicyException {
+            value: "enabled".to_string(),
+            allowed: true,
+            reason: "Desktop workstation needs Bluetooth".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    assert!(
+        result.apply_success,
+        "apply should succeed, errors: {:?}",
+        result
+            .apply_changes
+            .iter()
+            .filter(|c| !c.change_success)
+            .collect::<Vec<_>>()
+    );
+
+    // Should have a "skipped" change for bluetooth
+    let skipped = result
+        .apply_changes
+        .iter()
+        .find(|c| c.change_description.contains("skipped") && c.change_description.contains("bluetooth"));
+    assert!(skipped.is_some(), "should have a skipped change for bluetooth");
+    assert!(
+        skipped
+            .expect("checked above")
+            .change_description
+            .contains("Desktop workstation"),
+    );
+
+    // Verify no systemctl stop/disable/mask for bluetooth
+    let log = executor.log();
+    assert!(
+        !log.commands_executed.iter().any(|(cmd, args)| cmd == "systemctl"
+            && args.iter().any(|a| a == "bluetooth")
+            && args
+                .iter()
+                .any(|a| a == "stop" || a == "disable" || a == "mask")),
+        "should not execute stop/disable/mask for excepted bluetooth"
+    );
+}
+
+#[tokio::test]
+async fn test_services_validate_skips_exceptions() {
+    let executor = insecure_services_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = ServicesHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "bluetooth".to_string(),
+        PolicyException {
+            value: "enabled".to_string(),
+            allowed: true,
+            reason: "Desktop workstation needs Bluetooth".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let report = plugin.validate(&ctx, &config).await.unwrap();
+
+    // bluetooth should NOT appear in estimated_changes
+    assert!(
+        !report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("bluetooth")),
+        "excepted service should not appear in estimated changes"
+    );
+
+    // CUPS should still appear (not excepted)
+    assert!(
+        report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("cups")),
+        "non-excepted services should still appear"
     );
 }
