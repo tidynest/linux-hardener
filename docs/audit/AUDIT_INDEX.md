@@ -159,47 +159,65 @@ Report generation — 1 NormalizedF32 unwrap.
 - [x] `CRATE.md` assembled
 - [x] Verification passed (400 tests, 0 failures, clippy clean)
 
-## Session 11: hardener-ui (25 files, 2,254 lines)
+## Session 11: hardener-ui (25 files, 2,374 lines)
 
-WASM/Leptos GUI — lowest risk.
+WASM/Leptos GUI — lowest risk, 3 fixes.
 
-- [ ] `components/configure_section.rs` (315 lines)
-- [ ] `components/security_score.rs` (212 lines)
-- [ ] `components/history_section.rs` (193 lines)
-- [ ] `components/compliance_tab.rs` (183 lines)
-- [ ] `tauri_bindings.rs` (141 lines)
-- [ ] `lib.rs` (119 lines)
-- [ ] `pages/analysis_page.rs` (108 lines)
-- [ ] `utils/mock_data.rs` (106 lines)
-- [ ] `components/tabs.rs` (102 lines)
-- [ ] `components/quick_actions.rs` (99 lines)
-- [ ] `components/recent_activity.rs` (97 lines)
-- [ ] `components/theme_toggle.rs` (89 lines)
-- [ ] `components/finding_detail.rs` (85 lines)
-- [ ] `components/card.rs` (79 lines)
-- [ ] `components/findings_grid.rs` (76 lines)
-- [ ] `pages/hardening_page.rs` (71 lines)
-- [ ] `state/mod.rs` (57 lines)
-- [ ] `components/findings_tab.rs` (55 lines)
-- [ ] `components/mini_security_score.rs` (52 lines)
-- [ ] `components/severity_badge.rs` (39 lines)
-- [ ] `pages/dashboard_page.rs` (35 lines)
-- [ ] `components/mod.rs` (31 lines)
-- [ ] `types.rs` (20 lines)
-- [ ] `pages/mod.rs` (7 lines)
-- [ ] `utils/mod.rs` (3 lines)
-- [ ] `CRATE.md` assembled
-- [ ] Verification passed
+- [x] `components/configure_section.rs` (315 lines)
+- [x] `components/security_score.rs` (218 lines)
+- [x] `components/history_section.rs` (193 lines)
+- [x] `components/compliance_tab.rs` (183 lines)
+- [x] `tauri_bindings.rs` (141 lines)
+- [x] `lib.rs` (119 lines)
+- [x] `pages/analysis_page.rs` (108 lines)
+- [x] `utils/mock_data.rs` (106 lines)
+- [x] `components/tabs.rs` (102 lines)
+- [x] `components/quick_actions.rs` (99 lines)
+- [x] `components/recent_activity.rs` (97 lines)
+- [x] `components/theme_toggle.rs` (89 lines)
+- [x] `components/finding_detail.rs` (85 lines)
+- [x] `components/card.rs` (79 lines)
+- [x] `components/findings_grid.rs` (76 lines)
+- [x] `pages/hardening_page.rs` (71 lines)
+- [x] `state/mod.rs` (57 lines)
+- [x] `components/findings_tab.rs` (55 lines)
+- [x] `components/mini_security_score.rs` (52 lines)
+- [x] `components/severity_badge.rs` (39 lines)
+- [x] `pages/dashboard_page.rs` (35 lines)
+- [x] `components/mod.rs` (31 lines)
+- [x] `types.rs` (20 lines)
+- [x] `pages/mod.rs` (7 lines)
+- [x] `utils/mod.rs` (3 lines)
+- [x] `CRATE.md` assembled
+- [x] Verification passed (400 tests, 0 failures, clippy clean)
+
+## Audit Summary
+
+All 11 production crates audited across sessions 2–11.
+
+| Session | Crate | Files | Lines | Fixes | Flags |
+|---------|-------|-------|-------|-------|-------|
+| 2 | hardener-common | 5 | 680 | 2 | 1 |
+| 3 | hardener-types | 1 | 467 | 0 | 0 |
+| 4 | hardener-core | 11 | 2,288 | 5 | 7 |
+| 5 | hardener-state | 9 | 2,987 | 13 | 2 |
+| 6 | hardener-plugins | 13 | 5,492 | 28 | 9 |
+| 7 | hardener-scheduler | 11 | 3,305 | 12 | 2 |
+| 8 | hardener-cli | 14 | 3,191 | 19 | 6 |
+| 9 | hardener-distro | 7 | 1,071 | 6 | 3 |
+| 10 | hardener-compliance | 17 | 3,120 | 5 | 3 |
+| 11 | hardener-ui | 25 | 2,374 | 3 | 2 |
+| **Total** | **11 crates** | **113** | **24,975** | **93** | **35** |
 
 ## Known Issues (pre-flagged)
 
-| Flag | File | Issue |
-|------|------|-------|
-| DEAD CODE | `hardener-state/src/lib.rs:23-36` | Cargo template `add()` fn + `it_works` test |
-| DUPLICATION | `hardener-core/src/registry.rs` | 4x identical `RwLock` read error blocks |
-| ANTIPATTERN | `hardener-scheduler/src/systemd.rs:153-174` | `is_ok()` + `unwrap()` parses twice |
-| INCONSISTENCY | `hardener-cli/src/output.rs` | 5x `serde_json::to_string_pretty().unwrap()` |
-| DEAD CODE | `hardener-core/src/context.rs:27` | `#[allow(dead_code)]` on `shared_data` field |
-| ANTIPATTERN | `hardener-plugins/src/macros.rs` | `todo!()` stubs in macro — runtime panic |
-| SILENT FAILURE | `hardener-state/src/scan_manager.rs:232,235` | `unwrap_or_default()` hides corrupted JSON |
-| CONSTANT | `hardener-compliance/src/output/pdf.rs:580` | `NormalizedF32::new(0.8).unwrap()` |
+| Flag | File | Issue | Status |
+|------|------|-------|--------|
+| DEAD CODE | `hardener-state/src/lib.rs:23-36` | Cargo template `add()` fn + `it_works` test | Deferred |
+| DUPLICATION | `hardener-core/src/registry.rs` | 4x identical `RwLock` read error blocks | Deferred |
+| ANTIPATTERN | `hardener-scheduler/src/systemd.rs:153-174` | `is_ok()` + `unwrap()` parses twice | Fixed (Session 7) |
+| INCONSISTENCY | `hardener-cli/src/output.rs` | 5x `serde_json::to_string_pretty().unwrap()` | Fixed (Session 8) |
+| DEAD CODE | `hardener-core/src/context.rs:27` | `#[allow(dead_code)]` on `shared_data` field | Deferred |
+| ANTIPATTERN | `hardener-plugins/src/macros.rs` | `todo!()` stubs in macro — runtime panic | Deferred |
+| SILENT FAILURE | `hardener-state/src/scan_manager.rs:232,235` | `unwrap_or_default()` hides corrupted JSON | Deferred |
+| CONSTANT | `hardener-compliance/src/output/pdf.rs:580` | `NormalizedF32::new(0.8).unwrap()` | Fixed (Session 8) |

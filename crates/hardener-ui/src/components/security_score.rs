@@ -1,7 +1,12 @@
+//! Security score calculation based on compliance reports.
+//!
+//! Computes weighted scores per framework and an overall average.
+
 use crate::components::{Card, HeadingLevel};
 use crate::state::AppState;
 use crate::types::{ComplianceReport, ControlStatus, Severity};
 use leptos::prelude::*;
+use std::cmp::Ordering;
 
 /// Converts finding severity to a score weight for failed controls.
 ///
@@ -51,7 +56,7 @@ fn calculate_framework_score(report: &ComplianceReport) -> Option<f64> {
                     .control_findings
                     .iter()
                     .map(|f| severity_to_weight(&f.finding_severity))
-                    .min_by(|a, b| a.partial_cmp(b).unwrap())
+                    .min_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal))
                     .unwrap_or(50.0) // Default to Medium if no findings
             }
         })

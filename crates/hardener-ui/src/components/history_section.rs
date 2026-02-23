@@ -81,7 +81,7 @@ pub fn HistorySection() -> impl IntoView {
                 >
                     {move || {
                         let results = app_state.apply_results.get();
-                        let result = results.last().unwrap();
+                        let result = results.last().expect("guarded by Show when=");
                         let success = result.apply_success;
                         let changes_count = result.apply_changes.len();
                         let checkpoint_id = result.apply_checkpoint_id.clone();
