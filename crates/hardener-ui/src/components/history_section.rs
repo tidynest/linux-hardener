@@ -5,8 +5,18 @@
 use crate::components::{Card, HeadingLevel};
 use crate::state::AppState;
 use crate::tauri_bindings::{invoke_get_checkpoints, invoke_rollback};
-use crate::types::CheckpointInfo;
+use crate::types::{CheckpointInfo, FileRestoreAction};
 use leptos::prelude::*;
+
+/// Formats a `FileRestoreAction` variant for display.
+fn format_restore_action(action: FileRestoreAction) -> &'static str {
+    match action {
+        FileRestoreAction::Restored => "Restored",
+        FileRestoreAction::Removed => "Removed",
+        FileRestoreAction::PermissionsRestored => "Permissions Restored",
+        FileRestoreAction::Skipped => "Skipped",
+    }
+}
 
 /// History section with apply results and checkpoints.
 #[component]
@@ -40,12 +50,9 @@ pub fn HistorySection() -> impl IntoView {
     // Rollback handler
     let handle_rollback = move |checkpoint_id: String| {
         leptos::task::spawn_local(async move {
-            match invoke_rollback(checkpoint_id.clone()).await {
-                Ok(_) => {
-                    web_sys::console::log_1(
-                        &format!("Rolled back to checkpoint: {}", checkpoint_id).into(),
-                    );
-                    // Refresh checkpoints
+            match invoke_rollback(checkpoint_id).await {
+                Ok(result) => {
+                    app_state.rollback_result.set(Some(result));
                     if let Ok(cp) = invoke_get_checkpoints().await {
                         checkpoints.set(cp);
                     }
@@ -109,6 +116,57 @@ pub fn HistorySection() -> impl IntoView {
                                             view! {
                                                 <li class=if success { "change-success" } else { "change-failure" }>
                                                     {desc}
+                                                </li>
+                                            }
+                                        }).collect::<Vec<_>>()}
+                                    </ol>
+                                </details>
+                            </div>
+                        }
+                    }}
+                </Show>
+            </Card>
+
+            // Latest Rollback Result
+            <Card title="Latest Rollback" title_level=HeadingLevel::H2 class="rollback-results-summary">
+                <Show
+                    when=move || app_state.rollback_result.get().is_some()
+                    fallback=|| view! {
+                        <div class="empty-state">
+                            <div class="empty-state-icon">"↩"</div>
+                            <p class="empty-state-title">"No rollback performed yet"</p>
+                            <p class="empty-state-hint">"Click Rollback on a checkpoint to restore a previous state."</p>
+                        </div>
+                    }
+                >
+                    {move || {
+                        let result = app_state.rollback_result.get().expect("guarded by Show when=");
+                        let success = result.rollback_success;
+                        let files_count = result.rollback_files.len();
+                        let checkpoint_id = result.rollback_checkpoint_id.clone();
+                        let files = result.rollback_files.clone();
+
+                        view! {
+                            <div class="result-summary-card">
+                                <div class=format!("result-status {}", if success { "success" } else { "failed" })>
+                                    {if success { "Rollback Successful" } else { "Rollback Failed" }}
+                                </div>
+                                <div class="result-changes">
+                                    {format!("{} files processed", files_count)}
+                                </div>
+                                <div class="result-checkpoint">
+                                    "Checkpoint: "<code>{checkpoint_id}</code>
+                                </div>
+                                <details>
+                                    <summary>"View Restored Files"</summary>
+                                    <ol class="changes-list">
+                                        {files.iter().map(|file| {
+                                            let path = file.restore_path.clone();
+                                            let action = format_restore_action(file.restore_action);
+                                            let ok = file.restore_success;
+                                            view! {
+                                                <li class=if ok { "change-success" } else { "change-failure" }>
+                                                    <code>{path}</code>" — "{action}
                                                 </li>
                                             }
                                         }).collect::<Vec<_>>()}

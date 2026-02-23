@@ -3,7 +3,7 @@
 //! These bindings use wasm-bindgen to call Tauri's JavaScript invoke API.
 //! In browser mode (without Tauri), all commands return errors gracefully.
 
-use crate::types::{ApplyResult, CheckpointInfo, ComplianceReport, ScanResult};
+use crate::types::{ApplyResult, CheckpointInfo, ComplianceReport, RollbackResult, ScanResult};
 use hardener_types::ValidationReport;
 use wasm_bindgen::prelude::*;
 
@@ -130,12 +130,14 @@ pub async fn invoke_get_checkpoints() -> Result<Vec<CheckpointInfo>, String> {
 /// Invokes the run_rollback Tauri command.
 ///
 /// Restores system state to the specified checkpoint.
-pub async fn invoke_rollback(checkpoint_id: String) -> Result<(), String> {
+pub async fn invoke_rollback(checkpoint_id: String) -> Result<RollbackResult, String> {
     let args = serde_wasm_bindgen::to_value(&serde_json::json!({
         "checkpoint_id": checkpoint_id,
     }))
     .map_err(|e| format!("Failed to serialise arguments: {}", e))?;
 
-    invoke_command("run_rollback", args).await?;
-    Ok(())
+    let result = invoke_command("run_rollback", args).await?;
+
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to deserialise rollback result: {}", e))
 }

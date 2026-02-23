@@ -1,4 +1,4 @@
-use crate::types::{ApplyResult, ComplianceReport, Finding, ScanResult};
+use crate::types::{ApplyResult, ComplianceReport, Finding, RollbackResult, ScanResult};
 use hardener_types::ValidationReport;
 use leptos::prelude::*;
 
@@ -18,6 +18,8 @@ pub struct AppState {
     /// History of apply operations.
     /// Stores results from each hardening application.
     pub apply_results: RwSignal<Vec<ApplyResult>>,
+    /// Result from the most recent rollback operation.
+    pub rollback_result: RwSignal<Option<RollbackResult>>,
     /// Whether a system scan is currently in progress.
     pub is_scanning: RwSignal<bool>,
     /// Whether hardening changes are currently being applied.
@@ -44,6 +46,7 @@ impl Default for AppState {
             scan_results: RwSignal::new(Vec::new()),
             selected_finding: RwSignal::new(None),
             apply_results: RwSignal::new(Vec::new()),
+            rollback_result: RwSignal::new(None),
             is_scanning: RwSignal::new(false),
             is_applying: RwSignal::new(false),
             compliance_reports: RwSignal::new(Vec::new()),

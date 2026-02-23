@@ -431,7 +431,25 @@
         return true;
 
       case 'run_rollback':
-        return true;
+        return {
+          rollback_checkpoint_id: (args && args.checkpoint_id) || 'cp_mock_1234',
+          rollback_checkpoint_name: 'kernel-hardening-pre-apply',
+          rollback_success: true,
+          rollback_files: [
+            {
+              restore_path: '/etc/sysctl.d/99-hardener.conf',
+              restore_action: 'Removed',
+              restore_success: true,
+              restore_error: null,
+            },
+            {
+              restore_path: '/proc/sys/kernel/kptr_restrict',
+              restore_action: 'Restored',
+              restore_success: true,
+              restore_error: null,
+            },
+          ],
+        };
 
       case 'generate_compliance_report': {
         const frameworks = (args && args.frameworks) || ['CIS'];

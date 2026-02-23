@@ -4,7 +4,7 @@ use hardener_compliance::{
 };
 use hardener_core::{ApplyResult, Context, PluginMetadata, ScanResult, ValidationReport};
 use hardener_plugins::create_plugin_registry;
-use hardener_state::{CheckpointManager, ScanHistoryManager, ScanStatus, init_db};
+use hardener_state::{CheckpointManager, RollbackResult, ScanHistoryManager, ScanStatus, init_db};
 use serde::Serialize;
 use tokio::process::Command;
 use tracing::error;
@@ -327,16 +327,15 @@ pub async fn run_apply_dry_run(plugin_ids: Vec<String>) -> Result<Vec<Validation
 /// Uses pkexec to run the CLI with root privileges.
 /// Takes a checkpoint ID and restores the system state to that point.
 #[tauri::command]
-pub async fn run_rollback(checkpoint_id: String) -> Result<bool, String> {
-    // Build CLI arguments
+pub async fn run_rollback(checkpoint_id: String) -> Result<RollbackResult, String> {
     let args = vec!["rollback", "--format", "json", &checkpoint_id];
 
-    // Execute with root privileges
-    run_privileged_command(&args)
+    let output = run_privileged_command(&args)
         .await
         .map_err(|e| e.to_string())?;
 
-    Ok(true)
+    serde_json::from_str(&output)
+        .map_err(|e| format!("Failed to parse rollback result: {}", e))
 }
 
 /// Retrieves a list of all available checkpoints from both user and system databases.
