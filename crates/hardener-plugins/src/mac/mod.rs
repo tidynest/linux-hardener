@@ -397,13 +397,11 @@ impl HardeningPlugin for MacHardeningPlugin {
                 // as this requires knowing which profiles should be enforced.
                 // Instead, we report what needs to be done.
                 apply_changes.push(Change {
-                    change_description: "AppArmor detected - manual profile enforcement required"
+                    change_description: "AppArmor detected - use aa-enforce to set specific profiles to enforce mode"
                         .to_string(),
                     change_type: ChangeType::ConfigFile,
                     change_success: true,
-                    change_error: Some(
-                        "Use aa-enforce to set specific profiles to enforce mode".to_string(),
-                    ),
+                    change_error: None,
                 });
             }
             None => {

@@ -158,8 +158,8 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
         }],
         "fs.protected_hardlinks" | "fs.protected_symlinks" => vec![ComplianceMapping {
             compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "1.5.3".to_string(),
-            compliance_control_title: "Ensure core dumps are restricted".to_string(),
+            compliance_control_id: "1.6.1".to_string(),
+            compliance_control_title: "Ensure filesystem hardening is configured".to_string(),
             compliance_section: Some("Initial Setup".to_string()),
         }],
         "net.ipv4.conf.all.rp_filter" | "net.ipv4.conf.default.rp_filter" => {
@@ -271,8 +271,6 @@ impl HardeningPlugin for KernelHardeningPlugin {
     /// * `ctx`    - Execution context with checkpoint manager
     /// * `config` - Configuration (unused for now, applies all hardening)
     async fn apply(&self, ctx: &mut Context, _config: &PluginConfig) -> Result<ApplyResult> {
-        use std::path::Path;
-
         let mut apply_changes = Vec::new();
         let hardener_sysctl_path = Path::new("/etc/sysctl.d/99-hardener.conf");
 

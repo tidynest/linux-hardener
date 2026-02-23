@@ -245,6 +245,15 @@ impl FirewallBackend for UfwBackend {
                 }
                 Err(e) => {
                     warn!("Failed to apply rule '{}': {}", rule.rule_description, e);
+                    changes.push(Change {
+                        change_description: format!(
+                            "Failed to add firewall rule: {}",
+                            rule.rule_description
+                        ),
+                        change_type: ChangeType::FirewallRule,
+                        change_success: false,
+                        change_error: Some(e.to_string()),
+                    });
                 }
             }
         }

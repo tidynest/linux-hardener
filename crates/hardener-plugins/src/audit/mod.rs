@@ -395,7 +395,7 @@ fn get_audit_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
         "config" | "rules" => vec![ComplianceMapping {
             compliance_framework: ComplianceFramework::CIS,
             compliance_control_id: "4.1.2.1".to_string(),
-            compliance_control_title: "Ensure audit log storage size is  configured".to_string(),
+            compliance_control_title: "Ensure audit log storage size is configured".to_string(),
             compliance_section: Some("Logging and Auditing".to_string()),
         }],
         _ => vec![],
@@ -446,7 +446,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
                 finding_policy_exception: None,
             });
 
-            // If not installed, no pint checking further
+            // If not installed, no point checking further
             return Ok(ScanResult {
                 scan_duration_us: start.elapsed().as_micros() as u64,
                 scan_error: None,
@@ -461,7 +461,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
             findings.push(Finding {
                 finding_category: FindingCategory::Audit,
                 finding_current_value: "disabled".to_string(),
-                finding_description: "Audit daemon is not enable to start at boot".to_string(),
+                finding_description: "Audit daemon is not enabled to start at boot".to_string(),
                 finding_explanation:
                     "Auditd should be enabled to ensure audit logging starts automatically"
                         .to_string(),
@@ -517,7 +517,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
                             ),
                             finding_id: format!(
                                 "audit_rule_{}",
-                                rule.audit_rule_category.replace("-", "_")
+                                rule.audit_rule_category.replace('-', "_")
                             ),
                             finding_impact:
                                 "Security events in this category are not being audited"

@@ -204,7 +204,7 @@ impl HardeningPlugin for ServicesHardeningPlugin {
                         "Service {} is currently {}. {}",
                         directive.service_name, current_state, directive.service_description
                     ),
-                    finding_id: format!("service_{}", directive.service_name.replace("-", "_")),
+                    finding_id: format!("service_{}", directive.service_name.replace('-', "_")),
                     finding_impact: "Reduces attack surface by disabling unnecessary service"
                         .to_string(),
                     finding_recommended_value: "disabled and masked".to_string(),
@@ -236,7 +236,6 @@ impl HardeningPlugin for ServicesHardeningPlugin {
     async fn apply(&self, ctx: &mut Context, _config: &PluginConfig) -> Result<ApplyResult> {
         use std::path::Path;
 
-        let _start = Instant::now();
         let mut changes = Vec::new();
 
         // Create checkpoint for systemd unit files

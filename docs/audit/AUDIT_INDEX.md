@@ -66,21 +66,21 @@ Crypto, persistence, rollback — highest security surface.
 
 Largest crate — directly mutates system configuration.
 
-- [ ] `audit/mod.rs` (808 lines)
-- [ ] `pam/mod.rs` (661 lines)
-- [ ] `ssh/mod.rs` (620 lines)
-- [ ] `mac/mod.rs` (523 lines)
-- [ ] `kernel/mod.rs` (480 lines)
-- [ ] `services/mod.rs` (453 lines)
-- [ ] `permissions/mod.rs` (423 lines)
-- [ ] `firewall/mod.rs` (419 lines)
-- [ ] `firewall/nftables.rs` (314 lines)
-- [ ] `firewall/firewalld.rs` (281 lines)
-- [ ] `firewall/ufw.rs` (259 lines)
-- [ ] `lib.rs` (170 lines)
-- [ ] `macros.rs` (81 lines)
-- [ ] `CRATE.md` assembled
-- [ ] Verification passed
+- [x] `audit/mod.rs` (808 lines)
+- [x] `pam/mod.rs` (661 lines)
+- [x] `ssh/mod.rs` (620 lines)
+- [x] `mac/mod.rs` (523 lines)
+- [x] `kernel/mod.rs` (480 lines)
+- [x] `services/mod.rs` (453 lines)
+- [x] `permissions/mod.rs` (423 lines)
+- [x] `firewall/mod.rs` (419 lines)
+- [x] `firewall/nftables.rs` (314 lines)
+- [x] `firewall/firewalld.rs` (281 lines)
+- [x] `firewall/ufw.rs` (259 lines)
+- [x] `lib.rs` (170 lines)
+- [x] `macros.rs` (81 lines)
+- [x] `CRATE.md` assembled
+- [x] Verification passed (400 tests, 0 failures, clippy clean)
 
 ## Session 7: hardener-scheduler (11 files, 3,305 lines)
 

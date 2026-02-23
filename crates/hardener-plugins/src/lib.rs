@@ -100,11 +100,13 @@ pub async fn create_checkpoint_metadata_only_for_apply(
     Ok(Some(checkpoint_id.as_str().to_string()))
 }
 
-/// Re-export dependencies for macro use
-#[doc(hidden)]
 pub use audit::AuditHardeningPlugin;
 pub use firewall::FirewallHardeningPlugin;
+
+/// Re-export dependencies for macro use.
+#[doc(hidden)]
 pub use hardener_common;
+#[doc(hidden)]
 pub use hardener_core;
 pub use kernel::KernelHardeningPlugin;
 pub use mac::MacHardeningPlugin;

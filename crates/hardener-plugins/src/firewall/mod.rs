@@ -26,7 +26,7 @@ use tracing::{info, warn};
 /// Represents a single firewall rule in a backend-agnostic format.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Rule {
-    /// Rule finding_description for logging and display.
+    /// Rule description for logging and display.
     pub rule_description: String,
     /// Protocol (tcp, udp, icmp, all).
     pub rule_protocol: String,
@@ -185,7 +185,7 @@ impl FirewallHardeningPlugin {
 
         // No backend found.
         Err(hardener_common::error::HardeningError::Plugin(
-            "No supported firewall backend found (checked: ufw, nftables)".to_string(),
+            "No supported firewall backend found (checked: firewalld, ufw, nftables)".to_string(),
         ))
     }
 }

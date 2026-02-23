@@ -2,7 +2,7 @@
 //!
 //! This plugin scans, applies and manages OpenSSH server security settings.
 //! It focuses on critical authentication and protocol security including:
-//!  - Disabling root login
+//! - Disabling root login
 //! - Enforcing key-based authentication
 //! - Restricting protocol versions
 //! - Limiting authentication attempts.
@@ -169,7 +169,7 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
         "PasswordAuthentication" => vec![ComplianceMapping {
             compliance_framework: ComplianceFramework::CIS,
             compliance_control_id: "5.2.11".to_string(),
-            compliance_control_title: "Ensure SSH PermitEmptyPasswords is disabled".to_string(),
+            compliance_control_title: "Ensure SSH PasswordAuthentication is disabled".to_string(),
             compliance_section: Some("Access Control".to_string()),
         }],
         "PermitEmptyPasswords" => vec![ComplianceMapping {
@@ -377,7 +377,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                 ))
             })?;
 
-        // Step 3: Apply each directive.
+        // Step 4: Apply each directive.
         for directive in SSH_DIRECTIVES {
             // Check for a valid exception — skip this directive if exempted
             if let Some(exception) = config.has_valid_exception(directive.ssh_directive_name) {
@@ -444,7 +444,7 @@ impl HardeningPlugin for SshHardeningPlugin {
             }
         }
 
-        // Step 4: Write modified configuration using executor.
+        // Step 5: Write modified configuration using executor.
         match ctx
             .executor()
             .write_file(Path::new(config_path), &config_content)
@@ -470,7 +470,7 @@ impl HardeningPlugin for SshHardeningPlugin {
             }
         }
 
-        // Step 5: Restart SSH service to apply changes.
+        // Step 6: Restart SSH service to apply changes.
         match Self::restart_ssh_service(ctx).await {
             Ok(_) => {
                 changes.push(Change {

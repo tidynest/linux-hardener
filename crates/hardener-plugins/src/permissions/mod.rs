@@ -4,7 +4,7 @@
 //! across the system to prevent privilege escalation and unauthorised access.
 //!
 //! Checks:
-//! - Critical directory permissions (/root, /boot, /etc/ssh. /etc/sudoers)
+//! - Critical directory permissions (/root, /boot, /etc/ssh, /etc/sudoers)
 //! - SUID/SGID binaries (identifies dangerous ones)
 //! - World-writable files and directories
 //! - SSH key file permissions
@@ -160,32 +160,28 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
         "/etc/passwd" => vec![ComplianceMapping {
             compliance_framework: ComplianceFramework::CIS,
             compliance_control_id: "6.1.2".to_string(),
-            compliance_control_title: "Ensure permissions on /etc/passwd are
-  configured"
+            compliance_control_title: "Ensure permissions on /etc/passwd are configured"
                 .to_string(),
             compliance_section: Some("System Maintenance".to_string()),
         }],
         "/etc/shadow" => vec![ComplianceMapping {
             compliance_framework: ComplianceFramework::CIS,
             compliance_control_id: "6.1.3".to_string(),
-            compliance_control_title: "Ensure permissions on /etc/shadow are
-  configured"
+            compliance_control_title: "Ensure permissions on /etc/shadow are configured"
                 .to_string(),
             compliance_section: Some("System Maintenance".to_string()),
         }],
         "/etc/group" => vec![ComplianceMapping {
             compliance_framework: ComplianceFramework::CIS,
             compliance_control_id: "6.1.4".to_string(),
-            compliance_control_title: "Ensure permissions on /etc/group are
-  configured"
+            compliance_control_title: "Ensure permissions on /etc/group are configured"
                 .to_string(),
             compliance_section: Some("System Maintenance".to_string()),
         }],
         "/etc/gshadow" => vec![ComplianceMapping {
             compliance_framework: ComplianceFramework::CIS,
             compliance_control_id: "6.1.5".to_string(),
-            compliance_control_title: "Ensure permissions on /etc/gshadow are
-   configured"
+            compliance_control_title: "Ensure permissions on /etc/gshadow are configured"
                 .to_string(),
             compliance_section: Some("System Maintenance".to_string()),
         }],

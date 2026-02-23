@@ -127,7 +127,7 @@ impl NftablesBackend {
             // Allow established/related: ct state established,related accept
             args.push("ct".to_string());
             args.push("state".to_string());
-            args.push("established".to_string());
+            args.push("established,related".to_string());
             args.push("accept".to_string());
             return args;
         }
@@ -201,7 +201,7 @@ impl FirewallBackend for NftablesBackend {
         self.execute_nft(ctx, &["add", "table", "inet", "filter"])
             .await?;
 
-        // Step 2: Create input chain (with drop policy for security
+        // Step 2: Create input chain (with drop policy for security)
         self.execute_nft(
             ctx,
             &[

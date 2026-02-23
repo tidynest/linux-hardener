@@ -239,7 +239,7 @@ impl FirewallBackend for FirewalldBackend {
                         changes.push(Change {
                             change_type: ChangeType::FirewallRule,
                             change_description: format!(
-                                "Added port {} to zone '{}'",
+                                "Failed to add port {} to zone '{}'",
                                 port_spec, zone
                             ),
                             change_success: false,

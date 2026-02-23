@@ -43,7 +43,7 @@ macro_rules! define_plugin {
 
             fn dependencies(&self) -> Vec<$crate::hardener_common::types::PluginId> {
 
-                vec![$(PluginId::from($dep)),*]
+                vec![$($crate::hardener_common::types::PluginId::from($dep)),*]
             }
 
             async fn scan(

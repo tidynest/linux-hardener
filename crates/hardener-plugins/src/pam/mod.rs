@@ -2,7 +2,7 @@
 //!
 //! This plugin hardens system authentication by configuring:
 //! - Password quality requirements (complexity, length)
-//! - Account lookout policies (failed login attempts)
+//! - Account lockout policies (failed login attempts)
 //! - Password ageing policies (expiry, reuse prevention)
 
 use async_trait::async_trait;
@@ -64,7 +64,7 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
         _ => vec![ComplianceMapping {
             compliance_framework: ComplianceFramework::CIS,
             compliance_control_id: "5.3.1".to_string(),
-            compliance_control_title: "Ensure password creation requirements  are configured"
+            compliance_control_title: "Ensure password creation requirements are configured"
                 .to_string(),
             compliance_section: Some("Access Control".to_string()),
         }],
@@ -385,7 +385,7 @@ impl HardeningPlugin for PamHardeningPlugin {
         info!(
             "PAM apply completed: {} changes, success={} in {} ms",
             changes.len(),
-            duration_ms,
+            all_success,
             duration_ms
         );
 
