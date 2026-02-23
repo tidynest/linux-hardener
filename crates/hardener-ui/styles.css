@@ -1004,6 +1004,33 @@ tbody tr:hover {
   gap: var(--space-6);
 }
 
+.results-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-3) var(--space-4);
+}
+
+.severity-filter {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.severity-filter label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.severity-filter select {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: var(--space-1) var(--space-2);
+    font-size: 0.85rem;
+}
+
 /* Finding detail panel */
 .finding-detail {
   background-color: var(--bg-secondary);

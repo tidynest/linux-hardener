@@ -352,6 +352,30 @@
     GDPR: makeComplianceReport('GDPR', 78.0, 18, 4, 1),
   };
 
+  const SCAN_HISTORY = [
+    {
+      session_id: 'session-001',
+      started_at: '2026-02-23 10:30:00 UTC',
+      status: 'Completed',
+      total_findings: 8,
+      total_plugins: 6,
+    },
+    {
+      session_id: 'session-002',
+      started_at: '2026-02-22 15:45:00 UTC',
+      status: 'Completed',
+      total_findings: 5,
+      total_plugins: 4,
+    },
+    {
+      session_id: 'session-003',
+      started_at: '2026-02-21 09:00:00 UTC',
+      status: 'Failed',
+      total_findings: 0,
+      total_plugins: 2,
+    },
+  ];
+
   // ---- Command Handler ----
 
   async function handleInvoke(cmd, args) {
@@ -377,6 +401,17 @@
         scanHasRun = true;
         return SCAN_RESULTS;
 
+      case 'run_scan_filtered': {
+        scanHasRun = true;
+        const ids = (args && args.plugin_ids) || [];
+        if (ids.length === 0) return SCAN_RESULTS;
+        return SCAN_RESULTS.filter((r) => ids.includes(r.scan_plugin_id));
+      }
+
+      case 'run_scan_with_options':
+        scanHasRun = true;
+        return SCAN_RESULTS;
+
       case 'get_latest_scan':
         return scanHasRun ? SCAN_RESULTS : null;
 
@@ -389,6 +424,12 @@
       case 'get_checkpoints':
         return CHECKPOINTS;
 
+      case 'create_checkpoint':
+        return 'chk-mock-' + Date.now();
+
+      case 'delete_checkpoint':
+        return true;
+
       case 'run_rollback':
         return true;
 
@@ -398,6 +439,15 @@
           .map((f) => COMPLIANCE_REPORTS[f.toUpperCase()])
           .filter(Boolean);
       }
+
+      case 'export_report':
+        return ['Mock report content', 'txt'];
+
+      case 'get_scan_history':
+        return SCAN_HISTORY;
+
+      case 'get_scan_session':
+        return SCAN_RESULTS;
 
       default:
         throw `Unknown command: ${cmd}`;

@@ -56,6 +56,9 @@ logs/
 # Playwright MCP artifacts
 .playwright-mcp/
 
+# Node.js dependencies (GUI test suite)
+node_modules/
+
 # Debug screenshots
 pics-debug/
 
@@ -67,4 +70,7 @@ test-results/
 
 # Claude Code settings (user-specific)
 .claude/
+
+# Git worktrees (isolated development)
+.worktrees/
 
