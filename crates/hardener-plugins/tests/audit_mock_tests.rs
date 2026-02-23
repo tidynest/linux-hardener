@@ -4,7 +4,8 @@
 
 use hardener_common::types::{PluginId, Severity};
 use hardener_core::{
-    CommandOutput, Context, MockExecutor, SystemExecutor, plugin::HardeningPlugin,
+    CommandOutput, Context, MockExecutor, PluginConfig, PolicyException, SystemExecutor,
+    plugin::HardeningPlugin,
 };
 use hardener_plugins::AuditHardeningPlugin;
 use std::sync::Arc;
@@ -468,5 +469,143 @@ async fn test_audit_scan_permission_denied_should_not_report_missing_rules() {
             .take(5)
             .map(|f| &f.finding_id)
             .collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn test_audit_apply_skips_exceptions() {
+    // Auditd installed, enabled, running — apply writes rules file.
+    // Exception on "modules" category — those 3 rules should be absent.
+    let ok = CommandOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    let executor = MockExecutor::new()
+        .with_command_exists("auditd", true)
+        .with_command_exists("augenrules", true)
+        .with_command(
+            "systemctl",
+            &["is-enabled", "auditd"],
+            CommandOutput {
+                stdout: "enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-active", "auditd"],
+            CommandOutput {
+                stdout: "active\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command("mkdir", &["-p", "/etc/audit/rules.d"], ok.clone())
+        .with_command("augenrules", &["--load"], ok);
+
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    let plugin = AuditHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "modules".to_string(),
+        PolicyException {
+            value: "skip".to_string(),
+            allowed: true,
+            reason: "Module loading monitored by separate HIDS".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    // Should have a "skipped" change for modules category
+    let skipped = result
+        .apply_changes
+        .iter()
+        .find(|c| c.change_description.contains("skipped") && c.change_description.contains("modules"));
+    assert!(skipped.is_some(), "should have a skipped change for modules category");
+    assert!(
+        skipped
+            .expect("checked above")
+            .change_description
+            .contains("HIDS"),
+    );
+
+    // Verify the written rules file does NOT contain module rules
+    let log = executor.log();
+    let rules_write = log
+        .files_written
+        .iter()
+        .find(|(p, _)| p.to_str().unwrap().contains("hardening.rules"));
+    assert!(rules_write.is_some(), "should have written rules file");
+    let rules_content = &rules_write.expect("checked above").1;
+
+    // "insmod", "rmmod", "modprobe" should NOT appear (they're the 3 module rules)
+    assert!(
+        !rules_content.contains("insmod"),
+        "excepted module rules should not appear in rules file"
+    );
+    // Other categories should still appear
+    assert!(
+        rules_content.contains("identity"),
+        "non-excepted categories should still appear"
+    );
+}
+
+#[tokio::test]
+async fn test_audit_validate_skips_exceptions() {
+    // Partial rules (only identity) — normally many missing.
+    // Exception on "modules" should reduce the missing count.
+    let executor = partial_rules_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = AuditHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "modules".to_string(),
+        PolicyException {
+            value: "skip".to_string(),
+            allowed: true,
+            reason: "Module loading monitored externally".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let report = plugin.validate(&ctx, &config).await.unwrap();
+
+    // Without exception: partial_rules_executor has only identity rules.
+    // All other categories are missing. With "modules" excepted, the 3 module
+    // rules should be excluded from the missing count.
+    let config_no_exception = PluginConfig::default();
+    let report_no_exception = plugin.validate(&ctx, &config_no_exception).await.unwrap();
+
+    // Both should have an "Add N audit-rules" entry
+    let get_count = |changes: &[String]| -> Option<usize> {
+        changes
+            .iter()
+            .find(|c| c.contains("audit-rules"))
+            .and_then(|c| c.split_whitespace().nth(1))
+            .and_then(|n| n.parse().ok())
+    };
+
+    let count_with = get_count(&report.validation_report_estimated_changes);
+    let count_without = get_count(&report_no_exception.validation_report_estimated_changes);
+
+    assert!(count_with.is_some(), "should have audit-rules change with exception");
+    assert!(count_without.is_some(), "should have audit-rules change without exception");
+    assert!(
+        count_with.expect("checked") < count_without.expect("checked"),
+        "excepted category should reduce missing rule count: {} should be < {}",
+        count_with.expect("checked"),
+        count_without.expect("checked")
     );
 }

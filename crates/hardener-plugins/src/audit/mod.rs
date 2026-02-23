@@ -552,7 +552,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
         })
     }
 
-    async fn apply(&self, ctx: &mut Context, _config: &PluginConfig) -> Result<ApplyResult> {
+    async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult> {
         let mut changes = Vec::new();
 
         // Create checkpoint before changes
@@ -655,6 +655,26 @@ impl HardeningPlugin for AuditHardeningPlugin {
             "delete",
             "modules",
         ] {
+            // Check for a valid exception — skip entire category if exempted
+            if let Some(exception) = config.has_valid_exception(category) {
+                info!("Skipping audit category '{}' — exception: {}", category, exception.reason);
+                rules_content.push_str(&format!(
+                    "# {} — SKIPPED (exception: {})\n\n",
+                    category.to_uppercase(),
+                    exception.reason
+                ));
+                changes.push(Change {
+                    change_description: format!(
+                        "Audit category {}: skipped (exception: {})",
+                        category, exception.reason
+                    ),
+                    change_type: ChangeType::ConfigFile,
+                    change_success: true,
+                    change_error: None,
+                });
+                continue;
+            }
+
             rules_content.push_str(&format!("# {}\n", category.to_uppercase()));
 
             for rule in AUDIT_RULES
@@ -745,7 +765,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
         Ok(())
     }
 
-    async fn validate(&self, ctx: &Context, _config: &PluginConfig) -> Result<ValidationReport> {
+    async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {
         let mut estimated_changes = Vec::new();
         let mut issues = Vec::new();
 
@@ -768,9 +788,13 @@ impl HardeningPlugin for AuditHardeningPlugin {
                     let missing_rules = AUDIT_RULES
                         .iter()
                         .filter(|rule| {
-                            !current_rules
-                                .iter()
-                                .any(|current| current.contains(rule.audit_rule_category))
+                            // Skip rules whose category has a valid exception
+                            config
+                                .has_valid_exception(rule.audit_rule_category)
+                                .is_none()
+                                && !current_rules
+                                    .iter()
+                                    .any(|current| current.contains(rule.audit_rule_category))
                         })
                         .count();
 
