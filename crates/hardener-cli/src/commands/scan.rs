@@ -1,3 +1,5 @@
+//! Scan command — runs security plugins with filtering and persists results to history.
+
 use crate::cli::{OutputFormat, ScanMode, SeverityFilter};
 use crate::commands::daemon::load_scheduler_config;
 use crate::output;

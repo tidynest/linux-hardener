@@ -1,3 +1,5 @@
+//! CLI output formatting — multiplexes between JSON and coloured terminal output.
+
 use colored::Colorize;
 use hardener_common::types::Severity;
 use hardener_core::{ApplyResult, Finding, PluginMetadata, ValidationReport};
@@ -47,7 +49,10 @@ pub fn scan_results(
                     })
                 })
                 .collect();
-            println!("{}", serde_json::to_string_pretty(&json_results).unwrap());
+            match serde_json::to_string_pretty(&json_results) {
+                Ok(json) => println!("{json}"),
+                Err(e) => eprintln!("{{\"error\": \"serialisation failed: {e}\"}}"),
+            }
         }
         _ => {
             println!("\n{}", "═══ Scan Results ═══".bold());
@@ -98,7 +103,10 @@ pub fn scan_results(
 pub fn apply_results(format: &OutputFormat, results: &[(PluginMetadata, ApplyResult)]) {
     match format {
         OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(&results).unwrap());
+            match serde_json::to_string_pretty(&results) {
+                Ok(json) => println!("{json}"),
+                Err(e) => eprintln!("{{\"error\": \"serialisation failed: {e}\"}}"),
+            }
         }
         _ => {
             println!("\n{}", "═══ Apply Results ═══".bold());
@@ -137,7 +145,10 @@ pub fn apply_results(format: &OutputFormat, results: &[(PluginMetadata, ApplyRes
 pub fn plugin_list(format: &OutputFormat, plugins: &[PluginMetadata]) {
     match format {
         OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(&plugins).unwrap());
+            match serde_json::to_string_pretty(&plugins) {
+                Ok(json) => println!("{json}"),
+                Err(e) => eprintln!("{{\"error\": \"serialisation failed: {e}\"}}"),
+            }
         }
         _ => {
             println!("{}", "Available Plugins".bold());
@@ -158,7 +169,10 @@ pub fn plugin_list(format: &OutputFormat, plugins: &[PluginMetadata]) {
 pub fn checkpoint_list(format: &OutputFormat, checkpoints: &[Checkpoint]) {
     match format {
         OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(&checkpoints).unwrap());
+            match serde_json::to_string_pretty(&checkpoints) {
+                Ok(json) => println!("{json}"),
+                Err(e) => eprintln!("{{\"error\": \"serialisation failed: {e}\"}}"),
+            }
         }
         _ => {
             if checkpoints.is_empty() {
@@ -267,7 +281,10 @@ pub fn rollback_result(format: &OutputFormat, result: &RollbackResult) {
 pub fn validation_reports(format: &OutputFormat, reports: &[ValidationReport]) {
     match format {
         OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(&reports).unwrap());
+            match serde_json::to_string_pretty(&reports) {
+                Ok(json) => println!("{json}"),
+                Err(e) => eprintln!("{{\"error\": \"serialisation failed: {e}\"}}"),
+            }
         }
         _ => {
             for report in reports {

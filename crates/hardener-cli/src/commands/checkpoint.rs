@@ -1,3 +1,5 @@
+//! Checkpoint commands — create, list, show, delete, and rollback operations.
+
 use anyhow::{Result, bail};
 use hardener_state::{CheckpointId, CheckpointManager, CheckpointSigner, init_db};
 use std::path::PathBuf;
@@ -91,7 +93,7 @@ pub async fn rollback(checkpoint_id: &str, format: OutputFormat, quiet: bool) ->
     output::rollback_result(&format, &result);
 
     if !result.rollback_success {
-        bail!("Rollback completion with errors");
+        bail!("Rollback completed with errors");
     }
 
     Ok(())

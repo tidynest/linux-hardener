@@ -529,7 +529,6 @@ fn print_summary(reports: &[hardener_compliance::ComplianceReport], state: &Wiza
         let summary = &report.report_summary;
         let total = summary.summary_total_controls;
         let passing = summary.summary_passing;
-        let _failing = summary.summary_failing;
         let score = if total > 0 {
             (passing as f64 / total as f64) * 100.0
         } else {

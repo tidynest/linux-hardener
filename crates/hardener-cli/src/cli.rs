@@ -1,3 +1,5 @@
+//! CLI argument definitions — clap derive-based parser for all subcommands and global flags.
+
 use clap::{Parser, Subcommand, ValueEnum};
 pub(crate) use hardener_compliance::OutputFormat;
 
@@ -240,7 +242,7 @@ pub enum HistoryAction {
 
     /// Show details of a specific scan session.
     Show {
-        /// Session ID (UUID) to display).
+        /// Session ID (UUID) to display.
         session_id: String,
     },
 

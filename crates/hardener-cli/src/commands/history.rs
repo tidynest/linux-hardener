@@ -244,11 +244,13 @@ fn print_session_detail(session: &ScanSession, findings: &[ScanFindingRow], quie
     }
 }
 
-/// Truncates a string to max length with ellipsis.
+/// Truncates a string to max length with ellipsis (char-aware, safe for UTF-8).
 fn truncate_string(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
+    let chars: Vec<char> = s.chars().collect();
+    if chars.len() <= max_len {
         s.to_string()
     } else {
-        format!("{}...", &s[..max_len.saturating_sub(3)])
+        let end = max_len.saturating_sub(3);
+        format!("{}...", chars[..end].iter().collect::<String>())
     }
 }

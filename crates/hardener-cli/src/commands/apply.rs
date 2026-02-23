@@ -1,3 +1,5 @@
+//! Apply command — applies hardening changes with dry-run and checkpoint support.
+
 use crate::cli::OutputFormat;
 use crate::output;
 use anyhow::{Result, bail};

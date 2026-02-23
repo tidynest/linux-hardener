@@ -1,3 +1,5 @@
+//! CLI subcommand implementations.
+
 pub mod apply;
 pub mod checkpoint;
 pub mod daemon;

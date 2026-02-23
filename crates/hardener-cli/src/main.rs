@@ -1,3 +1,5 @@
+//! CLI entry point — parses arguments and dispatches to subcommand handlers.
+
 mod cli;
 mod commands;
 mod output;

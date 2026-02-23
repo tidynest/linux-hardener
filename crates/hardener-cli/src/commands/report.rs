@@ -9,7 +9,7 @@ use hardener_compliance::{
     TextFormatter,
 };
 use hardener_core::{Context, executor::SystemExecutor};
-use hardener_plugins::*;
+use hardener_plugins::create_plugin_registry;
 use std::{fs, io, io::Write, sync::Arc};
 
 pub async fn run(

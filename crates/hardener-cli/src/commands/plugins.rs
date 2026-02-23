@@ -1,3 +1,5 @@
+//! Plugins command — lists all registered hardening plugins.
+
 use anyhow::Result;
 use hardener_plugins::create_plugin_registry;
 

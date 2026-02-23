@@ -577,7 +577,7 @@ fn draw_control(
         for finding in &control.control_findings {
             surface.set_fill(Some(Fill {
                 paint: colour_fail().into(),
-                opacity: NormalizedF32::new(0.8).unwrap(),
+                opacity: NormalizedF32::new(0.8).expect("0.8 is always in [0.0, 1.0]"),
                 rule: FillRule::default(),
             }));
 
