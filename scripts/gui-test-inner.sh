@@ -130,7 +130,13 @@ run_playwright() {
 
     # Locate system Chromium binary
     local chromium_bin=""
-    for candidate in /usr/bin/chromium /usr/bin/chromium-browser /usr/bin/google-chrome-stable; do
+    for candidate in \
+        /usr/bin/chromium \
+        /usr/bin/chromium-browser \
+        /usr/bin/google-chrome-stable \
+        /usr/lib64/chromium-browser/headless_shell \
+        /usr/lib/chromium-browser/chromium-browser \
+        /usr/lib/chromium/chromium; do
         if [[ -x "$candidate" ]]; then
             chromium_bin="$candidate"
             break
