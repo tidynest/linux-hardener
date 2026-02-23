@@ -141,12 +141,21 @@ APPLY_FLAG=""
 [[ "$DO_APPLY" == "true" ]] && APPLY_FLAG="--apply"
 
 echo ""
-echo -e "${MAGENTA}╔══════════════════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${MAGENTA}║${NC}                                                                          ${MAGENTA}║${NC}"
-echo -e "${MAGENTA}║${NC}   ${BOLD}CROSS-DISTRO TEST RUNNER${NC}                                              ${MAGENTA}║${NC}"
-echo -e "${MAGENTA}║${NC}   Distros: ${#DISTROS[@]}  |  Apply: $DO_APPLY                                          ${MAGENTA}║${NC}"
-echo -e "${MAGENTA}║${NC}                                                                          ${MAGENTA}║${NC}"
-echo -e "${MAGENTA}╚══════════════════════════════════════════════════════════════════════════╝${NC}"
+BOX_W=74
+print_boxline() {
+    local content="$1"
+    local visible_len=${#content}
+    local pad=$((BOX_W - visible_len))
+    local spaces=""
+    for ((i=0; i<pad; i++)); do spaces+=" "; done
+    echo -e "${MAGENTA}║${NC}${content}${spaces}${MAGENTA}║${NC}"
+}
+echo -e "${MAGENTA}╔$(printf '═%.0s' $(seq 1 $BOX_W))╗${NC}"
+print_boxline ""
+print_boxline "   CROSS-DISTRO TEST RUNNER"
+print_boxline "   Distros: ${#DISTROS[@]}  |  Apply: $DO_APPLY"
+print_boxline ""
+echo -e "${MAGENTA}╚$(printf '═%.0s' $(seq 1 $BOX_W))╝${NC}"
 echo ""
 
 for distro in "${DISTROS[@]}"; do
@@ -238,9 +247,9 @@ SUMMARY_FILE="$RESULTS_DIR/summary.txt"
 } > "$SUMMARY_FILE"
 
 # Print summary to stdout with colour
-echo -e "${MAGENTA}╔══════════════════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${MAGENTA}║${NC}   ${BOLD}CROSS-DISTRO SUMMARY${NC}                                                  ${MAGENTA}║${NC}"
-echo -e "${MAGENTA}╚══════════════════════════════════════════════════════════════════════════╝${NC}"
+echo -e "${MAGENTA}╔$(printf '═%.0s' $(seq 1 $BOX_W))╗${NC}"
+print_boxline "   CROSS-DISTRO SUMMARY"
+echo -e "${MAGENTA}╚$(printf '═%.0s' $(seq 1 $BOX_W))╝${NC}"
 echo ""
 printf "  ${BOLD}%-12s %6s %6s %6s %7s %8s${NC}\n" "Distro" "Total" "Pass" "Fail" "Skip" "Status"
 printf "  %-12s %6s %6s %6s %7s %8s\n" "--------" "-----" "----" "----" "----" "------"
