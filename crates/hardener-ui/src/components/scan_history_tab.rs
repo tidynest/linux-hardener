@@ -40,9 +40,7 @@ pub fn ScanHistoryTab() -> impl IntoView {
                     app_state.scan_results.set(results);
                 }
                 Err(e) => {
-                    web_sys::console::error_1(
-                        &format!("Failed to load session: {}", e).into(),
-                    );
+                    web_sys::console::error_1(&format!("Failed to load session: {}", e).into());
                     app_state
                         .error_message
                         .set(Some(format!("Failed to load session: {}", e)));

@@ -5,16 +5,18 @@ use hardener_compliance::{
         CsvFormatter, HtmlFormatter, JsonFormatter, PdfFormatter, ReportFormatter, TextFormatter,
     },
 };
-use hardener_core::{ApplyResult, ConfigLoader, Context, Finding, PluginMetadata, ScanResult, ValidationReport};
+use hardener_core::{
+    ApplyResult, ConfigLoader, Context, Finding, PluginMetadata, ScanResult, ValidationReport,
+};
 use hardener_plugins::create_plugin_registry;
 use hardener_state::{
     Checkpoint, CheckpointId, CheckpointManager, FileState, RollbackResult, ScanHistoryManager,
     ScanSession, ScanSessionId, ScanStatus, init_db,
 };
+use hardener_types::ConfigSummary;
 use hardener_types::remote::{
     HostsConfig, RemoteConnectionInfo, RemoteConnectionStatus, RemoteHostProfile,
 };
-use hardener_types::ConfigSummary;
 use serde::Serialize;
 use std::sync::Mutex;
 use tokio::process::Command;
@@ -75,8 +77,8 @@ fn load_hosts_config() -> Result<HostsConfig, String> {
 /// Saves host profiles to TOML config file.
 fn save_hosts_config(config: &HostsConfig) -> Result<(), String> {
     let path = hosts_config_path()?;
-    let content =
-        toml::to_string_pretty(config).map_err(|e| format!("Failed to serialise hosts config: {e}"))?;
+    let content = toml::to_string_pretty(config)
+        .map_err(|e| format!("Failed to serialise hosts config: {e}"))?;
     std::fs::write(&path, content).map_err(|e| format!("Failed to write hosts config: {e}"))
 }
 
@@ -255,7 +257,10 @@ async fn create_scan_history_manager() -> Result<ScanHistoryManager, String> {
 /// Persists results to the database for GUI state restoration.
 /// Returns a vector of scan results, one per plugin.
 #[tauri::command]
-pub async fn run_scan(plugin_ids: Option<Vec<String>>, config_path: Option<String>) -> Result<Vec<ScanResult>, String> {
+pub async fn run_scan(
+    plugin_ids: Option<Vec<String>>,
+    config_path: Option<String>,
+) -> Result<Vec<ScanResult>, String> {
     // Create scan history manager for persistence
     let history_manager = create_scan_history_manager().await?;
 
@@ -265,7 +270,6 @@ pub async fn run_scan(plugin_ids: Option<Vec<String>>, config_path: Option<Strin
         .await
         .map_err(|e| e.to_string())?;
 
-
     // Load config if custom path provided
     let config = if let Some(ref path) = config_path {
         ConfigLoader::new()
@@ -273,9 +277,7 @@ pub async fn run_scan(plugin_ids: Option<Vec<String>>, config_path: Option<Strin
             .load()
             .map_err(|e| format!("Failed to load config: {}", e))?
     } else {
-        ConfigLoader::new()
-            .load()
-            .unwrap_or_default()
+        ConfigLoader::new().load().unwrap_or_default()
     };
     let ctx = Context::new();
     let registry = create_plugin_registry();
@@ -296,7 +298,6 @@ pub async fn run_scan(plugin_ids: Option<Vec<String>>, config_path: Option<Strin
         {
             continue;
         }
-
 
         // Skip plugins disabled by config
         if !config.is_plugin_enabled(metadata.plugin_id.as_str()) {
@@ -344,7 +345,10 @@ pub async fn run_scan(plugin_ids: Option<Vec<String>>, config_path: Option<Strin
 /// Uses pkexec to run the CLI with root privileges.
 /// The user will be prompted for their password via the polkit agent.
 #[tauri::command]
-pub async fn run_apply(plugin_ids: Vec<String>, config_path: Option<String>) -> Result<Vec<ApplyResult>, String> {
+pub async fn run_apply(
+    plugin_ids: Vec<String>,
+    config_path: Option<String>,
+) -> Result<Vec<ApplyResult>, String> {
     tracing::info!("=== run_apply called with plugins: {:?} ===", plugin_ids);
 
     // Build CLI arguments
@@ -385,7 +389,10 @@ pub async fn run_apply(plugin_ids: Vec<String>, config_path: Option<String>) -> 
 /// Unlike run_apply, this does NOT use pkexec because dry-run doesn't
 /// modify the system. Returns estimated changes for user review.
 #[tauri::command]
-pub async fn run_apply_dry_run(plugin_ids: Vec<String>, config_path: Option<String>) -> Result<Vec<ValidationReport>, String> {
+pub async fn run_apply_dry_run(
+    plugin_ids: Vec<String>,
+    config_path: Option<String>,
+) -> Result<Vec<ValidationReport>, String> {
     tracing::info!(
         "=== run_apply_dry_run called with plugins: {:?} ===",
         plugin_ids
@@ -441,7 +448,10 @@ pub async fn run_apply_dry_run(plugin_ids: Vec<String>, config_path: Option<Stri
 /// Uses pkexec to run the CLI with root privileges.
 /// Takes a checkpoint ID and restores the system state to that point.
 #[tauri::command]
-pub async fn run_rollback(checkpoint_id: String, config_path: Option<String>) -> Result<RollbackResult, String> {
+pub async fn run_rollback(
+    checkpoint_id: String,
+    config_path: Option<String>,
+) -> Result<RollbackResult, String> {
     let mut args: Vec<&str> = vec!["rollback", "--format", "json", &checkpoint_id];
 
     // Inject config file path if set
@@ -456,8 +466,7 @@ pub async fn run_rollback(checkpoint_id: String, config_path: Option<String>) ->
         .await
         .map_err(|e| e.to_string())?;
 
-    serde_json::from_str(&output)
-        .map_err(|e| format!("Failed to parse rollback result: {}", e))
+    serde_json::from_str(&output).map_err(|e| format!("Failed to parse rollback result: {}", e))
 }
 
 /// Retrieves a list of all available checkpoints from both user and system databases.
@@ -657,7 +666,11 @@ pub async fn export_compliance_report(
 
     // Determine output file path
     let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
-    let default_name = format!("compliance-report-{}.{}", timestamp, output_format.extension());
+    let default_name = format!(
+        "compliance-report-{}.{}",
+        timestamp,
+        output_format.extension()
+    );
 
     let final_path = match output_path {
         Some(path) => {
@@ -679,8 +692,7 @@ pub async fn export_compliance_report(
     // Write file (PDF needs binary handling)
     if output_format == OutputFormat::Pdf {
         let bytes: Vec<u8> = formatted.chars().map(|c| c as u8).collect();
-        std::fs::write(&final_path, bytes)
-            .map_err(|e| format!("Failed to write PDF: {}", e))?;
+        std::fs::write(&final_path, bytes).map_err(|e| format!("Failed to write PDF: {}", e))?;
     } else {
         std::fs::write(&final_path, &formatted)
             .map_err(|e| format!("Failed to write report: {}", e))?;
@@ -889,10 +901,7 @@ pub async fn connect_remote(
 
     match hardener_core::SshExecutor::connect(ssh_config).await {
         Ok(executor) => {
-            let user_display = profile
-                .user
-                .clone()
-                .unwrap_or_else(whoami::username);
+            let user_display = profile.user.clone().unwrap_or_else(whoami::username);
             let info = RemoteConnectionInfo {
                 profile_name: name,
                 host: profile.hostname.clone(),
@@ -922,9 +931,7 @@ pub async fn connect_remote(
 /// Drops the `SshExecutor` (which closes the underlying SSH session)
 /// and clears the managed state.
 #[tauri::command]
-pub async fn disconnect_remote(
-    state: tauri::State<'_, RemoteState>,
-) -> Result<(), String> {
+pub async fn disconnect_remote(state: tauri::State<'_, RemoteState>) -> Result<(), String> {
     let mut connection = state
         .active_connection
         .lock()
@@ -975,7 +982,10 @@ pub async fn run_remote_scan(
             match plugin.scan(&ctx).await {
                 Ok(result) => results.push(result),
                 Err(e) => {
-                    error!("Remote scan failed for plugin {}: {}", metadata.plugin_id, e);
+                    error!(
+                        "Remote scan failed for plugin {}: {}",
+                        metadata.plugin_id, e
+                    );
                 }
             }
         }
@@ -990,7 +1000,8 @@ pub async fn run_remote_scan(
 
 /// Reads the [scheduler] section from config.toml and returns it as SchedulerUiConfig.
 #[tauri::command]
-pub async fn get_scheduler_config() -> Result<hardener_types::scheduler::SchedulerUiConfig, String> {
+pub async fn get_scheduler_config() -> Result<hardener_types::scheduler::SchedulerUiConfig, String>
+{
     let path = hardener_config_path()?;
     if !path.exists() {
         return Ok(hardener_types::scheduler::SchedulerUiConfig::default());
@@ -1032,11 +1043,12 @@ pub async fn save_scheduler_config(
         String::new()
     };
 
-    let mut document: toml_edit::DocumentMut =
-        content.parse().map_err(|e| format!("Failed to parse config: {e}"))?;
+    let mut document: toml_edit::DocumentMut = content
+        .parse()
+        .map_err(|e| format!("Failed to parse config: {e}"))?;
 
-    let scheduler_toml =
-        toml::to_string(&config).map_err(|e| format!("Failed to serialise scheduler config: {e}"))?;
+    let scheduler_toml = toml::to_string(&config)
+        .map_err(|e| format!("Failed to serialise scheduler config: {e}"))?;
     let scheduler_table: toml_edit::DocumentMut = scheduler_toml
         .parse()
         .map_err(|e| format!("Failed to parse scheduler TOML: {e}"))?;

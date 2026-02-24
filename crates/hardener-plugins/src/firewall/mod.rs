@@ -166,7 +166,6 @@ fn apply_rule_directives(rule: &mut Rule, id: &str, config: &PluginConfig) {
     }
 }
 
-
 /// Main firewall hardening plugin
 ///
 /// This plugin automatically detects and uses the appropriate firewall
@@ -457,8 +456,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
                     .filter(|r| config.has_valid_exception(&rule_id(r)).is_none())
                     .count();
                 if rule_count > 0 {
-                    estimated_changes
-                        .push(format!("Apply {} baseline firewall rules", rule_count));
+                    estimated_changes.push(format!("Apply {} baseline firewall rules", rule_count));
                 }
             }
             Err(e) => {

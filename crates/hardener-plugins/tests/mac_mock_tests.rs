@@ -411,7 +411,10 @@ async fn test_mac_apply_skips_exceptions() {
         .apply_changes
         .iter()
         .find(|c| c.change_description.contains("skipped"));
-    assert!(skipped.is_some(), "should have a skipped change for SELinux");
+    assert!(
+        skipped.is_some(),
+        "should have a skipped change for SELinux"
+    );
     assert!(
         skipped
             .expect("checked above")

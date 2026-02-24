@@ -525,11 +525,13 @@ async fn test_audit_apply_skips_exceptions() {
     let result = plugin.apply(&mut ctx, &config).await.unwrap();
 
     // Should have a "skipped" change for modules category
-    let skipped = result
-        .apply_changes
-        .iter()
-        .find(|c| c.change_description.contains("skipped") && c.change_description.contains("modules"));
-    assert!(skipped.is_some(), "should have a skipped change for modules category");
+    let skipped = result.apply_changes.iter().find(|c| {
+        c.change_description.contains("skipped") && c.change_description.contains("modules")
+    });
+    assert!(
+        skipped.is_some(),
+        "should have a skipped change for modules category"
+    );
     assert!(
         skipped
             .expect("checked above")
@@ -600,8 +602,14 @@ async fn test_audit_validate_skips_exceptions() {
     let count_with = get_count(&report.validation_report_estimated_changes);
     let count_without = get_count(&report_no_exception.validation_report_estimated_changes);
 
-    assert!(count_with.is_some(), "should have audit-rules change with exception");
-    assert!(count_without.is_some(), "should have audit-rules change without exception");
+    assert!(
+        count_with.is_some(),
+        "should have audit-rules change with exception"
+    );
+    assert!(
+        count_without.is_some(),
+        "should have audit-rules change without exception"
+    );
     assert!(
         count_with.expect("checked") < count_without.expect("checked"),
         "excepted category should reduce missing rule count: {} should be < {}",

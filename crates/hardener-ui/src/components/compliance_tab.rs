@@ -90,8 +90,7 @@ pub fn ComplianceTab() -> impl IntoView {
         leptos::task::spawn_local(async move {
             match invoke_export_report(frameworks, format, None).await {
                 Ok(path) => {
-                    status_message
-                        .set(Some((format!("Exported to {}", path), true)));
+                    status_message.set(Some((format!("Exported to {}", path), true)));
                 }
                 Err(e) => {
                     web_sys::console::error_1(&format!("Export failed: {}", e).into());

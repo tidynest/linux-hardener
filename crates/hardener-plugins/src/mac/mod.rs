@@ -378,7 +378,10 @@ impl HardeningPlugin for MacHardeningPlugin {
             Some(MacSystem::SELinux) => {
                 // Check for exception before enforcing
                 if let Some(exception) = config.has_valid_exception("selinux-enforcing") {
-                    info!("Skipping SELinux enforcement — exception: {}", exception.reason);
+                    info!(
+                        "Skipping SELinux enforcement — exception: {}",
+                        exception.reason
+                    );
                     apply_changes.push(Change {
                         change_description: format!(
                             "SELinux enforcement: skipped (exception: {})",
@@ -412,7 +415,10 @@ impl HardeningPlugin for MacHardeningPlugin {
             Some(MacSystem::AppArmor) => {
                 // Check for exception before AppArmor enforcement guidance
                 if let Some(exception) = config.has_valid_exception("apparmor-enforce") {
-                    info!("Skipping AppArmor enforcement — exception: {}", exception.reason);
+                    info!(
+                        "Skipping AppArmor enforcement — exception: {}",
+                        exception.reason
+                    );
                     apply_changes.push(Change {
                         change_description: format!(
                             "AppArmor enforcement: skipped (exception: {})",
@@ -506,8 +512,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                     match self.get_selinux_mode(ctx).await {
                         Ok(mode) => {
                             if mode != "Enforcing" {
-                                estimated_changes
-                                    .push("Set SELinux to enforcing mode".to_string());
+                                estimated_changes.push("Set SELinux to enforcing mode".to_string());
                             }
                         }
                         Err(_) => {

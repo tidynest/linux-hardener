@@ -35,14 +35,16 @@ pub fn ConfigFileCard() -> impl IntoView {
                 }
                 Err(e) => {
                     app_state.config_path.set(Some(path_clone.clone()));
-                    app_state.config_summary.set(Some(crate::types::ConfigSummary {
-                        config_path: path_clone,
-                        config_is_valid: false,
-                        config_error: Some(e),
-                        config_enabled_plugins: Vec::new(),
-                        config_directive_count: 0,
-                        config_exception_count: 0,
-                    }));
+                    app_state
+                        .config_summary
+                        .set(Some(crate::types::ConfigSummary {
+                            config_path: path_clone,
+                            config_is_valid: false,
+                            config_error: Some(e),
+                            config_enabled_plugins: Vec::new(),
+                            config_directive_count: 0,
+                            config_exception_count: 0,
+                        }));
                 }
             }
             is_validating.set(false);

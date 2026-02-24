@@ -14,7 +14,14 @@ const SCHEDULE_PRESETS: &[(&str, &str)] = &[
 
 /// All available plugin IDs for the checkbox group.
 const PLUGIN_IDS: &[&str] = &[
-    "kernel", "ssh", "firewall", "pam", "services", "audit", "permissions", "mac",
+    "kernel",
+    "ssh",
+    "firewall",
+    "pam",
+    "services",
+    "audit",
+    "permissions",
+    "mac",
 ];
 
 /// Schedule configuration form.
@@ -75,7 +82,10 @@ pub fn ScheduleSection() -> impl IntoView {
         let plugins = selected_plugins.get_untracked();
         let severity = min_severity.get_untracked();
         let is_enabled = enabled.get_untracked();
-        let base_config = app_state.scheduler_config.get_untracked().unwrap_or_default();
+        let base_config = app_state
+            .scheduler_config
+            .get_untracked()
+            .unwrap_or_default();
 
         app_state.is_saving_scheduler.set(true);
         save_status.set(None);

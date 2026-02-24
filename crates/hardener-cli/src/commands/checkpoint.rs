@@ -86,7 +86,10 @@ pub async fn rollback(checkpoint_id: &str, format: OutputFormat, quiet: bool) ->
     let id = CheckpointId::new(checkpoint_id);
 
     if !quiet {
-        output::status(&format, &format!("Rolling back to checkpoint: {checkpoint_id}"));
+        output::status(
+            &format,
+            &format!("Rolling back to checkpoint: {checkpoint_id}"),
+        );
     }
 
     let result = manager.rollback(&id).await?;

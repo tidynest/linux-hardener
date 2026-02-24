@@ -4,9 +4,8 @@
 //! In browser mode (without Tauri), all commands return errors gracefully.
 
 use crate::types::{
-    ApplyResult, CheckpointDetail, CheckpointInfo, ComplianceReport, ConfigSummary,
-    PluginMetadata, RollbackResult, ScanResult, ScanSessionInfo, SchedulerUiConfig,
-    TestNotificationResult,
+    ApplyResult, CheckpointDetail, CheckpointInfo, ComplianceReport, ConfigSummary, PluginMetadata,
+    RollbackResult, ScanResult, ScanSessionInfo, SchedulerUiConfig, TestNotificationResult,
 };
 use hardener_types::ValidationReport;
 use hardener_types::remote::{RemoteConnectionStatus, RemoteHostProfile};
@@ -207,9 +206,7 @@ pub async fn invoke_delete_checkpoint(checkpoint_id: String) -> Result<bool, Str
 /// Invokes the get_scan_history Tauri command.
 ///
 /// Returns recent scan session metadata (no results data).
-pub async fn invoke_get_scan_history(
-    limit: Option<i32>,
-) -> Result<Vec<ScanSessionInfo>, String> {
+pub async fn invoke_get_scan_history(limit: Option<i32>) -> Result<Vec<ScanSessionInfo>, String> {
     let args = match limit {
         Some(n) => serde_wasm_bindgen::to_value(&serde_json::json!({ "limit": n }))
             .map_err(|e| format!("Failed to serialise arguments: {}", e))?,
@@ -344,7 +341,9 @@ pub async fn invoke_disconnect_remote() -> Result<(), String> {
 ///
 /// Runs a hardening scan on the connected remote host.
 /// Pass plugin IDs to scan a subset, or None to scan all.
-pub async fn invoke_remote_scan(plugin_ids: Option<Vec<String>>) -> Result<Vec<ScanResult>, String> {
+pub async fn invoke_remote_scan(
+    plugin_ids: Option<Vec<String>>,
+) -> Result<Vec<ScanResult>, String> {
     let args = serde_wasm_bindgen::to_value(&serde_json::json!({
         "pluginIds": plugin_ids,
     }))

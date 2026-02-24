@@ -466,10 +466,9 @@ async fn test_pam_apply_skips_exceptions() {
     let result = plugin.apply(&mut ctx, &config).await.unwrap();
 
     // Should have a "skipped" change for minlen
-    let skipped = result
-        .apply_changes
-        .iter()
-        .find(|c| c.change_description.contains("skipped") && c.change_description.contains("minlen"));
+    let skipped = result.apply_changes.iter().find(|c| {
+        c.change_description.contains("skipped") && c.change_description.contains("minlen")
+    });
     assert!(skipped.is_some(), "should have a skipped change for minlen");
     assert!(
         skipped

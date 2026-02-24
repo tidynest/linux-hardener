@@ -3,14 +3,14 @@
 //! The UI uses types from hardener-types for WASM compatibility.
 
 // Re-export all types from hardener-types
+pub use hardener_types::scheduler::{
+    EmailUiConfig, NotificationUiConfig, SchedulerUiConfig, TestNotificationResult, WebhookUiConfig,
+};
 pub use hardener_types::{
     ApplyResult, Change, ChangeType, ComplianceFramework, ComplianceMapping, ComplianceReport,
     ComplianceSummary, ConfigSummary, ControlResult, ControlStatus, FileRestoreAction,
-    FileRestoreResult, Finding, FindingCategory, FindingPolicyException, PluginId,
-    PluginMetadata, RollbackResult, ScanResult, Severity, ValidationIssue, ValidationReport,
-};
-pub use hardener_types::scheduler::{
-    EmailUiConfig, NotificationUiConfig, SchedulerUiConfig, TestNotificationResult, WebhookUiConfig,
+    FileRestoreResult, Finding, FindingCategory, FindingPolicyException, PluginId, PluginMetadata,
+    RollbackResult, ScanResult, Severity, ValidationIssue, ValidationReport,
 };
 
 /// Checkpoint information for UI display.

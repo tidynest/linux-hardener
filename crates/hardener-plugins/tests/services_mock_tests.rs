@@ -647,11 +647,13 @@ async fn test_services_apply_skips_exceptions() {
     );
 
     // Should have a "skipped" change for bluetooth
-    let skipped = result
-        .apply_changes
-        .iter()
-        .find(|c| c.change_description.contains("skipped") && c.change_description.contains("bluetooth"));
-    assert!(skipped.is_some(), "should have a skipped change for bluetooth");
+    let skipped = result.apply_changes.iter().find(|c| {
+        c.change_description.contains("skipped") && c.change_description.contains("bluetooth")
+    });
+    assert!(
+        skipped.is_some(),
+        "should have a skipped change for bluetooth"
+    );
     assert!(
         skipped
             .expect("checked above")
@@ -662,11 +664,13 @@ async fn test_services_apply_skips_exceptions() {
     // Verify no systemctl stop/disable/mask for bluetooth
     let log = executor.log();
     assert!(
-        !log.commands_executed.iter().any(|(cmd, args)| cmd == "systemctl"
-            && args.iter().any(|a| a == "bluetooth")
-            && args
-                .iter()
-                .any(|a| a == "stop" || a == "disable" || a == "mask")),
+        !log.commands_executed
+            .iter()
+            .any(|(cmd, args)| cmd == "systemctl"
+                && args.iter().any(|a| a == "bluetooth")
+                && args
+                    .iter()
+                    .any(|a| a == "stop" || a == "disable" || a == "mask")),
         "should not execute stop/disable/mask for excepted bluetooth"
     );
 }

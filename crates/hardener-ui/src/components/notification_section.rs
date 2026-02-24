@@ -58,7 +58,10 @@ pub fn NotificationSection() -> impl IntoView {
         let is_webhook_enabled = webhook_enabled.get_untracked();
         let url = webhook_url.get_untracked();
         let format = webhook_format.get_untracked();
-        let mut config = app_state.scheduler_config.get_untracked().unwrap_or_default();
+        let mut config = app_state
+            .scheduler_config
+            .get_untracked()
+            .unwrap_or_default();
 
         leptos::task::spawn_local(async move {
             config.notifications.email.enabled = is_email_enabled;

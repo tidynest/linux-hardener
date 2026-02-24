@@ -482,10 +482,9 @@ async fn test_permissions_apply_skips_exceptions() {
     let result = plugin.apply(&mut ctx, &config).await.unwrap();
 
     // Should have a "skipped" change for /boot
-    let skipped = result
-        .apply_changes
-        .iter()
-        .find(|c| c.change_description.contains("skipped") && c.change_description.contains("/boot"));
+    let skipped = result.apply_changes.iter().find(|c| {
+        c.change_description.contains("skipped") && c.change_description.contains("/boot")
+    });
     assert!(skipped.is_some(), "should have a skipped change for /boot");
     assert!(
         skipped
@@ -497,9 +496,7 @@ async fn test_permissions_apply_skips_exceptions() {
     // Verify no chmod command was issued at all
     let log = executor.log();
     assert!(
-        !log.commands_executed
-            .iter()
-            .any(|(cmd, _)| cmd == "chmod"),
+        !log.commands_executed.iter().any(|(cmd, _)| cmd == "chmod"),
         "should not execute chmod for excepted path"
     );
 }

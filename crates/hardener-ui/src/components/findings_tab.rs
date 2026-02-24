@@ -82,9 +82,8 @@ pub fn FindingsTab() -> impl IntoView {
     let total_count = move || all_findings().len();
     let filtered_count = move || filtered_findings.get().len();
     let has_findings = move || !all_findings().is_empty();
-    let is_filtered = move || {
-        app_state.severity_filter.get().is_some() || view_mode.get() != ViewMode::All
-    };
+    let is_filtered =
+        move || app_state.severity_filter.get().is_some() || view_mode.get() != ViewMode::All;
 
     let on_severity_change = move |ev: leptos::ev::Event| {
         let value = event_target_value(&ev);

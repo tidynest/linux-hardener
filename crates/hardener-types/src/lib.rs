@@ -10,11 +10,11 @@ use std::fmt;
 // Re-export chrono types used in reports
 pub use chrono::{DateTime, Utc};
 
+pub mod config_picker;
 pub mod remote;
 pub mod scheduler;
-pub mod config_picker;
-pub use remote::*;
 pub use config_picker::*;
+pub use remote::*;
 
 // ============================================================================
 // Plugin Types (from hardener-common)

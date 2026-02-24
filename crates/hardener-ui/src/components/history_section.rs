@@ -69,9 +69,7 @@ pub fn HistorySection() -> impl IntoView {
                     }
                 }
                 Err(e) => {
-                    web_sys::console::error_1(
-                        &format!("Create checkpoint failed: {}", e).into(),
-                    );
+                    web_sys::console::error_1(&format!("Create checkpoint failed: {}", e).into());
                     app_state
                         .error_message
                         .set(Some(format!("Create checkpoint failed: {}", e)));
@@ -91,9 +89,7 @@ pub fn HistorySection() -> impl IntoView {
                     }
                 }
                 Err(e) => {
-                    web_sys::console::error_1(
-                        &format!("Delete checkpoint failed: {}", e).into(),
-                    );
+                    web_sys::console::error_1(&format!("Delete checkpoint failed: {}", e).into());
                     app_state
                         .error_message
                         .set(Some(format!("Delete checkpoint failed: {}", e)));

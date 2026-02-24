@@ -657,7 +657,10 @@ impl HardeningPlugin for AuditHardeningPlugin {
         ] {
             // Check for a valid exception — skip entire category if exempted
             if let Some(exception) = config.has_valid_exception(category) {
-                info!("Skipping audit category '{}' — exception: {}", category, exception.reason);
+                info!(
+                    "Skipping audit category '{}' — exception: {}",
+                    category, exception.reason
+                );
                 rules_content.push_str(&format!(
                     "# {} — SKIPPED (exception: {})\n\n",
                     category.to_uppercase(),

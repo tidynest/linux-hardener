@@ -20,9 +20,7 @@ pub fn SchedulerPage() -> impl IntoView {
         match tauri_bindings::invoke_get_scheduler_config().await {
             Ok(config) => app_state.scheduler_config.set(Some(config)),
             Err(e) => {
-                web_sys::console::warn_1(
-                    &format!("Failed to load scheduler config: {e}").into(),
-                );
+                web_sys::console::warn_1(&format!("Failed to load scheduler config: {e}").into());
             }
         }
     });

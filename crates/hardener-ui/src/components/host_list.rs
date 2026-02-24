@@ -5,7 +5,9 @@
 //! at the bottom triggers the parent's edit callback with `None`.
 
 use crate::state::AppState;
-use crate::tauri_bindings::{invoke_connect_remote, invoke_delete_remote_host, invoke_list_remote_hosts};
+use crate::tauri_bindings::{
+    invoke_connect_remote, invoke_delete_remote_host, invoke_list_remote_hosts,
+};
 use hardener_types::remote::{RemoteConnectionInfo, RemoteConnectionStatus, RemoteHostProfile};
 use leptos::prelude::*;
 
@@ -14,10 +16,7 @@ use leptos::prelude::*;
 /// Loads profiles on mount and provides connect, edit, and delete actions
 /// per entry. The currently connected host receives an active highlight.
 #[component]
-pub fn HostList(
-    #[prop(into)]
-    on_edit: Callback<Option<RemoteHostProfile>>,
-) -> impl IntoView {
+pub fn HostList(#[prop(into)] on_edit: Callback<Option<RemoteHostProfile>>) -> impl IntoView {
     let app_state = expect_context::<AppState>();
 
     // Reload host list from backend into AppState.
@@ -55,9 +54,10 @@ pub fn HostList(
                 }
                 Ok(RemoteConnectionStatus::Failed { error }) => {
                     web_sys::console::error_1(&format!("Connection failed: {}", error).into());
-                    app_state
-                        .error_message
-                        .set(Some(format!("Connection to {} failed: {}", hostname, error)));
+                    app_state.error_message.set(Some(format!(
+                        "Connection to {} failed: {}",
+                        hostname, error
+                    )));
                 }
                 Err(e) => {
                     web_sys::console::error_1(&format!("Connect error: {}", e).into());

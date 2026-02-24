@@ -102,12 +102,10 @@ pub fn scan_results(
 
 pub fn apply_results(format: &OutputFormat, results: &[(PluginMetadata, ApplyResult)]) {
     match format {
-        OutputFormat::Json => {
-            match serde_json::to_string_pretty(&results) {
-                Ok(json) => println!("{json}"),
-                Err(e) => eprintln!("{{\"error\": \"serialisation failed: {e}\"}}"),
-            }
-        }
+        OutputFormat::Json => match serde_json::to_string_pretty(&results) {
+            Ok(json) => println!("{json}"),
+            Err(e) => eprintln!("{{\"error\": \"serialisation failed: {e}\"}}"),
+        },
         _ => {
             println!("\n{}", "═══ Apply Results ═══".bold());
 
@@ -144,12 +142,10 @@ pub fn apply_results(format: &OutputFormat, results: &[(PluginMetadata, ApplyRes
 
 pub fn plugin_list(format: &OutputFormat, plugins: &[PluginMetadata]) {
     match format {
-        OutputFormat::Json => {
-            match serde_json::to_string_pretty(&plugins) {
-                Ok(json) => println!("{json}"),
-                Err(e) => eprintln!("{{\"error\": \"serialisation failed: {e}\"}}"),
-            }
-        }
+        OutputFormat::Json => match serde_json::to_string_pretty(&plugins) {
+            Ok(json) => println!("{json}"),
+            Err(e) => eprintln!("{{\"error\": \"serialisation failed: {e}\"}}"),
+        },
         _ => {
             println!("{}", "Available Plugins".bold());
             println!("{}", "─".repeat(60));
@@ -168,12 +164,10 @@ pub fn plugin_list(format: &OutputFormat, plugins: &[PluginMetadata]) {
 
 pub fn checkpoint_list(format: &OutputFormat, checkpoints: &[Checkpoint]) {
     match format {
-        OutputFormat::Json => {
-            match serde_json::to_string_pretty(&checkpoints) {
-                Ok(json) => println!("{json}"),
-                Err(e) => eprintln!("{{\"error\": \"serialisation failed: {e}\"}}"),
-            }
-        }
+        OutputFormat::Json => match serde_json::to_string_pretty(&checkpoints) {
+            Ok(json) => println!("{json}"),
+            Err(e) => eprintln!("{{\"error\": \"serialisation failed: {e}\"}}"),
+        },
         _ => {
             if checkpoints.is_empty() {
                 println!("No checkpoints found.");
@@ -242,21 +236,28 @@ pub fn rollback_result(format: &OutputFormat, result: &RollbackResult) {
     use hardener_state::FileRestoreAction;
 
     match format {
-        OutputFormat::Json => {
-            match serde_json::to_string_pretty(&result) {
-                Ok(json) => println!("{json}"),
-                Err(e) => eprintln!("{{\"error\": \"serialisation failed: {e}\"}}"),
-            }
-        }
+        OutputFormat::Json => match serde_json::to_string_pretty(&result) {
+            Ok(json) => println!("{json}"),
+            Err(e) => eprintln!("{{\"error\": \"serialisation failed: {e}\"}}"),
+        },
         _ => {
-            let icon = if result.rollback_success { "✓".green() } else { "✗".red() };
-            println!("\n{icon} Rolled back to: {} ({})",
+            let icon = if result.rollback_success {
+                "✓".green()
+            } else {
+                "✗".red()
+            };
+            println!(
+                "\n{icon} Rolled back to: {} ({})",
                 result.rollback_checkpoint_name.bold(),
                 result.rollback_checkpoint_id.dimmed()
             );
 
             for file in &result.rollback_files {
-                let status = if file.restore_success { "✓".green() } else { "✗".red() };
+                let status = if file.restore_success {
+                    "✓".green()
+                } else {
+                    "✗".red()
+                };
                 let action = match file.restore_action {
                     FileRestoreAction::Restored => "restored",
                     FileRestoreAction::Removed => "removed",
@@ -269,7 +270,11 @@ pub fn rollback_result(format: &OutputFormat, result: &RollbackResult) {
                 }
             }
 
-            let restored = result.rollback_files.iter().filter(|f| f.restore_success).count();
+            let restored = result
+                .rollback_files
+                .iter()
+                .filter(|f| f.restore_success)
+                .count();
             println!(
                 "\n{} file(s) processed, {restored} restored successfully.",
                 result.rollback_files.len()
@@ -280,12 +285,10 @@ pub fn rollback_result(format: &OutputFormat, result: &RollbackResult) {
 
 pub fn validation_reports(format: &OutputFormat, reports: &[ValidationReport]) {
     match format {
-        OutputFormat::Json => {
-            match serde_json::to_string_pretty(&reports) {
-                Ok(json) => println!("{json}"),
-                Err(e) => eprintln!("{{\"error\": \"serialisation failed: {e}\"}}"),
-            }
-        }
+        OutputFormat::Json => match serde_json::to_string_pretty(&reports) {
+            Ok(json) => println!("{json}"),
+            Err(e) => eprintln!("{{\"error\": \"serialisation failed: {e}\"}}"),
+        },
         _ => {
             for report in reports {
                 println!(

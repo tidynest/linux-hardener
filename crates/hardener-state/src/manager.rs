@@ -1,6 +1,8 @@
 //! Checkpoint manager for creating and managing system state snapshots.
 
-use crate::checkpoint::{CheckpointId, FileRestoreResult, FileState, FileRestoreAction, RollbackResult};
+use crate::checkpoint::{
+    CheckpointId, FileRestoreAction, FileRestoreResult, FileState, RollbackResult,
+};
 use crate::{Checkpoint, CheckpointSigner};
 use hardener_common::error::Result;
 use sqlx::{Row, SqlitePool};
@@ -520,7 +522,8 @@ impl CheckpointManager {
     }
 
     fn restore_file_state_tracked(
-        &self, file_state: &FileState,
+        &self,
+        file_state: &FileState,
     ) -> (FileRestoreAction, Result<()>) {
         use std::{fs, os::unix::fs::PermissionsExt, path::Path};
 
@@ -530,14 +533,16 @@ impl CheckpointManager {
         let action = match (&file_state.file_content, path.is_dir()) {
             (Some(_), _) => FileRestoreAction::Restored,
             (None, true) => FileRestoreAction::PermissionsRestored,
-            (None, false) if file_state.file_permissions == 0 && path.exists() => { FileRestoreAction::Removed }
+            (None, false) if file_state.file_permissions == 0 && path.exists() => {
+                FileRestoreAction::Removed
+            }
             (None, false) => return (FileRestoreAction::Skipped, Ok(())),
         };
 
         // Remove files that didn't exist at checkpoint time
         if matches!(action, FileRestoreAction::Removed) {
-            let result = fs::remove_file(path)
-                .map_err(hardener_common::error::HardeningError::System);
+            let result =
+                fs::remove_file(path).map_err(hardener_common::error::HardeningError::System);
             return (action, result);
         }
 
@@ -545,7 +550,10 @@ impl CheckpointManager {
         if let Some(content) = &file_state.file_content
             && let Err(e) = fs::write(path, content)
         {
-            return (action, Err(hardener_common::error::HardeningError::System(e)));
+            return (
+                action,
+                Err(hardener_common::error::HardeningError::System(e)),
+            );
         }
 
         // Restore permissions
@@ -553,7 +561,10 @@ impl CheckpointManager {
             path,
             fs::Permissions::from_mode(file_state.file_permissions),
         ) {
-            return (action, Err(hardener_common::error::HardeningError::System(e)));
+            return (
+                action,
+                Err(hardener_common::error::HardeningError::System(e)),
+            );
         }
 
         // Restore ownership
@@ -570,7 +581,6 @@ impl CheckpointManager {
 
         (action, chown_result)
     }
-
 
     /// Restores the system to a previous checkpoint state.
     ///

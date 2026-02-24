@@ -3,7 +3,10 @@
 //! These tests verify plugin behavior without touching the real /proc/sys filesystem.
 
 use hardener_common::types::{PluginId, Severity};
-use hardener_core::{Context, FileMetadata, MockExecutor, PluginConfig, PolicyException, SystemExecutor, plugin::HardeningPlugin};
+use hardener_core::{
+    Context, FileMetadata, MockExecutor, PluginConfig, PolicyException, SystemExecutor,
+    plugin::HardeningPlugin,
+};
 use hardener_plugins::KernelHardeningPlugin;
 use std::sync::Arc;
 

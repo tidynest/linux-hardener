@@ -1,6 +1,9 @@
-use crate::types::{ApplyResult, ComplianceReport, ConfigSummary, Finding, RollbackResult, ScanResult, SchedulerUiConfig, Severity};
-use hardener_types::remote::{RemoteConnectionInfo, RemoteHostProfile};
+use crate::types::{
+    ApplyResult, ComplianceReport, ConfigSummary, Finding, RollbackResult, ScanResult,
+    SchedulerUiConfig, Severity,
+};
 use hardener_types::ValidationReport;
+use hardener_types::remote::{RemoteConnectionInfo, RemoteHostProfile};
 use leptos::prelude::*;
 
 /// Application state container holding all reactive signals for the UI.

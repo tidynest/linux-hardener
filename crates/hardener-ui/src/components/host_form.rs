@@ -22,29 +22,29 @@ pub fn HostForm(
     let is_edit = existing.is_some();
 
     // Form field signals, pre-filled from existing profile when editing.
-    let name = RwSignal::new(
-        existing.as_ref().map_or(String::new(), |p| p.name.clone()),
-    );
+    let name = RwSignal::new(existing.as_ref().map_or(String::new(), |p| p.name.clone()));
     let hostname = RwSignal::new(
-        existing.as_ref().map_or(String::new(), |p| p.hostname.clone()),
+        existing
+            .as_ref()
+            .map_or(String::new(), |p| p.hostname.clone()),
     );
     let user = RwSignal::new(
-        existing.as_ref().and_then(|p| p.user.clone()).unwrap_or_default(),
+        existing
+            .as_ref()
+            .and_then(|p| p.user.clone())
+            .unwrap_or_default(),
     );
-    let port = RwSignal::new(
-        existing.as_ref().map_or(22u16, |p| p.port),
-    );
+    let port = RwSignal::new(existing.as_ref().map_or(22u16, |p| p.port));
     let key_file = RwSignal::new(
-        existing.as_ref().and_then(|p| p.key_file.clone()).unwrap_or_default(),
+        existing
+            .as_ref()
+            .and_then(|p| p.key_file.clone())
+            .unwrap_or_default(),
     );
-    let host_key_checking = RwSignal::new(
-        existing.as_ref().map_or(true, |p| p.host_key_checking),
-    );
+    let host_key_checking = RwSignal::new(existing.as_ref().map_or(true, |p| p.host_key_checking));
     let is_saving = RwSignal::new(false);
 
-    let is_valid = move || {
-        !name.get().trim().is_empty() && !hostname.get().trim().is_empty()
-    };
+    let is_valid = move || !name.get().trim().is_empty() && !hostname.get().trim().is_empty();
 
     // Build profile from current field values, save, reload, close.
     let handle_submit = move |_| {
@@ -53,12 +53,20 @@ pub fn HostForm(
             hostname: hostname.get().trim().to_string(),
             user: {
                 let u = user.get();
-                if u.trim().is_empty() { None } else { Some(u.trim().to_string()) }
+                if u.trim().is_empty() {
+                    None
+                } else {
+                    Some(u.trim().to_string())
+                }
             },
             port: port.get(),
             key_file: {
                 let k = key_file.get();
-                if k.trim().is_empty() { None } else { Some(k.trim().to_string()) }
+                if k.trim().is_empty() {
+                    None
+                } else {
+                    Some(k.trim().to_string())
+                }
             },
             host_key_checking: host_key_checking.get(),
         };
@@ -74,9 +82,7 @@ pub fn HostForm(
                     on_close.run(());
                 }
                 Err(e) => {
-                    web_sys::console::error_1(
-                        &format!("Failed to save host: {}", e).into(),
-                    );
+                    web_sys::console::error_1(&format!("Failed to save host: {}", e).into());
                     app_state
                         .error_message
                         .set(Some(format!("Failed to save host: {}", e)));

@@ -174,8 +174,7 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
         "/etc/group" => vec![ComplianceMapping {
             compliance_framework: ComplianceFramework::CIS,
             compliance_control_id: "6.1.4".to_string(),
-            compliance_control_title: "Ensure permissions on /etc/group are configured"
-                .to_string(),
+            compliance_control_title: "Ensure permissions on /etc/group are configured".to_string(),
             compliance_section: Some("System Maintenance".to_string()),
         }],
         "/etc/gshadow" => vec![ComplianceMapping {
@@ -402,7 +401,10 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
 
         for directive in CRITICAL_PERMISSIONS {
             // Skip paths with valid exceptions
-            if config.has_valid_exception(directive.permission_path).is_some() {
+            if config
+                .has_valid_exception(directive.permission_path)
+                .is_some()
+            {
                 continue;
             }
 

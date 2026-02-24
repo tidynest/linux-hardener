@@ -112,7 +112,6 @@ impl AuditEntry {
     pub fn add_detail(&mut self, key: String, value: String) {
         self.entry_details.insert(key, value);
     }
-
 }
 
 /// Filter criteria for querying audit logs.
