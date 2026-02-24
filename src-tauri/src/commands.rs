@@ -870,3 +870,54 @@ pub async fn disconnect_remote(
     *connection = None;
     Ok(())
 }
+
+/// Scans a remote host using the active SSH connection.
+///
+/// Uses the `SshExecutor` from `RemoteState` instead of the local executor.
+/// Results are returned in-memory only (not persisted to scan history).
+#[tauri::command]
+pub async fn run_remote_scan(
+    plugin_ids: Option<Vec<String>>,
+    state: tauri::State<'_, RemoteState>,
+) -> Result<Vec<ScanResult>, String> {
+    // Clone the Arc<SshExecutor> out of the mutex before any async work
+    let executor = {
+        let connection = state
+            .active_connection
+            .lock()
+            .map_err(|e| format!("Lock error: {e}"))?;
+        match connection.as_ref() {
+            Some(conn) => conn.executor.clone(),
+            None => return Err("No active remote connection".to_string()),
+        }
+    };
+
+    let ctx = Context::with_executor(executor);
+    let registry = create_plugin_registry();
+
+    let mut results = Vec::new();
+    let plugin_list = registry.list().map_err(|e| e.to_string())?;
+
+    for metadata in plugin_list {
+        if let Some(ref ids) = plugin_ids
+            && !ids.is_empty()
+            && !ids.iter().any(|id| {
+                metadata.plugin_id == (*id).clone().into()
+                    || metadata.plugin_id == format!("{}-hardening", id).into()
+            })
+        {
+            continue;
+        }
+
+        if let Ok(Some(plugin)) = registry.get(&metadata.plugin_id) {
+            match plugin.scan(&ctx).await {
+                Ok(result) => results.push(result),
+                Err(e) => {
+                    error!("Remote scan failed for plugin {}: {}", metadata.plugin_id, e);
+                }
+            }
+        }
+    }
+
+    Ok(results)
+}
