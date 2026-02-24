@@ -2582,3 +2582,96 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
   color: var(--color-critical-bright);
   border: 1px solid var(--color-critical);
 }
+
+/* =============================================================
+   23. CONFIG FILE PICKER
+   ============================================================ */
+
+.config-file-card {
+  margin-bottom: var(--space-md);
+}
+
+.config-file-row {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: center;
+}
+
+.config-file-input {
+  flex: 1;
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  transition: border-color var(--transition-fast);
+}
+
+.config-file-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px rgba(var(--color-accent-rgb, 59, 130, 246), 0.15);
+}
+
+.config-file-input::placeholder {
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-style: italic;
+}
+
+.config-browse-btn {
+  white-space: nowrap;
+}
+
+.config-status-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: var(--space-xs);
+  min-height: 1.5rem;
+}
+
+.config-status {
+  font-size: 0.8125rem;
+}
+
+.config-default {
+  color: var(--text-muted);
+}
+
+.config-validating {
+  color: var(--text-secondary);
+}
+
+.config-valid {
+  color: var(--color-success, #22c55e);
+}
+
+.config-valid .config-status-icon {
+  font-weight: bold;
+}
+
+.config-invalid {
+  color: var(--color-error, #ef4444);
+}
+
+.config-invalid .config-status-icon {
+  font-weight: bold;
+}
+
+.config-clear-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.8125rem;
+  padding: 0;
+  text-decoration: underline;
+  transition: color var(--transition-fast);
+}
+
+.config-clear-btn:hover {
+  color: var(--text-primary);
+}
