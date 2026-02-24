@@ -163,6 +163,7 @@ pub fn ConfigureSection() -> impl IntoView {
                 "A checkpoint is created before changes are applied, allowing rollback if needed."
             </p>
             <ConfigFileCard />
+            <div class="two-col-row">
             <Card title="Security Profile" title_level=HeadingLevel::H2 class="profile-selector">
                 <fieldset>
                     <legend>"Choose a preset configuration"</legend>
@@ -236,20 +237,19 @@ pub fn ConfigureSection() -> impl IntoView {
                     })}
                 </div>
             </Card>
+            </div>
 
-            <Card class="apply-controls">
-                <button
-                    class="btn btn-primary btn-large"
-                    on:click=on_preview
-                    disabled=move || app_state.is_previewing.get() || app_state.is_applying.get()
-                >
-                    {move || if app_state.is_previewing.get() {
-                        "Generating Preview..."
-                    } else {
-                        "Preview Changes"
-                    }}
-                </button>
-            </Card>
+            <button
+                class="btn btn-primary btn-large"
+                on:click=on_preview
+                disabled=move || app_state.is_previewing.get() || app_state.is_applying.get()
+            >
+                {move || if app_state.is_previewing.get() {
+                    "Generating Preview..."
+                } else {
+                    "Preview Changes"
+                }}
+            </button>
 
             // Preview panel - shown after dry-run completes
             <Show when=move || app_state.show_preview.get()>
