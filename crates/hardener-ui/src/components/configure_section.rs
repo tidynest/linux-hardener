@@ -2,7 +2,7 @@
 //!
 //! Contains profile selection, plugin toggles, and apply controls.
 
-use crate::components::{Card, HeadingLevel};
+use crate::components::{Card, ConfigFileCard, HeadingLevel};
 use crate::state::AppState;
 use crate::tauri_bindings::{invoke_apply, invoke_apply_dry_run};
 use leptos::prelude::*;
@@ -162,7 +162,7 @@ pub fn ConfigureSection() -> impl IntoView {
                 "Higher security profiles may affect system usability. "
                 "A checkpoint is created before changes are applied, allowing rollback if needed."
             </p>
-
+            <ConfigFileCard />
             <Card title="Security Profile" title_level=HeadingLevel::H2 class="profile-selector">
                 <fieldset>
                     <legend>"Choose a preset configuration"</legend>
