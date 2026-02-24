@@ -5,7 +5,7 @@
  * HTML Structure (Leptos components):
  *   #app (trunk-injected)
  *     header.nav-header > nav.navigation > h1 + ul.nav-links > li > a
- *     main.main-content > Routes (dashboard-page | analysis-page | hardening-page)
+ *     main.main-content > Routes (dashboard-page | analysis-page | hardening-page | remote-page)
  */
 
 /* ============================================================
@@ -519,7 +519,8 @@ body {
 
 .dashboard-page,
 .analysis-page,
-.hardening-page {
+.hardening-page,
+.remote-page {
   flex: 1 1 0;
   display: flex;
   flex-direction: column;
@@ -2226,4 +2227,40 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
+}
+
+/* ============================================================
+   22. REMOTE SCANNING PAGE
+   ============================================================ */
+
+.remote-page {
+    gap: var(--space-md);
+}
+
+.remote-layout {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: var(--space-lg);
+    min-height: 400px;
+}
+
+.remote-sidebar {
+    border-right: 1px solid var(--border-color);
+    padding-right: var(--space-md);
+}
+
+.remote-main {
+    min-width: 0;
+}
+
+@media (max-width: 768px) {
+    .remote-layout {
+        grid-template-columns: 1fr;
+    }
+    .remote-sidebar {
+        border-right: none;
+        border-bottom: 1px solid var(--border-color);
+        padding-right: 0;
+        padding-bottom: var(--space-md);
+    }
 }

@@ -12,7 +12,7 @@ mod types;
 mod utils;
 
 use components::ThemeToggle;
-use pages::{AnalysisPage, DashboardPage, HardeningPage};
+use pages::{AnalysisPage, DashboardPage, HardeningPage, RemotePage};
 use state::AppState;
 pub use types::*;
 
@@ -20,7 +20,7 @@ pub use types::*;
 ///
 /// This sets up:
 /// - Application state (AppState) available to all child components via context
-/// - Router with three routes: Dashboard, Analysis, Hardening
+/// - Router with four routes: Dashboard, Analysis, Hardening, Remote
 /// - Navigation bar for moving between pages
 /// - Automatic loading of persisted scan results on mount
 #[component]
@@ -57,6 +57,7 @@ pub fn App() -> impl IntoView {
                         <li><A href="/">"Dashboard"</A></li>
                         <li><A href="/analysis">"Analysis"</A></li>
                         <li><A href="/hardening">"Hardening"</A></li>
+                        <li><A href="/remote">"Remote"</A></li>
                     </ul>
                     <ThemeToggle/>
                 </nav>
@@ -90,6 +91,7 @@ pub fn App() -> impl IntoView {
                     <Route path=StaticSegment("") view=DashboardPage/>
                     <Route path=StaticSegment("analysis") view=AnalysisPage/>
                     <Route path=StaticSegment("hardening") view=HardeningPage/>
+                    <Route path=StaticSegment("remote") view=RemotePage/>
                 </Routes>
             </main>
         </Router>
