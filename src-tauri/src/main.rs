@@ -17,6 +17,7 @@ fn main() {
         .init();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(RemoteState {
             active_connection: std::sync::Mutex::new(None),
         })
