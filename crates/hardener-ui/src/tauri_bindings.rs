@@ -5,7 +5,7 @@
 
 use crate::types::{
     ApplyResult, CheckpointDetail, CheckpointInfo, ComplianceReport, PluginMetadata, RollbackResult,
-    ScanResult, ScanSessionInfo,
+    ScanResult, ScanSessionInfo, SchedulerUiConfig, TestNotificationResult,
 };
 use hardener_types::ValidationReport;
 use hardener_types::remote::{RemoteConnectionStatus, RemoteHostProfile};
@@ -337,4 +337,36 @@ pub async fn invoke_remote_scan(plugin_ids: Option<Vec<String>>) -> Result<Vec<S
     let result = invoke_command("run_remote_scan", args).await?;
     serde_wasm_bindgen::from_value(result)
         .map_err(|e| format!("Failed to deserialise remote scan results: {}", e))
+}
+
+// === Scheduler Configuration Bindings ===
+
+/// Invokes the get_scheduler_config Tauri command.
+///
+/// Returns the current scheduler configuration from config.toml.
+pub async fn invoke_get_scheduler_config() -> Result<SchedulerUiConfig, String> {
+    let result = invoke_command("get_scheduler_config", JsValue::NULL).await?;
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to deserialise scheduler config: {}", e))
+}
+
+/// Invokes the save_scheduler_config Tauri command.
+///
+/// Persists scheduler configuration to the [scheduler] section of config.toml.
+pub async fn invoke_save_scheduler_config(config: SchedulerUiConfig) -> Result<(), String> {
+    let args = serde_wasm_bindgen::to_value(&serde_json::json!({
+        "config": config,
+    }))
+    .map_err(|e| format!("Failed to serialise scheduler config: {}", e))?;
+    invoke_command("save_scheduler_config", args).await?;
+    Ok(())
+}
+
+/// Invokes the test_notification Tauri command.
+///
+/// Sends a test notification through all enabled channels.
+pub async fn invoke_test_notification() -> Result<TestNotificationResult, String> {
+    let result = invoke_command("test_notification", JsValue::NULL).await?;
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to deserialise test result: {}", e))
 }

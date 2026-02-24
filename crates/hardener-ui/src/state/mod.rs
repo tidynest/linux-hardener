@@ -1,4 +1,4 @@
-use crate::types::{ApplyResult, ComplianceReport, Finding, RollbackResult, ScanResult, Severity};
+use crate::types::{ApplyResult, ComplianceReport, Finding, RollbackResult, ScanResult, SchedulerUiConfig, Severity};
 use hardener_types::remote::{RemoteConnectionInfo, RemoteHostProfile};
 use hardener_types::ValidationReport;
 use leptos::prelude::*;
@@ -52,6 +52,12 @@ pub struct AppState {
     pub is_connecting: RwSignal<bool>,
     /// Whether a remote scan is currently running.
     pub is_remote_scanning: RwSignal<bool>,
+    /// Loaded scheduler configuration from config.toml.
+    pub scheduler_config: RwSignal<Option<SchedulerUiConfig>>,
+    /// Whether scheduler config is being saved.
+    pub is_saving_scheduler: RwSignal<bool>,
+    /// Whether a test notification is in progress.
+    pub is_testing_notification: RwSignal<bool>,
 }
 
 impl Default for AppState {
@@ -75,6 +81,9 @@ impl Default for AppState {
             remote_scan_results: RwSignal::new(Vec::new()),
             is_connecting: RwSignal::new(false),
             is_remote_scanning: RwSignal::new(false),
+            scheduler_config: RwSignal::new(None),
+            is_saving_scheduler: RwSignal::new(false),
+            is_testing_notification: RwSignal::new(false),
         }
     }
 }

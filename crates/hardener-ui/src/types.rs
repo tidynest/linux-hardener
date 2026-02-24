@@ -9,6 +9,9 @@ pub use hardener_types::{
     Finding, FindingCategory, FindingPolicyException, PluginId, PluginMetadata, RollbackResult,
     ScanResult, Severity, ValidationIssue, ValidationReport,
 };
+pub use hardener_types::scheduler::{
+    EmailUiConfig, NotificationUiConfig, SchedulerUiConfig, TestNotificationResult, WebhookUiConfig,
+};
 
 /// Checkpoint information for UI display.
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
