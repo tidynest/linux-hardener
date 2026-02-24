@@ -2330,3 +2330,48 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
     width: 100%;
     margin-top: var(--space-sm);
 }
+
+/* --- Host Form --- */
+
+.host-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    padding: var(--space-md);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm, 6px);
+    background: var(--bg-secondary);
+}
+
+.host-form h3 {
+    margin: 0 0 var(--space-xs);
+    font-size: 1rem;
+    color: var(--text-primary);
+}
+
+.form-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs, 4px);
+}
+
+.form-field label {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.form-field-checkbox label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.form-actions {
+    display: flex;
+    gap: var(--space-sm);
+    margin-top: var(--space-xs);
+}
