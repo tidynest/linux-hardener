@@ -12,7 +12,9 @@ pub use chrono::{DateTime, Utc};
 
 pub mod remote;
 pub mod scheduler;
+pub mod config_picker;
 pub use remote::*;
+pub use config_picker::*;
 
 // ============================================================================
 // Plugin Types (from hardener-common)
