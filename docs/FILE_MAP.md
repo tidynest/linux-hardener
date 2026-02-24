@@ -10,7 +10,8 @@ This document lists all source files with their purpose and key exports.
 
 | File | Purpose | Key Exports |
 |------|---------|-------------|
-| `src/lib.rs` | All shared type definitions | `PluginId`, `Severity`, `FindingCategory`, `ComplianceFramework`, `ComplianceMapping`, `ControlStatus`, `FindingPolicyException`, `PluginMetadata`, `ScanResult`, `Finding`, `ApplyResult`, `Change`, `ChangeType`, `ValidationReport`, `ValidationIssue`, `ComplianceReport`, `ControlResult`, `ComplianceSummary` |
+| `src/lib.rs` | All shared type definitions | `PluginId`, `Severity`, `FindingCategory`, `ComplianceFramework`, `ComplianceMapping`, `ControlStatus`, `FindingPolicyException`, `PluginMetadata`, `ScanResult`, `Finding`, `ApplyResult`, `Change`, `ChangeType`, `ValidationReport`, `ValidationIssue`, `ComplianceReport`, `ControlResult`, `ComplianceSummary`, `ConfigSummary` |
+| `src/config_picker.rs` | Config file picker types | `ConfigSummary`, WASM-safe validation results for config file picker |
 
 ### Key Types (lib.rs)
 
@@ -434,6 +435,7 @@ pub struct ScanRunner {
 | `src/components/scan_history_tab.rs` | Scan history timeline for Analysis page | `ScanHistoryTab` |
 | `src/components/schedule_section.rs` | Cron schedule configuration form | `ScheduleSection` |
 | `src/components/notification_section.rs` | Email and webhook notification config | `NotificationSection` |
+| `src/components/config_file_card.rs` | Config file picker card component (text input, browse, validation) | `ConfigFileCard` |
 
 **Note**: This crate depends only on `hardener-types` for shared types to ensure WASM compatibility. External dependencies include Leptos (WASM framework), wasm-bindgen, and web-sys for browser APIs.
 
@@ -658,4 +660,4 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | `hardener-common/src/types.rs` | Added `FindingPolicyException` struct |
 | `hardener-cli/src/cli.rs` | Added `--config`, `--audit`, `--compliance`, `--exit-code` flags, `ScanMode` enum |
 
-**Last Updated**: 2026-02-23
+**Last Updated**: 2026-02-24

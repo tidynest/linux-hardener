@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.3] - 2025-12-11
 
+### Added (Config File Picker 2026-02-24)
+- **Config File Picker**: GUI equivalent of CLI `--config FILE` flag on Hardening page
+  - Text input + native file dialog (Browse button) via `tauri-plugin-dialog`
+  - Inline validation with one-line summary (plugin count, directives, exceptions)
+  - Config path threaded through scan, apply, dry-run, and rollback commands
+  - `ConfigSummary` type in `hardener-types` for WASM-safe validation results
+
 ### Added (Scheduler UI 2026-02-24)
 - **Scheduler Configuration Page**: New top-level "Scheduler" page for configuring scan scheduling and notifications
   - Schedule section: enabled toggle, cron presets (Daily/6h/12h/Weekly) with custom cron input, plugin checkboxes, severity threshold

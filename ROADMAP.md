@@ -430,7 +430,7 @@ User clicks "Apply"
 | Checkpoint details | `checkpoint show` | P2 | ✅ Complete |
 | Remote scanning UI | `--ssh` flags | P3 | ✅ Complete |
 | Scheduler UI | `daemon` commands | P3 | ✅ Complete |
-| Config file picker | `--config FILE` | P3 | ⬜ Pending |
+| Config file picker | `--config FILE` | P3 | ✅ Complete |
 
 #### C. Web Interface Enhancements
 
