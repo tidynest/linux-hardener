@@ -11,7 +11,9 @@ use hardener_state::{
     Checkpoint, CheckpointId, CheckpointManager, FileState, RollbackResult, ScanHistoryManager,
     ScanSession, ScanSessionId, ScanStatus, init_db,
 };
-use hardener_types::remote::{HostsConfig, RemoteConnectionInfo, RemoteHostProfile};
+use hardener_types::remote::{
+    HostsConfig, RemoteConnectionInfo, RemoteConnectionStatus, RemoteHostProfile,
+};
 use serde::Serialize;
 use std::sync::Mutex;
 use tokio::process::Command;
@@ -790,4 +792,81 @@ pub async fn delete_remote_host(name: String) -> Result<(), String> {
     let mut config = load_hosts_config()?;
     config.hosts.retain(|h| h.name != name);
     save_hosts_config(&config)
+}
+
+/// Connects to a remote host by profile name.
+///
+/// Looks up the profile from the TOML config, builds an `SshConfig`,
+/// and establishes the SSH session. The active connection is stored in
+/// managed `RemoteState` so subsequent commands can reuse it.
+#[tauri::command]
+pub async fn connect_remote(
+    name: String,
+    state: tauri::State<'_, RemoteState>,
+) -> Result<RemoteConnectionStatus, String> {
+    let config = load_hosts_config()?;
+    let profile = config
+        .hosts
+        .iter()
+        .find(|h| h.name == name)
+        .ok_or_else(|| format!("Host profile '{}' not found", name))?
+        .clone();
+
+    let ssh_config = hardener_core::SshConfig {
+        host: profile.hostname.clone(),
+        port: profile.port,
+        user: profile.user.clone(),
+        identity_file: profile.key_file.clone(),
+        known_hosts: if profile.host_key_checking {
+            hardener_core::KnownHosts::Strict
+        } else {
+            hardener_core::KnownHosts::Accept
+        },
+        connect_timeout: std::time::Duration::from_secs(30),
+    };
+
+    match hardener_core::SshExecutor::connect(ssh_config).await {
+        Ok(executor) => {
+            let user_display = profile
+                .user
+                .clone()
+                .unwrap_or_else(whoami::username);
+            let info = RemoteConnectionInfo {
+                profile_name: name,
+                host: profile.hostname.clone(),
+                user: user_display.clone(),
+            };
+            let mut connection = state
+                .active_connection
+                .lock()
+                .map_err(|e| format!("Lock error: {e}"))?;
+            *connection = Some(ActiveConnection {
+                executor: std::sync::Arc::new(executor),
+                info,
+            });
+            Ok(RemoteConnectionStatus::Connected {
+                host: profile.hostname,
+                user: user_display,
+            })
+        }
+        Err(e) => Ok(RemoteConnectionStatus::Failed {
+            error: format!("{e}"),
+        }),
+    }
+}
+
+/// Disconnects the active remote SSH session.
+///
+/// Drops the `SshExecutor` (which closes the underlying SSH session)
+/// and clears the managed state.
+#[tauri::command]
+pub async fn disconnect_remote(
+    state: tauri::State<'_, RemoteState>,
+) -> Result<(), String> {
+    let mut connection = state
+        .active_connection
+        .lock()
+        .map_err(|e| format!("Lock error: {e}"))?;
+    *connection = None;
+    Ok(())
 }

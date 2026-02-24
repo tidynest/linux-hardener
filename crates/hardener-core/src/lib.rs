@@ -51,6 +51,10 @@ pub use executor::{
 #[cfg(feature = "system")]
 pub use executor::ssh::{SshConfig, SshExecutor};
 
+// Re-export openssh types needed by consumers of SshConfig
+#[cfg(feature = "system")]
+pub use openssh::KnownHosts;
+
 #[cfg(feature = "system")]
 pub use plugin_manager::PluginManager;
 
