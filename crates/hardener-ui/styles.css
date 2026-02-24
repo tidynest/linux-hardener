@@ -2264,3 +2264,69 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
         padding-bottom: var(--space-md);
     }
 }
+
+/* --- Host List Sidebar --- */
+
+.host-list-title {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: var(--space-sm);
+    color: var(--text-primary);
+}
+
+.host-entries {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+}
+
+.host-entry {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    padding: var(--space-sm);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-secondary);
+    transition: border-color var(--transition-fast);
+}
+
+.host-entry:hover {
+    border-color: var(--color-accent);
+}
+
+.host-entry--active {
+    border-color: var(--color-accent);
+    background: var(--bg-tertiary);
+}
+
+.host-entry-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.host-entry-name {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+}
+
+.host-entry-detail {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+}
+
+.host-entry-actions {
+    display: flex;
+    gap: var(--space-xs);
+    flex-wrap: wrap;
+}
+
+.host-add-button {
+    width: 100%;
+    margin-top: var(--space-sm);
+}
