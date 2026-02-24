@@ -2375,3 +2375,58 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
     gap: var(--space-sm);
     margin-top: var(--space-xs);
 }
+
+/* --- Remote Status Panel --- */
+
+.remote-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-2xl);
+    color: var(--text-muted);
+    text-align: center;
+}
+
+.remote-connected-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-sm) var(--space-md);
+    background: var(--bg-secondary);
+    border: 1px solid var(--color-accent);
+    border-radius: var(--radius-sm, 6px);
+    margin-bottom: var(--space-md);
+}
+
+.remote-connected-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.remote-connected-label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.remote-connected-host {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--color-accent);
+}
+
+.remote-connected-actions {
+    display: flex;
+    gap: var(--space-sm);
+}
+
+.remote-results {
+    margin-top: var(--space-md);
+}
+
+.remote-results-title {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: var(--space-sm);
+    color: var(--text-primary);
+}
