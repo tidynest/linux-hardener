@@ -1,5 +1,6 @@
 mod card;
 mod compliance_tab;
+mod config_file_card;
 mod configure_section;
 mod finding_detail;
 mod findings_grid;
@@ -23,6 +24,7 @@ mod theme_toggle;
 pub use card::CardVariant;
 pub use card::{Card, HeadingLevel};
 pub use compliance_tab::ComplianceTab;
+pub use config_file_card::ConfigFileCard;
 pub use configure_section::ConfigureSection;
 pub use finding_detail::FindingDetail;
 pub use findings_grid::FindingsGrid;
