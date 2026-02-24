@@ -325,6 +325,22 @@ body {
 .gap-lg { gap: var(--space-lg); }  /* 24px */
 .gap-xl { gap: var(--space-xl); }  /* 32px */
 
+/* ── Two-column row layout ──────────────────────────────── */
+.two-col-row {
+  display: flex;
+  gap: var(--space-lg);
+}
+.two-col-row > * {
+  flex: 1;
+  min-width: 0;
+  align-self: start;
+}
+@media (max-width: 768px) {
+  .two-col-row {
+    flex-direction: column;
+  }
+}
+
 /* ============================================================
    2d. CARD COMPONENT
    Reusable container with consistent styling
