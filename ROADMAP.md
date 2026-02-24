@@ -432,7 +432,19 @@ User clicks "Apply"
 | Scheduler UI | `daemon` commands | P3 | ✅ Complete |
 | Config file picker | `--config FILE` | P3 | ✅ Complete |
 
-#### C. Web Interface Enhancements
+#### C. UI Polish Pass ✅
+
+| Fix | Pages | Status |
+|-----|-------|--------|
+| Shared `.two-col-row` CSS class with `align-self: start` | All | ✅ Complete |
+| RecentActivity card no longer stretches to fill page | Dashboard | ✅ Complete |
+| Quick-start guide replaces empty right panel | Remote | ✅ Complete |
+| Profile + Plugin Control side-by-side layout | Hardening (Configure) | ✅ Complete |
+| Apply + Rollback results side-by-side layout | Hardening (History) | ✅ Complete |
+| Cards size independently (no height-matching stretch) | Scheduler | ✅ Complete |
+| Directional empty-state guidance text | Dashboard, Hardening | ✅ Complete |
+
+#### D. Web Interface Enhancements
 
 | Feature | Description | Priority | Status |
 |---------|-------------|----------|--------|

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.3] - 2025-12-11
 
+### Changed (UI Polish Pass 2026-02-24)
+- **Dashboard**: `RecentActivity` card no longer stretches to fill remaining page height
+  - Removed `flex: 1 1 auto` and `min-height: 150px` — card sizes to content
+  - Empty-state hint directs users to Quick Actions above
+- **Remote Page**: Empty right panel replaced with numbered quick-start guide
+  - Dropped `min-height: 400px` on `.remote-layout`
+  - "Getting Started" guide with CSS-counter numbered steps
+- **Hardening Configure Tab**: Security Profile and Plugin Control now side-by-side
+  - Shared `.two-col-row` CSS class for consistent two-column layouts
+  - Preview Changes button is standalone (removed unnecessary Card wrapper)
+- **Hardening History Tab**: Latest Apply and Latest Rollback now side-by-side
+  - Directional empty-state guidance ("Configure and apply hardening in the Configure tab...")
+  - System Checkpoints table remains full-width below
+- **Scheduler Page**: Cards no longer height-stretch to match sibling
+  - `align-self: start` prevents shorter Notifications card from expanding
+  - Removed `margin-top: auto` that pinned buttons to bottom of stretched cards
+
 ### Added (Config File Picker 2026-02-24)
 - **Config File Picker**: GUI equivalent of CLI `--config FILE` flag on Hardening page
   - Text input + native file dialog (Browse button) via `tauri-plugin-dialog`
