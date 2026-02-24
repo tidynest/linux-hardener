@@ -68,7 +68,12 @@ pub fn RemoteStatus() -> impl IntoView {
             when=move || app_state.remote_connection.get().is_some()
             fallback=move || view! {
                 <div class="remote-empty">
-                    <div class="remote-empty-icon">"Select a host and connect to start remote scanning."</div>
+                    <p class="remote-guide-title">"Getting Started"</p>
+                    <ol class="remote-guide-steps">
+                        <li>"Add a remote host using the sidebar"</li>
+                        <li>"Click Connect to establish an SSH session"</li>
+                        <li>"Run a scan to analyse the remote system"</li>
+                    </ol>
                 </div>
             }
         >
