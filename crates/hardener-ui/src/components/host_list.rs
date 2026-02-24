@@ -153,7 +153,6 @@ pub fn HostList(#[prop(into)] on_edit: Callback<Option<RemoteHostProfile>>) -> i
                                             class="btn btn-secondary btn-small"
                                             on:click={
                                                 let profile = edit_profile.clone();
-                                                let on_edit = on_edit.clone();
                                                 move |_| on_edit.run(Some(profile.clone()))
                                             }
                                         >
@@ -179,7 +178,6 @@ pub fn HostList(#[prop(into)] on_edit: Callback<Option<RemoteHostProfile>>) -> i
             <button
                 class="btn btn-secondary host-add-button"
                 on:click={
-                    let on_edit = on_edit.clone();
                     move |_| on_edit.run(None)
                 }
             >

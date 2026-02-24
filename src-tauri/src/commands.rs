@@ -30,6 +30,7 @@ pub struct RemoteState {
 /// An active SSH connection with its executor and metadata.
 pub struct ActiveConnection {
     pub executor: std::sync::Arc<hardener_core::SshExecutor>,
+    #[allow(dead_code)]
     pub info: RemoteConnectionInfo,
 }
 

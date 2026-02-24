@@ -4,8 +4,8 @@
 //! In browser mode (without Tauri), all commands return errors gracefully.
 
 use crate::types::{
-    ApplyResult, CheckpointDetail, CheckpointInfo, ComplianceReport, ConfigSummary, PluginMetadata,
-    RollbackResult, ScanResult, ScanSessionInfo, SchedulerUiConfig, TestNotificationResult,
+    ApplyResult, CheckpointDetail, CheckpointInfo, ComplianceReport, ConfigSummary, RollbackResult,
+    ScanResult, ScanSessionInfo, SchedulerUiConfig, TestNotificationResult,
 };
 use hardener_types::ValidationReport;
 use hardener_types::remote::{RemoteConnectionStatus, RemoteHostProfile};
@@ -232,16 +232,6 @@ pub async fn invoke_get_scan_session(session_id: String) -> Result<Vec<ScanResul
 
     serde_wasm_bindgen::from_value(result)
         .map_err(|e| format!("Failed to deserialise scan session: {}", e))
-}
-
-/// Invokes the list_plugins Tauri command.
-///
-/// Returns metadata for all available hardening plugins.
-pub async fn invoke_list_plugins() -> Result<Vec<PluginMetadata>, String> {
-    let result = invoke_command("list_plugins", JsValue::NULL).await?;
-
-    serde_wasm_bindgen::from_value(result)
-        .map_err(|e| format!("Failed to deserialise plugin list: {}", e))
 }
 
 /// Invokes the get_checkpoint_detail Tauri command.

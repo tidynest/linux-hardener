@@ -41,7 +41,7 @@ pub fn HostForm(
             .and_then(|p| p.key_file.clone())
             .unwrap_or_default(),
     );
-    let host_key_checking = RwSignal::new(existing.as_ref().map_or(true, |p| p.host_key_checking));
+    let host_key_checking = RwSignal::new(existing.as_ref().is_none_or(|p| p.host_key_checking));
     let is_saving = RwSignal::new(false);
 
     let is_valid = move || !name.get().trim().is_empty() && !hostname.get().trim().is_empty();
