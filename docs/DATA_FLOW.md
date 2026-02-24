@@ -1,6 +1,6 @@
 # Linux System Hardener - Data Flow Documentation
 
-**Last Updated:** 2026-02-23
+**Last Updated:** 2026-02-24
 **Version:** 0.3.3
 
 This document describes the data flow for all major operations in the system.
@@ -516,13 +516,70 @@ struct Finding {
 
 ### Tauri Commands Available
 
+**Scanning**
+
 | Command | Parameters | Returns |
 |---------|------------|---------|
-| `run_scan` | `plugin: Option<String>` | `Vec<ScanResult>` |
-| `run_apply` | `plugins: Vec<String>` | `Vec<ApplyResult>` |
-| `run_rollback` | `checkpoint_id: String` | `RollbackResult` |
-| `get_checkpoints` | None | `Vec<Checkpoint>` |
+| `run_scan` | `plugin_ids: Option<Vec<String>>`, `config_path: Option<String>` | `Vec<ScanResult>` |
+| `get_latest_scan` | None | `Option<Vec<ScanResult>>` |
+| `run_apply` | `plugin_ids: Vec<String>`, `config_path: Option<String>` | `Vec<ApplyResult>` |
+| `run_apply_dry_run` | `plugin_ids: Vec<String>`, `config_path: Option<String>` | `Vec<ValidationReport>` |
+| `run_rollback` | `checkpoint_id: String`, `config_path: Option<String>` | `RollbackResult` |
+
+**Checkpoints**
+
+| Command | Parameters | Returns |
+|---------|------------|---------|
+| `get_checkpoints` | None | `Vec<CheckpointInfo>` |
+| `create_checkpoint` | `name: String` | `String` (checkpoint ID) |
+| `delete_checkpoint` | `checkpoint_id: String` | `bool` |
+| `get_checkpoint_detail` | `checkpoint_id: String` | `CheckpointDetail` |
+
+**Compliance**
+
+| Command | Parameters | Returns |
+|---------|------------|---------|
 | `generate_compliance_report` | `frameworks: Vec<String>` | `Vec<ComplianceReport>` |
+| `export_compliance_report` | `frameworks: Vec<String>`, `format: String`, `output_path: Option<String>` | `String` (file path) |
+
+**History**
+
+| Command | Parameters | Returns |
+|---------|------------|---------|
+| `get_scan_history` | `limit: Option<i32>` | `Vec<ScanSessionInfo>` |
+| `get_scan_session` | `session_id: String` | `Vec<ScanResult>` |
+
+**Plugins**
+
+| Command | Parameters | Returns |
+|---------|------------|---------|
+| `list_plugins` | None | `Vec<PluginMetadata>` |
+
+**Config**
+
+| Command | Parameters | Returns |
+|---------|------------|---------|
+| `validate_config` | `path: String` | `ConfigSummary` |
+| `pick_config_file` | `app: AppHandle` | `Option<String>` |
+
+**Remote**
+
+| Command | Parameters | Returns |
+|---------|------------|---------|
+| `list_remote_hosts` | None | `Vec<RemoteHostProfile>` |
+| `save_remote_host` | `profile: RemoteHostProfile` | `()` |
+| `delete_remote_host` | `name: String` | `()` |
+| `connect_remote` | `name: String`, `state: State<RemoteState>` | `RemoteConnectionStatus` |
+| `disconnect_remote` | `state: State<RemoteState>` | `()` |
+| `run_remote_scan` | `plugin_ids: Option<Vec<String>>`, `state: State<RemoteState>` | `Vec<ScanResult>` |
+
+**Scheduler**
+
+| Command | Parameters | Returns |
+|---------|------------|---------|
+| `get_scheduler_config` | None | `SchedulerUiConfig` |
+| `save_scheduler_config` | `config: SchedulerUiConfig` | `String` (saved path) |
+| `test_notification` | None | `TestNotificationResult` |
 
 ---
 
@@ -757,7 +814,7 @@ If any entry is modified, the hash chain breaks and tampering is detected.
          │
          ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  NotificationDispatcher::notify(summary)                     │
+│  NotificationDispatcher::dispatch(summary)                    │
 │  ├─ Check severity threshold (config.min_severity)           │
 │  ├─ EmailNotifier: SMTP via lettre (if configured)           │
 │  │   └─ Send HTML email with severity counts and findings    │

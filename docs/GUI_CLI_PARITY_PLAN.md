@@ -132,7 +132,7 @@ pub struct AppState {
 
 ---
 
-### Phase 2: Scan Filtering (P0)
+### Phase 2: Scan Filtering (P0) - COMPLETE
 **Goal:** Users can filter findings and scan specific plugins
 
 **Files to Modify:**
@@ -159,7 +159,7 @@ pub struct AppState {
 
 ---
 
-### Phase 3: Checkpoint Management (P1)
+### Phase 3: Checkpoint Management (P1) - COMPLETE
 **Goal:** Full checkpoint CRUD operations
 
 **Files to Modify:**
@@ -179,7 +179,7 @@ pub struct AppState {
 
 ---
 
-### Phase 4: Report Export (P1)
+### Phase 4: Report Export (P1) - COMPLETE
 **Goal:** Save compliance reports to files in various formats
 
 **Files to Modify:**
@@ -201,7 +201,7 @@ pub struct AppState {
 
 ---
 
-### Phase 5: Scan History (P2)
+### Phase 5: Scan History (P2) - COMPLETE
 **Goal:** Browse and review past scan results in new Analysis tab
 
 **Files to Modify:**
@@ -226,7 +226,7 @@ pub struct AppState {
 
 ---
 
-### Phase 6: Mode Toggles (P2)
+### Phase 6: Mode Toggles (P2) - PARTIALLY COMPLETE
 **Goal:** Audit and Compliance scan modes
 
 **Files to Modify:**
@@ -245,13 +245,15 @@ pub struct AppState {
 ## Recommended Implementation Order
 
 ```
-Phase 1 (Dry-run Preview) - ✅ COMPLETE (2025-12-11)
-Phase 2 (Scan Filtering) - CRITICAL USABILITY ← NEXT
-Phase 3 (Checkpoint Management)
-Phase 4 (Report Export)
-Phase 5 (Scan History)
-Phase 6 (Mode Toggles) + P3 features as time permits
+Phase 1 (Dry-run Preview)         - COMPLETE (2025-12-11)
+Phase 2 (Scan Filtering)          - COMPLETE
+Phase 3 (Checkpoint Management)   - COMPLETE
+Phase 4 (Report Export)           - COMPLETE
+Phase 5 (Scan History)            - COMPLETE
+Phase 6 (Mode Toggles)            - PARTIALLY COMPLETE
 ```
+
+> All core phases are complete. Phase 6 mode toggles have partial implementation.
 
 ---
 
@@ -303,22 +305,34 @@ This keeps you in control while learning the architecture.
 
 | Command | Function | Notes |
 |---------|----------|-------|
-| `run_scan()` | Full system scan | Returns Vec<ScanResult> |
-| `run_apply(plugin_ids)` | Apply selected plugins | Uses pkexec for root |
+| `run_scan(plugin_ids, config_path)` | System scan with optional plugin/config filter | Returns `Result<Vec<ScanResult>, String>` |
+| `run_apply(plugin_ids, config_path)` | Apply selected plugins | Uses pkexec for root |
+| `run_apply_dry_run(plugin_ids, config_path)` | Preview changes without applying | No root required |
 | `run_rollback(checkpoint_id)` | Restore checkpoint | Uses pkexec for root |
 | `get_checkpoints()` | List checkpoints | Reads user + system DBs |
-| `generate_compliance_report(frameworks)` | Generate reports | Returns Vec<ComplianceReport> |
+| `create_checkpoint(name)` | Create a named checkpoint | Returns checkpoint ID |
+| `delete_checkpoint(checkpoint_id)` | Delete a checkpoint | Returns bool |
+| `get_checkpoint_detail(checkpoint_id)` | View checkpoint contents | Returns file list |
+| `generate_compliance_report(frameworks)` | Generate reports | Returns `Vec<ComplianceReport>` |
+| `export_compliance_report(frameworks, format, output_path)` | Export report to file | Returns file path |
+| `get_scan_history(limit)` | List recent scan sessions | Returns session metadata |
+| `get_scan_session(session_id)` | Load full session results | Returns `Vec<ScanResult>` |
 | `get_latest_scan()` | Load saved scan results | For state restoration |
+| `list_plugins()` | List all available plugins | Returns `Vec<PluginMetadata>` |
+| `list_remote_hosts()` | List saved SSH host profiles | Returns `Vec<RemoteHostProfile>` |
+| `save_remote_host(profile)` | Save/update SSH host profile | Persists to hosts.toml |
+| `delete_remote_host(name)` | Delete SSH host profile | Removes from hosts.toml |
+| `connect_remote(name, state)` | Connect to remote host via SSH | Returns connection status |
+| `disconnect_remote(state)` | Disconnect active SSH session | Clears connection state |
+| `run_remote_scan(plugin_ids, state)` | Scan remote host via SSH | Returns `Vec<ScanResult>` |
+| `get_scheduler_config()` | Load scheduler configuration | Returns `SchedulerUiConfig` |
+| `save_scheduler_config(config)` | Save scheduler configuration | Writes to config.toml |
+| `test_notification()` | Send test notification | Returns `TestNotificationResult` |
+| `validate_config(path)` | Validate a config file | Returns `ConfigSummary` |
+| `pick_config_file(app)` | Open file dialog for config | Returns selected path |
 
-**Commands to Add (from this plan):**
-- `run_apply_dry_run(plugin_ids)` - Phase 1 ✅ COMPLETE
-- `run_scan_with_options(options)` - Phase 2
-- `create_checkpoint(name)` - Phase 3
-- `delete_checkpoint(id)` - Phase 3
-- `export_report(frameworks, format, path)` - Phase 4
-- `get_scan_history(limit)` - Phase 5
-- `get_scan_session(session_id)` - Phase 5
+All planned commands from the original plan have been implemented.
 
 ---
 
-**Last Updated**: 2026-02-22
+**Last Updated**: 2026-02-24

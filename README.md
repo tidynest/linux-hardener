@@ -72,11 +72,11 @@ The tool is designed for system administrators, DevOps engineers, and security p
 ### Test Coverage
 
 ```
-Total Tests: 396+ passing (Rust) + 84 GUI tests (Playwright)
+Total Tests: 418+ passing (Rust) + 84 GUI tests (Playwright)
 ├── Plugin Tests: 48 + 80 mock tests
 ├── Core Tests: 59 + 14 mock executor tests
 ├── Compliance Tests: 46
-├── State Tests: 31
+├── State Tests: 29
 ├── Scheduler Tests: 57 (daemon, runner, notifications, systemd)
 ├── CLI Tests: 31
 ├── Distro Tests: 13
@@ -520,7 +520,7 @@ See [ROADMAP.md](ROADMAP.md) for detailed implementation plans for upcoming feat
 - [x] Timestamp formatting on Checkpoints page
 - [x] Background colour personalisation (5 security-focused themes)
 - [x] Responsive layout for varying screen resolutions
-- [x] Navigation restructure (3 pages: Dashboard, Analysis, Hardening)
+- [x] Navigation restructure (5 pages: Dashboard, Analysis, Hardening, Remote, Scheduler)
 - [x] GUI functional testing
 - [x] CLI functional testing (30 tests, 100% pass rate)
 - [x] Safe testing environment (systemd-nspawn container)
@@ -537,18 +537,22 @@ See [ROADMAP.md](ROADMAP.md) for detailed implementation plans for upcoming feat
 - [x] Bug fixes: Security score calculation, false positives, validate() stubs, kernel rollback
 
 ### v0.3.3 - Distribution Validation (Complete)
-- [x] Arch Linux validation (102/102 tests pass) - covers Manjaro, EndeavourOS, Garuda
-- [x] Debian 12 validation (102/102 tests pass) - covers Ubuntu, Linux Mint, Pop!_OS, elementary
-- [x] Fedora 41 validation (102/102 tests pass) - covers RHEL, CentOS, Rocky, AlmaLinux, Oracle Linux
-- [x] openSUSE Leap 15.6 validation (102/102 tests pass) - covers SLES
+- [x] Arch Linux validation (123/123 tests pass) - covers Manjaro, EndeavourOS, Garuda
+- [x] Debian 12 validation (123/123 tests pass) - covers Ubuntu, Linux Mint, Pop!_OS, elementary
+- [x] Fedora 41 validation (123/123 tests pass) - covers RHEL, CentOS, AlmaLinux, Oracle Linux
+- [x] Rocky Linux 9 validation (123/123 tests pass) - covers RHEL family
+- [x] openSUSE Leap 15.6 validation (123/123 tests pass) - covers SLES
 
 > **Note on family coverage:** Each distribution covers its entire family. All distributions in a family map to the same `DistroFamily` enum and use identical hardener code paths.
 
-### v0.4.0 - Web Interface (Future)
-- [ ] Web dashboard for browser-based management
+### v0.4.0 - GUI/CLI Parity & UI Polish (Complete)
+- [x] GUI/CLI feature parity (scan filtering, checkpoint CRUD, report export, scan history, audit/compliance modes)
+- [x] Scheduler UI (schedule config, notification config, email/webhook, test notification)
+- [x] Config file picker in desktop app
+- [x] UI polish pass (side-by-side layouts, card standardisation, responsive fixes)
+- [x] Severity filter in scan results
 - [ ] Multi-host management from single UI
 - [ ] Historical security trends
-- [ ] Alert notifications on security regressions
 - [ ] Test on GNOME, KDE, XFCE desktop environments (pkexec/polkit agents)
 
 ### v1.0.0 - Production Release (Future)
@@ -578,4 +582,4 @@ This project draws inspiration from established security tools including:
 **Contact**: tidynest@proton.me
 **Repository**: https://github.com/tidynest/linux-system-hardener
 
-**Last Updated**: 2026-02-23
+**Last Updated**: 2026-02-24

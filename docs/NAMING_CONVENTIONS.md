@@ -1,7 +1,7 @@
 # Naming Conventions Reference
 
 **Author**: Eric Jingryd
-**Last Updated**: 2026-02-22
+**Last Updated**: 2026-02-24
 **Purpose**: Complete and authoritative naming standards for all identifiers in the project
 
 ---
@@ -194,7 +194,15 @@ hardener-compliance     # Compliance framework mapping (pdf feature)
 hardener-scheduler      # Scheduled scanning daemon
 hardener-cli            # Command-line interface
 hardener-ui             # Leptos WASM frontend
+linux-hardener-desktop  # Tauri v2 desktop application (src-tauri)
 ```
+
+**Permitted Abbreviations**: The following short names are exceptions to the
+"no abbreviations" rule because they are idiomatic in Rust and used consistently
+throughout the codebase:
+
+- `ctx` -- Standard name for the `Context` parameter passed to all plugin trait methods
+- `cfg` -- Used in `#[cfg()]` attributes (Rust built-in conditional compilation)
 
 ---
 
@@ -1599,7 +1607,7 @@ When naming any identifier in this project, verify:
 
 ---
 
-**Last Updated**: 2026-02-22
+**Last Updated**: 2026-02-24
 
 ### 2025-12-05 (GUI Styling)
 

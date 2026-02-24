@@ -289,4 +289,31 @@ mod tests {
             PathBuf::from("/etc/linux-hardener/config.toml")
         );
     }
+
+    #[test]
+    fn test_config_routing_end_to_end() {
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(
+            file,
+            r#"
+[services.exceptions.cups]
+value = "running"
+allowed = true
+reason = "Print server required"
+"#
+        )
+        .unwrap();
+
+        let config = ConfigLoader::new()
+            .skip_defaults()
+            .with_cli_config(file.path().to_path_buf())
+            .load()
+            .unwrap();
+
+        let plugin = config.get_plugin_config("service-minimisation");
+        assert!(
+            plugin.has_valid_exception("cups").is_some(),
+            "Exception added under [services] must be reachable via service-minimisation ID"
+        );
+    }
 }

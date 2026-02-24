@@ -1,7 +1,7 @@
 # Config File Picker — Design
 
 **Date**: 2026-02-24
-**Status**: Approved
+**Status**: Implemented
 **Feature**: GUI equivalent of CLI `--config FILE` flag (P3, v0.4.0)
 
 ## Overview

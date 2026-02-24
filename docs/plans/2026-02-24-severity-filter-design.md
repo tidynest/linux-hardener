@@ -1,7 +1,7 @@
 # Severity Filter — GUI Design
 
 **Date**: 2026-02-24
-**Status**: Approved
+**Status**: Implemented
 **Priority**: P0 (v0.4.0 GUI/CLI Parity)
 
 ## Summary

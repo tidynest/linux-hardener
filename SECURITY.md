@@ -92,11 +92,29 @@ The SSH remote scanning feature (`--ssh` flag) has these security considerations
 
 1. **Host Key Verification**: By default, strict host key checking is enforced. The `--ssh-no-verify` flag disables this but should only be used for testing.
 
-2. **Credential Handling**: SSH keys are recommended over passwords. Passwords can be passed via `HARDENER_SSH_PASSWORD` environment variable (hidden from CLI history).
+2. **Credential Handling**: SSH connections use key-based authentication only (via the `openssh` crate). SSH agent forwarding is supported. Password authentication is not implemented.
 
 3. **Privilege Escalation**: Apply/rollback operations on remote hosts require sudo access. Configure passwordless sudo for specific commands if needed.
 
 4. **Network Exposure**: SSH connections should use secure networks. Consider using VPNs or jump hosts for production environments.
+
+### Scheduler Notification Credentials
+
+The scheduled scanning daemon supports email notifications via SMTP:
+
+1. **SMTP Password**: Read from the `HARDENER_SMTP_PASSWORD` environment variable at runtime. This value is never written to disk or logged. Set it in your systemd unit environment or shell session before starting the daemon.
+
+2. **Webhook URLs**: Webhook endpoints (Slack, Discord, generic) are stored in `config.toml`. Ensure appropriate file permissions on the config file if webhook URLs contain secrets.
+
+### Desktop Application Privilege Escalation
+
+The Tauri desktop application uses `pkexec` (polkit) for operations that require root privileges:
+
+1. **Apply/Rollback**: When the user triggers apply or rollback from the GUI, the app invokes the hardener CLI binary via `pkexec`, prompting for authentication through the desktop polkit agent.
+
+2. **No Persistent Root**: The GUI process itself never runs as root. Privilege escalation is scoped to the specific CLI invocation and drops back to user-level immediately after completion.
+
+3. **Polkit Agent Requirement**: A polkit authentication agent must be running in the desktop session (GNOME, KDE, Hyprland, etc. all provide one).
 
 ## Secure Development Practices
 
@@ -165,4 +183,4 @@ For security concerns: **tidynest@proton.me**
 
 For general issues: [GitHub Issues](https://github.com/tidynest/linux-system-hardener/issues)
 
-**Last Updated**: 2025-12-11
+**Last Updated**: 2026-02-24

@@ -551,7 +551,7 @@ To reproduce the full cross-distro validation from scratch:
    - `scripts/create-debian-container.sh`
    - `scripts/create-fedora-container.sh`
    - `scripts/create-opensuse-container.sh`
-   - Rocky Linux: import from `podman export` of official `rockylinux:9` image
+   - `scripts/create-rhel-container.sh` (Rocky Linux 9 via podman export)
 
 2. **Build the musl static binary**:
    ```bash

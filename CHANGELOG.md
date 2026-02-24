@@ -55,7 +55,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Extended Tauri IPC Mock**: 8 new mock handlers for GUI testing
   - `run_scan_filtered`, `run_scan_with_options`, `create_checkpoint`, `delete_checkpoint`
   - `export_report`, `get_scan_history`, `get_scan_session`, plus mock scan history data
-- **Severity Filter CSS**: Dropdown styling for analysis view severity filtering
+- **Severity Filter**: Full severity filtering for the analysis view
+  - `severity_filter` reactive signal in `AppState` with `severity_rank()` and `parse_severity()` helpers
+  - `FindingsGrid` refactored to accept a `findings` prop (filtered externally)
+  - Dropdown in `FindingsTab` for selecting minimum severity threshold
+  - "X of Y findings" count display updates reactively
+  - `ViewMode` filter (All / Compliance) for toggling compliance-only findings
+  - CSS styling for the severity dropdown and filter controls
 
 ### Fixed (Live Testing Session 2026-02-23)
 - **Checkpoint Directory Permissions**: Checkpoints now capture and restore directory metadata (mode/uid/gid)
@@ -76,6 +82,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `augenrules --load` is the supported mechanism, with systemctl as fallback
   - Fixed in both apply and rollback code paths
 - **CLI Apply Output**: Partial failures now show individual change status instead of blanket "Unknown error"
+
+### PluginConfig Wiring (2026-02-23)
+- **All 8 plugins now consume PluginConfig**: Directives override default values; exceptions exempt specific items from hardening
+  - Two families: **value-override** (directives + exceptions) for SSH, Kernel, Firewall, PAM, Permissions; **binary** (exceptions only) for Services, Audit, MAC
+  - SSH (`d029629`), Kernel (`ca53286`), Firewall (`820f406`), PAM (`95bf62b`), Services (`f97e33b`), Permissions (`d01432a`), Audit (`2ec356a`), MAC (`ef0f8f6`)
+  - `HardeningPlugin` trait receives `&PluginConfig` per-plugin; `HardenerConfig` decomposed by callers
+  - 418 tests pass, clippy clean
 
 ### Added (GUI/CLI Feature Parity - Phase 1)
 - **Preview & Apply Flow**: Users can now preview changes before applying hardening
@@ -211,7 +224,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Score Ring Sizing**: Changed from fixed 160px to proportional `min(160px, 45vw)` with `aspect-ratio: 1` for smooth scaling
 - **RECENT ACTIVITY Section**: Added `min-height: 150px` to ensure visibility in single-column mode
 - **No Minimum Width**: Removed 320px minimum width constraint; content now shrinks/wraps at any viewport width
-- **Puppeteer MCP Documentation**: Added `docs/MCP_INSTRUCTIONS.md` with detailed instructions for automated UI testing
+- **Puppeteer MCP Documentation**: Added `MCP_INSTRUCTIONS.md` with detailed instructions for automated UI testing
 - **Accessibility: Skip Link**: Added keyboard-accessible skip link for screen reader users (`lib.rs`)
 - **Accessibility: Tab ARIA**: Full WAI-ARIA tabs pattern with `aria-controls`, `aria-labelledby`, `tabindex` management
 - **CSS Utility Classes**: Added `.truncate`, `.line-clamp-2`, `.line-clamp-3`, `.sr-only`, `.min-w-0`, `.skip-link`
@@ -276,7 +289,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Compliance page route `/compliance` with navigation link
 
 ### Changed
-- Test suite expanded from 220 to 396+ tests (80% increase)
+- Test suite expanded from 220 to 418+ tests (90% increase)
 - PDF findings now display with better visual hierarchy and spacing
 - All 8 plugins converted to async with `#[async_trait]`
 - HardeningPlugin trait methods now async: `scan()`, `apply()`, `rollback()`, `validate()`
@@ -433,4 +446,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.2.0]: https://github.com/tidynest/linux-system-hardener/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tidynest/linux-system-hardener/releases/tag/v0.1.0
 
-**Last Updated**: 2026-02-23
+**Last Updated**: 2026-02-24

@@ -229,3 +229,39 @@ fn finding_to_scan_finding(meta: &PluginMetadata, finding: &Finding) -> ScanFind
         },
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ALL_IDS: &[&str] = &[
+        "ssh-hardening",
+        "kernel-hardening",
+        "firewall-hardening",
+        "pam-hardening",
+        "audit-hardening",
+        "mac-hardening",
+        "permissions-hardening",
+        "service-minimisation",
+    ];
+
+    #[test]
+    fn test_valid_full_id() {
+        assert!(is_valid_plugin_name("kernel-hardening", ALL_IDS));
+    }
+
+    #[test]
+    fn test_valid_short_name() {
+        assert!(is_valid_plugin_name("kernel", ALL_IDS));
+    }
+
+    #[test]
+    fn test_valid_service_short() {
+        assert!(is_valid_plugin_name("service", ALL_IDS));
+    }
+
+    #[test]
+    fn test_invalid_name() {
+        assert!(!is_valid_plugin_name("nonexistent", ALL_IDS));
+    }
+}

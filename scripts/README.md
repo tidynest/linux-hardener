@@ -19,6 +19,8 @@ This directory contains utility scripts for the Linux Hardening Tool project.
 | **Create Debian container** | `sudo ./scripts/create-debian-container.sh` |
 | **Create Fedora container** | `sudo ./scripts/create-fedora-container.sh` |
 | **Create openSUSE container** | `sudo ./scripts/create-opensuse-container.sh` |
+| **Create Rocky 9 container** | `sudo ./scripts/create-rhel-container.sh` |
+| **Verify rollback** | `sudo ./scripts/verify-rollback.sh` |
 | **Run root tests** | `sudo ./scripts/root-test-suite.sh` |
 | **Run root tests (full)** | `sudo ./scripts/root-test-suite.sh --apply` |
 | **Full test suite** | `sudo ./scripts/full-test-suite.sh` |
@@ -861,6 +863,7 @@ In addition to the Arch Linux container, there are distribution-specific contain
 | `create-test-container.sh` | Arch Linux | pacman |
 | `create-debian-container.sh` | Debian 12 (Bookworm) | apt/debootstrap |
 | `create-fedora-container.sh` | Fedora 41 | dnf |
+| `create-rhel-container.sh` | Rocky Linux 9 | podman export |
 | `create-opensuse-container.sh` | openSUSE Leap 15.6 | zypper |
 
 **Usage** (same pattern for all):
@@ -899,6 +902,72 @@ All containers:
 - Have test users configured (`root:test`, `testuser:test`)
 - Bind-mount project at `/project`
 - Provide full systemd support
+
+---
+
+### Rocky Linux Container Creator
+
+**Script**: `create-rhel-container.sh`
+
+**Purpose**: Creates a Rocky Linux 9 container for cross-distro testing. Uses `podman export` from the official `rockylinux:9` image to produce a rootfs at `/var/lib/machines/hardener-test-rhel`.
+
+**Usage**:
+```bash
+# Create container (requires podman)
+sudo ./scripts/create-rhel-container.sh
+
+# Enter container
+sudo ./scripts/create-rhel-container.sh enter
+
+# Clean up
+sudo ./scripts/create-rhel-container.sh clean
+```
+
+**How It Works**:
+1. Pulls the official `rockylinux:9` container image via `podman`
+2. Runs the image and installs required packages (`openssh-server`, `audit`, `firewalld`, `nftables`)
+3. Configures test users (`root:test`, `testuser:test` with passwordless sudo)
+4. Exports the container filesystem via `podman export`
+5. Extracts it to `/var/lib/machines/hardener-test-rhel` for use with `systemd-nspawn`
+
+**Why Podman Export?**: Rocky Linux does not have a native bootstrap tool like `pacstrap` or `debootstrap`. The podman approach creates an equivalent rootfs from the official image.
+
+**Dependencies**:
+- `podman`
+- Root privileges
+
+---
+
+### Rollback Verification Script
+
+**Script**: `verify-rollback.sh`
+
+**Purpose**: Runs 5 targeted tests with 10 assertions to verify that the rollback system works correctly inside a Fedora nspawn container. Validates the complete apply-then-rollback cycle for multiple plugins.
+
+**Usage**:
+```bash
+# Run inside a container (or via nspawn from host)
+sudo ./scripts/verify-rollback.sh
+```
+
+**Test Cases**:
+| # | Test | Assertions |
+|---|------|-----------|
+| 1 | Kernel rollback | sysctl runtime values restored, config file removed |
+| 2 | SSH rollback | `sshd_config` byte-identical after rollback |
+| 3 | Permissions rollback | Directory modes restored, mixed actions (permissions/skipped) |
+| 4 | JSON output validation | Valid `RollbackResult` with per-file `restore_action` |
+| 5 | Multi-checkpoint | Sequential applies create separate checkpoints, both roll back correctly |
+
+**Exit Codes**:
+- `0`: All 10 assertions passed
+- `1`: One or more assertions failed
+
+**Dependencies**:
+- Bash
+- Pre-built musl binary at `/project/target/release/hardener`
+- Root privileges
+- Container environment (Fedora recommended)
 
 ---
 

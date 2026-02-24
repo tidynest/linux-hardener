@@ -31,7 +31,7 @@ const PLUGINS: &[PluginDef] = &[
         name: "PAM Authentication",
     },
     PluginDef {
-        id: "services",
+        id: "service",
         name: "Service Minimisation",
     },
     PluginDef {
@@ -60,7 +60,7 @@ pub fn ConfigureSection() -> impl IntoView {
     let plugin_states: Vec<(String, RwSignal<bool>)> = PLUGINS
         .iter()
         .map(|p| {
-            let enabled = matches!(p.id, "kernel" | "ssh" | "firewall" | "pam" | "services");
+            let enabled = matches!(p.id, "kernel" | "ssh" | "firewall" | "pam" | "service");
             (p.id.to_string(), RwSignal::new(enabled))
         })
         .collect();
@@ -72,7 +72,7 @@ pub fn ConfigureSection() -> impl IntoView {
 
         let enabled_plugins: Vec<&str> = match profile {
             "baseline" => vec!["ssh", "firewall"],
-            "secure" => vec!["kernel", "ssh", "firewall", "pam", "services"],
+            "secure" => vec!["kernel", "ssh", "firewall", "pam", "service"],
             "high" => PLUGINS.iter().map(|p| p.id).collect(),
             _ => vec![],
         };

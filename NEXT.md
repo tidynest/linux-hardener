@@ -2,7 +2,7 @@
 
 ---
 
-## Current State (as of 2026-02-23)
+## Current State (as of 2026-02-24)
 
 All major audit items are resolved. Live testing session uncovered and fixed 6 additional issues.
 
@@ -11,9 +11,13 @@ All major audit items are resolved. Live testing session uncovered and fixed 6 a
 - **All 13 audit bugs fixed** (BUG-01 through BUG-13) — see `docs/COMPREHENSIVE_AUDIT_REPORT.md`
 - **All 7 infrastructure issues resolved** (INFRA-01 through INFRA-07)
 - **Trait refactor complete** — `Config` unit struct deleted, `HardeningPlugin` trait now accepts `&PluginConfig`
-- **Cross-distro validation** — 102-test suite passes on Arch, Debian, Fedora, openSUSE
+- **Cross-distro validation** — 123-test suite passes on Arch, Debian, Fedora, Rocky Linux 9, openSUSE
 - **Live testing fixes** (2026-02-23) — checkpoint directory permissions, vfat detection, scan history, auditd reload
-- **381+ unit tests pass**, clippy clean, native + WASM builds clean
+- **PluginConfig wiring complete** (2026-02-23) — all 8 plugins consume directives/exceptions
+- **GUI/CLI feature parity complete** (2026-02-24) — scan filtering, checkpoint CRUD, report export, scan history, audit/compliance modes
+- **Scheduler UI complete** (2026-02-24) — schedule config, notification config, email/webhook, test notification
+- **UI polish pass complete** (2026-02-24) — side-by-side layouts, card standardisation, responsive fixes
+- **418+ unit tests pass**, clippy clean, native + WASM builds clean
 
 ### Trait refactor summary (commits `81c13ad`, `d029629`, `b87fb1c`):
 
@@ -48,45 +52,42 @@ All major audit items are resolved. Live testing session uncovered and fixed 6 a
 
 ## What's next (priority order)
 
-### 1. Wire remaining 7 plugins to consume PluginConfig
+### 1. PluginConfig wiring — COMPLETED (2026-02-23)
 
-The trait refactor is complete, but only the **SSH plugin** fully consumes `PluginConfig` directives and exceptions. The remaining 7 plugins accept `&PluginConfig` but ignore its contents. Each plugin should be wired one at a time to:
+All 8 plugins now fully consume `PluginConfig` directives and exceptions. Two families:
 
-- Read `config.directives` for per-plugin setting overrides
-- Check `config.has_valid_exception()` to skip rules with valid policy exceptions
-- Respect `config.enabled` to short-circuit when disabled
+- **Value-override** (directives + exceptions): SSH, Kernel, Firewall, PAM, Permissions
+- **Binary** (exceptions only): Services, Audit, MAC
 
-**Plugins to wire** (recommended order, simplest first):
+| Plugin | Commit | Status |
+|--------|--------|--------|
+| SSH (pilot) | `d029629` | Done |
+| Kernel | `ca53286` | Done |
+| Firewall | `820f406` | Done |
+| PAM | `95bf62b` | Done |
+| Services | `f97e33b` | Done |
+| Permissions | `d01432a` | Done |
+| Audit | `2ec356a` | Done |
+| MAC | `ef0f8f6` | Done |
 
-| Plugin | Key Directives | Complexity |
-|--------|---------------|------------|
-| Kernel | sysctl parameter overrides | Low |
-| Permissions | custom file permission rules | Low |
-| Services | service whitelist/blacklist | Low-Medium |
-| Audit | custom auditd rules | Medium |
-| PAM | module configuration overrides | Medium |
-| Firewall | port/rule exceptions | Medium |
-| MAC | SELinux/AppArmor policy overrides | Medium-High |
+### 2. GUI/CLI Feature Parity (v0.4.0) — COMPLETED (2026-02-24)
 
-**Reference implementation**: `crates/hardener-plugins/src/ssh/mod.rs` — see how it reads directives and checks exceptions.
-
-### 2. GUI/CLI Feature Parity (v0.4.0)
-
-See `docs/GUI_CLI_PARITY_PLAN.md` — Phase 1 (dry-run preview) is complete.
+See `docs/GUI_CLI_PARITY_PLAN.md` — all 6 phases complete.
 
 | Phase | Feature | Priority | Status |
 |-------|---------|----------|--------|
-| Phase 2 | Scan filtering (severity dropdown, plugin selection) | P0 | Pending |
-| Phase 3 | Checkpoint management (create/delete) | P1 | Pending |
-| Phase 4 | Report export (format selection, file save) | P1 | Pending |
-| Phase 5 | Scan history tab | P2 | Pending |
-| Phase 6 | Audit/compliance mode toggles | P2 | Pending |
+| Phase 1 | Dry-run preview | P0 | Done |
+| Phase 2 | Scan filtering (severity dropdown, plugin selection) | P0 | Done |
+| Phase 3 | Checkpoint management (create/delete) | P1 | Done |
+| Phase 4 | Report export (format selection, file save) | P1 | Done |
+| Phase 5 | Scan history tab | P2 | Done |
+| Phase 6 | Audit/compliance mode toggles | P2 | Done |
 
 ### 3. Remaining polish items
 
 | Item | Source | Priority |
 |------|--------|----------|
-| JSON output for `checkpoint rollback` command | ROADMAP.md v0.3.2 H | Low |
+| ~~JSON output for `checkpoint rollback` command~~ | ~~ROADMAP.md v0.3.2 H~~ | Done (`5167e5a`) |
 | Polkit policy file for nicer dialog text | ROADMAP.md v0.3.2 H | Low |
 | AUR/deb/rpm package dependencies | ROADMAP.md v1.0.0 | Low |
 | High Contrast theme (WCAG AAA) | ROADMAP.md v0.3.2 C | Low |
@@ -109,7 +110,7 @@ See `docs/GUI_CLI_PARITY_PLAN.md` — Phase 1 (dry-run preview) is complete.
 
 - **11 Crates** (10 core + 1 Tauri app)
 - **8 Security Plugins**: Kernel, SSH, Firewall, PAM, Services, Audit, Permissions, MAC
-- **381+ Passing Tests**
+- **418+ Passing Tests**
 - **Multi-Distribution Support**: Debian, Red Hat, Arch, SUSE families
 - **Current Version**: 0.3.3 (Development Release)
 - **WASM Support**: GUI frontend compiles to `wasm32-unknown-unknown`
@@ -183,4 +184,4 @@ hardener-scheduler
 
 *This document is prepared for continuity between development sessions.*
 
-**Last Updated**: 2026-02-23
+**Last Updated**: 2026-02-24

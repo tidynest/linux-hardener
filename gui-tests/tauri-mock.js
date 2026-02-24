@@ -159,7 +159,7 @@
       scan_error: null,
     },
     {
-      scan_plugin_id: 'services-hardening',
+      scan_plugin_id: 'service-minimisation',
       scan_success: true,
       scan_findings: [
         {
@@ -397,7 +397,7 @@
     { plugin_id: 'ssh-hardening', plugin_name: 'SSH Hardening', plugin_description: 'Secures OpenSSH server configuration', plugin_category: 'Authentication', plugin_dependencies: [] },
     { plugin_id: 'firewall-hardening', plugin_name: 'Firewall Hardening', plugin_description: 'Configures host firewall rules', plugin_category: 'Network', plugin_dependencies: [] },
     { plugin_id: 'pam-hardening', plugin_name: 'PAM Hardening', plugin_description: 'Strengthens PAM authentication modules', plugin_category: 'Authentication', plugin_dependencies: [] },
-    { plugin_id: 'services-hardening', plugin_name: 'Services Minimisation', plugin_description: 'Disables unnecessary system services', plugin_category: 'Services', plugin_dependencies: [] },
+    { plugin_id: 'service-minimisation', plugin_name: 'Services Minimisation', plugin_description: 'Disables unnecessary system services', plugin_category: 'Services', plugin_dependencies: [] },
     { plugin_id: 'audit-hardening', plugin_name: 'Audit Hardening', plugin_description: 'Configures auditd rules for system auditing', plugin_category: 'Logging', plugin_dependencies: [] },
     { plugin_id: 'permissions-hardening', plugin_name: 'Permissions Hardening', plugin_description: 'Fixes insecure file and directory permissions', plugin_category: 'FileSystem', plugin_dependencies: [] },
     { plugin_id: 'mac-hardening', plugin_name: 'MAC Hardening', plugin_description: 'Enforces SELinux or AppArmor mandatory access controls', plugin_category: 'AccessControl', plugin_dependencies: [] },

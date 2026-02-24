@@ -287,26 +287,29 @@ pub struct Finding {
     // ... existing fields ...
 
     /// Policy exception if configured
-    pub finding_policy_exception: Option<PolicyException>,
+    pub finding_policy_exception: Option<FindingPolicyException>,
 }
 
-pub struct PolicyException {
-    pub value: String,
-    pub allowed: bool,
-    pub reason: String,
-    pub approved_by: Option<String>,
-    pub approved_date: Option<String>,
-    pub ticket: Option<String>,
-    pub expires: Option<String>,
-    // Computed: is_expired() method, NOT a stored field
-    // Computed: is_valid() — returns allowed && !is_expired()
+pub struct FindingPolicyException {
+    pub exception_allowed_value: String,
+    pub exception_reason: String,
+    pub exception_approved_by: Option<String>,
+    pub exception_approved_date: Option<String>,
+    pub exception_ticket: Option<String>,
+    pub exception_expires: Option<String>,
+    pub exception_is_expired: bool,
 }
 ```
 
 ### Scan Logic
 
 ```rust
-fn scan_with_config(&self, ctx: &Context, config: &PluginConfig) -> Result<ScanResult> {
+// The trait method signature is:
+//   async fn scan(&self, ctx: &Context) -> Result<ScanResult>
+// scan() does NOT accept a PluginConfig parameter — only apply() and validate() do.
+// Policy exceptions are resolved by the caller after scan results are returned.
+
+async fn scan(&self, ctx: &Context) -> Result<ScanResult> {
     // 1. Always check against SECURE BASELINE (hardcoded)
     let baseline_value = get_secure_baseline(check_id);
     let current_value = get_current_value(check_id);
@@ -315,12 +318,8 @@ fn scan_with_config(&self, ctx: &Context, config: &PluginConfig) -> Result<ScanR
     if current_value != baseline_value {
         let mut finding = Finding::new(/* ... */);
 
-        // 3. Check if policy exception exists via PluginConfig method
-        if let Some(exception) = config.has_valid_exception(check_id) {
-            if current_value == exception.value {
-                finding.finding_policy_exception = Some(exception.clone());
-            }
-        }
+        // 3. Policy exceptions are annotated by the caller using PluginConfig
+        //    after scan completes (scan itself is config-agnostic)
 
         findings.push(finding);
     }
@@ -419,7 +418,7 @@ approved_date = "2024-10-15"
 MaxAuthTries = "1"  # Stricter than default of 3
 ClientAliveInterval = "60"  # Stricter than default of 300
 
-[kernel.params]
+[kernel.directives]
 "kernel.yama.ptrace_scope" = "3"  # Stricter than default of 2
 ```
 
@@ -430,7 +429,7 @@ ClientAliveInterval = "60"  # Stricter than default of 300
 AllowUsers = "admin,deploy"  # Organisation-specific requirement
 Banner = "/etc/ssh/banner.txt"
 
-[kernel.custom_params]
+[kernel.custom_directives]
 "net.ipv6.conf.all.disable_ipv6" = "1"  # Organisation disables IPv6
 ```
 
@@ -481,4 +480,4 @@ This design ensures:
 
 The key insight: **config is for policy management, not security filtering**.
 
-**Last Updated**: 2026-02-22
+**Last Updated**: 2026-02-24

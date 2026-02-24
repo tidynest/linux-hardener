@@ -294,7 +294,7 @@ pub async fn run_scan(
             && !ids.is_empty()
             && !ids.iter().any(|id| {
                 metadata.plugin_id == (*id).clone().into()
-                    || metadata.plugin_id == format!("{}-hardening", id).into()
+                    || metadata.plugin_id.as_str().starts_with(&format!("{}-", id))
             })
         {
             continue;
@@ -973,7 +973,7 @@ pub async fn run_remote_scan(
             && !ids.is_empty()
             && !ids.iter().any(|id| {
                 metadata.plugin_id == (*id).clone().into()
-                    || metadata.plugin_id == format!("{}-hardening", id).into()
+                    || metadata.plugin_id.as_str().starts_with(&format!("{}-", id))
             })
         {
             continue;

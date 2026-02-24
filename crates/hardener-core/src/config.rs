@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::LazyLock;
+use tracing::warn;
 
 /// Root configuration structure for Linux System Hardener.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -121,6 +123,8 @@ impl HardenerConfig {
 
     /// Get plugin-specific configuration by plugin ID.
     pub fn get_plugin_config(&self, plugin_id: &str) -> &PluginConfig {
+        static EMPTY: LazyLock<PluginConfig> = LazyLock::new(PluginConfig::default);
+
         match plugin_id {
             "ssh-hardening" => &self.ssh,
             "kernel-hardening" => &self.kernel,
@@ -129,8 +133,11 @@ impl HardenerConfig {
             "audit-hardening" => &self.audit,
             "mac-hardening" => &self.mac,
             "permissions-hardening" => &self.permissions,
-            "services-hardening" => &self.services,
-            _ => &self.ssh, // Fallback to default (empty config)
+            "service-minimisation" => &self.services,
+            _ => {
+                warn!("Unknown plugin ID '{plugin_id}', returning empty config");
+                &EMPTY
+            }
         }
     }
 }
@@ -282,5 +289,95 @@ mod tests {
             },
         );
         assert!(plugin.has_valid_exception("PermitRootLogin").is_none());
+    }
+
+    #[test]
+    fn test_get_plugin_config_all_ids() {
+        let mut config = HardenerConfig::default();
+        // Disable each plugin uniquely so we can verify routing
+        config.ssh.enabled = false;
+        config.kernel.enabled = true;
+        config.firewall.enabled = false;
+        config.pam.enabled = true;
+        config.audit.enabled = false;
+        config.mac.enabled = true;
+        config.permissions.enabled = false;
+        config.services.enabled = true;
+
+        assert!(!config.get_plugin_config("ssh-hardening").enabled);
+        assert!(config.get_plugin_config("kernel-hardening").enabled);
+        assert!(!config.get_plugin_config("firewall-hardening").enabled);
+        assert!(config.get_plugin_config("pam-hardening").enabled);
+        assert!(!config.get_plugin_config("audit-hardening").enabled);
+        assert!(config.get_plugin_config("mac-hardening").enabled);
+        assert!(!config.get_plugin_config("permissions-hardening").enabled);
+        assert!(config.get_plugin_config("service-minimisation").enabled);
+    }
+
+    #[test]
+    fn test_get_plugin_config_unknown_returns_default() {
+        let config = HardenerConfig::default();
+        let plugin = config.get_plugin_config("nonexistent-plugin");
+        assert!(plugin.enabled);
+        assert!(plugin.directives.is_empty());
+        assert!(plugin.exceptions.is_empty());
+    }
+
+    #[test]
+    fn test_get_plugin_config_service_minimisation() {
+        let mut config = HardenerConfig::default();
+        config.services.enabled = false;
+        config
+            .services
+            .directives
+            .insert("key".into(), "val".into());
+
+        let plugin = config.get_plugin_config("service-minimisation");
+        assert!(!plugin.enabled);
+        assert_eq!(plugin.directives.get("key").unwrap(), "val");
+    }
+
+    #[test]
+    fn test_get_plugin_config_isolation() {
+        let mut config = HardenerConfig::default();
+        config
+            .ssh
+            .directives
+            .insert("PermitRootLogin".into(), "no".into());
+
+        // SSH has the directive, kernel does not
+        assert!(
+            config
+                .get_plugin_config("ssh-hardening")
+                .directives
+                .contains_key("PermitRootLogin")
+        );
+        assert!(
+            !config
+                .get_plugin_config("kernel-hardening")
+                .directives
+                .contains_key("PermitRootLogin")
+        );
+    }
+
+    #[test]
+    fn test_get_plugin_config_exceptions_routed() {
+        let mut config = HardenerConfig::default();
+        config.services.exceptions.insert(
+            "cups".to_string(),
+            PolicyException {
+                value: "running".to_string(),
+                allowed: true,
+                reason: "Print server needed".to_string(),
+                approved_by: None,
+                approved_date: None,
+                ticket: None,
+                expires: None,
+            },
+        );
+
+        let plugin = config.get_plugin_config("service-minimisation");
+        assert!(plugin.has_valid_exception("cups").is_some());
+        assert!(plugin.has_valid_exception("avahi").is_none());
     }
 }

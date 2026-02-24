@@ -95,6 +95,19 @@ For user interaction feedback:
 | `--color-accent-hover` | Hover state for accent |
 | `--color-focus` | Focus ring colour (transparent) |
 
+### 5. Button Styles
+
+Dedicated button classes for consistent, WCAG-compliant interactive elements:
+
+| Class | Background | Purpose | Contrast |
+|-------|-----------|---------|----------|
+| `.btn-primary` | `#065f46` (darker green) | Primary actions (Save, Apply) | WCAG AA compliant against white text |
+| `.btn-accent` | `#155e75` (teal) | Secondary prominent actions (Test Notification) | WCAG AA compliant against white text |
+
+The `.btn-primary` colour was chosen over the default green to meet WCAG AA contrast
+requirements (4.5:1) for white text on coloured backgrounds. The `.btn-accent` provides
+a visually distinct alternative for secondary actions that still need prominence.
+
 ---
 
 ## Current Themes
@@ -323,4 +336,4 @@ Complete list of CSS variables used in themes:
 
 ---
 
-**Last Updated**: 2025-12-09
+**Last Updated**: 2026-02-24

@@ -298,7 +298,7 @@ Two remote commits (Dependabot RSA security update) are not pulled.
 
 ---
 
-### INFRA-03: Version Mismatch (0.3.2 vs 0.3.3)
+### INFRA-03: Version Mismatch (0.3.2 vs 0.3.3) -- FIXED
 
 **Severity**: HIGH
 
@@ -313,6 +313,9 @@ Two remote commits (Dependabot RSA security update) are not pulled.
 | `docs/ARCHITECTURE.md` | 0.3.3 |
 
 **Fix**: Bump all Cargo.toml and config files to 0.3.3.
+
+> **Status**: Fixed. All crates now use `version.workspace = true`, with the single
+> authoritative version defined in the root `Cargo.toml` workspace section.
 
 ---
 
@@ -347,13 +350,16 @@ Regressions in `commands.rs` or frontend code will not be caught.
 
 ---
 
-### INFRA-06: Tauri CSP Disabled and No Capabilities File
+### INFRA-06: Tauri CSP Disabled and No Capabilities File -- FIXED
 
 **Severity**: MEDIUM
 **File**: `src-tauri/tauri.conf.json:23-25`
 
 `"csp": null` disables Content Security Policy entirely. No `src-tauri/capabilities/` directory
 exists. For a security-focused tool, this is a poor posture.
+
+> **Status**: Fixed. The current `tauri.conf.json` has a proper CSP configured, and
+> `src-tauri/capabilities/default.json` now exists with appropriate permission grants.
 
 ---
 

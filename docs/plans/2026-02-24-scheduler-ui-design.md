@@ -1,7 +1,7 @@
 # Scheduler UI Design
 
 **Date:** 2026-02-24
-**Status:** Approved
+**Status:** Implemented
 **Scope:** GUI page for configuring scan scheduling and notifications
 
 ## Overview

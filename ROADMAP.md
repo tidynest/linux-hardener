@@ -380,10 +380,11 @@ User clicks "Apply"
 
 | Distribution | Family | Version | Tests | Pass | Fail | Skip | Status |
 |--------------|--------|---------|-------|------|------|------|--------|
-| Arch Linux | Arch | Rolling (LTS 6.12) | 102 | 102 | 0 | 1 | ✅ Complete |
-| Debian | Debian | 12 (Bookworm) | 102 | 102 | 0 | 1 | ✅ Complete |
-| Fedora | Red Hat | 41 | 102 | 102 | 0 | 1 | ✅ Complete |
-| openSUSE | SUSE | Leap 15.6 | 102 | 102 | 0 | 1 | ✅ Complete |
+| Arch Linux | Arch | Rolling (LTS 6.12) | 123 | 123 | 0 | 6 | ✅ Complete |
+| Debian | Debian | 12 (Bookworm) | 123 | 123 | 0 | 6 | ✅ Complete |
+| Fedora | Red Hat | 41 | 123 | 123 | 0 | 6 | ✅ Complete |
+| Rocky Linux | Red Hat | 9 | 123 | 123 | 0 | 6 | ✅ Complete |
+| openSUSE | SUSE | Leap 15.6 | 123 | 123 | 0 | 6 | ✅ Complete |
 
 > **Note on family coverage**: Each validated distribution covers its entire family. Debian covers Ubuntu/Mint/Pop!_OS/elementary; Fedora covers RHEL/CentOS/Rocky/Alma/Oracle Linux; openSUSE covers SLES; Arch covers Manjaro/EndeavourOS/Garuda. All distributions in a family use identical hardener code paths.
 
@@ -502,7 +503,7 @@ Features planned for post-v1.0.0 releases.
 
 | Item | Description | Priority | Status |
 |------|-------------|----------|--------|
-| Increase test coverage | Target 90%+ coverage | Low | ✅ Complete (396+ tests) |
+| Increase test coverage | Target 90%+ coverage | Low | ✅ Complete (418+ tests) |
 | Consolidate `create_plugin_registry()` | Duplicated in CLI, report, Tauri | Low | ✅ Complete |
 | Consolidate test mock plugins | Duplicated in registry.rs and plugin_manager_tests.rs | Low | ✅ Complete |
 | Config file utilities | Duplicated parsing/backup in SSH and PAM plugins | Low | ✅ Complete |

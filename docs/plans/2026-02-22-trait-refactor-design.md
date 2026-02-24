@@ -74,5 +74,6 @@ pub fn has_valid_exception(&self, key: &str) -> Option<&PolicyException> {
 ## Out of Scope
 
 - Wiring up the remaining 7 plugins to consume directives/exceptions (follow-up, one at a time)
+  - **Update:** All 8 plugins were subsequently wired up to consume PluginConfig (commits ca53286 through ef0f8f6, 2026-02-23).
 - Changing `scan()` to accept config (scan is read-only, doesn't need per-plugin config)
 - GUI changes (Tauri shells out to CLI)

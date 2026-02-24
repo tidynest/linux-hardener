@@ -1,6 +1,6 @@
 # Linux System Hardener - Architecture Documentation
 
-**Last Updated:** 2026-02-23
+**Last Updated:** 2026-02-24
 **Version:** 0.3.3 (Distribution Validation Complete)
 
 ---
@@ -115,16 +115,16 @@ Linux System Hardener is a modular security hardening tool for Linux systems, pr
 
 | Crate | Purpose | Key Exports |
 |-------|---------|-------------|
-| `hardener-types` | WASM-compatible shared types | `PluginId`, `Severity`, `Finding`, `ScanResult`, `ApplyResult`, `ComplianceReport`, etc. |
+| `hardener-types` | WASM-compatible shared types (4 source files: `lib.rs`, `config_picker.rs`, `remote.rs`, `scheduler.rs`) | `PluginId`, `Severity`, `Finding`, `ScanResult`, `ApplyResult`, `ComplianceReport`, `RollbackResult`, `ValidationReport`, `ConfigSummary`, `RemoteHostProfile`, `RemoteConnectionStatus`, `RemoteConnectionInfo`, `HostsConfig`, `SchedulerUiConfig`, `NotificationUiConfig`, `TestNotificationResult` |
 | `hardener-core` | Plugin framework, execution context, config | `HardeningPlugin`, `Context`, `PluginManager`, `HardenerConfig`, `ConfigLoader`, `SystemExecutor`, `LocalExecutor`, `SshExecutor` |
 | `hardener-common` | Shared utilities and error types | `HardeningError`, file utilities (re-exports types from hardener-types) |
 | `hardener-plugins` | 8 security plugin implementations | All plugin structs |
 | `hardener-state` | Checkpoint and audit system | `CheckpointManager`, `AuditLogger` |
 | `hardener-compliance` | Compliance framework mapping | `ReportGenerator`, frameworks (PDF behind `pdf` feature) |
-| `hardener-distro` | Distribution detection | `Distribution`, `DistroFamily` |
-| `hardener-scheduler` | Scheduled scanning daemon | `SchedulerConfig`, `ScanHistoryManager`, `JsonStore`, `ScanRunner`, `ScanSummary`, `TriggerType`, `Daemon`, `Notifier`, `EmailNotifier`, `WebhookNotifier`, `NotificationDispatcher`, `SystemdGenerator` |
+| `hardener-distro` | Distribution detection | `Distribution`, `DistroFamily`, `DistributionAdapter` |
+| `hardener-scheduler` | Scheduled scanning daemon | `SchedulerConfig`, `Daemon`, `ScanHistoryManager`, `JsonStore`, `NotificationDispatcher`, `ScanRunner`, `ScanSummary`, `TriggerType`, `SystemdGenerator`, `cron_to_calendar` |
 | `hardener-cli` | Command-line interface | Binary entry point |
-| `hardener-ui` | Leptos WASM frontend | 3-page architecture (Dashboard, Analysis, Hardening), dark terminal CSS theme (depends only on hardener-types) |
+| `hardener-ui` | Leptos WASM frontend | 5-page architecture (Dashboard, Analysis, Hardening, Remote, Scheduler), dark terminal CSS theme (depends only on hardener-types) |
 | `src-tauri` | Desktop app backend | Tauri commands |
 
 ### Tauri 2.x Integration Notes
@@ -379,7 +379,7 @@ pub trait FirewallBackend: Send + Sync {
 | Component | Location | Purpose |
 |-----------|----------|---------|
 | Checkpoints | `~/.local/share/linux-hardener/checkpoints.db` | System state snapshots |
-| Audit Log | Same DB, `audit_log` table | Tamper-proof action history |
+| Audit Log | `~/.local/share/linux-hardener/audit.log` (JSONL file) | Tamper-proof action history |
 | Signing Keys | `~/.local/share/linux-hardener/signing.key` | Ed25519 keys |
 
 ### Database Schema
@@ -387,11 +387,12 @@ pub trait FirewallBackend: Send + Sync {
 ```sql
 -- Checkpoint metadata
 CREATE TABLE checkpoints (
-    checkpoint_id TEXT PRIMARY KEY,
-    checkpoint_name TEXT NOT NULL,
-    checkpoint_timestamp INTEGER NOT NULL,
-    checkpoint_username TEXT NOT NULL,
-    checkpoint_signature BLOB NOT NULL
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    timestamp INTEGER NOT NULL,
+    username TEXT NOT NULL,
+    signature BLOB NOT NULL,
+    created_at INTEGER NOT NULL
 );
 
 -- Captured file states
@@ -399,24 +400,18 @@ CREATE TABLE file_states (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     checkpoint_id TEXT NOT NULL,
     file_path TEXT NOT NULL,
-    file_content BLOB,
-    file_permissions INTEGER NOT NULL,
-    file_owner_uid INTEGER NOT NULL,
-    file_owner_gid INTEGER NOT NULL,
-    FOREIGN KEY(checkpoint_id) REFERENCES checkpoints(checkpoint_id)
+    content BLOB,
+    permissions INTEGER,
+    owner_uid INTEGER,
+    owner_gid INTEGER,
+    FOREIGN KEY(checkpoint_id) REFERENCES checkpoints(id)
 );
 
--- Tamper-proof audit trail
-CREATE TABLE audit_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    entry_timestamp TIMESTAMP NOT NULL,
-    entry_action_type TEXT NOT NULL,
-    entry_user TEXT NOT NULL,
-    entry_target TEXT NOT NULL,
-    entry_result TEXT NOT NULL,
-    entry_details JSON,
-    entry_hash BLOB NOT NULL  -- SHA-256 hash chain
-);
+-- Audit logging uses file-based JSONL format (not SQLite).
+-- Each entry is a JSON line in the audit log file (~/.local/share/linux-hardener/audit.log).
+-- Fields per entry: entry_timestamp, entry_action_type, entry_user,
+-- entry_target, entry_result, entry_details, entry_hash (SHA-256 hash chain).
+-- See hardener-state/src/audit.rs for the AuditEntry struct.
 ```
 
 ---

@@ -111,10 +111,12 @@ hardener --ssh myserver scan
 
 Password Authentication
 
-Warning: Password authentication is less secure. Use key-based authentication when 
+Warning: Password authentication is less secure. Use key-based authentication when
 possible.
 
-Set the password via environment variable:
+> **Not yet implemented.** The SSH executor currently uses the `openssh` crate with
+> key-based and SSH agent authentication only. The `HARDENER_SSH_PASSWORD` environment
+> variable is reserved for future use but has no effect at this time.
 
 HARDENER_SSH_PASSWORD=secret hardener --ssh user@host scan
 
@@ -281,7 +283,7 @@ Audit Trail
 All remote operations are logged locally. Check the audit log for a record of what
 was changed:
 
-hardener audit --show
+hardener history list
 
 Limitations
 
@@ -291,7 +293,6 @@ Current limitations of SSH remote scanning:
 |----------------------|-----------------------------------------|
 | No parallel scanning | Hosts are scanned sequentially          |
 | No jump host support | Cannot use bastion/jump hosts (yet)     |
-| CLI only             | GUI does not support SSH connections    |
 | Local checkpoints    | Checkpoint data stored on local machine |
 
 Future Enhancements
@@ -300,6 +301,5 @@ Planned for future releases:
 - Parallel multi-host scanning
 - Jump host / bastion support
 - Remote checkpoint storage option
-- GUI SSH support
 
-**Last Updated**: 2026-02-22
+**Last Updated**: 2026-02-24
