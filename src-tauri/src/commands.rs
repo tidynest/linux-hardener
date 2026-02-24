@@ -40,6 +40,26 @@ fn hosts_config_path() -> Result<std::path::PathBuf, String> {
     Ok(config_dir.join("hosts.toml"))
 }
 
+/// Returns the path to the main hardener config file.
+///
+/// Checks the user config directory first, then falls back to the system-wide
+/// location. Returns the user path even if it doesn't exist yet (for creation).
+fn hardener_config_path() -> Result<std::path::PathBuf, String> {
+    let user_config = dirs::config_dir().map(|p| p.join("linux-hardener").join("config.toml"));
+    if let Some(ref path) = user_config
+        && path.exists()
+    {
+        return Ok(path.clone());
+    }
+
+    let system_config = std::path::PathBuf::from("/etc/linux-hardener/config.toml");
+    if system_config.exists() {
+        return Ok(system_config);
+    }
+
+    user_config.ok_or_else(|| "Cannot determine config directory".to_string())
+}
+
 /// Loads host profiles from TOML config file.
 fn load_hosts_config() -> Result<HostsConfig, String> {
     let path = hosts_config_path()?;
@@ -920,4 +940,148 @@ pub async fn run_remote_scan(
     }
 
     Ok(results)
+}
+
+// ---------------------------------------------------------------------------
+// Scheduler configuration
+// ---------------------------------------------------------------------------
+
+/// Reads the [scheduler] section from config.toml and returns it as SchedulerUiConfig.
+#[tauri::command]
+pub async fn get_scheduler_config() -> Result<hardener_types::scheduler::SchedulerUiConfig, String> {
+    let path = hardener_config_path()?;
+    if !path.exists() {
+        return Ok(hardener_types::scheduler::SchedulerUiConfig::default());
+    }
+
+    let content =
+        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read config: {e}"))?;
+
+    #[derive(serde::Deserialize)]
+    struct ConfigFile {
+        #[serde(default)]
+        scheduler: hardener_types::scheduler::SchedulerUiConfig,
+    }
+
+    let config: ConfigFile =
+        toml::from_str(&content).map_err(|e| format!("Failed to parse config: {e}"))?;
+
+    Ok(config.scheduler)
+}
+
+/// Saves the scheduler section to config.toml without disturbing other sections.
+///
+/// Uses `toml_edit` to perform a targeted update of only the `[scheduler]` table,
+/// preserving comments, formatting, and unrelated sections.
+#[tauri::command]
+pub async fn save_scheduler_config(
+    config: hardener_types::scheduler::SchedulerUiConfig,
+) -> Result<(), String> {
+    let path = hardener_config_path()?;
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create config directory: {e}"))?;
+    }
+
+    let content = if path.exists() {
+        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read config: {e}"))?
+    } else {
+        String::new()
+    };
+
+    let mut document: toml_edit::DocumentMut =
+        content.parse().map_err(|e| format!("Failed to parse config: {e}"))?;
+
+    let scheduler_toml =
+        toml::to_string(&config).map_err(|e| format!("Failed to serialise scheduler config: {e}"))?;
+    let scheduler_table: toml_edit::DocumentMut = scheduler_toml
+        .parse()
+        .map_err(|e| format!("Failed to parse scheduler TOML: {e}"))?;
+
+    document["scheduler"] = scheduler_table.as_item().clone();
+
+    std::fs::write(&path, document.to_string())
+        .map_err(|e| format!("Failed to write config: {e}"))
+}
+
+/// Sends a test notification through all enabled channels.
+///
+/// Creates a temporary database so the test doesn't pollute real scan history.
+/// Returns a success/failure summary suitable for display in the GUI.
+#[tauri::command]
+pub async fn test_notification() -> Result<hardener_types::scheduler::TestNotificationResult, String>
+{
+    let path = hardener_config_path()?;
+    let scheduler_config = if path.exists() {
+        let content =
+            std::fs::read_to_string(&path).map_err(|e| format!("Failed to read config: {e}"))?;
+
+        #[derive(serde::Deserialize)]
+        struct ConfigFile {
+            #[serde(default)]
+            scheduler: hardener_scheduler::SchedulerConfig,
+        }
+
+        let config: ConfigFile =
+            toml::from_str(&content).map_err(|e| format!("Failed to parse config: {e}"))?;
+        config.scheduler
+    } else {
+        hardener_scheduler::SchedulerConfig::default()
+    };
+
+    // Create temporary database for notification logging
+    let tmp_dir = tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {e}"))?;
+    let db_manager = hardener_scheduler::ScanHistoryManager::new(&tmp_dir.path().join("test.db"))
+        .await
+        .map_err(|e| format!("Failed to create temp DB: {e}"))?;
+
+    let summary = hardener_scheduler::ScanSummary {
+        session_id: "test-notification".into(),
+        host: hostname::get()
+            .map(|h| h.to_string_lossy().to_string())
+            .unwrap_or_else(|_| "unknown".into()),
+        plugins_scanned: vec!["test".into()],
+        total_findings: 1,
+        critical_count: 0,
+        high_count: 1,
+        medium_count: 0,
+        low_count: 0,
+        info_count: 0,
+        json_path: None,
+        json_hash: None,
+        had_errors: false,
+    };
+
+    let dispatcher = hardener_scheduler::NotificationDispatcher::new(
+        &scheduler_config.notifications,
+        std::sync::Arc::new(db_manager),
+    );
+
+    let results = dispatcher.dispatch(&summary).await;
+
+    if results.is_empty() {
+        return Ok(hardener_types::scheduler::TestNotificationResult {
+            success: false,
+            message: "No notification channels are enabled".into(),
+        });
+    }
+
+    let failures: Vec<&str> = results
+        .iter()
+        .filter(|r| !r.success)
+        .filter_map(|r| r.error.as_deref())
+        .collect();
+
+    if failures.is_empty() {
+        Ok(hardener_types::scheduler::TestNotificationResult {
+            success: true,
+            message: format!("Test sent to {} channel(s)", results.len()),
+        })
+    } else {
+        Ok(hardener_types::scheduler::TestNotificationResult {
+            success: false,
+            message: format!("Failed: {}", failures.join("; ")),
+        })
+    }
 }
