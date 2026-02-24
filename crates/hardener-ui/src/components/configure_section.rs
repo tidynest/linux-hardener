@@ -106,7 +106,7 @@ pub fn ConfigureSection() -> impl IntoView {
         app_state.show_preview.set(false);
 
         leptos::task::spawn_local(async move {
-            match invoke_apply_dry_run(plugins).await {
+            match invoke_apply_dry_run(plugins, app_state.config_path.get_untracked()).await {
                 Ok(results) => {
                     app_state.preview_results.set(results);
                     app_state.show_preview.set(true);
@@ -139,7 +139,7 @@ pub fn ConfigureSection() -> impl IntoView {
         app_state.show_preview.set(false);
 
         leptos::task::spawn_local(async move {
-            match invoke_apply(plugins).await {
+            match invoke_apply(plugins, app_state.config_path.get_untracked()).await {
                 Ok(results) => {
                     app_state.apply_results.update(|r| r.extend(results));
                     app_state.preview_results.set(Vec::new());

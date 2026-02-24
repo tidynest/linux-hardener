@@ -126,7 +126,7 @@ pub fn HistorySection() -> impl IntoView {
     // Rollback handler
     let handle_rollback = move |checkpoint_id: String| {
         leptos::task::spawn_local(async move {
-            match invoke_rollback(checkpoint_id).await {
+            match invoke_rollback(checkpoint_id, app_state.config_path.get_untracked()).await {
                 Ok(result) => {
                     app_state.rollback_result.set(Some(result));
                     if let Ok(cp) = invoke_get_checkpoints().await {

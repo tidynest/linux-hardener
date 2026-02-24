@@ -5,7 +5,7 @@ use hardener_compliance::{
         CsvFormatter, HtmlFormatter, JsonFormatter, PdfFormatter, ReportFormatter, TextFormatter,
     },
 };
-use hardener_core::{ApplyResult, Context, Finding, PluginMetadata, ScanResult, ValidationReport};
+use hardener_core::{ApplyResult, ConfigLoader, Context, Finding, PluginMetadata, ScanResult, ValidationReport};
 use hardener_plugins::create_plugin_registry;
 use hardener_state::{
     Checkpoint, CheckpointId, CheckpointManager, FileState, RollbackResult, ScanHistoryManager,
@@ -255,7 +255,7 @@ async fn create_scan_history_manager() -> Result<ScanHistoryManager, String> {
 /// Persists results to the database for GUI state restoration.
 /// Returns a vector of scan results, one per plugin.
 #[tauri::command]
-pub async fn run_scan(plugin_ids: Option<Vec<String>>) -> Result<Vec<ScanResult>, String> {
+pub async fn run_scan(plugin_ids: Option<Vec<String>>, config_path: Option<String>) -> Result<Vec<ScanResult>, String> {
     // Create scan history manager for persistence
     let history_manager = create_scan_history_manager().await?;
 
@@ -265,6 +265,18 @@ pub async fn run_scan(plugin_ids: Option<Vec<String>>) -> Result<Vec<ScanResult>
         .await
         .map_err(|e| e.to_string())?;
 
+
+    // Load config if custom path provided
+    let config = if let Some(ref path) = config_path {
+        ConfigLoader::new()
+            .with_cli_config(std::path::PathBuf::from(path))
+            .load()
+            .map_err(|e| format!("Failed to load config: {}", e))?
+    } else {
+        ConfigLoader::new()
+            .load()
+            .unwrap_or_default()
+    };
     let ctx = Context::new();
     let registry = create_plugin_registry();
 
@@ -285,6 +297,11 @@ pub async fn run_scan(plugin_ids: Option<Vec<String>>) -> Result<Vec<ScanResult>
             continue;
         }
 
+
+        // Skip plugins disabled by config
+        if !config.is_plugin_enabled(metadata.plugin_id.as_str()) {
+            continue;
+        }
         // Retrieve the actual plugin
         if let Ok(Some(plugin)) = registry.get(&metadata.plugin_id) {
             match plugin.scan(&ctx).await {
@@ -327,7 +344,7 @@ pub async fn run_scan(plugin_ids: Option<Vec<String>>) -> Result<Vec<ScanResult>
 /// Uses pkexec to run the CLI with root privileges.
 /// The user will be prompted for their password via the polkit agent.
 #[tauri::command]
-pub async fn run_apply(plugin_ids: Vec<String>) -> Result<Vec<ApplyResult>, String> {
+pub async fn run_apply(plugin_ids: Vec<String>, config_path: Option<String>) -> Result<Vec<ApplyResult>, String> {
     tracing::info!("=== run_apply called with plugins: {:?} ===", plugin_ids);
 
     // Build CLI arguments
@@ -341,6 +358,14 @@ pub async fn run_apply(plugin_ids: Vec<String>) -> Result<Vec<ApplyResult>, Stri
 
     let plugin_refs: Vec<&str> = plugin_args.iter().map(|s| s.as_str()).collect();
     args.extend(plugin_refs);
+
+    // Inject config file path if set
+    let config_flag;
+    if let Some(ref path) = config_path {
+        config_flag = path.clone();
+        args.push("--config");
+        args.push(&config_flag);
+    }
 
     // Execute with root privileges
     let output = run_privileged_command(&args)
@@ -360,7 +385,7 @@ pub async fn run_apply(plugin_ids: Vec<String>) -> Result<Vec<ApplyResult>, Stri
 /// Unlike run_apply, this does NOT use pkexec because dry-run doesn't
 /// modify the system. Returns estimated changes for user review.
 #[tauri::command]
-pub async fn run_apply_dry_run(plugin_ids: Vec<String>) -> Result<Vec<ValidationReport>, String> {
+pub async fn run_apply_dry_run(plugin_ids: Vec<String>, config_path: Option<String>) -> Result<Vec<ValidationReport>, String> {
     tracing::info!(
         "=== run_apply_dry_run called with plugins: {:?} ===",
         plugin_ids
@@ -375,6 +400,14 @@ pub async fn run_apply_dry_run(plugin_ids: Vec<String>) -> Result<Vec<Validation
     for id in &plugin_ids {
         args.push("--plugin");
         args.push(id);
+    }
+
+    // Inject config file path if set
+    let config_flag;
+    if let Some(ref path) = config_path {
+        config_flag = path.clone();
+        args.push("--config");
+        args.push(&config_flag);
     }
 
     // Execute without root privileges (dry-run is read-only)
@@ -408,8 +441,16 @@ pub async fn run_apply_dry_run(plugin_ids: Vec<String>) -> Result<Vec<Validation
 /// Uses pkexec to run the CLI with root privileges.
 /// Takes a checkpoint ID and restores the system state to that point.
 #[tauri::command]
-pub async fn run_rollback(checkpoint_id: String) -> Result<RollbackResult, String> {
-    let args = vec!["rollback", "--format", "json", &checkpoint_id];
+pub async fn run_rollback(checkpoint_id: String, config_path: Option<String>) -> Result<RollbackResult, String> {
+    let mut args: Vec<&str> = vec!["rollback", "--format", "json", &checkpoint_id];
+
+    // Inject config file path if set
+    let config_flag;
+    if let Some(ref path) = config_path {
+        config_flag = path.clone();
+        args.push("--config");
+        args.push(&config_flag);
+    }
 
     let output = run_privileged_command(&args)
         .await

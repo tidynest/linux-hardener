@@ -52,18 +52,19 @@ async fn invoke_command(cmd: &str, args: JsValue) -> Result<JsValue, String> {
     }
 }
 
-/// Invokes the run_scan Tauri command with an optional plugin filter.
+/// Invokes the run_scan Tauri command with an optional plugin filter and config path.
 ///
 /// Pass an empty vec to scan all plugins, or specific IDs to scan a subset.
-pub async fn invoke_scan(plugin_ids: Vec<String>) -> Result<Vec<ScanResult>, String> {
-    let args = if plugin_ids.is_empty() {
-        JsValue::NULL
-    } else {
-        serde_wasm_bindgen::to_value(&serde_json::json!({
-            "pluginIds": plugin_ids,
-        }))
-        .map_err(|e| format!("Failed to serialise arguments: {}", e))?
-    };
+/// Pass a config path to use a custom configuration file.
+pub async fn invoke_scan(
+    plugin_ids: Vec<String>,
+    config_path: Option<String>,
+) -> Result<Vec<ScanResult>, String> {
+    let args = serde_wasm_bindgen::to_value(&serde_json::json!({
+        "pluginIds": if plugin_ids.is_empty() { None } else { Some(plugin_ids) },
+        "configPath": config_path,
+    }))
+    .map_err(|e| format!("Failed to serialise arguments: {}", e))?;
 
     let result = invoke_command("run_scan", args).await?;
 
@@ -74,9 +75,14 @@ pub async fn invoke_scan(plugin_ids: Vec<String>) -> Result<Vec<ScanResult>, Str
 /// Invokes the run_apply Tauri command.
 ///
 /// Applies hardening changes for the specified plugins.
-pub async fn invoke_apply(plugin_ids: Vec<String>) -> Result<Vec<ApplyResult>, String> {
+/// Pass a config path to use a custom configuration file.
+pub async fn invoke_apply(
+    plugin_ids: Vec<String>,
+    config_path: Option<String>,
+) -> Result<Vec<ApplyResult>, String> {
     let args = serde_wasm_bindgen::to_value(&serde_json::json!({
         "plugin_ids": plugin_ids,
+        "configPath": config_path,
     }))
     .map_err(|e| format!("Failed to serialise arguments: {}", e))?;
 
@@ -89,11 +95,14 @@ pub async fn invoke_apply(plugin_ids: Vec<String>) -> Result<Vec<ApplyResult>, S
 /// Invokes the run_apply_dry_run Tauri command.
 ///
 /// Performs a dry-run preview of hardening changes without modifying the system.
+/// Pass a config path to use a custom configuration file.
 pub async fn invoke_apply_dry_run(
     plugin_ids: Vec<String>,
+    config_path: Option<String>,
 ) -> Result<Vec<ValidationReport>, String> {
     let args = serde_wasm_bindgen::to_value(&serde_json::json!({
         "plugin_ids": plugin_ids,
+        "configPath": config_path,
     }))
     .map_err(|e| format!("Failed to serialise arguments: {}", e))?;
 
@@ -258,9 +267,14 @@ pub async fn invoke_get_checkpoint_detail(
 /// Invokes the run_rollback Tauri command.
 ///
 /// Restores system state to the specified checkpoint.
-pub async fn invoke_rollback(checkpoint_id: String) -> Result<RollbackResult, String> {
+/// Pass a config path to use a custom configuration file.
+pub async fn invoke_rollback(
+    checkpoint_id: String,
+    config_path: Option<String>,
+) -> Result<RollbackResult, String> {
     let args = serde_wasm_bindgen::to_value(&serde_json::json!({
         "checkpoint_id": checkpoint_id,
+        "configPath": config_path,
     }))
     .map_err(|e| format!("Failed to serialise arguments: {}", e))?;
 
