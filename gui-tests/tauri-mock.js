@@ -28,6 +28,17 @@
     { name: 'db-01', hostname: '10.0.0.5', user: 'root', port: 2222, key_file: null, host_key_checking: false },
   ];
   let remoteConnected = null; // { profile_name, host, user }
+  let schedulerConfig = {
+    enabled: false,
+    schedule: '0 0 2 * * *',
+    plugins: [],
+    min_severity: 'medium',
+    notifications: {
+      notify_min_severity: '',
+      email: { enabled: false, recipients: [], from_address: '' },
+      webhooks: { enabled: false, url: '', format: 'generic' },
+    },
+  };
 
   // ---- Mock Data ----
 
@@ -541,6 +552,20 @@
       case 'run_remote_scan':
         if (!remoteConnected) throw 'No active remote connection';
         return SCAN_RESULTS;
+
+      // ---- Scheduler Commands ----
+
+      case 'get_scheduler_config':
+        return schedulerConfig;
+
+      case 'save_scheduler_config': {
+        const cfg = args && args.config;
+        if (cfg) schedulerConfig = cfg;
+        return null;
+      }
+
+      case 'test_notification':
+        return { success: true, message: 'Test notification sent successfully' };
 
       default:
         throw `Unknown command: ${cmd}`;
