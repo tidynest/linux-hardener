@@ -21,7 +21,7 @@ pub fn QuickActions() -> impl IntoView {
         app_state.is_scanning.set(true);
 
         leptos::task::spawn_local(async move {
-            match invoke_scan().await {
+            match invoke_scan(vec![]).await {
                 Ok(results) => {
                     app_state.scan_results.set(results);
 

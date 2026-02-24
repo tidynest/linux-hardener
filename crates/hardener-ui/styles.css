@@ -1587,6 +1587,29 @@ tbody tr:hover {
   flex-wrap: wrap;
 }
 
+.export-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.format-select {
+  padding: var(--space-xs) var(--space-sm);
+  font-size: 0.85rem;
+  font-family: inherit;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.format-select:focus {
+  border-color: var(--accent-primary);
+}
+
 .status-message {
   font-size: 0.875rem;
   padding: var(--space-xs) var(--space-sm);
@@ -1710,13 +1733,60 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 
 .checkpoint-header {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
   margin-bottom: var(--space-md);
+}
+
+.create-checkpoint-form {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.input-text {
+  padding: var(--space-xs) var(--space-sm);
+  font-size: 0.85rem;
+  font-family: inherit;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.input-text:focus {
+  border-color: var(--accent-primary);
+}
+
+.input-text::placeholder {
+  color: var(--text-muted);
 }
 
 .btn-small {
   padding: var(--space-xs) var(--space-sm);
   font-size: 0.75rem;
+}
+
+.btn-danger {
+  background: var(--severity-high, #c53030);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.btn-danger:hover {
+  opacity: 0.85;
+}
+
+.actions-cell {
+  display: flex;
+  gap: var(--space-xs);
+  align-items: center;
 }
 
 /* ============================================================

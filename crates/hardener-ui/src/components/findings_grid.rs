@@ -3,27 +3,17 @@ use crate::state::AppState;
 use crate::types::Finding;
 use leptos::prelude::*;
 
-/// Displays a table of security findings with sortable columns.
+/// Displays a table of security findings.
 ///
-/// Features:
-/// - Table layout with severity, category, title, current/recommended values
-/// - Click row to select finding for detailed view
-/// - Empty state when no findings exist
-/// - Semantic HTML table structure
+/// Receives a pre-filtered list of findings from the parent component.
+/// Handles row selection for the detail view.
 #[component]
-pub fn FindingsGrid() -> impl IntoView {
+pub fn FindingsGrid(
+    /// Findings to display, already filtered by the parent.
+    findings: Signal<Vec<Finding>>,
+) -> impl IntoView {
     let app_state = expect_context::<AppState>();
 
-    // Flatten all findings from scan results
-    let all_findings = move || {
-        let results = app_state.scan_results.get();
-        results
-            .iter()
-            .flat_map(|scan_result| scan_result.scan_findings.clone())
-            .collect::<Vec<_>>()
-    };
-
-    // Handle row click - set selected finding in state
     let on_row_click = move |finding: Finding| {
         app_state.selected_finding.set(Some(finding));
     };
@@ -31,7 +21,7 @@ pub fn FindingsGrid() -> impl IntoView {
     view! {
         <section class="findings-grid">
             {move || {
-                let findings = all_findings();
+                let findings = findings.get();
                 if findings.is_empty() {
                     view! {
                         <p class="empty-state">

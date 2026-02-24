@@ -47,11 +47,20 @@ async fn invoke_command(cmd: &str, args: JsValue) -> Result<JsValue, String> {
     }
 }
 
-/// Invokes the run_scan Tauri command.
+/// Invokes the run_scan Tauri command with an optional plugin filter.
 ///
-/// Returns scan results from all registered plugins.
-pub async fn invoke_scan() -> Result<Vec<ScanResult>, String> {
-    let result = invoke_command("run_scan", JsValue::NULL).await?;
+/// Pass an empty vec to scan all plugins, or specific IDs to scan a subset.
+pub async fn invoke_scan(plugin_ids: Vec<String>) -> Result<Vec<ScanResult>, String> {
+    let args = if plugin_ids.is_empty() {
+        JsValue::NULL
+    } else {
+        serde_wasm_bindgen::to_value(&serde_json::json!({
+            "pluginIds": plugin_ids,
+        }))
+        .map_err(|e| format!("Failed to serialise arguments: {}", e))?
+    };
+
+    let result = invoke_command("run_scan", args).await?;
 
     serde_wasm_bindgen::from_value(result)
         .map_err(|e| format!("Failed to deserialise scan result: {}", e))
@@ -106,6 +115,28 @@ pub async fn invoke_generate_report(
         .map_err(|e| format!("Failed to deserialise generate compliance reports: {}", e))
 }
 
+/// Invokes the export_compliance_report Tauri command.
+///
+/// Generates reports, formats them, and saves to a file.
+/// Returns the final file path used.
+pub async fn invoke_export_report(
+    frameworks: Vec<String>,
+    format: String,
+    output_path: Option<String>,
+) -> Result<String, String> {
+    let args = serde_wasm_bindgen::to_value(&serde_json::json!({
+        "frameworks": frameworks,
+        "format": format,
+        "outputPath": output_path,
+    }))
+    .map_err(|e| format!("Failed to serialise arguments: {}", e))?;
+
+    let result = invoke_command("export_compliance_report", args).await?;
+
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to deserialise export path: {}", e))
+}
+
 /// Invokes the get_latest_scan Tauri command.
 ///
 /// Retrieves the most recent persisted scan results from the database.
@@ -125,6 +156,38 @@ pub async fn invoke_get_checkpoints() -> Result<Vec<CheckpointInfo>, String> {
 
     serde_wasm_bindgen::from_value(result)
         .map_err(|e| format!("Failed to deserialise checkpoints: {}", e))
+}
+
+/// Invokes the create_checkpoint Tauri command.
+///
+/// Creates a manual checkpoint of the current system state.
+/// Requires root privileges (prompts for password via polkit).
+/// Returns the new checkpoint's ID.
+pub async fn invoke_create_checkpoint(name: String) -> Result<String, String> {
+    let args = serde_wasm_bindgen::to_value(&serde_json::json!({
+        "name": name,
+    }))
+    .map_err(|e| format!("Failed to serialise arguments: {}", e))?;
+
+    let result = invoke_command("create_checkpoint", args).await?;
+
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to deserialise checkpoint id: {}", e))
+}
+
+/// Invokes the delete_checkpoint Tauri command.
+///
+/// Deletes a checkpoint by ID. Tries user DB first, then system DB via pkexec.
+pub async fn invoke_delete_checkpoint(checkpoint_id: String) -> Result<bool, String> {
+    let args = serde_wasm_bindgen::to_value(&serde_json::json!({
+        "checkpointId": checkpoint_id,
+    }))
+    .map_err(|e| format!("Failed to serialise arguments: {}", e))?;
+
+    let result = invoke_command("delete_checkpoint", args).await?;
+
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to deserialise delete result: {}", e))
 }
 
 /// Invokes the run_rollback Tauri command.

@@ -4,7 +4,9 @@
 
 use crate::components::{Card, HeadingLevel};
 use crate::state::AppState;
-use crate::tauri_bindings::{invoke_get_checkpoints, invoke_rollback};
+use crate::tauri_bindings::{
+    invoke_create_checkpoint, invoke_delete_checkpoint, invoke_get_checkpoints, invoke_rollback,
+};
 use crate::types::{CheckpointInfo, FileRestoreAction};
 use leptos::prelude::*;
 
@@ -26,6 +28,8 @@ pub fn HistorySection() -> impl IntoView {
     // Local checkpoint state
     let checkpoints = RwSignal::new(Vec::<CheckpointInfo>::new());
     let is_loading = RwSignal::new(false);
+    let checkpoint_name = RwSignal::new(String::new());
+    let is_creating = RwSignal::new(false);
 
     // Function to load checkpoints
     let load_checkpoints = move || {
@@ -46,6 +50,55 @@ pub fn HistorySection() -> impl IntoView {
 
     // Load checkpoints on mount
     load_checkpoints();
+
+    // Create checkpoint handler
+    let handle_create = move |_| {
+        let name = checkpoint_name.get();
+        if name.trim().is_empty() {
+            return;
+        }
+        is_creating.set(true);
+        leptos::task::spawn_local(async move {
+            match invoke_create_checkpoint(name).await {
+                Ok(_id) => {
+                    checkpoint_name.set(String::new());
+                    if let Ok(cp) = invoke_get_checkpoints().await {
+                        checkpoints.set(cp);
+                    }
+                }
+                Err(e) => {
+                    web_sys::console::error_1(
+                        &format!("Create checkpoint failed: {}", e).into(),
+                    );
+                    app_state
+                        .error_message
+                        .set(Some(format!("Create checkpoint failed: {}", e)));
+                }
+            }
+            is_creating.set(false);
+        });
+    };
+
+    // Delete checkpoint handler
+    let handle_delete = move |checkpoint_id: String| {
+        leptos::task::spawn_local(async move {
+            match invoke_delete_checkpoint(checkpoint_id).await {
+                Ok(_) => {
+                    if let Ok(cp) = invoke_get_checkpoints().await {
+                        checkpoints.set(cp);
+                    }
+                }
+                Err(e) => {
+                    web_sys::console::error_1(
+                        &format!("Delete checkpoint failed: {}", e).into(),
+                    );
+                    app_state
+                        .error_message
+                        .set(Some(format!("Delete checkpoint failed: {}", e)));
+                }
+            }
+        });
+    };
 
     // Rollback handler
     let handle_rollback = move |checkpoint_id: String| {
@@ -181,6 +234,26 @@ pub fn HistorySection() -> impl IntoView {
             // Checkpoints Table
             <Card title="System Checkpoints" title_level=HeadingLevel::H2 class="checkpoints-section">
                 <div class="checkpoint-header">
+                    <div class="create-checkpoint-form">
+                        <input
+                            type="text"
+                            class="input-text"
+                            placeholder="Checkpoint name..."
+                            prop:value=move || checkpoint_name.get()
+                            on:input=move |ev| {
+                                checkpoint_name.set(event_target_value(&ev));
+                            }
+                        />
+                        <button
+                            class="btn btn-primary btn-small"
+                            on:click=handle_create
+                            disabled=move || {
+                                is_creating.get() || checkpoint_name.get().trim().is_empty()
+                            }
+                        >
+                            {move || if is_creating.get() { "Creating..." } else { "Create Checkpoint" }}
+                        </button>
+                    </div>
                     <button
                         class="btn btn-secondary btn-small"
                         on:click=move |_| load_checkpoints()
@@ -226,17 +299,25 @@ pub fn HistorySection() -> impl IntoView {
                                 let created = cp.checkpoint_created.clone();
                                 let rollback_id = id.clone();
 
+                                let delete_id = id.clone();
+
                                 view! {
                                     <tr>
                                         <td><code>{id}</code></td>
                                         <td>{name}</td>
                                         <td>{created}</td>
-                                        <td>
+                                        <td class="actions-cell">
                                             <button
                                                 class="rollback-button"
                                                 on:click=move |_| handle_rollback(rollback_id.clone())
                                             >
                                                 "Rollback"
+                                            </button>
+                                            <button
+                                                class="btn btn-danger btn-small"
+                                                on:click=move |_| handle_delete(delete_id.clone())
+                                            >
+                                                "Delete"
                                             </button>
                                         </td>
                                     </tr>

@@ -4,7 +4,7 @@
 
 use crate::components::{Card, HeadingLevel};
 use crate::state::AppState;
-use crate::tauri_bindings::invoke_generate_report;
+use crate::tauri_bindings::{invoke_export_report, invoke_generate_report};
 use leptos::prelude::*;
 
 /// Compliance tab content with framework selection and reports.
@@ -27,6 +27,10 @@ pub fn ComplianceTab() -> impl IntoView {
 
     // Status message for user feedback
     let status_message = RwSignal::new(Option::<(String, bool)>::None);
+
+    // Export format state
+    let export_format = RwSignal::new("text".to_string());
+    let is_exporting = RwSignal::new(false);
 
     // Toggle framework selection
     let toggle_framework = move |framework: &str| {
@@ -73,6 +77,31 @@ pub fn ComplianceTab() -> impl IntoView {
         });
     };
 
+    // Export handler — generates + saves to file
+    let on_export = move |_| {
+        let frameworks = selected_frameworks.get();
+        if frameworks.is_empty() {
+            return;
+        }
+        let format = export_format.get();
+        is_exporting.set(true);
+        status_message.set(None);
+
+        leptos::task::spawn_local(async move {
+            match invoke_export_report(frameworks, format, None).await {
+                Ok(path) => {
+                    status_message
+                        .set(Some((format!("Exported to {}", path), true)));
+                }
+                Err(e) => {
+                    web_sys::console::error_1(&format!("Export failed: {}", e).into());
+                    status_message.set(Some((format!("Export failed: {}", e), false)));
+                }
+            }
+            is_exporting.set(false);
+        });
+    };
+
     view! {
         <div class="compliance-tab">
             <Card title="Select Compliance Frameworks" title_level=HeadingLevel::H2 class="framework-selection">
@@ -109,6 +138,34 @@ pub fn ComplianceTab() -> impl IntoView {
                             "Generate Reports"
                         }}
                     </button>
+
+                    <div class="export-controls">
+                        <select
+                            class="format-select"
+                            on:change=move |ev| {
+                                export_format.set(event_target_value(&ev));
+                            }
+                        >
+                            <option value="text" selected=true>"Text"</option>
+                            <option value="json">"JSON"</option>
+                            <option value="csv">"CSV"</option>
+                            <option value="html">"HTML"</option>
+                            <option value="pdf">"PDF"</option>
+                        </select>
+                        <button
+                            class="btn btn-secondary"
+                            on:click=on_export
+                            disabled=move || {
+                                selected_frameworks.get().is_empty() || is_exporting.get()
+                            }
+                        >
+                            {move || if is_exporting.get() {
+                                "Exporting..."
+                            } else {
+                                "Export to File"
+                            }}
+                        </button>
+                    </div>
 
                     {move || status_message.get().map(|(msg, is_success)| {
                         let class = if is_success { "status-success" } else { "status-error" };

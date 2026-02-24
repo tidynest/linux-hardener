@@ -461,6 +461,9 @@
       case 'export_report':
         return ['Mock report content', 'txt'];
 
+      case 'export_compliance_report':
+        return '/home/user/Documents/compliance-report-20260224.txt';
+
       case 'get_scan_history':
         return SCAN_HISTORY;
 

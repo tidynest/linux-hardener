@@ -1,4 +1,4 @@
-use crate::types::{ApplyResult, ComplianceReport, Finding, RollbackResult, ScanResult};
+use crate::types::{ApplyResult, ComplianceReport, Finding, RollbackResult, ScanResult, Severity};
 use hardener_types::ValidationReport;
 use leptos::prelude::*;
 
@@ -15,6 +15,9 @@ pub struct AppState {
     /// Currently selected finding for the detail view.
     /// Set to Some(finding) when user clicks a finding row.
     pub selected_finding: RwSignal<Option<Finding>>,
+    /// Minimum severity threshold for findings display.
+    /// None shows all findings; Some(level) filters to findings >= level.
+    pub severity_filter: RwSignal<Option<Severity>>,
     /// History of apply operations.
     /// Stores results from each hardening application.
     pub apply_results: RwSignal<Vec<ApplyResult>>,
@@ -45,6 +48,7 @@ impl Default for AppState {
         AppState {
             scan_results: RwSignal::new(Vec::new()),
             selected_finding: RwSignal::new(None),
+            severity_filter: RwSignal::new(None),
             apply_results: RwSignal::new(Vec::new()),
             rollback_result: RwSignal::new(None),
             is_scanning: RwSignal::new(false),

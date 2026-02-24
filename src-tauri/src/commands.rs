@@ -1,10 +1,15 @@
 use hardener_common::types::ComplianceFramework;
 use hardener_compliance::{
     ComplianceReport, OutputFormat, ReportConfig, ReportGenerator, Scenario,
+    output::{
+        CsvFormatter, HtmlFormatter, JsonFormatter, PdfFormatter, ReportFormatter, TextFormatter,
+    },
 };
-use hardener_core::{ApplyResult, Context, PluginMetadata, ScanResult, ValidationReport};
+use hardener_core::{ApplyResult, Context, Finding, PluginMetadata, ScanResult, ValidationReport};
 use hardener_plugins::create_plugin_registry;
-use hardener_state::{CheckpointManager, RollbackResult, ScanHistoryManager, ScanStatus, init_db};
+use hardener_state::{
+    CheckpointId, CheckpointManager, RollbackResult, ScanHistoryManager, ScanStatus, init_db,
+};
 use serde::Serialize;
 use tokio::process::Command;
 use tracing::error;
@@ -31,11 +36,10 @@ fn format_timestamp(timestamp: i64) -> String {
 /// the binary in standard locations or PATH.
 fn get_hardener_binary_path() -> Result<String, String> {
     // Check sibling directory of current executable (works in dev and production)
-    if let Ok(exe) = std::env::current_exe() {
-        let sibling = exe.with_file_name("hardener");
-        if sibling.exists() {
-            return Ok(sibling.to_string_lossy().to_string());
-        }
+    if let Ok(exe) = std::env::current_exe()
+        && exe.with_file_name("hardener").exists()
+    {
+        return Ok(exe.with_file_name("hardener").to_string_lossy().to_string());
     }
 
     // In dev builds, check workspace target directory
@@ -185,7 +189,7 @@ async fn create_scan_history_manager() -> Result<ScanHistoryManager, String> {
 /// Persists results to the database for GUI state restoration.
 /// Returns a vector of scan results, one per plugin.
 #[tauri::command]
-pub async fn run_scan() -> Result<Vec<ScanResult>, String> {
+pub async fn run_scan(plugin_ids: Option<Vec<String>>) -> Result<Vec<ScanResult>, String> {
     // Create scan history manager for persistence
     let history_manager = create_scan_history_manager().await?;
 
@@ -204,6 +208,17 @@ pub async fn run_scan() -> Result<Vec<ScanResult>, String> {
     let plugin_list = registry.list().map_err(|e| e.to_string())?;
 
     for metadata in plugin_list {
+        // Skip plugins not in the filter list (if a filter was provided)
+        if let Some(ref ids) = plugin_ids
+            && !ids.is_empty()
+            && !ids.iter().any(|id| {
+                metadata.plugin_id == (*id).clone().into()
+                    || metadata.plugin_id == format!("{}-hardening", id).into()
+            })
+        {
+            continue;
+        }
+
         // Retrieve the actual plugin
         if let Ok(Some(plugin)) = registry.get(&metadata.plugin_id) {
             match plugin.scan(&ctx).await {
@@ -387,30 +402,55 @@ pub async fn get_checkpoints() -> Result<Vec<CheckpointInfo>, String> {
         .collect())
 }
 
-/// Generates compliance reports for the specified frameworks.
+/// Creates a manual checkpoint of the current system state.
 ///
-/// Takes a list of framework names and returns compliance reports.
+/// Requires root privileges via pkexec since it reads protected system files.
 #[tauri::command]
-pub async fn generate_compliance_report(
-    frameworks: Vec<String>,
-) -> Result<Vec<ComplianceReport>, String> {
-    // First run a scan to get findings
-    let ctx = Context::new();
-    let registry = create_plugin_registry();
+pub async fn create_checkpoint(name: String) -> Result<String, String> {
+    let args = vec!["checkpoint", "create", "--format", "json", &name];
 
-    let mut all_findings = Vec::new();
-    let plugin_list = registry.list().map_err(|e| e.to_string())?;
+    let output = run_privileged_command(&args)
+        .await
+        .map_err(|e| e.to_string())?;
 
-    for metadata in plugin_list {
-        if let Ok(Some(plugin)) = registry.get(&metadata.plugin_id)
-            && let Ok(result) = plugin.scan(&ctx).await
-        {
-            all_findings.extend(result.scan_findings);
-        }
+    // CLI outputs JSON: {"checkpoint_id": "..."}
+    let parsed: serde_json::Value =
+        serde_json::from_str(&output).map_err(|e| format!("Failed to parse response: {}", e))?;
+
+    parsed["checkpoint_id"]
+        .as_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "Missing checkpoint_id in response".to_string())
+}
+
+/// Deletes a checkpoint by ID.
+///
+/// Tries the user database first, then the system database.
+/// Does not require root privileges.
+#[tauri::command]
+pub async fn delete_checkpoint(checkpoint_id: String) -> Result<bool, String> {
+    let cp_id = CheckpointId::new(&checkpoint_id);
+
+    // Try user database first
+    let user_db = get_user_db_path();
+    if user_db.exists()
+        && let Ok(manager) = create_checkpoint_manager(&user_db).await
+        && manager.delete_checkpoint(&cp_id).await.is_ok()
+    {
+        return Ok(true);
     }
 
-    // Parse framework names into ComplianceFramework enum
-    let parsed_frameworks: Vec<ComplianceFramework> = frameworks
+    // Fall back to system database (needs pkexec for root-owned checkpoints)
+    let args = vec!["checkpoint", "delete", &checkpoint_id];
+    run_privileged_command(&args)
+        .await
+        .map(|_| true)
+        .map_err(|e| e.to_string())
+}
+
+/// Parses framework name strings into `ComplianceFramework` enum values.
+fn parse_frameworks(frameworks: &[String]) -> Vec<ComplianceFramework> {
+    frameworks
         .iter()
         .filter_map(|f| match f.to_uppercase().as_str() {
             "CIS" => Some(ComplianceFramework::CIS),
@@ -421,20 +461,125 @@ pub async fn generate_compliance_report(
             "GDPR" => Some(ComplianceFramework::GDPR),
             _ => None,
         })
-        .collect();
+        .collect()
+}
 
-    // Create report config with custom frameworks
+/// Parses a format string into an `OutputFormat`.
+fn parse_output_format(format: &str) -> Result<OutputFormat, String> {
+    match format.to_lowercase().as_str() {
+        "text" | "txt" => Ok(OutputFormat::Text),
+        "json" => Ok(OutputFormat::Json),
+        "csv" => Ok(OutputFormat::Csv),
+        "html" => Ok(OutputFormat::Html),
+        "pdf" => Ok(OutputFormat::Pdf),
+        _ => Err(format!(
+            "Unsupported format '{}'. Use text, json, csv, html, or pdf.",
+            format
+        )),
+    }
+}
+
+/// Scans all plugins and collects findings for compliance reporting.
+async fn collect_findings() -> Result<Vec<Finding>, String> {
+    let ctx = Context::new();
+    let registry = create_plugin_registry();
+    let plugin_list = registry.list().map_err(|e| e.to_string())?;
+
+    let mut findings = Vec::new();
+    for metadata in plugin_list {
+        if let Ok(Some(plugin)) = registry.get(&metadata.plugin_id)
+            && let Ok(result) = plugin.scan(&ctx).await
+        {
+            findings.extend(result.scan_findings);
+        }
+    }
+    Ok(findings)
+}
+
+/// Generates compliance reports for the specified frameworks.
+///
+/// Takes a list of framework names and returns compliance reports.
+#[tauri::command]
+pub async fn generate_compliance_report(
+    frameworks: Vec<String>,
+) -> Result<Vec<ComplianceReport>, String> {
+    let all_findings = collect_findings().await?;
+    let parsed_frameworks = parse_frameworks(&frameworks);
+
     let config = ReportConfig {
         scenario: Scenario::Custom(parsed_frameworks),
         formats: vec![OutputFormat::Text],
         output_dir: None,
     };
 
-    // Generate reports
+    let generator = ReportGenerator::new(config);
+    Ok(generator.generate(&all_findings))
+}
+
+/// Exports compliance reports to a file in the specified format.
+///
+/// Generates reports, formats them, and writes to the output path.
+/// Returns the final file path used (extension may be appended).
+#[tauri::command]
+pub async fn export_compliance_report(
+    frameworks: Vec<String>,
+    format: String,
+    output_path: Option<String>,
+) -> Result<String, String> {
+    let output_format = parse_output_format(&format)?;
+    let all_findings = collect_findings().await?;
+    let parsed_frameworks = parse_frameworks(&frameworks);
+
+    let config = ReportConfig {
+        scenario: Scenario::Custom(parsed_frameworks),
+        formats: vec![output_format],
+        output_dir: None,
+    };
+
     let generator = ReportGenerator::new(config);
     let reports = generator.generate(&all_findings);
 
-    Ok(reports)
+    // Format reports
+    let formatted: String = match output_format {
+        OutputFormat::Text => TextFormatter::new().format_all(&reports),
+        OutputFormat::Json => JsonFormatter::pretty().format_all(&reports),
+        OutputFormat::Csv => CsvFormatter::new().format_all(&reports),
+        OutputFormat::Html => HtmlFormatter::new().format_all(&reports),
+        OutputFormat::Pdf => PdfFormatter::new().format_all(&reports),
+    };
+
+    // Determine output file path
+    let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+    let default_name = format!("compliance-report-{}.{}", timestamp, output_format.extension());
+
+    let final_path = match output_path {
+        Some(path) => {
+            if std::path::Path::new(&path).extension().is_none() {
+                format!("{}.{}", path, output_format.extension())
+            } else {
+                path
+            }
+        }
+        None => {
+            // Save to user's Documents or home directory
+            let dir = dirs::document_dir()
+                .or_else(dirs::home_dir)
+                .unwrap_or_else(|| std::path::PathBuf::from("."));
+            dir.join(&default_name).to_string_lossy().to_string()
+        }
+    };
+
+    // Write file (PDF needs binary handling)
+    if output_format == OutputFormat::Pdf {
+        let bytes: Vec<u8> = formatted.chars().map(|c| c as u8).collect();
+        std::fs::write(&final_path, bytes)
+            .map_err(|e| format!("Failed to write PDF: {}", e))?;
+    } else {
+        std::fs::write(&final_path, &formatted)
+            .map_err(|e| format!("Failed to write report: {}", e))?;
+    }
+
+    Ok(final_path)
 }
 
 /// Retrieves the most recent scan results from the database.

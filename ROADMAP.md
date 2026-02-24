@@ -412,12 +412,12 @@ User clicks "Apply"
 | Feature | CLI Equivalent | Priority | Status |
 |---------|----------------|----------|--------|
 | Dry-run preview | `apply --dry-run` | P0 | ✅ Complete |
-| Severity filter | `scan --severity` | P0 | ⬜ Pending |
-| Plugin selection on scan | `scan --plugin` | P1 | ⬜ Pending |
-| Manual checkpoint create | `checkpoint create` | P1 | ⬜ Pending |
-| Checkpoint delete | `checkpoint delete` | P1 | ⬜ Pending |
-| Report export to file | `report --output` | P1 | ⬜ Pending |
-| Report format selection | `report --report-format` | P1 | ⬜ Pending |
+| Severity filter | `scan --severity` | P0 | ✅ Complete |
+| Plugin selection on scan | `scan --plugin` | P1 | ✅ Complete |
+| Manual checkpoint create | `checkpoint create` | P1 | ✅ Complete |
+| Checkpoint delete | `checkpoint delete` | P1 | ✅ Complete |
+| Report export to file | `report --output` | P1 | ✅ Complete |
+| Report format selection | `report --report-format` | P1 | ✅ Complete |
 
 #### B. GUI/CLI Parity — P2-P3 Features
 
@@ -623,4 +623,4 @@ When working on new features:
 
 ---
 
-**Last Updated**: 2026-02-23
+**Last Updated**: 2026-02-24
