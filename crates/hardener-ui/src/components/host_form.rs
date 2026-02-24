@@ -13,7 +13,6 @@ use leptos::prelude::*;
 #[component]
 pub fn HostForm(
     /// Existing profile to edit (None = add new).
-    #[prop(optional)]
     existing: Option<RemoteHostProfile>,
     /// Callback when form is submitted or cancelled.
     #[prop(into)]
