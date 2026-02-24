@@ -10,6 +10,9 @@ use std::fmt;
 // Re-export chrono types used in reports
 pub use chrono::{DateTime, Utc};
 
+pub mod remote;
+pub use remote::*;
+
 // ============================================================================
 // Plugin Types (from hardener-common)
 // ============================================================================
