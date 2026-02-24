@@ -567,6 +567,19 @@
       case 'test_notification':
         return { success: true, message: 'Test notification sent successfully' };
 
+      case 'validate_config':
+        return {
+          config_path: (args && args.path) || '/home/user/.config/linux-hardener/config.toml',
+          config_is_valid: true,
+          config_error: null,
+          config_enabled_plugins: ['kernel', 'ssh', 'firewall', 'pam', 'services', 'audit', 'permissions', 'mac'],
+          config_directive_count: 3,
+          config_exception_count: 1,
+        };
+
+      case 'pick_config_file':
+        return '/home/user/.config/linux-hardener/config.toml';
+
       default:
         throw `Unknown command: ${cmd}`;
     }
