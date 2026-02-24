@@ -11,9 +11,51 @@ use hardener_state::{
     Checkpoint, CheckpointId, CheckpointManager, FileState, RollbackResult, ScanHistoryManager,
     ScanSession, ScanSessionId, ScanStatus, init_db,
 };
+use hardener_types::remote::{HostsConfig, RemoteConnectionInfo, RemoteHostProfile};
 use serde::Serialize;
+use std::sync::Mutex;
 use tokio::process::Command;
 use tracing::error;
+
+/// Managed state for remote SSH connections.
+pub struct RemoteState {
+    pub active_connection: Mutex<Option<ActiveConnection>>,
+}
+
+/// An active SSH connection with its executor and metadata.
+pub struct ActiveConnection {
+    pub executor: std::sync::Arc<hardener_core::SshExecutor>,
+    pub info: RemoteConnectionInfo,
+}
+
+/// Returns the path to the hosts config file (~/.config/linux-hardener/hosts.toml).
+fn hosts_config_path() -> Result<std::path::PathBuf, String> {
+    let config_dir = dirs::config_dir()
+        .ok_or_else(|| "Cannot determine config directory".to_string())?
+        .join("linux-hardener");
+    std::fs::create_dir_all(&config_dir)
+        .map_err(|e| format!("Failed to create config directory: {e}"))?;
+    Ok(config_dir.join("hosts.toml"))
+}
+
+/// Loads host profiles from TOML config file.
+fn load_hosts_config() -> Result<HostsConfig, String> {
+    let path = hosts_config_path()?;
+    if !path.exists() {
+        return Ok(HostsConfig::default());
+    }
+    let content =
+        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read hosts config: {e}"))?;
+    toml::from_str(&content).map_err(|e| format!("Failed to parse hosts config: {e}"))
+}
+
+/// Saves host profiles to TOML config file.
+fn save_hosts_config(config: &HostsConfig) -> Result<(), String> {
+    let path = hosts_config_path()?;
+    let content =
+        toml::to_string_pretty(config).map_err(|e| format!("Failed to serialise hosts config: {e}"))?;
+    std::fs::write(&path, content).map_err(|e| format!("Failed to write hosts config: {e}"))
+}
 
 /// Checkpoint information returned to the frontend.
 #[derive(Clone, Debug, Serialize)]
@@ -717,4 +759,35 @@ pub async fn get_latest_scan() -> Result<Option<Vec<ScanResult>>, String> {
         Ok(None) => Ok(None),
         Err(e) => Err(e.to_string()),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Remote host profile CRUD
+// ---------------------------------------------------------------------------
+
+/// Lists all saved remote host profiles from the TOML config.
+#[tauri::command]
+pub async fn list_remote_hosts() -> Result<Vec<RemoteHostProfile>, String> {
+    let config = load_hosts_config()?;
+    Ok(config.hosts)
+}
+
+/// Creates or updates a remote host profile (upsert by name).
+#[tauri::command]
+pub async fn save_remote_host(profile: RemoteHostProfile) -> Result<(), String> {
+    let mut config = load_hosts_config()?;
+    if let Some(existing) = config.hosts.iter_mut().find(|h| h.name == profile.name) {
+        *existing = profile;
+    } else {
+        config.hosts.push(profile);
+    }
+    save_hosts_config(&config)
+}
+
+/// Deletes a remote host profile by name.
+#[tauri::command]
+pub async fn delete_remote_host(name: String) -> Result<(), String> {
+    let mut config = load_hosts_config()?;
+    config.hosts.retain(|h| h.name != name);
+    save_hosts_config(&config)
 }
