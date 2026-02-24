@@ -1,6 +1,6 @@
 # Linux System Hardener - Architecture Documentation
 
-**Last Updated:** 2026-02-24
+**Last Updated:** 2026-02-25
 **Version:** 0.3.3 (Distribution Validation Complete)
 
 ---
@@ -27,7 +27,8 @@ Linux System Hardener is a modular security hardening tool for Linux systems, pr
 │   └─ Apply         │   └─ Dashboard       │   └─ hardener-state │
 │   └─ Rollback      │   └─ Analysis        │                     │
 │   └─ Checkpoint    │   └─ Hardening       │                     │
-│   └─ Report        │                      │                     │
+│   └─ Report        │   └─ Remote          │                     │
+│                    │   └─ Scheduler       │                     │
 └────────────────────┴──────────────────────┴─────────────────────┘
                               │
                               ▼
@@ -534,5 +535,3 @@ The `main` branch is kept in sync on GitHub and GitLab. The release script (`scr
 - `docs/RELEASING.md` - Versioning and release process
 - `ROADMAP.md` - Development roadmap
 - `README.md` - User documentation
-
-**Last Updated**: 2026-02-23

@@ -80,9 +80,9 @@ SchedulerPage ──test───→ test_notification ──→ NotificationDis
 
 | Command | Input | Output |
 |---------|-------|--------|
-| `get_scheduler_config` | — | `SchedulerConfig` |
-| `save_scheduler_config` | `SchedulerConfig` | `()` |
-| `test_notification` | — | `Result<String, String>` |
+| `get_scheduler_config` | — | `SchedulerUiConfig` |
+| `save_scheduler_config` | `SchedulerUiConfig` | `()` |
+| `test_notification` | — | `Result<TestNotificationResult, String>` |
 
 All three commands read/write the TOML config file used by the CLI daemon. The
 GUI does not start the daemon itself — it only configures it.
@@ -90,7 +90,7 @@ GUI does not start the daemon itself — it only configures it.
 ## AppState Signals
 
 ```rust
-pub scheduler_config: RwSignal<Option<SchedulerConfig>>,
+pub scheduler_config: RwSignal<Option<SchedulerUiConfig>>,
 pub is_saving_scheduler: RwSignal<bool>,
 pub is_testing_notification: RwSignal<bool>,
 ```

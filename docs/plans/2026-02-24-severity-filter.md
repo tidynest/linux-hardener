@@ -1,7 +1,5 @@
 # Severity Filter Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
-
 **Goal:** Add a client-side severity filter dropdown to the GUI findings tab, matching the CLI's `--severity` flag.
 
 **Architecture:** Add `severity_filter` signal to `AppState`, a dropdown `<select>` in the `FindingsTab` header, and pass filtered findings to `FindingsGrid` as a prop. All filtering is client-side using `Severity`'s derived `PartialOrd`.

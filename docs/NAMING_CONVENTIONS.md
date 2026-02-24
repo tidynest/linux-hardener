@@ -307,7 +307,7 @@ PluginId::new("service_hardening") // Wrong case (use kebab-case, not snake_case
 - `"audit"` alone could mean audit logging or audit rule hardening
 - `"mac"` alone could refer to MAC addresses (network) or Mandatory Access Control (security)
 - Hyphenated suffixes follow kebab-case convention for identifiers
-- Special cases like `"service-minimisation"` use British spelling and describe the specific function
+- All 8 plugin IDs use the `-hardening` suffix except `service-minimisation`, which is the sole exception — it uses British spelling and describes the specific function rather than appending `-hardening`
 
 **Backend/Adapter Structs**:
 ```rust
@@ -823,11 +823,11 @@ pub struct Checkpoint {
 }
 
 pub struct ScanResult {
-    pub plugin_id: PluginId,
-    pub success: bool,
-    pub findings: Vec<Finding>,
-    pub duration_us: u128,
-    pub error: Option<String>,
+    pub scan_plugin_id: PluginId,
+    pub scan_success: bool,
+    pub scan_findings: Vec<Finding>,
+    pub scan_duration_us: u64,
+    pub scan_error: Option<String>,
 }
 
 // ❌ BAD: Ambiguous field names without prefixes
@@ -844,24 +844,25 @@ pub struct Distribution {
 // ✅ GOOD:
 pub struct Finding {
     pub finding_id: String,
-    pub severity: Severity,
-    pub category: FindingCategory,
-    pub title: String,
-    pub description: String,
-    pub current_value: String,
-    pub recommended_value: String,
-    pub explanation: String,
-    pub impact: String,
-    pub remediation_steps: Vec<String>,
+    pub finding_severity: Severity,
+    pub finding_category: FindingCategory,
+    pub finding_title: String,
+    pub finding_description: String,
+    pub finding_current_value: String,
+    pub finding_recommended_value: String,
+    pub finding_explanation: String,
+    pub finding_impact: String,
+    pub finding_remediation_steps: Vec<String>,
+    pub finding_compliance: Vec<ComplianceMapping>,
+    pub finding_policy_exception: Option<FindingPolicyException>,
 }
 
 pub struct ApplyResult {
-    pub success: bool,
-    pub changes: Vec<Change>,
-    pub checkpoint_id: CheckpointId,
-    pub apply_timestamp: u64,
-    pub duration_us: u128,
-    pub warnings: Vec<String>,
+    pub apply_plugin_id: PluginId,
+    pub apply_success: bool,
+    pub apply_changes: Vec<Change>,
+    pub apply_checkpoint_id: Option<String>,
+    pub apply_error: Option<String>,
 }
 
 pub struct Rule {
@@ -1059,11 +1060,11 @@ pub struct PluginMetadata {
 }
 
 pub struct ScanResult {
-    pub plugin_id: PluginId,
-    pub success: bool,
-    pub findings: Vec<Finding>,
-    pub duration_us: u128,
-    pub error: Option<String>,
+    pub scan_plugin_id: PluginId,
+    pub scan_success: bool,
+    pub scan_findings: Vec<Finding>,
+    pub scan_duration_us: u64,
+    pub scan_error: Option<String>,
 }
 
 // Methods:

@@ -975,7 +975,7 @@ sudo ./scripts/verify-rollback.sh
 
 **Script**: `root-test-suite.sh`
 
-**Purpose**: Comprehensive automated test suite for root operations. Runs 36 tests covering all CLI functionality.
+**Purpose**: Comprehensive automated test suite for root operations. Tests are organized into the following categories covering all CLI functionality.
 
 **Usage**:
 ```bash
@@ -1072,7 +1072,7 @@ sudo ./scripts/full-test-suite.sh --apply
 | 11. History Commands | list, show, export |
 | 12. Systemd Commands | generate, install, status, uninstall |
 | 13. Apply Kernel | Apply kernel hardening + verify changes |
-| 14. Apply Other Plugins | Apply all 8 plugins individually |
+| 14. Apply Other Plugins | Apply 5 remaining plugins (ssh, permissions, pam, firewall, service-minimisation); audit and mac are skipped in containers. Kernel is handled in section 13. |
 | 15. Apply --all | Apply all plugins at once |
 | 16. Rollback | Rollback to checkpoint, verify restoration |
 | 17. Global --format Flag | Test global format flag with various commands |
@@ -1398,4 +1398,4 @@ Additional utility scripts can be added here:
 
 ---
 
-**Last Updated**: 2026-02-23
+**Last Updated**: 2026-02-25

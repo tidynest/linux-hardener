@@ -144,7 +144,7 @@ cargo build --release
 cargo test
 
 # Build desktop application (requires Tauri CLI)
-cargo install tauri-cli
+cargo install tauri-cli --version "^2"
 cargo tauri build
 ```
 
@@ -435,9 +435,10 @@ expires = "2025-06-30"
 
 ### Checkpoint Location
 
-By default, checkpoints are stored in:
+Checkpoints are stored in:
 ```
-~/.local/share/linux-hardener/checkpoints.db
+~/.local/share/linux-hardener/checkpoints.db       # regular user
+/var/lib/linux-hardener/checkpoints.db              # when running as root
 ```
 
 ---
@@ -522,11 +523,11 @@ See [ROADMAP.md](ROADMAP.md) for detailed implementation plans for upcoming feat
 - [x] Responsive layout for varying screen resolutions
 - [x] Navigation restructure (5 pages: Dashboard, Analysis, Hardening, Remote, Scheduler)
 - [x] GUI functional testing
-- [x] CLI functional testing (30 tests, 100% pass rate)
+- [x] CLI functional testing (97 tests: 31 unit + 66 functional)
 - [x] Safe testing environment (systemd-nspawn container)
 
 ### v0.3.2 - GUI Major Redesign (Complete)
-- [x] Page consolidation (6 pages → 3 logical sections: Dashboard, Analysis, Hardening)
+- [x] Page redesign (Dashboard, Analysis, Hardening restructured with new layout and accessibility)
 - [x] Session 1: Overflow fixes, skip link, tab ARIA accessibility
 - [x] Session 2: CSS utility classes (flex/grid/gap), responsive testing (320-1920px)
 - [x] Session 2: Card component standardisation

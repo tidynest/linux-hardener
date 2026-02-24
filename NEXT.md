@@ -116,7 +116,7 @@ See `docs/GUI_CLI_PARITY_PLAN.md` — all 6 phases complete.
 - **WASM Support**: GUI frontend compiles to `wasm32-unknown-unknown`
 
 For version history and detailed feature tracking, see [ROADMAP.md](ROADMAP.md).
-For coding standards, workflow, and conventions, see `.claude/CLAUDE.md`.
+For coding standards, workflow, and conventions, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 

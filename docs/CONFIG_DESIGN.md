@@ -113,10 +113,15 @@ disabled_plugins = []
 [ssh]
 enabled = true
 
-# Simple directive configuration (uses secure defaults)
+# Override baseline directives with stricter values
 [ssh.directives]
 PermitRootLogin = "no"
 MaxAuthTries = "3"
+
+# Additional organisation-specific directives (not in baseline)
+[ssh.custom_directives]
+AllowUsers = "admin,deploy"
+Banner = "/etc/ssh/banner.txt"
 ```
 
 ### Policy Exception Structure
@@ -480,4 +485,4 @@ This design ensures:
 
 The key insight: **config is for policy management, not security filtering**.
 
-**Last Updated**: 2026-02-24
+**Last Updated**: 2026-02-25

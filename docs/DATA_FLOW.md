@@ -1,6 +1,6 @@
 # Linux System Hardener - Data Flow Documentation
 
-**Last Updated:** 2026-02-24
+**Last Updated:** 2026-02-25
 **Version:** 0.3.3
 
 This document describes the data flow for all major operations in the system.
@@ -581,6 +581,36 @@ struct Finding {
 | `save_scheduler_config` | `config: SchedulerUiConfig` | `String` (saved path) |
 | `test_notification` | None | `TestNotificationResult` |
 
+### AppState Reactive Signals
+
+All GUI state lives in `AppState` (`hardener-ui/src/state/mod.rs`). Each field is a Leptos `RwSignal`:
+
+| Signal | Type | Purpose |
+|--------|------|---------|
+| `scan_results` | `RwSignal<Vec<ScanResult>>` | Latest scan findings |
+| `selected_finding` | `RwSignal<Option<Finding>>` | Currently selected finding in detail panel |
+| `severity_filter` | `RwSignal<Option<Severity>>` | Client-side severity filter for findings |
+| `apply_results` | `RwSignal<Vec<ApplyResult>>` | Results from last apply operation |
+| `rollback_result` | `RwSignal<Option<RollbackResult>>` | Result from last rollback operation |
+| `is_scanning` | `RwSignal<bool>` | Scan in progress |
+| `is_applying` | `RwSignal<bool>` | Apply in progress |
+| `compliance_reports` | `RwSignal<Vec<ComplianceReport>>` | Generated compliance reports |
+| `is_generating_report` | `RwSignal<bool>` | Report generation in progress |
+| `preview_results` | `RwSignal<Vec<ValidationReport>>` | Dry-run preview results |
+| `is_previewing` | `RwSignal<bool>` | Preview in progress |
+| `show_preview` | `RwSignal<bool>` | Whether preview panel is visible |
+| `error_message` | `RwSignal<Option<String>>` | Global error banner message |
+| `remote_hosts` | `RwSignal<Vec<RemoteHostProfile>>` | Saved remote host profiles |
+| `remote_connection` | `RwSignal<Option<RemoteConnectionInfo>>` | Active remote connection info |
+| `remote_scan_results` | `RwSignal<Vec<ScanResult>>` | Remote scan findings |
+| `is_connecting` | `RwSignal<bool>` | Remote connection in progress |
+| `is_remote_scanning` | `RwSignal<bool>` | Remote scan in progress |
+| `scheduler_config` | `RwSignal<Option<SchedulerUiConfig>>` | Loaded scheduler configuration |
+| `is_saving_scheduler` | `RwSignal<bool>` | Scheduler config save in progress |
+| `is_testing_notification` | `RwSignal<bool>` | Notification test in progress |
+| `config_path` | `RwSignal<Option<String>>` | Selected config file path |
+| `config_summary` | `RwSignal<Option<ConfigSummary>>` | Validated config file summary |
+
 ---
 
 ## Hash Chain Integrity
@@ -1039,4 +1069,4 @@ pub struct Daemon {
 | `linux-hardener.service` | Runs `hardener daemon run-once` (Type=oneshot) |
 | `linux-hardener.timer` | Triggers service on schedule |
 
-**Last Updated**: 2026-02-23
+**Last Updated**: 2026-02-25

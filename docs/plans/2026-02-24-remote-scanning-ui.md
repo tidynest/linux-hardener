@@ -1,7 +1,5 @@
 # Remote Scanning UI — Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
-
 **Goal:** Add a "Remote" page to the GUI that lets users save SSH host profiles, connect to remote machines, and run security scans over SSH.
 
 **Architecture:** Tauri backend holds an `SshExecutor` in managed state. GUI sends connection details via IPC, Tauri connects and holds the session, then runs scans through it using the existing `PluginManager::scan()` pipeline. Results are standard `Vec<ScanResult>` — existing findings rendering works unchanged.

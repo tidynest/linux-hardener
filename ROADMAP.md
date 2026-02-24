@@ -157,9 +157,9 @@ This document tracks the development progress and planned features for Linux Sys
 | Timestamp formatting | Format raw timestamp numbers on Checkpoints page | Medium | ✅ Complete |
 | Background personalisation | 5 security-focused themes (Fortress, Sentinel, Command, Guardian, Daywatch) | Low | ✅ Complete |
 | Responsive layout | Mobile-first responsive design | Medium | ✅ Complete |
-| Navigation restructure | Consolidated to 3 pages (Dashboard, Analysis, Hardening) | Low | ✅ Complete |
+| Navigation restructure | 5 pages (Dashboard, Analysis, Hardening, Remote, Scheduler) | Low | ✅ Complete |
 | GUI functional testing | Verify all GUI features work correctly | High | ✅ Complete |
-| CLI functional testing | Verify all CLI commands work (31 unit + 66 functional tests) | High | ✅ Complete |
+| CLI functional testing | Verify all CLI commands work (97 tests: 31 unit + 66 functional) | High | ✅ Complete |
 | Safe testing environment | systemd-nspawn container with test scripts | Critical | ✅ Complete |
 
 #### A. GUI Fixes (2025-12-05/06)

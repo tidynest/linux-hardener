@@ -1,6 +1,6 @@
 # Linux System Hardener - File Map
 
-**Last Updated:** 2026-02-24
+**Last Updated:** 2026-02-25
 
 This document lists all source files with their purpose and key exports.
 
@@ -601,7 +601,6 @@ pub async fn pick_config_file(app: tauri::AppHandle) -> Result<Option<String>, S
 | `Cargo.toml` | Workspace definition |
 | `.cargo/config.toml` | WASM rustflags (getrandom backend) |
 | `.cargo/audit.toml` | Cargo audit configuration |
-| `rustfmt.toml` | Rust formatting config |
 | `deny.toml` | Cargo deny (dependency policy) configuration |
 | `release.toml` | cargo-release configuration |
 | `cliff.toml` | git-cliff changelog generation |
@@ -674,8 +673,25 @@ pub async fn pick_config_file(app: tauri::AppHandle) -> Result<Option<String>, S
 | `docs/RELEASING.md` | Versioning and release process |
 | `docs/SSH_REMOTE_SCANNING.md` | SSH remote scanning user guide |
 | `docs/THEME_DESIGN_GUIDE.md` | GUI theming system documentation |
+| `docs/browser-automation.md` | Playwright browser automation setup and troubleshooting |
+| `docs/css-architecture.md` | CSS architecture and theming implementation details |
+| `docs/FRONTEND_LAYOUT_PLAN.md` | Frontend page layout and component plan |
+| `docs/DOCUMENTATION_AUDIT.md` | Documentation coverage audit results |
+| `docs/GUI_V031_TEST_PLAN.md` | GUI v0.3.1 Playwright test plan |
+| `docs/tauri-plus-leptos-development-on-arch-linux-with-hyprland.md` | Tauri + Leptos development environment setup on Arch/Hyprland |
+| `docs/claude-code-configuration.md` | Development tooling configuration reference |
 | `docs/plans/2026-02-22-trait-refactor.md` | Trait refactor execution log |
 | `docs/plans/2026-02-22-trait-refactor-design.md` | Trait refactor design document |
+| `docs/plans/2026-02-24-severity-filter-design.md` | Severity filter feature design |
+| `docs/plans/2026-02-24-severity-filter.md` | Severity filter implementation plan |
+| `docs/plans/2026-02-24-remote-scanning-ui-design.md` | Remote scanning UI design document |
+| `docs/plans/2026-02-24-remote-scanning-ui.md` | Remote scanning UI implementation plan |
+| `docs/plans/2026-02-24-scheduler-ui-design.md` | Scheduler UI design document |
+| `docs/plans/2026-02-24-scheduler-ui.md` | Scheduler UI implementation plan |
+| `docs/plans/2026-02-24-config-file-picker-design.md` | Config file picker design document |
+| `docs/plans/2026-02-24-config-file-picker.md` | Config file picker implementation plan |
+| `docs/plans/2026-02-24-ui-polish-design.md` | UI polish pass design document |
+| `docs/plans/2026-02-24-ui-polish.md` | UI polish pass implementation plan |
 
 ---
 
@@ -715,7 +731,7 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 |------|---------|
 | `gui-tests/package.json` | npm dependencies (Playwright) |
 | `gui-tests/playwright.config.js` | Playwright configuration (base URL, browser, timeouts) |
-| `gui-tests/tauri-mock.js` | Tauri IPC mock (`window.__TAURI__`) covering all 13 IPC commands |
+| `gui-tests/tauri-mock.js` | Tauri IPC mock (`window.__TAURI__`) covering all IPC commands |
 | `gui-tests/spa-server.py` | SPA-aware HTTP server (port 8787, client-side routing) |
 | `gui-tests/tests/helpers.js` | Shared test helpers and utilities |
 | `gui-tests/tests/dashboard.spec.js` | T-DASH-01..09 (9 tests): score, scan trigger, navigation, activity |
@@ -744,4 +760,4 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | `hardener-common/src/types.rs` | Added `FindingPolicyException` struct |
 | `hardener-cli/src/cli.rs` | Added `--config`, `--audit`, `--compliance`, `--exit-code` flags, `ScanMode` enum |
 
-**Last Updated**: 2026-02-24
+**Last Updated**: 2026-02-25

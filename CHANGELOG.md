@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.3] - 2025-12-11
+## [0.3.3] - 2026-02-25
 
 ### Changed (UI Polish Pass 2026-02-24)
 - **Dashboard**: `RecentActivity` card no longer stretches to fill remaining page height
@@ -63,7 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `ViewMode` filter (All / Compliance) for toggling compliance-only findings
   - CSS styling for the severity dropdown and filter controls
 
-### Fixed (Live Testing Session 2026-02-23)
+### Fixed (2026-02-23)
 - **Checkpoint Directory Permissions**: Checkpoints now capture and restore directory metadata (mode/uid/gid)
   - Added `capture_directory_entry()` to `CheckpointManager` for metadata-only directory snapshots
   - `capture_directory_recursive()` now includes the directory entry itself, not just child files
@@ -86,7 +86,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### PluginConfig Wiring (2026-02-23)
 - **All 8 plugins now consume PluginConfig**: Directives override default values; exceptions exempt specific items from hardening
   - Two families: **value-override** (directives + exceptions) for SSH, Kernel, Firewall, PAM, Permissions; **binary** (exceptions only) for Services, Audit, MAC
-  - SSH (`d029629`), Kernel (`ca53286`), Firewall (`820f406`), PAM (`95bf62b`), Services (`f97e33b`), Permissions (`d01432a`), Audit (`2ec356a`), MAC (`ef0f8f6`)
+  - SSH (`755bc35`), Kernel (`ca53286`), Firewall (`820f406`), PAM (`95bf62b`), Services (`f97e33b`), Permissions (`d01432a`), Audit (`2ec356a`), MAC (`ef0f8f6`)
   - `HardeningPlugin` trait receives `&PluginConfig` per-plugin; `HardenerConfig` decomposed by callers
   - 418 tests pass, clippy clean
 
@@ -153,7 +153,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - History (6 tests): checkpoints, rollback, apply results
   - Themes (7 tests + 30 screenshots): all 6 themes verified
   - Error handling (4 tests): scan/apply/checkpoint errors, dismiss
-- **Tauri IPC Mock**: JavaScript mock of `window.__TAURI__` with all 7 IPC commands
+- **Tauri IPC Mock**: JavaScript mock of `window.__TAURI__` with all IPC commands
 - **Cross-Distro GUI Validation**: 84/84 tests pass on all 5 distros
 - **GUI Test Runner**: `scripts/run-gui-tests.sh` orchestrates Playwright tests inside nspawn containers
 - **`--gui` flag for cross-distro runner**: `run-cross-distro-tests.sh --gui` runs GUI tests after CLI tests
@@ -170,42 +170,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `scripts/create-opensuse-container.sh` - openSUSE/SUSE testing
 - **Musl Static Build**: Cross-distribution binary using musl libc for maximum compatibility
 
-### Fixed (Bug Fix Session 2025-12-10)
-- **Invalid Plugin Name Accepted Silently (Q)**: `--plugin nonexistent` now returns error with valid plugin list
+### Fixed (2025-12-10)
+- **Invalid Plugin Name Accepted Silently**: `--plugin nonexistent` now returns error with valid plugin list
   - Added `validate_plugin_filter()` in scan.rs to check plugin names before scanning
   - Supports both full IDs (`kernel-hardening`) and short names (`kernel`)
   - Exit code 1 for invalid plugins, enabling proper CI/CD error detection
-- **Test Script 105% Pass Rate (R)**: Fixed test counter bug in `full-test-suite.sh`
+- **Test Script 105% Pass Rate**: Fixed test counter bug in `full-test-suite.sh`
   - Preflight checks were incrementing PASSED without incrementing TOTAL
   - Added `log_check()` function for non-test verification steps
 
-### Fixed (Bug Fix Session 2025-12-09)
-- **Security Score Calculation (A-C)**: Redesigned from findings-based to compliance-based weighted scoring
+### Fixed (2025-12-09)
+- **Security Score Calculation**: Redesigned from findings-based to compliance-based weighted scoring
   - Pass = 100pts, Critical fail = 0pts, High = 25pts, Medium = 50pts, Low = 75pts
   - Overall score = average of framework weighted scores
   - Added expandable "Framework Breakdown" showing per-framework scores
-- **UFW False Positive (D)**: Firewall plugin now uses `systemctl is-active ufw` first (no root needed)
+- **UFW False Positive**: Firewall plugin now uses `systemctl is-active ufw` first (no root needed)
   - Falls back to `ufw status` only when systemctl unavailable
-- **Audit Rules False Positives (E)**: Added `AuditRulesResult` enum to distinguish permission denied from missing rules
+- **Audit Rules False Positives**: Added `AuditRulesResult` enum to distinguish permission denied from missing rules
   - No longer reports 25 false positives when running without root
-- **Empty validate() Stubs (F)**: Implemented proper validate() for permissions, SSH, and firewall plugins
+- **Empty validate() Stubs**: Implemented proper validate() for permissions, SSH, and firewall plugins
   - Now reports estimated changes like "PermitRootLogin: yes → no"
-- **Kernel Rollback Gap (G)**: apply() now creates `/etc/sysctl.d/99-hardener.conf`
+- **Kernel Rollback Gap**: apply() now creates `/etc/sysctl.d/99-hardener.conf`
   - Kernel hardening persists across reboot
   - Rollback properly removes config and reloads sysctl
 
 ### Fixed (GUI Issues 2025-12-09)
-- **Theme Selector Unreadable (L)**: Added `appearance: none` CSS reset for cross-browser styling
+- **Theme Selector Unreadable**: Added `appearance: none` CSS reset for cross-browser styling
   - Custom SVG dropdown arrow for dark and light themes
   - WebKit now respects CSS colours instead of native controls
-- **Generate Reports No Feedback (J)**: Added status message display for report generation
+- **Generate Reports No Feedback**: Added status message display for report generation
   - Shows success message with report count after generation
   - Shows error message if generation fails
-- **Checkpoints Not Visible After Apply (K)**: Now reads from both user and system databases
+- **Checkpoints Not Visible After Apply**: Now reads from both user and system databases
   - GUI reads from `~/.local/share/linux-hardener/checkpoints.db` (user) AND `/var/lib/linux-hardener/checkpoints.db` (system)
   - Added refresh button to checkpoint list
   - Checkpoints from privileged apply operations (pkexec) now visible
-- **Score Mismatch Dashboard vs Analysis (H)**: Unified score calculation
+- **Score Mismatch Dashboard vs Analysis**: Unified score calculation
   - `MiniSecurityScore` component now uses shared `calculate_all_scores()` function
   - Both pages display identical compliance-based weighted scores
 
@@ -213,22 +213,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **GUI Dark Terminal Theme**: Complete CSS styling with professional dark aesthetic
 - **Fluid Typography**: Score ring text uses `clamp()` for proportional scaling across viewport widths
 - **Card Component**: Reusable `Card` component in `card.rs` with `CardVariant` (Default, Compact, Empty) and `HeadingLevel` (H2, H3, H4) props for consistent section styling
-- **CSS Transitions (Session 4)**: Added transition variables (`--transition-fast`, `--transition-normal`, `--transition-slow`) for smooth hover animations
-- **Empty State Icons (Session 4)**: Consistent empty states with contextual icons across all pages: 📋 (activity), 🔍 (findings), 📊 (compliance), ⚡ (apply operations), 💾 (checkpoints)
-- **Button Hover Effects (Session 4)**: Subtle `translateY(-1px)` lift effect with box-shadow on hover for action buttons
-- **E2E Test Cases (Session 4)**: Added TC-11 to TC-14 covering empty states, animations, themes, and responsive layout
+- **CSS Transitions**: Added transition variables (`--transition-fast`, `--transition-normal`, `--transition-slow`) for smooth hover animations
+- **Empty State Icons**: Consistent empty states with contextual icons across all pages: activity, findings, compliance, apply operations, checkpoints
+- **Button Hover Effects**: Subtle `translateY(-1px)` lift effect with box-shadow on hover for action buttons
+- **E2E Test Cases**: Added TC-11 to TC-14 covering empty states, animations, themes, and responsive layout
 
 ### Changed
 - **Responsive Dashboard Layout**: Improved single-column mode with compact sections and proper stacking order (Score → Actions → Activity)
 - **Refactored Section Containers**: All page sections now use the `Card` component instead of raw `<section>` tags for consistent styling
 - **Score Ring Sizing**: Changed from fixed 160px to proportional `min(160px, 45vw)` with `aspect-ratio: 1` for smooth scaling
-- **RECENT ACTIVITY Section**: Added `min-height: 150px` to ensure visibility in single-column mode
 - **No Minimum Width**: Removed 320px minimum width constraint; content now shrinks/wraps at any viewport width
-- **Puppeteer MCP Documentation**: Added `MCP_INSTRUCTIONS.md` with detailed instructions for automated UI testing
+- **Playwright MCP Documentation**: Added `MCP_INSTRUCTIONS.md` with detailed instructions for automated UI testing
 - **Accessibility: Skip Link**: Added keyboard-accessible skip link for screen reader users (`lib.rs`)
 - **Accessibility: Tab ARIA**: Full WAI-ARIA tabs pattern with `aria-controls`, `aria-labelledby`, `tabindex` management
 - **CSS Utility Classes**: Added `.truncate`, `.line-clamp-2`, `.line-clamp-3`, `.sr-only`, `.min-w-0`, `.skip-link`
-- **CSS Flex/Grid Utilities (Session 2)**: Added `.flex`, `.flex-col`, `.flex-wrap`, `.flex-1`, `.items-center`, `.items-start`, `.justify-center`, `.justify-between`, `.grid`, `.gap-xs`, `.gap-sm`, `.gap-md`, `.gap-lg`, `.gap-xl`
+- **CSS Flex/Grid Utilities**: Added `.flex`, `.flex-col`, `.flex-wrap`, `.flex-1`, `.items-center`, `.items-start`, `.justify-center`, `.justify-between`, `.grid`, `.gap-xs`, `.gap-sm`, `.gap-md`, `.gap-lg`, `.gap-xl`
 - **CSS Variables**: Extended spacing scale (`--space-xs` to `--space-2xl`), border radius scale, z-index scale
 - **Responsive Testing**: Verified layouts at 320px, 640px, 1920px viewports
 
@@ -239,19 +238,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CSS Cleanup**: Removed redundant container styles (`.dashboard-section`, `.profile-selector`, `.plugin-toggles`, `.apply-controls`, `.framework-selection`) - Card component now provides these styles
 - **GUI Responsive Layout (Ultra-Wide)**: Content now constrained to 1600px max-width and centred on ultra-wide screens (4K)
 - **GUI Value Cell Overflow**: Long file paths in tables now truncate with ellipsis instead of breaking layout
-- **GUI Minimum Width Floor**: Added 320px minimum width to prevent layout collapse at extreme narrow widths
 - **Flex Container Overflow**: Added `min-width: 0` to flex children (`.navigation`, `.nav-links`, `.header-content`, `.activity-content`)
 - **Grid Container Overflow**: Updated grid templates to use `minmax(0, 1fr)` pattern (`.dashboard-grid`, `.scanner-layout`, `.report-summary`)
 - **Auto-fill Grid Overflow**: Used `minmax(min(Xpx, 100%), 1fr)` for `.plugin-grid` and `.framework-grid` to prevent narrow viewport overflow
 
 ### Added (continued)
-  - CSS Variables for consistent theming (colours, typography, spacing)
-  - JetBrains Mono for data/code, Inter for UI text
-  - Colour-coded security states (green/amber/red for good/warning/critical)
-  - Horizontal navigation bar with hover effects
-  - Security score circular gauge with glow effects
-  - Styled buttons, tables, forms, badges, and empty states
-  - Foundation styles for 3-page architecture: Dashboard, Analysis (tabbed), Hardening (sectioned)
+- CSS Variables for consistent theming (colours, typography, spacing)
+- JetBrains Mono for data/code, Inter for UI text
+- Colour-coded security states (green/amber/red for good/warning/critical)
+- Horizontal navigation bar with hover effects
+- Security score circular gauge with glow effects
+- Styled buttons, tables, forms, badges, and empty states
+- Foundation styles for 3-page architecture: Dashboard, Analysis (tabbed), Hardening (sectioned)
 - **WASM-Compatible Types Crate**: New `hardener-types` crate for shared type definitions
   - Extracted all shared types (PluginId, Severity, Finding, ScanResult, etc.) to dedicated crate
   - WASM-safe dependencies only (serde, chrono)
@@ -259,7 +257,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **PDF Feature Gate**: krilla PDF library now behind optional `pdf` feature in hardener-compliance
 - **WASM Entry Point**: Added `#[wasm_bindgen(start)]` entry point for Leptos app mounting
 - `.cargo/config.toml` for WASM rustflags (getrandom backend configuration)
-- `crates/hardener-ui/styles.css` - Complete dark terminal theme CSS (~500 lines)
+- `crates/hardener-ui/styles.css` - Complete dark terminal theme CSS (~2700 lines)
 
 ### Fixed
 - **GUI "Loading..." text persistence**: Fixed by mounting app to `#app` element instead of body and clearing inner HTML
@@ -351,6 +349,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Runs on push/PR to `main`: check, test, clippy, fmt, security audit, multi-platform builds
 - GitLab CI also functional for builds and releases
 
+## [0.3.2] - 2025-12-09
+
+GUI major redesign with dark terminal theme, responsive layouts, accessibility improvements (WCAG AA contrast, WAI-ARIA tabs, skip link), and multiple bug fixes including security score calculation, UFW false positives, audit rules false positives, and checkpoint visibility.
+
+## [0.3.1] - 2025-12-05
+
+GUI polish pass: CSS transitions, empty state icons, button hover effects, fluid typography, reusable Card component, and E2E test cases TC-11 through TC-14.
+
+## [0.3.0] - 2025-12-01
+
+Remote SSH scanning (`--ssh` flag), scheduled scanning daemon with cron-based scheduling, notification system (email via SMTP, webhooks for Slack/Discord), systemd integration for service/timer generation, and scan history CLI commands.
+
+## [0.2.0] - 2025-11-28
+
+Configuration file support with layered loading, compliance framework reporting (CIS, STIG, NIST 800-53, PCI-DSS, HIPAA, GDPR), PDF report generation, interactive report wizard, and CSV/HTML output formats.
+
 ## [0.1.0] - 2025-11-25
 
 ### Added
@@ -432,7 +446,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Version History
 
-- **0.3.3** (2025-12-11): Distribution validation complete (4 families)
+- **0.3.3** (2026-02-25): Distribution validation complete (5 distributions across 4 families)
 - **0.3.2** (2025-12-09): GUI major redesign, bug fixes, accessibility
 - **0.3.1** (2025-12-05): GUI polish and testing
 - **0.3.0** (2025-12-01): Remote SSH scanning, scheduled scanning, notifications
@@ -446,4 +460,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.2.0]: https://github.com/tidynest/linux-system-hardener/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tidynest/linux-system-hardener/releases/tag/v0.1.0
 
-**Last Updated**: 2026-02-24
+**Last Updated**: 2026-02-25

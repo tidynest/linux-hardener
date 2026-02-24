@@ -76,7 +76,7 @@ with "Specify plugins with --plugin or use --all", and nothing happens.
 **Files**:
 - `crates/hardener-ui/src/components/configure_section.rs:144-146`
 - `crates/hardener-ui/src/components/quick_actions.rs:49-51`
-- `crates/hardener-ui/src/components/analysis_page.rs:38-40`
+- `crates/hardener-ui/src/pages/analysis_page.rs:38-40`
 - `crates/hardener-ui/src/components/history_section.rs:27-29, 51-53`
 
 **Problem**: Every `Err` branch across the entire frontend only calls
@@ -437,5 +437,5 @@ Several crates declare dependencies locally instead of using `workspace = true`:
 
 ---
 
-*This report was generated from parallel analysis of all 120+ source files, 30+ documentation
-files, and the complete git history of the project.*
+*This report covers all 120+ source files, 30+ documentation files, and the complete git
+history of the project.*

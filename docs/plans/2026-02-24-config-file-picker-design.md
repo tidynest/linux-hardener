@@ -40,11 +40,11 @@ Two injection points:
 // hardener-types/src/config_picker.rs
 pub struct ConfigSummary {
     pub config_path: String,
-    pub is_valid: bool,
-    pub error: Option<String>,
-    pub enabled_plugins: Vec<String>,
-    pub directive_count: u32,
-    pub exception_count: u32,
+    pub config_is_valid: bool,
+    pub config_error: Option<String>,
+    pub config_enabled_plugins: Vec<String>,
+    pub config_directive_count: u32,
+    pub config_exception_count: u32,
 }
 ```
 
