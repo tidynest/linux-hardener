@@ -11,6 +11,7 @@ use std::fmt;
 pub use chrono::{DateTime, Utc};
 
 pub mod remote;
+pub mod scheduler;
 pub use remote::*;
 
 // ============================================================================
