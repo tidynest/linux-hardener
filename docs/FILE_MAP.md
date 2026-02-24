@@ -400,13 +400,15 @@ pub struct ScanRunner {
 | `src/pages/mod.rs` | Pages module exports | `DashboardPage`, `AnalysisPage`, `HardeningPage` |
 | `src/components/mod.rs` | Components module exports | All component re-exports, `Card`, `CardVariant`, `HeadingLevel` |
 
-### Pages (3-page architecture)
+### Pages (5-page architecture)
 
 | File | Purpose | Key Exports |
 |------|---------|-------------|
 | `src/pages/dashboard_page.rs` | Dashboard with security score and quick actions | `DashboardPage` |
 | `src/pages/analysis_page.rs` | Tabbed interface for findings and compliance | `AnalysisPage` |
 | `src/pages/hardening_page.rs` | Sectioned interface for configuration and history | `HardeningPage` |
+| `src/pages/remote_page.rs` | Remote SSH host management and scanning | `RemotePage` |
+| `src/pages/scheduler_page.rs` | Scheduler and notification configuration | `SchedulerPage` |
 
 ### Components
 
@@ -426,6 +428,12 @@ pub struct ScanRunner {
 | `src/components/severity_badge.rs` | Severity level badge display | `SeverityBadge` |
 | `src/components/card.rs` | Reusable card container component | `Card`, `CardVariant`, `HeadingLevel` |
 | `src/components/theme_toggle.rs` | Theme selector dropdown component | `ThemeToggle` |
+| `src/components/host_list.rs` | Remote host profile list sidebar | `HostList` |
+| `src/components/host_form.rs` | Add/edit remote host profile form | `HostForm` |
+| `src/components/remote_status.rs` | Remote connection status and scan results | `RemoteStatus` |
+| `src/components/scan_history_tab.rs` | Scan history timeline for Analysis page | `ScanHistoryTab` |
+| `src/components/schedule_section.rs` | Cron schedule configuration form | `ScheduleSection` |
+| `src/components/notification_section.rs` | Email and webhook notification config | `NotificationSection` |
 
 **Note**: This crate depends only on `hardener-types` for shared types to ensure WASM compatibility. External dependencies include Leptos (WASM framework), wasm-bindgen, and web-sys for browser APIs.
 

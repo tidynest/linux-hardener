@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.3] - 2025-12-11
 
+### Added (Scheduler UI 2026-02-24)
+- **Scheduler Configuration Page**: New top-level "Scheduler" page for configuring scan scheduling and notifications
+  - Schedule section: enabled toggle, cron presets (Daily/6h/12h/Weekly) with custom cron input, plugin checkboxes, severity threshold
+  - Notification section: email recipients and from address, webhook endpoint with Slack/Discord/Generic format
+  - Test notification button with inline success/failure feedback
+- **WASM-safe Scheduler Types**: `SchedulerUiConfig`, `NotificationUiConfig`, `EmailUiConfig`, `WebhookUiConfig`, `TestNotificationResult` in `hardener-types`
+- **Tauri IPC Commands**: `get_scheduler_config`, `save_scheduler_config`, `test_notification` with `toml_edit` for surgical config updates
+- **Mock Handlers**: 3 new scheduler IPC mock handlers for GUI testing
+
 ### Added (Rollback JSON Output 2026-02-23)
 - **Structured Rollback Results**: `checkpoint rollback` now returns per-file restore status
   - `RollbackResult` with `rollback_success`, `rollback_checkpoint_id`, `rollback_files`
