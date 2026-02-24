@@ -561,7 +561,7 @@
       case 'save_scheduler_config': {
         const cfg = args && args.config;
         if (cfg) schedulerConfig = cfg;
-        return null;
+        return '/home/user/.config/hardener/config.toml';
       }
 
       case 'test_notification':

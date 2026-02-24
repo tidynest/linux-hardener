@@ -976,7 +976,7 @@ pub async fn get_scheduler_config() -> Result<hardener_types::scheduler::Schedul
 #[tauri::command]
 pub async fn save_scheduler_config(
     config: hardener_types::scheduler::SchedulerUiConfig,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let path = hardener_config_path()?;
 
     if let Some(parent) = path.parent() {
@@ -1002,7 +1002,9 @@ pub async fn save_scheduler_config(
     document["scheduler"] = scheduler_table.as_item().clone();
 
     std::fs::write(&path, document.to_string())
-        .map_err(|e| format!("Failed to write config: {e}"))
+        .map_err(|e| format!("Failed to write config: {e}"))?;
+
+    Ok(path.display().to_string())
 }
 
 /// Sends a test notification through all enabled channels.

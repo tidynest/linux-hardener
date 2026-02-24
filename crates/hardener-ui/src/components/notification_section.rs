@@ -26,6 +26,7 @@ pub fn NotificationSection() -> impl IntoView {
     let webhook_url = RwSignal::new(String::new());
     let webhook_format = RwSignal::new("generic".to_string());
     let test_result_message = RwSignal::new(None::<(bool, String)>);
+    let save_status = RwSignal::new(None::<(bool, String)>);
 
     // Sync from loaded config
     Effect::new(move || {
@@ -43,29 +44,37 @@ pub fn NotificationSection() -> impl IntoView {
     // Save handler — merges notification fields into existing config, preserving schedule
     let handle_save = move |_| {
         app_state.is_saving_scheduler.set(true);
+        save_status.set(None);
 
+        // Snapshot all form signals before entering async (avoids reactive tracking warnings)
         let recipients: Vec<String> = email_recipients
-            .get()
+            .get_untracked()
             .split(',')
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .collect();
+        let is_email_enabled = email_enabled.get_untracked();
+        let from = email_from.get_untracked();
+        let is_webhook_enabled = webhook_enabled.get_untracked();
+        let url = webhook_url.get_untracked();
+        let format = webhook_format.get_untracked();
+        let mut config = app_state.scheduler_config.get_untracked().unwrap_or_default();
 
         leptos::task::spawn_local(async move {
-            let mut config = app_state.scheduler_config.get().unwrap_or_default();
-            config.notifications.email.enabled = email_enabled.get();
+            config.notifications.email.enabled = is_email_enabled;
             config.notifications.email.recipients = recipients;
-            config.notifications.email.from_address = email_from.get();
-            config.notifications.webhooks.enabled = webhook_enabled.get();
-            config.notifications.webhooks.url = webhook_url.get();
-            config.notifications.webhooks.format = webhook_format.get();
+            config.notifications.email.from_address = from;
+            config.notifications.webhooks.enabled = is_webhook_enabled;
+            config.notifications.webhooks.url = url;
+            config.notifications.webhooks.format = format;
 
             match tauri_bindings::invoke_save_scheduler_config(config.clone()).await {
-                Ok(()) => app_state.scheduler_config.set(Some(config)),
+                Ok(path) => {
+                    app_state.scheduler_config.set(Some(config));
+                    save_status.set(Some((true, format!("Notifications saved to {path}"))));
+                }
                 Err(e) => {
-                    app_state
-                        .error_message
-                        .set(Some(format!("Failed to save notifications: {e}")));
+                    save_status.set(Some((false, format!("Failed to save: {e}"))));
                 }
             }
             app_state.is_saving_scheduler.set(false);
@@ -219,6 +228,32 @@ pub fn NotificationSection() -> impl IntoView {
                 </div>
             </Show>
 
+            // Status messages
+            <Show when=move || save_status.get().is_some()>
+                {move || {
+                    save_status.get().map(|(ok, msg)| {
+                        let class = if ok {
+                            "test-result test-result--success"
+                        } else {
+                            "test-result test-result--failure"
+                        };
+                        view! { <div class=class>{msg}</div> }
+                    })
+                }}
+            </Show>
+            <Show when=move || test_result_message.get().is_some()>
+                {move || {
+                    test_result_message.get().map(|(success, message)| {
+                        let class = if success {
+                            "test-result test-result--success"
+                        } else {
+                            "test-result test-result--failure"
+                        };
+                        view! { <div class=class>{message}</div> }
+                    })
+                }}
+            </Show>
+
             // --- Actions ---
             <div class="form-actions">
                 <button
@@ -235,7 +270,7 @@ pub fn NotificationSection() -> impl IntoView {
                     }}
                 </button>
                 <button
-                    class="btn btn-secondary"
+                    class="btn btn-accent"
                     on:click=handle_test
                     disabled=move || app_state.is_testing_notification.get()
                 >
@@ -243,25 +278,11 @@ pub fn NotificationSection() -> impl IntoView {
                         if app_state.is_testing_notification.get() {
                             "Sending..."
                         } else {
-                            "Send Test Notification"
+                            "\u{25B6} Test Notification"
                         }
                     }}
                 </button>
             </div>
-
-            // Test result message
-            <Show when=move || test_result_message.get().is_some()>
-                {move || {
-                    test_result_message.get().map(|(success, message)| {
-                        let class = if success {
-                            "test-result test-result--success"
-                        } else {
-                            "test-result test-result--failure"
-                        };
-                        view! { <div class=class>{message}</div> }
-                    })
-                }}
-            </Show>
         </div>
     }
 }

@@ -751,14 +751,14 @@ body {
 }
 
 .btn-primary {
-  background-color: var(--color-good);
-  color: #ffffff;
-  border-color: var(--color-good);
+  background-color: #065f46;
+  color: #d1fae5;
+  border-color: #065f46;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background-color: var(--color-good-bright);
-  border-color: var(--color-good-bright);
+  background-color: #047857;
+  border-color: #047857;
 }
 
 .btn-secondary {
@@ -770,6 +770,17 @@ body {
 .btn-secondary:hover:not(:disabled) {
   background-color: var(--bg-tertiary);
   color: var(--text-primary);
+}
+
+.btn-accent {
+  background-color: #155e75;
+  color: #cffafe;
+  border-color: #155e75;
+}
+
+.btn-accent:hover:not(:disabled) {
+  background-color: #0e7490;
+  border-color: #0e7490;
 }
 
 .btn-large {
@@ -2437,8 +2448,31 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 
 .scheduler-page {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 1.5rem;
+}
+
+.scheduler-page > * {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.scheduler-page .schedule-section,
+.scheduler-page .notification-section {
+  flex: 1;
+}
+
+.scheduler-page .form-actions {
+  margin-top: auto;
+  padding-top: 1rem;
+}
+
+@media (max-width: 768px) {
+  .scheduler-page {
+    flex-direction: column;
+  }
 }
 
 .schedule-section,

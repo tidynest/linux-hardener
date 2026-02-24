@@ -34,6 +34,7 @@ pub fn ScheduleSection() -> impl IntoView {
     let custom_cron = RwSignal::new(String::new());
     let selected_plugins = RwSignal::new(Vec::<String>::new());
     let min_severity = RwSignal::new("medium".to_string());
+    let save_status = RwSignal::new(None::<(bool, String)>);
 
     // Sync local state when config loads
     Effect::new(move || {
@@ -71,28 +72,28 @@ pub fn ScheduleSection() -> impl IntoView {
     // Save handler — merges schedule fields into existing config, preserving notifications
     let handle_save = move |_| {
         let cron = effective_cron();
-        let plugins = selected_plugins.get();
-        let severity = min_severity.get();
-        let is_enabled = enabled.get();
+        let plugins = selected_plugins.get_untracked();
+        let severity = min_severity.get_untracked();
+        let is_enabled = enabled.get_untracked();
+        let base_config = app_state.scheduler_config.get_untracked().unwrap_or_default();
 
         app_state.is_saving_scheduler.set(true);
+        save_status.set(None);
 
         leptos::task::spawn_local(async move {
-            let mut config = app_state
-                .scheduler_config
-                .get()
-                .unwrap_or_default();
+            let mut config = base_config;
             config.enabled = is_enabled;
             config.schedule = cron;
             config.plugins = plugins;
             config.min_severity = severity;
 
             match tauri_bindings::invoke_save_scheduler_config(config.clone()).await {
-                Ok(()) => app_state.scheduler_config.set(Some(config)),
+                Ok(path) => {
+                    app_state.scheduler_config.set(Some(config));
+                    save_status.set(Some((true, format!("Schedule saved to {path}"))));
+                }
                 Err(e) => {
-                    app_state
-                        .error_message
-                        .set(Some(format!("Failed to save schedule: {e}")));
+                    save_status.set(Some((false, format!("Failed to save: {e}"))));
                 }
             }
             app_state.is_saving_scheduler.set(false);
@@ -157,6 +158,16 @@ pub fn ScheduleSection() -> impl IntoView {
                         .collect::<Vec<_>>()}
                     <option value="Custom">"Custom"</option>
                 </select>
+                <span class="form-hint">
+                    {move || {
+                        let cron = effective_cron();
+                        if cron.is_empty() {
+                            String::new()
+                        } else {
+                            format!("Cron: {cron}")
+                        }
+                    }}
+                </span>
             </div>
 
             // Custom cron input (visible only when Custom is selected)
@@ -233,6 +244,20 @@ pub fn ScheduleSection() -> impl IntoView {
                     <option value="info">"Info"</option>
                 </select>
             </div>
+
+            // Save status
+            <Show when=move || save_status.get().is_some()>
+                {move || {
+                    save_status.get().map(|(ok, msg)| {
+                        let class = if ok {
+                            "test-result test-result--success"
+                        } else {
+                            "test-result test-result--failure"
+                        };
+                        view! { <div class=class>{msg}</div> }
+                    })
+                }}
+            </Show>
 
             // Save button
             <div class="form-actions">

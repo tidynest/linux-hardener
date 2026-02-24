@@ -353,13 +353,14 @@ pub async fn invoke_get_scheduler_config() -> Result<SchedulerUiConfig, String> 
 /// Invokes the save_scheduler_config Tauri command.
 ///
 /// Persists scheduler configuration to the [scheduler] section of config.toml.
-pub async fn invoke_save_scheduler_config(config: SchedulerUiConfig) -> Result<(), String> {
+pub async fn invoke_save_scheduler_config(config: SchedulerUiConfig) -> Result<String, String> {
     let args = serde_wasm_bindgen::to_value(&serde_json::json!({
         "config": config,
     }))
     .map_err(|e| format!("Failed to serialise scheduler config: {}", e))?;
-    invoke_command("save_scheduler_config", args).await?;
-    Ok(())
+    let result = invoke_command("save_scheduler_config", args).await?;
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to deserialise save path: {}", e))
 }
 
 /// Invokes the test_notification Tauri command.
