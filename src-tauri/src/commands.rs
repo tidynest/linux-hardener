@@ -8,7 +8,8 @@ use hardener_compliance::{
 use hardener_core::{ApplyResult, Context, Finding, PluginMetadata, ScanResult, ValidationReport};
 use hardener_plugins::create_plugin_registry;
 use hardener_state::{
-    CheckpointId, CheckpointManager, RollbackResult, ScanHistoryManager, ScanStatus, init_db,
+    Checkpoint, CheckpointId, CheckpointManager, FileState, RollbackResult, ScanHistoryManager,
+    ScanSession, ScanSessionId, ScanStatus, init_db,
 };
 use serde::Serialize;
 use tokio::process::Command;
@@ -580,6 +581,127 @@ pub async fn export_compliance_report(
     }
 
     Ok(final_path)
+}
+
+/// Scan session info returned to the frontend.
+#[derive(Clone, Debug, Serialize)]
+pub struct ScanSessionInfo {
+    pub session_id: String,
+    pub started_at: String,
+    pub completed_at: Option<String>,
+    pub total_findings: i32,
+    pub total_plugins: i32,
+    pub status: String,
+}
+
+impl From<ScanSession> for ScanSessionInfo {
+    fn from(s: ScanSession) -> ScanSessionInfo {
+        ScanSessionInfo {
+            session_id: s.session_id.as_str().to_string(),
+            started_at: format_timestamp(s.session_started_at),
+            completed_at: s.session_completed_at.map(format_timestamp),
+            total_findings: s.session_total_findings,
+            total_plugins: s.session_total_plugins,
+            status: s.session_status.as_str().to_string(),
+        }
+    }
+}
+
+/// Lists recent scan history sessions (metadata only).
+#[tauri::command]
+pub async fn get_scan_history(limit: Option<i32>) -> Result<Vec<ScanSessionInfo>, String> {
+    let manager = create_scan_history_manager().await?;
+    let sessions = manager
+        .list_sessions(limit.unwrap_or(20))
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(sessions.into_iter().map(ScanSessionInfo::from).collect())
+}
+
+/// Retrieves full scan results for a specific session.
+#[tauri::command]
+pub async fn get_scan_session(session_id: String) -> Result<Vec<ScanResult>, String> {
+    let manager = create_scan_history_manager().await?;
+    let id = ScanSessionId::new(session_id);
+
+    manager
+        .get_session_results(&id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Lists available hardening plugins with their metadata.
+#[tauri::command]
+pub async fn list_plugins() -> Result<Vec<PluginMetadata>, String> {
+    let registry = create_plugin_registry();
+    registry.list().map_err(|e| e.to_string())
+}
+
+/// Checkpoint detail info returned to the frontend.
+#[derive(Clone, Debug, Serialize)]
+pub struct CheckpointDetail {
+    pub checkpoint_id: String,
+    pub checkpoint_name: String,
+    pub checkpoint_created: String,
+    pub checkpoint_user: String,
+    pub file_count: usize,
+    pub files: Vec<CheckpointFileInfo>,
+}
+
+/// Individual file state within a checkpoint.
+#[derive(Clone, Debug, Serialize)]
+pub struct CheckpointFileInfo {
+    pub path: String,
+    pub permissions: String,
+    pub has_content: bool,
+}
+
+/// Converts a `Checkpoint` and its `FileState` entries into frontend detail.
+fn checkpoint_to_detail(cp: Checkpoint, files: Vec<FileState>) -> CheckpointDetail {
+    CheckpointDetail {
+        checkpoint_id: cp.checkpoint_id.as_str().to_string(),
+        checkpoint_name: cp.checkpoint_name,
+        checkpoint_created: format_timestamp(cp.checkpoint_timestamp),
+        checkpoint_user: cp.checkpoint_username,
+        file_count: files.len(),
+        files: files
+            .into_iter()
+            .map(|f| CheckpointFileInfo {
+                path: f.file_path,
+                permissions: format!("{:o}", f.file_permissions),
+                has_content: f.file_content.is_some(),
+            })
+            .collect(),
+    }
+}
+
+/// Retrieves detailed checkpoint information including captured files.
+///
+/// Searches both user and system databases.
+#[tauri::command]
+pub async fn get_checkpoint_detail(checkpoint_id: String) -> Result<CheckpointDetail, String> {
+    let cp_id = CheckpointId::new(&checkpoint_id);
+
+    // Try user database first
+    let user_db = get_user_db_path();
+    if user_db.exists()
+        && let Ok(manager) = create_checkpoint_manager(&user_db).await
+        && let Ok((cp, files)) = manager.get_checkpoint(&cp_id).await
+    {
+        return Ok(checkpoint_to_detail(cp, files));
+    }
+
+    // Try system database
+    let system_db = get_system_db_path();
+    if system_db.exists()
+        && let Ok(manager) = create_checkpoint_manager(&system_db).await
+        && let Ok((cp, files)) = manager.get_checkpoint(&cp_id).await
+    {
+        return Ok(checkpoint_to_detail(cp, files));
+    }
+
+    Err(format!("Checkpoint '{}' not found", checkpoint_id))
 }
 
 /// Retrieves the most recent scan results from the database.

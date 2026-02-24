@@ -182,7 +182,10 @@ impl ScanHistoryManager {
     }
 
     /// Retrieves all scan results for a given session.
-    async fn get_session_results(&self, session_id: &ScanSessionId) -> Result<Vec<ScanResult>> {
+    pub async fn get_session_results(
+        &self,
+        session_id: &ScanSessionId,
+    ) -> Result<Vec<ScanResult>> {
         let result_rows = sqlx::query(
             "SELECT id, plugin_id, success, duration_us, error_message
              FROM scan_results

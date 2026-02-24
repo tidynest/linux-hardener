@@ -2,7 +2,8 @@ mod commands;
 
 use commands::{
     create_checkpoint, delete_checkpoint, export_compliance_report, generate_compliance_report,
-    get_checkpoints, get_latest_scan, run_apply, run_apply_dry_run, run_rollback, run_scan,
+    get_checkpoint_detail, get_checkpoints, get_latest_scan, get_scan_history, get_scan_session,
+    list_plugins, run_apply, run_apply_dry_run, run_rollback, run_scan,
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -18,8 +19,12 @@ fn main() {
             delete_checkpoint,
             export_compliance_report,
             generate_compliance_report,
+            get_checkpoint_detail,
             get_checkpoints,
             get_latest_scan,
+            get_scan_history,
+            get_scan_session,
+            list_plugins,
             run_apply,
             run_apply_dry_run,
             run_rollback,

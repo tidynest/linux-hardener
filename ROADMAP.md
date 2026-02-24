@@ -423,11 +423,11 @@ User clicks "Apply"
 
 | Feature | CLI Equivalent | Priority | Status |
 |---------|----------------|----------|--------|
-| Scan history | `history list/show` | P2 | ⬜ Pending |
-| Audit mode toggle | `scan --audit` | P2 | ⬜ Pending |
-| Compliance mode toggle | `scan --compliance` | P2 | ⬜ Pending |
-| Plugin listing | `plugins` command | P2 | ⬜ Pending |
-| Checkpoint details | `checkpoint show` | P2 | ⬜ Pending |
+| Scan history | `history list/show` | P2 | ✅ Complete |
+| Audit mode toggle | `scan --audit` | P2 | ✅ Complete |
+| Compliance mode toggle | `scan --compliance` | P2 | ✅ Complete |
+| Plugin listing | `plugins` command | P2 | ✅ Complete |
+| Checkpoint details | `checkpoint show` | P2 | ✅ Complete |
 | Remote scanning UI | `--ssh` flags | P3 | ⬜ Pending |
 | Scheduler UI | `daemon` commands | P3 | ⬜ Pending |
 | Config file picker | `--config FILE` | P3 | ⬜ Pending |

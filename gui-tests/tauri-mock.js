@@ -356,24 +356,35 @@
     {
       session_id: 'session-001',
       started_at: '2026-02-23 10:30:00 UTC',
-      status: 'Completed',
+      status: 'completed',
       total_findings: 8,
       total_plugins: 6,
     },
     {
       session_id: 'session-002',
       started_at: '2026-02-22 15:45:00 UTC',
-      status: 'Completed',
+      status: 'completed',
       total_findings: 5,
       total_plugins: 4,
     },
     {
       session_id: 'session-003',
       started_at: '2026-02-21 09:00:00 UTC',
-      status: 'Failed',
+      status: 'failed',
       total_findings: 0,
       total_plugins: 2,
     },
+  ];
+
+  const PLUGINS = [
+    { plugin_id: 'kernel-hardening', plugin_name: 'Kernel Hardening', plugin_description: 'Hardens kernel parameters via sysctl', plugin_category: 'Kernel', plugin_dependencies: [] },
+    { plugin_id: 'ssh-hardening', plugin_name: 'SSH Hardening', plugin_description: 'Secures OpenSSH server configuration', plugin_category: 'Authentication', plugin_dependencies: [] },
+    { plugin_id: 'firewall-hardening', plugin_name: 'Firewall Hardening', plugin_description: 'Configures host firewall rules', plugin_category: 'Network', plugin_dependencies: [] },
+    { plugin_id: 'pam-hardening', plugin_name: 'PAM Hardening', plugin_description: 'Strengthens PAM authentication modules', plugin_category: 'Authentication', plugin_dependencies: [] },
+    { plugin_id: 'services-hardening', plugin_name: 'Services Minimisation', plugin_description: 'Disables unnecessary system services', plugin_category: 'Services', plugin_dependencies: [] },
+    { plugin_id: 'audit-hardening', plugin_name: 'Audit Hardening', plugin_description: 'Configures auditd rules for system auditing', plugin_category: 'Logging', plugin_dependencies: [] },
+    { plugin_id: 'permissions-hardening', plugin_name: 'Permissions Hardening', plugin_description: 'Fixes insecure file and directory permissions', plugin_category: 'FileSystem', plugin_dependencies: [] },
+    { plugin_id: 'mac-hardening', plugin_name: 'MAC Hardening', plugin_description: 'Enforces SELinux or AppArmor mandatory access controls', plugin_category: 'AccessControl', plugin_dependencies: [] },
   ];
 
   // ---- Command Handler ----
@@ -469,6 +480,26 @@
 
       case 'get_scan_session':
         return SCAN_RESULTS;
+
+      case 'list_plugins':
+        return PLUGINS;
+
+      case 'get_checkpoint_detail': {
+        const cpId = (args && args.checkpointId) || 'unknown';
+        const cp = CHECKPOINTS.find((c) => c.checkpoint_id === cpId) || CHECKPOINTS[0];
+        return {
+          checkpoint_id: cp.checkpoint_id,
+          checkpoint_name: cp.checkpoint_name,
+          checkpoint_created: cp.checkpoint_created,
+          checkpoint_user: cp.checkpoint_user,
+          file_count: 3,
+          files: [
+            { path: '/etc/sysctl.d/99-hardener.conf', permissions: '644', has_content: true },
+            { path: '/etc/ssh/sshd_config', permissions: '600', has_content: true },
+            { path: '/etc/security/pwquality.conf', permissions: '644', has_content: false },
+          ],
+        };
+      }
 
       default:
         throw `Unknown command: ${cmd}`;

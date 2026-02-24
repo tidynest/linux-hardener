@@ -3,7 +3,10 @@
 //! These bindings use wasm-bindgen to call Tauri's JavaScript invoke API.
 //! In browser mode (without Tauri), all commands return errors gracefully.
 
-use crate::types::{ApplyResult, CheckpointInfo, ComplianceReport, RollbackResult, ScanResult};
+use crate::types::{
+    ApplyResult, CheckpointDetail, CheckpointInfo, ComplianceReport, PluginMetadata, RollbackResult,
+    ScanResult, ScanSessionInfo,
+};
 use hardener_types::ValidationReport;
 use wasm_bindgen::prelude::*;
 
@@ -188,6 +191,66 @@ pub async fn invoke_delete_checkpoint(checkpoint_id: String) -> Result<bool, Str
 
     serde_wasm_bindgen::from_value(result)
         .map_err(|e| format!("Failed to deserialise delete result: {}", e))
+}
+
+/// Invokes the get_scan_history Tauri command.
+///
+/// Returns recent scan session metadata (no results data).
+pub async fn invoke_get_scan_history(
+    limit: Option<i32>,
+) -> Result<Vec<ScanSessionInfo>, String> {
+    let args = match limit {
+        Some(n) => serde_wasm_bindgen::to_value(&serde_json::json!({ "limit": n }))
+            .map_err(|e| format!("Failed to serialise arguments: {}", e))?,
+        None => JsValue::NULL,
+    };
+
+    let result = invoke_command("get_scan_history", args).await?;
+
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to deserialise scan history: {}", e))
+}
+
+/// Invokes the get_scan_session Tauri command.
+///
+/// Returns full scan results for a specific session.
+pub async fn invoke_get_scan_session(session_id: String) -> Result<Vec<ScanResult>, String> {
+    let args = serde_wasm_bindgen::to_value(&serde_json::json!({
+        "sessionId": session_id,
+    }))
+    .map_err(|e| format!("Failed to serialise arguments: {}", e))?;
+
+    let result = invoke_command("get_scan_session", args).await?;
+
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to deserialise scan session: {}", e))
+}
+
+/// Invokes the list_plugins Tauri command.
+///
+/// Returns metadata for all available hardening plugins.
+pub async fn invoke_list_plugins() -> Result<Vec<PluginMetadata>, String> {
+    let result = invoke_command("list_plugins", JsValue::NULL).await?;
+
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to deserialise plugin list: {}", e))
+}
+
+/// Invokes the get_checkpoint_detail Tauri command.
+///
+/// Returns detailed checkpoint information including captured files.
+pub async fn invoke_get_checkpoint_detail(
+    checkpoint_id: String,
+) -> Result<CheckpointDetail, String> {
+    let args = serde_wasm_bindgen::to_value(&serde_json::json!({
+        "checkpointId": checkpoint_id,
+    }))
+    .map_err(|e| format!("Failed to serialise arguments: {}", e))?;
+
+    let result = invoke_command("get_checkpoint_detail", args).await?;
+
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to deserialise checkpoint detail: {}", e))
 }
 
 /// Invokes the run_rollback Tauri command.

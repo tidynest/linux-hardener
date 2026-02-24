@@ -2,7 +2,9 @@
 //!
 //! Provides a tabbed interface for viewing findings and compliance reports.
 
-use crate::components::{ComplianceTab, FindingsTab, MiniSecurityScore, TabBar, TabDef, TabPanel};
+use crate::components::{
+    ComplianceTab, FindingsTab, MiniSecurityScore, ScanHistoryTab, TabBar, TabDef, TabPanel,
+};
 use crate::state::AppState;
 use crate::tauri_bindings::invoke_scan;
 use leptos::prelude::*;
@@ -12,7 +14,7 @@ use leptos::prelude::*;
 pub fn AnalysisPage() -> impl IntoView {
     let app_state = expect_context::<AppState>();
 
-    // Tab state: 0 = Findings, 1 = Compliance
+    // Tab state: 0 = Findings, 1 = Compliance, 2 = History
     let active_tab = RwSignal::new(0_usize);
 
     // Finding count for badge
@@ -61,6 +63,11 @@ pub fn AnalysisPage() -> impl IntoView {
                 label: "Compliance",
                 badge: None,
             },
+            TabDef {
+                id: "history",
+                label: "History",
+                badge: None,
+            },
         ]
     };
 
@@ -73,6 +80,7 @@ pub fn AnalysisPage() -> impl IntoView {
                         {move || match active_tab.get() {
                             0 => "Scan findings and security issues",
                             1 => "Compliance framework reports",
+                            2 => "Past scan sessions",
                             _ => "",
                         }}
                     </p>
@@ -101,6 +109,9 @@ pub fn AnalysisPage() -> impl IntoView {
                 </TabPanel>
                 <TabPanel id="compliance" index=1 active_tab=active_tab>
                     <ComplianceTab />
+                </TabPanel>
+                <TabPanel id="history" index=2 active_tab=active_tab>
+                    <ScanHistoryTab />
                 </TabPanel>
             </div>
         </article>

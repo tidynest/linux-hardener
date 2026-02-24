@@ -5,9 +5,10 @@
 use crate::components::{Card, HeadingLevel};
 use crate::state::AppState;
 use crate::tauri_bindings::{
-    invoke_create_checkpoint, invoke_delete_checkpoint, invoke_get_checkpoints, invoke_rollback,
+    invoke_create_checkpoint, invoke_delete_checkpoint, invoke_get_checkpoint_detail,
+    invoke_get_checkpoints, invoke_rollback,
 };
-use crate::types::{CheckpointInfo, FileRestoreAction};
+use crate::types::{CheckpointDetail, CheckpointInfo, FileRestoreAction};
 use leptos::prelude::*;
 
 /// Formats a `FileRestoreAction` variant for display.
@@ -30,6 +31,7 @@ pub fn HistorySection() -> impl IntoView {
     let is_loading = RwSignal::new(false);
     let checkpoint_name = RwSignal::new(String::new());
     let is_creating = RwSignal::new(false);
+    let expanded_detail = RwSignal::new(None::<CheckpointDetail>);
 
     // Function to load checkpoints
     let load_checkpoints = move || {
@@ -95,6 +97,27 @@ pub fn HistorySection() -> impl IntoView {
                     app_state
                         .error_message
                         .set(Some(format!("Delete checkpoint failed: {}", e)));
+                }
+            }
+        });
+    };
+
+    // Detail toggle handler
+    let handle_detail = move |checkpoint_id: String| {
+        // Toggle off if already showing this checkpoint
+        if let Some(ref detail) = expanded_detail.get()
+            && detail.checkpoint_id == checkpoint_id
+        {
+            expanded_detail.set(None);
+            return;
+        }
+        leptos::task::spawn_local(async move {
+            match invoke_get_checkpoint_detail(checkpoint_id).await {
+                Ok(detail) => expanded_detail.set(Some(detail)),
+                Err(e) => {
+                    web_sys::console::error_1(
+                        &format!("Failed to load checkpoint detail: {}", e).into(),
+                    );
                 }
             }
         });
@@ -298,8 +321,9 @@ pub fn HistorySection() -> impl IntoView {
                                 let name = cp.checkpoint_name.clone();
                                 let created = cp.checkpoint_created.clone();
                                 let rollback_id = id.clone();
-
+                                let detail_id = id.clone();
                                 let delete_id = id.clone();
+                                let row_id = id.clone();
 
                                 view! {
                                     <tr>
@@ -307,6 +331,12 @@ pub fn HistorySection() -> impl IntoView {
                                         <td>{name}</td>
                                         <td>{created}</td>
                                         <td class="actions-cell">
+                                            <button
+                                                class="btn btn-secondary btn-small"
+                                                on:click=move |_| handle_detail(detail_id.clone())
+                                            >
+                                                "Details"
+                                            </button>
                                             <button
                                                 class="rollback-button"
                                                 on:click=move |_| handle_rollback(rollback_id.clone())
@@ -321,6 +351,44 @@ pub fn HistorySection() -> impl IntoView {
                                             </button>
                                         </td>
                                     </tr>
+                                    // Expansion row for checkpoint detail
+                                    <Show when=move || {
+                                        expanded_detail.get()
+                                            .as_ref()
+                                            .is_some_and(|d| d.checkpoint_id == row_id)
+                                    }>
+                                        {move || {
+                                            let detail = expanded_detail.get();
+                                            let detail = detail.as_ref().expect("guarded by Show when=");
+                                            let file_count = detail.file_count;
+                                            let files = detail.files.clone();
+                                            view! {
+                                                <tr class="detail-expansion-row">
+                                                    <td colspan="4">
+                                                        <div class="checkpoint-detail-panel">
+                                                            <p class="detail-file-count">
+                                                                {format!("{} files captured", file_count)}
+                                                            </p>
+                                                            <ul class="detail-file-list">
+                                                                {files.iter().map(|f| {
+                                                                    let path = f.path.clone();
+                                                                    let perms = f.permissions.clone();
+                                                                    let has = f.has_content;
+                                                                    view! {
+                                                                        <li>
+                                                                            <code>{path}</code>
+                                                                            <span class="detail-file-perms">{perms}</span>
+                                                                            {if has { " (content saved)" } else { " (metadata only)" }}
+                                                                        </li>
+                                                                    }
+                                                                }).collect::<Vec<_>>()}
+                                                            </ul>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        }}
+                                    </Show>
                                 }
                             }).collect::<Vec<_>>()}
                         </tbody>
