@@ -56,7 +56,7 @@ pub fn RecentActivity() -> impl IntoView {
                     <div class="empty-state">
                         <div class="empty-state-icon">"📋"</div>
                         <p class="empty-state-title">"No activity yet"</p>
-                        <p class="empty-state-hint">"Run a scan to get started."</p>
+                        <p class="empty-state-hint">"Use Quick Actions above to run a scan and see activity here."</p>
                     </div>
                 }
             >

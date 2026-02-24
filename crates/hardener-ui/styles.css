@@ -1528,10 +1528,8 @@ tbody tr:hover {
 /* .recent-activity container styles removed - now using Card component */
 /* Keep layout-specific styles */
 .recent-activity {
-  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  min-height: 150px;  /* Ensure section is always visible */
   overflow-y: auto;
 }
 
@@ -2117,10 +2115,6 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
     gap: var(--space-3);
   }
 
-  /* Ensure recent activity is visible */
-  .recent-activity {
-    margin-top: var(--space-4);
-  }
 }
 
 /* Tablets */
