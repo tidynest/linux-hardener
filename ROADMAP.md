@@ -428,7 +428,7 @@ User clicks "Apply"
 | Compliance mode toggle | `scan --compliance` | P2 | ✅ Complete |
 | Plugin listing | `plugins` command | P2 | ✅ Complete |
 | Checkpoint details | `checkpoint show` | P2 | ✅ Complete |
-| Remote scanning UI | `--ssh` flags | P3 | ⬜ Pending |
+| Remote scanning UI | `--ssh` flags | P3 | ✅ Complete |
 | Scheduler UI | `daemon` commands | P3 | ⬜ Pending |
 | Config file picker | `--config FILE` | P3 | ⬜ Pending |
 
