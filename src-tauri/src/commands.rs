@@ -14,6 +14,7 @@ use hardener_state::{
 use hardener_types::remote::{
     HostsConfig, RemoteConnectionInfo, RemoteConnectionStatus, RemoteHostProfile,
 };
+use hardener_types::ConfigSummary;
 use serde::Serialize;
 use std::sync::Mutex;
 use tokio::process::Command;
@@ -1086,4 +1087,93 @@ pub async fn test_notification() -> Result<hardener_types::scheduler::TestNotifi
             message: format!("Failed: {}", failures.join("; ")),
         })
     }
+}
+
+/// Validates a config file and returns a summary of its contents.
+///
+/// Parses the TOML file using ConfigLoader and counts plugins,
+/// directives, and exceptions. Returns error details if invalid.
+#[tauri::command]
+pub async fn validate_config(path: String) -> Result<ConfigSummary, String> {
+    use hardener_core::ConfigLoader;
+
+    let file_path = std::path::PathBuf::from(&path);
+
+    if !file_path.exists() {
+        return Ok(ConfigSummary {
+            config_path: path,
+            config_is_valid: false,
+            config_error: Some("File not found".to_string()),
+            ..Default::default()
+        });
+    }
+
+    let loader = ConfigLoader::new()
+        .skip_defaults()
+        .with_cli_config(file_path);
+
+    match loader.load() {
+        Ok(config) => {
+            let plugin_sections = [
+                ("kernel", &config.kernel),
+                ("ssh", &config.ssh),
+                ("firewall", &config.firewall),
+                ("pam", &config.pam),
+                ("services", &config.services),
+                ("audit", &config.audit),
+                ("permissions", &config.permissions),
+                ("mac", &config.mac),
+            ];
+
+            let enabled_plugins: Vec<String> = plugin_sections
+                .iter()
+                .filter(|(_, plugin_config)| plugin_config.enabled)
+                .map(|(name, _)| (*name).to_string())
+                .collect();
+
+            let directive_count: u32 = plugin_sections
+                .iter()
+                .map(|(_, plugin_config)| {
+                    (plugin_config.directives.len() + plugin_config.custom_directives.len()) as u32
+                })
+                .sum();
+
+            let exception_count: u32 = plugin_sections
+                .iter()
+                .map(|(_, plugin_config)| plugin_config.exceptions.len() as u32)
+                .sum();
+
+            Ok(ConfigSummary {
+                config_path: path,
+                config_is_valid: true,
+                config_error: None,
+                config_enabled_plugins: enabled_plugins,
+                config_directive_count: directive_count,
+                config_exception_count: exception_count,
+            })
+        }
+        Err(e) => Ok(ConfigSummary {
+            config_path: path,
+            config_is_valid: false,
+            config_error: Some(e.to_string()),
+            ..Default::default()
+        }),
+    }
+}
+
+/// Opens a native file dialog for selecting a TOML config file.
+///
+/// Returns the selected file path, or None if the dialog was cancelled.
+#[tauri::command]
+pub async fn pick_config_file(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let file_path = app
+        .dialog()
+        .file()
+        .add_filter("TOML Config", &["toml"])
+        .set_title("Select Configuration File")
+        .blocking_pick_file();
+
+    Ok(file_path.map(|p| p.to_string()))
 }
