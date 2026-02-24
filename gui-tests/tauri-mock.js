@@ -23,6 +23,11 @@
 
   // ---- State ----
   let scanHasRun = false;
+  let remoteHosts = [
+    { name: 'web-01', hostname: '192.168.1.10', user: 'admin', port: 22, key_file: '~/.ssh/id_ed25519', host_key_checking: true },
+    { name: 'db-01', hostname: '10.0.0.5', user: 'root', port: 2222, key_file: null, host_key_checking: false },
+  ];
+  let remoteConnected = null; // { profile_name, host, user }
 
   // ---- Mock Data ----
 
@@ -500,6 +505,42 @@
           ],
         };
       }
+
+      // ---- Remote Scanning Commands ----
+
+      case 'list_remote_hosts':
+        return remoteHosts;
+
+      case 'save_remote_host': {
+        const profile = args;
+        const idx = remoteHosts.findIndex((h) => h.name === profile.name);
+        if (idx >= 0) remoteHosts[idx] = profile;
+        else remoteHosts.push(profile);
+        return null;
+      }
+
+      case 'delete_remote_host': {
+        const delName = args && args.name;
+        remoteHosts = remoteHosts.filter((h) => h.name !== delName);
+        if (remoteConnected && remoteConnected.profile_name === delName) remoteConnected = null;
+        return null;
+      }
+
+      case 'connect_remote': {
+        const connName = args && args.name;
+        const host = remoteHosts.find((h) => h.name === connName);
+        if (!host) return { Failed: { error: `Host "${connName}" not found` } };
+        remoteConnected = { profile_name: host.name, host: host.hostname, user: host.user || 'root' };
+        return { Connected: { host: host.hostname, user: host.user || 'root' } };
+      }
+
+      case 'disconnect_remote':
+        remoteConnected = null;
+        return null;
+
+      case 'run_remote_scan':
+        if (!remoteConnected) throw 'No active remote connection';
+        return SCAN_RESULTS;
 
       default:
         throw `Unknown command: ${cmd}`;
