@@ -5,9 +5,9 @@
 // Re-export all types from hardener-types
 pub use hardener_types::{
     ApplyResult, Change, ChangeType, ComplianceFramework, ComplianceMapping, ComplianceReport,
-    ComplianceSummary, ControlResult, ControlStatus, FileRestoreAction, FileRestoreResult,
-    Finding, FindingCategory, FindingPolicyException, PluginId, PluginMetadata, RollbackResult,
-    ScanResult, Severity, ValidationIssue, ValidationReport,
+    ComplianceSummary, ConfigSummary, ControlResult, ControlStatus, FileRestoreAction,
+    FileRestoreResult, Finding, FindingCategory, FindingPolicyException, PluginId,
+    PluginMetadata, RollbackResult, ScanResult, Severity, ValidationIssue, ValidationReport,
 };
 pub use hardener_types::scheduler::{
     EmailUiConfig, NotificationUiConfig, SchedulerUiConfig, TestNotificationResult, WebhookUiConfig,

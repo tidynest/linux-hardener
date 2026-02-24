@@ -1,4 +1,4 @@
-use crate::types::{ApplyResult, ComplianceReport, Finding, RollbackResult, ScanResult, SchedulerUiConfig, Severity};
+use crate::types::{ApplyResult, ComplianceReport, ConfigSummary, Finding, RollbackResult, ScanResult, SchedulerUiConfig, Severity};
 use hardener_types::remote::{RemoteConnectionInfo, RemoteHostProfile};
 use hardener_types::ValidationReport;
 use leptos::prelude::*;
@@ -58,6 +58,10 @@ pub struct AppState {
     pub is_saving_scheduler: RwSignal<bool>,
     /// Whether a test notification is in progress.
     pub is_testing_notification: RwSignal<bool>,
+    /// Path to a user-selected custom config file (None = default config).
+    pub config_path: RwSignal<Option<String>>,
+    /// Validation summary for the currently selected config file.
+    pub config_summary: RwSignal<Option<ConfigSummary>>,
 }
 
 impl Default for AppState {
@@ -84,6 +88,8 @@ impl Default for AppState {
             scheduler_config: RwSignal::new(None),
             is_saving_scheduler: RwSignal::new(false),
             is_testing_notification: RwSignal::new(false),
+            config_path: RwSignal::new(None),
+            config_summary: RwSignal::new(None),
         }
     }
 }

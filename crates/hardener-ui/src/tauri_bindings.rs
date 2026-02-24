@@ -4,8 +4,9 @@
 //! In browser mode (without Tauri), all commands return errors gracefully.
 
 use crate::types::{
-    ApplyResult, CheckpointDetail, CheckpointInfo, ComplianceReport, PluginMetadata, RollbackResult,
-    ScanResult, ScanSessionInfo, SchedulerUiConfig, TestNotificationResult,
+    ApplyResult, CheckpointDetail, CheckpointInfo, ComplianceReport, ConfigSummary,
+    PluginMetadata, RollbackResult, ScanResult, ScanSessionInfo, SchedulerUiConfig,
+    TestNotificationResult,
 };
 use hardener_types::ValidationReport;
 use hardener_types::remote::{RemoteConnectionStatus, RemoteHostProfile};
@@ -370,4 +371,31 @@ pub async fn invoke_test_notification() -> Result<TestNotificationResult, String
     let result = invoke_command("test_notification", JsValue::NULL).await?;
     serde_wasm_bindgen::from_value(result)
         .map_err(|e| format!("Failed to deserialise test result: {}", e))
+}
+
+// === Config File Picker Bindings ===
+
+/// Invokes the validate_config Tauri command.
+///
+/// Validates a TOML config file and returns a summary of its contents.
+pub async fn invoke_validate_config(path: String) -> Result<ConfigSummary, String> {
+    let args = serde_wasm_bindgen::to_value(&serde_json::json!({
+        "path": path,
+    }))
+    .map_err(|e| format!("Failed to serialise arguments: {}", e))?;
+
+    let result = invoke_command("validate_config", args).await?;
+
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to deserialise config summary: {}", e))
+}
+
+/// Invokes the pick_config_file Tauri command.
+///
+/// Opens a native file dialog for selecting a TOML config file.
+pub async fn invoke_pick_config_file() -> Result<Option<String>, String> {
+    let result = invoke_command("pick_config_file", JsValue::NULL).await?;
+
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to deserialise file path: {}", e))
 }
