@@ -8,6 +8,7 @@ use crate::types::{
     ScanResult, ScanSessionInfo,
 };
 use hardener_types::ValidationReport;
+use hardener_types::remote::{RemoteConnectionStatus, RemoteHostProfile};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -266,4 +267,74 @@ pub async fn invoke_rollback(checkpoint_id: String) -> Result<RollbackResult, St
 
     serde_wasm_bindgen::from_value(result)
         .map_err(|e| format!("Failed to deserialise rollback result: {}", e))
+}
+
+// === Remote Scanning Bindings ===
+
+/// Invokes the list_remote_hosts Tauri command.
+///
+/// Returns all saved remote host profiles.
+pub async fn invoke_list_remote_hosts() -> Result<Vec<RemoteHostProfile>, String> {
+    let result = invoke_command("list_remote_hosts", JsValue::NULL).await?;
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to deserialise remote hosts: {}", e))
+}
+
+/// Invokes the save_remote_host Tauri command.
+///
+/// Persists a remote host profile to the configuration file.
+pub async fn invoke_save_remote_host(profile: RemoteHostProfile) -> Result<(), String> {
+    let args = serde_wasm_bindgen::to_value(&serde_json::json!({
+        "profile": profile,
+    }))
+    .map_err(|e| format!("Failed to serialise profile: {}", e))?;
+    invoke_command("save_remote_host", args).await?;
+    Ok(())
+}
+
+/// Invokes the delete_remote_host Tauri command.
+///
+/// Removes a remote host profile by name.
+pub async fn invoke_delete_remote_host(name: String) -> Result<(), String> {
+    let args = serde_wasm_bindgen::to_value(&serde_json::json!({
+        "name": name,
+    }))
+    .map_err(|e| format!("Failed to serialise name: {}", e))?;
+    invoke_command("delete_remote_host", args).await?;
+    Ok(())
+}
+
+/// Invokes the connect_remote Tauri command.
+///
+/// Establishes an SSH connection to the named remote host.
+pub async fn invoke_connect_remote(name: String) -> Result<RemoteConnectionStatus, String> {
+    let args = serde_wasm_bindgen::to_value(&serde_json::json!({
+        "name": name,
+    }))
+    .map_err(|e| format!("Failed to serialise name: {}", e))?;
+    let result = invoke_command("connect_remote", args).await?;
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to deserialise connection status: {}", e))
+}
+
+/// Invokes the disconnect_remote Tauri command.
+///
+/// Closes the active SSH connection.
+pub async fn invoke_disconnect_remote() -> Result<(), String> {
+    invoke_command("disconnect_remote", JsValue::NULL).await?;
+    Ok(())
+}
+
+/// Invokes the run_remote_scan Tauri command.
+///
+/// Runs a hardening scan on the connected remote host.
+/// Pass plugin IDs to scan a subset, or None to scan all.
+pub async fn invoke_remote_scan(plugin_ids: Option<Vec<String>>) -> Result<Vec<ScanResult>, String> {
+    let args = serde_wasm_bindgen::to_value(&serde_json::json!({
+        "pluginIds": plugin_ids,
+    }))
+    .map_err(|e| format!("Failed to serialise scan args: {}", e))?;
+    let result = invoke_command("run_remote_scan", args).await?;
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to deserialise remote scan results: {}", e))
 }

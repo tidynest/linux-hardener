@@ -1,4 +1,5 @@
 use crate::types::{ApplyResult, ComplianceReport, Finding, RollbackResult, ScanResult, Severity};
+use hardener_types::remote::{RemoteConnectionInfo, RemoteHostProfile};
 use hardener_types::ValidationReport;
 use leptos::prelude::*;
 
@@ -41,6 +42,16 @@ pub struct AppState {
     /// Global error message displayed as a toast/banner.
     /// Set to Some(message) to show, None to dismiss.
     pub error_message: RwSignal<Option<String>>,
+    /// Saved remote host profiles.
+    pub remote_hosts: RwSignal<Vec<RemoteHostProfile>>,
+    /// Currently active remote connection info (None = disconnected).
+    pub remote_connection: RwSignal<Option<RemoteConnectionInfo>>,
+    /// Results from the most recent remote scan.
+    pub remote_scan_results: RwSignal<Vec<ScanResult>>,
+    /// Whether an SSH connection attempt is in progress.
+    pub is_connecting: RwSignal<bool>,
+    /// Whether a remote scan is currently running.
+    pub is_remote_scanning: RwSignal<bool>,
 }
 
 impl Default for AppState {
@@ -59,6 +70,11 @@ impl Default for AppState {
             is_previewing: RwSignal::new(false),
             show_preview: RwSignal::new(false),
             error_message: RwSignal::new(None),
+            remote_hosts: RwSignal::new(Vec::new()),
+            remote_connection: RwSignal::new(None),
+            remote_scan_results: RwSignal::new(Vec::new()),
+            is_connecting: RwSignal::new(false),
+            is_remote_scanning: RwSignal::new(false),
         }
     }
 }
