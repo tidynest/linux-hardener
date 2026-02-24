@@ -150,6 +150,7 @@ pub fn HistorySection() -> impl IntoView {
                 "Checkpoints preserve your system state before each change, enabling safe rollback."
             </p>
 
+            <div class="two-col-row">
             // Latest Apply Result
             <Card title="Latest Apply Operation" title_level=HeadingLevel::H2 class="apply-results-summary">
                 <Show
@@ -158,7 +159,7 @@ pub fn HistorySection() -> impl IntoView {
                         <div class="empty-state">
                             <div class="empty-state-icon">"⚡"</div>
                             <p class="empty-state-title">"No apply operations yet"</p>
-                            <p class="empty-state-hint">"Apply hardening to see results here."</p>
+                            <p class="empty-state-hint">"Configure and apply hardening in the Configure tab to see results here."</p>
                         </div>
                     }
                 >
@@ -253,6 +254,7 @@ pub fn HistorySection() -> impl IntoView {
                     }}
                 </Show>
             </Card>
+            </div>
 
             // Checkpoints Table
             <Card title="System Checkpoints" title_level=HeadingLevel::H2 class="checkpoints-section">
