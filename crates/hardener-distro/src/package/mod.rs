@@ -68,12 +68,16 @@ pub fn validate_package_names(packages: &[&str], rules: PackageNameRules) -> Res
 }
 
 /// Executes a command and returns stdout, with standardised error handling.
+///
+/// Resolves bare command names to absolute paths via a trusted search list,
+/// preventing PATH-based binary substitution attacks.
 pub fn execute_command(command: &str, args: &[&str]) -> Result<String> {
-    let output = std::process::Command::new(command)
+    let resolved = hardener_common::binary_utils::resolve_binary(command);
+    let output = std::process::Command::new(&resolved)
         .args(args)
         .output()
         .map_err(|e| {
-            HardeningError::PackageManager(format!("Failed to execute {}: {}", command, e))
+            HardeningError::PackageManager(format!("Failed to execute {}: {}", resolved, e))
         })?;
 
     if !output.status.success() {

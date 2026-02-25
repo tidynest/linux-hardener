@@ -3,6 +3,7 @@
 //! Provides error types, file utilities, logging, and common type re-exports
 //! used by all other crates in the workspace.
 
+pub mod binary_utils;
 pub mod error;
 pub mod file_utils;
 pub mod logging;

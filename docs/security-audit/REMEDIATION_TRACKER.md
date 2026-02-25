@@ -43,25 +43,25 @@ Findings are ordered by remediation priority, which considers severity, cascade 
 | 27 | SAM-035 | Medium | SMTP hostname injection | S | -- | Fixed |
 | 28 | SAM-036 | Medium | CSV formula injection | S | -- | Fixed |
 | 29 | SAM-037 | Medium | No config file size limit | S | SAM-062 (related) | Fixed |
-| 30 | SAM-030 | Medium | Private key unencrypted at rest | M | -- | Open |
-| 31 | SAM-014 | High | No signing trust separation | L | -- | Open |
-| 32 | SAM-018 | Medium | Partial rollback inconsistency | M | -- | Open |
+| 30 | SAM-030 | Medium | Private key unencrypted at rest | M | -- | Fixed |
+| 31 | SAM-014 | High | No signing trust separation | L | -- | Fixed |
+| 32 | SAM-018 | Medium | Partial rollback inconsistency | M | -- | Fixed |
 | 33 | SAM-019 | Medium | Checkpoint capture follows symlinks | S | -- | Fixed |
 | 34 | SAM-020 | Medium | Backup file symlink race | S | SAM-050 (same pattern) | Fixed |
 | 35 | SAM-022 | Medium | Checkpoint TOCTOU exists-then-read | S | -- | Fixed |
-| 36 | SAM-023 | Medium | Config read-modify-write race | M | -- | Open |
+| 36 | SAM-023 | Medium | Config read-modify-write race | M | -- | Fixed |
 | 37 | SAM-041 | Medium | Mutex deadlock risk in async | S | -- | Fixed |
-| 38 | SAM-045 | Medium | Permissions TOCTOU | M | -- | Open |
+| 38 | SAM-045 | Medium | Permissions TOCTOU | M | -- | Fixed |
 | 39 | SAM-046 | Medium | SSH no-verify missing warning | S | -- | Fixed |
-| 40 | SAM-032 | Medium | GUI checkpoint display no verification | M | -- | Open |
-| 41 | SAM-047 | Low | Non-atomic write_file | S | -- | Open |
-| 42 | SAM-060 | Low | Bare command names / env inheritance | M | -- | Open |
-| 43 | SAM-053 | Low | User config for root operations | M | -- | Open |
-| 44 | SAM-052 | Low | Corrupted JSON silent fallback | S | -- | Open |
-| 45 | SAM-058 | Low | HTML report unescaped fields | S | SAM-059 (same fix pattern) | Open |
-| 46 | SAM-069 | Low | Error messages contain internal paths | M | SAM-068, SAM-075 (same pattern) | Open |
+| 40 | SAM-032 | Medium | GUI checkpoint display no verification | M | -- | Fixed |
+| 41 | SAM-047 | Low | Non-atomic write_file | S | -- | Fixed |
+| 42 | SAM-060 | Low | Bare command names / env inheritance | M | -- | Fixed |
+| 43 | SAM-053 | Low | User config for root operations | M | -- | Fixed |
+| 44 | SAM-052 | Low | Corrupted JSON silent fallback | S | -- | Fixed |
+| 45 | SAM-058 | Low | HTML report unescaped fields | S | SAM-059 (same fix pattern) | Fixed |
+| 46 | SAM-069 | Low | Error messages contain internal paths | M | SAM-068, SAM-075 (same pattern) | Fixed |
 | 47 | SAM-057 | Low | Key bytes not zeroed | S | -- | Fixed |
-| 48 | SAM-054 | Low | No key rotation | L | -- | Open |
+| 48 | SAM-054 | Low | No key rotation | L | -- | Fixed |
 | 49 | SAM-055 | Low | Non-constant-time hash compare | S | -- | Fixed |
 | 50+ | Remaining | Low | See sections below | S-M | -- | Open |
 

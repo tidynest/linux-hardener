@@ -365,7 +365,23 @@ impl HardeningPlugin for SshHardeningPlugin {
             }
         }
 
-        // Step 3: Read current configuration using executor.
+        // Step 3: Acquire advisory lock on config file to prevent concurrent
+        // read-modify-write races with other processes editing sshd_config.
+        let lock_file = std::fs::File::open(config_path).map_err(|e| {
+            hardener_common::error::HardeningError::Plugin(format!(
+                "Failed to open {} for locking: {}",
+                config_path, e
+            ))
+        })?;
+        let _lock = nix::fcntl::Flock::lock(lock_file, nix::fcntl::FlockArg::LockExclusive)
+            .map_err(|(_file, errno)| {
+                hardener_common::error::HardeningError::Plugin(format!(
+                    "Failed to lock {}: {}",
+                    config_path, errno
+                ))
+            })?;
+
+        // Step 4: Read current configuration while holding the lock.
         let mut config_content = ctx
             .executor()
             .read_file(Path::new(config_path))
@@ -377,7 +393,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                 ))
             })?;
 
-        // Step 4: Apply each directive.
+        // Step 5: Apply each directive.
         for directive in SSH_DIRECTIVES {
             // Check for a valid exception — skip this directive if exempted
             if let Some(exception) = config.has_valid_exception(directive.ssh_directive_name) {

@@ -601,6 +601,24 @@ impl CheckpointManager {
         Ok(())
     }
 
+    /// Verifies the cryptographic signature of a checkpoint without restoring files.
+    ///
+    /// Returns `Ok(())` if the signature is valid, `Err` if verification fails
+    /// or the checkpoint data has been tampered with.
+    pub async fn verify_checkpoint(&self, checkpoint_id: &CheckpointId) -> Result<()> {
+        let (checkpoint, file_states) = self.get_checkpoint(checkpoint_id).await?;
+
+        let digest = Self::generate_digest(
+            &checkpoint.checkpoint_id,
+            &checkpoint.checkpoint_name,
+            checkpoint.checkpoint_timestamp,
+            &checkpoint.checkpoint_username,
+            &file_states,
+        );
+        self.signer
+            .verify(&digest, &checkpoint.checkpoint_signature)
+    }
+
     /// Restores a single file to its checkpointed state.
     ///
     /// Validates the path against an allowlist and rejects symlinks before
@@ -656,11 +674,13 @@ impl CheckpointManager {
             return (action, result);
         }
 
-        // Restore file content
-        if let Some(content) = &file_state.file_content
-            && let Err(e) = fs::write(path, content)
-        {
-            return (action, Err(HardeningError::System(e)));
+        // Restore file content atomically to prevent partial writes on interruption
+        if let Some(content) = &file_state.file_content {
+            let content_str = String::from_utf8_lossy(content);
+            if let Err(e) = hardener_common::file_utils::update_file_atomically(path, &content_str)
+            {
+                return (action, Err(e));
+            }
         }
 
         // Restore permissions
@@ -714,6 +734,34 @@ impl CheckpointManager {
         self.signer
             .verify(&digest, &checkpoint.checkpoint_signature)?;
 
+        // Phase 1: Pre-validate all targets before writing anything.
+        // Rejects if any target path fails the allowlist check or is a symlink,
+        // preventing a partially-rolled-back inconsistent state.
+        for fs in &file_states {
+            let path = Path::new(&fs.file_path);
+            let path_str = &fs.file_path;
+
+            if !path_str.starts_with('/')
+                || path
+                    .components()
+                    .any(|c| c == std::path::Component::ParentDir)
+                || !self
+                    .allowed_rollback_prefixes
+                    .iter()
+                    .any(|p| path_str.starts_with(p))
+            {
+                return Err(HardeningError::Config(format!(
+                    "Rollback aborted: path outside allowed directories: {path_str}"
+                )));
+            }
+            if path.is_symlink() {
+                return Err(HardeningError::Config(format!(
+                    "Rollback aborted: target is a symlink: {path_str}"
+                )));
+            }
+        }
+
+        // Phase 2: Apply all file restores (pre-validated).
         let mut all_ok = true;
         let files: Vec<_> = file_states
             .iter()

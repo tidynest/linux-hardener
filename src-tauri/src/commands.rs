@@ -22,6 +22,49 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tokio::process::Command;
 use tracing::error;
 
+/// Strips internal filesystem paths from error messages before sending to the GUI.
+///
+/// Replaces absolute paths with generic descriptions to avoid leaking
+/// system architecture details to the frontend (CWE-209).
+fn sanitise_error(msg: &str) -> String {
+    // Replace common internal paths with safe descriptions
+    let sanitised = msg
+        .replace("/etc/linux-hardener/", "[config]/")
+        .replace("/var/lib/linux-hardener/", "[data]/")
+        .replace("/var/log/linux-hardener/", "[log]/");
+
+    // Strip remaining absolute paths (keep the basename for context)
+    let mut result = String::with_capacity(sanitised.len());
+    let mut i = 0;
+    let chars: Vec<char> = sanitised.chars().collect();
+    while i < chars.len() {
+        if chars[i] == '/' && i + 1 < chars.len() && chars[i + 1].is_alphanumeric() {
+            // Scan ahead to end of path
+            let start = i;
+            let mut last_slash = i;
+            let mut j = i + 1;
+            while j < chars.len() && (chars[j].is_alphanumeric() || "/-_.".contains(chars[j])) {
+                if chars[j] == '/' {
+                    last_slash = j;
+                }
+                j += 1;
+            }
+            // Only replace multi-segment absolute paths (at least 2 slashes)
+            if last_slash > start {
+                let basename = &sanitised[last_slash + 1..j];
+                result.push_str(basename);
+            } else {
+                result.push_str(&sanitised[start..j]);
+            }
+            i = j;
+        } else {
+            result.push(chars[i]);
+            i += 1;
+        }
+    }
+    result
+}
+
 /// Minimum seconds between consecutive privileged operations.
 const PRIVILEGED_OP_COOLDOWN_SECS: u64 = 5;
 
@@ -150,6 +193,9 @@ pub struct CheckpointInfo {
     pub checkpoint_name: String,
     pub checkpoint_created: String,
     pub checkpoint_user: String,
+    /// Whether the checkpoint's signature was successfully verified.
+    /// `false` indicates potential tampering or a missing signing key.
+    pub checkpoint_verified: bool,
 }
 
 /// Formats a Unix timestamp as a human-readable string.
@@ -278,8 +324,8 @@ impl std::fmt::Display for PrivilegedCommandError {
                 f,
                 "Authentication cancelled. Root privileges are required for this operation."
             ),
-            Self::ExecutionFailed(msg) => write!(f, "Command failed: {}", msg),
-            Self::ParseError(msg) => write!(f, "Failed to parse output: {}", msg),
+            Self::ExecutionFailed(msg) => write!(f, "Command failed: {}", sanitise_error(msg)),
+            Self::ParseError(msg) => write!(f, "Failed to parse output: {}", sanitise_error(msg)),
         }
     }
 }
@@ -624,46 +670,53 @@ pub async fn run_rollback(
 /// This function merges both sources for a complete view.
 #[tauri::command]
 pub async fn get_checkpoints() -> Result<Vec<CheckpointInfo>, String> {
-    let mut all_checkpoints = Vec::new();
+    let mut entries: Vec<(Checkpoint, CheckpointManager)> = Vec::new();
 
-    // Try user database first
+    // Collect checkpoints from user database
     let user_db = get_user_db_path();
     if user_db.exists()
         && let Ok(manager) = create_checkpoint_manager(&user_db).await
         && let Ok(checkpoints) = manager.list_checkpoints().await
     {
-        all_checkpoints.extend(checkpoints);
+        for cp in checkpoints {
+            entries.push((cp, create_checkpoint_manager(&user_db).await.unwrap()));
+        }
     }
 
-    // Try system database (checkpoints from pkexec apply operations)
+    // Collect checkpoints from system database
     let system_db = get_system_db_path();
     if system_db.exists()
         && let Ok(manager) = create_checkpoint_manager(&system_db).await
         && let Ok(checkpoints) = manager.list_checkpoints().await
     {
-        // Add only checkpoints not already in the list (by ID)
         for cp in checkpoints {
-            if !all_checkpoints
+            if !entries
                 .iter()
-                .any(|c| c.checkpoint_id == cp.checkpoint_id)
+                .any(|(e, _)| e.checkpoint_id == cp.checkpoint_id)
             {
-                all_checkpoints.push(cp);
+                entries.push((cp, create_checkpoint_manager(&system_db).await.unwrap()));
             }
         }
     }
 
     // Sort by timestamp descending (newest first)
-    all_checkpoints.sort_by(|a, b| b.checkpoint_timestamp.cmp(&a.checkpoint_timestamp));
+    entries.sort_by(|(a, _), (b, _)| b.checkpoint_timestamp.cmp(&a.checkpoint_timestamp));
 
-    Ok(all_checkpoints
-        .into_iter()
-        .map(|cp| CheckpointInfo {
+    // Verify each checkpoint's signature and build response
+    let mut result = Vec::with_capacity(entries.len());
+    for (cp, manager) in &entries {
+        let verified = manager.verify_checkpoint(&cp.checkpoint_id).await.is_ok();
+
+        result.push(CheckpointInfo {
             checkpoint_id: cp.checkpoint_id.as_str().to_string(),
-            checkpoint_name: cp.checkpoint_name,
+            checkpoint_name: cp.checkpoint_name.clone(),
             checkpoint_created: format_timestamp(cp.checkpoint_timestamp),
-            checkpoint_user: cp.checkpoint_username,
-        })
-        .collect())
+            checkpoint_user: cp.checkpoint_username.clone(),
+            checkpoint_verified: verified,
+        });
+    }
+
+    Ok(result)
 }
 
 /// Creates a manual checkpoint of the current system state.
