@@ -4,7 +4,7 @@ use crate::checkpoint::{
     CheckpointId, FileRestoreAction, FileRestoreResult, FileState, RollbackResult,
 };
 use crate::{Checkpoint, CheckpointSigner};
-use hardener_common::error::Result;
+use hardener_common::error::{HardeningError, Result};
 use sqlx::{Row, SqlitePool};
 use std::path::Path;
 
@@ -20,6 +20,10 @@ pub struct CheckpointManager {
 }
 
 impl CheckpointManager {
+    /// Creates a new CheckpointManager, loading the signing key from the default path.
+    ///
+    /// # Errors
+    /// Returns an error if the signing key cannot be loaded or generated.
     pub fn new(db_pool: SqlitePool) -> Result<CheckpointManager> {
         let signer = CheckpointSigner::new()?;
         Ok(Self { db_pool, signer })
@@ -193,6 +197,39 @@ impl CheckpointManager {
         Ok(file_states)
     }
 
+    /// Computes an SHA-256 digest over checkpoint metadata and file contents.
+    ///
+    /// Shared by both signing (at checkpoint creation) and verification
+    /// (at rollback) to ensure identical digest computation.
+    fn generate_digest(
+        checkpoint_id: &CheckpointId,
+        checkpoint_name: &str,
+        checkpoint_timestamp: i64,
+        checkpoint_username: &str,
+        file_states: &[FileState],
+    ) -> Vec<u8> {
+        use ring::digest::{Context as DigestContext, SHA256};
+
+        let mut hash_context = DigestContext::new(&SHA256);
+        hash_context.update(checkpoint_id.as_str().as_bytes());
+        hash_context.update(checkpoint_name.as_bytes());
+        hash_context.update(&checkpoint_timestamp.to_be_bytes());
+        hash_context.update(checkpoint_username.as_bytes());
+
+        for file_state in file_states {
+            hash_context.update(file_state.file_path.as_bytes());
+            if let Some(content) = &file_state.file_content {
+                hash_context.update(content);
+            }
+            hash_context.update(&file_state.file_permissions.to_be_bytes());
+            hash_context.update(&file_state.file_owner_uid.to_be_bytes());
+            hash_context.update(&file_state.file_owner_gid.to_be_bytes());
+        }
+
+        // Finalise the hash
+        hash_context.finish().as_ref().to_vec()
+    }
+
     /// Generates a cryptographic signature for checkpoint integrity.
     ///
     /// The signature covers checkpoint metadata and hashes of all file contents.
@@ -208,33 +245,14 @@ impl CheckpointManager {
         checkpoint_username: &str,
         file_states: &[FileState],
     ) -> Result<Vec<u8>> {
-        use ring::digest::{Context as DigestContext, SHA256};
-
-        // Create a hash context
-        let mut hash_context = DigestContext::new(&SHA256);
-
-        // Hash checkpoint metadata
-        hash_context.update(checkpoint_id.as_str().as_bytes());
-        hash_context.update(checkpoint_name.as_bytes());
-
-        hash_context.update(&checkpoint_timestamp.to_be_bytes());
-        hash_context.update(checkpoint_username.as_bytes());
-
-        // Hash each file's content
-        for file_state in file_states {
-            hash_context.update(file_state.file_path.as_bytes());
-            if let Some(content) = &file_state.file_content {
-                hash_context.update(content);
-            }
-        }
-
-        // Finalise the hash
-        let digest = hash_context.finish();
-
-        // Sign the hash
-        let signature = self.signer.sign(digest.as_ref());
-
-        Ok(signature)
+        let digest = Self::generate_digest(
+            checkpoint_id,
+            checkpoint_name,
+            checkpoint_timestamp,
+            checkpoint_username,
+            file_states,
+        );
+        Ok(self.signer.sign(&digest))
     }
 
     /// Creates a new checkpoint capturing the state of specified files.
@@ -521,6 +539,10 @@ impl CheckpointManager {
         Ok(())
     }
 
+    /// Restores a single file to its checkpointed state.
+    ///
+    /// Validates the path against an allowlist and rejects symlinks before
+    /// performing any write. Returns the action taken and success/failure.
     fn restore_file_state_tracked(
         &self,
         file_state: &FileState,
