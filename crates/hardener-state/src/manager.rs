@@ -8,6 +8,21 @@ use hardener_common::error::{HardeningError, Result};
 use sqlx::{Row, SqlitePool};
 use std::path::Path;
 
+/// Default rollback path prefixes for production use.
+const DEFAULT_ROLLBACK_PREFIXES: &[&str] = &[
+    "/etc/ssh/",
+    "/etc/sysctl.d/",
+    "/etc/security/",
+    "/etc/pam.d/",
+    "/etc/audit/",
+    "/etc/apparmor",
+    "/etc/selinux/",
+    "/etc/login.defs",
+    "/etc/nftables",
+    "/etc/firewalld/",
+    "/etc/ufw/",
+];
+
 /// Manages checkpoint creation, storage, and retrieval.
 ///
 /// The CheckpointManager handles all operations related to checkpoints,
@@ -17,6 +32,8 @@ pub struct CheckpointManager {
     db_pool: SqlitePool,
     /// Cryptographic signer for checkpoint integrity
     signer: CheckpointSigner,
+    /// Allowed path prefixes for rollback file writes.
+    allowed_rollback_prefixes: Vec<String>,
 }
 
 impl CheckpointManager {
@@ -26,7 +43,12 @@ impl CheckpointManager {
     /// Returns an error if the signing key cannot be loaded or generated.
     pub fn new(db_pool: SqlitePool) -> Result<CheckpointManager> {
         let signer = CheckpointSigner::new()?;
-        Ok(Self { db_pool, signer })
+        Ok(Self {
+            db_pool,
+            signer,
+            allowed_rollback_prefixes: DEFAULT_ROLLBACK_PREFIXES.iter().map(
+                |prefix| prefix.to_string()).collect(),
+        })
     }
 
     /// Creates a new CheckpointManager with a custom signer.
@@ -36,8 +58,30 @@ impl CheckpointManager {
         db_pool: SqlitePool,
         signer: CheckpointSigner,
     ) -> Result<CheckpointManager> {
-        Ok(Self { db_pool, signer })
+        Ok(Self {
+            db_pool,
+            signer,
+            allowed_rollback_prefixes: DEFAULT_ROLLBACK_PREFIXES.iter().map(
+                |prefix| prefix.to_string()).collect(),
+        })
     }
+
+    /// Creates a CheckpointManager with custom rollback path prefixes.
+    ///
+    /// Allows tests and specialised deployments to override the default
+    /// allowlist without weakening production security.
+    pub fn new_with_allowlist(
+        db_pool: SqlitePool,
+        signer: CheckpointSigner,
+        allowed_prefixes: Vec<String>,
+    ) -> Result<CheckpointManager> {
+        Ok(Self {
+            db_pool,
+            signer,
+            allowed_rollback_prefixes: allowed_prefixes,
+        })
+    }
+
 
     /// Generates a unique checkpoint ID.
     ///
@@ -82,11 +126,11 @@ impl CheckpointManager {
 
         // Get metadata first
         let file_metadata =
-            fs::metadata(file_path).map_err(hardener_common::error::HardeningError::System)?;
+            fs::metadata(file_path).map_err(HardeningError::System)?;
 
         // Read file content
         let file_content =
-            fs::read(file_path).map_err(hardener_common::error::HardeningError::System)?;
+            fs::read(file_path).map_err(HardeningError::System)?;
 
         // Extract permissions and ownership
         let file_permissions = file_metadata.permissions().mode();
@@ -122,7 +166,7 @@ impl CheckpointManager {
         }
 
         let metadata =
-            fs::metadata(dir_path).map_err(hardener_common::error::HardeningError::System)?;
+            fs::metadata(dir_path).map_err(HardeningError::System)?;
 
         Ok(FileState {
             file_path: dir_path.to_string_lossy().to_string(),
@@ -159,7 +203,7 @@ impl CheckpointManager {
         }
 
         let metadata =
-            fs::metadata(file_path).map_err(hardener_common::error::HardeningError::System)?;
+            fs::metadata(file_path).map_err(HardeningError::System)?;
 
         if metadata.is_dir() {
             // Recursively capture all files in directory
@@ -177,10 +221,10 @@ impl CheckpointManager {
         let mut file_states = vec![self.capture_directory_entry(dir_path)?];
 
         let entries =
-            fs::read_dir(dir_path).map_err(hardener_common::error::HardeningError::System)?;
+            fs::read_dir(dir_path).map_err(HardeningError::System)?;
 
         for entry in entries {
-            let entry = entry.map_err(hardener_common::error::HardeningError::System)?;
+            let entry = entry.map_err(HardeningError::System)?;
             let path = entry.path();
 
             if path.is_dir() {
@@ -386,7 +430,7 @@ impl CheckpointManager {
         .bind(checkpoint_timestamp)
         .execute(&self.db_pool)
         .await
-        .map_err(|e| hardener_common::error::HardeningError::Database(e.to_string()))?;
+        .map_err(|e| HardeningError::Database(e.to_string()))?;
 
         // Insert file states
         for file_state in file_states {
@@ -409,7 +453,7 @@ impl CheckpointManager {
             .bind(file_state.file_owner_gid as i64)
             .execute(&self.db_pool)
             .await
-            .map_err(|e| hardener_common::error::HardeningError::Database(e.to_string()))?;
+            .map_err(|e| HardeningError::Database(e.to_string()))?;
         }
 
         Ok(())
@@ -439,7 +483,7 @@ impl CheckpointManager {
         .bind(checkpoint_id.as_str())
         .fetch_one(&self.db_pool)
         .await
-        .map_err(|e| hardener_common::error::HardeningError::Database(e.to_string()))?;
+        .map_err(|e| HardeningError::Database(e.to_string()))?;
 
         let checkpoint = Checkpoint {
             checkpoint_id: CheckpointId::new(checkpoint_row.get::<String, _>("id")),
@@ -463,7 +507,7 @@ impl CheckpointManager {
         .bind(checkpoint_id.as_str())
         .fetch_all(&self.db_pool)
         .await
-        .map_err(|e| hardener_common::error::HardeningError::Database(e.to_string()))?;
+        .map_err(|e| HardeningError::Database(e.to_string()))?;
 
         let mut file_states = Vec::new();
         for row in file_rows {
@@ -498,7 +542,7 @@ impl CheckpointManager {
         )
         .fetch_all(&self.db_pool)
         .await
-        .map_err(|e| hardener_common::error::HardeningError::Database(e.to_string()))?;
+        .map_err(|e| HardeningError::Database(e.to_string()))?;
 
         let mut checkpoints = Vec::new();
         for row in rows {
@@ -527,14 +571,14 @@ impl CheckpointManager {
             .bind(checkpoint_id.as_str())
             .execute(&self.db_pool)
             .await
-            .map_err(|e| hardener_common::error::HardeningError::Database(e.to_string()))?;
+            .map_err(|e| HardeningError::Database(e.to_string()))?;
 
         // Delete checkpoint metadata
         sqlx::query("DELETE FROM checkpoints WHERE id = ?")
             .bind(checkpoint_id.as_str())
             .execute(&self.db_pool)
             .await
-            .map_err(|e| hardener_common::error::HardeningError::Database(e.to_string()))?;
+            .map_err(|e| HardeningError::Database(e.to_string()))?;
 
         Ok(())
     }
@@ -551,25 +595,10 @@ impl CheckpointManager {
 
         let path = Path::new(&file_state.file_path);
 
-        // Validate path before any filesystem operations
-        const ALLOWED_PREFIXES: &[&str] = &[
-            "/etc/ssh/",
-            "/etc/sysctl.d/",
-            "/etc/security/",
-            "/etc/pam.d/",
-            "/etc/audit/",
-            "/etc/apparmor",
-            "/etc/selinux/",
-            "/etc/login.defs",
-            "/etc/nftables",
-            "/etc/firewalld/",
-            "/etc/ufw/",
-        ];
-
         let path_str = &file_state.file_path;
         if !path_str.starts_with('/')
             || path.components().any(|c| c == std::path::Component::ParentDir)
-            || !ALLOWED_PREFIXES.iter().any(|p| path_str.starts_with(p))
+            || !self.allowed_rollback_prefixes.iter().any(|p| path_str.starts_with(p))
         {
             return (
                 FileRestoreAction::Skipped,
@@ -601,7 +630,7 @@ impl CheckpointManager {
         // Remove files that didn't exist at checkpoint time
         if matches!(action, FileRestoreAction::Removed) {
             let result =
-                fs::remove_file(path).map_err(hardener_common::error::HardeningError::System);
+                fs::remove_file(path).map_err(HardeningError::System);
             return (action, result);
         }
 
@@ -611,7 +640,7 @@ impl CheckpointManager {
         {
             return (
                 action,
-                Err(hardener_common::error::HardeningError::System(e)),
+                Err(HardeningError::System(e)),
             );
         }
 
@@ -622,7 +651,7 @@ impl CheckpointManager {
         ) {
             return (
                 action,
-                Err(hardener_common::error::HardeningError::System(e)),
+                Err(HardeningError::System(e)),
             );
         }
 
@@ -633,7 +662,7 @@ impl CheckpointManager {
             Some(nix::unistd::Gid::from_raw(file_state.file_owner_gid)),
         )
         .map_err(|e| {
-            hardener_common::error::HardeningError::Privilege(format!(
+            HardeningError::Privilege(format!(
                 "Failed to restore ownership: {e}"
             ))
         });

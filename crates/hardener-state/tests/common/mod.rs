@@ -31,9 +31,14 @@ impl TestFixture {
         let signer = hardener_state::CheckpointSigner::new_with_path(&key_path)
             .expect("Failed to create signer");
 
-        // Manually create CheckpointManager with test signer
-        let checkpoint_manager = CheckpointManager::new_with_signer(db_pool.clone(), signer)
-            .expect("Failed to create checkpoint manager");
+        // Allow temp directory paths for test rollbacks
+        let temp_prefix = temp_dir.path().to_string_lossy().to_string();
+        let checkpoint_manager = CheckpointManager::new_with_allowlist(
+            db_pool.clone(),
+            signer,
+            vec![temp_prefix],
+        )
+        .expect("Failed to create checkpoint manager");
 
         TestFixture {
             fixture_checkpoint_manager: checkpoint_manager,

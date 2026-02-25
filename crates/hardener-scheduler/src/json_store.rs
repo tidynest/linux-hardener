@@ -74,11 +74,22 @@ impl JsonStore {
         Ok(files)
     }
 
-    /// Reads and deserialises a JSON file.
-    pub async fn read<T: serde::de::DeserializeOwned>(&self, path: &Path) -> Result<T> {
+    /// Reads and deserialises a JSON file with integrity verification.
+    pub async fn read<T: serde::de::DeserializeOwned>(
+        &self, 
+        path: &Path,
+        expected_hash: &str,
+    ) -> Result<T> {
         let content = fs::read_to_string(path)
             .await
             .map_err(|e| HardeningError::Database(format!("Failed to read file: {}", e)))?;
+
+        if Self::sha256(&content) != expected_hash {
+            return Err(HardeningError::Database(format!(
+                "integrity check failed: hash mismatch {}",
+                path.display(),
+            )));
+        }
 
         serde_json::from_str(&content)
             .map_err(|e| HardeningError::Database(format!("JSON parse failed: {}", e)))
@@ -138,11 +149,11 @@ mod tests {
             value: 42,
         };
 
-        let (path, _hash) = store.write("abcd1234-5678", &data).await.unwrap();
+        let (path, hash) = store.write("abcd1234-5678", &data).await.unwrap();
         assert!(path.contains("scan_"));
         assert!(path.ends_with(".json"));
 
-        let read_data: TestData = store.read(Path::new(&path)).await.unwrap();
+        let read_data: TestData = store.read(Path::new(&path), &hash).await.unwrap();
         assert_eq!(read_data, data);
     }
 

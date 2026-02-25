@@ -72,24 +72,32 @@ impl CheckpointSigner {
 
     /// Saves a signing key to disk with restrictive permissions.
     ///
-    /// # Security Implications
-    /// Sets file permissions to 0600 (owner read/write only).
+    /// Uses atomic file creation to ensure the key is never world-readable. 
     fn save_key(key_path: &Path, signing_key: &SigningKey) -> Result<()> {
-        use std::os::unix::fs::PermissionsExt;
+        use std::fs::{DirBuilder, OpenOptions};
+        use std::io::Write;
+        use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 
         // Ensure parent directory exists
         if let Some(parent) = key_path.parent() {
-            fs::create_dir_all(parent).map_err(HardeningError::System)?;
+            DirBuilder::new()
+                .recursive(true)
+                .mode(0o700)
+                .create(parent)
+                .map_err(HardeningError::System)?;
         }
 
-        // Write key bytes to file
-        let key_bytes = signing_key.to_bytes();
-        fs::write(key_path, key_bytes).map_err(HardeningError::System)?;
+        // Create file atomically with 0600 - never exists with wrong mode
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(key_path)
+            .map_err(HardeningError::System)?;
 
-        // Set restrictive permissions (0600 - owner read/write only)
-        let permissions = fs::Permissions::from_mode(0o600);
-        fs::set_permissions(key_path, permissions).map_err(HardeningError::System)?;
-
+        file.write_all(&signing_key.to_bytes())
+            .map_err(HardeningError::System)?;
+            
         Ok(())
     }
 

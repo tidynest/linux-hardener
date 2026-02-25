@@ -93,7 +93,14 @@ pub async fn init_db(db_path: Option<&Path>) -> Result<SqlitePool> {
 
     // Create parent directory if it doesn't exist
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(HardeningError::System)?;
+        use std::fs::DirBuilder;
+        use std::os::unix::fs::DirBuilderExt;
+
+        DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(parent)
+            .map_err(HardeningError::System)?;
     }
 
     // Configure SQLite connection
@@ -113,6 +120,13 @@ pub async fn init_db(db_path: Option<&Path>) -> Result<SqlitePool> {
         .execute(&pool)
         .await
         .map_err(|e| HardeningError::Database(e.to_string()))?;
+
+    // Restrict DB file permissions after creation
+    use std::fs::Permissions;
+    use std::os::unix::fs::PermissionsExt;
+
+    std::fs::set_permissions(&path, Permissions::from_mode(0o600))
+        .map_err(HardeningError::System)?;
 
     Ok(pool)
 }
