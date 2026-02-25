@@ -22,6 +22,12 @@ use std::sync::Mutex;
 use tokio::process::Command;
 use tracing::error;
 
+use crate::validation::{
+    validate_checkpoint_id, validate_checkpoint_name, validate_ipc_string, validate_output_path,
+    validate_plugin_ids, validate_privileged_config_path, validate_ssh_key_path,
+    validate_user_config_path,
+};
+
 /// Managed state for remote SSH connections.
 pub struct RemoteState {
     pub active_connection: Mutex<Option<ActiveConnection>>,
@@ -274,6 +280,13 @@ pub async fn run_scan(
     plugin_ids: Option<Vec<String>>,
     config_path: Option<String>,
 ) -> Result<Vec<ScanResult>, String> {
+    if let Some(ref ids) = plugin_ids {
+        validate_plugin_ids(ids)?;
+    }
+    if let Some(ref path) = config_path {
+        validate_user_config_path(path)?;
+    }
+
     // Create scan history manager for persistence
     let history_manager = create_scan_history_manager().await?;
 
@@ -362,6 +375,11 @@ pub async fn run_apply(
     plugin_ids: Vec<String>,
     config_path: Option<String>,
 ) -> Result<Vec<ApplyResult>, String> {
+    validate_plugin_ids(&plugin_ids)?;
+    if let Some(ref path) = config_path {
+        validate_privileged_config_path(path)?;
+    }
+
     tracing::info!("=== run_apply called with plugins: {:?} ===", plugin_ids);
 
     // Build CLI arguments
@@ -406,6 +424,11 @@ pub async fn run_apply_dry_run(
     plugin_ids: Vec<String>,
     config_path: Option<String>,
 ) -> Result<Vec<ValidationReport>, String> {
+    validate_plugin_ids(&plugin_ids)?;
+    if let Some(ref path) = config_path {
+        validate_user_config_path(path)?;
+    }
+
     tracing::info!(
         "=== run_apply_dry_run called with plugins: {:?} ===",
         plugin_ids
@@ -465,7 +488,12 @@ pub async fn run_rollback(
     checkpoint_id: String,
     config_path: Option<String>,
 ) -> Result<RollbackResult, String> {
-    let mut args: Vec<&str> = vec!["rollback", "--format", "json", &checkpoint_id];
+    validate_checkpoint_id(&checkpoint_id)?;
+    if let Some(ref path) = config_path {
+        validate_privileged_config_path(path)?;
+    }
+
+    let mut args: Vec<&str> = vec!["rollback", "--format", "json", "--", &checkpoint_id];
 
     // Inject config file path if set
     let config_flag;
@@ -536,7 +564,9 @@ pub async fn get_checkpoints() -> Result<Vec<CheckpointInfo>, String> {
 /// Requires root privileges via pkexec since it reads protected system files.
 #[tauri::command]
 pub async fn create_checkpoint(name: String) -> Result<String, String> {
-    let args = vec!["checkpoint", "create", "--format", "json", &name];
+    validate_checkpoint_name(&name)?;
+
+    let args = vec!["checkpoint", "create", "--format", "json", "--", &name];
 
     let output = run_privileged_command(&args)
         .await
@@ -558,6 +588,8 @@ pub async fn create_checkpoint(name: String) -> Result<String, String> {
 /// Does not require root privileges.
 #[tauri::command]
 pub async fn delete_checkpoint(checkpoint_id: String) -> Result<bool, String> {
+    validate_checkpoint_id(&checkpoint_id)?;
+
     let cp_id = CheckpointId::new(&checkpoint_id);
 
     // Try user database first
@@ -655,6 +687,14 @@ pub async fn export_compliance_report(
     format: String,
     output_path: Option<String>,
 ) -> Result<String, String> {
+    for f in &frameworks {
+        validate_ipc_string(f, "framework")?;
+    }
+    validate_ipc_string(&format, "format")?;
+    if let Some(ref path) = output_path {
+        validate_output_path(path)?;
+    }
+
     let output_format = parse_output_format(&format)?;
     let all_findings = collect_findings().await?;
     let parsed_frameworks = parse_frameworks(&frameworks);
@@ -753,6 +793,8 @@ pub async fn get_scan_history(limit: Option<i32>) -> Result<Vec<ScanSessionInfo>
 /// Retrieves full scan results for a specific session.
 #[tauri::command]
 pub async fn get_scan_session(session_id: String) -> Result<Vec<ScanResult>, String> {
+    validate_ipc_string(&session_id, "session_id")?;
+
     let manager = create_scan_history_manager().await?;
     let id = ScanSessionId::new(session_id);
 
@@ -812,6 +854,8 @@ fn checkpoint_to_detail(cp: Checkpoint, files: Vec<FileState>) -> CheckpointDeta
 /// Searches both user and system databases.
 #[tauri::command]
 pub async fn get_checkpoint_detail(checkpoint_id: String) -> Result<CheckpointDetail, String> {
+    validate_checkpoint_id(&checkpoint_id)?;
+
     let cp_id = CheckpointId::new(&checkpoint_id);
 
     // Try user database first
@@ -864,6 +908,15 @@ pub async fn list_remote_hosts() -> Result<Vec<RemoteHostProfile>, String> {
 /// Creates or updates a remote host profile (upsert by name).
 #[tauri::command]
 pub async fn save_remote_host(profile: RemoteHostProfile) -> Result<(), String> {
+    validate_ipc_string(&profile.name, "profile_name")?;
+    validate_ipc_string(&profile.hostname, "hostname")?;
+    if let Some(ref user) = profile.user {
+        validate_ipc_string(user, "user")?;
+    }
+    if let Some(ref key) = profile.key_file {
+        validate_ssh_key_path(key)?;
+    }
+
     let mut config = load_hosts_config()?;
     if let Some(existing) = config.hosts.iter_mut().find(|h| h.name == profile.name) {
         *existing = profile;
@@ -876,6 +929,8 @@ pub async fn save_remote_host(profile: RemoteHostProfile) -> Result<(), String> 
 /// Deletes a remote host profile by name.
 #[tauri::command]
 pub async fn delete_remote_host(name: String) -> Result<(), String> {
+    validate_ipc_string(&name, "profile_name")?;
+
     let mut config = load_hosts_config()?;
     config.hosts.retain(|h| h.name != name);
     save_hosts_config(&config)
@@ -891,6 +946,8 @@ pub async fn connect_remote(
     name: String,
     state: tauri::State<'_, RemoteState>,
 ) -> Result<RemoteConnectionStatus, String> {
+    validate_ipc_string(&name, "profile_name")?;
+
     let config = load_hosts_config()?;
     let profile = config
         .hosts
@@ -962,6 +1019,10 @@ pub async fn run_remote_scan(
     plugin_ids: Option<Vec<String>>,
     state: tauri::State<'_, RemoteState>,
 ) -> Result<Vec<ScanResult>, String> {
+    if let Some(ref ids) = plugin_ids {
+        validate_plugin_ids(ids)?;
+    }
+
     // Clone the Arc<SshExecutor> out of the mutex before any async work
     let executor = {
         let connection = state
@@ -1043,6 +1104,16 @@ pub async fn get_scheduler_config() -> Result<hardener_types::scheduler::Schedul
 pub async fn save_scheduler_config(
     config: hardener_types::scheduler::SchedulerUiConfig,
 ) -> Result<String, String> {
+    validate_ipc_string(&config.schedule, "schedule")?;
+    for plugin in &config.plugins {
+        validate_ipc_string(plugin, "scheduler_plugin")?;
+    }
+    validate_ipc_string(&config.notifications.webhooks.url, "webhook_url")?;
+    validate_ipc_string(&config.notifications.email.from_address, "from_address")?;
+    for recipient in &config.notifications.email.recipients {
+        validate_ipc_string(recipient, "email_recipient")?;
+    }
+
     let path = hardener_config_path()?;
 
     if let Some(parent) = path.parent() {
@@ -1161,6 +1232,8 @@ pub async fn test_notification() -> Result<hardener_types::scheduler::TestNotifi
 /// directives, and exceptions. Returns error details if invalid.
 #[tauri::command]
 pub async fn validate_config(path: String) -> Result<ConfigSummary, String> {
+    validate_user_config_path(&path)?;
+
     use hardener_core::ConfigLoader;
 
     let file_path = std::path::PathBuf::from(&path);
