@@ -195,10 +195,10 @@ pub fn validate_privileged_config_path(path: &str) -> Result<PathBuf, String> {
     // Allow user config dir: ~/.config/linux-hardener/
     if let Some(config_dir) = dirs::config_dir() {
         let allowed = config_dir.join("linux-hardener");
-        if let Ok(allowed_canonical) = allowed.canonicalize() {
-            if canonical.starts_with(&allowed_canonical) {
-                return Ok(canonical);
-            }
+        if let Ok(allowed_canonical) = allowed.canonicalize()
+            && canonical.starts_with(&allowed_canonical)
+        {
+            return Ok(canonical);
         }
         // Also allow if the dir doesn't exist yet but path matches
         if canonical.starts_with(&allowed) {
@@ -275,15 +275,15 @@ pub fn validate_output_path(path: &str) -> Result<PathBuf, String> {
         }
 
         // Allow XDG document/download dirs if different from defaults
-        if let Some(doc_dir) = dirs::document_dir() {
-            if expanded.starts_with(&doc_dir) {
-                return Ok(expanded);
-            }
+        if let Some(doc_dir) = dirs::document_dir()
+            && expanded.starts_with(&doc_dir)
+        {
+            return Ok(expanded);
         }
-        if let Some(dl_dir) = dirs::download_dir() {
-            if expanded.starts_with(&dl_dir) {
-                return Ok(expanded);
-            }
+        if let Some(dl_dir) = dirs::download_dir()
+            && expanded.starts_with(&dl_dir)
+        {
+            return Ok(expanded);
         }
     }
 
