@@ -1,4 +1,5 @@
 mod commands;
+mod validation;
 
 use commands::{
     RemoteState, connect_remote, create_checkpoint, delete_checkpoint, delete_remote_host,

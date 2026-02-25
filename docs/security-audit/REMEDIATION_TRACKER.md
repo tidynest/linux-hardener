@@ -22,8 +22,8 @@ Findings are ordered by remediation priority, which considers severity, cascade 
 | 6 | SAM-011 | High | Signing key co-located with checkpoint DB | S | SAM-014 (partially) | Open |
 | 7 | SAM-003 | Critical | AuditLogger never instantiated in production | M | SAM-013, SAM-031 (enables) | Open |
 | 8 | SAM-004 | Critical | JSON store hash never verified in production | S | -- | Open |
-| 9 | SAM-015 | Medium | No IPC input validation before pkexec | M | SAM-078 (partially) | Open |
-| 10 | SAM-016 | Medium | Config path traversal to root process | S | SAM-071 (partially) | Open |
+| 9 | SAM-015 | Medium | No IPC input validation before pkexec | M | SAM-077, SAM-078 | Fixed |
+| 10 | SAM-016 | Medium | Config path traversal to root process | S | SAM-071 | Fixed |
 | 11 | SAM-010 | High | SSRF via webhook URL | M | -- | Open |
 | 12 | SAM-024 | Medium | Signing key TOCTOU permission race | S | -- | Open |
 | 13 | SAM-026 | Medium | Parent dir default permissions | S | -- | Open |
@@ -36,8 +36,8 @@ Findings are ordered by remediation priority, which considers severity, cascade 
 | 20 | SAM-038 | Medium | withGlobalTauri exposes IPC | S | SAM-039 (related) | Open |
 | 21 | SAM-042 | Medium | No concurrency guards on privileged ops | S | -- | Open |
 | 22 | SAM-044 | Medium | No rate limiting on pkexec commands | M | -- | Open |
-| 23 | SAM-043 | Medium | SSH key file path credential exfiltration | S | -- | Open |
-| 24 | SAM-040 | Medium | Export report arbitrary file write | S | -- | Open |
+| 23 | SAM-043 | Medium | SSH key file path credential exfiltration | S | -- | Fixed |
+| 24 | SAM-040 | Medium | Export report arbitrary file write | S | -- | Fixed |
 | 25 | SAM-033 | Medium | Webhook env var leaks secrets | S | -- | Open |
 | 26 | SAM-034 | Medium | Webhook header injection | S | -- | Open |
 | 27 | SAM-035 | Medium | SMTP hostname injection | S | -- | Open |
