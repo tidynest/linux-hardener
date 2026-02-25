@@ -9,6 +9,7 @@ pub mod plugin;
 // System-specific modules (require hostname, nix, petgraph)
 pub mod config;
 pub mod config_loader;
+pub mod config_validation;
 #[cfg(feature = "system")]
 pub mod context;
 pub mod executor;

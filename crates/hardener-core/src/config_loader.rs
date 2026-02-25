@@ -69,7 +69,12 @@ impl ConfigLoader {
         }
 
         // 5. Apply environment variable overrides
-        Ok(Self::apply_env_overrides(config))
+        let config = Self::apply_env_overrides(config);
+
+        // 6. Validate all directive values before returning
+        crate::config_validation::validate_config(&config)?;
+
+        Ok(config)
     }
 
     /// Helper to merge a configuration source if it exists.
