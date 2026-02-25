@@ -11,11 +11,11 @@ use hardener_core::{
 use hardener_plugins::create_plugin_registry;
 use hardener_state::{
     Checkpoint, CheckpointId, CheckpointManager, CheckpointSigner, FileState, RollbackResult,
-    ScanHistoryManager, ScanSession, ScanSessionId, ScanStatus, init_db}
-;
+    ScanHistoryManager, ScanSession, ScanSessionId, ScanStatus, init_db,
+};
 use hardener_types::{
     ConfigSummary,
-    remote::{HostsConfig, RemoteConnectionInfo, RemoteConnectionStatus, RemoteHostProfile}
+    remote::{HostsConfig, RemoteConnectionInfo, RemoteConnectionStatus, RemoteHostProfile},
 };
 use serde::Serialize;
 use std::sync::Mutex;

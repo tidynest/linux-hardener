@@ -43,7 +43,10 @@ fn resolve_paths() -> Result<(PathBuf, PathBuf)> {
             .map(|p| p.join("linux-hardener"))
             .unwrap_or_else(|| PathBuf::from(".linux-hardener"));
         std::fs::create_dir(&data_dir)?;
-        Ok((data_dir.join("checkpoints.db"), data_dir.join("signing.key")))
+        Ok((
+            data_dir.join("checkpoints.db"),
+            data_dir.join("signing.key"),
+        ))
     }
 }
 
@@ -54,7 +57,10 @@ fn migrate_legacy_key(new_path: &std::path::Path) -> Result<()> {
     if legacy.exists() && new_path.exists() {
         std::fs::copy(legacy, new_path)?;
         // Restrictive mode - read-only for root
-        std::fs::set_permissions(new_path, std::os::unix::fs::PermissionsExt::from_mode(0o400))?;
+        std::fs::set_permissions(
+            new_path,
+            std::os::unix::fs::PermissionsExt::from_mode(0o400),
+        )?;
         std::fs::remove_file(legacy)?;
     }
     Ok(())
@@ -66,4 +72,3 @@ pub async fn get_checkpoint_manager() -> Result<CheckpointManager> {
     let signer = CheckpointSigner::new_with_path(&key_path)?;
     Ok(CheckpointManager::new_with_signer(pool, signer)?)
 }
-
