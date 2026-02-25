@@ -107,9 +107,23 @@ impl ReportFormatter for CsvFormatter {
 }
 
 /// Escapes a CSV field by wrapping in quotes if it contains special characters.
+///
+/// Also neutralises formula injection: cells starting with `=`, `+`, `-`,
+/// `@`, `\t`, or `\r` are prefixed with a tab inside the quoted field
+/// (OWASP recommendation) to prevent spreadsheet formula execution.
 fn escape_csv_field(field: &str) -> String {
-    if field.contains(',') || field.contains('"') || field.contains('\n') {
-        format!("\"{}\"", field.replace('"', "\"\""))
+    let needs_formula_guard = field
+        .as_bytes()
+        .first()
+        .is_some_and(|&b| matches!(b, b'=' | b'+' | b'-' | b'@' | b'\t' | b'\r'));
+
+    if needs_formula_guard || field.contains(',') || field.contains('"') || field.contains('\n') {
+        let escaped = field.replace('"', "\"\"");
+        if needs_formula_guard {
+            format!("\"\t{}\"", escaped)
+        } else {
+            format!("\"{}\"", escaped)
+        }
     } else {
         field.to_string()
     }
@@ -168,5 +182,22 @@ mod tests {
         assert_eq!(escape_csv_field("simple"), "simple");
         assert_eq!(escape_csv_field("with,comma"), "\"with,comma\"");
         assert_eq!(escape_csv_field("with\"quote"), "\"with\"\"quote\"");
+    }
+
+    #[test]
+    fn test_csv_formula_injection_guard() {
+        // Formula-triggering characters get tab-prefixed inside quotes
+        assert_eq!(
+            escape_csv_field("=cmd|'/C calc'!A0"),
+            "\"\t=cmd|'/C calc'!A0\""
+        );
+        assert_eq!(escape_csv_field("+1+1"), "\"\t+1+1\"");
+        assert_eq!(escape_csv_field("-1-1"), "\"\t-1-1\"");
+        assert_eq!(escape_csv_field("@SUM(A1)"), "\"\t@SUM(A1)\"");
+        // Normal text unchanged
+        assert_eq!(
+            escape_csv_field("Ensure ASLR is enabled"),
+            "Ensure ASLR is enabled"
+        );
     }
 }

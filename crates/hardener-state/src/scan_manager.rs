@@ -56,6 +56,12 @@ impl ScanHistoryManager {
         session_id: &ScanSessionId,
         results: &[ScanResult],
     ) -> Result<()> {
+        let mut tx = self
+            .db_pool
+            .begin()
+            .await
+            .map_err(|e| HardeningError::Database(e.to_string()))?;
+
         for result in results {
             // Insert scan_results row
             let result_row = sqlx::query(
@@ -68,7 +74,7 @@ impl ScanHistoryManager {
             .bind(result.scan_success)
             .bind(result.scan_duration_us as i64)
             .bind(&result.scan_error)
-            .fetch_one(&self.db_pool)
+            .fetch_one(&mut *tx)
             .await
             .map_err(|e| HardeningError::Database(e.to_string()))?;
 
@@ -107,11 +113,15 @@ impl ScanHistoryManager {
                 .bind(&remediation_json)
                 .bind(&compliance_json)
                 .bind(&policy_exception_json)
-                .execute(&self.db_pool)
+                .execute(&mut *tx)
                 .await
                 .map_err(|e| HardeningError::Database(e.to_string()))?;
             }
         }
+
+        tx.commit()
+            .await
+            .map_err(|e| HardeningError::Database(e.to_string()))?;
 
         Ok(())
     }

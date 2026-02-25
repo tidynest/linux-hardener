@@ -20,7 +20,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(RemoteState {
-            active_connection: std::sync::Mutex::new(None),
+            active_connection: tokio::sync::Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             connect_remote,

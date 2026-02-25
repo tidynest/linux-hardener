@@ -18,9 +18,60 @@ use hardener_types::{
     remote::{HostsConfig, RemoteConnectionInfo, RemoteConnectionStatus, RemoteHostProfile},
 };
 use serde::Serialize;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tokio::process::Command;
 use tracing::error;
+
+/// Minimum seconds between consecutive privileged operations.
+const PRIVILEGED_OP_COOLDOWN_SECS: u64 = 5;
+
+/// Prevents concurrent privileged operations (apply, rollback, checkpoint
+/// create/delete). Only one pkexec subprocess may run at a time.
+static PRIVILEGED_OP_RUNNING: AtomicBool = AtomicBool::new(false);
+
+/// Unix timestamp (seconds) when the last privileged operation completed.
+static PRIVILEGED_OP_LAST_COMPLETED: AtomicU64 = AtomicU64::new(0);
+
+/// RAII guard that enforces both mutual exclusion and rate limiting
+/// for privileged operations.
+struct PrivilegedOpGuard;
+
+impl PrivilegedOpGuard {
+    fn acquire() -> Result<Self, String> {
+        // Enforce cooldown since last completed operation
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let last = PRIVILEGED_OP_LAST_COMPLETED.load(Ordering::SeqCst);
+        let elapsed = now.saturating_sub(last);
+        if last > 0 && elapsed < PRIVILEGED_OP_COOLDOWN_SECS {
+            return Err(format!(
+                "Rate limit: please wait {} seconds before the next privileged operation.",
+                PRIVILEGED_OP_COOLDOWN_SECS - elapsed
+            ));
+        }
+
+        // Enforce mutual exclusion
+        PRIVILEGED_OP_RUNNING
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .map_err(|_| {
+                "Another privileged operation is already in progress. Please wait.".to_string()
+            })?;
+        Ok(Self)
+    }
+}
+
+impl Drop for PrivilegedOpGuard {
+    fn drop(&mut self) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        PRIVILEGED_OP_LAST_COMPLETED.store(now, Ordering::SeqCst);
+        PRIVILEGED_OP_RUNNING.store(false, Ordering::SeqCst);
+    }
+}
 
 use crate::validation::{
     validate_checkpoint_id, validate_checkpoint_name, validate_ipc_string, validate_output_path,
@@ -29,8 +80,11 @@ use crate::validation::{
 };
 
 /// Managed state for remote SSH connections.
+///
+/// Uses `tokio::sync::Mutex` to avoid blocking the async runtime if the
+/// lock is held across await points.
 pub struct RemoteState {
-    pub active_connection: Mutex<Option<ActiveConnection>>,
+    pub active_connection: tokio::sync::Mutex<Option<ActiveConnection>>,
 }
 
 /// An active SSH connection with its executor and metadata.
@@ -105,16 +159,19 @@ fn format_timestamp(timestamp: i64) -> String {
         .unwrap_or_else(|| format!("Invalid timestamp: {}", timestamp))
 }
 
-/// Returns the path to the hardener CLI binary.
+/// Returns the canonical absolute path to the hardener CLI binary.
 ///
-/// In development, uses the debug build. In production, expects
-/// the binary in standard locations or PATH.
+/// Searches in order: sibling of current exe, dev workspace target,
+/// then PATH via `which`. Every candidate is resolved to a canonical
+/// absolute path before being returned — bare command names are never
+/// returned to prevent PATH-based privilege escalation through pkexec.
 fn get_hardener_binary_path() -> Result<String, String> {
     // Check sibling directory of current executable (works in dev and production)
-    if let Ok(exe) = std::env::current_exe()
-        && exe.with_file_name("hardener").exists()
-    {
-        return Ok(exe.with_file_name("hardener").to_string_lossy().to_string());
+    if let Ok(exe) = std::env::current_exe() {
+        let candidate = exe.with_file_name("hardener");
+        if let Ok(canonical) = std::fs::canonicalize(&candidate) {
+            return Ok(canonical.to_string_lossy().to_string());
+        }
     }
 
     // In dev builds, check workspace target directory
@@ -124,25 +181,71 @@ fn get_hardener_binary_path() -> Result<String, String> {
             .parent()
             .map(|root| root.join("target").join("debug").join("hardener"));
         if let Some(path) = workspace_path
-            && path.exists()
+            && let Ok(canonical) = std::fs::canonicalize(&path)
         {
-            return Ok(path.to_string_lossy().to_string());
+            return Ok(canonical.to_string_lossy().to_string());
         }
     }
 
-    // Try PATH lookup
-    if std::process::Command::new("which")
+    // Resolve via PATH — capture the actual absolute path from `which`
+    if let Ok(output) = std::process::Command::new("/usr/bin/which")
         .arg("hardener")
         .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+        && output.status.success()
     {
-        return Ok("hardener".to_string());
+        let resolved = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if let Ok(canonical) = std::fs::canonicalize(&resolved) {
+            return Ok(canonical.to_string_lossy().to_string());
+        }
     }
 
     Err("Could not find hardener CLI binary. \
          In development, run: cargo build -p hardener-cli"
         .to_string())
+}
+
+/// Validates that a binary path is safe for privileged execution.
+///
+/// Rejects symlinks, world-writable files, and (in release builds)
+/// binaries not owned by root. This closes the TOCTOU window between
+/// path resolution and pkexec invocation.
+fn validate_binary_path(path: &str) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let p = std::path::Path::new(path);
+
+    // Must be absolute
+    if !p.is_absolute() {
+        return Err(format!("Binary path is not absolute: {path}"));
+    }
+
+    // Must not be a symlink at the final component
+    let meta =
+        std::fs::symlink_metadata(p).map_err(|e| format!("Cannot stat binary {path}: {e}"))?;
+
+    if meta.file_type().is_symlink() {
+        return Err(format!("Binary path is a symlink: {path}"));
+    }
+
+    if !meta.is_file() {
+        return Err(format!("Binary path is not a regular file: {path}"));
+    }
+
+    // Must not be world-writable
+    if meta.permissions().mode() & 0o002 != 0 {
+        return Err(format!("Binary is world-writable: {path}"));
+    }
+
+    // In release builds, require root ownership
+    #[cfg(not(debug_assertions))]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if meta.uid() != 0 {
+            return Err(format!("Binary is not owned by root: {path}"));
+        }
+    }
+
+    Ok(())
 }
 
 /// Error types for privileged command execution.
@@ -183,13 +286,15 @@ impl std::fmt::Display for PrivilegedCommandError {
 
 /// Executes a command with root privileges via pkexec.
 ///
-/// Returns the command's stdout on success or an appropriate error.
+/// Resolves the hardener binary to a canonical absolute path, validates
+/// ownership and permissions, then invokes pkexec with the absolute path.
 async fn run_privileged_command(args: &[&str]) -> Result<String, PrivilegedCommandError> {
     let binary = get_hardener_binary_path().map_err(PrivilegedCommandError::ExecutionFailed)?;
+    validate_binary_path(&binary).map_err(PrivilegedCommandError::ExecutionFailed)?;
 
     tracing::info!("=== Running pkexec {} {:?} ===", binary, args);
 
-    let output = Command::new("pkexec")
+    let output = Command::new("/usr/bin/pkexec")
         .arg(&binary)
         .args(args)
         .output()
@@ -375,6 +480,7 @@ pub async fn run_apply(
     plugin_ids: Vec<String>,
     config_path: Option<String>,
 ) -> Result<Vec<ApplyResult>, String> {
+    let _guard = PrivilegedOpGuard::acquire()?;
     validate_plugin_ids(&plugin_ids)?;
     if let Some(ref path) = config_path {
         validate_privileged_config_path(path)?;
@@ -488,6 +594,7 @@ pub async fn run_rollback(
     checkpoint_id: String,
     config_path: Option<String>,
 ) -> Result<RollbackResult, String> {
+    let _guard = PrivilegedOpGuard::acquire()?;
     validate_checkpoint_id(&checkpoint_id)?;
     if let Some(ref path) = config_path {
         validate_privileged_config_path(path)?;
@@ -564,6 +671,7 @@ pub async fn get_checkpoints() -> Result<Vec<CheckpointInfo>, String> {
 /// Requires root privileges via pkexec since it reads protected system files.
 #[tauri::command]
 pub async fn create_checkpoint(name: String) -> Result<String, String> {
+    let _guard = PrivilegedOpGuard::acquire()?;
     validate_checkpoint_name(&name)?;
 
     let args = vec!["checkpoint", "create", "--format", "json", "--", &name];
@@ -588,6 +696,7 @@ pub async fn create_checkpoint(name: String) -> Result<String, String> {
 /// Does not require root privileges.
 #[tauri::command]
 pub async fn delete_checkpoint(checkpoint_id: String) -> Result<bool, String> {
+    let _guard = PrivilegedOpGuard::acquire()?;
     validate_checkpoint_id(&checkpoint_id)?;
 
     let cp_id = CheckpointId::new(&checkpoint_id);
@@ -977,10 +1086,7 @@ pub async fn connect_remote(
                 host: profile.hostname.clone(),
                 user: user_display.clone(),
             };
-            let mut connection = state
-                .active_connection
-                .lock()
-                .map_err(|e| format!("Lock error: {e}"))?;
+            let mut connection = state.active_connection.lock().await;
             *connection = Some(ActiveConnection {
                 executor: std::sync::Arc::new(executor),
                 info,
@@ -1002,10 +1108,7 @@ pub async fn connect_remote(
 /// and clears the managed state.
 #[tauri::command]
 pub async fn disconnect_remote(state: tauri::State<'_, RemoteState>) -> Result<(), String> {
-    let mut connection = state
-        .active_connection
-        .lock()
-        .map_err(|e| format!("Lock error: {e}"))?;
+    let mut connection = state.active_connection.lock().await;
     *connection = None;
     Ok(())
 }
@@ -1025,10 +1128,7 @@ pub async fn run_remote_scan(
 
     // Clone the Arc<SshExecutor> out of the mutex before any async work
     let executor = {
-        let connection = state
-            .active_connection
-            .lock()
-            .map_err(|e| format!("Lock error: {e}"))?;
+        let connection = state.active_connection.lock().await;
         match connection.as_ref() {
             Some(conn) => conn.executor.clone(),
             None => return Err("No active remote connection".to_string()),

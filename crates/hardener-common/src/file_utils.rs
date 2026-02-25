@@ -28,12 +28,17 @@ use tempfile::NamedTempFile;
 /// update_file_atomically(Path::new("/etc/ssh/sshd_config"), "PermitRootLogin no\n")?;
 /// ```
 pub fn update_file_atomically(path: &Path, content: &str) -> Result<()> {
+    use std::fs;
+
     let dir = path.parent().ok_or_else(|| {
         crate::error::HardeningError::Plugin(format!(
             "No parent directory for path: {}",
             path.display()
         ))
     })?;
+
+    // Capture original permissions before overwriting (if file exists)
+    let original_permissions = fs::metadata(path).ok().map(|m| m.permissions());
 
     // Create temp file in same directory (same filesystem) for atomic rename
     let mut temp = NamedTempFile::new_in(dir).map_err(|e| {
@@ -58,6 +63,17 @@ pub fn update_file_atomically(path: &Path, content: &str) -> Result<()> {
             e
         ))
     })?;
+
+    // Restore original permissions (persist() replaces the inode, losing them)
+    if let Some(perms) = original_permissions {
+        fs::set_permissions(path, perms).map_err(|e| {
+            crate::error::HardeningError::Plugin(format!(
+                "Failed to restore permissions on {}: {}",
+                path.display(),
+                e
+            ))
+        })?;
+    }
 
     Ok(())
 }
@@ -268,13 +284,7 @@ pub fn create_timestamped_backup(path: &Path) -> Result<PathBuf> {
 
     let backup_path = PathBuf::from(format!("{}.backup.{}", path.display(), timestamp));
 
-    std::fs::copy(path, &backup_path).map_err(|e| {
-        crate::error::HardeningError::Plugin(format!(
-            "Failed to create backup of {}: {}",
-            path.display(),
-            e
-        ))
-    })?;
+    safe_copy_to_new(path, &backup_path)?;
 
     Ok(backup_path)
 }
@@ -295,14 +305,63 @@ pub fn create_timestamped_backup(path: &Path) -> Result<PathBuf> {
 /// ```
 pub fn backup_file(path: &Path) -> Result<PathBuf> {
     let backup_path = path.with_extension("backup");
-    std::fs::copy(path, &backup_path).map_err(|e| {
+    safe_copy_to_new(path, &backup_path)?;
+    Ok(backup_path)
+}
+
+/// Copies `src` to `dst`, refusing to overwrite or follow symlinks at the destination.
+///
+/// Uses `O_CREAT | O_EXCL` to atomically create the destination, preventing
+/// symlink race attacks on predictable backup paths.
+fn safe_copy_to_new(src: &Path, dst: &Path) -> Result<()> {
+    use std::fs::{File, OpenOptions};
+    use std::io::{Read, Write};
+    use std::os::unix::fs::OpenOptionsExt;
+
+    // Reject if destination is an existing symlink or file
+    if dst.exists() || dst.is_symlink() {
+        return Err(crate::error::HardeningError::Plugin(format!(
+            "Backup destination already exists: {}",
+            dst.display()
+        )));
+    }
+
+    let mut src_file = File::open(src).map_err(|e| {
         crate::error::HardeningError::Plugin(format!(
-            "Failed to create backup of {}: {}",
-            path.display(),
+            "Failed to open source {}: {}",
+            src.display(),
             e
         ))
     })?;
-    Ok(backup_path)
+
+    // O_CREAT | O_EXCL: fails if path already exists (atomic, no symlink follow)
+    let mut dst_file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(dst)
+        .map_err(|e| {
+            crate::error::HardeningError::Plugin(format!(
+                "Failed to create backup {}: {}",
+                dst.display(),
+                e
+            ))
+        })?;
+
+    let mut buf = Vec::new();
+    src_file.read_to_end(&mut buf).map_err(|e| {
+        crate::error::HardeningError::Plugin(format!("Failed to read {}: {}", src.display(), e))
+    })?;
+
+    dst_file.write_all(&buf).map_err(|e| {
+        crate::error::HardeningError::Plugin(format!(
+            "Failed to write backup {}: {}",
+            dst.display(),
+            e
+        ))
+    })?;
+
+    Ok(())
 }
 
 /// Safely modifies a file with automatic backup and atomic write.

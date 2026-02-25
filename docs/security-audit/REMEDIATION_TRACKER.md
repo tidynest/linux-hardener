@@ -14,45 +14,45 @@ Findings are ordered by remediation priority, which considers severity, cascade 
 
 | Priority | SAM-ID | Severity | Title | Effort | Cascade Fixes | Status |
 |----------|--------|----------|-------|--------|---------------|--------|
-| 1 | SAM-001 | Critical | Checkpoint signature never verified before rollback | S | SAM-032 (partially) | Open |
-| 2 | SAM-002 | Critical | Rollback writes to arbitrary paths as root | S | -- | Open |
-| 3 | SAM-012 | High | Signature does not cover permissions/ownership | S | SAM-056 (related) | Open |
-| 4 | SAM-005 | High | SSH executor uses shell-interpreted raw commands | L | SAM-006, SAM-007, SAM-008, SAM-048 | Open |
-| 5 | SAM-009 | High | Config directive values flow unsanitised to commands | M | SAM-021, SAM-049 (partially) | Open |
-| 6 | SAM-011 | High | Signing key co-located with checkpoint DB | S | SAM-014 (partially) | Open |
-| 7 | SAM-003 | Critical | AuditLogger never instantiated in production | M | SAM-013, SAM-031 (enables) | Open |
-| 8 | SAM-004 | Critical | JSON store hash never verified in production | S | -- | Open |
+| 1 | SAM-001 | Critical | Checkpoint signature never verified before rollback | S | SAM-032 (partially) | Fixed |
+| 2 | SAM-002 | Critical | Rollback writes to arbitrary paths as root | S | -- | Fixed |
+| 3 | SAM-012 | High | Signature does not cover permissions/ownership | S | SAM-056 (related) | Fixed |
+| 4 | SAM-005 | High | SSH executor uses shell-interpreted raw commands | L | SAM-006, SAM-007, SAM-008, SAM-048 | Fixed |
+| 5 | SAM-009 | High | Config directive values flow unsanitised to commands | M | SAM-021, SAM-049 (partially) | Fixed |
+| 6 | SAM-011 | High | Signing key co-located with checkpoint DB | S | SAM-014 (partially) | Fixed |
+| 7 | SAM-003 | Critical | AuditLogger never instantiated in production | M | SAM-013, SAM-031 (enables) | Fixed |
+| 8 | SAM-004 | Critical | JSON store hash never verified in production | S | -- | Fixed |
 | 9 | SAM-015 | Medium | No IPC input validation before pkexec | M | SAM-077, SAM-078 | Fixed |
 | 10 | SAM-016 | Medium | Config path traversal to root process | S | SAM-071 | Fixed |
-| 11 | SAM-010 | High | SSRF via webhook URL | M | -- | Open |
-| 12 | SAM-024 | Medium | Signing key TOCTOU permission race | S | -- | Open |
-| 13 | SAM-026 | Medium | Parent dir default permissions | S | -- | Open |
-| 14 | SAM-027 | Medium | SQLite DB default permissions | S | -- | Open |
-| 15 | SAM-013 | High | Hash chain resets on restart | M | -- | Open |
-| 16 | SAM-028 | Medium | DB operations not in transactions | M | -- | Open |
-| 17 | SAM-029 | Medium | Foreign keys not enforced | S | -- | Open |
-| 18 | SAM-017 | Medium | Binary path TOCTOU and PATH fallback | M | -- | Open |
-| 19 | SAM-025 | Medium | Atomic write loses file permissions | S | -- | Open |
-| 20 | SAM-038 | Medium | withGlobalTauri exposes IPC | S | SAM-039 (related) | Open |
-| 21 | SAM-042 | Medium | No concurrency guards on privileged ops | S | -- | Open |
-| 22 | SAM-044 | Medium | No rate limiting on pkexec commands | M | -- | Open |
+| 11 | SAM-010 | High | SSRF via webhook URL | M | -- | Fixed |
+| 12 | SAM-024 | Medium | Signing key TOCTOU permission race | S | -- | Fixed |
+| 13 | SAM-026 | Medium | Parent dir default permissions | S | -- | Fixed |
+| 14 | SAM-027 | Medium | SQLite DB default permissions | S | -- | Fixed |
+| 15 | SAM-013 | High | Hash chain resets on restart | M | -- | Fixed |
+| 16 | SAM-028 | Medium | DB operations not in transactions | M | -- | Fixed |
+| 17 | SAM-029 | Medium | Foreign keys not enforced | S | -- | Fixed |
+| 18 | SAM-017 | Medium | Binary path TOCTOU and PATH fallback | M | -- | Fixed |
+| 19 | SAM-025 | Medium | Atomic write loses file permissions | S | -- | Fixed |
+| 20 | SAM-038 | Medium | withGlobalTauri exposes IPC | S | SAM-039 (related) | Fixed |
+| 21 | SAM-042 | Medium | No concurrency guards on privileged ops | S | -- | Fixed |
+| 22 | SAM-044 | Medium | No rate limiting on pkexec commands | M | -- | Fixed |
 | 23 | SAM-043 | Medium | SSH key file path credential exfiltration | S | -- | Fixed |
 | 24 | SAM-040 | Medium | Export report arbitrary file write | S | -- | Fixed |
-| 25 | SAM-033 | Medium | Webhook env var leaks secrets | S | -- | Open |
-| 26 | SAM-034 | Medium | Webhook header injection | S | -- | Open |
-| 27 | SAM-035 | Medium | SMTP hostname injection | S | -- | Open |
-| 28 | SAM-036 | Medium | CSV formula injection | S | -- | Open |
-| 29 | SAM-037 | Medium | No config file size limit | S | SAM-062 (related) | Open |
+| 25 | SAM-033 | Medium | Webhook env var leaks secrets | S | -- | Fixed |
+| 26 | SAM-034 | Medium | Webhook header injection | S | -- | Fixed |
+| 27 | SAM-035 | Medium | SMTP hostname injection | S | -- | Fixed |
+| 28 | SAM-036 | Medium | CSV formula injection | S | -- | Fixed |
+| 29 | SAM-037 | Medium | No config file size limit | S | SAM-062 (related) | Fixed |
 | 30 | SAM-030 | Medium | Private key unencrypted at rest | M | -- | Open |
 | 31 | SAM-014 | High | No signing trust separation | L | -- | Open |
 | 32 | SAM-018 | Medium | Partial rollback inconsistency | M | -- | Open |
-| 33 | SAM-019 | Medium | Checkpoint capture follows symlinks | S | -- | Open |
-| 34 | SAM-020 | Medium | Backup file symlink race | S | SAM-050 (same pattern) | Open |
-| 35 | SAM-022 | Medium | Checkpoint TOCTOU exists-then-read | S | -- | Open |
+| 33 | SAM-019 | Medium | Checkpoint capture follows symlinks | S | -- | Fixed |
+| 34 | SAM-020 | Medium | Backup file symlink race | S | SAM-050 (same pattern) | Fixed |
+| 35 | SAM-022 | Medium | Checkpoint TOCTOU exists-then-read | S | -- | Fixed |
 | 36 | SAM-023 | Medium | Config read-modify-write race | M | -- | Open |
-| 37 | SAM-041 | Medium | Mutex deadlock risk in async | S | -- | Open |
+| 37 | SAM-041 | Medium | Mutex deadlock risk in async | S | -- | Fixed |
 | 38 | SAM-045 | Medium | Permissions TOCTOU | M | -- | Open |
-| 39 | SAM-046 | Medium | SSH no-verify missing warning | S | -- | Open |
+| 39 | SAM-046 | Medium | SSH no-verify missing warning | S | -- | Fixed |
 | 40 | SAM-032 | Medium | GUI checkpoint display no verification | M | -- | Open |
 | 41 | SAM-047 | Low | Non-atomic write_file | S | -- | Open |
 | 42 | SAM-060 | Low | Bare command names / env inheritance | M | -- | Open |
@@ -60,9 +60,9 @@ Findings are ordered by remediation priority, which considers severity, cascade 
 | 44 | SAM-052 | Low | Corrupted JSON silent fallback | S | -- | Open |
 | 45 | SAM-058 | Low | HTML report unescaped fields | S | SAM-059 (same fix pattern) | Open |
 | 46 | SAM-069 | Low | Error messages contain internal paths | M | SAM-068, SAM-075 (same pattern) | Open |
-| 47 | SAM-057 | Low | Key bytes not zeroed | S | -- | Open |
+| 47 | SAM-057 | Low | Key bytes not zeroed | S | -- | Fixed |
 | 48 | SAM-054 | Low | No key rotation | L | -- | Open |
-| 49 | SAM-055 | Low | Non-constant-time hash compare | S | -- | Open |
+| 49 | SAM-055 | Low | Non-constant-time hash compare | S | -- | Fixed |
 | 50+ | Remaining | Low | See sections below | S-M | -- | Open |
 
 **Effort Key:** S = Small (< 1 hour, localised change), M = Medium (1-4 hours, touches multiple files), L = Large (> 4 hours, architectural change)

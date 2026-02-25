@@ -112,38 +112,38 @@ impl CheckpointManager {
     /// # Errors
     /// Returns an error if the file cannot be read or metadata cannot be accessed.
     fn capture_single_file(&self, file_path: &Path) -> Result<FileState> {
-        use std::fs;
+        use std::fs::File;
+        use std::io::Read;
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
-        // Check if file exists
-        if !file_path.exists() {
-            // File doesn't exist - record that fact
-            return Ok(FileState {
-                file_path: file_path.to_string_lossy().to_string(),
-                file_content: None,
-                file_permissions: 0,
-                file_owner_uid: 0,
-                file_owner_gid: 0,
-            });
-        }
+        // Open file once — all subsequent operations use this handle,
+        // eliminating the TOCTOU window between exists/metadata/read.
+        let mut file = match File::open(file_path) {
+            Ok(f) => f,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(FileState {
+                    file_path: file_path.to_string_lossy().to_string(),
+                    file_content: None,
+                    file_permissions: 0,
+                    file_owner_uid: 0,
+                    file_owner_gid: 0,
+                });
+            }
+            Err(e) => return Err(HardeningError::System(e)),
+        };
 
-        // Get metadata first
-        let file_metadata = fs::symlink_metadata(file_path).map_err(HardeningError::System)?;
-
-        // Read file content
-        let file_content = fs::read(file_path).map_err(HardeningError::System)?;
-
-        // Extract permissions and ownership
-        let file_permissions = file_metadata.permissions().mode();
-        let file_owner_uid = file_metadata.uid();
-        let file_owner_gid = file_metadata.gid();
+        // Metadata and content from the same open file descriptor
+        let file_metadata = file.metadata().map_err(HardeningError::System)?;
+        let mut file_content = Vec::new();
+        file.read_to_end(&mut file_content)
+            .map_err(HardeningError::System)?;
 
         Ok(FileState {
             file_path: file_path.to_string_lossy().to_string(),
             file_content: Some(file_content),
-            file_permissions,
-            file_owner_uid,
-            file_owner_gid,
+            file_permissions: file_metadata.permissions().mode(),
+            file_owner_uid: file_metadata.uid(),
+            file_owner_gid: file_metadata.gid(),
         })
     }
 
@@ -408,6 +408,12 @@ impl CheckpointManager {
         checkpoint_signature: &[u8],
         file_states: &[FileState],
     ) -> Result<()> {
+        let mut tx = self
+            .db_pool
+            .begin()
+            .await
+            .map_err(|e| HardeningError::Database(e.to_string()))?;
+
         // Insert checkpoint metadata
         sqlx::query(
             "INSERT INTO checkpoints (
@@ -426,7 +432,7 @@ impl CheckpointManager {
         .bind(checkpoint_username)
         .bind(checkpoint_signature)
         .bind(checkpoint_timestamp)
-        .execute(&self.db_pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| HardeningError::Database(e.to_string()))?;
 
@@ -449,10 +455,14 @@ impl CheckpointManager {
             .bind(file_state.file_permissions)
             .bind(file_state.file_owner_uid as i64)
             .bind(file_state.file_owner_gid as i64)
-            .execute(&self.db_pool)
+            .execute(&mut *tx)
             .await
             .map_err(|e| HardeningError::Database(e.to_string()))?;
         }
+
+        tx.commit()
+            .await
+            .map_err(|e| HardeningError::Database(e.to_string()))?;
 
         Ok(())
     }
@@ -564,17 +574,27 @@ impl CheckpointManager {
     /// # Errors
     /// Returns an error if checkpoint doesn't exist or database operation fails.
     pub async fn delete_checkpoint(&self, checkpoint_id: &CheckpointId) -> Result<()> {
+        let mut tx = self
+            .db_pool
+            .begin()
+            .await
+            .map_err(|e| HardeningError::Database(e.to_string()))?;
+
         // Delete file states first (foreign key constraint)
         sqlx::query("DELETE FROM file_states WHERE checkpoint_id = ?")
             .bind(checkpoint_id.as_str())
-            .execute(&self.db_pool)
+            .execute(&mut *tx)
             .await
             .map_err(|e| HardeningError::Database(e.to_string()))?;
 
         // Delete checkpoint metadata
         sqlx::query("DELETE FROM checkpoints WHERE id = ?")
             .bind(checkpoint_id.as_str())
-            .execute(&self.db_pool)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| HardeningError::Database(e.to_string()))?;
+
+        tx.commit()
             .await
             .map_err(|e| HardeningError::Database(e.to_string()))?;
 

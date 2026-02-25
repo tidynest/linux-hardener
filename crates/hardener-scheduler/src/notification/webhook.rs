@@ -132,10 +132,13 @@ impl WebhookNotifier {
         Some(Self { endpoint, client })
     }
 
+    /// Allowed environment variable prefixes for header expansion.
+    const ENV_ALLOWLIST: &[&str] = &["HARDENER_WEBHOOK_", "HARDENER_AUTH_"];
+
     /// Expands environment variables in header values.
     ///
-    /// Replaces `${VAR_NAME}` with the value of the environment variable.
-    /// Unset variables are replaced with empty strings.
+    /// Only variables matching the allowlist prefixes are expanded.
+    /// Unset or disallowed variables are replaced with empty strings.
     fn expand_env_vars(value: &str) -> String {
         let mut result = value.to_string();
         let mut start = 0;
@@ -145,7 +148,12 @@ impl WebhookNotifier {
             if let Some(var_end) = result[var_start..].find('}') {
                 let var_end = var_start + var_end;
                 let var_name = &result[var_start + 2..var_end];
-                let var_value = env::var(var_name).unwrap_or_default();
+                let var_value = if Self::ENV_ALLOWLIST.iter().any(|p| var_name.starts_with(p)) {
+                    env::var(var_name).unwrap_or_default()
+                } else {
+                    warn!("Blocked env var expansion for '{var_name}': not in allowlist");
+                    String::new()
+                };
                 result.replace_range(var_start..=var_end, &var_value);
                 start = var_start + var_value.len();
             } else {
@@ -154,6 +162,25 @@ impl WebhookNotifier {
         }
 
         result
+    }
+
+    /// Validates a custom header key and value.
+    ///
+    /// Rejects keys with non-token characters and values containing
+    /// control characters (CR, LF, NUL) to prevent header injection.
+    fn validate_header(key: &str, value: &str) -> Result<(), String> {
+        if !key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') {
+            return Err(format!("invalid header key: {key}"));
+        }
+        if value
+            .bytes()
+            .any(|b| b == b'\r' || b == b'\n' || b == b'\0')
+        {
+            return Err(format!(
+                "header value for '{key}' contains control characters"
+            ));
+        }
+        Ok(())
     }
 
     /// Builds the JSON payload based on the endpoint format.
@@ -302,9 +329,13 @@ impl Notifier for WebhookNotifier {
             .post(&self.endpoint.url)
             .header("Content-Type", "application/json");
 
-        // Add custom headers with env var expansion
+        // Add custom headers with env var expansion and injection validation
         for (key, value) in &self.endpoint.headers {
             let expanded = Self::expand_env_vars(value);
+            if let Err(reason) = Self::validate_header(key, &expanded) {
+                error!("Webhook '{}' header rejected: {reason}", self.endpoint.name);
+                return NotificationResult::failed(self.channel(), reason);
+            }
             request = request.header(key, expanded);
         }
 
@@ -348,27 +379,36 @@ mod tests {
     #[test]
     fn expand_env_vars_single_var() {
         // SAFETY: Test runs single-threaded; no concurrent env access
-        unsafe { env::set_var("TEST_WEBHOOK_VAR", "secret123") };
-        let result = WebhookNotifier::expand_env_vars("Bearer ${TEST_WEBHOOK_VAR}");
+        unsafe { env::set_var("HARDENER_WEBHOOK_TOKEN", "secret123") };
+        let result = WebhookNotifier::expand_env_vars("Bearer ${HARDENER_WEBHOOK_TOKEN}");
         assert_eq!(result, "Bearer secret123");
         // SAFETY: Test runs single-threaded; no concurrent env access
-        unsafe { env::remove_var("TEST_WEBHOOK_VAR") };
+        unsafe { env::remove_var("HARDENER_WEBHOOK_TOKEN") };
     }
 
     #[test]
     fn expand_env_vars_multiple_vars() {
         // SAFETY: Test runs single-threaded; no concurrent env access
         unsafe {
-            env::set_var("TEST_VAR_A", "alpha");
-            env::set_var("TEST_VAR_B", "beta");
+            env::set_var("HARDENER_WEBHOOK_A", "alpha");
+            env::set_var("HARDENER_AUTH_B", "beta");
         }
-        let result = WebhookNotifier::expand_env_vars("${TEST_VAR_A}-${TEST_VAR_B}");
+        let result = WebhookNotifier::expand_env_vars("${HARDENER_WEBHOOK_A}-${HARDENER_AUTH_B}");
         assert_eq!(result, "alpha-beta");
         // SAFETY: Test runs single-threaded; no concurrent env access
         unsafe {
-            env::remove_var("TEST_VAR_A");
-            env::remove_var("TEST_VAR_B");
+            env::remove_var("HARDENER_WEBHOOK_A");
+            env::remove_var("HARDENER_AUTH_B");
         }
+    }
+
+    #[test]
+    fn expand_env_vars_blocked_var_becomes_empty() {
+        // SAFETY: Test runs single-threaded; no concurrent env access
+        unsafe { env::set_var("SECRET_KEY", "should_not_leak") };
+        let result = WebhookNotifier::expand_env_vars("${SECRET_KEY}");
+        assert_eq!(result, "");
+        unsafe { env::remove_var("SECRET_KEY") };
     }
 
     #[test]

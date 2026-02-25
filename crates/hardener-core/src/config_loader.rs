@@ -105,8 +105,26 @@ impl ConfigLoader {
         dirs::config_dir().map(|p| p.join("linux-hardener").join("config.toml"))
     }
 
+    /// Maximum config file size (1 MiB). Prevents OOM from oversized files.
+    const MAX_CONFIG_SIZE: u64 = 1_048_576;
+
     /// Load configuration from a TOML file.
     fn load_from_file(path: &Path) -> Result<HardenerConfig> {
+        let metadata = std::fs::metadata(path).map_err(|e| {
+            HardeningError::Config(format!(
+                "Failed to stat config file {}: {}",
+                path.display(),
+                e
+            ))
+        })?;
+        if metadata.len() > Self::MAX_CONFIG_SIZE {
+            return Err(HardeningError::Config(format!(
+                "Config file {} exceeds 1 MiB size limit ({} bytes)",
+                path.display(),
+                metadata.len()
+            )));
+        }
+
         let content = std::fs::read_to_string(path).map_err(|e| {
             HardeningError::Config(format!(
                 "Failed to read config file {}: {}",

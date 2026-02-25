@@ -82,6 +82,13 @@ impl EmailNotifier {
         Some(transport)
     }
 
+    /// Strips control characters from a string to prevent SMTP header injection.
+    fn sanitise_for_header(s: &str) -> String {
+        s.chars()
+            .filter(|c| !c.is_ascii_control() || *c == '\t')
+            .collect()
+    }
+
     /// Formats the email subject line.
     fn format_subject(&self, summary: &ScanSummary) -> String {
         let severity = if summary.critical_count > 0 {
@@ -94,9 +101,10 @@ impl EmailNotifier {
             "LOW"
         };
 
+        let host = Self::sanitise_for_header(&summary.host);
         format!(
             "[{}] Security Scan: {} findings on {}",
-            severity, summary.total_findings, summary.host
+            severity, summary.total_findings, host
         )
     }
 
