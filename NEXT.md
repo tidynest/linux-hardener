@@ -2,9 +2,9 @@
 
 ---
 
-## Current State (as of 2026-02-24)
+## Current State (as of 2026-02-25)
 
-All major audit items are resolved. Live testing session uncovered and fixed 6 additional issues.
+All major audit items are resolved. Project is feature-complete for v0.4.0; focus is now on v1.0.0 production readiness.
 
 ### Completed milestones:
 
@@ -17,7 +17,11 @@ All major audit items are resolved. Live testing session uncovered and fixed 6 a
 - **GUI/CLI feature parity complete** (2026-02-24) — scan filtering, checkpoint CRUD, report export, scan history, audit/compliance modes
 - **Scheduler UI complete** (2026-02-24) — schedule config, notification config, email/webhook, test notification
 - **UI polish pass complete** (2026-02-24) — side-by-side layouts, card standardisation, responsive fixes
-- **418+ unit tests pass**, clippy clean, native + WASM builds clean
+- **Packaging infrastructure** (2026-02-25) — AUR PKGBUILD, RPM spec, Debian packaging, systemd units, polkit policy
+- **Test quality pass** (2026-02-25) — 178+ assertion messages, 80+ println removed, net -422 lines
+- **High Contrast theme** (2026-02-25) — WCAG AAA accessibility theme (7:1+ contrast ratios)
+- **Man page** (2026-02-25) — `data/hardener.1` troff man page for all commands
+- **428 unit tests pass**, clippy clean, native + WASM builds clean
 
 ### Trait refactor summary (commits `81c13ad`, `d029629`, `b87fb1c`):
 
@@ -85,22 +89,22 @@ See `docs/GUI_CLI_PARITY_PLAN.md` — all 6 phases complete.
 
 ### 3. Remaining polish items
 
-| Item | Source | Priority |
-|------|--------|----------|
-| ~~JSON output for `checkpoint rollback` command~~ | ~~ROADMAP.md v0.3.2 H~~ | Done (`5167e5a`) |
-| Polkit policy file for nicer dialog text | ROADMAP.md v0.3.2 H | Low |
-| AUR/deb/rpm package dependencies | ROADMAP.md v1.0.0 | Low |
-| High Contrast theme (WCAG AAA) | ROADMAP.md v0.3.2 C | Low |
-| Extract inline tests to `tests/` dirs | ROADMAP.md tech debt | Low |
+| Item | Source | Priority | Status |
+|------|--------|----------|--------|
+| ~~JSON output for `checkpoint rollback` command~~ | ~~ROADMAP.md v0.3.2 H~~ | Done | `5167e5a` |
+| ~~Polkit policy file for nicer dialog text~~ | ~~ROADMAP.md v0.3.2 H~~ | Done | 2026-02-25 |
+| ~~High Contrast theme (WCAG AAA)~~ | ~~ROADMAP.md v0.3.2 C~~ | Done | 2026-02-25 |
+| ~~Extract inline tests to `tests/` dirs~~ | ~~ROADMAP.md tech debt~~ | Done | 2026-02-25 |
+| AUR/deb/rpm package building & upload | ROADMAP.md v1.0.0 | Medium | Specs ready |
 
 ### 4. v1.0.0 production readiness
 
-| Item | Priority |
-|------|----------|
-| Security audit (third-party review) | Critical |
-| Package distribution (deb, rpm, AUR) | High |
-| Comprehensive user documentation | High |
-| Performance optimisation | Medium |
+| Item | Priority | Status |
+|------|----------|--------|
+| Security audit (third-party review) | Critical | Pending |
+| Package distribution (deb, rpm, AUR) | High | Specs ready, build scripts created |
+| Comprehensive user documentation | High | Man page done, user guide pending |
+| Performance optimisation | Medium | Pending |
 
 ---
 
@@ -110,7 +114,7 @@ See `docs/GUI_CLI_PARITY_PLAN.md` — all 6 phases complete.
 
 - **11 Crates** (10 core + 1 Tauri app)
 - **8 Security Plugins**: Kernel, SSH, Firewall, PAM, Services, Audit, Permissions, MAC
-- **418+ Passing Tests**
+- **428+ Passing Tests**
 - **Multi-Distribution Support**: Debian, Red Hat, Arch, SUSE families
 - **Current Version**: 0.3.3 (Development Release)
 - **WASM Support**: GUI frontend compiles to `wasm32-unknown-unknown`
@@ -184,4 +188,4 @@ hardener-scheduler
 
 *This document is prepared for continuity between development sessions.*
 
-**Last Updated**: 2026-02-24
+**Last Updated**: 2026-02-25

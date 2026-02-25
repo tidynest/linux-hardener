@@ -268,7 +268,7 @@ sudo ./scripts/root-test-suite.sh --apply      # Full tests (apply + rollback)
 | `data-theme` attribute | CSS-only theme switching via `[data-theme="..."]` for all 5 themes | Medium | ✅ Complete |
 | Focus state improvements | Consistent 0.125rem outline ring for accessibility | Medium | ✅ Complete |
 | Theme toggle component | ThemeToggle dropdown with localStorage persistence | Low | ✅ Complete |
-| High Contrast theme | WCAG AAA accessibility theme option | Low | ⬜ Pending |
+| High Contrast theme | WCAG AAA accessibility theme (7:1+ contrast ratios) | Low | ✅ Complete |
 
 #### D. Polish & Testing (Session 4) ✅
 
@@ -369,7 +369,7 @@ User clicks "Apply"
 - [x] Add JSON output mode to CLI `checkpoint rollback` command
 - [x] Create user-friendly error messages for polkit failures
 - [x] Test on Hyprland (with polkit-gnome)
-- [ ] Create polkit policy file for nicer dialog text
+- [x] Create polkit policy file for nicer dialog text
 - [ ] Add to AUR/deb/rpm package dependencies
 
 > **Tauri 2.x Note**: Frontend argument keys MUST use camelCase (e.g., `pluginIds` not `plugin_ids`) to match Tauri 2.x's default serde configuration.
@@ -461,8 +461,8 @@ User clicks "Apply"
 | Feature | Description | Priority | Status |
 |---------|-------------|----------|--------|
 | Security audit | Third-party security review | Critical | ⬜ Pending |
-| Package distribution | deb, rpm, AUR packages | High | ⬜ Pending |
-| Comprehensive documentation | User guide, API docs | High | ⬜ Pending |
+| Package distribution | deb, rpm, AUR packages | High | 🔄 Specs ready |
+| Comprehensive documentation | User guide, API docs, man page | High | 🔄 Man page done |
 | Performance optimisation | Scan speed improvements | Medium | ⬜ Pending |
 | Internationalisation | Multi-language support | Low | ⬜ Pending |
 
@@ -495,7 +495,7 @@ Features planned for post-v1.0.0 releases.
 |---------|-------------|----------|--------|
 | SELinux policy management | Full policy editing, not just detection | Low | ⬜ Pending |
 | AppArmor profile editor | Create and manage AppArmor profiles | Low | ⬜ Pending |
-| High Contrast theme | WCAG AAA accessibility theme | Low | ⬜ Pending |
+| High Contrast theme | WCAG AAA accessibility theme | Low | ✅ Complete |
 
 ---
 
@@ -503,7 +503,7 @@ Features planned for post-v1.0.0 releases.
 
 | Item | Description | Priority | Status |
 |------|-------------|----------|--------|
-| Increase test coverage | Target 90%+ coverage | Low | ✅ Complete (418+ tests) |
+| Increase test coverage | Target 90%+ coverage | Low | ✅ Complete (428+ tests) |
 | Consolidate `create_plugin_registry()` | Duplicated in CLI, report, Tauri | Low | ✅ Complete |
 | Consolidate test mock plugins | Duplicated in registry.rs and plugin_manager_tests.rs | Low | ✅ Complete |
 | Config file utilities | Duplicated parsing/backup in SSH and PAM plugins | Low | ✅ Complete |
@@ -512,7 +512,7 @@ Features planned for post-v1.0.0 releases.
 | Remove duplicate registry in plugins.rs | Removed from plugins.rs and apply.rs | Low | ✅ Complete |
 | Review field naming consistency | Audit complete: 2 violations fixed | Low | ✅ Complete |
 | Gate or remove `testing` feature | Removed unused feature from hardener-core | Low | ✅ Complete |
-| Extract inline tests to `tests/` dirs | Follow `hardener-plugins/tests/` pattern | Low | ⬜ Pending |
+| Extract inline tests to `tests/` dirs | Follow `hardener-plugins/tests/` pattern | Low | ✅ Complete |
 | Framework descriptions in reports | Added `description()` as subtitle | Low | ✅ Complete |
 
 ### Code Deduplication Summary ✅
@@ -636,4 +636,4 @@ When working on new features:
 
 ---
 
-**Last Updated**: 2026-02-24
+**Last Updated**: 2026-02-25

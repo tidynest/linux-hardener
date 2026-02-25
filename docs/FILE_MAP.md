@@ -627,6 +627,7 @@ pub async fn pick_config_file(app: tauri::AppHandle) -> Result<Option<String>, S
 |------|---------|
 | `data/linux-hardener.desktop` | XDG desktop entry for the GUI application |
 | `data/config.toml.example` | Commented example configuration with all 8 plugin sections |
+| `data/hardener.1` | Unix man page (troff) for the `hardener` CLI |
 
 ---
 

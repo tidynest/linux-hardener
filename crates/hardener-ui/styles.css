@@ -203,6 +203,29 @@
     --border-color: #d6d3d1;
 }
 
+/* High Contrast - WCAG AAA accessibility theme */
+[data-theme="high-contrast"] {
+    --bg-primary: #000000;
+    --bg-secondary: #0a0a0a;
+    --bg-tertiary: #1a1a1a;
+    --bg-elevated: #262626;
+    --text-primary: #ffffff;
+    --text-secondary: #e5e5e5;
+    --text-muted: #d4d4d4;
+    --color-good: #4ade80;
+    --color-good-bright: #86efac;
+    --color-warning: #fde047;
+    --color-warning-bright: #fef08a;
+    --color-critical: #fca5a5;
+    --color-critical-bright: #fecaca;
+    --color-info: #93c5fd;
+    --color-pending: #a3a3a3;
+    --color-accent: #67e8f9;
+    --color-accent-hover: #a5f3fc;
+    --color-focus: rgba(103, 232, 249, 0.6);
+    --border-color: #525252;
+}
+
 /* ============================================================
    2. RESET & BASE - CRITICAL: Full viewport coverage
    ============================================================ */

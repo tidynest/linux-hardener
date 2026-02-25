@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.3] - 2026-02-25
 
+### Added (v1.0.0 Infrastructure 2026-02-25)
+- **Packaging Infrastructure**: Complete build specs for three distribution families
+  - AUR `PKGBUILD` with musl CLI + Tauri desktop builds
+  - RPM `.spec` for Fedora/RHEL/openSUSE with systemd integration
+  - Debian packaging (`debian/control`, `rules`, `changelog`, `postinst`, `prerm`, `copyright`)
+- **Systemd Units**: `linux-hardener.service` (oneshot) and `linux-hardener.timer` (daily at 02:00)
+  - Security hardened: `NoNewPrivileges`, `ProtectSystem=strict`, `PrivateTemp`
+- **Desktop Entry**: XDG `.desktop` file for application launcher integration
+- **Config Example**: Comprehensive `data/config.toml.example` with all 8 plugin sections documented
+- **Polkit Policy**: `com.tidynest.linux-hardener.policy` for nicer pkexec authentication dialogs
+  - Separate actions for apply and rollback with descriptive messages
+  - `auth_admin_keep` for active sessions (avoids repeated password prompts)
+- **Man Page**: `data/hardener.1` troff man page covering all commands, options, and examples
+- **High Contrast Theme**: WCAG AAA accessibility theme with 7:1+ contrast ratios
+  - Pure black background with bright white text for maximum readability
+  - High-saturation semantic colours chosen for colour-blind distinguishability
+  - Available in theme selector dropdown alongside existing 6 themes
+
+### Changed (Test Quality 2026-02-25)
+- **Assertion Messages**: Added descriptive messages to 178+ bare `assert!()` calls across 12 test files
+  - Failure output now shows what was expected and the actual value
+  - Consistent patterns: `.is_ok()` shows error, `.contains()` shows searched value, `.is_empty()` shows contents
+- **Test Output Cleanup**: Removed 80+ `println!`/`eprintln!` calls from test code
+  - Some replaced with proper assertions; others simply removed (test output noise)
+  - Net reduction of 422 lines while improving test diagnostics
+
 ### Changed (UI Polish Pass 2026-02-24)
 - **Dashboard**: `RecentActivity` card no longer stretches to fill remaining page height
   - Removed `flex: 1 1 auto` and `min-height: 150px` — card sizes to content
@@ -287,7 +313,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Compliance page route `/compliance` with navigation link
 
 ### Changed
-- Test suite expanded from 220 to 418+ tests (90% increase)
+- Test suite expanded from 220 to 428+ tests (95% increase)
 - PDF findings now display with better visual hierarchy and spacing
 - All 8 plugins converted to async with `#[async_trait]`
 - HardeningPlugin trait methods now async: `scan()`, `apply()`, `rollback()`, `validate()`

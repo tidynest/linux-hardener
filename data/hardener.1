@@ -1,0 +1,425 @@
+.\" hardener(1) - Linux System Hardener manual page
+.\" Copyright 2026 Eric Jingryd
+.\" Licensed under the Apache License, Version 2.0
+.\"
+.TH HARDENER 1 "2026-02-25" "1.0.0" "Linux System Hardener"
+.
+.SH NAME
+hardener \- comprehensive Linux security automation tool with multi-distribution support
+.
+.SH SYNOPSIS
+.B hardener
+.RI [ COMMAND ]
+.RI [ OPTIONS ]
+.
+.br
+.B hardener scan
+.RB [ \-p
+.IR PLUGIN ]
+.RB [ \-s
+.IR SEVERITY ]
+.RB [ \-\-audit | \-\-compliance ]
+.RB [ \-\-exit\-code ]
+.
+.br
+.B hardener apply
+.RB [ \-p
+.IR PLUGIN ]
+.RB [ \-a ]
+.RB [ \-\-dry\-run ]
+.
+.br
+.B hardener rollback
+.I CHECKPOINT_ID
+.
+.br
+.B hardener checkpoint
+.RI [ list | create | delete | show ]
+.
+.br
+.B hardener plugins
+.
+.br
+.B hardener report
+.RB [ \-s
+.IR SCENARIO ]
+.RB [ \-\-framework
+.IR FRAMEWORK ]
+.
+.br
+.B hardener daemon
+.RI [ start | run\-once | status ]
+.
+.br
+.B hardener systemd
+.RI [ generate | install | uninstall | status ]
+.
+.br
+.B hardener history
+.RI [ list | show | export ]
+.
+.SH DESCRIPTION
+.B hardener
+is a security hardening tool for Linux systems.
+It scans for misconfigurations, applies recommended security settings, and generates
+compliance reports against industry frameworks.
+The tool supports Arch, Debian, Fedora, RHEL, and openSUSE distributions.
+.PP
+Eight built-in security plugins cover the following areas:
+.TP
+.B kernel
+Sysctl parameters: ASLR, pointer restriction, ptrace scope, SYN cookies, and more.
+.TP
+.B ssh
+OpenSSH server configuration: root login, password authentication, key exchange, and idle timeouts.
+.TP
+.B firewall
+Firewall status and baseline rules via nftables, firewalld, or UFW.
+.TP
+.B pam
+PAM password complexity, aging policies, and account lockout.
+.TP
+.B services
+Detection and disabling of unnecessary network services.
+.TP
+.B permissions
+File and directory permission auditing for critical system paths.
+.TP
+.B audit
+Linux Audit subsystem rules for monitoring security-relevant events.
+.TP
+.B mac
+Mandatory Access Control status (SELinux or AppArmor).
+.PP
+All changes are checkpointed before application, allowing safe rollback to any
+previous state.
+A desktop GUI (Tauri + Leptos) provides the same functionality with a graphical interface.
+.
+.SH COMMANDS
+.TP
+.B scan
+Scan the system for security issues.
+Returns findings categorised by severity (info, low, medium, high, critical).
+.TP
+.B apply
+Apply hardening recommendations.
+Creates an automatic checkpoint before making changes.
+.TP
+.B rollback
+Restore the system to a previous checkpoint.
+Requires a checkpoint identifier obtained from
+.BR "hardener checkpoint list" .
+.TP
+.B checkpoint
+Manage checkpoints.
+Subcommands:
+.BR list ,
+.BR create ,
+.BR delete ,
+.BR show .
+.TP
+.B plugins
+List all available security plugins with their metadata.
+.TP
+.B report
+Generate compliance reports against industry security frameworks.
+.TP
+.B daemon
+Manage the scheduled scanning daemon.
+Subcommands:
+.BR start ,
+.BR run\-once ,
+.BR status .
+.TP
+.B systemd
+Manage systemd unit files for automated scanning.
+Subcommands:
+.BR generate ,
+.BR install ,
+.BR uninstall ,
+.BR status .
+.TP
+.B history
+View and export scan history.
+Subcommands:
+.BR list ,
+.BR show ,
+.BR export .
+.
+.SH OPTIONS
+.SS Global Options
+.TP
+.BR \-f ", " \-\-format " " \fIFORMAT\fR
+Output format.
+One of
+.BR text ,
+.BR json ,
+.BR csv ,
+.BR html ,
+or
+.BR pdf .
+Default:
+.BR text .
+.TP
+.BR \-q ", " \-\-quiet
+Suppress non-essential output.
+.TP
+.BR \-C ", " \-\-config " " \fIFILE\fR
+Path to a configuration file.
+Overrides the default search paths.
+.TP
+.BI \-\-ssh " HOST"
+Remote host to scan via SSH.
+Accepts
+.IR user@host
+format.
+.TP
+.BI \-\-port " PORT"
+SSH port number.
+Default:
+.BR 22 .
+.TP
+.BI \-\-ssh\-key " FILE"
+Path to an SSH private key (identity file).
+.TP
+.BI \-\-ssh\-timeout " SECONDS"
+SSH connection timeout in seconds.
+Default:
+.BR 30 .
+.TP
+.B \-\-ssh\-no\-verify
+Skip SSH host key verification.
+Use with caution.
+.
+.SS Scan Options
+.TP
+.BR \-p ", " \-\-plugin " " \fIPLUGIN\fR
+Run only the specified plugin.
+May be given multiple times.
+.TP
+.B \-\-audit
+Audit mode: perform a pure security assessment without applying changes.
+.TP
+.B \-\-compliance
+Compliance mode: only report findings that violate policy.
+.TP
+.B \-\-exit\-code
+Exit with status 1 if any findings exist.
+Useful for CI/CD pipelines.
+.TP
+.BR \-s ", " \-\-severity " " \fISEVERITY\fR
+Minimum severity level to include in results.
+One of
+.BR info ,
+.BR low ,
+.BR medium ,
+.BR high ,
+or
+.BR critical .
+Default:
+.BR info .
+.
+.SS Apply Options
+.TP
+.BR \-p ", " \-\-plugin " " \fIPLUGIN\fR
+Apply only the specified plugin.
+May be given multiple times.
+.TP
+.BR \-a ", " \-\-all
+Apply all enabled plugins.
+.TP
+.B \-\-dry\-run
+Preview the changes that would be made without actually applying them.
+.
+.SS Report Options
+.TP
+.BR \-s ", " \-\-scenario " " \fISCENARIO\fR
+Use-case scenario for report generation.
+One of
+.BR server ,
+.BR workstation ,
+.BR government ,
+.BR healthcare ,
+.BR financial ,
+.BR gdpr ,
+or
+.BR all .
+.TP
+.BI \-\-framework " FRAMEWORK"
+Compliance framework.
+One of
+.BR cis ,
+.BR stig ,
+.BR nist ,
+.BR pcidss ,
+.BR hipaa ,
+or
+.BR gdpr .
+.TP
+.BI \-\-report\-format " FORMAT"
+Report output format.
+One of
+.BR text
+or
+.BR json .
+.TP
+.BR \-o ", " \-\-output " " \fIFILE\fR
+Write the report to the specified file path instead of stdout.
+.TP
+.BR \-i ", " \-\-interactive
+Launch the interactive report wizard.
+.
+.SH FILES
+.TP
+.I /etc/linux-hardener/config.toml
+System-wide configuration file.
+Settings here apply to all users and require root privileges to modify.
+.TP
+.I ~/.config/linux-hardener/config.toml
+Per-user configuration file.
+Overrides system-wide settings for the current user.
+.TP
+.I /var/lib/linux-hardener/
+System state directory.
+Contains the checkpoint database and audit logs created during privileged operations.
+.TP
+.I ~/.local/share/linux-hardener/
+Per-user state directory.
+Contains scan history and checkpoints for unprivileged operations.
+.
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+All operations completed without error and, when
+.B \-\-exit\-code
+is not set, the exit status does not reflect whether findings exist.
+.TP
+.B 1
+An error occurred, or findings exist when
+.B \-\-exit\-code
+is specified.
+.
+.SH EXAMPLES
+Scan all plugins and display results as text:
+.PP
+.RS
+.nf
+hardener scan
+.fi
+.RE
+.PP
+Scan only the SSH and kernel plugins with minimum severity of medium:
+.PP
+.RS
+.nf
+hardener scan \-p ssh \-p kernel \-s medium
+.fi
+.RE
+.PP
+Run an audit scan and exit with code 1 if findings exist (for CI/CD):
+.PP
+.RS
+.nf
+hardener scan \-\-audit \-\-exit\-code \-f json
+.fi
+.RE
+.PP
+Preview firewall hardening changes without applying them:
+.PP
+.RS
+.nf
+hardener apply \-p firewall \-\-dry\-run
+.fi
+.RE
+.PP
+Apply all hardening plugins:
+.PP
+.RS
+.nf
+sudo hardener apply \-\-all
+.fi
+.RE
+.PP
+List available checkpoints and roll back to a specific one:
+.PP
+.RS
+.nf
+hardener checkpoint list
+sudo hardener rollback abc123
+.fi
+.RE
+.PP
+Generate a CIS Benchmark compliance report and save it as PDF:
+.PP
+.RS
+.nf
+hardener report \-\-framework cis \-f pdf \-o report.pdf
+.fi
+.RE
+.PP
+Scan a remote host over SSH:
+.PP
+.RS
+.nf
+hardener scan \-\-ssh admin@192.168.1.100 \-\-ssh\-key ~/.ssh/id_ed25519
+.fi
+.RE
+.PP
+Scan a remote host on a non-standard SSH port:
+.PP
+.RS
+.nf
+hardener scan \-\-ssh admin@server.example.com \-\-port 2222
+.fi
+.RE
+.PP
+Export scan history to JSON:
+.PP
+.RS
+.nf
+hardener history export \-f json \-o history.json
+.fi
+.RE
+.PP
+Install and enable the systemd timer for daily scans:
+.PP
+.RS
+.nf
+sudo hardener systemd install
+sudo hardener systemd status
+.fi
+.RE
+.PP
+Use a custom configuration file:
+.PP
+.RS
+.nf
+hardener scan \-C /path/to/config.toml
+.fi
+.RE
+.
+.SH SEE ALSO
+.BR sshd_config (5),
+.BR sysctl.conf (5),
+.BR auditctl (8),
+.BR auditd (8),
+.BR nft (8),
+.BR firewall\-cmd (1),
+.BR ufw (8),
+.BR pam (8),
+.BR systemctl (1),
+.BR apparmor (7),
+.BR selinux (8)
+.
+.SH BUGS
+Report bugs at
+.UR https://github.com/ericjingryd/linux-system-hardener/issues
+the project issue tracker
+.UE .
+.
+.SH AUTHORS
+Eric Jingryd
+.
+.SH LICENSE
+Licensed under the Apache License, Version 2.0.

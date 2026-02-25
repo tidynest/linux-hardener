@@ -10,6 +10,7 @@ const THEMES: &[(&str, &str)] = &[
     ("command", "Command"),
     ("guardian", "Guardian"),
     ("daywatch", "Daywatch"),
+    ("high-contrast", "High Contrast"),
 ];
 
 /// Dropdown component for switching the application theme.
