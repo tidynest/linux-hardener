@@ -129,18 +129,6 @@ mod tests {
         assert!(result.is_ok());
 
         let distro = result.unwrap();
-        println!(
-            "Detected: {} {} ({})",
-            distro.distro_name,
-            distro.distro_version,
-            match distro.distro_family {
-                DistroFamily::Debian => "Debian family",
-                DistroFamily::RedHat => "Red Hat family",
-                DistroFamily::Arch => "Arch family",
-                DistroFamily::Suse => "SUSE family",
-            }
-        );
-
         assert!(!distro.distro_name.is_empty());
         assert!(!distro.distro_version.is_empty());
     }

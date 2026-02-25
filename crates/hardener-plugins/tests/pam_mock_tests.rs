@@ -90,7 +90,7 @@ async fn test_pam_scan_secure_config_no_findings() {
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_success);
+    assert!(result.scan_success, "secure PAM scan should succeed");
     assert_eq!(result.scan_plugin_id, PluginId::from("pam-hardening"));
     assert!(
         result.scan_findings.is_empty(),
@@ -111,8 +111,8 @@ async fn test_pam_scan_insecure_config_finds_issues() {
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_success);
-    assert!(!result.scan_findings.is_empty());
+    assert!(result.scan_success, "insecure PAM scan should succeed");
+    assert!(!result.scan_findings.is_empty(), "insecure PAM config should have findings");
 
     let finding_ids: Vec<_> = result
         .scan_findings
@@ -133,10 +133,10 @@ async fn test_pam_scan_insecure_config_finds_issues() {
     );
 
     // Should find PASS_MAX_DAYS is too long
-    assert!(finding_ids.contains(&"pam-PASS_MAX_DAYS"));
+    assert!(finding_ids.contains(&"pam-PASS_MAX_DAYS"), "should flag PASS_MAX_DAYS, got: {finding_ids:?}");
 
     // Should find PASS_MIN_DAYS is 0
-    assert!(finding_ids.contains(&"pam-PASS_MIN_DAYS"));
+    assert!(finding_ids.contains(&"pam-PASS_MIN_DAYS"), "should flag PASS_MIN_DAYS, got: {finding_ids:?}");
 }
 
 #[tokio::test]
@@ -147,9 +147,9 @@ async fn test_pam_scan_missing_configs_flags_all() {
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_success);
+    assert!(result.scan_success, "scan with missing configs should succeed");
     // All directives should be flagged as "not set"
-    assert!(!result.scan_findings.is_empty());
+    assert!(!result.scan_findings.is_empty(), "missing configs should produce findings");
 
     // All findings should have "not set" as current value
     for finding in &result.scan_findings {
@@ -169,7 +169,7 @@ async fn test_pam_scan_partial_config() {
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_success);
+    assert!(result.scan_success, "partial PAM scan should succeed");
 
     let finding_ids: Vec<_> = result
         .scan_findings
@@ -178,17 +178,17 @@ async fn test_pam_scan_partial_config() {
         .collect();
 
     // minlen and dcredit are set correctly - should NOT be flagged
-    assert!(!finding_ids.contains(&"pam-minlen"));
-    assert!(!finding_ids.contains(&"pam-dcredit"));
+    assert!(!finding_ids.contains(&"pam-minlen"), "correctly set minlen should not be flagged");
+    assert!(!finding_ids.contains(&"pam-dcredit"), "correctly set dcredit should not be flagged");
 
     // ucredit, lcredit, ocredit, maxrepeat are missing - should be flagged
-    assert!(finding_ids.contains(&"pam-ucredit"));
-    assert!(finding_ids.contains(&"pam-lcredit"));
-    assert!(finding_ids.contains(&"pam-ocredit"));
-    assert!(finding_ids.contains(&"pam-maxrepeat"));
+    assert!(finding_ids.contains(&"pam-ucredit"), "missing ucredit should be flagged");
+    assert!(finding_ids.contains(&"pam-lcredit"), "missing lcredit should be flagged");
+    assert!(finding_ids.contains(&"pam-ocredit"), "missing ocredit should be flagged");
+    assert!(finding_ids.contains(&"pam-maxrepeat"), "missing maxrepeat should be flagged");
 
     // PASS_MIN_DAYS is wrong (0 vs 1) - should be flagged
-    assert!(finding_ids.contains(&"pam-PASS_MIN_DAYS"));
+    assert!(finding_ids.contains(&"pam-PASS_MIN_DAYS"), "wrong PASS_MIN_DAYS should be flagged");
 }
 
 #[tokio::test]
@@ -212,8 +212,8 @@ async fn test_pam_scan_finding_structure() {
     assert_eq!(minlen_finding.finding_current_value, "8");
     assert_eq!(minlen_finding.finding_recommended_value, "14");
     assert_eq!(minlen_finding.finding_severity, Severity::High);
-    assert!(minlen_finding.finding_title.contains("minlen"));
-    assert!(!minlen_finding.finding_compliance.is_empty());
+    assert!(minlen_finding.finding_title.contains("minlen"), "finding title should mention minlen, got: {}", minlen_finding.finding_title);
+    assert!(!minlen_finding.finding_compliance.is_empty(), "minlen finding should have compliance mappings");
 }
 
 #[tokio::test]
@@ -231,11 +231,13 @@ async fn test_pam_scan_compliance_mappings() {
         .find(|f| f.finding_id == "pam-minlen")
         .expect("Should have minlen finding");
 
-    assert!(!minlen_finding.finding_compliance.is_empty());
+    assert!(!minlen_finding.finding_compliance.is_empty(), "minlen finding should have compliance mappings");
     assert!(
         minlen_finding.finding_compliance[0]
             .compliance_control_id
-            .starts_with("5.3")
+            .starts_with("5.3"),
+        "minlen compliance control should start with 5.3, got: {}",
+        minlen_finding.finding_compliance[0].compliance_control_id
     );
 }
 
@@ -289,7 +291,7 @@ async fn test_pam_validate() {
     let result = plugin.validate(&ctx, &config).await.unwrap();
 
     // Should have estimated changes
-    assert!(!result.validation_report_estimated_changes.is_empty());
+    assert!(!result.validation_report_estimated_changes.is_empty(), "validation should produce estimated changes");
 }
 
 #[tokio::test]
@@ -328,7 +330,7 @@ async fn test_pam_scan_duration_recorded() {
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_duration_us > 0);
+    assert!(result.scan_duration_us > 0, "scan duration should be recorded");
 }
 
 #[tokio::test]
@@ -348,16 +350,16 @@ async fn test_pam_scan_with_remote_executor() {
         .with_file("/etc/security/pwquality.conf", "minlen 8\n")
         .with_file("/etc/login.defs", "PASS_MAX_DAYS 99999\n");
 
-    assert!(executor.is_remote());
+    assert!(executor.is_remote(), "remote executor should report as remote");
 
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PamHardeningPlugin::new();
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_success);
+    assert!(result.scan_success, "remote PAM scan should succeed");
     // Should find issues on remote system
-    assert!(!result.scan_findings.is_empty());
+    assert!(!result.scan_findings.is_empty(), "insecure remote PAM config should have findings");
 }
 
 #[tokio::test]
@@ -387,7 +389,7 @@ PASS_WARN_AGE 7
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_success);
+    assert!(result.scan_success, "whitespace-variant scan should succeed");
     // All secure values should be recognized
     assert!(
         result.scan_findings.is_empty(),

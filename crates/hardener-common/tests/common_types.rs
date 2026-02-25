@@ -31,10 +31,10 @@ fn test_plugin_id_hash() {
 
 #[test]
 fn test_severity_ordering() {
-    assert!(Severity::Info < Severity::Low);
-    assert!(Severity::Low < Severity::Medium);
-    assert!(Severity::Medium < Severity::High);
-    assert!(Severity::High < Severity::Critical);
+    assert!(Severity::Info < Severity::Low, "Info should be less than Low");
+    assert!(Severity::Low < Severity::Medium, "Low should be less than Medium");
+    assert!(Severity::Medium < Severity::High, "Medium should be less than High");
+    assert!(Severity::High < Severity::Critical, "High should be less than Critical");
 
     // Test that ordering works correctly
     let mut severities = vec![
@@ -114,37 +114,51 @@ fn test_compliance_framework_description() {
     assert!(
         ComplianceFramework::CIS
             .description()
-            .contains("Center for Internet Security")
+            .contains("Center for Internet Security"),
+        "CIS description should mention Center for Internet Security, got: {}",
+        ComplianceFramework::CIS.description()
     );
     assert!(
         ComplianceFramework::HIPAA
             .description()
-            .contains("Health Insurance")
+            .contains("Health Insurance"),
+        "HIPAA description should mention Health Insurance, got: {}",
+        ComplianceFramework::HIPAA.description()
     );
     assert!(
         ComplianceFramework::ISO27001
             .description()
-            .contains("International Organisation")
+            .contains("International Organisation"),
+        "ISO27001 description should mention International Organisation, got: {}",
+        ComplianceFramework::ISO27001.description()
     );
     assert!(
         ComplianceFramework::NIST
             .description()
-            .contains("National Institute")
+            .contains("National Institute"),
+        "NIST description should mention National Institute, got: {}",
+        ComplianceFramework::NIST.description()
     );
     assert!(
         ComplianceFramework::PCIDSS
             .description()
-            .contains("Payment Card")
+            .contains("Payment Card"),
+        "PCIDSS description should mention Payment Card, got: {}",
+        ComplianceFramework::PCIDSS.description()
     );
     assert!(
         ComplianceFramework::STIG
             .description()
-            .contains("Defense Information")
+            .contains("Defense Information"),
+        "STIG description should mention Defense Information, got: {}",
+        ComplianceFramework::STIG.description()
     );
     assert!(
         ComplianceFramework::GDPR
             .description()
-            .contains("General Data Protection")
+            .contains("General Data Protection"),
+        "GDPR description should mention General Data Protection, got: {}",
+        ComplianceFramework::GDPR.description()
     );
 }
 
@@ -153,17 +167,17 @@ fn test_types_are_serializable() {
     // Test that types can be serialised to JSON
     let id = PluginId::new("test");
     let json = serde_json::to_string(&id).unwrap();
-    assert!(json.contains("test"));
+    assert!(json.contains("test"), "PluginId JSON should contain 'test', got: {json}");
 
     let category = FindingCategory::Kernel;
     let json = serde_json::to_string(&category).unwrap();
-    assert!(json.contains("Kernel"));
+    assert!(json.contains("Kernel"), "FindingCategory JSON should contain 'Kernel', got: {json}");
 
     let framework = ComplianceFramework::CIS;
     let json = serde_json::to_string(&framework).unwrap();
-    assert!(json.contains("CIS"));
+    assert!(json.contains("CIS"), "ComplianceFramework JSON should contain 'CIS', got: {json}");
 
     let severity = Severity::High;
     let json = serde_json::to_string(&severity).unwrap();
-    assert!(json.contains("High"));
+    assert!(json.contains("High"), "Severity JSON should contain 'High', got: {json}");
 }

@@ -169,7 +169,7 @@ async fn test_mac_scan_selinux_enforcing_no_findings() {
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_success);
+    assert!(result.scan_success, "SELinux enforcing scan should succeed");
     assert_eq!(result.scan_plugin_id, PluginId::new("mac-hardening"));
     assert!(
         result.scan_findings.is_empty(),
@@ -190,11 +190,11 @@ async fn test_mac_scan_selinux_permissive() {
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_success);
-    assert!(!result.scan_findings.is_empty());
+    assert!(result.scan_success, "SELinux permissive scan should succeed");
+    assert!(!result.scan_findings.is_empty(), "SELinux permissive should have findings");
 
     let finding = &result.scan_findings[0];
-    assert!(finding.finding_id.contains("selinux"));
+    assert!(finding.finding_id.contains("selinux"), "finding ID should mention selinux, got: {}", finding.finding_id);
     assert_eq!(finding.finding_current_value, "Permissive");
     assert_eq!(finding.finding_recommended_value, "Enforcing");
     assert_eq!(finding.finding_severity, Severity::High);
@@ -208,8 +208,8 @@ async fn test_mac_scan_selinux_disabled() {
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_success);
-    assert!(!result.scan_findings.is_empty());
+    assert!(result.scan_success, "SELinux disabled scan should succeed");
+    assert!(!result.scan_findings.is_empty(), "SELinux disabled should have findings");
 
     let finding = &result.scan_findings[0];
     assert_eq!(finding.finding_current_value, "Disabled");
@@ -225,7 +225,7 @@ async fn test_mac_scan_apparmor_enforcing_no_findings() {
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_success);
+    assert!(result.scan_success, "AppArmor enforcing scan should succeed");
     // All profiles in enforce mode - should have no findings
     assert!(
         result.scan_findings.is_empty(),
@@ -246,8 +246,8 @@ async fn test_mac_scan_apparmor_complain_mode() {
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_success);
-    assert!(!result.scan_findings.is_empty());
+    assert!(result.scan_success, "AppArmor complain scan should succeed");
+    assert!(!result.scan_findings.is_empty(), "AppArmor complain mode should have findings");
 
     // Should flag profiles in complain mode
     let finding = result
@@ -258,7 +258,10 @@ async fn test_mac_scan_apparmor_complain_mode() {
 
     assert!(
         finding.finding_description.contains("complain")
-            || finding.finding_current_value.contains("complain")
+            || finding.finding_current_value.contains("complain"),
+        "finding should mention complain mode, got description: {}, value: {}",
+        finding.finding_description,
+        finding.finding_current_value
     );
 }
 
@@ -270,8 +273,8 @@ async fn test_mac_scan_no_mac_system() {
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_success);
-    assert!(!result.scan_findings.is_empty());
+    assert!(result.scan_success, "no MAC system scan should succeed");
+    assert!(!result.scan_findings.is_empty(), "no MAC system should have findings");
 
     let finding = &result.scan_findings[0];
     assert_eq!(finding.finding_id, "no-mac-system");
@@ -288,12 +291,14 @@ async fn test_mac_scan_compliance_mappings() {
     let result = plugin.scan(&ctx).await.unwrap();
 
     let finding = &result.scan_findings[0];
-    assert!(!finding.finding_compliance.is_empty());
+    assert!(!finding.finding_compliance.is_empty(), "MAC finding should have compliance mappings");
     // CIS control for MAC
     assert!(
         finding.finding_compliance[0]
             .compliance_control_id
-            .starts_with("1.6")
+            .starts_with("1.6"),
+        "MAC compliance control should start with 1.6, got: {}",
+        finding.finding_compliance[0].compliance_control_id
     );
 }
 
@@ -306,7 +311,7 @@ async fn test_mac_validate_with_selinux() {
 
     let result = plugin.validate(&ctx, &config).await.unwrap();
 
-    assert!(result.validation_report_is_valid);
+    assert!(result.validation_report_is_valid, "validation with SELinux should be valid");
 }
 
 #[tokio::test]
@@ -321,7 +326,7 @@ async fn test_mac_validate_no_mac() {
     // Current implementation: validate returns valid even with no MAC
     // (the scan will flag the issue, but validate just checks prerequisites)
     // This is a design choice - validate checks if apply CAN run, not if it SHOULD
-    assert!(result.validation_report_is_valid);
+    assert!(result.validation_report_is_valid, "validation without MAC should still be valid (checks prerequisites only)");
 }
 
 #[tokio::test]
@@ -332,7 +337,7 @@ async fn test_mac_scan_duration_recorded() {
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_duration_us > 0);
+    assert!(result.scan_duration_us > 0, "scan duration should be recorded");
 }
 
 #[tokio::test]
@@ -370,16 +375,16 @@ async fn test_mac_scan_with_remote_executor() {
             },
         );
 
-    assert!(executor.is_remote());
+    assert!(executor.is_remote(), "remote executor should report as remote");
 
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = MacHardeningPlugin::new();
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_success);
+    assert!(result.scan_success, "remote MAC scan should succeed");
     // Should find SELinux not enforcing on remote
-    assert!(!result.scan_findings.is_empty());
+    assert!(!result.scan_findings.is_empty(), "SELinux permissive on remote should have findings");
 }
 
 #[tokio::test]

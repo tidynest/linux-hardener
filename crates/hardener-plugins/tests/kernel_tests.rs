@@ -37,27 +37,12 @@ async fn test_kernel_scan_reads_parameters() {
         scan_result.scan_duration_us > 0,
         "Should record scan duration in microseconds"
     );
-    println!(
-        "Scan completed in {}µs ({}ms)",
-        scan_result.scan_duration_us,
-        scan_result.scan_duration_us / 1000
-    );
-
-    // Findings may or may not exist depending on current system state
-    println!(
-        "Found {} insecure kernel parameters",
-        scan_result.scan_findings.len()
-    );
 
     // Verify finding structure if any exist
     if let Some(finding) = scan_result.scan_findings.first() {
         assert!(!finding.finding_current_value.is_empty());
         assert!(!finding.finding_recommended_value.is_empty());
         assert!(!finding.finding_explanation.is_empty());
-        println!(
-            "Example finding: {} (current: {}, recommended: {})",
-            finding.finding_title, finding.finding_current_value, finding.finding_recommended_value
-        );
     }
 }
 
@@ -81,24 +66,6 @@ async fn test_kernel_validate_checks_parameters() {
         !validation.validation_report_estimated_changes.is_empty(),
         "Should estimate at least some changes"
     );
-
-    println!(
-        "Validation found {} potential issues",
-        validation.validation_report_issues.len()
-    );
-    println!(
-        "Would make {} changes",
-        validation.validation_report_estimated_changes.len()
-    );
-
-    // Show a few estimated changes
-    for change in validation
-        .validation_report_estimated_changes
-        .iter()
-        .take(3)
-    {
-        println!("  - {}", change);
-    }
 }
 
 #[tokio::test]
@@ -113,35 +80,14 @@ async fn test_kernel_apply_requires_root() {
     // This test requires root - will fail without privileges
     match result {
         Ok(apply_result) => {
-            println!("Apply succeeded!");
-            println!("Plugin ID: {}", apply_result.apply_plugin_id.as_str());
-            println!("Overall success: {}", apply_result.apply_success);
-            println!("Changes made: {}", apply_result.apply_changes.len());
-
-            let successful = apply_result
-                .apply_changes
-                .iter()
-                .filter(|c| c.change_success)
-                .count();
-            let failed = apply_result
-                .apply_changes
-                .iter()
-                .filter(|c| !c.change_success)
-                .count();
-
-            println!("  Successful: {}", successful);
-            println!("  Failed: {}", failed);
-
-            for change in &apply_result.apply_changes {
-                println!(
-                    "  {} {}",
-                    if change.change_success { "✓" } else { "✗" },
-                    change.change_description
-                );
-            }
+            assert_eq!(apply_result.apply_plugin_id.as_str(), "kernel-hardening");
+            assert!(
+                apply_result.apply_success,
+                "Apply should succeed with root privileges"
+            );
         }
-        Err(e) => {
-            println!("Apply failed (may need root): {:?}", e);
+        Err(_) => {
+            // Expected if not running as root
         }
     }
 }

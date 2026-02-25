@@ -307,15 +307,10 @@ mod tests {
     fn test_system_info_detection() {
         let info = SystemInfo::detect().unwrap();
 
-        // Print what we detected (useful for debugging)
-        println!("Distribution: {}", info.system_distribution);
-        println!("Version: {}", info.system_distribution_version);
-        println!("Kernel: {}", info.system_kernel_version);
-        println!("Hostname: {}", info.system_hostname);
-        println!("Architecture: {}", info.system_architecture);
-
-        // Basic sanity checks
         assert!(!info.system_distribution.is_empty());
+        assert!(!info.system_distribution_version.is_empty());
+        assert!(!info.system_kernel_version.is_empty());
+        assert!(!info.system_hostname.is_empty());
         assert!(!info.system_architecture.is_empty());
     }
 

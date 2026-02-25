@@ -34,9 +34,6 @@ fn test_dependency_resolution_valid_chain() {
 
     // Resolve dependencies - should succeed
     let result = manager.resolve_dependencies();
-    if let Err(e) = &result {
-        eprintln!("Error: {:?}", e);
-    }
     assert!(
         result.is_ok(),
         "Dependency resolution should succeed for valid chain"

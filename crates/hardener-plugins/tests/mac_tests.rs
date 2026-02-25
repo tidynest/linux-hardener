@@ -45,12 +45,6 @@ async fn test_mac_scan_detects_system() {
     );
     assert_eq!(scan_result.scan_plugin_id.to_string(), "mac-hardening");
 
-    // Should detect MAC system status
-    println!(
-        "MAC scan found {} findings",
-        scan_result.scan_findings.len()
-    );
-
     // Verify timing is captured
     assert!(
         scan_result.scan_duration_us > 0,
@@ -75,13 +69,6 @@ async fn test_mac_scan_detects_system() {
             !finding.finding_remediation_steps.is_empty(),
             "Should have remediation steps"
         );
-
-        println!(
-            "Finding: {} - {}",
-            finding.finding_id, finding.finding_title
-        );
-        println!("  Current: {}", finding.finding_current_value);
-        println!("  Recommended: {}", finding.finding_recommended_value);
     }
 }
 
@@ -105,29 +92,6 @@ async fn test_mac_validate() {
         validation_report.validation_report_plugin_id.to_string(),
         "mac-hardening"
     );
-
-    println!(
-        "Validation valid: {}",
-        validation_report.validation_report_is_valid
-    );
-    println!(
-        "Issues found: {}",
-        validation_report.validation_report_issues.len()
-    );
-    println!(
-        "Estimated changes: {}",
-        validation_report.validation_report_estimated_changes.len()
-    );
-
-    // Print any validation issues
-    for issue in &validation_report.validation_report_issues {
-        println!("  Issue: {}", issue.validation_issue_message);
-    }
-
-    // Print estimated changes
-    for change in &validation_report.validation_report_estimated_changes {
-        println!("  Estimated change: {}", change);
-    }
 }
 
 #[tokio::test]
@@ -142,22 +106,7 @@ async fn test_mac_apply_requires_root() {
 
     match result {
         Ok(apply_result) => {
-            println!("MAC apply succeeded (running as root)");
-            println!("Changes made: {}", apply_result.apply_changes.len());
-
             assert_eq!(apply_result.apply_plugin_id.to_string(), "mac-hardening");
-
-            // Print all changes for manual verification
-            for change in &apply_result.apply_changes {
-                println!(
-                    "  - [{}] {}",
-                    if change.change_success { "✓" } else { "✗" },
-                    change.change_description
-                );
-                if let Some(ref error) = change.change_error {
-                    println!("    Error: {}", error);
-                }
-            }
 
             // Verify change structure if any changes were made
             for change in &apply_result.apply_changes {
@@ -167,8 +116,7 @@ async fn test_mac_apply_requires_root() {
                 );
             }
         }
-        Err(e) => {
-            println!("MAC apply failed (likely not root): {:?}", e);
+        Err(_) => {
             // This is expected if not running as root
         }
     }

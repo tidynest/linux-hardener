@@ -9,11 +9,11 @@ use std::path::Path;
 async fn test_mock_executor_description() {
     let executor = MockExecutor::new();
     assert_eq!(executor.description(), "mock");
-    assert!(!executor.is_remote());
+    assert!(!executor.is_remote(), "default mock executor should not be remote");
 
     let remote = MockExecutor::new().remote();
     assert_eq!(remote.description(), "mock-remote");
-    assert!(remote.is_remote());
+    assert!(remote.is_remote(), "remote mock executor should report as remote");
 
     let custom = MockExecutor::new().with_description("test-executor");
     assert_eq!(custom.description(), "test-executor");
@@ -40,7 +40,7 @@ async fn test_mock_executor_read_file_not_found() {
     let executor = MockExecutor::new();
 
     let result = executor.read_file(Path::new("/nonexistent")).await;
-    assert!(result.is_err());
+    assert!(result.is_err(), "reading nonexistent file should return error, got: {result:?}");
     assert!(result.unwrap_err().to_string().contains("file not found"));
 }
 
@@ -96,14 +96,16 @@ async fn test_mock_executor_path_exists() {
         executor
             .path_exists(Path::new("/etc/exists.conf"))
             .await
-            .unwrap()
+            .unwrap(),
+        "registered file path should exist"
     );
-    assert!(executor.path_exists(Path::new("/etc/mydir")).await.unwrap());
+    assert!(executor.path_exists(Path::new("/etc/mydir")).await.unwrap(), "registered directory path should exist");
     assert!(
         !executor
             .path_exists(Path::new("/etc/missing"))
             .await
-            .unwrap()
+            .unwrap(),
+        "unregistered path should not exist"
     );
 }
 
@@ -118,9 +120,9 @@ async fn test_mock_executor_file_metadata() {
         .file_metadata(Path::new("/etc/test.conf"))
         .await
         .unwrap();
-    assert!(meta.exists);
-    assert!(meta.is_file);
-    assert!(!meta.is_dir);
+    assert!(meta.exists, "file metadata should report exists");
+    assert!(meta.is_file, "file metadata should report is_file");
+    assert!(!meta.is_dir, "file metadata should not report is_dir");
     assert_eq!(meta.mode, 0o644);
     assert_eq!(meta.size, 5); // "12345" = 5 bytes
 
@@ -129,9 +131,9 @@ async fn test_mock_executor_file_metadata() {
         .file_metadata(Path::new("/etc/mydir"))
         .await
         .unwrap();
-    assert!(meta.exists);
-    assert!(!meta.is_file);
-    assert!(meta.is_dir);
+    assert!(meta.exists, "directory metadata should report exists");
+    assert!(!meta.is_file, "directory metadata should not report is_file");
+    assert!(meta.is_dir, "directory metadata should report is_dir");
     assert_eq!(meta.mode, 0o755);
 
     // Nonexistent path
@@ -139,7 +141,7 @@ async fn test_mock_executor_file_metadata() {
         .file_metadata(Path::new("/nonexistent"))
         .await
         .unwrap();
-    assert!(!meta.exists);
+    assert!(!meta.exists, "nonexistent path metadata should not report exists");
 }
 
 #[tokio::test]
@@ -178,7 +180,7 @@ async fn test_mock_executor_execute_command() {
         .execute_command("systemctl", &["status", "sshd"])
         .await
         .unwrap();
-    assert!(output.success());
+    assert!(output.success(), "registered command should report success, exit_code: {}", output.exit_code);
     assert_eq!(output.stdout, "active (running)\n");
     assert_eq!(output.exit_code, 0);
 
@@ -194,12 +196,13 @@ async fn test_mock_executor_command_not_registered() {
     let executor = MockExecutor::new();
 
     let result = executor.execute_command("unknown", &["arg"]).await;
-    assert!(result.is_err());
+    assert!(result.is_err(), "unregistered command should return error, got: {result:?}");
     assert!(
         result
             .unwrap_err()
             .to_string()
-            .contains("command not registered")
+            .contains("command not registered"),
+        "error should mention 'command not registered'"
     );
 }
 
@@ -219,14 +222,14 @@ async fn test_mock_executor_command_exists() {
         );
 
     // Explicitly registered
-    assert!(executor.command_exists("systemctl").await.unwrap());
-    assert!(!executor.command_exists("nonexistent").await.unwrap());
+    assert!(executor.command_exists("systemctl").await.unwrap(), "explicitly registered command should exist");
+    assert!(!executor.command_exists("nonexistent").await.unwrap(), "explicitly non-existent command should not exist");
 
     // Inferred from registered command
-    assert!(executor.command_exists("sshd").await.unwrap());
+    assert!(executor.command_exists("sshd").await.unwrap(), "command inferred from registered args should exist");
 
     // Unknown command
-    assert!(!executor.command_exists("unknown").await.unwrap());
+    assert!(!executor.command_exists("unknown").await.unwrap(), "unknown command should not exist");
 }
 
 #[tokio::test]
@@ -256,9 +259,9 @@ async fn test_mock_executor_log_operations() {
     // Clear log and verify
     executor.clear_log();
     let log = executor.log();
-    assert!(log.files_read.is_empty());
-    assert!(log.files_written.is_empty());
-    assert!(log.commands_executed.is_empty());
+    assert!(log.files_read.is_empty(), "cleared log should have no files_read, found: {:?}", log.files_read);
+    assert!(log.files_written.is_empty(), "cleared log should have no files_written, found: {:?}", log.files_written);
+    assert!(log.commands_executed.is_empty(), "cleared log should have no commands_executed, found: {:?}", log.commands_executed);
 }
 
 #[tokio::test]

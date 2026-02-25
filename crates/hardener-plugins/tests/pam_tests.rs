@@ -44,13 +44,6 @@ async fn test_pam_scan_reads_configuration() {
     );
     assert_eq!(scan_result.scan_plugin_id.to_string(), "pam-hardening");
 
-    // Should have findings if system isn't hardened
-    // (Most systems won't have all secure settings by default)
-    println!(
-        "PAM scan found {} findings",
-        scan_result.scan_findings.len()
-    );
-
     // Verify timing is captured
     assert!(
         scan_result.scan_duration_us > 0,
@@ -86,19 +79,6 @@ async fn test_pam_validate_checks_config_files() {
             .is_empty(),
         "Should estimate changes to be made"
     );
-
-    println!(
-        "Validation valid: {}",
-        validation_report.validation_report_is_valid
-    );
-    println!(
-        "Issues found: {}",
-        validation_report.validation_report_issues.len()
-    );
-    println!(
-        "Estimated changes: {}",
-        validation_report.validation_report_estimated_changes.len()
-    );
 }
 
 #[tokio::test]
@@ -113,26 +93,13 @@ async fn test_pam_apply_requires_root() {
 
     match result {
         Ok(apply_result) => {
-            println!("PAM apply succeeded (running as root)");
-            println!("Changes made: {}", apply_result.apply_changes.len());
-
             assert_eq!(apply_result.apply_plugin_id.to_string(), "pam-hardening");
             assert!(
                 !apply_result.apply_changes.is_empty(),
                 "Should have made changes"
             );
-
-            // Print all changes for manual verification
-            for change in &apply_result.apply_changes {
-                println!(
-                    "  - [{}] {}",
-                    if change.change_success { "✓" } else { "✗" },
-                    change.change_description
-                );
-            }
         }
-        Err(e) => {
-            println!("PAM apply failed (likely not root): {:?}", e);
+        Err(_) => {
             // This is expected if not running as root
         }
     }

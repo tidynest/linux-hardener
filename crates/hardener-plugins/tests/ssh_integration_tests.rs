@@ -99,16 +99,6 @@ async fn test_kernel_plugin_scan_over_ssh() {
         "Duration should be recorded"
     );
 
-    println!(
-        "Kernel scan found {} findings over SSH",
-        scan_result.scan_findings.len()
-    );
-    for finding in &scan_result.scan_findings {
-        println!(
-            "  - {}: {} (current: {})",
-            finding.finding_id, finding.finding_title, finding.finding_current_value
-        );
-    }
 }
 
 #[tokio::test]
@@ -127,13 +117,7 @@ async fn test_kernel_plugin_validate_over_ssh() {
     );
 
     let report = result.unwrap();
-    println!("Kernel validation over SSH:");
-    println!("  Valid: {}", report.validation_report_is_valid);
-    println!("  Issues: {}", report.validation_report_issues.len());
-    println!(
-        "  Estimated changes: {}",
-        report.validation_report_estimated_changes.len()
-    );
+    assert!(!report.validation_report_plugin_id.as_str().is_empty());
 }
 
 // =============================================================================
@@ -158,16 +142,10 @@ async fn test_ssh_plugin_scan_over_ssh() {
     // Note: scan might fail if sshd_config doesn't exist on target
     // That's okay - we're testing the remote execution path
 
-    println!("SSH scan success: {}", scan_result.scan_success);
-    if let Some(ref error) = scan_result.scan_error {
-        println!(
-            "SSH scan error (expected if sshd not configured): {}",
-            error
-        );
-    }
-    println!(
-        "SSH scan found {} findings over SSH",
-        scan_result.scan_findings.len()
+    // Scan might fail if sshd_config doesn't exist on target - that's OK
+    assert_eq!(
+        scan_result.scan_plugin_id.as_str(),
+        "ssh-hardening"
     );
 }
 
@@ -192,16 +170,6 @@ async fn test_services_plugin_scan_over_ssh() {
     let scan_result = result.unwrap();
     assert!(scan_result.scan_success, "Scan should report success");
 
-    println!(
-        "Services scan found {} findings over SSH",
-        scan_result.scan_findings.len()
-    );
-    for finding in &scan_result.scan_findings {
-        println!(
-            "  - {}: {}",
-            finding.finding_id, finding.finding_current_value
-        );
-    }
 }
 
 #[tokio::test]
@@ -220,10 +188,7 @@ async fn test_services_plugin_validate_over_ssh() {
     );
 
     let report = result.unwrap();
-    println!(
-        "Services validation over SSH: valid={}",
-        report.validation_report_is_valid
-    );
+    assert!(!report.validation_report_plugin_id.as_str().is_empty());
 }
 
 // =============================================================================
@@ -240,11 +205,8 @@ async fn test_multiple_plugins_sequential_over_ssh() {
         Box::new(ServicesHardeningPlugin::new()),
     ];
 
-    let mut total_findings = 0;
-
     for plugin in &plugins {
         let metadata = plugin.metadata();
-        println!("Scanning {} over SSH...", metadata.plugin_name);
 
         let result = plugin.scan(&ctx).await;
         assert!(
@@ -255,16 +217,8 @@ async fn test_multiple_plugins_sequential_over_ssh() {
         );
 
         let scan_result = result.unwrap();
-        total_findings += scan_result.scan_findings.len();
-
-        println!(
-            "  {} findings, {}µs",
-            scan_result.scan_findings.len(),
-            scan_result.scan_duration_us
-        );
+        assert!(scan_result.scan_success, "{} scan should succeed", metadata.plugin_name);
     }
-
-    println!("Total findings across all plugins: {}", total_findings);
 }
 
 // =============================================================================
@@ -310,7 +264,7 @@ async fn test_command_not_found_over_ssh() {
         .executor()
         .command_exists("this_command_definitely_does_not_exist")
         .await;
-    assert!(exists.is_ok());
+    assert!(exists.is_ok(), "command_exists should not return error, got: {exists:?}");
     assert!(!exists.unwrap(), "Non-existent command should return false");
 }
 
@@ -332,8 +286,6 @@ async fn test_ssh_connection_failure() {
     let result = SshExecutor::connect(config).await;
 
     assert!(result.is_err(), "Connection to invalid host should fail");
-    let err = result.err().unwrap().to_string();
-    println!("Expected connection error: {}", err);
 }
 
 #[tokio::test]

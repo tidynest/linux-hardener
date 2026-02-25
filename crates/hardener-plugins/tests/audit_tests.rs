@@ -44,12 +44,6 @@ async fn test_audit_scan_detects_configuration() {
     );
     assert_eq!(scan_result.scan_plugin_id.to_string(), "audit-hardening");
 
-    // Should have findings if auditd is not fully configured
-    println!(
-        "Audit scan found {} findings",
-        scan_result.scan_findings.len()
-    );
-
     // Verify timing is captured
     assert!(
         scan_result.scan_duration_us > 0,
@@ -98,28 +92,11 @@ async fn test_audit_validate_checks_auditd() {
         "audit-hardening"
     );
 
-    println!(
-        "Validation valid: {}",
-        validation_report.validation_report_is_valid
-    );
-    println!(
-        "Issues found: {}",
-        validation_report.validation_report_issues.len()
-    );
-    println!(
-        "Estimated changes: {}",
-        validation_report.validation_report_estimated_changes.len()
-    );
-
     // If auditd is available, should be valid
     if validation_report.validation_report_is_valid {
         assert!(
             validation_report.validation_report_issues.is_empty(),
             "Valid validation should have no issues"
-        );
-        println!(
-            "Audit rules to be configured: {}",
-            validation_report.validation_report_estimated_changes.len()
         );
     } else {
         // If auditd is not available, should have a critical issue
@@ -149,19 +126,7 @@ async fn test_audit_apply_requires_root() {
 
     match result {
         Ok(apply_result) => {
-            println!("Audit apply succeeded (running as root)");
-            println!("Changes made: {}", apply_result.apply_changes.len());
-
             assert_eq!(apply_result.apply_plugin_id.to_string(), "audit-hardening");
-
-            // Print all changes for manual verification
-            for change in &apply_result.apply_changes {
-                println!(
-                    "  - [{}] {}",
-                    if change.change_success { "✓" } else { "✗" },
-                    change.change_description
-                );
-            }
 
             // Verify change structure if any changes were made
             for change in &apply_result.apply_changes {
@@ -171,8 +136,7 @@ async fn test_audit_apply_requires_root() {
                 );
             }
         }
-        Err(e) => {
-            println!("Audit apply failed (likely not root): {:?}", e);
+        Err(_) => {
             // This is expected if not running as root
         }
     }

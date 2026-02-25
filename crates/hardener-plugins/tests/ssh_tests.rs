@@ -42,27 +42,9 @@ async fn test_ssh_scan_reads_configuration() {
             assert!(scan_result.scan_success, "Scan operation should succeed");
 
             assert!(scan_result.scan_error.is_none(), "Should not have errors");
-
-            // Print findings for manual verification
-            println!(
-                "SSH scan found {} findings:",
-                scan_result.scan_findings.len()
-            );
-            for finding in &scan_result.scan_findings {
-                println!(
-                    "  - {}: {} → {}",
-                    finding.finding_title,
-                    finding.finding_current_value,
-                    finding.finding_recommended_value
-                );
-            }
         }
-        Err(e) => {
+        Err(_) => {
             // If /etc/ssh/sshd_config doesn't exist, that's acceptable for test environments.
-            eprintln!(
-                "SSH scan failed (could be expected in test environment): {}",
-                e
-            );
         }
     }
 }
@@ -82,28 +64,13 @@ async fn test_ssh_validate_checks_config_file() {
                 PluginId::new("ssh-hardening")
             );
 
-            println!(
-                "SSH validation result: valid={}",
-                validation_report.validation_report_is_valid
-            );
-
-            if !validation_report.validation_report_issues.is_empty() {
-                println!("Validation issues found:");
-                for issue in &validation_report.validation_report_issues {
-                    println!(
-                        "  - [{}] {}",
-                        issue.validation_issue_severity, issue.validation_issue_message
-                    );
-                }
-            }
-
             // If config file exists and is readable, validation should pass
             if validation_report.validation_report_is_valid {
                 assert!(validation_report.validation_report_issues.is_empty());
             }
         }
-        Err(e) => {
-            eprintln!("Validation failed: {}", e);
+        Err(_) => {
+            // Validation may fail if sshd_config doesn't exist in test environment.
         }
     }
 }
@@ -115,33 +82,11 @@ async fn test_ssh_apply_requires_root() {
     let mut ctx = Context::new();
     let config = PluginConfig::default();
 
-    println!("\n=== Testing SSH Apply (requires root) ===");
-    println!("This test will:");
-    println!("1. Create a backup of /etc/ssh/sshd_config");
-    println!("2. Apply 8 secure SSH directives");
-    println!("3. Write the modified configuration");
-    println!("4. Restart the SSH service");
-    println!("\nIMPORTANT: Ensure you have SSH key access before running!\n");
-
     let result = plugin.apply(&mut ctx, &config).await;
 
     match result {
         Ok(apply_result) => {
             assert_eq!(apply_result.apply_plugin_id, PluginId::new("ssh-hardening"));
-
-            println!("\nApply result: success={}", apply_result.apply_success);
-            println!("Changes made ({}):", apply_result.apply_changes.len());
-
-            for change in &apply_result.apply_changes {
-                let status = if change.change_success { "✓" } else { "✗" };
-                println!(
-                    "  {} [{}] {}",
-                    status, change.change_type, change.change_description
-                );
-                if let Some(ref error) = change.change_error {
-                    println!("      Error: {}", error);
-                }
-            }
 
             // Verify all changes succeeded
             assert!(

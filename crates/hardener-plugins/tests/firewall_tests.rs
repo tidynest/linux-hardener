@@ -47,11 +47,7 @@ async fn test_firewall_scan_detects_backend() {
 
     // If UFW is available, scan should succeed
     // If not available, scan should fail gracefully.
-    if scan_result.scan_success {
-        println!("Firewall backend detected successfully");
-        println!("Findings: {}", scan_result.scan_findings.len());
-    } else {
-        println!("No firewall backend found (expected on some systems)");
+    if !scan_result.scan_success {
         assert!(scan_result.scan_error.is_some());
     }
 }
@@ -93,51 +89,9 @@ async fn test_firewall_apply_requires_root() {
     assert_eq!(apply_result.apply_plugin_id.as_str(), "firewall-hardening");
 
     if apply_result.apply_success {
-        println!("[SUCCESS] Firewall apply succeeded");
-        println!("Changes made: {}", apply_result.apply_changes.len());
-
-        for change in &apply_result.apply_changes {
-            println!(
-                "  - {}: {}",
-                change.change_description,
-                if change.change_success {
-                    "[OK]"
-                } else {
-                    "[FAILED]"
-                }
-            );
-            if let Some(ref error) = change.change_error {
-                println!("    Error: {}", error);
-            }
-        }
-
         // Verify scan now shows firewall as enabled
         let scan_result = plugin.scan(&ctx).await.unwrap();
         assert!(scan_result.scan_success, "Scan should succeed after apply");
-
-        // Should have no findings if firewall is now enabled
-        let disabled_findings: Vec<_> = scan_result
-            .scan_findings
-            .iter()
-            .filter(|f| f.finding_title.contains("disabled"))
-            .collect();
-
-        if disabled_findings.is_empty() {
-            println!("[SUCCESS] Firewall is now enabled (no 'disabled' findings)");
-        } else {
-            println!("[WARNING] Firewall still shows as disabled:");
-            for finding in disabled_findings {
-                println!(
-                    "  - {}: {}",
-                    finding.finding_title, finding.finding_description
-                );
-            }
-        }
-    } else {
-        println!("[FAILED] Firewall apply failed");
-        if let Some(ref error) = apply_result.apply_error {
-            println!("Error: {}", error);
-        }
     }
 }
 
@@ -163,16 +117,7 @@ async fn test_backend_detection_order() {
 
     let scan_result = result.unwrap();
 
-    if scan_result.scan_success {
-        println!("Detected firewall backend successfully");
-
-        // Check which backend was detected by looking at findings
-        if scan_result.scan_error.is_none() {
-            println!("Backend detection successful");
-        }
-    } else {
-        // No backend found - this is acceptable on systems without firewall tools
-        println!("No firewall backend detected (this is OK for test systems)");
+    if !scan_result.scan_success {
         assert!(
             scan_result.scan_error.is_some(),
             "Should have error message when no backend found"
@@ -269,25 +214,12 @@ async fn test_firewalld_backend_detection() {
     assert!(detected.is_ok(), "Firewalld detection should not error");
 
     if detected.unwrap() {
-        println!("[OK] Firewalld detected");
-
-        // Test backend name
         assert_eq!(backend.backend_name(), "firewalld");
 
-        // Test is_enabled
-        let enabled = backend.is_enabled(&ctx).await;
-        if enabled.is_ok() {
-            println!("[OK] Firewalld is running");
-        } else {
-            println!("[INFO] Firewalld is not running (this is OK)");
-        }
+        let _enabled = backend.is_enabled(&ctx).await;
 
-        // Test get_default_rules
         let rules = backend.get_default_rules();
         assert!(!rules.is_empty(), "Should return default rules");
-        println!("[OK] Default rules: {} rules", rules.len());
-    } else {
-        println!("[SKIP] Firewalld not installed on this system");
     }
 }
 
@@ -307,25 +239,12 @@ async fn test_ufw_backend_detection() {
     assert!(detected.is_ok(), "UFW detection should not error");
 
     if detected.unwrap() {
-        println!("[OK] UFW detected");
-
-        // Test backend name
         assert_eq!(backend.backend_name(), "ufw");
 
-        // Test is_enabled
-        let enabled = backend.is_enabled(&ctx).await;
-        if enabled.is_ok() {
-            println!("[OK] UFW is active");
-        } else {
-            println!("[INFO] UFW is not active (this is OK)");
-        }
+        let _enabled = backend.is_enabled(&ctx).await;
 
-        // Test get_default_rules
         let rules = backend.get_default_rules();
         assert!(!rules.is_empty(), "Should return default rules");
-        println!("[OK] Default rules: {} rules", rules.len());
-    } else {
-        println!("[SKIP] UFW not installed on this system");
     }
 }
 
@@ -345,24 +264,11 @@ async fn test_nftables_backend_detection() {
     assert!(detected.is_ok(), "Nftables detection should not error");
 
     if detected.unwrap() {
-        println!("[OK] Nftables detected");
-
-        // Test backend name
         assert_eq!(backend.backend_name(), "nftables");
 
-        // Test is_enabled
-        let enabled = backend.is_enabled(&ctx).await;
-        if enabled.is_ok() {
-            println!("[OK] Nftables has active ruleset");
-        } else {
-            println!("[INFO] Nftables has no active ruleset (this is OK)");
-        }
+        let _enabled = backend.is_enabled(&ctx).await;
 
-        // Test get_default_rules
         let rules = backend.get_default_rules();
         assert!(!rules.is_empty(), "Should return default rules");
-        println!("[OK] Default rules: {} rules", rules.len());
-    } else {
-        println!("[SKIP] Nftables not installed on this system");
     }
 }

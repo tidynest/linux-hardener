@@ -88,7 +88,7 @@ async fn test_firewall_scan_ufw_active_no_findings() {
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_success);
+    assert!(result.scan_success, "active firewall scan should succeed");
     assert_eq!(result.scan_plugin_id, PluginId::new("firewall-hardening"));
 
     // UFW is active, should have no "disabled" findings
@@ -116,7 +116,7 @@ async fn test_firewall_scan_ufw_disabled_has_finding() {
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_success);
+    assert!(result.scan_success, "disabled firewall scan should succeed");
 
     // UFW is disabled, should have a "disabled" finding
     let disabled_findings: Vec<_> = result
@@ -245,7 +245,7 @@ async fn test_firewall_scan_duration_recorded() {
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_duration_us > 0);
+    assert!(result.scan_duration_us > 0, "scan duration should be recorded");
 }
 
 /// Helper: UFW active + all baseline rule commands registered.
