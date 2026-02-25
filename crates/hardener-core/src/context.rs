@@ -5,7 +5,7 @@
 
 use crate::executor::{SystemExecutor, local::LocalExecutor};
 use hardener_common::{error::Result, types::PluginId};
-use hardener_state::CheckpointManager;
+use hardener_state::{AuditLogger, CheckpointManager};
 use hostname;
 use nix;
 use serde::{Deserialize, Serialize};
@@ -21,6 +21,8 @@ use std::{
 pub struct Context {
     /// Audit log for tracking all operations.
     audit_log: Arc<RwLock<Vec<PluginAuditEntry>>>,
+    /// Audit log manager
+    audit_logger: Option<Arc<AuditLogger>>,
     /// Checkpoint manager for creating and restoring system state snapshots.
     checkpoint_manager: Option<Arc<CheckpointManager>>,
     /// Shared data that plugins can use to communicate
@@ -228,6 +230,7 @@ impl Context {
     pub fn with_executor(executor: Arc<dyn SystemExecutor>) -> Context {
         Self {
             audit_log: Arc::new(RwLock::new(Vec::new())),
+            audit_logger: None,
             checkpoint_manager: None,
             shared_data: Arc::new(RwLock::new(HashMap::new())),
             system_info: SystemInfo::detect().unwrap_or_else(|_| SystemInfo {
@@ -265,6 +268,16 @@ impl Context {
     /// Sets the checkpoint manager for this context.
     pub fn set_checkpoint_manager(&mut self, checkpoint_manager: CheckpointManager) {
         self.checkpoint_manager = Some(Arc::new(checkpoint_manager));
+    }
+
+    /// Sets the persistent audit logger for this context.
+    pub fn set_audit_logger(&mut self, logger: AuditLogger) {
+        self.audit_logger = Some(Arc::new(logger));
+    }
+
+    /// Returns a reference to the persistent audit logger, if available.
+    pub fn audit_logger(&self) -> Option<&Arc<AuditLogger>> {
+        self.audit_logger.as_ref()
     }
 
     /// Returns a reference to the checkpoint manager, if available.

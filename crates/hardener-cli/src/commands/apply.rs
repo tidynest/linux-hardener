@@ -6,9 +6,10 @@ use anyhow::{Result, bail};
 use hardener_common::types::PluginId;
 use hardener_core::{ConfigLoader, Context, HardenerConfig, SystemExecutor};
 use hardener_plugins::create_plugin_registry;
+use hardener_state::{ActionResult, ActionType};
 use std::sync::Arc;
 
-use super::state::get_checkpoint_manager;
+use super::state::{get_audit_logger, get_checkpoint_manager};
 
 pub async fn run(
     plugin_filter: &[String],
@@ -36,6 +37,9 @@ pub async fn run(
     } else {
         Context::with_executor(executor)
     };
+    if let Some(logger) = get_audit_logger().await {
+        ctx.set_audit_logger(logger);
+    }
 
     let hardener_config = ConfigLoader::new()
         .load()
@@ -130,6 +134,26 @@ pub async fn run(
 
     if results.iter().any(|(_, r)| !r.apply_success) {
         had_failure = true;
+    }
+
+    // Persistent audit log
+    if let Some(logger) = ctx.audit_logger() {
+        let user = super::state::effective_user();
+        for (metadata, result) in &results {
+            let action_result = if result.apply_success {
+                ActionResult::Success
+            } else {
+                ActionResult::Failure
+            };
+            let _ = logger
+                .log_action(
+                    ActionType::Apply,
+                    user.clone(),
+                    metadata.plugin_name.clone(),
+                    action_result,
+                )
+                .await;
+        }
     }
 
     if dry_run {

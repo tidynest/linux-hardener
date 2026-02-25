@@ -1,12 +1,12 @@
 //! Checkpoint commands — create, list, show, delete, and rollback operations.
 
 use anyhow::{Result, bail};
-use hardener_state::CheckpointId;
+use hardener_state::{ActionResult, ActionType, CheckpointId};
 
 use crate::cli::OutputFormat;
 use crate::output;
 
-use super::state::get_checkpoint_manager;
+use super::state::{effective_user, get_audit_logger, get_checkpoint_manager};
 
 pub async fn list(format: OutputFormat, _quiet: bool) -> Result<()> {
     let manager = get_checkpoint_manager().await?;
@@ -32,6 +32,17 @@ pub async fn create(name: &str, format: OutputFormat, quiet: bool) -> Result<()>
 
     let checkpoint_id = manager.create_checkpoint(name, &paths).await?;
 
+    if let Some(logger) = get_audit_logger().await {
+        let _ = logger
+            .log_action(
+                ActionType::CheckpointCreate,
+                effective_user(),
+                name.to_string(),
+                ActionResult::Success,
+            )
+            .await;
+    }
+
     output::checkpoint_created(&format, &checkpoint_id);
     Ok(())
 }
@@ -45,6 +56,18 @@ pub async fn delete(checkpoint_id: &str, format: OutputFormat, quiet: bool) -> R
     }
 
     manager.delete_checkpoint(&id).await?;
+
+    if let Some(logger) = get_audit_logger().await {
+        let _ = logger
+            .log_action(
+                ActionType::CheckpointDelete,
+                effective_user(),
+                checkpoint_id.to_string(),
+                ActionResult::Success,
+            )
+            .await;
+    }
+
     Ok(())
 }
 
@@ -75,6 +98,22 @@ pub async fn rollback(checkpoint_id: &str, format: OutputFormat, quiet: bool) ->
 
     let result = manager.rollback(&id).await?;
     output::rollback_result(&format, &result);
+
+    let action_result = if result.rollback_success {
+        ActionResult::Success
+    } else {
+        ActionResult::Failure
+    };
+    if let Some(logger) = get_audit_logger().await {
+        let _ = logger
+            .log_action(
+                ActionType::Rollback,
+                effective_user(),
+                checkpoint_id.to_string(),
+                action_result,
+            )
+            .await;
+    }
 
     if !result.rollback_success {
         bail!("Rollback completed with errors");

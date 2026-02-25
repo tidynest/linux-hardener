@@ -45,7 +45,7 @@ pub struct AuditEntry {
     pub entry_action_type: ActionType,
     /// User who performed the action
     pub entry_user: String,
-    /// Target of the action (e.g., file path, plugin name)
+    /// Target of the action (e.g. file path, plugin name)
     pub entry_target: String,
     /// Whether the action succeeded or failed
     pub entry_result: ActionResult,
@@ -223,7 +223,8 @@ impl AuditLogger {
     /// # Returns
     /// A new AuditLogger instance, or an error if file cannot be opened
     pub async fn new(log_path: &str) -> Result<AuditLogger> {
-        // Open file in append mode (create if it doesn't exist)
+        let chain = Self::recover_chain(log_path).await;
+
         let file = OpenOptions::new()
             .create(true)
             .append(true)
@@ -232,8 +233,26 @@ impl AuditLogger {
 
         Ok(AuditLogger {
             file: tokio::sync::Mutex::new(file),
-            hash_chain: tokio::sync::Mutex::new(HashChain::new()),
+            hash_chain: tokio::sync::Mutex::new(chain),
         })
+    }
+
+    /// Recovers the hash chain state from the last entry in an existing log.
+    ///
+    /// Walks the full log to rebuild the chain position. Falls back to
+    /// genesis if the file doesn't exist, is empty, or can't be parsed.
+    async fn recover_chain(log_path: &str) -> HashChain {
+        let Ok(content) = tokio::fs::read_to_string(log_path).await else {
+            return HashChain::new();
+        };
+
+        let mut chain = HashChain::new();
+        for line in content.lines() {
+            if let Ok(entry) = serde_json::from_str::<AuditEntry>(line) {
+                chain.update(entry.entry_hash);
+            }
+        }
+        chain
     }
 
     /// Logs an action to the audit log with hash chain.
