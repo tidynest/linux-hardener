@@ -403,8 +403,8 @@ Run with --fix to generate stub entries for missing files.
 Suggested stub entries:
 
 # Add to hardener-state section:
-| `crates/hardener-state/src/scan_history.rs` | Scan History | TODO |
-| `crates/hardener-state/src/scan_manager.rs` | Scan Manager | TODO |
+| `crates/hardener-state/src/scan_history.rs` | Scan History | Implemented |
+| `crates/hardener-state/src/scan_manager.rs` | Scan Manager | Implemented |
 ```
 
 **Exclusions**:
