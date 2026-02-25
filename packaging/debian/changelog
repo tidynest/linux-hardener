@@ -1,0 +1,5 @@
+linux-system-hardener (0.3.3-1) unstable; urgency=medium
+
+  * Initial Debian package release.
+
+ -- Eric Jingryd <tidynest@proton.me>  Tue, 25 Feb 2026 00:00:00 +0000

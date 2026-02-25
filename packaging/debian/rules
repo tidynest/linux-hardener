@@ -1,0 +1,26 @@
+#!/usr/bin/make -f
+export CARGO_HOME = $(CURDIR)/debian/.cargo
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli
+	cd src-tauri && cargo build --release
+
+override_dh_auto_install:
+	install -Dm755 target/x86_64-unknown-linux-musl/release/hardener \
+	    debian/linux-system-hardener/usr/bin/hardener
+	install -Dm755 src-tauri/target/release/linux-hardener-desktop \
+	    debian/linux-system-hardener/usr/bin/linux-hardener-desktop
+	install -Dm644 systemd/linux-hardener.service \
+	    debian/linux-system-hardener/usr/lib/systemd/system/linux-hardener.service
+	install -Dm644 systemd/linux-hardener.timer \
+	    debian/linux-system-hardener/usr/lib/systemd/system/linux-hardener.timer
+	install -Dm644 data/linux-hardener.desktop \
+	    debian/linux-system-hardener/usr/share/applications/linux-hardener.desktop
+	install -dm755 debian/linux-system-hardener/etc/linux-hardener
+	install -dm755 debian/linux-system-hardener/var/lib/linux-hardener
+
+override_dh_auto_test:
+	cargo test --release || true

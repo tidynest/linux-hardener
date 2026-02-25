@@ -1,0 +1,130 @@
+# Linux System Hardener — Configuration File
+#
+# Place this file at:
+#   System-wide:  /etc/linux-hardener/config.toml
+#   Per-user:     ~/.config/linux-hardener/config.toml
+#   CLI override: hardener --config /path/to/config.toml
+#
+# Precedence (later overrides earlier):
+#   1. Built-in defaults
+#   2. /etc/linux-hardener/config.toml
+#   3. ~/.config/linux-hardener/config.toml
+#   4. --config flag
+#   5. HARDENER_* environment variables
+
+# ─────────────────────────────────────────────
+# Global Settings
+# ─────────────────────────────────────────────
+[global]
+# Plugins to enable (empty = all enabled).
+# Valid IDs: ssh-hardening, kernel-hardening, firewall-hardening,
+#            pam-hardening, audit-hardening, mac-hardening,
+#            permissions-hardening, service-minimisation
+enabled_plugins = []
+
+# Plugins to explicitly disable (takes precedence over enabled_plugins).
+disabled_plugins = []
+
+# ─────────────────────────────────────────────
+# SSH Hardening
+# ─────────────────────────────────────────────
+[ssh]
+enabled = true
+
+# Override default directive values (stricter than baseline).
+# Keys are sshd_config directives, values are the desired settings.
+# [ssh.directives]
+# PermitRootLogin = "no"
+# PasswordAuthentication = "no"
+# MaxAuthTries = "3"
+
+# Additional custom directives beyond the built-in set.
+# [ssh.custom_directives]
+# ClientAliveInterval = "300"
+# ClientAliveCountMax = "2"
+
+# Policy exceptions — exempt specific checks from findings.
+# [ssh.exceptions.PasswordAuthentication]
+# value = "yes"
+# allowed = true
+# reason = "Legacy application requires password auth on jump host"
+# approved_by = "Security Team"
+# approved_date = "2026-01-15"
+# ticket = "SEC-1234"
+# expires = "2026-07-15"
+
+# ─────────────────────────────────────────────
+# Kernel Hardening
+# ─────────────────────────────────────────────
+[kernel]
+enabled = true
+
+# [kernel.directives]
+# kernel.randomize_va_space = "2"
+# kernel.kptr_restrict = "2"
+# net.ipv4.conf.all.rp_filter = "1"
+
+# [kernel.exceptions.kernel.sysrq]
+# value = "1"
+# allowed = true
+# reason = "Required for remote debugging on headless servers"
+
+# ─────────────────────────────────────────────
+# Firewall Hardening
+# ─────────────────────────────────────────────
+[firewall]
+enabled = true
+
+# [firewall.exceptions.ssh_port]
+# value = "open"
+# allowed = true
+# reason = "Management access required"
+
+# ─────────────────────────────────────────────
+# PAM Hardening
+# ─────────────────────────────────────────────
+[pam]
+enabled = true
+
+# [pam.directives]
+# minlen = "14"
+# dcredit = "-1"
+# ucredit = "-1"
+# lcredit = "-1"
+# ocredit = "-1"
+
+# ─────────────────────────────────────────────
+# Audit Rules Hardening
+# ─────────────────────────────────────────────
+[audit]
+enabled = true
+
+# Exception categories: time-change, identity, network-change,
+#                       perm-mod, privileged, delete, modules
+# [audit.exceptions.modules]
+# value = "skip"
+# allowed = true
+# reason = "Container environment — no kernel module loading"
+
+# ─────────────────────────────────────────────
+# MAC (Mandatory Access Control) Hardening
+# ─────────────────────────────────────────────
+[mac]
+enabled = true
+
+# ─────────────────────────────────────────────
+# File Permissions Hardening
+# ─────────────────────────────────────────────
+[permissions]
+enabled = true
+
+# ─────────────────────────────────────────────
+# Service Minimisation
+# ─────────────────────────────────────────────
+[services]
+enabled = true
+
+# [services.exceptions.cups]
+# value = "active"
+# allowed = true
+# reason = "Print server required in this environment"

@@ -1,0 +1,13 @@
+#!/bin/bash
+set -e
+
+case "$1" in
+    remove)
+        if command -v systemctl >/dev/null; then
+            systemctl stop linux-hardener.timer 2>/dev/null || true
+            systemctl disable linux-hardener.timer 2>/dev/null || true
+        fi
+        ;;
+esac
+
+#DEBHELPER#

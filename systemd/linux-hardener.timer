@@ -1,0 +1,11 @@
+[Unit]
+Description=Linux System Hardener scheduled security scan (timer)
+Documentation=https://github.com/tidynest/linux-system-hardener
+
+[Timer]
+OnCalendar=*-*-* 02:00:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

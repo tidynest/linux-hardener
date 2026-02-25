@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Linux System Hardener
+GenericName=Security Hardening Tool
+Comment=System security hardening, scanning, and compliance tool
+Exec=linux-hardener-desktop
+Icon=linux-hardener
+Categories=System;Security;
+Terminal=false
+StartupNotify=true
+Keywords=security;hardening;compliance;audit;

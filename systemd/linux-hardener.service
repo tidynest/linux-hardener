@@ -1,0 +1,20 @@
+[Unit]
+Description=Linux System Hardener scheduled security scan
+Documentation=https://github.com/tidynest/linux-system-hardener
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/hardener daemon run-once
+StandardOutput=journal
+StandardError=journal
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTemp=true
+ReadWritePaths=/var/lib/linux-hardener
+
+[Install]
+WantedBy=multi-user.target

@@ -612,6 +612,39 @@ pub async fn pick_config_file(app: tauri::AppHandle) -> Result<Option<String>, S
 
 ---
 
+## Systemd Units
+
+| File | Purpose |
+|------|---------|
+| `systemd/linux-hardener.service` | Oneshot service for scheduled security scans |
+| `systemd/linux-hardener.timer` | Timer unit triggering daily scans at 02:00 |
+
+---
+
+## Data Files
+
+| File | Purpose |
+|------|---------|
+| `data/linux-hardener.desktop` | XDG desktop entry for the GUI application |
+| `data/config.toml.example` | Commented example configuration with all 8 plugin sections |
+
+---
+
+## Packaging
+
+| File | Purpose |
+|------|---------|
+| `packaging/PKGBUILD` | AUR (Arch Linux) package build script |
+| `packaging/linux-system-hardener.spec` | RPM (Fedora/RHEL/openSUSE) spec file |
+| `packaging/debian/control` | Debian package metadata and dependencies |
+| `packaging/debian/rules` | Debian build instructions (debhelper) |
+| `packaging/debian/changelog` | Debian changelog |
+| `packaging/debian/postinst` | Post-installation script (systemd reload, permissions) |
+| `packaging/debian/prerm` | Pre-removal script (stop/disable timer) |
+| `packaging/debian/copyright` | Apache-2.0 licence in Debian format |
+
+---
+
 ## CI/CD Files
 
 | File | Purpose |
