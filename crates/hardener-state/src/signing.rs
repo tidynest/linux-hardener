@@ -5,6 +5,7 @@
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier};
 use hardener_common::error::{HardeningError, Result};
 use std::{fs, path::Path};
+use zeroize::Zeroize;
 
 /// Manages Ed25519 signing keys for checkpoint signatures.
 pub struct CheckpointSigner {
@@ -49,6 +50,7 @@ impl CheckpointSigner {
         rand::rng().fill_bytes(&mut secret_bytes);
 
         let signing_key = SigningKey::from_bytes(&secret_bytes);
+        secret_bytes.zeroize();
 
         Ok(signing_key)
     }
@@ -63,11 +65,14 @@ impl CheckpointSigner {
             ));
         }
 
-        let key_array: [u8; 32] = key_bytes
+        let mut key_array: [u8; 32] = key_bytes
             .try_into()
             .map_err(|_| HardeningError::Config("Invalid key format".to_string()))?;
 
-        Ok(SigningKey::from_bytes(&key_array))
+        let signing_key = SigningKey::from_bytes(&key_array);
+        key_array.zeroize();
+
+        Ok(signing_key)
     }
 
     /// Saves a signing key to disk with restrictive permissions.

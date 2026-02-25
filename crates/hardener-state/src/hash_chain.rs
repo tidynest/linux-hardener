@@ -72,7 +72,8 @@ impl HashChain {
         let expected_hash = digest(&SHA256, &combined);
 
         // Compare with what was claimed
-        expected_hash.as_ref() == claimed_hash
+        use subtle::ConstantTimeEq;
+        expected_hash.as_ref().ct_eq(claimed_hash).into()
     }
 
     /// Returns the current previous_hash value.

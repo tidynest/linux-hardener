@@ -2146,9 +2146,11 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
+ "subtle",
  "tempfile",
  "tokio",
  "tracing",
+ "zeroize",
 ]
 
 [[package]]

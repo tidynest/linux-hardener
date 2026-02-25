@@ -126,7 +126,7 @@ impl CheckpointManager {
 
         // Get metadata first
         let file_metadata =
-            fs::metadata(file_path).map_err(HardeningError::System)?;
+            fs::symlink_metadata(file_path).map_err(HardeningError::System)?;
 
         // Read file content
         let file_content =
@@ -166,7 +166,7 @@ impl CheckpointManager {
         }
 
         let metadata =
-            fs::metadata(dir_path).map_err(HardeningError::System)?;
+            fs::symlink_metadata(dir_path).map_err(HardeningError::System)?;
 
         Ok(FileState {
             file_path: dir_path.to_string_lossy().to_string(),
@@ -203,7 +203,7 @@ impl CheckpointManager {
         }
 
         let metadata =
-            fs::metadata(file_path).map_err(HardeningError::System)?;
+            fs::symlink_metadata(file_path).map_err(HardeningError::System)?;
 
         if metadata.is_dir() {
             // Recursively capture all files in directory

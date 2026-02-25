@@ -121,6 +121,12 @@ pub async fn init_db(db_path: Option<&Path>) -> Result<SqlitePool> {
         .await
         .map_err(|e| HardeningError::Database(e.to_string()))?;
 
+    // Foreign key enforcement
+    sqlx::query("PRAGMA foreign_keys = ON")
+        .execute(&pool)
+        .await
+        .map_err(|e| HardeningError::Database(e.to_string()))?;
+
     // Restrict DB file permissions after creation
     use std::fs::Permissions;
     use std::os::unix::fs::PermissionsExt;
