@@ -6,28 +6,9 @@ use anyhow::{Result, bail};
 use hardener_common::types::PluginId;
 use hardener_core::{ConfigLoader, Context, HardenerConfig, SystemExecutor};
 use hardener_plugins::create_plugin_registry;
-use hardener_state::{CheckpointManager, CheckpointSigner, init_db};
-use std::path::PathBuf;
 use std::sync::Arc;
 
-async fn get_checkpoint_manager() -> Result<CheckpointManager> {
-    let data_dir = if nix::unistd::geteuid().is_root() {
-        PathBuf::from("/var/lib/linux-hardener")
-    } else {
-        dirs::data_local_dir()
-            .map(|p| p.join("linux-hardener"))
-            .unwrap_or_else(|| PathBuf::from(".linux-hardener"))
-    };
-
-    std::fs::create_dir_all(&data_dir)?;
-
-    let db_path = data_dir.join("checkpoints.db");
-    let key_path = data_dir.join("signing.key");
-
-    let pool = init_db(Some(db_path.as_path())).await?;
-    let signer = CheckpointSigner::new_with_path(&key_path)?;
-    Ok(CheckpointManager::new_with_signer(pool, signer)?)
-}
+use super::state::get_checkpoint_manager;
 
 pub async fn run(
     plugin_filter: &[String],

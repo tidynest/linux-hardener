@@ -1,31 +1,12 @@
 //! Checkpoint commands — create, list, show, delete, and rollback operations.
 
 use anyhow::{Result, bail};
-use hardener_state::{CheckpointId, CheckpointManager, CheckpointSigner, init_db};
-use std::path::PathBuf;
+use hardener_state::CheckpointId;
 
 use crate::cli::OutputFormat;
 use crate::output;
 
-async fn get_checkpoint_manager() -> Result<CheckpointManager> {
-    let data_dir = if nix::unistd::geteuid().is_root() {
-        PathBuf::from("/var/lib/linux-hardener")
-    } else {
-        dirs::data_local_dir()
-            .map(|p| p.join("linux-hardener"))
-            .unwrap_or_else(|| PathBuf::from(".linux-hardener"))
-    };
-
-    // Ensure directory exists
-    std::fs::create_dir_all(&data_dir)?;
-
-    let db_path = data_dir.join("checkpoints.db");
-    let key_path = data_dir.join("signing.key");
-
-    let pool = init_db(Some(db_path.as_path())).await?;
-    let signer = CheckpointSigner::new_with_path(&key_path)?;
-    Ok(CheckpointManager::new_with_signer(pool, signer)?)
-}
+use super::state::get_checkpoint_manager;
 
 pub async fn list(format: OutputFormat, _quiet: bool) -> Result<()> {
     let manager = get_checkpoint_manager().await?;

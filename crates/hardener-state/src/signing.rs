@@ -14,7 +14,7 @@ pub struct CheckpointSigner {
 
 impl CheckpointSigner {
     /// Default path for the signing key.
-    const DEFAULT_KEY_PATH: &'static str = "/var/lib/linux-hardener/signing.key";
+    const DEFAULT_KEY_PATH: &'static str = "/etc/linux-hardener/signing.key";
 }
 
 impl CheckpointSigner {
@@ -96,7 +96,7 @@ impl CheckpointSigner {
         let mut file = OpenOptions::new()
             .write(true)
             .create_new(true)
-            .mode(0o600)
+            .mode(0o400)
             .open(key_path)
             .map_err(HardeningError::System)?;
 

@@ -486,27 +486,23 @@ mod tests {
 
     #[test]
     fn validate_url_accepts_https() {
-
         assert!(validate_webhook_url("https://example.com/hook").is_ok());
     }
 
     #[test]
     fn validate_url_accepts_http() {
-
         assert!(validate_webhook_url("http://example.com/hook").is_ok());
     }
 
     #[test]
     fn validate_url_rejects_ftp_scheme() {
-        let err =
-            validate_webhook_url("ftp://example.com").unwrap_err();
+        let err = validate_webhook_url("ftp://example.com").unwrap_err();
         assert!(err.contains("ftp"));
     }
 
     #[test]
     fn validate_url_rejects_file_scheme() {
-        let err =
-            validate_webhook_url("file:///etc/passwd").unwrap_err();
+        let err = validate_webhook_url("file:///etc/passwd").unwrap_err();
         assert!(err.contains("file"));
     }
 
@@ -517,7 +513,6 @@ mod tests {
 
     #[test]
     fn validate_url_rejects_private_literal() {
-
         assert!(validate_webhook_url("http://192.168.1.1/hook").is_err());
         assert!(validate_webhook_url("http://10.0.0.1/hook").is_err());
     }

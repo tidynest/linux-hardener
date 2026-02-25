@@ -10,12 +10,12 @@ use hardener_core::{
 };
 use hardener_plugins::create_plugin_registry;
 use hardener_state::{
-    Checkpoint, CheckpointId, CheckpointManager, FileState, RollbackResult, ScanHistoryManager,
-    ScanSession, ScanSessionId, ScanStatus, init_db,
-};
-use hardener_types::ConfigSummary;
-use hardener_types::remote::{
-    HostsConfig, RemoteConnectionInfo, RemoteConnectionStatus, RemoteHostProfile,
+    Checkpoint, CheckpointId, CheckpointManager, CheckpointSigner, FileState, RollbackResult,
+    ScanHistoryManager, ScanSession, ScanSessionId, ScanStatus, init_db}
+;
+use hardener_types::{
+    ConfigSummary,
+    remote::{HostsConfig, RemoteConnectionInfo, RemoteConnectionStatus, RemoteHostProfile}
 };
 use serde::Serialize;
 use std::sync::Mutex;
@@ -233,11 +233,23 @@ fn get_system_db_path() -> std::path::PathBuf {
 
 /// Creates a CheckpointManager with database connection.
 ///
-/// Uses a user-local database path to avoid requiring root for reads.
+/// Derives the signing key from the database location:
+/// system DB uses the separated key in `/etc/linux-hardener/`,
+/// use DB uses a sibling key in the same directory.
 async fn create_checkpoint_manager(db_path: &std::path::Path) -> Result<CheckpointManager, String> {
     let pool = init_db(Some(db_path)).await.map_err(|e| e.to_string())?;
 
-    CheckpointManager::new(pool).map_err(|e| e.to_string())
+    let key_path = if db_path.starts_with("/var/lib/linux-hardener") {
+        std::path::PathBuf::from("/etc/linux-hardener/signing.key")
+    } else {
+        db_path
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .join("signing.key")
+    };
+
+    let signer = CheckpointSigner::new_with_path(&key_path).map_err(|e| e.to_string())?;
+    CheckpointManager::new_with_signer(pool, signer).map_err(|e| e.to_string())
 }
 
 /// Creates a ScanHistoryManager with database connection.

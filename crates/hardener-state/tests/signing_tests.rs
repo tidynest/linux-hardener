@@ -135,5 +135,5 @@ fn test_key_file_permissions() {
     // Check permissions (0600)
     use std::os::unix::fs::PermissionsExt;
     let perms = fs::metadata(&key_path).unwrap().permissions();
-    assert_eq!(perms.mode() & 0o777, 0o600);
+    assert_eq!(perms.mode() & 0o777, 0o400);
 }
