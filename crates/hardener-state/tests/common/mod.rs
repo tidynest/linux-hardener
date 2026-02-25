@@ -33,12 +33,9 @@ impl TestFixture {
 
         // Allow temp directory paths for test rollbacks
         let temp_prefix = temp_dir.path().to_string_lossy().to_string();
-        let checkpoint_manager = CheckpointManager::new_with_allowlist(
-            db_pool.clone(),
-            signer,
-            vec![temp_prefix],
-        )
-        .expect("Failed to create checkpoint manager");
+        let checkpoint_manager =
+            CheckpointManager::new_with_allowlist(db_pool.clone(), signer, vec![temp_prefix])
+                .expect("Failed to create checkpoint manager");
 
         TestFixture {
             fixture_checkpoint_manager: checkpoint_manager,

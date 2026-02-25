@@ -77,7 +77,7 @@ impl CheckpointSigner {
 
     /// Saves a signing key to disk with restrictive permissions.
     ///
-    /// Uses atomic file creation to ensure the key is never world-readable. 
+    /// Uses atomic file creation to ensure the key is never world-readable.
     fn save_key(key_path: &Path, signing_key: &SigningKey) -> Result<()> {
         use std::fs::{DirBuilder, OpenOptions};
         use std::io::Write;
@@ -102,7 +102,7 @@ impl CheckpointSigner {
 
         file.write_all(&signing_key.to_bytes())
             .map_err(HardeningError::System)?;
-            
+
         Ok(())
     }
 

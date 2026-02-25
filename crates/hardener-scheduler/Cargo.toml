@@ -42,6 +42,7 @@ tracing = { workspace = true }
 # System
 hostname = { workspace = true }
 dirs = { workspace = true }
+url = "2.5.7"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

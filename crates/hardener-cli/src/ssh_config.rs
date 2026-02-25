@@ -63,7 +63,9 @@ impl SshConnectionConfig {
             known_hosts: if self.strict_host_key_checking {
                 KnownHosts::Strict
             } else {
-                eprintln!("WARNING: SSH host key verification disabled - connection is vulnerable to MITM attacks");
+                eprintln!(
+                    "WARNING: SSH host key verification disabled - connection is vulnerable to MITM attacks"
+                );
                 KnownHosts::Accept
             },
             connect_timeout: self.timeout,

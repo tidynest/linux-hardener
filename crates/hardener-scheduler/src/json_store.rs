@@ -76,7 +76,7 @@ impl JsonStore {
 
     /// Reads and deserialises a JSON file with integrity verification.
     pub async fn read<T: serde::de::DeserializeOwned>(
-        &self, 
+        &self,
         path: &Path,
         expected_hash: &str,
     ) -> Result<T> {

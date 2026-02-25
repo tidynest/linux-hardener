@@ -46,8 +46,10 @@ impl CheckpointManager {
         Ok(Self {
             db_pool,
             signer,
-            allowed_rollback_prefixes: DEFAULT_ROLLBACK_PREFIXES.iter().map(
-                |prefix| prefix.to_string()).collect(),
+            allowed_rollback_prefixes: DEFAULT_ROLLBACK_PREFIXES
+                .iter()
+                .map(|prefix| prefix.to_string())
+                .collect(),
         })
     }
 
@@ -61,8 +63,10 @@ impl CheckpointManager {
         Ok(Self {
             db_pool,
             signer,
-            allowed_rollback_prefixes: DEFAULT_ROLLBACK_PREFIXES.iter().map(
-                |prefix| prefix.to_string()).collect(),
+            allowed_rollback_prefixes: DEFAULT_ROLLBACK_PREFIXES
+                .iter()
+                .map(|prefix| prefix.to_string())
+                .collect(),
         })
     }
 
@@ -81,7 +85,6 @@ impl CheckpointManager {
             allowed_rollback_prefixes: allowed_prefixes,
         })
     }
-
 
     /// Generates a unique checkpoint ID.
     ///
@@ -125,12 +128,10 @@ impl CheckpointManager {
         }
 
         // Get metadata first
-        let file_metadata =
-            fs::symlink_metadata(file_path).map_err(HardeningError::System)?;
+        let file_metadata = fs::symlink_metadata(file_path).map_err(HardeningError::System)?;
 
         // Read file content
-        let file_content =
-            fs::read(file_path).map_err(HardeningError::System)?;
+        let file_content = fs::read(file_path).map_err(HardeningError::System)?;
 
         // Extract permissions and ownership
         let file_permissions = file_metadata.permissions().mode();
@@ -165,8 +166,7 @@ impl CheckpointManager {
             });
         }
 
-        let metadata =
-            fs::symlink_metadata(dir_path).map_err(HardeningError::System)?;
+        let metadata = fs::symlink_metadata(dir_path).map_err(HardeningError::System)?;
 
         Ok(FileState {
             file_path: dir_path.to_string_lossy().to_string(),
@@ -202,8 +202,7 @@ impl CheckpointManager {
             }]);
         }
 
-        let metadata =
-            fs::symlink_metadata(file_path).map_err(HardeningError::System)?;
+        let metadata = fs::symlink_metadata(file_path).map_err(HardeningError::System)?;
 
         if metadata.is_dir() {
             // Recursively capture all files in directory
@@ -220,8 +219,7 @@ impl CheckpointManager {
 
         let mut file_states = vec![self.capture_directory_entry(dir_path)?];
 
-        let entries =
-            fs::read_dir(dir_path).map_err(HardeningError::System)?;
+        let entries = fs::read_dir(dir_path).map_err(HardeningError::System)?;
 
         for entry in entries {
             let entry = entry.map_err(HardeningError::System)?;
@@ -597,8 +595,13 @@ impl CheckpointManager {
 
         let path_str = &file_state.file_path;
         if !path_str.starts_with('/')
-            || path.components().any(|c| c == std::path::Component::ParentDir)
-            || !self.allowed_rollback_prefixes.iter().any(|p| path_str.starts_with(p))
+            || path
+                .components()
+                .any(|c| c == std::path::Component::ParentDir)
+            || !self
+                .allowed_rollback_prefixes
+                .iter()
+                .any(|p| path_str.starts_with(p))
         {
             return (
                 FileRestoreAction::Skipped,
@@ -629,8 +632,7 @@ impl CheckpointManager {
 
         // Remove files that didn't exist at checkpoint time
         if matches!(action, FileRestoreAction::Removed) {
-            let result =
-                fs::remove_file(path).map_err(HardeningError::System);
+            let result = fs::remove_file(path).map_err(HardeningError::System);
             return (action, result);
         }
 
@@ -638,10 +640,7 @@ impl CheckpointManager {
         if let Some(content) = &file_state.file_content
             && let Err(e) = fs::write(path, content)
         {
-            return (
-                action,
-                Err(HardeningError::System(e)),
-            );
+            return (action, Err(HardeningError::System(e)));
         }
 
         // Restore permissions
@@ -649,10 +648,7 @@ impl CheckpointManager {
             path,
             fs::Permissions::from_mode(file_state.file_permissions),
         ) {
-            return (
-                action,
-                Err(HardeningError::System(e)),
-            );
+            return (action, Err(HardeningError::System(e)));
         }
 
         // Restore ownership
@@ -661,11 +657,7 @@ impl CheckpointManager {
             Some(nix::unistd::Uid::from_raw(file_state.file_owner_uid)),
             Some(nix::unistd::Gid::from_raw(file_state.file_owner_gid)),
         )
-        .map_err(|e| {
-            HardeningError::Privilege(format!(
-                "Failed to restore ownership: {e}"
-            ))
-        });
+        .map_err(|e| HardeningError::Privilege(format!("Failed to restore ownership: {e}")));
 
         (action, chown_result)
     }
@@ -699,7 +691,8 @@ impl CheckpointManager {
             &checkpoint.checkpoint_username,
             &file_states,
         );
-        self.signer.verify(&digest, &checkpoint.checkpoint_signature)?;
+        self.signer
+            .verify(&digest, &checkpoint.checkpoint_signature)?;
 
         let mut all_ok = true;
         let files: Vec<_> = file_states

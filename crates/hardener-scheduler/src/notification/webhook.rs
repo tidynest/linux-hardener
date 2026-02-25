@@ -15,6 +15,94 @@ use tracing::{debug, error, warn};
 /// HTTP request timeout for webhook endpoint.
 const WEBHOOK_TIMEOUT_SECS: u64 = 30;
 
+/// Returns `true` if the address is loopback, private, link-local, or unspecified.
+fn is_blocked_addr(addr: std::net::IpAddr) -> bool {
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+    match addr {
+        IpAddr::V4(ip) => {
+            ip.is_loopback()
+                || ip.is_private()
+                || ip.is_link_local()
+                || ip.is_unspecified()
+                || ip.is_broadcast()
+                || ip == Ipv4Addr::new(0, 0, 0, 0)
+        }
+        IpAddr::V6(ip) => {
+            ip.is_loopback()
+            || ip.is_unspecified()
+            || ip == Ipv6Addr::LOCALHOST
+            // fe80::/10 link-local
+            || (ip.segments()[0] & 0xffc0) == 0xfe80
+            // fc00::/7 unique local (private equivalent)
+            || (ip.segments()[0] & 0xfe00) == 0xfc00
+            // ::ffff:0:0/96 mapped IPv4 - check the inner v4
+            || ip.to_ipv4_mapped().is_some_and(|v4| {
+                v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+            })
+        }
+    }
+}
+
+/// Validates a webhook URL against SSRF risks.
+///
+/// Rejects non-HTTP schemes, loopback, private, and link-local addresses.
+fn validate_webhook_url(url: &str) -> Result<url::Url, String> {
+    let parsed = url::Url::parse(url).map_err(|e| format!("Invalid URL: {e}"))?;
+
+    // Require HTTP(S) scheme
+    match parsed.scheme() {
+        "https" | "http" => {}
+        scheme => return Err(format!("scheme '{scheme}' not allowed, use https or http")),
+    }
+
+    // If the host is an IP literal, check it immediately
+    if let Some(host) = parsed.host() {
+        match host {
+            url::Host::Ipv4(ip) if is_blocked_addr(ip.into()) => {
+                return Err(format!("blocked address: {ip}"));
+            }
+            url::Host::Ipv6(ip) if is_blocked_addr(ip.into()) => {
+                return Err(format!("blocked address: {ip}"));
+            }
+            url::Host::Domain("") => return Err("empty hostname".to_string()),
+            _ => {}
+        }
+    } else {
+        return Err("URL has no host".to_string());
+    }
+
+    Ok(parsed)
+}
+
+/// Resolves a hostname and rejects it if any resolved IP is blocked.
+///
+/// Must be called in an async context before making the HTTP request.
+async fn validate_resolved_url(url: &url::Url) -> Result<(), String> {
+    let Some(host) = url.host_str() else {
+        return Err("URL has no host".to_string());
+    };
+    let port = url.port_or_known_default().unwrap_or(443);
+    let addr_str = format!("{host}:{port}");
+
+    let addrs = tokio::net::lookup_host(&addr_str)
+        .await
+        .map_err(|e| format!("DNS resolution failed for '{host}': {e}"))?;
+
+    for sock_addr in addrs {
+        if is_blocked_addr(sock_addr.ip()) {
+            return Err(format!(
+                "'{host}' resolves to blocked address {}",
+                sock_addr.ip()
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 /// Sends notification to a single webhook endpoint.
 pub struct WebhookNotifier {
     endpoint: WebhookEndpoint,
@@ -28,6 +116,11 @@ impl WebhookNotifier {
     pub fn new(endpoint: WebhookEndpoint) -> Option<Self> {
         if endpoint.url.is_empty() {
             warn!("Webhook '{}' has empty URL, skipping", endpoint.name);
+            return None;
+        }
+
+        if let Err(reason) = validate_webhook_url(&endpoint.url) {
+            warn!("Webhook '{}' rejected: {reason}", endpoint.name);
             return None;
         }
 
@@ -194,6 +287,14 @@ impl WebhookNotifier {
 #[async_trait]
 impl Notifier for WebhookNotifier {
     async fn send(&self, summary: &ScanSummary) -> NotificationResult {
+        // Strict SSRF: re-validate with DNS resolution before every request
+        if let Ok(parsed) = url::Url::parse(&self.endpoint.url)
+            && let Err(reason) = validate_resolved_url(&parsed).await
+        {
+            error!("Webhook '{}' SSRF blocked: {reason}", self.endpoint.name);
+            return NotificationResult::failed(self.channel(), format!("SSRF blocked: {reason}"));
+        }
+
         let payload = self.build_payload(summary);
 
         let mut request = self
@@ -247,26 +348,26 @@ mod tests {
     #[test]
     fn expand_env_vars_single_var() {
         // SAFETY: Test runs single-threaded; no concurrent env access
-        unsafe { std::env::set_var("TEST_WEBHOOK_VAR", "secret123") };
+        unsafe { env::set_var("TEST_WEBHOOK_VAR", "secret123") };
         let result = WebhookNotifier::expand_env_vars("Bearer ${TEST_WEBHOOK_VAR}");
         assert_eq!(result, "Bearer secret123");
         // SAFETY: Test runs single-threaded; no concurrent env access
-        unsafe { std::env::remove_var("TEST_WEBHOOK_VAR") };
+        unsafe { env::remove_var("TEST_WEBHOOK_VAR") };
     }
 
     #[test]
     fn expand_env_vars_multiple_vars() {
         // SAFETY: Test runs single-threaded; no concurrent env access
         unsafe {
-            std::env::set_var("TEST_VAR_A", "alpha");
-            std::env::set_var("TEST_VAR_B", "beta");
+            env::set_var("TEST_VAR_A", "alpha");
+            env::set_var("TEST_VAR_B", "beta");
         }
         let result = WebhookNotifier::expand_env_vars("${TEST_VAR_A}-${TEST_VAR_B}");
         assert_eq!(result, "alpha-beta");
         // SAFETY: Test runs single-threaded; no concurrent env access
         unsafe {
-            std::env::remove_var("TEST_VAR_A");
-            std::env::remove_var("TEST_VAR_B");
+            env::remove_var("TEST_VAR_A");
+            env::remove_var("TEST_VAR_B");
         }
     }
 
@@ -338,6 +439,114 @@ mod tests {
             headers: std::collections::HashMap::new(),
         };
         assert!(WebhookNotifier::new(endpoint).is_some());
+    }
+
+    // --- SSRF validation tests ---
+
+    #[test]
+    fn blocked_addr_loopback_v4() {
+        assert!(is_blocked_addr("127.0.0.1".parse().unwrap()));
+        assert!(is_blocked_addr("127.255.255.254".parse().unwrap()));
+    }
+
+    #[test]
+    fn blocked_addr_private_ranges() {
+        assert!(is_blocked_addr("10.0.0.1".parse().unwrap()));
+        assert!(is_blocked_addr("172.16.0.1".parse().unwrap()));
+        assert!(is_blocked_addr("192.168.1.1".parse().unwrap()));
+    }
+
+    #[test]
+    fn blocked_addr_link_local_and_unspecified() {
+        assert!(is_blocked_addr("169.254.1.1".parse().unwrap()));
+        assert!(is_blocked_addr("0.0.0.0".parse().unwrap()));
+    }
+
+    #[test]
+    fn blocked_addr_v6_loopback_and_private() {
+        assert!(is_blocked_addr("::1".parse().unwrap()));
+        assert!(is_blocked_addr("fe80::1".parse().unwrap()));
+        assert!(is_blocked_addr("fc00::1".parse().unwrap()));
+        assert!(is_blocked_addr("fd12::1".parse().unwrap()));
+    }
+
+    #[test]
+    fn blocked_addr_v4_mapped_v6() {
+        // ::ffff:127.0.0.1 — mapped loopback must be caught
+        assert!(is_blocked_addr("::ffff:127.0.0.1".parse().unwrap()));
+        assert!(is_blocked_addr("::ffff:10.0.0.1".parse().unwrap()));
+    }
+
+    #[test]
+    fn allowed_addr_public() {
+        assert!(!is_blocked_addr("8.8.8.8".parse().unwrap()));
+        assert!(!is_blocked_addr("93.184.216.34".parse().unwrap()));
+        assert!(!is_blocked_addr("2606:4700::1".parse().unwrap()));
+    }
+
+    #[test]
+    fn validate_url_accepts_https() {
+
+        assert!(validate_webhook_url("https://example.com/hook").is_ok());
+    }
+
+    #[test]
+    fn validate_url_accepts_http() {
+
+        assert!(validate_webhook_url("http://example.com/hook").is_ok());
+    }
+
+    #[test]
+    fn validate_url_rejects_ftp_scheme() {
+        let err =
+            validate_webhook_url("ftp://example.com").unwrap_err();
+        assert!(err.contains("ftp"));
+    }
+
+    #[test]
+    fn validate_url_rejects_file_scheme() {
+        let err =
+            validate_webhook_url("file:///etc/passwd").unwrap_err();
+        assert!(err.contains("file"));
+    }
+
+    #[test]
+    fn validate_url_rejects_loopback_literal() {
+        assert!(validate_webhook_url("http://127.0.0.1/hook").is_err());
+    }
+
+    #[test]
+    fn validate_url_rejects_private_literal() {
+
+        assert!(validate_webhook_url("http://192.168.1.1/hook").is_err());
+        assert!(validate_webhook_url("http://10.0.0.1/hook").is_err());
+    }
+
+    #[test]
+    fn validate_url_rejects_v6_loopback_literal() {
+        assert!(validate_webhook_url("http://[::1]/hook").is_err());
+    }
+
+    #[test]
+    fn validate_url_rejects_invalid_url() {
+        assert!(validate_webhook_url("not a url at all").is_err());
+    }
+
+    #[test]
+    fn validate_url_rejects_nonsense_input() {
+        assert!(validate_webhook_url("://missing-scheme").is_err());
+        assert!(validate_webhook_url("").is_err());
+    }
+
+    #[test]
+    fn webhook_new_rejects_loopback_url() {
+        let endpoint = WebhookEndpoint {
+            name: "test".to_string(),
+            url: "http://127.0.0.1/hook".to_string(),
+            format: WebhookFormat::Generic,
+            headers: std::collections::HashMap::new(),
+        };
+        assert!(WebhookNotifier::new(endpoint).is_none());
     }
 
     /// Helper to create a test summary.

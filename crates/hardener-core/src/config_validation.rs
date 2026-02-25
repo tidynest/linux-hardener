@@ -9,7 +9,9 @@ use crate::config::HardenerConfig;
 use hardener_common::error::{HardeningError, Result};
 
 /// Characters that must never appear in any directive value.
-const SHELL_METACHARACTERS: &[char] = &[';', '`', '$', '(', ')', '{', '}', '|', '&', '\n', '\r', '\0'];
+const SHELL_METACHARACTERS: &[char] = &[
+    ';', '`', '$', '(', ')', '{', '}', '|', '&', '\n', '\r', '\0',
+];
 
 /// Validates all directive values in a merged config.
 ///
@@ -17,11 +19,36 @@ const SHELL_METACHARACTERS: &[char] = &[';', '`', '$', '(', ')', '{', '}', '|', 
 pub fn validate_config(config: &HardenerConfig) -> Result<()> {
     let mut errors: Vec<String> = Vec::new();
 
-    validate_plugin_directives("kernel", &config.kernel.directives, validate_kernel_value, &mut errors);
-    validate_plugin_directives("ssh", &config.ssh.directives, validate_ssh_value, &mut errors);
-    validate_plugin_directives("firewall", &config.firewall.directives, validate_firewall_value, &mut errors);
-    validate_plugin_directives("pam", &config.pam.directives, validate_pam_value, &mut errors);
-    validate_plugin_directives("permissions", &config.permissions.directives, validate_permissions_value, &mut errors);
+    validate_plugin_directives(
+        "kernel",
+        &config.kernel.directives,
+        validate_kernel_value,
+        &mut errors,
+    );
+    validate_plugin_directives(
+        "ssh",
+        &config.ssh.directives,
+        validate_ssh_value,
+        &mut errors,
+    );
+    validate_plugin_directives(
+        "firewall",
+        &config.firewall.directives,
+        validate_firewall_value,
+        &mut errors,
+    );
+    validate_plugin_directives(
+        "pam",
+        &config.pam.directives,
+        validate_pam_value,
+        &mut errors,
+    );
+    validate_plugin_directives(
+        "permissions",
+        &config.permissions.directives,
+        validate_permissions_value,
+        &mut errors,
+    );
 
     // Binary plugins (audit, mac, services) have no directive values to validate,
     // but still check for universal violations in custom_directives.
@@ -89,7 +116,11 @@ fn check_universal(value: &str) -> std::result::Result<(), String> {
 fn validate_kernel_value(_key: &str, value: &str) -> std::result::Result<(), String> {
     // Sysctl values can be single integers or space-separated integers
     // (e.g., "0 0 0" for net.ipv4.tcp_rmem)
-    if !value.is_empty() && value.split_whitespace().all(|token| token.parse::<i64>().is_ok()) {
+    if !value.is_empty()
+        && value
+            .split_whitespace()
+            .all(|token| token.parse::<i64>().is_ok())
+    {
         Ok(())
     } else {
         Err(format!("expected numeric sysctl value, got '{value}'"))
@@ -135,7 +166,10 @@ fn validate_firewall_value(key: &str, value: &str) -> std::result::Result<(), St
         }
         "source" => {
             // IP address or CIDR — basic structural check
-            if value.chars().all(|c| c.is_ascii_digit() || c == '.' || c == '/' || c == ':') {
+            if value
+                .chars()
+                .all(|c| c.is_ascii_digit() || c == '.' || c == '/' || c == ':')
+            {
                 Ok(())
             } else {
                 Err(format!("expected IP/CIDR, got '{value}'"))
@@ -155,10 +189,15 @@ fn validate_pam_value(_key: &str, value: &str) -> std::result::Result<(), String
         return Ok(());
     }
     // Allow single alphanumeric tokens (e.g., hash algorithm names)
-    if value.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+    if value
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
         return Ok(());
     }
-    Err(format!("expected numeric or single-token value, got '{value}'"))
+    Err(format!(
+        "expected numeric or single-token value, got '{value}'"
+    ))
 }
 
 /// Permissions: octal mode string like "700", "0755".
@@ -243,10 +282,10 @@ mod tests {
             "kernel.randomize_va_space".to_string(),
             "not_numeric".to_string(),
         );
-        config.ssh.directives.insert(
-            "PermitRootLogin".to_string(),
-            "no; rm -rf /".to_string(),
-        );
+        config
+            .ssh
+            .directives
+            .insert("PermitRootLogin".to_string(), "no; rm -rf /".to_string());
 
         let result = validate_config(&config);
         assert!(result.is_err());
@@ -259,18 +298,18 @@ mod tests {
     #[test]
     fn test_validate_config_accepts_valid_config() {
         let mut config = HardenerConfig::default();
-        config.kernel.directives.insert(
-            "kernel.randomize_va_space".to_string(),
-            "2".to_string(),
-        );
-        config.ssh.directives.insert(
-            "PermitRootLogin".to_string(),
-            "no".to_string(),
-        );
-        config.permissions.directives.insert(
-            "/root".to_string(),
-            "700".to_string(),
-        );
+        config
+            .kernel
+            .directives
+            .insert("kernel.randomize_va_space".to_string(), "2".to_string());
+        config
+            .ssh
+            .directives
+            .insert("PermitRootLogin".to_string(), "no".to_string());
+        config
+            .permissions
+            .directives
+            .insert("/root".to_string(), "700".to_string());
 
         assert!(validate_config(&config).is_ok());
     }

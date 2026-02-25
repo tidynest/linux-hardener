@@ -145,9 +145,7 @@ impl SystemExecutor for SshExecutor {
     async fn write_file(&self, path: &Path, content: &str) -> Result<()> {
         let escaped = shell_escape(&path.display().to_string());
         let delim = unique_delimiter(content);
-        let cmd = format!(
-            "sudo tee {escaped} > /dev/null << '{delim}'\n{content}\n{delim}"
-        );
+        let cmd = format!("sudo tee {escaped} > /dev/null << '{delim}'\n{content}\n{delim}");
         let output = self.run_command(&cmd).await?;
 
         if output.success() {
@@ -167,9 +165,7 @@ impl SystemExecutor for SshExecutor {
 
     async fn file_metadata(&self, path: &Path) -> Result<FileMetadata> {
         let escaped = shell_escape(&path.display().to_string());
-        let cmd = format!(
-            "stat -c '%F %a %s' {escaped} 2>/dev/null || echo 'NOTFOUND'"
-        );
+        let cmd = format!("stat -c '%F %a %s' {escaped} 2>/dev/null || echo 'NOTFOUND'");
         let output = self.run_command(&cmd).await?;
 
         let stdout = output.stdout.trim();
@@ -210,13 +206,12 @@ impl SystemExecutor for SshExecutor {
             .output()
             .await
             .with_context(|| format!("SSH command failed: {} {}", program, args.join(" ")))?;
-        
-        Ok(CommandOutput { 
-            stdout: String::from_utf8_lossy(&output.stdout).to_string(), 
+
+        Ok(CommandOutput {
+            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
             stderr: String::from_utf8_lossy(&output.stderr).to_string(),
             exit_code: output.status.code().unwrap_or(-1),
         })
-
     }
 
     async fn command_exists(&self, program: &str) -> Result<bool> {
