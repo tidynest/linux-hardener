@@ -30,6 +30,23 @@ impl Default for SshConfig {
     }
 }
 
+/// Escapes a string for safe inclusion in a single-quoted shell argument.
+///
+/// Replaces each single quote with the sequence `'\''` which ends the
+/// current single-quoted string, adds an escaped quote, and reopens.
+fn shell_escape(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// Generate a heredoc delimiter guaranteed absent from `content`.
+fn unique_delimiter(content: &str) -> String {
+    let mut delim = String::from("HARDENER_EOF");
+    while content.contains(&delim) {
+        delim.push('X');
+    }
+    delim
+}
+
 /// SSH-based system executor for remote hosts.
 pub struct SshExecutor {
     session: Session,
@@ -102,7 +119,8 @@ impl SystemExecutor for SshExecutor {
     }
 
     async fn read_file(&self, path: &Path) -> Result<String> {
-        let cmd = format!("cat '{}'", path.display());
+        let escaped = shell_escape(&path.display().to_string());
+        let cmd = format!("cat {escaped}");
         let output = self.run_command(&cmd).await?;
 
         if output.success() {
@@ -113,7 +131,8 @@ impl SystemExecutor for SshExecutor {
     }
 
     async fn read_file_optional(&self, path: &Path) -> Result<Option<String>> {
-        let cmd = format!("cat '{}' 2>/dev/null", path.display());
+        let escaped = shell_escape(&path.display().to_string());
+        let cmd = format!("cat {escaped} 2>/dev/null");
         let output = self.run_command(&cmd).await?;
 
         if output.success() {
@@ -124,11 +143,10 @@ impl SystemExecutor for SshExecutor {
     }
 
     async fn write_file(&self, path: &Path, content: &str) -> Result<()> {
-        // Use sudo tee for privileged writes
+        let escaped = shell_escape(&path.display().to_string());
+        let delim = unique_delimiter(content);
         let cmd = format!(
-            "sudo tee '{}' > /dev/null << 'HARDENER_EOF'\n{}\nHARDENER_EOF",
-            path.display(),
-            content
+            "sudo tee {escaped} > /dev/null << '{delim}'\n{content}\n{delim}"
         );
         let output = self.run_command(&cmd).await?;
 
@@ -140,16 +158,17 @@ impl SystemExecutor for SshExecutor {
     }
 
     async fn path_exists(&self, path: &Path) -> Result<bool> {
-        let cmd = format!("test -e '{}' && echo yes || echo no", path.display());
+        let escaped = shell_escape(&path.display().to_string());
+        let cmd = format!("test -e {escaped} && echo yes || echo no");
 
         let output = self.run_command(&cmd).await?;
         Ok(output.stdout.trim() == "yes")
     }
 
     async fn file_metadata(&self, path: &Path) -> Result<FileMetadata> {
+        let escaped = shell_escape(&path.display().to_string());
         let cmd = format!(
-            "stat -c '%F %a %s' '{}' 2>/dev/null || echo 'NOTFOUND'",
-            path.display()
+            "stat -c '%F %a %s' {escaped} 2>/dev/null || echo 'NOTFOUND'"
         );
         let output = self.run_command(&cmd).await?;
 
@@ -184,12 +203,20 @@ impl SystemExecutor for SshExecutor {
     }
 
     async fn execute_command(&self, program: &str, args: &[&str]) -> Result<CommandOutput> {
-        let cmd = if args.is_empty() {
-            program.to_string()
-        } else {
-            format!("{} {}", program, args.join(" "))
-        };
-        self.run_command(&cmd).await
+        let output = self
+            .session
+            .command(program)
+            .args(args)
+            .output()
+            .await
+            .with_context(|| format!("SSH command failed: {} {}", program, args.join(" ")))?;
+        
+        Ok(CommandOutput { 
+            stdout: String::from_utf8_lossy(&output.stdout).to_string(), 
+            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+            exit_code: output.status.code().unwrap_or(-1),
+        })
+
     }
 
     async fn command_exists(&self, program: &str) -> Result<bool> {
