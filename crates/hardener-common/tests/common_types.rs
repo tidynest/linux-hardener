@@ -31,10 +31,22 @@ fn test_plugin_id_hash() {
 
 #[test]
 fn test_severity_ordering() {
-    assert!(Severity::Info < Severity::Low, "Info should be less than Low");
-    assert!(Severity::Low < Severity::Medium, "Low should be less than Medium");
-    assert!(Severity::Medium < Severity::High, "Medium should be less than High");
-    assert!(Severity::High < Severity::Critical, "High should be less than Critical");
+    assert!(
+        Severity::Info < Severity::Low,
+        "Info should be less than Low"
+    );
+    assert!(
+        Severity::Low < Severity::Medium,
+        "Low should be less than Medium"
+    );
+    assert!(
+        Severity::Medium < Severity::High,
+        "Medium should be less than High"
+    );
+    assert!(
+        Severity::High < Severity::Critical,
+        "High should be less than Critical"
+    );
 
     // Test that ordering works correctly
     let mut severities = vec![
@@ -167,17 +179,29 @@ fn test_types_are_serializable() {
     // Test that types can be serialised to JSON
     let id = PluginId::new("test");
     let json = serde_json::to_string(&id).unwrap();
-    assert!(json.contains("test"), "PluginId JSON should contain 'test', got: {json}");
+    assert!(
+        json.contains("test"),
+        "PluginId JSON should contain 'test', got: {json}"
+    );
 
     let category = FindingCategory::Kernel;
     let json = serde_json::to_string(&category).unwrap();
-    assert!(json.contains("Kernel"), "FindingCategory JSON should contain 'Kernel', got: {json}");
+    assert!(
+        json.contains("Kernel"),
+        "FindingCategory JSON should contain 'Kernel', got: {json}"
+    );
 
     let framework = ComplianceFramework::CIS;
     let json = serde_json::to_string(&framework).unwrap();
-    assert!(json.contains("CIS"), "ComplianceFramework JSON should contain 'CIS', got: {json}");
+    assert!(
+        json.contains("CIS"),
+        "ComplianceFramework JSON should contain 'CIS', got: {json}"
+    );
 
     let severity = Severity::High;
     let json = serde_json::to_string(&severity).unwrap();
-    assert!(json.contains("High"), "Severity JSON should contain 'High', got: {json}");
+    assert!(
+        json.contains("High"),
+        "Severity JSON should contain 'High', got: {json}"
+    );
 }

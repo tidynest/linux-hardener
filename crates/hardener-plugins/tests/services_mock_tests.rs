@@ -234,8 +234,15 @@ async fn test_services_scan_finding_structure() {
     assert_eq!(bt_finding.finding_current_value, "enabled and active");
     assert_eq!(bt_finding.finding_recommended_value, "disabled and masked");
     assert_eq!(bt_finding.finding_severity, Severity::High);
-    assert!(bt_finding.finding_title.contains("bluetooth"), "finding title should mention bluetooth, got: {}", bt_finding.finding_title);
-    assert!(!bt_finding.finding_remediation_steps.is_empty(), "bluetooth finding should have remediation steps");
+    assert!(
+        bt_finding.finding_title.contains("bluetooth"),
+        "finding title should mention bluetooth, got: {}",
+        bt_finding.finding_title
+    );
+    assert!(
+        !bt_finding.finding_remediation_steps.is_empty(),
+        "bluetooth finding should have remediation steps"
+    );
 
     // Check remediation steps
     let steps: Vec<_> = bt_finding
@@ -243,9 +250,18 @@ async fn test_services_scan_finding_structure() {
         .iter()
         .map(|s| s.as_str())
         .collect();
-    assert!(steps.iter().any(|s| s.contains("systemctl stop")), "remediation should include systemctl stop");
-    assert!(steps.iter().any(|s| s.contains("systemctl disable")), "remediation should include systemctl disable");
-    assert!(steps.iter().any(|s| s.contains("systemctl mask")), "remediation should include systemctl mask");
+    assert!(
+        steps.iter().any(|s| s.contains("systemctl stop")),
+        "remediation should include systemctl stop"
+    );
+    assert!(
+        steps.iter().any(|s| s.contains("systemctl disable")),
+        "remediation should include systemctl disable"
+    );
+    assert!(
+        steps.iter().any(|s| s.contains("systemctl mask")),
+        "remediation should include systemctl mask"
+    );
 }
 
 #[tokio::test]
@@ -277,15 +293,31 @@ async fn test_services_validate_with_systemctl() {
 
     let result = plugin.validate(&ctx, &config).await.unwrap();
 
-    assert!(result.validation_report_is_valid, "validation with systemctl should be valid");
-    assert!(result.validation_report_issues.is_empty(), "validation with systemctl should have no issues, found: {:?}", result.validation_report_issues);
+    assert!(
+        result.validation_report_is_valid,
+        "validation with systemctl should be valid"
+    );
+    assert!(
+        result.validation_report_issues.is_empty(),
+        "validation with systemctl should have no issues, found: {:?}",
+        result.validation_report_issues
+    );
 
     // Should list estimated changes for enabled services
-    assert!(!result.validation_report_estimated_changes.is_empty(), "enabled services should produce estimated changes");
+    assert!(
+        !result.validation_report_estimated_changes.is_empty(),
+        "enabled services should produce estimated changes"
+    );
 
     let changes_str = result.validation_report_estimated_changes.join(" ");
-    assert!(changes_str.contains("bluetooth"), "estimated changes should mention bluetooth, got: {changes_str}");
-    assert!(changes_str.contains("cups"), "estimated changes should mention cups, got: {changes_str}");
+    assert!(
+        changes_str.contains("bluetooth"),
+        "estimated changes should mention bluetooth, got: {changes_str}"
+    );
+    assert!(
+        changes_str.contains("cups"),
+        "estimated changes should mention cups, got: {changes_str}"
+    );
 }
 
 #[tokio::test]
@@ -298,13 +330,27 @@ async fn test_services_validate_no_systemctl() {
     let result = plugin.validate(&ctx, &config).await.unwrap();
 
     // Should have critical issue about missing systemctl
-    assert!(!result.validation_report_is_valid, "validation without systemctl should be invalid");
-    assert!(!result.validation_report_issues.is_empty(), "validation without systemctl should have issues");
+    assert!(
+        !result.validation_report_is_valid,
+        "validation without systemctl should be invalid"
+    );
+    assert!(
+        !result.validation_report_issues.is_empty(),
+        "validation without systemctl should have issues"
+    );
 
     let issue = &result.validation_report_issues[0];
     assert_eq!(issue.validation_issue_severity, Severity::Critical);
-    assert!(issue.validation_issue_message.contains("systemctl"), "issue should mention systemctl, got: {}", issue.validation_issue_message);
-    assert!(issue.validation_issue_message.contains("systemd"), "issue should mention systemd, got: {}", issue.validation_issue_message);
+    assert!(
+        issue.validation_issue_message.contains("systemctl"),
+        "issue should mention systemctl, got: {}",
+        issue.validation_issue_message
+    );
+    assert!(
+        issue.validation_issue_message.contains("systemd"),
+        "issue should mention systemd, got: {}",
+        issue.validation_issue_message
+    );
 }
 
 #[tokio::test]
@@ -355,7 +401,11 @@ async fn test_services_metadata() {
 
     assert_eq!(metadata.plugin_id, PluginId::new("service-minimisation"));
     assert_eq!(metadata.plugin_name, "Service Minimisation");
-    assert!(metadata.plugin_description.contains("systemd"), "plugin description should mention systemd, got: {}", metadata.plugin_description);
+    assert!(
+        metadata.plugin_description.contains("systemd"),
+        "plugin description should mention systemd, got: {}",
+        metadata.plugin_description
+    );
 }
 
 #[tokio::test]
@@ -420,7 +470,10 @@ async fn test_services_scan_with_remote_executor() {
             },
         );
 
-    assert!(executor.is_remote(), "remote executor should report as remote");
+    assert!(
+        executor.is_remote(),
+        "remote executor should report as remote"
+    );
 
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = ServicesHardeningPlugin::new();
@@ -435,7 +488,11 @@ async fn test_services_scan_with_remote_executor() {
             .iter()
             .any(|f| f.finding_id == "service_bluetooth"),
         "should find bluetooth on remote, got: {:?}",
-        result.scan_findings.iter().map(|f| &f.finding_id).collect::<Vec<_>>()
+        result
+            .scan_findings
+            .iter()
+            .map(|f| &f.finding_id)
+            .collect::<Vec<_>>()
     );
 }
 
@@ -528,7 +585,10 @@ async fn test_services_compliance_mappings() {
         .iter()
         .find(|f| f.finding_id == "service_cups")
         .expect("Should have cups finding");
-    assert!(!cups_finding.finding_compliance.is_empty(), "cups finding should have compliance mappings");
+    assert!(
+        !cups_finding.finding_compliance.is_empty(),
+        "cups finding should have compliance mappings"
+    );
     assert_eq!(
         cups_finding.finding_compliance[0].compliance_control_id,
         "2.2.4"
@@ -540,7 +600,10 @@ async fn test_services_compliance_mappings() {
         .iter()
         .find(|f| f.finding_id == "service_avahi_daemon")
         .expect("Should have avahi finding");
-    assert!(!avahi_finding.finding_compliance.is_empty(), "avahi finding should have compliance mappings");
+    assert!(
+        !avahi_finding.finding_compliance.is_empty(),
+        "avahi finding should have compliance mappings"
+    );
     assert_eq!(
         avahi_finding.finding_compliance[0].compliance_control_id,
         "2.2.3"

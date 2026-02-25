@@ -54,7 +54,11 @@ async fn test_ssh_scan_secure_config_no_findings() {
 
     assert!(result.scan_success, "secure SSH scan should succeed");
     assert_eq!(result.scan_plugin_id, PluginId::new("ssh-hardening"));
-    assert!(result.scan_error.is_none(), "secure SSH scan should have no error, got: {:?}", result.scan_error);
+    assert!(
+        result.scan_error.is_none(),
+        "secure SSH scan should have no error, got: {:?}",
+        result.scan_error
+    );
     assert!(
         result.scan_findings.is_empty(),
         "Secure config should have no findings, but got: {:?}",
@@ -120,9 +124,18 @@ async fn test_ssh_scan_missing_config_file() {
     let result = plugin.scan(&ctx).await.unwrap();
 
     // Scan should return gracefully with an error message
-    assert!(!result.scan_success, "scan with missing config should not succeed");
-    assert!(result.scan_error.is_some(), "scan with missing config should have an error message");
-    assert!(result.scan_error.unwrap().contains("Failed to read"), "error should mention failed read");
+    assert!(
+        !result.scan_success,
+        "scan with missing config should not succeed"
+    );
+    assert!(
+        result.scan_error.is_some(),
+        "scan with missing config should have an error message"
+    );
+    assert!(
+        result.scan_error.unwrap().contains("Failed to read"),
+        "error should mention failed read"
+    );
 }
 
 #[tokio::test]
@@ -135,7 +148,10 @@ async fn test_ssh_scan_missing_directives_flagged() {
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_success, "scan with partial config should succeed");
+    assert!(
+        result.scan_success,
+        "scan with partial config should succeed"
+    );
 
     // Missing directives should be flagged
     let finding_ids: Vec<_> = result
@@ -145,12 +161,24 @@ async fn test_ssh_scan_missing_directives_flagged() {
         .collect();
 
     // PermitRootLogin is set correctly, shouldn't be flagged
-    assert!(!finding_ids.contains(&"ssh-permitrootlogin"), "correctly set PermitRootLogin should not be flagged");
+    assert!(
+        !finding_ids.contains(&"ssh-permitrootlogin"),
+        "correctly set PermitRootLogin should not be flagged"
+    );
 
     // These are missing, should be flagged
-    assert!(finding_ids.contains(&"ssh-passwordauthentication"), "missing PasswordAuthentication should be flagged");
-    assert!(finding_ids.contains(&"ssh-permitemptypasswords"), "missing PermitEmptyPasswords should be flagged");
-    assert!(finding_ids.contains(&"ssh-protocol"), "missing Protocol should be flagged");
+    assert!(
+        finding_ids.contains(&"ssh-passwordauthentication"),
+        "missing PasswordAuthentication should be flagged"
+    );
+    assert!(
+        finding_ids.contains(&"ssh-permitemptypasswords"),
+        "missing PermitEmptyPasswords should be flagged"
+    );
+    assert!(
+        finding_ids.contains(&"ssh-protocol"),
+        "missing Protocol should be flagged"
+    );
 
     // Verify "not set" current value
     let password_auth = result
@@ -171,8 +199,15 @@ async fn test_ssh_validate_file_exists() {
 
     let result = plugin.validate(&ctx, &config).await.unwrap();
 
-    assert!(result.validation_report_is_valid, "validation with existing config should be valid");
-    assert!(result.validation_report_issues.is_empty(), "validation with existing config should have no issues, found: {:?}", result.validation_report_issues);
+    assert!(
+        result.validation_report_is_valid,
+        "validation with existing config should be valid"
+    );
+    assert!(
+        result.validation_report_issues.is_empty(),
+        "validation with existing config should have no issues, found: {:?}",
+        result.validation_report_issues
+    );
 }
 
 #[tokio::test]
@@ -184,8 +219,14 @@ async fn test_ssh_validate_file_missing() {
 
     let result = plugin.validate(&ctx, &config).await.unwrap();
 
-    assert!(!result.validation_report_is_valid, "validation with missing config should be invalid");
-    assert!(!result.validation_report_issues.is_empty(), "validation with missing config should have issues");
+    assert!(
+        !result.validation_report_is_valid,
+        "validation with missing config should be invalid"
+    );
+    assert!(
+        !result.validation_report_issues.is_empty(),
+        "validation with missing config should have issues"
+    );
 
     // MockExecutor returns FileMetadata { exists: false, is_file: false } for missing files
     // So the first issue is "not a regular file", and the second is "Cannot read"
@@ -219,7 +260,10 @@ async fn test_ssh_validate_not_regular_file() {
 
     let result = plugin.validate(&ctx, &config).await.unwrap();
 
-    assert!(!result.validation_report_is_valid, "directory as config should make validation invalid");
+    assert!(
+        !result.validation_report_is_valid,
+        "directory as config should make validation invalid"
+    );
 
     let issue = &result.validation_report_issues[0];
     assert!(
@@ -266,10 +310,17 @@ async fn test_ssh_scan_compliance_mappings() {
         .expect("Should have PermitRootLogin finding");
 
     // Verify compliance mapping
-    assert!(!root_login.finding_compliance.is_empty(), "PermitRootLogin finding should have compliance mappings");
+    assert!(
+        !root_login.finding_compliance.is_empty(),
+        "PermitRootLogin finding should have compliance mappings"
+    );
     let cis_mapping = &root_login.finding_compliance[0];
     assert_eq!(cis_mapping.compliance_control_id, "5.2.10");
-    assert!(cis_mapping.compliance_control_title.contains("root login"), "CIS mapping title should mention root login, got: {}", cis_mapping.compliance_control_title);
+    assert!(
+        cis_mapping.compliance_control_title.contains("root login"),
+        "CIS mapping title should mention root login, got: {}",
+        cis_mapping.compliance_control_title
+    );
 }
 
 #[tokio::test]
@@ -297,7 +348,10 @@ async fn test_ssh_scan_with_remote_executor() {
             "PermitRootLogin no\nPasswordAuthentication no\n",
         );
 
-    assert!(executor.is_remote(), "remote executor should report as remote");
+    assert!(
+        executor.is_remote(),
+        "remote executor should report as remote"
+    );
 
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = SshHardeningPlugin::new();

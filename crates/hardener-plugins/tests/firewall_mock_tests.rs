@@ -245,7 +245,10 @@ async fn test_firewall_scan_duration_recorded() {
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_duration_us > 0, "scan duration should be recorded");
+    assert!(
+        result.scan_duration_us > 0,
+        "scan duration should be recorded"
+    );
 }
 
 /// Helper: UFW active + all baseline rule commands registered.

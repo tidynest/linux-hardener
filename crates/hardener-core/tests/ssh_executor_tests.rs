@@ -55,10 +55,17 @@ fn test_ssh_config_default() {
     assert_eq!(config.host, "");
     assert_eq!(config.port, 22);
     assert!(config.user.is_none(), "default user should be None");
-    assert!(config.identity_file.is_none(), "default identity_file should be None");
+    assert!(
+        config.identity_file.is_none(),
+        "default identity_file should be None"
+    );
     assert_eq!(config.connect_timeout, Duration::from_secs(30));
     // Default should be Strict for security
-    assert!(matches!(config.known_hosts, KnownHosts::Strict), "default known_hosts should be Strict, got: {:?}", config.known_hosts);
+    assert!(
+        matches!(config.known_hosts, KnownHosts::Strict),
+        "default known_hosts should be Strict, got: {:?}",
+        config.known_hosts
+    );
 }
 
 #[test]
@@ -117,7 +124,11 @@ async fn test_ssh_executor_connect() {
 
     let executor = executor.unwrap();
     assert!(executor.is_remote(), "SSH executor should report as remote");
-    assert!(executor.description().starts_with("ssh://"), "SSH executor description should start with ssh://, got: {}", executor.description());
+    assert!(
+        executor.description().starts_with("ssh://"),
+        "SSH executor description should start with ssh://, got: {}",
+        executor.description()
+    );
 }
 
 #[tokio::test]
@@ -135,7 +146,10 @@ async fn test_ssh_executor_read_file() {
         "Should read /etc/hostname: {:?}",
         content.err()
     );
-    assert!(!content.unwrap().is_empty(), "/etc/hostname content should not be empty");
+    assert!(
+        !content.unwrap().is_empty(),
+        "/etc/hostname content should not be empty"
+    );
 }
 
 #[tokio::test]
@@ -149,7 +163,10 @@ async fn test_ssh_executor_read_file_not_found() {
     let result = executor
         .read_file(Path::new("/nonexistent/file/path"))
         .await;
-    assert!(result.is_err(), "reading nonexistent file should return error, got: {result:?}");
+    assert!(
+        result.is_err(),
+        "reading nonexistent file should return error, got: {result:?}"
+    );
 }
 
 #[tokio::test]
@@ -164,15 +181,27 @@ async fn test_ssh_executor_read_file_optional() {
     let result = executor
         .read_file_optional(Path::new("/etc/hostname"))
         .await;
-    assert!(result.is_ok(), "read_file_optional for existing file should succeed, got: {result:?}");
-    assert!(result.unwrap().is_some(), "existing file should return Some content");
+    assert!(
+        result.is_ok(),
+        "read_file_optional for existing file should succeed, got: {result:?}"
+    );
+    assert!(
+        result.unwrap().is_some(),
+        "existing file should return Some content"
+    );
 
     // Non-existing file
     let result = executor
         .read_file_optional(Path::new("/nonexistent/path"))
         .await;
-    assert!(result.is_ok(), "read_file_optional for missing file should succeed, got: {result:?}");
-    assert!(result.unwrap().is_none(), "nonexistent file should return None");
+    assert!(
+        result.is_ok(),
+        "read_file_optional for missing file should succeed, got: {result:?}"
+    );
+    assert!(
+        result.unwrap().is_none(),
+        "nonexistent file should return None"
+    );
 }
 
 #[tokio::test]
@@ -184,7 +213,10 @@ async fn test_ssh_executor_path_exists() {
         .expect("Failed to connect");
 
     // Should exist
-    assert!(executor.path_exists(Path::new("/etc")).await.unwrap(), "/etc should exist");
+    assert!(
+        executor.path_exists(Path::new("/etc")).await.unwrap(),
+        "/etc should exist"
+    );
     assert!(
         executor
             .path_exists(Path::new("/etc/passwd"))
@@ -216,7 +248,11 @@ async fn test_ssh_executor_file_metadata() {
     assert!(meta.exists, "/etc metadata should report exists");
     assert!(meta.is_dir, "/etc should be a directory");
     assert!(!meta.is_file, "/etc should not be a file");
-    assert!(meta.mode > 0, "/etc should have non-zero mode, got: {}", meta.mode);
+    assert!(
+        meta.mode > 0,
+        "/etc should have non-zero mode, got: {}",
+        meta.mode
+    );
 
     // File
     let meta = executor
@@ -226,7 +262,11 @@ async fn test_ssh_executor_file_metadata() {
     assert!(meta.exists, "/etc/passwd metadata should report exists");
     assert!(meta.is_file, "/etc/passwd should be a file");
     assert!(!meta.is_dir, "/etc/passwd should not be a directory");
-    assert!(meta.size > 0, "/etc/passwd should have non-zero size, got: {}", meta.size);
+    assert!(
+        meta.size > 0,
+        "/etc/passwd should have non-zero size, got: {}",
+        meta.size
+    );
 
     // Non-existent
     let meta = executor
@@ -249,7 +289,11 @@ async fn test_ssh_executor_execute_command() {
         .execute_command("echo", &["hello", "world"])
         .await
         .unwrap();
-    assert!(output.success(), "echo command should succeed, exit_code: {}", output.exit_code);
+    assert!(
+        output.success(),
+        "echo command should succeed, exit_code: {}",
+        output.exit_code
+    );
     assert_eq!(output.stdout.trim(), "hello world");
     assert_eq!(output.exit_code, 0);
 
@@ -268,8 +312,14 @@ async fn test_ssh_executor_command_exists() {
         .expect("Failed to connect");
 
     // Should exist on any Linux system
-    assert!(executor.command_exists("cat").await.unwrap(), "cat command should exist");
-    assert!(executor.command_exists("ls").await.unwrap(), "ls command should exist");
+    assert!(
+        executor.command_exists("cat").await.unwrap(),
+        "cat command should exist"
+    );
+    assert!(
+        executor.command_exists("ls").await.unwrap(),
+        "ls command should exist"
+    );
 
     // Should not exist
     assert!(
@@ -311,13 +361,25 @@ fn test_ssh_executor_description_format() {
     // Verify we understand the description format without needing a connection
     let expected_format = "ssh://testuser@example.com:2222";
 
-    assert!(expected_format.starts_with("ssh://"), "expected format should start with ssh://");
-    assert!(expected_format.contains("@"), "expected format should contain @");
-    assert!(expected_format.contains(":"), "expected format should contain :");
+    assert!(
+        expected_format.starts_with("ssh://"),
+        "expected format should start with ssh://"
+    );
+    assert!(
+        expected_format.contains("@"),
+        "expected format should contain @"
+    );
+    assert!(
+        expected_format.contains(":"),
+        "expected format should contain :"
+    );
 
     // Test default user case
     let default_user_format = "ssh://root@localhost:22";
-    assert!(default_user_format.contains("root@"), "default user format should contain root@");
+    assert!(
+        default_user_format.contains("root@"),
+        "default user format should contain root@"
+    );
 }
 
 // =============================================================================
@@ -337,7 +399,10 @@ async fn test_ssh_executor_kernel_param_read() {
         .read_file_optional(Path::new("/proc/sys/kernel/hostname"))
         .await;
 
-    assert!(result.is_ok(), "reading /proc/sys/kernel/hostname should succeed, got: {result:?}");
+    assert!(
+        result.is_ok(),
+        "reading /proc/sys/kernel/hostname should succeed, got: {result:?}"
+    );
     let content = result.unwrap();
     assert!(content.is_some(), "Should be able to read kernel hostname");
 }
@@ -362,6 +427,9 @@ async fn test_ssh_executor_systemctl_command() {
             .unwrap();
 
         // Even if it fails, we should get a response
-        assert!(!output.stdout.is_empty() || !output.stderr.is_empty(), "systemctl should produce some output");
+        assert!(
+            !output.stdout.is_empty() || !output.stderr.is_empty(),
+            "systemctl should produce some output"
+        );
     }
 }

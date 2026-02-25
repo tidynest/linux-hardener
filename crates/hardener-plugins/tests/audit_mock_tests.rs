@@ -144,7 +144,10 @@ async fn test_audit_scan_fully_configured_no_findings() {
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_success, "fully configured audit scan should succeed");
+    assert!(
+        result.scan_success,
+        "fully configured audit scan should succeed"
+    );
     assert_eq!(result.scan_plugin_id, PluginId::new("audit-hardening"));
     assert!(
         result.scan_findings.is_empty(),
@@ -191,8 +194,14 @@ async fn test_audit_scan_disabled_and_stopped() {
         .collect();
 
     // Should find auditd not enabled and not running
-    assert!(finding_ids.contains(&"audit_not_enabled"), "should flag auditd not enabled, got: {finding_ids:?}");
-    assert!(finding_ids.contains(&"auditd_not_running"), "should flag auditd not running, got: {finding_ids:?}");
+    assert!(
+        finding_ids.contains(&"audit_not_enabled"),
+        "should flag auditd not enabled, got: {finding_ids:?}"
+    );
+    assert!(
+        finding_ids.contains(&"auditd_not_running"),
+        "should flag auditd not running, got: {finding_ids:?}"
+    );
 
     // Check severities
     let not_enabled = result
@@ -250,12 +259,18 @@ async fn test_audit_scan_finding_structure() {
     let finding = &result.scan_findings[0];
 
     assert_eq!(finding.finding_id, "audit_not_installed");
-    assert!(!finding.finding_compliance.is_empty(), "audit finding should have compliance mappings");
+    assert!(
+        !finding.finding_compliance.is_empty(),
+        "audit finding should have compliance mappings"
+    );
     assert_eq!(
         finding.finding_compliance[0].compliance_control_id,
         "4.1.1.1"
     );
-    assert!(!finding.finding_remediation_steps.is_empty(), "audit finding should have remediation steps");
+    assert!(
+        !finding.finding_remediation_steps.is_empty(),
+        "audit finding should have remediation steps"
+    );
 }
 
 #[tokio::test]
@@ -267,9 +282,15 @@ async fn test_audit_validate_with_auditd() {
 
     let result = plugin.validate(&ctx, &config).await.unwrap();
 
-    assert!(result.validation_report_is_valid, "validation with auditd should be valid");
+    assert!(
+        result.validation_report_is_valid,
+        "validation with auditd should be valid"
+    );
     // Should have estimated changes for missing rules
-    assert!(!result.validation_report_estimated_changes.is_empty(), "partial rules should produce estimated changes");
+    assert!(
+        !result.validation_report_estimated_changes.is_empty(),
+        "partial rules should produce estimated changes"
+    );
 }
 
 #[tokio::test]
@@ -281,12 +302,22 @@ async fn test_audit_validate_no_auditd() {
 
     let result = plugin.validate(&ctx, &config).await.unwrap();
 
-    assert!(!result.validation_report_is_valid, "validation without auditd should be invalid");
-    assert!(!result.validation_report_issues.is_empty(), "validation without auditd should have issues");
+    assert!(
+        !result.validation_report_is_valid,
+        "validation without auditd should be invalid"
+    );
+    assert!(
+        !result.validation_report_issues.is_empty(),
+        "validation without auditd should have issues"
+    );
 
     let issue = &result.validation_report_issues[0];
     assert_eq!(issue.validation_issue_severity, Severity::Critical);
-    assert!(issue.validation_issue_message.contains("auditd"), "issue should mention auditd, got: {}", issue.validation_issue_message);
+    assert!(
+        issue.validation_issue_message.contains("auditd"),
+        "issue should mention auditd, got: {}",
+        issue.validation_issue_message
+    );
 }
 
 #[tokio::test]
@@ -297,7 +328,10 @@ async fn test_audit_scan_duration_recorded() {
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_duration_us > 0, "scan duration should be recorded");
+    assert!(
+        result.scan_duration_us > 0,
+        "scan duration should be recorded"
+    );
 }
 
 #[tokio::test]
@@ -368,7 +402,10 @@ async fn test_audit_scan_with_remote_executor() {
             },
         );
 
-    assert!(executor.is_remote(), "remote executor should report as remote");
+    assert!(
+        executor.is_remote(),
+        "remote executor should report as remote"
+    );
 
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = AuditHardeningPlugin::new();
@@ -383,7 +420,11 @@ async fn test_audit_scan_with_remote_executor() {
             .iter()
             .any(|f| f.finding_id == "auditd_not_running"),
         "should find auditd not running on remote, got: {:?}",
-        result.scan_findings.iter().map(|f| &f.finding_id).collect::<Vec<_>>()
+        result
+            .scan_findings
+            .iter()
+            .map(|f| &f.finding_id)
+            .collect::<Vec<_>>()
     );
 }
 

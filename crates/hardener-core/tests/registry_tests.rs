@@ -1,6 +1,6 @@
 use hardener_common::types::PluginId;
-use hardener_core::testing::MockPlugin;
 use hardener_core::PluginRegistry;
+use hardener_core::testing::MockPlugin;
 
 #[test]
 fn test_register_plugin() {

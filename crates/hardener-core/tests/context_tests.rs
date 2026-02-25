@@ -1,6 +1,6 @@
-use hardener_core::{Context, PluginAuditEntry, SystemInfo};
-use hardener_core::context::AuditOperation;
 use hardener_common::types::PluginId;
+use hardener_core::context::AuditOperation;
+use hardener_core::{Context, PluginAuditEntry, SystemInfo};
 
 #[test]
 fn test_system_info_detection() {
@@ -15,8 +15,7 @@ fn test_system_info_detection() {
 
 #[test]
 fn test_audit_entry_creation() {
-    let entry =
-        PluginAuditEntry::new("test_plugin", AuditOperation::Scan, "Scanning system", true);
+    let entry = PluginAuditEntry::new("test_plugin", AuditOperation::Scan, "Scanning system", true);
 
     assert_eq!(entry.entry_plugin_id, PluginId::from("test_plugin"));
     assert_eq!(entry.entry_description, "Scanning system");
@@ -42,8 +41,7 @@ fn test_audit_entry_with_error() {
 #[test]
 fn test_context_logs_audit() {
     let ctx = Context::new();
-    let entry =
-        PluginAuditEntry::new("test_plugin", AuditOperation::Scan, "Test operation", true);
+    let entry = PluginAuditEntry::new("test_plugin", AuditOperation::Scan, "Test operation", true);
 
     let result = ctx.log_audit(entry);
     assert!(result.is_ok());

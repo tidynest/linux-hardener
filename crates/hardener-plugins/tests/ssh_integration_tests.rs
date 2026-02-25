@@ -98,7 +98,6 @@ async fn test_kernel_plugin_scan_over_ssh() {
         scan_result.scan_duration_us > 0,
         "Duration should be recorded"
     );
-
 }
 
 #[tokio::test]
@@ -143,10 +142,7 @@ async fn test_ssh_plugin_scan_over_ssh() {
     // That's okay - we're testing the remote execution path
 
     // Scan might fail if sshd_config doesn't exist on target - that's OK
-    assert_eq!(
-        scan_result.scan_plugin_id.as_str(),
-        "ssh-hardening"
-    );
+    assert_eq!(scan_result.scan_plugin_id.as_str(), "ssh-hardening");
 }
 
 // =============================================================================
@@ -169,7 +165,6 @@ async fn test_services_plugin_scan_over_ssh() {
 
     let scan_result = result.unwrap();
     assert!(scan_result.scan_success, "Scan should report success");
-
 }
 
 #[tokio::test]
@@ -217,7 +212,11 @@ async fn test_multiple_plugins_sequential_over_ssh() {
         );
 
         let scan_result = result.unwrap();
-        assert!(scan_result.scan_success, "{} scan should succeed", metadata.plugin_name);
+        assert!(
+            scan_result.scan_success,
+            "{} scan should succeed",
+            metadata.plugin_name
+        );
     }
 }
 
@@ -264,7 +263,10 @@ async fn test_command_not_found_over_ssh() {
         .executor()
         .command_exists("this_command_definitely_does_not_exist")
         .await;
-    assert!(exists.is_ok(), "command_exists should not return error, got: {exists:?}");
+    assert!(
+        exists.is_ok(),
+        "command_exists should not return error, got: {exists:?}"
+    );
     assert!(!exists.unwrap(), "Non-existent command should return false");
 }
 

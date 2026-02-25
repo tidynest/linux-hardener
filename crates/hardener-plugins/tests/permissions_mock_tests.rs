@@ -132,7 +132,10 @@ async fn test_permissions_scan_secure_config_no_findings() {
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_success, "secure permissions scan should succeed");
+    assert!(
+        result.scan_success,
+        "secure permissions scan should succeed"
+    );
     assert_eq!(
         result.scan_plugin_id,
         PluginId::new("permissions-hardening")
@@ -156,8 +159,14 @@ async fn test_permissions_scan_finds_insecure_permissions() {
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_success, "insecure permissions scan should succeed");
-    assert!(!result.scan_findings.is_empty(), "insecure permissions should have findings");
+    assert!(
+        result.scan_success,
+        "insecure permissions scan should succeed"
+    );
+    assert!(
+        !result.scan_findings.is_empty(),
+        "insecure permissions should have findings"
+    );
 
     let finding_ids: Vec<_> = result
         .scan_findings
@@ -166,8 +175,14 @@ async fn test_permissions_scan_finds_insecure_permissions() {
         .collect();
 
     // Should find issues with /root, /boot, and /etc/sudoers
-    assert!(finding_ids.iter().any(|id| id.contains("root")), "should flag /root, got: {finding_ids:?}");
-    assert!(finding_ids.iter().any(|id| id.contains("boot")), "should flag /boot, got: {finding_ids:?}");
+    assert!(
+        finding_ids.iter().any(|id| id.contains("root")),
+        "should flag /root, got: {finding_ids:?}"
+    );
+    assert!(
+        finding_ids.iter().any(|id| id.contains("boot")),
+        "should flag /boot, got: {finding_ids:?}"
+    );
     assert!(
         finding_ids
             .iter()
@@ -176,7 +191,10 @@ async fn test_permissions_scan_finds_insecure_permissions() {
     );
 
     // /etc/ssh should NOT be in findings (it's correct)
-    assert!(!finding_ids.iter().any(|id| id.contains("etc-ssh")), "correctly-permissioned /etc/ssh should not be flagged");
+    assert!(
+        !finding_ids.iter().any(|id| id.contains("etc-ssh")),
+        "correctly-permissioned /etc/ssh should not be flagged"
+    );
 }
 
 #[tokio::test]
@@ -201,13 +219,28 @@ async fn test_permissions_scan_finding_structure() {
     assert_eq!(result.scan_findings.len(), 1);
     let finding = &result.scan_findings[0];
 
-    assert!(finding.finding_id.contains("root"), "finding ID should mention root, got: {}", finding.finding_id);
+    assert!(
+        finding.finding_id.contains("root"),
+        "finding ID should mention root, got: {}",
+        finding.finding_id
+    );
     assert_eq!(finding.finding_current_value, "0755");
     assert_eq!(finding.finding_recommended_value, "0700");
     assert_eq!(finding.finding_severity, Severity::High);
-    assert!(finding.finding_title.contains("/root"), "finding title should mention /root, got: {}", finding.finding_title);
-    assert!(!finding.finding_remediation_steps.is_empty(), "finding should have remediation steps");
-    assert!(finding.finding_remediation_steps[0].contains("chmod"), "remediation should mention chmod, got: {}", finding.finding_remediation_steps[0]);
+    assert!(
+        finding.finding_title.contains("/root"),
+        "finding title should mention /root, got: {}",
+        finding.finding_title
+    );
+    assert!(
+        !finding.finding_remediation_steps.is_empty(),
+        "finding should have remediation steps"
+    );
+    assert!(
+        finding.finding_remediation_steps[0].contains("chmod"),
+        "remediation should mention chmod, got: {}",
+        finding.finding_remediation_steps[0]
+    );
 }
 
 #[tokio::test]
@@ -219,9 +252,16 @@ async fn test_permissions_scan_missing_paths_skipped() {
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_success, "scan with missing paths should succeed");
+    assert!(
+        result.scan_success,
+        "scan with missing paths should succeed"
+    );
     // Missing paths should be skipped, not flagged
-    assert!(result.scan_findings.is_empty(), "missing paths should produce no findings, found: {:?}", result.scan_findings);
+    assert!(
+        result.scan_findings.is_empty(),
+        "missing paths should produce no findings, found: {:?}",
+        result.scan_findings
+    );
 }
 
 #[tokio::test]
@@ -284,7 +324,10 @@ async fn test_permissions_scan_duration_recorded() {
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_duration_us > 0, "scan duration should be recorded");
+    assert!(
+        result.scan_duration_us > 0,
+        "scan duration should be recorded"
+    );
 }
 
 #[tokio::test]
@@ -297,8 +340,15 @@ async fn test_permissions_validate_always_valid() {
 
     let result = plugin.validate(&ctx, &config).await.unwrap();
 
-    assert!(result.validation_report_is_valid, "permissions validation should always be valid");
-    assert!(result.validation_report_issues.is_empty(), "permissions validation should have no issues, found: {:?}", result.validation_report_issues);
+    assert!(
+        result.validation_report_is_valid,
+        "permissions validation should always be valid"
+    );
+    assert!(
+        result.validation_report_issues.is_empty(),
+        "permissions validation should have no issues, found: {:?}",
+        result.validation_report_issues
+    );
 }
 
 #[tokio::test]
@@ -327,15 +377,24 @@ async fn test_permissions_scan_with_remote_executor() {
             },
         );
 
-    assert!(executor.is_remote(), "remote executor should report as remote");
+    assert!(
+        executor.is_remote(),
+        "remote executor should report as remote"
+    );
 
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PermissionsHardeningPlugin::new();
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_success, "remote permissions scan should succeed");
-    assert!(!result.scan_findings.is_empty(), "insecure remote permissions should have findings");
+    assert!(
+        result.scan_success,
+        "remote permissions scan should succeed"
+    );
+    assert!(
+        !result.scan_findings.is_empty(),
+        "insecure remote permissions should have findings"
+    );
 }
 
 /// Tests that chmod returning success but not actually changing mode is detected.

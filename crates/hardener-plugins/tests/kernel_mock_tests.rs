@@ -74,7 +74,10 @@ async fn test_kernel_scan_secure_config_no_findings() {
 
     let result = plugin.scan(&ctx).await.unwrap();
 
-    assert!(result.scan_success, "secure kernel scan should succeed, got: {result:?}");
+    assert!(
+        result.scan_success,
+        "secure kernel scan should succeed, got: {result:?}"
+    );
     assert_eq!(result.scan_plugin_id, PluginId::new("kernel-hardening"));
     assert!(
         result.scan_findings.is_empty(),
@@ -112,9 +115,18 @@ async fn test_kernel_scan_insecure_config_finds_all_issues() {
         .map(|f| f.finding_id.as_str())
         .collect();
 
-    assert!(finding_ids.contains(&"kernel_kernel_randomize_va_space"), "should flag ASLR, got: {finding_ids:?}");
-    assert!(finding_ids.contains(&"kernel_kernel_kptr_restrict"), "should flag kptr_restrict, got: {finding_ids:?}");
-    assert!(finding_ids.contains(&"kernel_net_ipv4_tcp_syncookies"), "should flag tcp_syncookies, got: {finding_ids:?}");
+    assert!(
+        finding_ids.contains(&"kernel_kernel_randomize_va_space"),
+        "should flag ASLR, got: {finding_ids:?}"
+    );
+    assert!(
+        finding_ids.contains(&"kernel_kernel_kptr_restrict"),
+        "should flag kptr_restrict, got: {finding_ids:?}"
+    );
+    assert!(
+        finding_ids.contains(&"kernel_net_ipv4_tcp_syncookies"),
+        "should flag tcp_syncookies, got: {finding_ids:?}"
+    );
 }
 
 #[tokio::test]
@@ -135,12 +147,24 @@ async fn test_kernel_scan_partial_config_finds_some_issues() {
         .collect();
 
     // These are insecure
-    assert!(finding_ids.contains(&"kernel_kernel_kptr_restrict"), "insecure kptr_restrict should be flagged");
-    assert!(finding_ids.contains(&"kernel_fs_suid_dumpable"), "insecure suid_dumpable should be flagged");
+    assert!(
+        finding_ids.contains(&"kernel_kernel_kptr_restrict"),
+        "insecure kptr_restrict should be flagged"
+    );
+    assert!(
+        finding_ids.contains(&"kernel_fs_suid_dumpable"),
+        "insecure suid_dumpable should be flagged"
+    );
 
     // These are secure - should NOT be in findings
-    assert!(!finding_ids.contains(&"kernel_kernel_randomize_va_space"), "secure ASLR should not be flagged");
-    assert!(!finding_ids.contains(&"kernel_kernel_dmesg_restrict"), "secure dmesg_restrict should not be flagged");
+    assert!(
+        !finding_ids.contains(&"kernel_kernel_randomize_va_space"),
+        "secure ASLR should not be flagged"
+    );
+    assert!(
+        !finding_ids.contains(&"kernel_kernel_dmesg_restrict"),
+        "secure dmesg_restrict should not be flagged"
+    );
 }
 
 #[tokio::test]
@@ -153,9 +177,16 @@ async fn test_kernel_scan_missing_params_gracefully_skipped() {
     let result = plugin.scan(&ctx).await.unwrap();
 
     // Scan should succeed even with no readable params
-    assert!(result.scan_success, "scan with missing params should still succeed");
+    assert!(
+        result.scan_success,
+        "scan with missing params should still succeed"
+    );
     // No findings because params don't exist
-    assert!(result.scan_findings.is_empty(), "missing params should produce no findings, found: {:?}", result.scan_findings);
+    assert!(
+        result.scan_findings.is_empty(),
+        "missing params should produce no findings, found: {:?}",
+        result.scan_findings
+    );
 }
 
 #[tokio::test]
@@ -174,8 +205,15 @@ async fn test_kernel_scan_finding_structure() {
     assert_eq!(finding.finding_current_value, "0");
     assert_eq!(finding.finding_recommended_value, "2");
     assert_eq!(finding.finding_severity, Severity::Medium);
-    assert!(finding.finding_title.contains("kernel.randomize_va_space"), "finding title should mention param name, got: {}", finding.finding_title);
-    assert!(!finding.finding_compliance.is_empty(), "finding should have compliance mappings");
+    assert!(
+        finding.finding_title.contains("kernel.randomize_va_space"),
+        "finding title should mention param name, got: {}",
+        finding.finding_title
+    );
+    assert!(
+        !finding.finding_compliance.is_empty(),
+        "finding should have compliance mappings"
+    );
 }
 
 #[tokio::test]
@@ -195,7 +233,10 @@ async fn test_kernel_scan_compliance_mappings() {
         .iter()
         .find(|f| f.finding_id == "kernel_kernel_randomize_va_space")
         .unwrap();
-    assert!(!aslr_finding.finding_compliance.is_empty(), "ASLR finding should have compliance mappings");
+    assert!(
+        !aslr_finding.finding_compliance.is_empty(),
+        "ASLR finding should have compliance mappings"
+    );
     assert_eq!(
         aslr_finding.finding_compliance[0].compliance_control_id,
         "1.5.1"
@@ -234,8 +275,15 @@ async fn test_kernel_validate_writable_params() {
     let result = plugin.validate(&ctx, &config).await.unwrap();
 
     // Should have estimated change for writable param
-    assert!(!result.validation_report_estimated_changes.is_empty(), "writable param should produce estimated changes");
-    assert!(result.validation_report_estimated_changes[0].contains("randomize_va_space"), "estimated change should mention randomize_va_space, got: {}", result.validation_report_estimated_changes[0]);
+    assert!(
+        !result.validation_report_estimated_changes.is_empty(),
+        "writable param should produce estimated changes"
+    );
+    assert!(
+        result.validation_report_estimated_changes[0].contains("randomize_va_space"),
+        "estimated change should mention randomize_va_space, got: {}",
+        result.validation_report_estimated_changes[0]
+    );
 }
 
 #[tokio::test]
@@ -259,12 +307,22 @@ async fn test_kernel_validate_readonly_params() {
     let result = plugin.validate(&ctx, &config).await.unwrap();
 
     // Should have validation issue for read-only param
-    assert!(!result.validation_report_is_valid, "read-only param should make validation invalid");
-    assert!(!result.validation_report_issues.is_empty(), "read-only param should produce validation issues");
+    assert!(
+        !result.validation_report_is_valid,
+        "read-only param should make validation invalid"
+    );
+    assert!(
+        !result.validation_report_issues.is_empty(),
+        "read-only param should produce validation issues"
+    );
 
     let issue = &result.validation_report_issues[0];
     assert_eq!(issue.validation_issue_severity, Severity::High);
-    assert!(issue.validation_issue_message.contains("read-only"), "issue should mention read-only, got: {}", issue.validation_issue_message);
+    assert!(
+        issue.validation_issue_message.contains("read-only"),
+        "issue should mention read-only, got: {}",
+        issue.validation_issue_message
+    );
 }
 
 #[tokio::test]
@@ -281,13 +339,23 @@ async fn test_kernel_validate_missing_params() {
 
     // With MockExecutor, missing files return mode=0, which triggers "read-only" check
     // This results in High severity issues, making validation fail
-    assert!(!result.validation_report_is_valid, "missing params (mode=0) should make validation invalid");
-    assert!(!result.validation_report_issues.is_empty(), "missing params should produce validation issues");
+    assert!(
+        !result.validation_report_is_valid,
+        "missing params (mode=0) should make validation invalid"
+    );
+    assert!(
+        !result.validation_report_issues.is_empty(),
+        "missing params should produce validation issues"
+    );
 
     // All issues should be about read-only (mode=0)
     for issue in &result.validation_report_issues {
         assert_eq!(issue.validation_issue_severity, Severity::High);
-        assert!(issue.validation_issue_message.contains("read-only"), "issue should mention read-only, got: {}", issue.validation_issue_message);
+        assert!(
+            issue.validation_issue_message.contains("read-only"),
+            "issue should mention read-only, got: {}",
+            issue.validation_issue_message
+        );
     }
 }
 
@@ -344,7 +412,10 @@ async fn test_kernel_scan_with_remote_executor() {
         .with_file("/proc/sys/kernel/randomize_va_space", "2")
         .with_file("/proc/sys/kernel/kptr_restrict", "1"); // Insecure
 
-    assert!(executor.is_remote(), "remote executor should report as remote");
+    assert!(
+        executor.is_remote(),
+        "remote executor should report as remote"
+    );
 
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = KernelHardeningPlugin::new();
@@ -359,7 +430,11 @@ async fn test_kernel_scan_with_remote_executor() {
             .iter()
             .any(|f| f.finding_id == "kernel_kernel_kptr_restrict"),
         "should flag kptr_restrict on remote, got: {:?}",
-        result.scan_findings.iter().map(|f| &f.finding_id).collect::<Vec<_>>()
+        result
+            .scan_findings
+            .iter()
+            .map(|f| &f.finding_id)
+            .collect::<Vec<_>>()
     );
 }
 
@@ -427,7 +502,10 @@ async fn test_kernel_apply_skips_exceptions() {
         .find(|c| c.change_description.contains("skipped"))
         .expect("should have a skipped change");
     assert!(skipped.change_description.contains("Legacy software"));
-    assert!(skipped.change_success, "skipped change should report success");
+    assert!(
+        skipped.change_success,
+        "skipped change should report success"
+    );
 
     // Should NOT have written to the excepted param's /proc/sys path
     let log = executor.log();
