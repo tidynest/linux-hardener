@@ -551,6 +551,43 @@ impl CheckpointManager {
 
         let path = Path::new(&file_state.file_path);
 
+        // Validate path before any filesystem operations
+        const ALLOWED_PREFIXES: &[&str] = &[
+            "/etc/ssh/",
+            "/etc/sysctl.d/",
+            "/etc/security/",
+            "/etc/pam.d/",
+            "/etc/audit/",
+            "/etc/apparmor",
+            "/etc/selinux/",
+            "/etc/login.defs",
+            "/etc/nftables",
+            "/etc/firewalld/",
+            "/etc/ufw/",
+        ];
+
+        let path_str = &file_state.file_path;
+        if !path_str.starts_with('/')
+            || path.components().any(|c| c == std::path::Component::ParentDir)
+            || !ALLOWED_PREFIXES.iter().any(|p| path_str.starts_with(p))
+        {
+            return (
+                FileRestoreAction::Skipped,
+                Err(HardeningError::Config(format!(
+                    "Rollback path outside allowed directories: {path_str}"
+                ))),
+            );
+        }
+
+        if path.is_symlink() {
+            return (
+                FileRestoreAction::Skipped,
+                Err(HardeningError::Config(format!(
+                    "Rollback target is a symlink: {path_str}"
+                ))),
+            );
+        }
+
         // Determine what action this file needs.
         let action = match (&file_state.file_content, path.is_dir()) {
             (Some(_), _) => FileRestoreAction::Restored,
@@ -624,6 +661,16 @@ impl CheckpointManager {
     pub async fn rollback(&self, checkpoint_id: &CheckpointId) -> Result<RollbackResult> {
         // Retrieve checkpoint and all file states
         let (checkpoint, file_states) = self.get_checkpoint(checkpoint_id).await?;
+
+        // Verify checkpoint integrity before restoring files
+        let digest = Self::generate_digest(
+            &checkpoint.checkpoint_id,
+            &checkpoint.checkpoint_name,
+            checkpoint.checkpoint_timestamp,
+            &checkpoint.checkpoint_username,
+            &file_states,
+        );
+        self.signer.verify(&digest, &checkpoint.checkpoint_signature)?;
 
         let mut all_ok = true;
         let files: Vec<_> = file_states
