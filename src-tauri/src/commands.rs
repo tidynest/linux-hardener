@@ -65,6 +65,11 @@ fn sanitise_error(msg: &str) -> String {
     result
 }
 
+/// Wraps an error into a sanitised string safe for the GUI frontend.
+fn safe_err(e: impl std::fmt::Display) -> String {
+    sanitise_error(&e.to_string())
+}
+
 /// Minimum seconds between consecutive privileged operations.
 const PRIVILEGED_OP_COOLDOWN_SECS: u64 = 5;
 
@@ -143,7 +148,7 @@ fn hosts_config_path() -> Result<std::path::PathBuf, String> {
         .ok_or_else(|| "Cannot determine config directory".to_string())?
         .join("linux-hardener");
     std::fs::create_dir_all(&config_dir)
-        .map_err(|e| format!("Failed to create config directory: {e}"))?;
+        .map_err(|e| safe_err(format!("Failed to create config directory: {e}")))?;
     Ok(config_dir.join("hosts.toml"))
 }
 
@@ -173,17 +178,18 @@ fn load_hosts_config() -> Result<HostsConfig, String> {
     if !path.exists() {
         return Ok(HostsConfig::default());
     }
-    let content =
-        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read hosts config: {e}"))?;
-    toml::from_str(&content).map_err(|e| format!("Failed to parse hosts config: {e}"))
+    let content = std::fs::read_to_string(&path)
+        .map_err(|e| safe_err(format!("Failed to read hosts config: {e}")))?;
+    toml::from_str(&content).map_err(|e| safe_err(format!("Failed to parse hosts config: {e}")))
 }
 
 /// Saves host profiles to TOML config file.
 fn save_hosts_config(config: &HostsConfig) -> Result<(), String> {
     let path = hosts_config_path()?;
     let content = toml::to_string_pretty(config)
-        .map_err(|e| format!("Failed to serialise hosts config: {e}"))?;
-    std::fs::write(&path, content).map_err(|e| format!("Failed to write hosts config: {e}"))
+        .map_err(|e| safe_err(format!("Failed to serialise hosts config: {e}")))?;
+    std::fs::write(&path, content)
+        .map_err(|e| safe_err(format!("Failed to write hosts config: {e}")))
 }
 
 /// Checkpoint information returned to the frontend.
@@ -262,24 +268,26 @@ fn validate_binary_path(path: &str) -> Result<(), String> {
 
     // Must be absolute
     if !p.is_absolute() {
-        return Err(format!("Binary path is not absolute: {path}"));
+        return Err(safe_err(format!("Binary path is not absolute: {path}")));
     }
 
     // Must not be a symlink at the final component
     let meta =
-        std::fs::symlink_metadata(p).map_err(|e| format!("Cannot stat binary {path}: {e}"))?;
+        std::fs::symlink_metadata(p).map_err(|e| safe_err(format!("Cannot stat binary: {e}")))?;
 
     if meta.file_type().is_symlink() {
-        return Err(format!("Binary path is a symlink: {path}"));
+        return Err(safe_err(format!("Binary path is a symlink: {path}")));
     }
 
     if !meta.is_file() {
-        return Err(format!("Binary path is not a regular file: {path}"));
+        return Err(safe_err(format!(
+            "Binary path is not a regular file: {path}"
+        )));
     }
 
     // Must not be world-writable
     if meta.permissions().mode() & 0o002 != 0 {
-        return Err(format!("Binary is world-writable: {path}"));
+        return Err(safe_err(format!("Binary is world-writable: {path}")));
     }
 
     // In release builds, require root ownership
@@ -287,7 +295,7 @@ fn validate_binary_path(path: &str) -> Result<(), String> {
     {
         use std::os::unix::fs::MetadataExt;
         if meta.uid() != 0 {
-            return Err(format!("Binary is not owned by root: {path}"));
+            return Err(safe_err(format!("Binary is not owned by root: {path}")));
         }
     }
 
@@ -394,7 +402,7 @@ fn get_system_db_path() -> std::path::PathBuf {
 /// system DB uses the separated key in `/etc/linux-hardener/`,
 /// use DB uses a sibling key in the same directory.
 async fn create_checkpoint_manager(db_path: &std::path::Path) -> Result<CheckpointManager, String> {
-    let pool = init_db(Some(db_path)).await.map_err(|e| e.to_string())?;
+    let pool = init_db(Some(db_path)).await.map_err(safe_err)?;
 
     let key_path = if db_path.starts_with("/var/lib/linux-hardener") {
         std::path::PathBuf::from("/etc/linux-hardener/signing.key")
@@ -405,8 +413,8 @@ async fn create_checkpoint_manager(db_path: &std::path::Path) -> Result<Checkpoi
             .join("signing.key")
     };
 
-    let signer = CheckpointSigner::new_with_path(&key_path).map_err(|e| e.to_string())?;
-    CheckpointManager::new_with_signer(pool, signer).map_err(|e| e.to_string())
+    let signer = CheckpointSigner::new_with_path(&key_path).map_err(safe_err)?;
+    CheckpointManager::new_with_signer(pool, signer).map_err(safe_err)
 }
 
 /// Creates a ScanHistoryManager with database connection.
@@ -415,9 +423,7 @@ async fn create_checkpoint_manager(db_path: &std::path::Path) -> Result<Checkpoi
 async fn create_scan_history_manager() -> Result<ScanHistoryManager, String> {
     let db_path = get_user_db_path();
 
-    let pool = init_db(Some(db_path.as_path()))
-        .await
-        .map_err(|e| e.to_string())?;
+    let pool = init_db(Some(db_path.as_path())).await.map_err(safe_err)?;
 
     Ok(ScanHistoryManager::new(pool))
 }
@@ -442,17 +448,14 @@ pub async fn run_scan(
     let history_manager = create_scan_history_manager().await?;
 
     // Start a new scan session
-    let session_id = history_manager
-        .start_session()
-        .await
-        .map_err(|e| e.to_string())?;
+    let session_id = history_manager.start_session().await.map_err(safe_err)?;
 
     // Load config if custom path provided
     let config = if let Some(ref path) = config_path {
         ConfigLoader::new()
             .with_cli_config(std::path::PathBuf::from(path))
             .load()
-            .map_err(|e| format!("Failed to load config: {}", e))?
+            .map_err(|e| safe_err(format!("Failed to load config: {}", e)))?
     } else {
         ConfigLoader::new().load().unwrap_or_default()
     };
@@ -462,7 +465,7 @@ pub async fn run_scan(
     let mut results = Vec::new();
 
     // Get list of all plugin metadata
-    let plugin_list = registry.list().map_err(|e| e.to_string())?;
+    let plugin_list = registry.list().map_err(safe_err)?;
 
     for metadata in plugin_list {
         // Skip plugins not in the filter list (if a filter was provided)
@@ -555,13 +558,11 @@ pub async fn run_apply(
     }
 
     // Execute with root privileges
-    let output = run_privileged_command(&args)
-        .await
-        .map_err(|e| e.to_string())?;
+    let output = run_privileged_command(&args).await.map_err(safe_err)?;
 
     // Parse JSON output from CLI
     let parsed: Vec<(PluginMetadata, ApplyResult)> = serde_json::from_str(&output)
-        .map_err(|e| format!("Failed to parse apply results: {}", e))?;
+        .map_err(|e| safe_err(format!("Failed to parse apply results: {}", e)))?;
     let results: Vec<ApplyResult> = parsed.into_iter().map(|(_, r)| r).collect();
 
     Ok(results)
@@ -610,15 +611,15 @@ pub async fn run_apply_dry_run(
         .args(&args)
         .output()
         .await
-        .map_err(|e| format!("Failed to execute dry-run: {}", e))?;
+        .map_err(|e| safe_err(format!("Failed to execute dry-run: {}", e)))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Dry-run failed: {}", stderr));
+        return Err(sanitise_error(&format!("Dry-run failed: {}", stderr)));
     }
 
-    let stdout =
-        String::from_utf8(output.stdout).map_err(|e| format!("Invalid UTF-8 in output: {}", e))?;
+    let stdout = String::from_utf8(output.stdout)
+        .map_err(|e| safe_err(format!("Invalid UTF-8 in output: {}", e)))?;
 
     // Find the JSON array in output (skip any info lines)
     let json_start = stdout.find('[').ok_or("No JSON array found in output")?;
@@ -626,7 +627,7 @@ pub async fn run_apply_dry_run(
 
     // Parse JSON array
     let results: Vec<ValidationReport> = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse dry-run results: {}", e))?;
+        .map_err(|e| safe_err(format!("Failed to parse dry-run results: {}", e)))?;
 
     Ok(results)
 }
@@ -656,11 +657,10 @@ pub async fn run_rollback(
         args.push(&config_flag);
     }
 
-    let output = run_privileged_command(&args)
-        .await
-        .map_err(|e| e.to_string())?;
+    let output = run_privileged_command(&args).await.map_err(safe_err)?;
 
-    serde_json::from_str(&output).map_err(|e| format!("Failed to parse rollback result: {}", e))
+    serde_json::from_str(&output)
+        .map_err(|e| safe_err(format!("Failed to parse rollback result: {}", e)))
 }
 
 /// Retrieves a list of all available checkpoints from both user and system databases.
@@ -679,7 +679,10 @@ pub async fn get_checkpoints() -> Result<Vec<CheckpointInfo>, String> {
         && let Ok(checkpoints) = manager.list_checkpoints().await
     {
         for cp in checkpoints {
-            entries.push((cp, create_checkpoint_manager(&user_db).await.unwrap()));
+            let Ok(mgr) = create_checkpoint_manager(&user_db).await else {
+                continue;
+            };
+            entries.push((cp, mgr));
         }
     }
 
@@ -694,7 +697,10 @@ pub async fn get_checkpoints() -> Result<Vec<CheckpointInfo>, String> {
                 .iter()
                 .any(|(e, _)| e.checkpoint_id == cp.checkpoint_id)
             {
-                entries.push((cp, create_checkpoint_manager(&system_db).await.unwrap()));
+                let Ok(mgr) = create_checkpoint_manager(&system_db).await else {
+                    continue;
+                };
+                entries.push((cp, mgr));
             }
         }
     }
@@ -729,13 +735,11 @@ pub async fn create_checkpoint(name: String) -> Result<String, String> {
 
     let args = vec!["checkpoint", "create", "--format", "json", "--", &name];
 
-    let output = run_privileged_command(&args)
-        .await
-        .map_err(|e| e.to_string())?;
+    let output = run_privileged_command(&args).await.map_err(safe_err)?;
 
     // CLI outputs JSON: {"checkpoint_id": "..."}
-    let parsed: serde_json::Value =
-        serde_json::from_str(&output).map_err(|e| format!("Failed to parse response: {}", e))?;
+    let parsed: serde_json::Value = serde_json::from_str(&output)
+        .map_err(|e| safe_err(format!("Failed to parse response: {}", e)))?;
 
     parsed["checkpoint_id"]
         .as_str()
@@ -768,7 +772,7 @@ pub async fn delete_checkpoint(checkpoint_id: String) -> Result<bool, String> {
     run_privileged_command(&args)
         .await
         .map(|_| true)
-        .map_err(|e| e.to_string())
+        .map_err(safe_err)
 }
 
 /// Parses framework name strings into `ComplianceFramework` enum values.
@@ -795,10 +799,10 @@ fn parse_output_format(format: &str) -> Result<OutputFormat, String> {
         "csv" => Ok(OutputFormat::Csv),
         "html" => Ok(OutputFormat::Html),
         "pdf" => Ok(OutputFormat::Pdf),
-        _ => Err(format!(
+        _ => Err(sanitise_error(&format!(
             "Unsupported format '{}'. Use text, json, csv, html, or pdf.",
             format
-        )),
+        ))),
     }
 }
 
@@ -806,7 +810,7 @@ fn parse_output_format(format: &str) -> Result<OutputFormat, String> {
 async fn collect_findings() -> Result<Vec<Finding>, String> {
     let ctx = Context::new();
     let registry = create_plugin_registry();
-    let plugin_list = registry.list().map_err(|e| e.to_string())?;
+    let plugin_list = registry.list().map_err(safe_err)?;
 
     let mut findings = Vec::new();
     for metadata in plugin_list {
@@ -907,10 +911,11 @@ pub async fn export_compliance_report(
     // Write file (PDF needs binary handling)
     if output_format == OutputFormat::Pdf {
         let bytes: Vec<u8> = formatted.chars().map(|c| c as u8).collect();
-        std::fs::write(&final_path, bytes).map_err(|e| format!("Failed to write PDF: {}", e))?;
+        std::fs::write(&final_path, bytes)
+            .map_err(|e| safe_err(format!("Failed to write PDF: {}", e)))?;
     } else {
         std::fs::write(&final_path, &formatted)
-            .map_err(|e| format!("Failed to write report: {}", e))?;
+            .map_err(|e| safe_err(format!("Failed to write report: {}", e)))?;
     }
 
     Ok(final_path)
@@ -947,7 +952,7 @@ pub async fn get_scan_history(limit: Option<i32>) -> Result<Vec<ScanSessionInfo>
     let sessions = manager
         .list_sessions(limit.unwrap_or(20))
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(safe_err)?;
 
     Ok(sessions.into_iter().map(ScanSessionInfo::from).collect())
 }
@@ -960,17 +965,14 @@ pub async fn get_scan_session(session_id: String) -> Result<Vec<ScanResult>, Str
     let manager = create_scan_history_manager().await?;
     let id = ScanSessionId::new(session_id);
 
-    manager
-        .get_session_results(&id)
-        .await
-        .map_err(|e| e.to_string())
+    manager.get_session_results(&id).await.map_err(safe_err)
 }
 
 /// Lists available hardening plugins with their metadata.
 #[tauri::command]
 pub async fn list_plugins() -> Result<Vec<PluginMetadata>, String> {
     let registry = create_plugin_registry();
-    registry.list().map_err(|e| e.to_string())
+    registry.list().map_err(safe_err)
 }
 
 /// Checkpoint detail info returned to the frontend.
@@ -1149,9 +1151,7 @@ pub async fn connect_remote(
                 user: user_display,
             })
         }
-        Err(e) => Ok(RemoteConnectionStatus::Failed {
-            error: format!("{e}"),
-        }),
+        Err(e) => Ok(RemoteConnectionStatus::Failed { error: safe_err(e) }),
     }
 }
 
@@ -1192,7 +1192,7 @@ pub async fn run_remote_scan(
     let registry = create_plugin_registry();
 
     let mut results = Vec::new();
-    let plugin_list = registry.list().map_err(|e| e.to_string())?;
+    let plugin_list = registry.list().map_err(safe_err)?;
 
     for metadata in plugin_list {
         if let Some(ref ids) = plugin_ids
@@ -1234,8 +1234,8 @@ pub async fn get_scheduler_config() -> Result<hardener_types::scheduler::Schedul
         return Ok(hardener_types::scheduler::SchedulerUiConfig::default());
     }
 
-    let content =
-        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read config: {e}"))?;
+    let content = std::fs::read_to_string(&path)
+        .map_err(|e| safe_err(format!("Failed to read config: {e}")))?;
 
     #[derive(serde::Deserialize)]
     struct ConfigFile {
@@ -1244,7 +1244,7 @@ pub async fn get_scheduler_config() -> Result<hardener_types::scheduler::Schedul
     }
 
     let config: ConfigFile =
-        toml::from_str(&content).map_err(|e| format!("Failed to parse config: {e}"))?;
+        toml::from_str(&content).map_err(|e| safe_err(format!("Failed to parse config: {e}")))?;
 
     Ok(config.scheduler)
 }
@@ -1271,31 +1271,32 @@ pub async fn save_scheduler_config(
 
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create config directory: {e}"))?;
+            .map_err(|e| safe_err(format!("Failed to create config directory: {e}")))?;
     }
 
     let content = if path.exists() {
-        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read config: {e}"))?
+        std::fs::read_to_string(&path)
+            .map_err(|e| safe_err(format!("Failed to read config: {e}")))?
     } else {
         String::new()
     };
 
     let mut document: toml_edit::DocumentMut = content
         .parse()
-        .map_err(|e| format!("Failed to parse config: {e}"))?;
+        .map_err(|e| safe_err(format!("Failed to parse config: {e}")))?;
 
     let scheduler_toml = toml::to_string(&config)
-        .map_err(|e| format!("Failed to serialise scheduler config: {e}"))?;
+        .map_err(|e| safe_err(format!("Failed to serialise scheduler config: {e}")))?;
     let scheduler_table: toml_edit::DocumentMut = scheduler_toml
         .parse()
-        .map_err(|e| format!("Failed to parse scheduler TOML: {e}"))?;
+        .map_err(|e| safe_err(format!("Failed to parse scheduler TOML: {e}")))?;
 
     document["scheduler"] = scheduler_table.as_item().clone();
 
     std::fs::write(&path, document.to_string())
-        .map_err(|e| format!("Failed to write config: {e}"))?;
+        .map_err(|e| safe_err(format!("Failed to write config: {e}")))?;
 
-    Ok(path.display().to_string())
+    Ok("Configuration saved".to_string())
 }
 
 /// Sends a test notification through all enabled channels.
@@ -1305,10 +1306,11 @@ pub async fn save_scheduler_config(
 #[tauri::command]
 pub async fn test_notification() -> Result<hardener_types::scheduler::TestNotificationResult, String>
 {
+    let _guard = PrivilegedOpGuard::acquire()?;
     let path = hardener_config_path()?;
     let scheduler_config = if path.exists() {
-        let content =
-            std::fs::read_to_string(&path).map_err(|e| format!("Failed to read config: {e}"))?;
+        let content = std::fs::read_to_string(&path)
+            .map_err(|e| safe_err(format!("Failed to read config: {e}")))?;
 
         #[derive(serde::Deserialize)]
         struct ConfigFile {
@@ -1316,18 +1318,19 @@ pub async fn test_notification() -> Result<hardener_types::scheduler::TestNotifi
             scheduler: hardener_scheduler::SchedulerConfig,
         }
 
-        let config: ConfigFile =
-            toml::from_str(&content).map_err(|e| format!("Failed to parse config: {e}"))?;
+        let config: ConfigFile = toml::from_str(&content)
+            .map_err(|e| safe_err(format!("Failed to parse config: {e}")))?;
         config.scheduler
     } else {
         hardener_scheduler::SchedulerConfig::default()
     };
 
     // Create temporary database for notification logging
-    let tmp_dir = tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {e}"))?;
+    let tmp_dir =
+        tempfile::tempdir().map_err(|e| safe_err(format!("Failed to create temp dir: {e}")))?;
     let db_manager = hardener_scheduler::ScanHistoryManager::new(&tmp_dir.path().join("test.db"))
         .await
-        .map_err(|e| format!("Failed to create temp DB: {e}"))?;
+        .map_err(|e| safe_err(format!("Failed to create temp DB: {e}")))?;
 
     let summary = hardener_scheduler::ScanSummary {
         session_id: "test-notification".into(),

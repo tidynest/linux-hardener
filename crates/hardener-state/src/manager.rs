@@ -265,7 +265,11 @@ impl CheckpointManager {
         hash_context.update(&checkpoint_timestamp.to_be_bytes());
         hash_context.update(checkpoint_username.as_bytes());
 
-        for file_state in file_states {
+        // Sort by path for deterministic ordering regardless of DB row order
+        let mut sorted_states: Vec<&FileState> = file_states.iter().collect();
+        sorted_states.sort_by_key(|s| &s.file_path);
+
+        for file_state in sorted_states {
             hash_context.update(file_state.file_path.as_bytes());
             if let Some(content) = &file_state.file_content {
                 hash_context.update(content);
@@ -301,7 +305,7 @@ impl CheckpointManager {
             checkpoint_username,
             file_states,
         );
-        Ok(self.signer.sign(&digest))
+        self.signer.sign(&digest)
     }
 
     /// Creates a new checkpoint capturing the state of specified files.
@@ -517,7 +521,8 @@ impl CheckpointManager {
                 owner_uid,
                 owner_gid
             FROM
-                file_states WHERE checkpoint_id = ?",
+                file_states WHERE checkpoint_id = ?
+            ORDER BY file_path",
         )
         .bind(checkpoint_id.as_str())
         .fetch_all(&self.db_pool)

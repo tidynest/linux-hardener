@@ -63,7 +63,7 @@ Findings are ordered by remediation priority, which considers severity, cascade 
 | 47 | SAM-057 | Low | Key bytes not zeroed | S | -- | Fixed |
 | 48 | SAM-054 | Low | No key rotation | L | -- | Fixed |
 | 49 | SAM-055 | Low | Non-constant-time hash compare | S | -- | Fixed |
-| 50+ | Remaining | Low | See sections below | S-M | -- | Open |
+| 50+ | Remaining | Low | See sections below | S-M | -- | Partially Fixed |
 
 **Effort Key:** S = Small (< 1 hour, localised change), M = Medium (1-4 hours, touches multiple files), L = Large (> 4 hours, architectural change)
 
@@ -205,13 +205,13 @@ These are lower-priority findings that improve overall security posture without 
 | SAM-039 | Capability | Define explicit Tauri capability ACLs for custom commands | After SAM-038 |
 | SAM-044 | Rate Limiting | Add minimum interval between privileged operations | After SAM-042 |
 | SAM-035 | Email | Sanitise hostname in email subject | After SAM-010 |
-| SAM-020 | File Safety | Use O_CREAT O_EXCL for backup file creation | After SAM-047 |
+| SAM-020 | File Safety | Use O_CREAT O_EXCL for backup file creation | **Fixed** (randomised suffix + no-dereference) |
 | SAM-022 | TOCTOU | Open file once for both metadata and content in capture | After SAM-019 |
 | SAM-023 | TOCTOU | Add flock() for config read-modify-write cycles | Opportunistic |
 | SAM-045 | TOCTOU | Use fchmod() with O_NOFOLLOW for permissions changes | Opportunistic |
 | SAM-018 | Rollback | Implement two-phase rollback with pre-validation | After SAM-001+SAM-002 |
 | SAM-032 | GUI | Show signature verification status in checkpoint list | After SAM-001 |
-| SAM-069 | Error Handling | Map internal errors to user-friendly messages | Opportunistic |
+| SAM-069 | Error Handling | Map internal errors to user-friendly messages | **Fixed** |
 | SAM-052 | Data Integrity | Return errors for corrupted JSON instead of empty defaults | Opportunistic |
 | SAM-062 | DoS | Bound directive/exception map sizes after parsing | After SAM-037 |
 | SAM-063 | Config | Validate env var override plugin IDs against registry | Opportunistic |

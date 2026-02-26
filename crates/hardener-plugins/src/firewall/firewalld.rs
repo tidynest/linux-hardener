@@ -10,6 +10,27 @@ use hardener_common::error::{HardeningError, Result};
 use hardener_core::{Change, ChangeType, context::Context};
 use tracing::{debug, error, info, warn};
 
+/// Validates that a firewalld zone name contains only safe characters.
+pub fn validate_zone_name(name: &str) -> Result<()> {
+    if name.is_empty() || name.len() > 64 {
+        return Err(HardeningError::Config("Invalid zone name length".into()));
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(HardeningError::Config(format!(
+            "Zone name contains invalid characters: {name}"
+        )));
+    }
+    if name.starts_with('-') {
+        return Err(HardeningError::Config(
+            "Zone name must not start with a dash".into(),
+        ));
+    }
+    Ok(())
+}
+
 /// Firewalld backend for RHEL/Fedora/CentOS systems.
 ///
 /// Firewalld uses zones (e.g., "public", "trusted") to organise rules.
@@ -48,7 +69,9 @@ impl FirewalldBackend {
         let output = self
             .execute_firewall_cmd(ctx, &["--get-default-zone"])
             .await?;
-        Ok(output.trim().to_string())
+        let zone = output.trim().to_string();
+        validate_zone_name(&zone)?;
+        Ok(zone)
     }
 }
 

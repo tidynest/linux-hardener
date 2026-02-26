@@ -88,6 +88,10 @@ fn validate_plugin_directives(
     errors: &mut Vec<String>,
 ) {
     for (key, value) in directives {
+        if let Err(reason) = validate_directive_key(section, key) {
+            errors.push(format!("[{section}.directives] {key}: {reason}"));
+            continue;
+        }
         if let Err(reason) = check_universal(value) {
             errors.push(format!("[{section}.directives] {key}: {reason}"));
         } else if let Err(reason) = plugin_validator(key, value) {
@@ -106,6 +110,26 @@ fn check_universal(value: &str) -> std::result::Result<(), String> {
             c => format!("'{c}'"),
         };
         return Err(format!("contains forbidden character {label}"));
+    }
+    Ok(())
+}
+
+/// Validates directive keys for safe characters. Prevents path traversal
+/// via sysctl `.replace('.', "/")` in the kernel plugin.
+pub fn validate_directive_key(plugin_id: &str, key: &str) -> std::result::Result<(), String> {
+    if key.is_empty() || key.len() > 128 {
+        return Err(format!("directive key too long or empty: '{key}'"));
+    }
+    if !key
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-' || c == '/')
+    {
+        return Err(format!(
+            "directive key for '{plugin_id}' contains invalid characters: '{key}'"
+        ));
+    }
+    if key.contains("..") {
+        return Err(format!("directive key contains '..': '{key}'"));
     }
     Ok(())
 }
@@ -201,12 +225,26 @@ fn validate_pam_value(_key: &str, value: &str) -> std::result::Result<(), String
 }
 
 /// Permissions: octal mode string like "700", "0755".
+/// Rejects special bits (SUID/SGID/sticky), world-writable, and zero modes.
 fn validate_permissions_value(_key: &str, value: &str) -> std::result::Result<(), String> {
     if value.len() < 3 || value.len() > 4 {
         return Err(format!("expected 3-4 digit octal mode, got '{value}'"));
     }
     if !value.chars().all(|c| ('0'..='7').contains(&c)) {
         return Err(format!("expected octal digits (0-7), got '{value}'"));
+    }
+    let mode =
+        u32::from_str_radix(value, 8).map_err(|_| format!("invalid octal mode: '{value}'"))?;
+    if mode & 0o7000 != 0 {
+        return Err(format!(
+            "special bits (SUID/SGID/sticky) not allowed: '{value}'"
+        ));
+    }
+    if mode & 0o002 != 0 {
+        return Err(format!("world-writable mode not allowed: '{value}'"));
+    }
+    if mode == 0 {
+        return Err(format!("zero permissions not allowed: '{value}'"));
     }
     Ok(())
 }
@@ -269,10 +307,34 @@ mod tests {
     fn test_permissions_value_validation() {
         assert!(validate_permissions_value("/root", "700").is_ok());
         assert!(validate_permissions_value("/boot", "0755").is_ok());
+        assert!(validate_permissions_value("/etc/ssh", "0600").is_ok());
+        assert!(validate_permissions_value("/tmp", "644").is_ok());
         assert!(validate_permissions_value("/etc", "rwx").is_err());
         assert!(validate_permissions_value("/etc", "888").is_err());
         assert!(validate_permissions_value("/etc", "77").is_err());
         assert!(validate_permissions_value("/etc", "12345").is_err());
+    }
+
+    #[test]
+    fn test_permissions_rejects_suid() {
+        assert!(validate_permissions_value("key", "4755").is_err());
+    }
+
+    #[test]
+    fn test_permissions_rejects_sgid() {
+        assert!(validate_permissions_value("key", "2755").is_err());
+    }
+
+    #[test]
+    fn test_permissions_rejects_world_writable() {
+        assert!(validate_permissions_value("key", "777").is_err());
+        assert!(validate_permissions_value("key", "0777").is_err());
+    }
+
+    #[test]
+    fn test_permissions_rejects_no_access() {
+        assert!(validate_permissions_value("key", "000").is_err());
+        assert!(validate_permissions_value("key", "0000").is_err());
     }
 
     #[test]
@@ -312,5 +374,24 @@ mod tests {
             .insert("/root".to_string(), "700".to_string());
 
         assert!(validate_config(&config).is_ok());
+    }
+
+    #[test]
+    fn test_kernel_key_rejects_path_traversal() {
+        assert!(validate_directive_key("kernel", "kernel/../../../etc/passwd").is_err());
+        assert!(validate_directive_key("kernel", "net.ipv4.../../secret").is_err());
+    }
+
+    #[test]
+    fn test_kernel_key_rejects_shell_metacharacters() {
+        assert!(validate_directive_key("kernel", "net.ipv4; rm -rf /").is_err());
+        assert!(validate_directive_key("kernel", "key\nnewline").is_err());
+    }
+
+    #[test]
+    fn test_kernel_key_accepts_valid_sysctl_names() {
+        assert!(validate_directive_key("kernel", "net.ipv4.tcp_syncookies").is_ok());
+        assert!(validate_directive_key("kernel", "kernel.randomize_va_space").is_ok());
+        assert!(validate_directive_key("kernel", "fs.protected_hardlinks").is_ok());
     }
 }

@@ -48,12 +48,15 @@ impl ReportFormatter for CsvFormatter {
             let title_escaped = escape_csv_field(&control.control_title);
             let section_escaped = escape_csv_field(&control.control_section);
 
+            let framework_escaped = escape_csv_field(&report.report_framework.to_string());
+            let control_id_escaped = escape_csv_field(&control.control_id);
+
             output.push_str(&format!(
                 "{},{},{},{},{},{},{},{}\n",
-                report.report_framework,
+                framework_escaped,
                 framework_name,
                 framework_desc,
-                control.control_id,
+                control_id_escaped,
                 title_escaped,
                 section_escaped,
                 status_str,

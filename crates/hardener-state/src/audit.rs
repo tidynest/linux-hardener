@@ -63,9 +63,15 @@ impl AuditEntry {
     /// * `user`        - Username performing the action
     /// * `target`      - Target of the action
     /// * `hash`        - Hash chain value for this entry
-    pub fn new(action_type: ActionType, user: String, target: String, hash: Vec<u8>) -> AuditEntry {
+    pub fn new(
+        action_type: ActionType,
+        user: String,
+        target: String,
+        hash: Vec<u8>,
+        timestamp: DateTime<Utc>,
+    ) -> AuditEntry {
         Self {
-            entry_timestamp: Utc::now(),
+            entry_timestamp: timestamp,
             entry_action_type: action_type,
             entry_user: user,
             entry_target: target,
@@ -89,12 +95,13 @@ impl AuditEntry {
         target: String,
         error_message: String,
         hash: Vec<u8>,
+        timestamp: DateTime<Utc>,
     ) -> AuditEntry {
         let mut details = HashMap::new();
         details.insert("error".to_string(), error_message);
 
         AuditEntry {
-            entry_timestamp: Utc::now(),
+            entry_timestamp: timestamp,
             entry_action_type: action_type,
             entry_user: user,
             entry_target: target,
@@ -275,15 +282,15 @@ impl AuditLogger {
         // Lock the hash chain
         let mut chain = self.hash_chain.lock().await;
 
-        // Serialise entry data for hashing (without the hash itself)
-        let entry_data = (Utc::now().timestamp(), action_type, &user, &target, result);
+        // Compute timestamp ONCE for both hash and entry
+        let now = Utc::now();
+
+        let entry_data = (now.timestamp(), action_type, &user, &target, result);
         let serialised_data = serde_json::to_vec(&entry_data)?;
 
-        // Compute hash for this entry
         let hash = chain.next_hash(&serialised_data);
 
-        // Create the full entry with the hash
-        let entry = AuditEntry::new(action_type, user, target, hash.clone());
+        let entry = AuditEntry::new(action_type, user, target, hash.clone(), now);
 
         // Serialise the complete entry for writing
         let mut entry_json = serde_json::to_vec(&entry)?;
@@ -320,9 +327,11 @@ impl AuditLogger {
         // Lock the hash chain
         let mut chain = self.hash_chain.lock().await;
 
-        // Serialise entry data for hashing
+        // Compute timestamp ONCE for both hash and entry
+        let now = Utc::now();
+
         let entry_data = (
-            Utc::now().timestamp(),
+            now.timestamp(),
             action_type,
             &user,
             &target,
@@ -331,11 +340,10 @@ impl AuditLogger {
         );
         let serialised_data = serde_json::to_vec(&entry_data)?;
 
-        // Compute hash for this entry
         let hash = chain.next_hash(&serialised_data);
 
-        // Create failure entry with error message
-        let entry = AuditEntry::new_failure(action_type, user, target, error_message, hash.clone());
+        let entry =
+            AuditEntry::new_failure(action_type, user, target, error_message, hash.clone(), now);
 
         // Serialise and write
         let mut entry_json = serde_json::to_vec(&entry)?;

@@ -437,3 +437,19 @@ async fn test_firewall_validate_skips_exceptions() {
         report.validation_report_estimated_changes
     );
 }
+
+#[test]
+fn test_zone_name_validation() {
+    use hardener_plugins::firewall::firewalld::validate_zone_name;
+
+    assert!(validate_zone_name("public").is_ok());
+    assert!(validate_zone_name("trusted").is_ok());
+    assert!(validate_zone_name("my-zone").is_ok());
+    assert!(validate_zone_name("zone_1").is_ok());
+
+    assert!(validate_zone_name("").is_err());
+    assert!(validate_zone_name("--help").is_err());
+    assert!(validate_zone_name("zone; rm -rf /").is_err());
+    assert!(validate_zone_name(&"a".repeat(65)).is_err());
+    assert!(validate_zone_name("zone\nnewline").is_err());
+}

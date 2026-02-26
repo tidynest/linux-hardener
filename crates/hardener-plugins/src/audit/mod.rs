@@ -302,9 +302,13 @@ async fn read_current_audit_rules(ctx: &Context) -> AuditRulesResult {
 
 /// Writes audit rules to the hardening rules file with backup.
 async fn write_audit_rules_file(ctx: &Context, content: &str) -> Result<String> {
-    // Create backup with timestamp
+    // Create backup with timestamp + random suffix to prevent symlink attacks
     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-    let backup_path = format!("{}.backup.{}", AUDIT_RULES_PATH, timestamp);
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .subsec_nanos();
+    let backup_path = format!("{}.backup.{}.{:08x}", AUDIT_RULES_PATH, timestamp, nonce);
 
     // Backup existing file if it exists
     if ctx
@@ -314,7 +318,7 @@ async fn write_audit_rules_file(ctx: &Context, content: &str) -> Result<String> 
         .unwrap_or(false)
     {
         ctx.executor()
-            .execute_command("cp", &[AUDIT_RULES_PATH, &backup_path])
+            .execute_command("cp", &["--no-dereference", AUDIT_RULES_PATH, &backup_path])
             .await?;
     }
 

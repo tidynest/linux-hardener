@@ -20,7 +20,7 @@ fn test_signer_creates_new_key() {
     );
 
     // Should be able to sign with the new key
-    let signature = signer.sign(b"test data");
+    let signature = signer.sign(b"test data").unwrap();
     assert_eq!(signature.len(), 64);
 }
 
@@ -31,11 +31,11 @@ fn test_signer_loads_existing_key() {
 
     // Create first signer (generates key)
     let signer1 = CheckpointSigner::new_with_path(&key_path).unwrap();
-    let sig1 = signer1.sign(b"test data");
+    let sig1 = signer1.sign(b"test data").unwrap();
 
     // Create second signer (loads same key)
     let signer2 = CheckpointSigner::new_with_path(&key_path).unwrap();
-    let sig2 = signer2.sign(b"test data");
+    let sig2 = signer2.sign(b"test data").unwrap();
 
     // Both signers should produce the same signature
     assert_eq!(sig1, sig2);
@@ -49,7 +49,7 @@ fn test_sign_and_verify_success() {
     let signer = CheckpointSigner::new_with_path(&key_path).unwrap();
     let data = b"important checkpoint data";
 
-    let signature = signer.sign(data);
+    let signature = signer.sign(data).unwrap();
     let result = signer.verify(data, &signature);
 
     assert!(result.is_ok());
@@ -63,7 +63,7 @@ fn test_verify_fails_with_wrong_data() {
     let signer = CheckpointSigner::new_with_path(&key_path).unwrap();
     let data = b"original data";
 
-    let signature = signer.sign(data);
+    let signature = signer.sign(data).unwrap();
     let result = signer.verify(b"tampered data", &signature);
 
     assert!(result.is_err());
@@ -77,7 +77,7 @@ fn test_verify_fails_with_wrong_signature() {
     let signer = CheckpointSigner::new_with_path(&key_path).unwrap();
     let data = b"original data";
 
-    let mut signature = signer.sign(data);
+    let mut signature = signer.sign(data).unwrap();
     // Tamper with signature
     signature[0] ^= 0xFF;
 
@@ -123,8 +123,8 @@ fn test_different_keys_produce_different_signatures() {
     let signer2 = CheckpointSigner::new_with_path(&key_path2).unwrap();
 
     let data = b"same data";
-    let sig1 = signer1.sign(data);
-    let sig2 = signer2.sign(data);
+    let sig1 = signer1.sign(data).unwrap();
+    let sig2 = signer2.sign(data).unwrap();
 
     // Different keys should produce different signatures
     assert_ne!(sig1, sig2);
@@ -138,7 +138,7 @@ fn test_public_key_only_verification() {
     // Create signer (generates both private + public key)
     let signer = CheckpointSigner::new_with_path(&key_path).unwrap();
     let data = b"important checkpoint data";
-    let signature = signer.sign(data);
+    let signature = signer.sign(data).unwrap();
 
     // Remove private key, keeping only public key
     fs::remove_file(&key_path).unwrap();
@@ -168,4 +168,23 @@ fn test_key_file_permissions() {
     use std::os::unix::fs::PermissionsExt;
     let perms = fs::metadata(&key_path).unwrap().permissions();
     assert_eq!(perms.mode() & 0o777, 0o400);
+}
+
+#[test]
+fn test_sign_returns_error_in_verify_only_mode() {
+    let dir = tempdir().unwrap();
+    let key_path = dir.path().join("test.key");
+
+    // Create a full signer, then load verifier-only
+    let _signer = CheckpointSigner::new_with_path(&key_path).unwrap();
+
+    // Delete private key, keep only public key
+    fs::remove_file(&key_path).unwrap();
+
+    let verifier = CheckpointSigner::new_with_path(&key_path).unwrap();
+    assert!(!verifier.can_sign());
+
+    // sign() should return Err, not panic
+    let result = verifier.sign(b"test data");
+    assert!(result.is_err());
 }

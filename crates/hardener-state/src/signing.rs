@@ -294,13 +294,14 @@ impl CheckpointSigner {
     ///
     /// Requires the private key to be available. Returns an error in
     /// verification-only mode.
-    pub fn sign(&self, data: &[u8]) -> Vec<u8> {
-        let signing_key = self
-            .signing_key
-            .as_ref()
-            .expect("sign() called in verification-only mode");
+    pub fn sign(&self, data: &[u8]) -> Result<Vec<u8>> {
+        let signing_key = self.signing_key.as_ref().ok_or_else(|| {
+            HardeningError::Config(
+                "Cannot sign: private key not available (verification-only mode)".to_string(),
+            )
+        })?;
         let signature: Signature = signing_key.sign(data);
-        signature.to_bytes().to_vec()
+        Ok(signature.to_bytes().to_vec())
     }
 
     /// Verifies a signature against data.
