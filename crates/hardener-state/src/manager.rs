@@ -657,12 +657,28 @@ impl CheckpointManager {
         }
 
         if path.is_symlink() {
-            return (
-                FileRestoreAction::Skipped,
-                Err(HardeningError::Config(format!(
-                    "Rollback target is a symlink: {path_str}"
-                ))),
-            );
+            if let Ok(resolved) = path.canonicalize() {
+                let resolved_str = resolved.to_string_lossy();
+                if !self
+                    .allowed_rollback_prefixes
+                    .iter()
+                    .any(|p| resolved_str.starts_with(p))
+                {
+                    return (
+                        FileRestoreAction::Skipped,
+                        Err(HardeningError::Config(format!(
+                            "Rollback symlink {path_str} resolves outside allowed directories"
+                        ))),
+                    );
+                }
+            } else {
+                return (
+                    FileRestoreAction::Skipped,
+                    Err(HardeningError::Config(format!(
+                        "Rollback target is a broken symlink: {path_str}"
+                    ))),
+                );
+            }
         }
 
         // Determine what action this file needs.
@@ -742,8 +758,10 @@ impl CheckpointManager {
             .verify(&digest, &checkpoint.checkpoint_signature)?;
 
         // Phase 1: Pre-validate all targets before writing anything.
-        // Rejects if any target path fails the allowlist check or is a symlink,
-        // preventing a partially-rolled-back inconsistent state.
+        // Rejects if any target path fails the allowlist check, preventing a
+        // partially-rolled-back inconsistent state. Symlinks are allowed only
+        // if their resolved target is also within the allowed prefixes (e.g.
+        // Debian symlinks /etc/sysctl.d/99-sysctl.conf -> /etc/sysctl.conf).
         for fs in &file_states {
             let path = Path::new(&fs.file_path);
             let path_str = &fs.file_path;
@@ -762,9 +780,21 @@ impl CheckpointManager {
                 )));
             }
             if path.is_symlink() {
-                return Err(HardeningError::Config(format!(
-                    "Rollback aborted: target is a symlink: {path_str}"
-                )));
+                let resolved = path.canonicalize().map_err(|e| {
+                    HardeningError::Config(format!(
+                        "Rollback aborted: cannot resolve symlink {path_str}: {e}"
+                    ))
+                })?;
+                let resolved_str = resolved.to_string_lossy();
+                if !self
+                    .allowed_rollback_prefixes
+                    .iter()
+                    .any(|p| resolved_str.starts_with(p))
+                {
+                    return Err(HardeningError::Config(format!(
+                        "Rollback aborted: symlink {path_str} resolves outside allowed directories"
+                    )));
+                }
             }
         }
 
