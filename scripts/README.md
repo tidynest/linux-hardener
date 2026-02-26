@@ -1,5 +1,7 @@
 # Project Scripts
 
+**Last Updated**: 2026-02-26
+
 This directory contains utility scripts for the Linux Hardening Tool project.
 
 ## Quick Reference
@@ -1397,5 +1399,3 @@ Additional utility scripts can be added here:
 - Performance benchmarking scripts
 
 ---
-
-**Last Updated**: 2026-02-25

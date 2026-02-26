@@ -1,6 +1,6 @@
 # Linux System Hardener - File Map
 
-**Last Updated:** 2026-02-25
+**Last Updated:** 2026-02-26
 
 This document lists all source files with their purpose and key exports.
 
@@ -61,6 +61,7 @@ pub struct ComplianceSummary { summary_total_controls, summary_passing, summary_
 | `src/commands/systemd.rs` | Systemd unit file commands | `generate()`, `install()`, `uninstall()`, `status()` |
 | `src/commands/history.rs` | Scan history commands | `list()`, `show()`, `export()` |
 | `src/ssh_config.rs` | SSH connection config helper | `SshConnectionConfig` |
+| `src/commands/state.rs` | Shared state initialisation (DB + signing key paths) | `get_checkpoint_manager()`, `get_audit_logger()`, `effective_user()` |
 
 ---
 
@@ -76,6 +77,7 @@ pub struct ComplianceSummary { summary_total_controls, summary_passing, summary_
 | `src/config.rs` | Configuration structs | `HardenerConfig`, `GlobalConfig`, `PluginConfig`, `PolicyException` |
 | `src/config_loader.rs` | Config loading and merging | `ConfigLoader` |
 | `src/testing.rs` | MockPlugin builder for tests | `MockPlugin` |
+| `src/config_validation.rs` | Config directive validation at load time | `validate_config()`, per-plugin validators (kernel, SSH, firewall, PAM, permissions) |
 | `src/executor/mod.rs` | SystemExecutor trait and types | `SystemExecutor`, `CommandOutput`, `FileMetadata` |
 | `src/executor/local.rs` | Local file/command operations | `LocalExecutor` |
 | `src/executor/ssh.rs` | SSH remote operations | `SshExecutor`, `SshConfig` |
@@ -106,6 +108,7 @@ pub trait HardeningPlugin: Send + Sync {
 | `src/error.rs` | Error types | `HardeningError`, `Result<T>` |
 | `src/logging.rs` | Logging setup | `init_logging()` |
 | `src/file_utils.rs` | File utilities | `update_file_atomically()`, `read_config_file()`, `set_config_directive()`, `create_timestamped_backup()` |
+| `src/binary_utils.rs` | Safe binary path resolution (CWE-426 prevention) | `resolve_binary()`, `TRUSTED_PATH` |
 
 **Note**: Core types (Severity, FindingCategory, etc.) are now defined in `hardener-types` and re-exported here for backwards compatibility.
 
@@ -518,8 +521,9 @@ pub async fn invoke_pick_config_file() -> Result<Option<String>, String>;
 |------|---------|-------------|
 | `src/main.rs` | Tauri app entry | `main()` |
 | `src/commands.rs` | Tauri invoke handlers | `run_scan`, `run_apply`, `run_apply_dry_run`, `run_rollback`, `get_checkpoints`, `create_checkpoint`, `delete_checkpoint`, `get_checkpoint_detail`, `generate_compliance_report`, `export_compliance_report`, `get_scan_history`, `get_scan_session`, `list_plugins`, `get_latest_scan`, `list_remote_hosts`, `save_remote_host`, `delete_remote_host`, `connect_remote`, `disconnect_remote`, `run_remote_scan`, `get_scheduler_config`, `save_scheduler_config`, `test_notification`, `validate_config`, `pick_config_file` |
+| `src/validation.rs` | IPC input validation layer | `validate_ipc_string()`, `validate_plugin_ids()`, `validate_checkpoint_id()`, `validate_checkpoint_name()`, `validate_privileged_config_path()`, `validate_user_config_path()`, `validate_output_path()`, `validate_ssh_key_path()` |
 
-### Tauri Commands (25 total)
+### Tauri Commands
 
 ```rust
 // Core scan/apply/rollback
@@ -579,11 +583,11 @@ pub async fn run_remote_scan(plugin_ids: Option<Vec<String>>, state: tauri::Stat
 
 // Scheduler
 #[tauri::command]
-pub async fn get_scheduler_config() -> Result<SchedulerUiConfig, String>
+pub async fn get_scheduler_config() -> Result<hardener_types::scheduler::SchedulerUiConfig, String>
 #[tauri::command]
-pub async fn save_scheduler_config(config: SchedulerUiConfig) -> Result<String, String>
+pub async fn save_scheduler_config(config: hardener_types::scheduler::SchedulerUiConfig) -> Result<String, String>
 #[tauri::command]
-pub async fn test_notification() -> Result<TestNotificationResult, String>
+pub async fn test_notification() -> Result<hardener_types::scheduler::TestNotificationResult, String>
 
 // Config file picker
 #[tauri::command]

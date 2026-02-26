@@ -9,7 +9,7 @@ const { expect } = require('@playwright/test');
  * Checks for the nav header which only appears after Leptos hydrates.
  */
 async function waitForApp(page) {
-  await page.waitForSelector('.nav-header', { timeout: 15000 });
+  await page.waitForSelector('.nav-header', { timeout: 20000 });
 }
 
 /**

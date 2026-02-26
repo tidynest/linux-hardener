@@ -103,12 +103,16 @@ const STATES = [
     setup: async (page) => {
       await loadApp(page, '/hardening');
       await page.locator('.section-btn', { hasText: 'History' }).click();
-      await page.waitForSelector('.history-section', { timeout: 5000 });
+      await page.waitForSelector('.history-section', { timeout: 10000 });
     },
   },
 ];
 
 test.describe('Theme Screenshots', () => {
+  // Longer timeout for screenshot captures — Chromium slows under memory
+  // pressure after 70+ prior tests in containerised environments
+  test.describe.configure({ timeout: 60000 });
+
   for (const theme of THEMES) {
     for (const state of STATES) {
       test(`screenshot: ${state.name} [${theme.name}]`, async ({ page }) => {
