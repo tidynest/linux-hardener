@@ -474,8 +474,30 @@ impl HardeningPlugin for MacHardeningPlugin {
         info!("MAC configuration files restored from checkpoint");
 
         // Reload SELinux/AppArmor based on what's available
-        // Try SELinux first
-        let selinux_result = ctx.executor().execute_command("setenforce", &["1"]).await;
+        // Try SELinux first — restore mode from the config we just rolled back
+        let selinux_mode = std::fs::read_to_string("/etc/selinux/config")
+            .ok()
+            .and_then(|content| {
+                content.lines().find_map(|line| {
+                    let trimmed = line.trim();
+                    trimmed
+                        .strip_prefix("SELINUX=")
+                        .filter(|_| !trimmed.starts_with('#'))
+                        .map(|v| {
+                            if v.trim().eq_ignore_ascii_case("enforcing") {
+                                "1"
+                            } else {
+                                "0"
+                            }
+                        })
+                })
+            })
+            .unwrap_or("1");
+
+        let selinux_result = ctx
+            .executor()
+            .execute_command("setenforce", &[selinux_mode])
+            .await;
 
         if selinux_result.is_ok() {
             info!("SELinux policy reloaded");

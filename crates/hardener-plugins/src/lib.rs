@@ -121,14 +121,30 @@ pub use ssh::SshHardeningPlugin;
 /// Used by CLI commands, Tauri backend, and tests.
 pub fn create_plugin_registry() -> hardener_core::PluginRegistry {
     let registry = hardener_core::PluginRegistry::new();
-    let _ = registry.register(Box::new(AuditHardeningPlugin::new()));
-    let _ = registry.register(Box::new(FirewallHardeningPlugin::new()));
-    let _ = registry.register(Box::new(KernelHardeningPlugin::new()));
-    let _ = registry.register(Box::new(MacHardeningPlugin::new()));
-    let _ = registry.register(Box::new(PamHardeningPlugin::new()));
-    let _ = registry.register(Box::new(PermissionsHardeningPlugin::new()));
-    let _ = registry.register(Box::new(ServicesHardeningPlugin::new()));
-    let _ = registry.register(Box::new(SshHardeningPlugin::new()));
+    registry
+        .register(Box::new(AuditHardeningPlugin::new()))
+        .expect("failed to register audit plugin");
+    registry
+        .register(Box::new(FirewallHardeningPlugin::new()))
+        .expect("failed to register firewall plugin");
+    registry
+        .register(Box::new(KernelHardeningPlugin::new()))
+        .expect("failed to register kernel plugin");
+    registry
+        .register(Box::new(MacHardeningPlugin::new()))
+        .expect("failed to register mac plugin");
+    registry
+        .register(Box::new(PamHardeningPlugin::new()))
+        .expect("failed to register pam plugin");
+    registry
+        .register(Box::new(PermissionsHardeningPlugin::new()))
+        .expect("failed to register permissions plugin");
+    registry
+        .register(Box::new(ServicesHardeningPlugin::new()))
+        .expect("failed to register services plugin");
+    registry
+        .register(Box::new(SshHardeningPlugin::new()))
+        .expect("failed to register ssh plugin");
     registry
 }
 

@@ -100,6 +100,10 @@ impl ReportFormatter for PdfFormatter {
         // Each byte is preserved as-is (ISO-8859-1 / Latin-1 encoding).
         pdf_bytes.into_iter().map(|b| b as char).collect()
     }
+
+    fn format_bytes(&self, report: &ComplianceReport) -> Vec<u8> {
+        generate_pdf(report)
+    }
 }
 
 /// Tracks current Y position during PDF generation.

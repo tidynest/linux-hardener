@@ -110,7 +110,7 @@ pub async fn run(
 
         if output_format == OutputFormat::Pdf {
             // PDF is binary - convert back to bytes
-            let bytes: Vec<u8> = formatted.chars().map(|c| c as u8).collect();
+            let bytes = hardener_compliance::output::PdfFormatter::new().format_bytes(&reports[0]);
             fs::write(&final_path, bytes)?;
         } else {
             fs::write(&final_path, &formatted)?;
@@ -123,7 +123,7 @@ pub async fn run(
         let timestamp = Local::now().format("%Y%m%d-%H%M%S");
         let filename = format!("compliance-report-{}.pdf", timestamp);
 
-        let bytes: Vec<u8> = formatted.chars().map(|c| c as u8).collect();
+        let bytes = hardener_compliance::output::PdfFormatter::new().format_bytes(&reports[0]);
         fs::write(&filename, bytes)?;
         if !quiet {
             println!("Report saved to: {}", filename);

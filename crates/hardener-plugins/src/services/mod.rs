@@ -127,25 +127,49 @@ async fn is_service_active(ctx: &Context, service_name: &str) -> Result<bool> {
 
 /// Stops a running service.
 async fn stop_service(ctx: &Context, service_name: &str) -> Result<()> {
-    ctx.executor()
+    let output = ctx
+        .executor()
         .execute_command("systemctl", &["stop", service_name])
         .await?;
+    if !output.success() {
+        return Err(hardener_common::error::HardeningError::Plugin(format!(
+            "systemctl stop {} failed: {}",
+            service_name,
+            output.stderr.trim()
+        )));
+    }
     Ok(())
 }
 
 /// Disables a service from starting at boot.
 async fn disable_service(ctx: &Context, service_name: &str) -> Result<()> {
-    ctx.executor()
+    let output = ctx
+        .executor()
         .execute_command("systemctl", &["disable", service_name])
         .await?;
+    if !output.success() {
+        return Err(hardener_common::error::HardeningError::Plugin(format!(
+            "systemctl stop {} failed: {}",
+            service_name,
+            output.stderr.trim()
+        )));
+    }
     Ok(())
 }
 
 /// Masks a service to prevent it from being started.
 async fn mask_service(ctx: &Context, service_name: &str) -> Result<()> {
-    ctx.executor()
+    let output = ctx
+        .executor()
         .execute_command("systemctl", &["mask", service_name])
         .await?;
+    if !output.success() {
+        return Err(hardener_common::error::HardeningError::Plugin(format!(
+            "systemctl stop {} failed: {}",
+            service_name,
+            output.stderr.trim()
+        )));
+    }
     Ok(())
 }
 

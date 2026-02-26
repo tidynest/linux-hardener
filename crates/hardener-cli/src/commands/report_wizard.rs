@@ -470,7 +470,7 @@ fn output_reports(
                 }
 
                 if *format == OutputFormat::Pdf {
-                    let bytes: Vec<u8> = formatted.chars().map(|c| c as u8).collect();
+                    let bytes = PdfFormatter::new().format_bytes(&reports[0]);
                     fs::write(&path, bytes)?;
                 } else {
                     fs::write(&path, &formatted)?;
@@ -487,7 +487,7 @@ fn output_reports(
                 if *format == OutputFormat::Pdf {
                     let timestamp = Local::now().format("%Y%m%d-%H%M%S");
                     let filename = format!("compliance-report-{}.pdf", timestamp);
-                    let bytes: Vec<u8> = formatted.chars().map(|c| c as u8).collect();
+                    let bytes = PdfFormatter::new().format_bytes(&reports[0]);
                     fs::write(&filename, bytes)?;
                     println!("  {} Saved PDF report to: {}", "✓".green(), filename);
                     continue;

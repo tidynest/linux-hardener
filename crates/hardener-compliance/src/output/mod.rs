@@ -23,6 +23,12 @@ pub trait ReportFormatter {
     /// Formats a single compliance report.
     fn format(&self, report: &ComplianceReport) -> String;
 
+    /// Formats a report as raw bytes. Defaults to UTF-8 encoding of `format()`.
+    /// Override for binary formats (e.g. PDF).
+    fn format_bytes(&self, report: &ComplianceReport) -> Vec<u8> {
+        self.format(report).into_bytes()
+    }
+
     /// Formats multiple compliance reports.
     fn format_all(&self, reports: &[ComplianceReport]) -> String {
         reports

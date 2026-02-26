@@ -33,9 +33,9 @@ pub struct Distribution {
     pub distro_family: DistroFamily,
     /// Distribution name (e.g. "ubuntu", "fedora", "arch").
     pub distro_name: String,
-    /// Distribution version (e.g., "22.04", "39", "rolling").
+    /// Distribution version (e.g. "22.04", "39", "rolling").
     pub distro_version: String,
-    /// Optional codename (e.g., "jammy", "bookworm").
+    /// Optional codename (e.g. "jammy", "bookworm").
     pub distro_codename: Option<String>,
 }
 
@@ -132,42 +132,42 @@ mod tests {
         assert!(!distro.distro_name.is_empty());
         assert!(!distro.distro_version.is_empty());
     }
-}
 
-#[test]
-fn test_family_mapping() {
-    // Debian family
-    assert_eq!(
-        Distribution::map_to_family("ubuntu").unwrap(),
-        DistroFamily::Debian
-    );
-    assert_eq!(
-        Distribution::map_to_family("debian").unwrap(),
-        DistroFamily::Debian
-    );
+    #[test]
+    fn test_family_mapping() {
+        // Debian family
+        assert_eq!(
+            Distribution::map_to_family("ubuntu").unwrap(),
+            DistroFamily::Debian
+        );
+        assert_eq!(
+            Distribution::map_to_family("debian").unwrap(),
+            DistroFamily::Debian
+        );
 
-    // Red Hat family
-    assert_eq!(
-        Distribution::map_to_family("fedora").unwrap(),
-        DistroFamily::RedHat
-    );
-    assert_eq!(
-        Distribution::map_to_family("rhel").unwrap(),
-        DistroFamily::RedHat
-    );
+        // Red Hat family
+        assert_eq!(
+            Distribution::map_to_family("fedora").unwrap(),
+            DistroFamily::RedHat
+        );
+        assert_eq!(
+            Distribution::map_to_family("rhel").unwrap(),
+            DistroFamily::RedHat
+        );
 
-    // Arch family
-    assert_eq!(
-        Distribution::map_to_family("arch").unwrap(),
-        DistroFamily::Arch
-    );
+        // Arch family
+        assert_eq!(
+            Distribution::map_to_family("arch").unwrap(),
+            DistroFamily::Arch
+        );
 
-    // SUSE family
-    assert_eq!(
-        Distribution::map_to_family("opensuse").unwrap(),
-        DistroFamily::Suse
-    );
+        // SUSE family
+        assert_eq!(
+            Distribution::map_to_family("opensuse").unwrap(),
+            DistroFamily::Suse
+        );
 
-    // Unknown should error
-    assert!(Distribution::map_to_family("unknown").is_err());
+        // Unknown should error
+        assert!(Distribution::map_to_family("unknown").is_err());
+    }
 }
