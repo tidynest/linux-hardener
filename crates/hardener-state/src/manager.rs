@@ -9,18 +9,25 @@ use sqlx::{Row, SqlitePool};
 use std::path::Path;
 
 /// Default rollback path prefixes for production use.
+///
+/// Paths match via `starts_with`, so `/etc/ssh` covers both
+/// `/etc/ssh` itself and any file beneath it (e.g. `/etc/ssh/sshd_config`).
+/// Trailing slashes are intentionally omitted for this reason.
 const DEFAULT_ROLLBACK_PREFIXES: &[&str] = &[
-    "/etc/ssh/",
-    "/etc/sysctl.d/",
-    "/etc/security/",
-    "/etc/pam.d/",
-    "/etc/audit/",
+    "/etc/ssh",
+    "/etc/sysctl",
+    "/etc/security",
+    "/etc/pam.d",
+    "/etc/audit",
     "/etc/apparmor",
-    "/etc/selinux/",
+    "/etc/selinux",
     "/etc/login.defs",
     "/etc/nftables",
-    "/etc/firewalld/",
-    "/etc/ufw/",
+    "/etc/firewalld",
+    "/etc/ufw",
+    "/etc/sudoers",
+    "/root",
+    "/boot",
 ];
 
 /// Manages checkpoint creation, storage, and retrieval.
