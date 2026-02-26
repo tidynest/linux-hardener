@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 hardener-common = { path = "../hardener-common" }
 hardener-core   = { path = "../hardener-core" }
+nix = { workspace = true, features = ["fs"] }
 tokio = { workspace = true }
 tracing = { workspace = true }
 async-trait = { workspace = true }

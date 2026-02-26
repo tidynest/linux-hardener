@@ -401,10 +401,12 @@ async fn test_permissions_scan_with_remote_executor() {
 ///
 /// Simulates vfat/FAT32 behaviour where chmod exits 0 but the filesystem
 /// ignores the request (permissions are governed by mount options).
+/// Uses `.remote()` because MockExecutor cannot support local fchmod.
 #[tokio::test]
 async fn test_permissions_apply_detects_vfat_noop() {
     // /boot at 0o755 — chmod will "succeed" but mode stays 0o755
     let executor = MockExecutor::new()
+        .remote()
         .with_file_metadata(
             "/boot",
             "",
@@ -453,7 +455,9 @@ async fn test_permissions_apply_detects_vfat_noop() {
 #[tokio::test]
 async fn test_permissions_apply_respects_directives() {
     // /boot at 0o777 — directive overrides target to 0o755 instead of baseline 0o700
+    // Uses `.remote()` because MockExecutor cannot support local fchmod.
     let executor = MockExecutor::new()
+        .remote()
         .with_file_metadata(
             "/boot",
             "",

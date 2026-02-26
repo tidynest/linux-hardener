@@ -239,20 +239,20 @@ impl ScanHistoryManager {
 
         for row in finding_rows {
             let raw_remediation: &str = row.get("remediation_steps");
-            let remediation_steps: Vec<String> = serde_json::from_str(raw_remediation)
-                .unwrap_or_else(|e| {
-                    tracing::warn!("Corrupted remediation_steps JSON for result {result_id}: {e}");
-                    Vec::new()
-                });
+            let remediation_steps: Vec<String> =
+                serde_json::from_str(raw_remediation).map_err(|e| {
+                    HardeningError::Database(format!(
+                        "Corrupted remediation_steps JSON for result {result_id}: {e}"
+                    ))
+                })?;
 
             let raw_compliance: &str = row.get("compliance_mappings");
-            let compliance: Vec<ComplianceMapping> = serde_json::from_str(raw_compliance)
-                .unwrap_or_else(|e| {
-                    tracing::warn!(
+            let compliance: Vec<ComplianceMapping> =
+                serde_json::from_str(raw_compliance).map_err(|e| {
+                    HardeningError::Database(format!(
                         "Corrupted compliance_mappings JSON for result {result_id}: {e}"
-                    );
-                    Vec::new()
-                });
+                    ))
+                })?;
 
             let policy_exception: Option<FindingPolicyException> = row
                 .get::<Option<String>, _>("policy_exception")

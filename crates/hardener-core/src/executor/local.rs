@@ -39,7 +39,7 @@ impl SystemExecutor for LocalExecutor {
     }
 
     async fn write_file(&self, path: &Path, content: &str) -> Result<()> {
-        std::fs::write(path, content)
+        hardener_common::file_utils::update_file_atomically(path, content)
             .with_context(|| format!("Failed to write file {}", path.display()))
     }
 
@@ -68,10 +68,11 @@ impl SystemExecutor for LocalExecutor {
     }
 
     async fn execute_command(&self, program: &str, args: &[&str]) -> Result<CommandOutput> {
-        let output = Command::new(program)
+        let resolved = hardener_common::binary_utils::resolve_binary(program);
+        let output = Command::new(&resolved)
             .args(args)
             .output()
-            .with_context(|| format!("Failed to execute command {}", program))?;
+            .with_context(|| format!("Failed to execute command {}", resolved))?;
 
         Ok(CommandOutput {
             stdout: String::from_utf8_lossy(&output.stdout).to_string(),

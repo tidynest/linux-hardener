@@ -20,6 +20,7 @@ use hardener_core::{
     context::Context,
     plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult},
 };
+use std::os::unix::fs::OpenOptionsExt;
 use std::{path::Path, time::Instant};
 use tracing::info;
 
@@ -190,6 +191,10 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
 
 /// Applies correct permissions to a path and tracks the change.
 ///
+/// For local execution: uses `O_NOFOLLOW` open + `fchmod` to operate on
+/// the real inode, eliminating the TOCTOU window between check and chmod.
+/// For remote execution: falls back to the executor's `execute_command`.
+///
 /// Returns a Change object if successful, None if path doesn't exist or on error.
 async fn apply_path_permissions(ctx: &Context, directive: &PermissionDirective) -> Option<Change> {
     let path = Path::new(directive.permission_path);
@@ -199,16 +204,81 @@ async fn apply_path_permissions(ctx: &Context, directive: &PermissionDirective) 
         return None;
     }
 
-    // Get current permissions
+    // Get current permissions via executor (works for both local and remote)
     let metadata = ctx.executor().file_metadata(path).await.ok()?;
     let current_mode = metadata.mode & 0o777;
 
-    // Skip if already correct
     if current_mode == directive.permission_mode {
         return None;
     }
 
-    // Apply new permissions using chmod command
+    // Use TOCTOU-safe fchmod for local targets, executor for remote
+    if !ctx.executor().is_remote() {
+        apply_local_fchmod(directive, current_mode)
+    } else {
+        apply_remote_chmod(ctx, directive, current_mode).await
+    }
+}
+
+/// TOCTOU-safe local permission change via `O_NOFOLLOW` + `fchmod`.
+fn apply_local_fchmod(directive: &PermissionDirective, current_mode: u32) -> Option<Change> {
+    use nix::sys::stat::{Mode, fchmod};
+
+    let path = Path::new(directive.permission_path);
+    let flags = if path.is_dir() {
+        nix::libc::O_NOFOLLOW | nix::libc::O_DIRECTORY
+    } else {
+        nix::libc::O_NOFOLLOW
+    };
+
+    let file = match std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(flags)
+        .open(path)
+    {
+        Ok(f) => f,
+        Err(e) => {
+            return Some(Change {
+                change_description: format!(
+                    "Failed to open {} for chmod",
+                    directive.permission_path
+                ),
+                change_type: ChangeType::Permissions,
+                change_success: false,
+                change_error: Some(e.to_string()),
+            });
+        }
+    };
+
+    let target_mode = Mode::from_bits_truncate(directive.permission_mode);
+    match fchmod(&file, target_mode) {
+        Ok(()) => Some(Change {
+            change_description: format!(
+                "Changed permissions on {} from {:04o} to {:04o}",
+                directive.permission_path, current_mode, directive.permission_mode
+            ),
+            change_type: ChangeType::Permissions,
+            change_success: true,
+            change_error: None,
+        }),
+        Err(e) => Some(Change {
+            change_description: format!(
+                "Failed to change permissions on {}",
+                directive.permission_path
+            ),
+            change_type: ChangeType::Permissions,
+            change_success: false,
+            change_error: Some(e.to_string()),
+        }),
+    }
+}
+
+/// Remote permission change via executor (falls back to chmod command).
+async fn apply_remote_chmod(
+    ctx: &Context,
+    directive: &PermissionDirective,
+    current_mode: u32,
+) -> Option<Change> {
     let mode_str = format!("{:04o}", directive.permission_mode);
     let result = ctx
         .executor()
@@ -217,7 +287,8 @@ async fn apply_path_permissions(ctx: &Context, directive: &PermissionDirective) 
 
     match result {
         Ok(output) if output.success() => {
-            // Verify the change actually took effect (chmod silently no-ops on vfat/FAT32)
+            // Verify the change took effect
+            let path = Path::new(directive.permission_path);
             let verified = ctx
                 .executor()
                 .file_metadata(path)

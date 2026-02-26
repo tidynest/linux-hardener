@@ -32,7 +32,7 @@ impl ReportFormatter for HtmlFormatter {
         // Report Title
         html.push_str(&format!(
             "<h1>{} Compliance Report</h1>\n",
-            report.report_framework.full_name()
+            html_escape(report.report_framework.full_name())
         ));
         html.push_str(&format!(
             "<p class=\"subtitle\">{}</p>\n",
@@ -112,7 +112,7 @@ impl ReportFormatter for HtmlFormatter {
                         html.push_str(&format!(
                             "<tr class=\"finding\"><td></td><td colspan=\"2\">→ [{}]
   {}</td></tr>\n",
-                            finding.finding_severity,
+                            html_escape(&finding.finding_severity.to_string()),
                             html_escape(&finding.finding_title)
                         ));
                     }

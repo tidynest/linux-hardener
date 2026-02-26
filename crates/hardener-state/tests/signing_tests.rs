@@ -10,9 +10,14 @@ fn test_signer_creates_new_key() {
     let signer = CheckpointSigner::new_with_path(&key_path).unwrap();
 
     assert!(key_path.exists());
-    // Key should be 32 bytes
+    // Key file is now encrypted: MAGIC(4) + NONCE(12) + CT(32) + TAG(16) = 64 bytes
     let key_bytes = fs::read(&key_path).unwrap();
-    assert_eq!(key_bytes.len(), 32);
+    assert_eq!(key_bytes.len(), 64);
+    assert_eq!(
+        &key_bytes[..4],
+        b"LSH1",
+        "encrypted key should have LSH1 header"
+    );
 
     // Should be able to sign with the new key
     let signature = signer.sign(b"test data");
@@ -123,6 +128,33 @@ fn test_different_keys_produce_different_signatures() {
 
     // Different keys should produce different signatures
     assert_ne!(sig1, sig2);
+}
+
+#[test]
+fn test_public_key_only_verification() {
+    let dir = tempdir().unwrap();
+    let key_path = dir.path().join("test.key");
+
+    // Create signer (generates both private + public key)
+    let signer = CheckpointSigner::new_with_path(&key_path).unwrap();
+    let data = b"important checkpoint data";
+    let signature = signer.sign(data);
+
+    // Remove private key, keeping only public key
+    fs::remove_file(&key_path).unwrap();
+    let pubkey_path = dir.path().join("test.pub");
+    assert!(pubkey_path.exists(), "public key should have been created");
+
+    // Load verifier-only from public key
+    let verifier = CheckpointSigner::new_with_path(&key_path).unwrap();
+    assert!(
+        !verifier.can_sign(),
+        "should not be able to sign without private key"
+    );
+    assert!(
+        verifier.verify(data, &signature).is_ok(),
+        "should verify with public key only"
+    );
 }
 
 #[test]

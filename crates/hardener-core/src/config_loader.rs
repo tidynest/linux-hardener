@@ -57,8 +57,12 @@ impl ConfigLoader {
             if let Some(path) = Self::system_config_path() {
                 config = Self::merge_source(config, &path, false)?;
             }
-            // 3. Load user config if it exists
-            if let Some(path) = Self::user_config_path() {
+            // 3. Load user config if it exists — skip when running as root
+            //    (via pkexec) to prevent unprivileged user config from
+            //    influencing root-level hardening operations.
+            if !Self::is_running_as_root()
+                && let Some(path) = Self::user_config_path()
+            {
                 config = Self::merge_source(config, &path, false)?;
             }
         }
@@ -93,6 +97,21 @@ impl ConfigLoader {
 
         let overlay = Self::load_from_file(path)?;
         Ok(Self::merge_configs(base, overlay))
+    }
+
+    /// Returns true when the process is running with effective UID 0.
+    ///
+    /// When `true`, user-level config (`~/.config/...`) is skipped to prevent
+    /// unprivileged config from influencing root hardening operations via pkexec.
+    fn is_running_as_root() -> bool {
+        #[cfg(feature = "system")]
+        {
+            nix::unistd::geteuid().is_root()
+        }
+        #[cfg(not(feature = "system"))]
+        {
+            false
+        }
     }
 
     /// Get the system config path.
