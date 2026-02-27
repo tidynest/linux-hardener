@@ -12,7 +12,9 @@ use commands::{
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 fn main() {
-    // Initialize tracing for debug output
+    // Prevent WebKitGTK compositing crash on Wayland (Hyprland, Sway, etc.)
+    std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())
         .init();
