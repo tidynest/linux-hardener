@@ -1,4 +1,5 @@
 mod card;
+mod clipboard;
 mod compliance_tab;
 mod config_file_card;
 mod configure_section;
@@ -24,6 +25,7 @@ mod theme_toggle;
 #[allow(unused_imports)]
 pub use card::CardVariant;
 pub use card::{Card, HeadingLevel};
+pub use clipboard::CopyButton;
 pub use compliance_tab::ComplianceTab;
 pub use config_file_card::ConfigFileCard;
 pub use configure_section::ConfigureSection;

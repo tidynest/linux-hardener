@@ -1,9 +1,11 @@
-//! Tab components for the consolidated page architecture
+//! Tab components for the consolidated page architecture.
 //!
 //! Provides a reusable tab bar with animated transitions and optional badges.
-//! Implements WAI-ARIA tabs pattern for accessibility.
+//! Implements the full WAI-ARIA Tabs pattern including keyboard navigation:
+//! ArrowLeft/Right to move between tabs, Home/End to jump to first/last.
 
 use leptos::prelude::*;
+use wasm_bindgen::JsCast;
 
 /// A single tab definition.
 pub struct TabDef {
@@ -27,8 +29,35 @@ pub fn TabBar(
     active_tab: RwSignal<usize>,
     #[prop(default = "Tabs")] aria_label: &'static str,
 ) -> impl IntoView {
+    let tab_count = tabs.len();
+
+    // WAI-ARIA Tabs keyboard handler: Arrow keys cycle, Home/End jump
+    let on_keydown = move |ev: web_sys::KeyboardEvent| {
+        let current = active_tab.get_untracked();
+        let next = match ev.key().as_str() {
+            "ArrowRight" | "ArrowDown" => Some((current + 1) % tab_count),
+            "ArrowLeft" | "ArrowUp" => Some(current.checked_sub(1).unwrap_or(tab_count - 1)),
+            "Home" => Some(0),
+            "End" => Some(tab_count - 1),
+            _ => None,
+        };
+
+        if let Some(idx) = next {
+            ev.prevent_default();
+            active_tab.set(idx);
+
+            // Move DOM focus to the newly active tab button
+            if let Some(document) = web_sys::window().and_then(|w| w.document())
+                && let Some(el) = document.query_selector("[role='tab'][aria-selected='true']").ok().flatten()
+                && let Ok(html) = el.dyn_into::<web_sys::HtmlElement>()
+            {
+                let _ = html.focus();
+            }
+        }
+    };
+
     view! {
-        <nav class="tab-bar" role="tablist" aria-label=aria_label>
+        <nav class="tab-bar" role="tablist" aria-label=aria_label on:keydown=on_keydown>
             {tabs.into_iter().enumerate().map(|(idx, tab)| {
                 let badge = tab.badge;
                 let label = tab.label;

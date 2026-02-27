@@ -96,6 +96,9 @@ pub fn HostList(#[prop(into)] on_edit: Callback<Option<RemoteHostProfile>>) -> i
         });
     };
 
+    // Tracks which host name has a pending delete confirmation
+    let pending_delete = RwSignal::new(None::<String>);
+
     view! {
         <div class="host-list">
             <h3 class="host-list-title">"Saved Hosts"</h3>
@@ -131,7 +134,7 @@ pub fn HostList(#[prop(into)] on_edit: Callback<Option<RemoteHostProfile>>) -> i
                             };
 
                             view! {
-                                <li class=entry_class>
+                                <li class=entry_class aria-current={if is_active { Some("true") } else { None }}>
                                     <div class="host-entry-info">
                                         <span class="host-entry-name">{name}</span>
                                         <span class="host-entry-detail">
@@ -158,15 +161,54 @@ pub fn HostList(#[prop(into)] on_edit: Callback<Option<RemoteHostProfile>>) -> i
                                         >
                                             "Edit"
                                         </button>
-                                        <button
-                                            class="btn btn-danger btn-small"
-                                            on:click={
-                                                let name = delete_name.clone();
-                                                move |_| handle_delete(name.clone())
+                                        {
+                                            let name_show = delete_name.clone();
+                                            let name_confirm = delete_name.clone();
+                                            let is_confirming = move || {
+                                                pending_delete.get().as_deref() == Some(name_show.as_str())
+                                            };
+                                            view! {
+                                                <Show
+                                                    when=is_confirming
+                                                    fallback={
+                                                        let n = delete_name.clone();
+                                                        move || view! {
+                                                            <button
+                                                                class="btn btn-danger btn-small"
+                                                                on:click={
+                                                                    let n = n.clone();
+                                                                    move |_| pending_delete.set(Some(n.clone()))
+                                                                }
+                                                            >
+                                                                "Delete"
+                                                            </button>
+                                                        }
+                                                    }
+                                                >
+                                                    <span class="confirm-delete-inline">
+                                                        <span class="confirm-delete-label">"Delete?"</span>
+                                                        <button
+                                                            class="btn btn-danger btn-small"
+                                                            on:click={
+                                                                let n = name_confirm.clone();
+                                                                move |_| {
+                                                                    pending_delete.set(None);
+                                                                    handle_delete(n.clone());
+                                                                }
+                                                            }
+                                                        >
+                                                            "Confirm"
+                                                        </button>
+                                                        <button
+                                                            class="btn btn-secondary btn-small"
+                                                            on:click=move |_| pending_delete.set(None)
+                                                        >
+                                                            "Cancel"
+                                                        </button>
+                                                    </span>
+                                                </Show>
                                             }
-                                        >
-                                            "Delete"
-                                        </button>
+                                        }
                                     </div>
                                 </li>
                             }

@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 
-use crate::components::SeverityBadge;
+use crate::components::{CopyButton, SeverityBadge};
 use crate::state::AppState;
 
 /// Displays detailed information about a selected finding.
@@ -25,13 +25,39 @@ pub fn FindingDetail() -> impl IntoView {
         <Show when=move || app_state.selected_finding.get().is_some()>
             {move || {
                 app_state.selected_finding.get().map(|finding| {
+                    // Build a structured text summary for clipboard
+                    let copy_text = {
+                        let mut text = format!(
+                            "{}\nSeverity: {:?} | Category: {:?}\n\n{}\n",
+                            finding.finding_title,
+                            finding.finding_severity,
+                            finding.finding_category,
+                            finding.finding_description,
+                        );
+                        text.push_str(&format!(
+                            "\nCurrent: {}\nRecommended: {}\n",
+                            finding.finding_current_value,
+                            finding.finding_recommended_value,
+                        ));
+                        if !finding.finding_remediation_steps.is_empty() {
+                            text.push_str("\nRemediation:\n");
+                            for (i, step) in finding.finding_remediation_steps.iter().enumerate() {
+                                text.push_str(&format!("  {}. {}\n", i + 1, step));
+                            }
+                        }
+                        text
+                    };
+
                     view! {
                         <aside class="finding-detail">
                             <header class="detail-header">
                                 <h2>{finding.finding_title.clone()}</h2>
-                                <button class="close-button" on:click=on_close>
-                                    "Close"
-                                </button>
+                                <div class="detail-header-actions">
+                                    <CopyButton text=Signal::derive(move || copy_text.clone()) />
+                                    <button class="close-button" on:click=on_close>
+                                        "Close"
+                                    </button>
+                                </div>
                             </header>
 
                             <section class="detail-severity">

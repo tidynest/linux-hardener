@@ -156,7 +156,7 @@ pub fn ScheduleSection() -> impl IntoView {
                         .collect::<Vec<_>>()}
                     <option value="Custom">"Custom"</option>
                 </select>
-                <span class="form-hint">
+                <span class="form-hint" aria-live="polite">
                     {move || {
                         let cron = effective_cron();
                         if cron.is_empty() {
@@ -189,7 +189,7 @@ pub fn ScheduleSection() -> impl IntoView {
             <div class="form-row">
                 <label class="form-label">"Plugins"</label>
                 <span class="form-hint">"Leave all unchecked to scan every plugin"</span>
-                <div class="plugin-checkboxes">
+                <div class="plugin-checkboxes" role="group" aria-label="Scan plugins">
                     {PLUGIN_IDS
                         .iter()
                         .map(|id| {
@@ -251,6 +251,7 @@ pub fn ScheduleSection() -> impl IntoView {
                     class="btn btn-primary"
                     on:click=handle_save
                     disabled=move || app_state.is_saving_scheduler.get()
+                    aria-live="polite"
                 >
                     {move || {
                         if app_state.is_saving_scheduler.get() {

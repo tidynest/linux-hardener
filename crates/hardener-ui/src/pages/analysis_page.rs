@@ -6,7 +6,7 @@ use crate::components::{
     ComplianceTab, FindingsTab, MiniSecurityScore, ScanHistoryTab, TabBar, TabDef, TabPanel,
 };
 use crate::state::AppState;
-use crate::tauri_bindings::invoke_scan;
+use crate::tauri_bindings::{invoke_generate_report, invoke_scan};
 use leptos::prelude::*;
 
 /// Analysis page with tabbed interface for Findings and Compliance.
@@ -35,6 +35,20 @@ pub fn AnalysisPage() -> impl IntoView {
             match invoke_scan(vec![], app_state.config_path.get_untracked()).await {
                 Ok(results) => {
                     app_state.scan_results.set(results);
+
+                    // Auto-generate compliance reports for all frameworks (consistent with Dashboard)
+                    let frameworks = vec![
+                        "cis".into(), "stig".into(), "nist".into(),
+                        "pci-dss".into(), "hipaa".into(), "gdpr".into(),
+                    ];
+                    match invoke_generate_report(frameworks).await {
+                        Ok(reports) => app_state.compliance_reports.set(reports),
+                        Err(e) => {
+                            web_sys::console::warn_1(
+                                &format!("Compliance report generation failed: {e}").into(),
+                            );
+                        }
+                    }
                 }
                 Err(e) => {
                     web_sys::console::error_1(&format!("Scan failed: {}", e).into());
@@ -91,6 +105,7 @@ pub fn AnalysisPage() -> impl IntoView {
                         class="btn btn-primary"
                         on:click=on_scan
                         disabled=move || app_state.is_scanning.get()
+                        aria-live="polite"
                     >
                         {move || if app_state.is_scanning.get() {
                             "Scanning..."

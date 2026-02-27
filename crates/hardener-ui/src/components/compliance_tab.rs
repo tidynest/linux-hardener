@@ -2,7 +2,7 @@
 //!
 //! Contains framework selection and report generation.
 
-use crate::components::{Card, HeadingLevel};
+use crate::components::{Card, CopyButton, HeadingLevel};
 use crate::state::AppState;
 use crate::tauri_bindings::{invoke_export_report, invoke_generate_report};
 use leptos::prelude::*;
@@ -104,7 +104,7 @@ pub fn ComplianceTab() -> impl IntoView {
     view! {
         <div class="compliance-tab">
             <Card title="Select Compliance Frameworks" title_level=HeadingLevel::H2 class="framework-selection">
-                <div class="framework-grid">
+                <div class="framework-grid" role="group" aria-label="Compliance frameworks">
                     {frameworks.into_iter().map(|(id, label)| {
                         let id_str = id.to_string();
                         let id_for_check = id_str.clone();
@@ -194,6 +194,11 @@ pub fn ComplianceTab() -> impl IntoView {
                         let manual = report.report_summary.summary_manual_review;
                         let na = report.report_summary.summary_not_applicable;
 
+                        let copy_text = format!(
+                            "{} — {:.0}%\nPassing: {} | Failing: {} | Manual: {} | N/A: {}",
+                            framework, score, passing, failing, manual, na,
+                        );
+
                         let score_class = if score >= 80.0 {
                             "score-high"
                         } else if score >= 60.0 {
@@ -206,9 +211,12 @@ pub fn ComplianceTab() -> impl IntoView {
                             <div class="report-card">
                                 <div class="report-card-header">
                                     <h3>{framework}</h3>
-                                    <span class=format!("compliance-score {}", score_class)>
-                                        {format!("{:.0}%", score)}
-                                    </span>
+                                    <div class="report-card-actions">
+                                        <span class=format!("compliance-score {}", score_class)>
+                                            {format!("{:.0}%", score)}
+                                        </span>
+                                        <CopyButton text=Signal::derive(move || copy_text.clone()) />
+                                    </div>
                                 </div>
 
                                 <div class="report-summary">

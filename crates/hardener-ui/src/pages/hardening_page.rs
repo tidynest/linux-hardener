@@ -30,6 +30,10 @@ pub fn HardeningPage() -> impl IntoView {
 
             <nav class="section-toggle" role="tablist">
                 <button
+                    role="tab"
+                    aria-selected=move || (active_section.get() == 0).to_string()
+                    aria-controls="panel-configure"
+                    tabindex=move || if active_section.get() == 0 { 0 } else { -1 }
                     class=move || {
                         if active_section.get() == 0 {
                             "section-btn section-active"
@@ -42,6 +46,10 @@ pub fn HardeningPage() -> impl IntoView {
                     "Configure"
                 </button>
                 <button
+                    role="tab"
+                    aria-selected=move || (active_section.get() == 1).to_string()
+                    aria-controls="panel-history"
+                    tabindex=move || if active_section.get() == 1 { 0 } else { -1 }
                     class=move || {
                         if active_section.get() == 1 {
                             "section-btn section-active"
@@ -60,10 +68,14 @@ pub fn HardeningPage() -> impl IntoView {
 
             <div class="section-content">
                 <Show when=move || active_section.get() == 0>
-                    <ConfigureSection />
+                    <div id="panel-configure" role="tabpanel">
+                        <ConfigureSection />
+                    </div>
                 </Show>
                 <Show when=move || active_section.get() == 1>
-                    <HistorySection />
+                    <div id="panel-history" role="tabpanel">
+                        <HistorySection />
+                    </div>
                 </Show>
             </div>
         </article>

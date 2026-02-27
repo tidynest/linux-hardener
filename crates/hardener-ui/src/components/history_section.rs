@@ -2,7 +2,7 @@
 //!
 //! Displays apply results and checkpoint management.
 
-use crate::components::{Card, HeadingLevel};
+use crate::components::{Card, CopyButton, HeadingLevel};
 use crate::state::AppState;
 use crate::tauri_bindings::{
     invoke_create_checkpoint, invoke_delete_checkpoint, invoke_get_checkpoint_detail,
@@ -32,6 +32,8 @@ pub fn HistorySection() -> impl IntoView {
     let checkpoint_name = RwSignal::new(String::new());
     let is_creating = RwSignal::new(false);
     let expanded_detail = RwSignal::new(None::<CheckpointDetail>);
+    // Tracks which checkpoint ID has a pending delete confirmation (None = no confirmation shown)
+    let pending_delete = RwSignal::new(None::<String>);
 
     // Function to load checkpoints
     let load_checkpoints = move || {
@@ -271,6 +273,7 @@ pub fn HistorySection() -> impl IntoView {
                             disabled=move || {
                                 is_creating.get() || checkpoint_name.get().trim().is_empty()
                             }
+                            aria-live="polite"
                         >
                             {move || if is_creating.get() { "Creating..." } else { "Create Checkpoint" }}
                         </button>
@@ -279,6 +282,7 @@ pub fn HistorySection() -> impl IntoView {
                         class="btn btn-secondary btn-small"
                         on:click=move |_| load_checkpoints()
                         disabled=move || is_loading.get()
+                        aria-live="polite"
                     >
                         {move || if is_loading.get() { "Refreshing..." } else { "Refresh" }}
                     </button>
@@ -341,12 +345,54 @@ pub fn HistorySection() -> impl IntoView {
                                             >
                                                 "Rollback"
                                             </button>
-                                            <button
-                                                class="btn btn-danger btn-small"
-                                                on:click=move |_| handle_delete(delete_id.clone())
-                                            >
-                                                "Delete"
-                                            </button>
+                                            {
+                                                let delete_id_show = delete_id.clone();
+                                                let delete_id_confirm = delete_id.clone();
+                                                let is_confirming = move || {
+                                                    pending_delete.get().as_deref() == Some(delete_id_show.as_str())
+                                                };
+                                                view! {
+                                                    <Show
+                                                        when=is_confirming
+                                                        fallback={
+                                                            let id = delete_id.clone();
+                                                            move || view! {
+                                                                <button
+                                                                    class="btn btn-danger btn-small"
+                                                                    on:click={
+                                                                        let id = id.clone();
+                                                                        move |_| pending_delete.set(Some(id.clone()))
+                                                                    }
+                                                                >
+                                                                    "Delete"
+                                                                </button>
+                                                            }
+                                                        }
+                                                    >
+                                                        <span class="confirm-delete-inline">
+                                                            <span class="confirm-delete-label">"Delete?"</span>
+                                                            <button
+                                                                class="btn btn-danger btn-small"
+                                                                on:click={
+                                                                    let id = delete_id_confirm.clone();
+                                                                    move |_| {
+                                                                        pending_delete.set(None);
+                                                                        handle_delete(id.clone());
+                                                                    }
+                                                                }
+                                                            >
+                                                                "Confirm"
+                                                            </button>
+                                                            <button
+                                                                class="btn btn-secondary btn-small"
+                                                                on:click=move |_| pending_delete.set(None)
+                                                            >
+                                                                "Cancel"
+                                                            </button>
+                                                        </span>
+                                                    </Show>
+                                                }
+                                            }
                                         </td>
                                     </tr>
                                     // Expansion row for checkpoint detail
@@ -360,13 +406,23 @@ pub fn HistorySection() -> impl IntoView {
                                             let detail = detail.as_ref().expect("guarded by Show when=");
                                             let file_count = detail.file_count;
                                             let files = detail.files.clone();
+                                            let copy_text = {
+                                                let mut text = format!("Checkpoint: {} files\n", file_count);
+                                                for f in &files {
+                                                    text.push_str(&format!("  {} ({})\n", f.path, f.permissions));
+                                                }
+                                                text
+                                            };
                                             view! {
                                                 <tr class="detail-expansion-row">
                                                     <td colspan="4">
                                                         <div class="checkpoint-detail-panel">
-                                                            <p class="detail-file-count">
-                                                                {format!("{} files captured", file_count)}
-                                                            </p>
+                                                            <div class="detail-file-header">
+                                                                <p class="detail-file-count">
+                                                                    {format!("{} files captured", file_count)}
+                                                                </p>
+                                                                <CopyButton text=Signal::derive(move || copy_text.clone()) />
+                                                            </div>
                                                             <ul class="detail-file-list">
                                                                 {files.iter().map(|f| {
                                                                     let path = f.path.clone();

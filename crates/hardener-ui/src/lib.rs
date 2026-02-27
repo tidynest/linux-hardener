@@ -5,6 +5,8 @@ use leptos_router::{
 };
 
 mod components;
+mod keyboard;
+mod navigation;
 mod pages;
 pub mod state;
 mod tauri_bindings;
@@ -47,6 +49,9 @@ pub fn App() -> impl IntoView {
 
     view! {
         <Router>
+            // Install hooks that require Router context (use_navigate, use_location)
+            <GlobalHooks/>
+
             // Skip link for keyboard/screen reader users - appears on focus
             <a href="#main-content" class="skip-link">"Skip to main content"</a>
 
@@ -98,6 +103,18 @@ pub fn App() -> impl IntoView {
             </main>
         </Router>
     }
+}
+
+/// Invisible component that installs global hooks requiring Router context.
+///
+/// Placed as the first child inside `<Router>` so it can access
+/// `use_navigate()` and `use_location()`.
+#[component]
+fn GlobalHooks() -> impl IntoView {
+    let app_state = expect_context::<AppState>();
+    keyboard::use_global_keyboard(app_state);
+    navigation::use_scroll_and_focus_on_navigate();
+    // Renders nothing — purely side-effect driven
 }
 
 use wasm_bindgen::JsCast;

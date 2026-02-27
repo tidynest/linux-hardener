@@ -72,6 +72,7 @@ pub fn QuickActions() -> impl IntoView {
                     class="btn btn-primary"
                     on:click=on_run_scan
                     disabled=move || app_state.is_scanning.get()
+                    aria-live="polite"
                 >
                     {move || if app_state.is_scanning.get() {
                         "Scanning..."

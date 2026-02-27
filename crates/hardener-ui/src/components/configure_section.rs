@@ -213,7 +213,10 @@ pub fn ConfigureSection() -> impl IntoView {
             </Card>
 
             <Card title="Plugin Control" title_level=HeadingLevel::H2 class="plugin-toggles">
-                <div class="plugin-grid">
+                <p id="profile-hint" class="sr-only" aria-live="polite">
+                    {move || format!("Active profile: {}", selected_profile.get())}
+                </p>
+                <div class="plugin-grid" role="group" aria-label="Plugin toggles" aria-describedby="profile-hint">
                     {plugin_states.with_value(|states| {
                         states.iter().enumerate().map(|(i, (_, signal))| {
                             let plugin = &PLUGINS[i];
@@ -243,6 +246,7 @@ pub fn ConfigureSection() -> impl IntoView {
                 class="btn btn-primary btn-large"
                 on:click=on_preview
                 disabled=move || app_state.is_previewing.get() || app_state.is_applying.get()
+                aria-live="polite"
             >
                 {move || if app_state.is_previewing.get() {
                     "Generating Preview..."
@@ -300,6 +304,7 @@ pub fn ConfigureSection() -> impl IntoView {
                             class="btn btn-primary"
                             on:click=on_confirm_apply
                             disabled=move || app_state.is_applying.get()
+                            aria-live="polite"
                         >
                             {move || if app_state.is_applying.get() {
                                 "Applying..."
