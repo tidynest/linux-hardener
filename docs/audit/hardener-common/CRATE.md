@@ -1,16 +1,17 @@
 # hardener-common — Crate Audit
 
-**Crate:** `crates/hardener-common/` | **Files:** 5 | **Lines:** 680 (478 prod, 202 test)
+**Crate:** `crates/hardener-common/` | **Files:** 6 | **Lines:** 640 (438 prod, 202 test)
 
 ## Purpose
 Shared foundation crate — error types, atomic file operations, config parsing, logging init, and type re-exports. Every other crate in the workspace depends on this one.
 
 ## Architecture
 ```
-lib.rs ──┬── error.rs        HardeningError enum + Result alias
-         ├── file_utils.rs   Atomic writes, config parse/edit, backups
-         ├── logging.rs      Tracing subscriber init
-         └── types.rs        Re-exports from hardener-types
+lib.rs ──┬── binary_utils.rs  Safe binary resolution (CWE-426 mitigation)
+         ├── error.rs         HardeningError enum + Result alias
+         ├── file_utils.rs    Atomic writes, config parse/edit, backups
+         ├── logging.rs       Tracing subscriber init
+         └── types.rs         Re-exports from hardener-types
 ```
 
 ## Inter-Module Data Flow
@@ -28,6 +29,7 @@ Caller (any crate)
 ## Public Interface Summary
 | Module | Items | Key Types |
 |--------|-------|-----------|
+| binary_utils | 2 | `TRUSTED_PATH` const, `resolve_binary()` — CWE-426 mitigation |
 | error | 2 | `HardeningError` (14 variants), `Result<T>` |
 | file_utils | 9 | `ConfigFormat`, 8 functions |
 | logging | 1 | `init_logger()` |

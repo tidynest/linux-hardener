@@ -1,6 +1,6 @@
 # hardener-compliance — Crate Audit
 
-**Files:** 17 | **Lines:** 3,120 | **Fixes:** 5 | **Design Flags:** 3
+**Files:** 17 | **Lines:** 2,856 | **Fixes:** 5 | **Design Flags:** 3
 
 ## Purpose
 

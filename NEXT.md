@@ -21,7 +21,10 @@ All major audit items are resolved. Project is feature-complete for v0.4.0; focu
 - **Test quality pass** (2026-02-25) — 178+ assertion messages, 80+ println removed, net -422 lines
 - **High Contrast theme** (2026-02-25) — WCAG AAA accessibility theme (7:1+ contrast ratios)
 - **Man page** (2026-02-25) — `data/hardener.1` troff man page for all commands
-- **428 unit tests pass**, clippy clean, native + WASM builds clean
+- **Security remediation** (2026-02-26) — all 53 security findings resolved (see `docs/security-audit/REMEDIATION_TRACKER.md`)
+- **Code quality pass** (2026-02-27) — 27 code quality findings fixed, shared helper extraction, 10 packaging fixes
+- **Documentation** (2026-02-27) — SECURITY.md updated, INSTALL.md created for 5 distro families
+- **505+ unit tests pass**, clippy clean, native + WASM builds clean
 
 ### Trait refactor summary (commits `81c13ad`, `d029629`, `b87fb1c`):
 
@@ -101,9 +104,9 @@ See `docs/GUI_CLI_PARITY_PLAN.md` — all 6 phases complete.
 
 | Item | Priority | Status |
 |------|----------|--------|
-| Security audit (third-party review) | Critical | Pending |
+| Security audit (internal: 53/53 complete) | Critical | Done — third-party review pending |
 | Package distribution (deb, rpm, AUR) | High | Specs ready, build scripts created |
-| Comprehensive user documentation | High | Man page done, user guide pending |
+| Comprehensive user documentation | High | Man page + INSTALL.md done |
 | Performance optimisation | Medium | Pending |
 
 ---
@@ -114,7 +117,7 @@ See `docs/GUI_CLI_PARITY_PLAN.md` — all 6 phases complete.
 
 - **11 Crates** (10 core + 1 Tauri app)
 - **8 Security Plugins**: Kernel, SSH, Firewall, PAM, Services, Audit, Permissions, MAC
-- **428+ Passing Tests**
+- **505+ Passing Tests**
 - **Multi-Distribution Support**: Debian, Red Hat, Arch, SUSE families
 - **Current Version**: 0.3.3 (Development Release)
 - **WASM Support**: GUI frontend compiles to `wasm32-unknown-unknown`
@@ -188,4 +191,4 @@ hardener-scheduler
 
 *This document is prepared for continuity between development sessions.*
 
-**Last Updated**: 2026-02-25
+**Last Updated**: 2026-02-27

@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added (Documentation 2026-02-27)
+- **INSTALL.md**: Installation guide covering all 5 distro families (Arch, Debian, Fedora, Rocky, openSUSE)
+- **SECURITY.md**: Updated with 8 security practices, corrected 3 stale Known Limitations
+
+### Changed (Code Quality 2026-02-27)
+- **Shared helpers**: Extracted `form_helpers.rs` (UI JsCast events), `run_package_command` + `rpm_is_installed` (distro package ops) to reduce duplication
+- **Security remediation**: All 53 internal audit findings resolved (see `docs/security-audit/REMEDIATION_TRACKER.md`)
+- **505+ tests** pass, clippy clean, native + WASM builds clean
+
+### Fixed (Packaging 2026-02-27)
+- Systemd `ReadWritePaths` now includes all required runtime directories
+- Man page URL corrected to project homepage
+- Tauri plugin ID matches canonical `service-minimisation`
+- AUR PKGBUILD, RPM spec, and Debian packaging install all data files correctly
+
 ## [0.3.3] - 2026-02-25
 
 ### Added (v1.0.0 Infrastructure 2026-02-25)

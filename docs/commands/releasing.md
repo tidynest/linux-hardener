@@ -31,7 +31,7 @@ Performs the full release sequence:
 1. Runs `cargo test --workspace` and `cargo clippy --workspace`
 2. Auto-updates documentation (`./scripts/update_all_docs.py --apply`)
 3. Validates documentation (`./scripts/validate_all.py --quick`)
-4. Bumps version in `Cargo.toml`, `CHANGELOG.md`, `README.md`, `docs/ARCHITECTURE.md`
+4. Bumps version in `Cargo.toml`, `CHANGELOG.md`, `README.md`, `docs/architecture/ARCHITECTURE.md`
 5. Runs `cargo update --workspace`
 6. Creates a git commit and annotated tag (`vX.Y.Z`)
 7. Pushes `main` and the tag to both `origin` (GitHub) and `gitlab` remotes

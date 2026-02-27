@@ -1,6 +1,6 @@
 # hardener-cli — Crate Audit
 
-**Crate:** `hardener-cli` | **Files:** 14 | **Lines:** 3,191
+**Crate:** `hardener-cli` | **Files:** 15 | **Lines:** 3,393
 
 ## Purpose
 User-facing CLI binary — parses arguments, dispatches to subcommand handlers, formats output as coloured text or JSON.
@@ -14,6 +14,7 @@ main.rs
 ├── ssh_config.rs       (SSH connection parsing)
 └── commands/
     ├── mod.rs           (re-exports)
+    ├── state.rs         (shared state init: DB, signing key, audit logger)
     ├── scan.rs          (security scan + history persistence)
     ├── apply.rs         (hardening apply + checkpoint support)
     ├── checkpoint.rs    (CRUD + rollback)
@@ -72,7 +73,7 @@ CLI args → Cli::parse() → match Command
 | # | File | Issue |
 |---|------|-------|
 | D1 | report_wizard.rs, report.rs | PDF `chars().map(\|c\| c as u8)` truncates binary — needs `ReportFormatter` trait to return `Vec<u8>` |
-| D2 | checkpoint.rs, apply.rs | `get_checkpoint_manager()` duplicated verbatim |
+| D2 | checkpoint.rs, apply.rs | `get_checkpoint_manager()` extracted to `state.rs` |
 | D3 | cli.rs | `ReportFormat` enum unused in production |
 | D4 | report_wizard.rs | Framework/format display-name matches repeated 3x |
 | D5 | scan.rs | `_config` loaded but result unused |

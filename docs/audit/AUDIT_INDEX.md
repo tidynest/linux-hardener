@@ -197,17 +197,19 @@ All 11 production crates audited across sessions 2–11.
 
 | Session | Crate | Files | Lines | Fixes | Flags |
 |---------|-------|-------|-------|-------|-------|
-| 2 | hardener-common | 5 | 680 | 2 | 1 |
-| 3 | hardener-types | 1 | 467 | 0 | 0 |
-| 4 | hardener-core | 11 | 2,288 | 5 | 7 |
-| 5 | hardener-state | 9 | 2,987 | 13 | 2 |
-| 6 | hardener-plugins | 13 | 5,492 | 28 | 9 |
-| 7 | hardener-scheduler | 11 | 3,305 | 12 | 2 |
-| 8 | hardener-cli | 14 | 3,191 | 19 | 6 |
-| 9 | hardener-distro | 7 | 1,071 | 6 | 3 |
-| 10 | hardener-compliance | 17 | 3,120 | 5 | 3 |
-| 11 | hardener-ui | 25 | 2,374 | 3 | 2 |
-| **Total** | **11 crates** | **113** | **24,975** | **93** | **35** |
+| 2 | hardener-common | 6 | 640 | 2 | 1 |
+| 3 | hardener-types | 4 | 645 | 0 | 0 |
+| 4 | hardener-core | 13 | 2,719 | 5 | 7 |
+| 5 | hardener-state | 9 | 2,550 | 13 | 2 |
+| 6 | hardener-plugins | 13 | 5,947 | 28 | 9 |
+| 7 | hardener-scheduler | 11 | 3,580 | 12 | 2 |
+| 8 | hardener-cli | 15 | 3,393 | 19 | 6 |
+| 9 | hardener-distro | 7 | 1,019 | 6 | 3 |
+| 10 | hardener-compliance | 17 | 2,856 | 5 | 3 |
+| 11 | hardener-ui | 33 | 4,574 | 3 | 2 |
+| **Total** | **11 crates** | **128** | **27,923** | **93** | **35** |
+
+> **Note (2026-02-27):** Line counts updated to reflect post-refactor state. New files: `binary_utils.rs` (common), `config_validation.rs` (core), `state.rs` (cli), 3 type submodules, 8 UI components + 2 pages + `form_helpers.rs`.
 
 ## Known Issues (pre-flagged)
 

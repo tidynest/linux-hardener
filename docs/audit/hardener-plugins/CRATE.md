@@ -1,5 +1,5 @@
 # hardener-plugins Audit Summary
-**Crate:** `crates/hardener-plugins` | **Files:** 13 | **Lines:** ~5,492
+**Crate:** `crates/hardener-plugins` | **Files:** 13 | **Lines:** ~5,947
 
 ## Architecture
 Largest crate — directly mutates system configuration via 8 hardening plugins implementing `HardeningPlugin` trait. Each plugin follows a table-driven pattern with const arrays defining rules/directives. Firewall uses a strategy pattern with 3 backends (nftables, firewalld, ufw).

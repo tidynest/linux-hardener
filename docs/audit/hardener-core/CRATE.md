@@ -42,7 +42,7 @@ HARDENER_DISABLED_PLUGINS              (env var override)
 ## Architecture Diagram
 ```
 lib.rs (crate root, re-exports)
- ├── config.rs ◄── config_loader.rs
+ ├── config.rs ◄── config_loader.rs ◄── config_validation.rs
  │     │
  │     ▼
  ├── plugin.rs (trait + re-exports from hardener-types/common/state)
@@ -73,6 +73,7 @@ lib.rs (crate root, re-exports)
 |--------|------------|-------------|
 | `config` | `HardenerConfig`, `GlobalConfig`, `PluginConfig`, `PolicyException` | always |
 | `config_loader` | `ConfigLoader` | always |
+| `config_validation` | `validate_config()`, `validate_directive_key()` | always |
 | `plugin` | `HardeningPlugin` trait, 14 type re-exports | trait: `system`; types: always |
 | `context` | `Context`, `SystemInfo`, `PluginAuditEntry`, `AuditOperation` | `system` |
 | `executor/mod` | `SystemExecutor` trait, `CommandOutput`, `FileMetadata` | always |
@@ -97,18 +98,20 @@ lib.rs (crate root, re-exports)
 ## Line Count Summary
 | Module | Total | Prod | Test |
 |--------|-------|------|------|
-| context.rs | 358 | 301 | 57 |
+| config_loader.rs | 403 | 300 | 103 |
+| config_validation.rs | 397 | 250 | 147 |
 | plugin_manager.rs | 334 | 334 | 0 |
 | executor/mock.rs | 315 | 315 | 0 |
-| config_loader.rs | 292 | 189 | 103 |
-| config.rs | 286 | 154 | 132 |
-| registry.rs | 199 | 114 | 85 |
-| executor/ssh.rs | 199 | 199 | 0 |
+| context.rs | 313 | 256 | 57 |
+| executor/ssh.rs | 221 | 221 | 0 |
+| config.rs | 161 | 29 | 132 |
+| testing.rs | 148 | 148 | 0 |
+| registry.rs | 111 | 26 | 85 |
 | plugin.rs | 93 | 81 | 12 |
-| executor/local.rs | 87 | 87 | 0 |
+| executor/local.rs | 88 | 88 | 0 |
 | executor/mod.rs | 72 | 72 | 0 |
-| lib.rs | 59 | 59 | 0 |
-| **Total** | **2,294** | **1,905** | **389** |
+| lib.rs | 63 | 63 | 0 |
+| **Total** | **2,719** | **2,183** | **536** |
 
 ## Verdict
 The `hardener-core` crate is well-structured with clean separation of concerns. The strategy pattern for executors and the petgraph-based dependency resolution are solid architectural choices. Five flags identified: one medium-severity bug (config fallback), two low-severity design issues (dead code, double indirection), one low-severity duplication, and one low-severity security note. Zero production unwraps. The crate is ready for production use with the F-04 config fallback bug as the only item warranting a near-term fix.

@@ -293,7 +293,7 @@ Browser mode enables automated UI testing via Playwright MCP. Configure `playwri
 }
 ```
 
-See [browser-automation.md](archive/browser-automation.md) for complete setup and troubleshooting guide.
+See [browser-automation.md](../archive/browser-automation.md) for complete setup and troubleshooting guide.
 
 ---
 

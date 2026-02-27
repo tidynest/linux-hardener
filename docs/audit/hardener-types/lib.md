@@ -1,8 +1,17 @@
 # hardener-types::lib
-**File:** `crates/hardener-types/src/lib.rs` | **Lines:** 467 (all production, no tests)
+**File:** `crates/hardener-types/src/lib.rs` | **Lines:** 520 (all production, no tests)
 
 ## Purpose
 WASM-compatible shared DTOs — all types that cross the Tauri IPC boundary between native backend and Leptos frontend.
+
+## Submodules
+| Module | Lines | Description |
+|--------|-------|-------------|
+| `config_picker` | 20 | `ConfigSummary` — validated config file summary for UI display |
+| `remote` | 54 | `RemoteHostProfile`, `HostsConfig`, `RemoteConnectionStatus`, `RemoteConnectionInfo` |
+| `scheduler` | 51 | `SchedulerUiConfig`, `NotificationUiConfig`, `EmailUiConfig`, `WebhookUiConfig`, `TestNotificationResult` |
+
+Note: `config_picker` and `remote` are re-exported via `pub use *`; `scheduler` is `pub mod` only.
 
 ## Dependencies
 - Imports from: `serde` — Serialize/Deserialize, `chrono` — DateTime<Utc>, `std::fmt`
@@ -29,6 +38,9 @@ WASM-compatible shared DTOs — all types that cross the Tauri IPC boundary betw
 | `ComplianceReport` | struct | Full framework report: controls + summary |
 | `ControlResult` | struct | Single control check result |
 | `ComplianceSummary` | struct | Aggregate stats: passing, failing, score% |
+| `FileRestoreAction` | enum (4) | Restored, Removed, PermissionsRestored, Skipped |
+| `FileRestoreResult` | struct | Single file restore outcome (path, action, success, error) |
+| `RollbackResult` | struct | Full rollback result (checkpoint_id, name, success, files) |
 
 ## Data Flow
 ```

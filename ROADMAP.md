@@ -225,7 +225,7 @@ sudo ./scripts/root-test-suite.sh --apply      # Full tests (apply + rollback)
 
 ### v0.3.2 — Frontend Layout & Accessibility ✅
 
-> **Implementation Guide**: See [docs/FRONTEND_LAYOUT_PLAN.md](docs/FRONTEND_LAYOUT_PLAN.md)
+> **Implementation Guide**: See [docs/FRONTEND_LAYOUT_PLAN.md](docs/archive/FRONTEND_LAYOUT_PLAN.md)
 
 | Feature | Description | Priority | Status |
 |---------|-------------|----------|--------|
@@ -460,9 +460,10 @@ User clicks "Apply"
 
 | Feature | Description | Priority | Status |
 |---------|-------------|----------|--------|
-| Security audit | Third-party security review | Critical | ⬜ Pending |
+| Security audit (internal) | Internal security review (53/53 findings) | Critical | ✅ Complete |
+| Security audit (external) | Third-party security review | Critical | ⬜ Pending |
 | Package distribution | deb, rpm, AUR packages | High | 🔄 Specs ready |
-| Comprehensive documentation | User guide, API docs, man page | High | 🔄 Man page done |
+| Comprehensive documentation | User guide, API docs, man page | High | 🔄 Man page + INSTALL.md done |
 | Performance optimisation | Scan speed improvements | Medium | ⬜ Pending |
 | Internationalisation | Multi-language support | Low | ⬜ Pending |
 
@@ -503,7 +504,7 @@ Features planned for post-v1.0.0 releases.
 
 | Item | Description | Priority | Status |
 |------|-------------|----------|--------|
-| Increase test coverage | Target 90%+ coverage | Low | ✅ Complete (428+ tests) |
+| Increase test coverage | Target 90%+ coverage | Low | ✅ Complete (505+ tests) |
 | Consolidate `create_plugin_registry()` | Duplicated in CLI, report, Tauri | Low | ✅ Complete |
 | Consolidate test mock plugins | Duplicated in registry.rs and plugin_manager_tests.rs | Low | ✅ Complete |
 | Config file utilities | Duplicated parsing/backup in SSH and PAM plugins | Low | ✅ Complete |

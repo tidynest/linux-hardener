@@ -1,6 +1,6 @@
 # hardener-distro — Crate Audit
 
-**Crate:** `hardener-distro` | **Files:** 7 | **Lines:** 1,071
+**Crate:** `hardener-distro` | **Files:** 7 | **Lines:** 1,019
 
 ## Purpose
 Distribution detection and package manager abstraction — unified interface for APT, DNF, Pacman, Zypper.

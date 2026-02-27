@@ -1,6 +1,6 @@
 # hardener-state — Crate Audit
 
-**Version:** 0.3.3 | **Files:** 9 | **Lines:** ~2,950 (prod) + ~1,000 (test)
+**Version:** 0.3.3 | **Files:** 9 | **Lines:** ~2,550 total
 **Role:** State persistence layer — checkpoints, rollback, audit logging, scan history.
 
 ## Architecture Overview
@@ -36,7 +36,7 @@ AuditLogger(file_path) → log_action()/log_failure() → HashChain.next_hash() 
 
 | Component | Risk | Mitigation |
 |-----------|------|------------|
-| Signing key (`signing.rs`) | Key theft → forged checkpoints | Stored at `/var/lib/linux-hardener/signing.key` with 0600 perms |
+| Signing key (`signing.rs`) | Key theft → forged checkpoints | Stored at `/etc/linux-hardener/signing.key` with 0400 perms; AES-256-GCM encrypted at rest |
 | Audit log (`audit.rs`) | Log tampering | SHA-256 hash chain; `verify_integrity()` detects modifications |
 | File restore (`manager.rs`) | Rollback writes arbitrary files as root | Scoped to previously-captured paths; requires root privileges |
 | SQLite DB (`db.rs`) | DB corruption | Schema with foreign keys + ON DELETE CASCADE; pool max 5 connections |

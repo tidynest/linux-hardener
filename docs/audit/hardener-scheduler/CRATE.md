@@ -1,5 +1,5 @@
 # hardener-scheduler Audit Summary
-**Crate:** `crates/hardener-scheduler` | **Files:** 11 | **Lines:** ~3,305
+**Crate:** `crates/hardener-scheduler` | **Files:** 11 | **Lines:** ~3,580
 
 ## Architecture
 Cron-based scanning daemon. `Daemon` manages lifecycle (start/stop/signal handling), `ScanRunner` orchestrates plugin scans → severity filtering → JSON export → DB persistence → notifications. Notification subsystem uses `Notifier` trait with email (SMTP/lettre) and webhook (Slack/Discord/Generic) implementations. Systemd unit generator for alternative scheduling.

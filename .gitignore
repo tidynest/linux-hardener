@@ -41,13 +41,13 @@ crates/hardener-ui/themes/
 SSH_CLI_IMPLEMENTATION.md
 docs/HANDOFF.md
 docs/SSH_REMOTE_PLAN.md
-docs/DOCUMENTATION_AUDIT.md
-docs/FRONTEND_LAYOUT_PLAN.md
-docs/GUI_V031_TEST_PLAN.md
-docs/browser-automation.md
-docs/claude-code-configuration.md
-docs/css-architecture.md
-docs/tauri-plus-leptos-development-on-arch-linux-with-hyprland.md
+docs/archive/DOCUMENTATION_AUDIT.md
+docs/archive/FRONTEND_LAYOUT_PLAN.md
+docs/archive/GUI_V031_TEST_PLAN.md
+docs/archive/browser-automation.md
+docs/archive/claude-code-configuration.md
+docs/archive/css-architecture.md
+docs/archive/tauri-plus-leptos-development-on-arch-linux-with-hyprland.md
 MCP_INSTRUCTIONS.md
 
 # Local development logs

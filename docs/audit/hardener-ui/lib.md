@@ -1,5 +1,5 @@
 # hardener-ui::lib
-**File:** `crates/hardener-ui/src/lib.rs` | **Lines:** 119
+**File:** `crates/hardener-ui/src/lib.rs` | **Lines:** 123
 
 ## Purpose
 Crate root. Defines the `App` component with client-side router (Dashboard/Analysis/Hardening),
@@ -14,7 +14,7 @@ global error banner, skip-link for accessibility, and loads persisted scan data 
 ## Internal Details
 | Item | Description |
 |------|-------------|
-| Router | Three routes: `/` (Dashboard), `/analysis` (Analysis), `/hardening` (Hardening) |
+| Router | Five routes: `/` (Dashboard), `/analysis` (Analysis), `/hardening` (Hardening), `/remote` (Remote), `/scheduler` (Scheduler) |
 | Error banner | Reads `AppState.has_error` signal, displays global error message |
 | Skip-link | `<a>` element for keyboard accessibility — jumps to `#main-content` |
 | On-mount scan | Calls `invoke_get_latest_scan()` to hydrate state from last session |

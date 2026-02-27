@@ -441,6 +441,7 @@ pub struct ScanRunner {
 | `src/components/schedule_section.rs` | Cron schedule configuration form | `ScheduleSection` |
 | `src/components/notification_section.rs` | Email and webhook notification config | `NotificationSection` |
 | `src/components/config_file_card.rs` | Config file picker card component (text input, browse, validation) | `ConfigFileCard` |
+| `src/components/form_helpers.rs` | Shared JsCast event extraction helpers | `input_value()`, `checkbox_checked()`, `select_value()` |
 
 **Note**: This crate depends only on `hardener-types` for shared types to ensure WASM compatibility. External dependencies include Leptos (WASM framework), wasm-bindgen, and web-sys for browser APIs.
 
@@ -711,7 +712,7 @@ pub async fn pick_config_file(app: tauri::AppHandle) -> Result<Option<String>, S
 | `docs/RELEASING.md` | Versioning and release process |
 | `docs/SSH_REMOTE_SCANNING.md` | SSH remote scanning user guide |
 | `docs/THEME_DESIGN_GUIDE.md` | GUI theming system documentation |
-| `docs/browser-automation.md` | Playwright browser automation setup and troubleshooting |
+| `docs/archive/browser-automation.md` | Playwright browser automation setup and troubleshooting (archived) |
 | `docs/css-architecture.md` | CSS architecture and theming implementation details |
 | `docs/FRONTEND_LAYOUT_PLAN.md` | Frontend page layout and component plan |
 | `docs/DOCUMENTATION_AUDIT.md` | Documentation coverage audit results |

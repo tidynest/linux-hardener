@@ -167,7 +167,7 @@ cd crates/hardener-ui && trunk serve --port 1420
 
 # Browser automation via Playwright MCP (recommended for UI testing)
 # Configure playwright-brave in .mcp.json, then use mcp__playwright-brave__browser_navigate
-# See docs/browser-automation.md for complete setup instructions
+# See MCP_INSTRUCTIONS.md for complete setup instructions
 ```
 
 ### Development Workflow Commands
