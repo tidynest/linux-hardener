@@ -315,7 +315,7 @@ class DocumentationUpdater:
 
         # Files and patterns to update
         updates = [
-            ("docs/ARCHITECTURE.md", r'(\*\*Version\*\*:\s*)\d+\.\d+\.\d+'),
+            ("docs/architecture/ARCHITECTURE.md", r'(\*\*Version\*\*:\s*)\d+\.\d+\.\d+'),
             ("README.md", r'(\*\*Version\*\*:\s*)\d+\.\d+\.\d+'),
         ]
 

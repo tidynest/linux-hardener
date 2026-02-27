@@ -12,7 +12,7 @@ Exit codes:
 Checks:
     - README.md plugin table
     - ROADMAP.md plugin checklist
-    - docs/ARCHITECTURE.md plugin table
+    - docs/architecture/ARCHITECTURE.md plugin table
 """
 
 import re
@@ -118,7 +118,7 @@ def parse_plugins_from_readme(root: Path) -> dict[str, str]:
 
 def parse_plugins_from_architecture(root: Path) -> dict[str, dict]:
     """Parse plugin info from ARCHITECTURE.md plugin table."""
-    arch_file = root / "docs" / "ARCHITECTURE.md"
+    arch_file = root / "docs" / "architecture" / "ARCHITECTURE.md"
     content = arch_file.read_text()
 
     plugins = {}
@@ -181,7 +181,7 @@ def main():
     print()
 
     # Check 2: All source plugins are in ARCHITECTURE.md
-    print(f"{BLUE}Checking docs/ARCHITECTURE.md...{NC}")
+    print(f"{BLUE}Checking docs/architecture/ARCHITECTURE.md...{NC}")
     # Architecture uses struct names like "AuditHardeningPlugin"
     arch_names = set(arch_plugins.keys())
 

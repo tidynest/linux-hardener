@@ -10,7 +10,7 @@ Exit codes:
     1: Discrepancies found
 
 Checks:
-    - docs/ARCHITECTURE.md framework table
+    - docs/architecture/ARCHITECTURE.md framework table
     - ROADMAP.md framework table
 """
 
@@ -90,7 +90,7 @@ def parse_documented_counts(root: Path) -> dict[str, dict[str, str]]:
     docs = {}
 
     files_to_check = [
-        ("docs/ARCHITECTURE.md", "ARCHITECTURE.md"),
+        ("docs/architecture/ARCHITECTURE.md", "ARCHITECTURE.md"),
         ("ROADMAP.md", "ROADMAP.md"),
     ]
 
