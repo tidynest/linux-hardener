@@ -46,6 +46,11 @@ build() {
     export CFLAGS="${CFLAGS//-flto=auto/}"
     export CXXFLAGS="${CXXFLAGS//-flto=auto/}"
 
+    # Remap absolute source paths embedded by panic!/unwrap/tracing to
+    # relative prefixes — prevents $srcdir and $HOME leaking into binaries.
+    _remap="--remap-path-prefix=$srcdir=src: --remap-path-prefix=$HOME/.cargo/registry/src/=registry: --remap-path-prefix=$HOME/.rustup/toolchains/=toolchain:"
+    export RUSTFLAGS="${RUSTFLAGS:-} ${_remap}"
+
     cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli
 
     # Build the Leptos WASM frontend (Tauri embeds these assets from dist/).

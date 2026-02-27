@@ -1300,15 +1300,43 @@ pub async fn save_scheduler_config(
         .parse()
         .map_err(|e| safe_err(format!("Failed to parse config: {e}")))?;
 
-    let scheduler_toml = toml::to_string(&config)
+    // Remove existing scheduler section, serialise the rest, then append
+    // a properly grouped [scheduler] block at the end.  toml_edit scatters
+    // dotted subtables ([scheduler.notifications.*]) between unrelated
+    // sections when assigned via the Table API, so we build the block as
+    // a plain string instead.
+    document.remove("scheduler");
+    let mut output = document.to_string();
+
+    let scheduler_toml = toml::to_string_pretty(&config)
         .map_err(|e| safe_err(format!("Failed to serialise scheduler config: {e}")))?;
-    let scheduler_table: toml_edit::DocumentMut = scheduler_toml
-        .parse()
-        .map_err(|e| safe_err(format!("Failed to parse scheduler TOML: {e}")))?;
 
-    document["scheduler"] = scheduler_table.as_item().clone();
+    // Split serialised scheduler into top-level keys and subtable sections,
+    // prefixing each [table] header with "scheduler.".
+    let mut top_keys = String::new();
+    let mut subtables = String::new();
+    for line in scheduler_toml.lines() {
+        if line.starts_with('[') || !subtables.is_empty() {
+            if line.starts_with('[') {
+                subtables.push_str(&line.replacen('[', "[scheduler.", 1));
+            } else {
+                subtables.push_str(line);
+            }
+            subtables.push('\n');
+        } else {
+            top_keys.push_str(line);
+            top_keys.push('\n');
+        }
+    }
 
-    std::fs::write(&write_path, document.to_string())
+    output.push_str("\n[scheduler]\n");
+    output.push_str(&top_keys);
+    if !subtables.is_empty() {
+        output.push('\n');
+        output.push_str(&subtables);
+    }
+
+    std::fs::write(&write_path, output)
         .map_err(|e| safe_err(format!("Failed to write config: {e}")))?;
 
     Ok("Configuration saved".to_string())
