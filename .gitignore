@@ -77,3 +77,10 @@ test-results/
 # Git worktrees (isolated development)
 .worktrees/
 
+# makepkg build artifacts
+packaging/src/
+packaging/pkg/
+packaging/*.pkg.tar*
+packaging/*.tar.gz
+packaging/*.tar.zst
+

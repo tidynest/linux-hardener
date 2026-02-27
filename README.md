@@ -1,7 +1,7 @@
 # Linux System Hardener
 
 **Author**: Eric Jingryd
-**Version**: 0.3.3 (Development Release)
+**Version**: 1.0.0
 **License**: Apache-2.0
 
 A comprehensive Linux security automation tool with multi-distribution support, built in Rust. Provides automated security scanning, hardening, and compliance reporting with full rollback capabilities.
@@ -67,7 +67,7 @@ The tool is designed for system administrators, DevOps engineers, and security p
 
 ## Project Status
 
-**Current Phase**: Development Release (v0.3.3)
+**Current Phase**: Production Release (v1.0.0)
 
 ### Test Coverage
 
@@ -124,11 +124,26 @@ linux-system-hardener/
 
 ## Getting Started
 
-### Prerequisites
+### Install from AUR (Arch Linux)
 
-- Rust 1.85+ (with `wasm32-unknown-unknown` target for UI)
+```bash
+# Using an AUR helper (e.g. paru, yay)
+paru -S linux-system-hardener
+
+# Or manually
+git clone https://aur.archlinux.org/linux-system-hardener.git
+cd linux-system-hardener
+makepkg -si
+```
+
+This installs both the `hardener` CLI and the `linux-hardener-desktop` GUI application.
+
+### Prerequisites (Building from Source)
+
+- Rust 1.85+ (with `wasm32-unknown-unknown` and `x86_64-unknown-linux-musl` targets)
 - Linux system (for full functionality)
 - Root access (for applying hardening changes)
+- `musl` toolchain (for static CLI binary)
 
 ### Build from Source
 
@@ -556,11 +571,11 @@ See [ROADMAP.md](ROADMAP.md) for detailed implementation plans for upcoming feat
 - [ ] Historical security trends
 - [ ] Test on GNOME, KDE, XFCE desktop environments (pkexec/polkit agents)
 
-### v1.0.0 - Production Release (Future)
-- [ ] Security audit completed
-- [ ] Package distribution (deb, rpm, AUR)
-- [ ] Comprehensive user documentation
-- [ ] Performance optimisation
+### v1.0.0 - Production Release (Complete)
+- [x] Security audit completed
+- [x] Package distribution (AUR)
+- [x] Comprehensive user documentation
+- [x] Performance optimisation
 
 ---
 
