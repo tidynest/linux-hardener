@@ -302,4 +302,4 @@ Planned for future releases:
 - Jump host / bastion support
 - Remote checkpoint storage option
 
-**Last Updated**: 2026-02-25
+**Last Updated**: 2026-02-27

@@ -1,6 +1,6 @@
 # Remaining Work — Linux System Hardener
 
-> **Last Updated:** 2026-02-27 | **Version:** 1.0.0
+> **Last Updated:** 2026-02-27 | **Version:** 1.0.2
 
 ---
 
