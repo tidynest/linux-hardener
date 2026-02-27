@@ -14,7 +14,4 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
 PrivateTemp=true
-ReadWritePaths=/var/lib/linux-hardener
-
-[Install]
-WantedBy=multi-user.target
+ReadWritePaths=/var/lib/linux-hardener /var/log/linux-hardener /etc/linux-hardener

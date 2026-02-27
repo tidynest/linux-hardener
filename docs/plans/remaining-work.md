@@ -73,13 +73,14 @@ All 21 items fixed across 8 crates.
 | Should-Have | Polkit policy file | Nicer auth dialogs instead of raw pkexec |
 | Should-Have | WCAG AA contrast audit | Accessibility compliance for the GUI |
 
-### Phase 1 — Infrastructure
+### Phase 1 — Infrastructure (Complete)
 
-- [ ] `systemd/hardener-scheduler.service` + `.timer`
-- [ ] `data/linux-hardener.desktop`
-- [ ] `data/config.toml.example` with commented defaults
-- [ ] `man/hardener.1` man page
-- [ ] `packaging/` — PKGBUILD (AUR), `.spec` (RPM), `debian/` tree
+- [x] `systemd/linux-hardener.service` + `.timer` — oneshot + daily 02:00 timer, sandboxed with `ProtectSystem=strict`
+- [x] `data/linux-hardener.desktop` — XDG 1.0 compliant desktop entry
+- [x] `data/config.toml.example` — commented defaults for all 8 plugins
+- [x] `data/hardener.1` — full man page covering all commands and options
+- [x] `data/com.tidynest.linux-hardener.policy` — polkit actions for apply + rollback
+- [x] `packaging/` — PKGBUILD (AUR), `.spec` (RPM), `debian/` tree — all install man page, polkit policy, config, log dir
 
 ### Phase 2 — Quality
 

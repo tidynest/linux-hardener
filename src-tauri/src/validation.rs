@@ -25,7 +25,7 @@ const KNOWN_PLUGIN_IDS: &[&str] = &[
     "mac-hardening",
     "pam-hardening",
     "permissions-hardening",
-    "services-hardening",
+    "service-minimisation",
     "ssh-hardening",
 ];
 

@@ -38,11 +38,20 @@ install -Dm644 systemd/linux-hardener.timer \
 install -Dm644 data/linux-hardener.desktop \
     %{buildroot}%{_datadir}/applications/linux-hardener.desktop
 
+install -Dm644 data/hardener.1 \
+    %{buildroot}%{_mandir}/man1/hardener.1
+
+install -Dm644 data/com.tidynest.linux-hardener.policy \
+    %{buildroot}%{_datadir}/polkit-1/actions/com.tidynest.linux-hardener.policy
+
 install -Dm644 data/config.toml.example \
     %{buildroot}%{_docdir}/%{name}/config.toml.example
+install -Dm644 data/config.toml.example \
+    %{buildroot}%{_sysconfdir}/linux-hardener/config.toml
 
 install -d -m 755 %{buildroot}%{_sysconfdir}/linux-hardener
 install -d -m 755 %{buildroot}%{_localstatedir}/lib/linux-hardener
+install -d -m 700 %{buildroot}%{_localstatedir}/log/linux-hardener
 
 %post
 systemctl daemon-reload || true
@@ -63,8 +72,12 @@ systemctl daemon-reload || true
 %{_unitdir}/linux-hardener.service
 %{_unitdir}/linux-hardener.timer
 %{_datadir}/applications/linux-hardener.desktop
+%{_mandir}/man1/hardener.1*
+%{_datadir}/polkit-1/actions/com.tidynest.linux-hardener.policy
+%config(noreplace) %{_sysconfdir}/linux-hardener/config.toml
 %dir %{_sysconfdir}/linux-hardener
 %dir %{_localstatedir}/lib/linux-hardener
+%dir %attr(700,root,root) %{_localstatedir}/log/linux-hardener
 
 %changelog
 * Tue Feb 25 2026 Eric Jingryd <tidynest@proton.me> - 0.3.3-1

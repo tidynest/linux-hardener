@@ -60,13 +60,24 @@ package() {
     install -Dm644 "data/linux-hardener.desktop" \
         "$pkgdir/usr/share/applications/linux-hardener.desktop"
 
+    # Man page
+    install -Dm644 "data/hardener.1" \
+        "$pkgdir/usr/share/man/man1/hardener.1"
+
+    # Polkit policy
+    install -Dm644 "data/com.tidynest.linux-hardener.policy" \
+        "$pkgdir/usr/share/polkit-1/actions/com.tidynest.linux-hardener.policy"
+
     # Default config
     install -Dm644 "data/config.toml.example" \
         "$pkgdir/usr/share/doc/$pkgname/config.toml.example"
+    install -Dm644 "data/config.toml.example" \
+        "$pkgdir/etc/linux-hardener/config.toml"
 
     # Directories
     install -dm755 "$pkgdir/etc/linux-hardener"
     install -dm755 "$pkgdir/var/lib/linux-hardener"
+    install -dm700 "$pkgdir/var/log/linux-hardener"
 
     # Licence and docs
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"

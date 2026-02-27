@@ -3,7 +3,10 @@ set -e
 
 case "$1" in
     configure)
-        [ -d /var/lib/linux-hardener ] && chown root:root /var/lib/linux-hardener
+        install -dm755 /var/lib/linux-hardener
+        chown root:root /var/lib/linux-hardener
+        install -dm700 /var/log/linux-hardener
+        chown root:root /var/log/linux-hardener
         command -v systemctl >/dev/null && systemctl daemon-reload || true
         ;;
 esac
