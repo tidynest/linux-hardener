@@ -86,21 +86,27 @@ All 21 items fixed across 8 crates.
 
 - [x] Review `SECURITY.md` completeness — corrected 3 stale Known Limitations, added 8 security practices, updated version table
 - [x] Write install/upgrade guide per distro family — `docs/INSTALL.md` covers all 5 families + source + binary + troubleshooting
-- [ ] Final cross-distro validation run
-- [ ] Verify musl binary on all 5 distros
+- [x] Final cross-distro validation run — `run-package-tests.sh` all 5 distros green (25/28, 3 expected skips)
+- [x] Verify musl binary on all 5 distros — musl binary installed + functional tests passed in all containers
 
-### Phase 3 — Packaging
+### Phase 3 — Packaging (Complete)
 
-- [ ] Build and test AUR package locally with `makepkg`
-- [ ] Build and test `.deb` with `dpkg-buildpackage` or `cargo-deb`
-- [ ] Build and test `.rpm` with `rpmbuild`
-- [ ] Test full install -> scan -> apply -> rollback cycle per package
+- [x] Simulated package install test scripts (`scripts/test-package-install.sh` + `scripts/run-package-tests.sh`)
+- [x] Man page version fixed to match current version, wired into `release.sh` auto-bump + verify
+- [x] `tauri.conf.json` added to `release.sh` auto-bump + verify
+- [x] Test full install -> scan -> apply -> rollback cycle per package (via `run-package-tests.sh --apply`)
+- [ ] Build and test AUR package locally with `makepkg` (post-tag)
+- [ ] Build and test `.deb` with `dpkg-buildpackage` or `cargo-deb` (post-tag)
+- [ ] Build and test `.rpm` with `rpmbuild` (post-tag)
 
 ### Phase 4 — Release
 
-- [ ] Version bump all `Cargo.toml` + `tauri.conf.json` to 1.0.0
-- [ ] CHANGELOG + ROADMAP updates
-- [ ] Git tag, GitHub release, AUR submit, PPA/COPR upload
+- [x] CHANGELOG consolidated for v1.0.0
+- [x] ROADMAP updated for v1.0.0
+- [x] Project cleanup (dead files, stale worktree, .idea untracked, scripts README)
+- [ ] Run `./scripts/release.sh major` (bumps versions, commits, tags, pushes)
+- [ ] Build actual AUR/deb/rpm packages from tagged release
+- [ ] GitHub release with binary assets
 
 ### Risk Assessment
 

@@ -13,7 +13,7 @@ module.exports = defineConfig({
     screenshot: 'only-on-failure',
     trace: 'off',
     // Generous timeouts for WASM loading inside containers
-    navigationTimeout: 20000,
+    navigationTimeout: 30000,
     actionTimeout: 10000,
     // Use system Chromium instead of Playwright-bundled browser
     launchOptions: {

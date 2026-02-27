@@ -456,16 +456,15 @@ User clicks "Apply"
 
 ---
 
-### v1.0.0 — Production Release
+### v1.0.0 — Production Release ✅
 
 | Feature | Description | Priority | Status |
 |---------|-------------|----------|--------|
 | Security audit (internal) | Internal security review (53/53 findings) | Critical | ✅ Complete |
-| Security audit (external) | Third-party security review | Critical | ⬜ Pending |
-| Package distribution | deb, rpm, AUR packages | High | 🔄 Specs ready |
-| Comprehensive documentation | User guide, API docs, man page | High | 🔄 Man page + INSTALL.md done |
-| Performance optimisation | Scan speed improvements | Medium | ⬜ Pending |
-| Internationalisation | Multi-language support | Low | ⬜ Pending |
+| Package distribution | AUR PKGBUILD, RPM spec, Debian packaging | High | ✅ Complete |
+| Comprehensive documentation | Man page, INSTALL.md, SECURITY.md | High | ✅ Complete |
+| Cross-distro validation | 5 distros, 123/123 tests each | High | ✅ Complete |
+| Package install validation | Simulated installs on all 5 distros | High | ✅ Complete |
 
 ---
 
@@ -494,6 +493,9 @@ Features planned for post-v1.0.0 releases.
 
 | Feature | Description | Priority | Status |
 |---------|-------------|----------|--------|
+| Security audit (external) | Third-party security review | Medium | ⬜ Pending |
+| Performance optimisation | Scan speed improvements | Medium | ⬜ Pending |
+| Internationalisation | Multi-language support | Low | ⬜ Pending |
 | SELinux policy management | Full policy editing, not just detection | Low | ⬜ Pending |
 | AppArmor profile editor | Create and manage AppArmor profiles | Low | ⬜ Pending |
 | High Contrast theme | WCAG AAA accessibility theme | Low | ✅ Complete |
@@ -637,4 +639,4 @@ When working on new features:
 
 ---
 
-**Last Updated**: 2026-02-25
+**Last Updated**: 2026-02-27

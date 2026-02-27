@@ -38,11 +38,33 @@ verify_versions() {
         fi
     fi
 
+    # Check data/hardener.1 (.TH header)
+    if [[ -f "data/hardener.1" ]]; then
+        local man_version
+        man_version=$(grep '^\.\s*TH' data/hardener.1 | sed 's/.*"\([0-9]\+\.[0-9]\+\.[0-9]\+\)".*/\1/' || echo "NOT_FOUND")
+        if [[ "$man_version" != "$cargo_version" ]]; then
+            all_match=false
+            mismatches+=("data/hardener.1: $man_version")
+        fi
+    fi
+
+    # Check src-tauri/tauri.conf.json
+    if [[ -f "src-tauri/tauri.conf.json" ]]; then
+        local tauri_version
+        tauri_version=$(grep '"version"' src-tauri/tauri.conf.json | head -1 | sed 's/.*"\([0-9]\+\.[0-9]\+\.[0-9]\+\)".*/\1/' || echo "NOT_FOUND")
+        if [[ "$tauri_version" != "$cargo_version" ]]; then
+            all_match=false
+            mismatches+=("src-tauri/tauri.conf.json: $tauri_version")
+        fi
+    fi
+
     # Report results
     echo -e "  Cargo.toml (workspace): ${GREEN}${cargo_version}${NC}"
 
     if $all_match; then
         echo -e "  docs/ARCHITECTURE.md:   ${GREEN}${cargo_version}${NC}"
+        echo -e "  data/hardener.1:        ${GREEN}${cargo_version}${NC}"
+        echo -e "  tauri.conf.json:        ${GREEN}${cargo_version}${NC}"
         echo -e "\n${GREEN}✓ All version references match${NC}"
         return 0
     else
@@ -233,6 +255,26 @@ for doc_file in "${DOC_FILES[@]}"; do
     fi
 done
 
+# Update man page version in .TH header
+if [[ -f "data/hardener.1" ]]; then
+    if $DRY_RUN; then
+        echo "Would update version in data/hardener.1"
+    else
+        sed -i "s/^\(\.TH HARDENER 1 \"[^\"]*\" \"\)[0-9]\+\.[0-9]\+\.[0-9]\+/\1${NEW_VERSION}/" "data/hardener.1"
+        echo "  Updated data/hardener.1"
+    fi
+fi
+
+# Update Tauri desktop app version
+if [[ -f "src-tauri/tauri.conf.json" ]]; then
+    if $DRY_RUN; then
+        echo "Would update version in src-tauri/tauri.conf.json"
+    else
+        sed -i "s/\"version\": \"[0-9]\+\.[0-9]\+\.[0-9]\+\"/\"version\": \"${NEW_VERSION}\"/" "src-tauri/tauri.conf.json"
+        echo "  Updated src-tauri/tauri.conf.json"
+    fi
+fi
+
 # Step 3c: Update test count in README.md
 echo -e "\n${BLUE}Step 3c: Updating test count in README.md...${NC}"
 if $DRY_RUN; then
@@ -274,6 +316,8 @@ else
     git add Cargo.toml Cargo.lock CHANGELOG.md README.md
     git add docs/*.md 2>/dev/null || true
     git add scripts/README.md 2>/dev/null || true
+    git add data/hardener.1 2>/dev/null || true
+    git add src-tauri/tauri.conf.json 2>/dev/null || true
     git commit -m "chore(release): bump version to ${NEW_VERSION}"
 fi
 

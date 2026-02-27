@@ -25,7 +25,7 @@ Thumbs.db
 *_backup_*
 
 # IDE-specific
-.idea/dictionaries/
+.idea/
 .vscode/settings.json
 
 # MCP configuration (personal/machine-specific)
@@ -61,6 +61,9 @@ node_modules/
 
 # Debug screenshots
 pics-debug/
+
+# Root-level lockfile (no package.json at root)
+package-lock.json
 
 # Python virtual environments
 .venv/

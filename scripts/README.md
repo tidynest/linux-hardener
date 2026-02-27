@@ -1,6 +1,6 @@
 # Project Scripts
 
-**Last Updated**: 2026-02-26
+**Last Updated**: 2026-02-27
 
 This directory contains utility scripts for the Linux Hardening Tool project.
 
@@ -32,6 +32,8 @@ This directory contains utility scripts for the Linux Hardening Tool project.
 | **Single distro test** | `sudo ./scripts/run-cross-distro-tests.sh --distro arch` |
 | **GUI tests (Web UI)** | `sudo ./scripts/run-gui-tests.sh` |
 | **Tauri GUI tests** | `sudo ./scripts/run-tauri-gui-tests.sh` |
+| **Package install tests** | `sudo ./scripts/run-package-tests.sh` |
+| **Single distro pkg test** | `sudo ./scripts/run-package-tests.sh --distro arch` |
 
 ---
 
@@ -1387,7 +1389,107 @@ sudo ./scripts/run-tauri-gui-tests.sh
 
 **Script**: `tauri-gui-test-inner.sh`
 
-**Purpose**: Runs inside the nspawn container for Tauri desktop tests. Starts Xvfb, launches the Tauri application, and runs Playwright tests against the desktop window.
+**Purpose**: Runs inside the Arch nspawn container for Tauri desktop tests. Starts Xvfb on display `:99`, launches the Tauri binary (`target/debug/linux-hardener-desktop`), and tests 5 of 7 IPC commands using `xdotool` (commands requiring `pkexec` are skipped). Captures screenshots via `xwd` + ImageMagick.
+
+**Usage**:
+```bash
+# Called automatically by run-tauri-gui-tests.sh — not invoked directly
+/bin/bash /project/scripts/tauri-gui-test-inner.sh
+```
+
+---
+
+## Package Install Test Scripts
+
+Two scripts validate that the distribution packages (AUR, deb, rpm) install correctly and produce a working system.
+
+---
+
+### Package Install Test Runner
+
+**Script**: `run-package-tests.sh`
+
+**Purpose**: Host orchestrator that validates package installs across all 5 distributions. For each distro, copies the musl binary and `test-package-install.sh` into the container, then runs the inner script via `systemd-nspawn --pipe`. Mirrors the structure of `run-cross-distro-tests.sh` but focuses on packaging — install, validate, functional test, uninstall.
+
+**Usage**:
+```bash
+# Run on all 5 distros
+sudo ./scripts/run-package-tests.sh
+
+# Single distro
+sudo ./scripts/run-package-tests.sh --distro arch
+
+# With destructive tests (apply + rollback)
+sudo ./scripts/run-package-tests.sh --apply
+
+# Rebuild musl binary first
+sudo ./scripts/run-package-tests.sh --rebuild
+```
+
+**Options**:
+| Flag | Description |
+|------|-------------|
+| `--apply` | Enable apply + rollback tests inside containers |
+| `--distro NAME` | Test single distro: `arch`, `debian`, `fedora`, `rhel`, `opensuse` |
+| `--rebuild` | Build musl static binary before testing |
+| `--help` | Show usage |
+
+**Output Files**:
+```
+test-results/
+  pkg-arch.log         # Package test output for Arch
+  pkg-debian.log       # Package test output for Debian
+  pkg-fedora.log       # Package test output for Fedora
+  pkg-rhel.log         # Package test output for Rocky 9
+  pkg-opensuse.log     # Package test output for openSUSE
+  pkg-summary.txt      # Aggregated results table
+```
+
+**Exit Codes**:
+- `0`: All distros passed
+- `1`: One or more distros had failures
+
+**Dependencies**:
+- Bash
+- systemd-nspawn (part of systemd)
+- Pre-built musl binary (or use --rebuild)
+- Root privileges
+- Container filesystems at `/var/lib/machines/`
+
+---
+
+### Package Install Validation (Inner Script)
+
+**Script**: `test-package-install.sh`
+
+**Purpose**: Runs inside the nspawn container via `run-package-tests.sh`. Simulates a distribution package install by mirroring the PKGBUILD `package()` function, then validates the complete file layout, permissions, and basic functionality.
+
+**Usage**:
+```bash
+# Called automatically by run-package-tests.sh — not invoked directly
+/bin/bash /project/scripts/test-package-install.sh [--apply]
+```
+
+**What It Validates**:
+| Category | Checks |
+|----------|--------|
+| Binary install | Binary at `/usr/bin/hardener`, executable |
+| Man page | Installed at `/usr/share/man/man1/hardener.1.gz` |
+| Systemd unit | `hardener.service` present and loadable |
+| Config files | Default config at `/etc/linux-hardener/config.toml` |
+| Permissions | Config dir `0755`, signing key `0400` |
+| Desktop entry | `.desktop` file and polkit rule installed |
+| Functional | `hardener --version`, `hardener scan --dry-run` |
+
+**Exit Codes**:
+- `0`: All tests passed
+- `1`: One or more tests failed
+
+**Dependencies**:
+- Bash
+- Pre-built musl binary at `/project/target/*/release/hardener`
+- Root privileges
+- Container environment
 
 ---
 

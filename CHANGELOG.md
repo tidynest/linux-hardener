@@ -7,20 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added (Documentation 2026-02-27)
-- **INSTALL.md**: Installation guide covering all 5 distro families (Arch, Debian, Fedora, Rocky, openSUSE)
-- **SECURITY.md**: Updated with 8 security practices, corrected 3 stale Known Limitations
+### 1.0.0 — Production Release
 
-### Changed (Code Quality 2026-02-27)
-- **Shared helpers**: Extracted `form_helpers.rs` (UI JsCast events), `run_package_command` + `rpm_is_installed` (distro package ops) to reduce duplication
-- **Security remediation**: All 53 internal audit findings resolved (see `docs/security-audit/REMEDIATION_TRACKER.md`)
-- **505+ tests** pass, clippy clean, native + WASM builds clean
+First stable release. Feature-complete Linux system hardener with 8 security plugins, CLI and desktop GUI, compliance reporting across 6 frameworks, remote SSH scanning, scheduled scanning with notifications, and checkpoint/rollback. Validated across 5 Linux distributions (Arch, Debian, Fedora, Rocky 9, openSUSE).
 
-### Fixed (Packaging 2026-02-27)
-- Systemd `ReadWritePaths` now includes all required runtime directories
+### Added
+- Installation guide covering all 5 distro families (`docs/INSTALL.md`)
+- Package install validation scripts for cross-distro packaging QA
+- Distribution packages: AUR PKGBUILD, RPM spec, Debian packaging tree
+
+### Changed
+- All 53 internal security audit findings resolved
+- Extracted shared helpers to reduce code duplication across UI and package crates
+- SECURITY.md updated with 8 security practices, corrected 3 stale Known Limitations
+- 505+ tests pass, clippy clean, native + WASM builds clean
+
+### Fixed
+- Systemd `ReadWritePaths` covers all required runtime directories
 - Man page URL corrected to project homepage
 - Tauri plugin ID matches canonical `service-minimisation`
-- AUR PKGBUILD, RPM spec, and Debian packaging install all data files correctly
+- AUR, RPM, and Debian packaging install all data files correctly
 
 ## [0.3.3] - 2026-02-25
 
@@ -489,6 +495,7 @@ Configuration file support with layered loading, compliance framework reporting 
 
 ## Version History
 
+- **1.0.0** (2026-02-27): First stable production release
 - **0.3.3** (2026-02-25): Distribution validation complete (5 distributions across 4 families)
 - **0.3.2** (2025-12-09): GUI major redesign, bug fixes, accessibility
 - **0.3.1** (2025-12-05): GUI polish and testing
@@ -496,6 +503,7 @@ Configuration file support with layered loading, compliance framework reporting 
 - **0.2.0** (2025-11-28): Compliance frameworks, PDF reports, configuration system
 - **0.1.0** (2025-11-25): Initial development release
 
+[1.0.0]: https://github.com/tidynest/linux-system-hardener/compare/v0.3.3...v1.0.0
 [0.3.3]: https://github.com/tidynest/linux-system-hardener/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/tidynest/linux-system-hardener/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/tidynest/linux-system-hardener/compare/v0.3.0...v0.3.1
@@ -503,4 +511,4 @@ Configuration file support with layered loading, compliance framework reporting 
 [0.2.0]: https://github.com/tidynest/linux-system-hardener/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tidynest/linux-system-hardener/releases/tag/v0.1.0
 
-**Last Updated**: 2026-02-25
+**Last Updated**: 2026-02-27
