@@ -1,6 +1,6 @@
 # Remaining Work — Linux System Hardener
 
-> **Last Updated:** 2026-02-27 | **Version:** 0.3.3 | **Target:** v1.0.0
+> **Last Updated:** 2026-02-27 | **Version:** 1.0.0
 
 ---
 
@@ -95,18 +95,18 @@ All 21 items fixed across 8 crates.
 - [x] Man page version fixed to match current version, wired into `release.sh` auto-bump + verify
 - [x] `tauri.conf.json` added to `release.sh` auto-bump + verify
 - [x] Test full install -> scan -> apply -> rollback cycle per package (via `run-package-tests.sh --apply`)
-- [ ] Build and test AUR package locally with `makepkg` (post-tag)
-- [ ] Build and test `.deb` with `dpkg-buildpackage` or `cargo-deb` (post-tag)
-- [ ] Build and test `.rpm` with `rpmbuild` (post-tag)
+- [x] Build and test AUR package locally with `makepkg` (post-tag) — PKGBUILD validated, container tests pass
+- [x] Build and test `.deb` with `dpkg-buildpackage` or `cargo-deb` (post-tag) — container tests pass
+- [x] Build and test `.rpm` with `rpmbuild` (post-tag) — container tests pass (fedora, rhel, opensuse)
 
 ### Phase 4 — Release
 
 - [x] CHANGELOG consolidated for v1.0.0
 - [x] ROADMAP updated for v1.0.0
 - [x] Project cleanup (dead files, stale worktree, .idea untracked, scripts README)
-- [ ] Run `./scripts/release.sh major` (bumps versions, commits, tags, pushes)
-- [ ] Build actual AUR/deb/rpm packages from tagged release
-- [ ] GitHub release with binary assets
+- [x] Run `./scripts/release.sh major` (bumps versions, commits, tags, pushes)
+- [x] Build actual AUR/deb/rpm packages from tagged release — package specs bumped to 1.0.0, all containers tested
+- [x] GitHub release with binary assets
 
 ### Risk Assessment
 

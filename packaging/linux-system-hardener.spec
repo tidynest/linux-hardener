@@ -1,5 +1,5 @@
 Name:           linux-system-hardener
-Version:        0.3.3
+Version:        1.0.0
 Release:        1%{?dist}
 Summary:        Linux security automation: scanning, hardening, and rollback
 License:        Apache-2.0
@@ -80,5 +80,8 @@ systemctl daemon-reload || true
 %dir %attr(700,root,root) %{_localstatedir}/log/linux-hardener
 
 %changelog
+* Fri Feb 27 2026 Eric Jingryd <tidynest@proton.me> - 1.0.0-1
+- v1.0.0 release: 8 hardening plugins, CLI + GUI, multi-distro support
+
 * Tue Feb 25 2026 Eric Jingryd <tidynest@proton.me> - 0.3.3-1
 - Initial RPM packaging

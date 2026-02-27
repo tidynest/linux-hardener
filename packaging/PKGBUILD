@@ -1,6 +1,6 @@
 # Maintainer: Eric Jingryd <tidynest@proton.me>
 pkgname=linux-system-hardener
-pkgver=0.3.3
+pkgver=1.0.0
 pkgrel=1
 pkgdesc="Linux security automation: scanning, hardening, and rollback across 8 domains"
 arch=('x86_64')
