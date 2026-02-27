@@ -83,7 +83,7 @@ def parse_plugins_from_registry(root: Path) -> list[str]:
 
     # Find all registry.register() calls
     # Match: registry.register(Box::new(XxxPlugin::new()))
-    pattern = r'registry\.register\(Box::new\((\w+)::new\(\)\)\)'
+    pattern = r'\.register\(Box::new\((\w+)::new\(\)\)\)'
     matches = re.findall(pattern, content)
 
     return matches
