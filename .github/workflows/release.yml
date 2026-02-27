@@ -7,6 +7,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # Exclude GUI crates that require GTK/system libraries
+  WORKSPACE_EXCLUDE: --exclude linux-hardener-desktop --exclude hardener-ui
 
 jobs:
   # Run tests before releasing
@@ -20,7 +22,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Run tests
-        run: cargo test --workspace
+        run: cargo test --workspace $WORKSPACE_EXCLUDE
 
   # Build release binaries for multiple platforms
   build:
