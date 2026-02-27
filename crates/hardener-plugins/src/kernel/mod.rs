@@ -41,7 +41,7 @@ impl KernelHardeningPlugin {
     /// Reads a sysctl parameter value from /proc/sys.
     ///
     /// # Arguments
-    /// * `param` - Parameter name in dot notation (e.g., "kernel.randomize_va_space")
+    /// * `param` - Parameter name in dot notation (e.g. "kernel.randomize_va_space")
     /// * `ctx` - Execution context providing the system executor
     ///
     /// # Returns
@@ -59,66 +59,78 @@ impl KernelHardeningPlugin {
 /// - Parameter name in sysctl dot notation
 /// - Recommended secure value
 /// - Human-readable explanation
-const KERNEL_PARAMS: &[(&str, &str, &str)] = &[
+const KERNEL_PARAMS: &[(&str, &str, &str, Severity)] = &[
     (
         "kernel.randomize_va_space",
         "2",
         "Enable full address space layout randomisation (ASLR)",
+        Severity::High,
     ),
     (
         "kernel.kptr_restrict",
         "2",
         "Hides kernel pointers from all users except root",
+        Severity::Medium,
     ),
     (
         "kernel.dmesg_restrict",
         "1",
         "Restricts dmesg access to privileged users only",
+        Severity::Medium,
     ),
     (
         "kernel.yama.ptrace_scope",
         "2",
         "Restricts ptrace usage to admin-only",
+        Severity::High,
     ),
     (
         "fs.suid_dumpable",
         "0",
         "Prevents setuid processes from creating core dumps",
+        Severity::Medium,
     ),
     (
         "fs.protected_hardlinks",
         "1",
         "Prevents hardlink creation to files user doesn't own",
+        Severity::Medium,
     ),
     (
         "fs.protected_symlinks",
         "1",
         "Prevents symlink following in sticky world-writable directories",
+        Severity::Medium,
     ),
     (
         "net.ipv4.conf.all.rp_filter",
         "1",
         "Enables reverse path filtering (anti-spoofing)",
+        Severity::High,
     ),
     (
         "net.ipv4.conf.default.rp_filter",
         "1",
         "Enables reverse path filtering for new interfaces",
+        Severity::High,
     ),
     (
         "net.ipv4.tcp_syncookies",
         "1",
         "Enables SYN flood protection",
+        Severity::High,
     ),
     (
         "net.ipv4.conf.all.accept_source_route",
         "0",
         "Disables source routing (security risk)",
+        Severity::Medium,
     ),
     (
         "net.ipv4.conf.default.accept_source_route",
         "0",
         "Disables source routing for new interfaces",
+        Severity::Medium,
     ),
 ];
 
@@ -217,7 +229,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
         let start_time = Instant::now();
         let mut findings = Vec::new();
 
-        for (param_name, expected_value, param_description) in KERNEL_PARAMS {
+        for (param_name, expected_value, param_description, severity) in KERNEL_PARAMS {
             match self.read_sysctl(param_name, ctx).await {
                 Ok(actual_value) => {
                     if actual_value != *expected_value {
@@ -227,17 +239,20 @@ impl HardeningPlugin for KernelHardeningPlugin {
                             finding_description: param_description.to_string(),
                             finding_explanation: format!(
                                 "This parameter should be set to '{}' for security hardening",
-                                expected_value
+                                expected_value,
                             ),
                             finding_id: format!("kernel_{}", param_name.replace('.', "_")),
-                            finding_impact: "Low impact - requires reboot or sysctl reload"
-                                .to_string(),
+                            finding_impact: format!(
+                                "Insecure {} weakens system defences against exploitation",
+                                param_name,
+                            ),
+
                             finding_recommended_value: expected_value.to_string(),
                             finding_remediation_steps: vec![format!(
                                 "Set {} = {}",
                                 param_name, expected_value
                             )],
-                            finding_severity: Severity::Medium,
+                            finding_severity: *severity,
                             finding_title: format!("Insecure value for {}", param_name),
                             finding_compliance: get_compliance_mappings(param_name),
                             finding_policy_exception: None,
@@ -301,7 +316,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
         );
 
         // Apply each parameter to runtime AND build config file content.
-        for (param_name, expected_value, param_description) in KERNEL_PARAMS {
+        for (param_name, expected_value, param_description, _severity) in KERNEL_PARAMS {
             // Check for a valid exception — skip this parameter if exempted
             if let Some(exception) = config.has_valid_exception(param_name) {
                 info!("Skipping {} — exception: {}", param_name, exception.reason);
@@ -461,7 +476,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
         let mut issues = Vec::new();
         let mut estimated_changes = Vec::new();
 
-        for (param_name, expected_value, _expected_description) in KERNEL_PARAMS {
+        for (param_name, expected_value, _expected_description, _severity) in KERNEL_PARAMS {
             // Skip parameters with valid exceptions
             if config.has_valid_exception(param_name).is_some() {
                 continue;

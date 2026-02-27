@@ -41,9 +41,15 @@ pub async fn run(
         ctx.set_audit_logger(logger);
     }
 
-    let hardener_config = ConfigLoader::new()
-        .load()
-        .unwrap_or_else(|_| HardenerConfig::default());
+    let hardener_config = match ConfigLoader::new().load() {
+        Ok(config) => config,
+        Err(e) => {
+            if !quiet {
+                output::warning(&format, &format!("Config load failed, using defaults: {e}"));
+            }
+            HardenerConfig::default()
+        }
+    };
 
     let plugins = registry.list()?;
     let plugin_ids: Vec<PluginId> = if all {

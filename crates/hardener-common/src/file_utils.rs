@@ -6,6 +6,7 @@ use crate::error::Result;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
+use tracing::warn;
 
 /// Updates a file atomically using a temporary file and atomic rename.
 ///
@@ -231,7 +232,7 @@ pub fn set_config_directive(
             format!("{} {}", directive_name, value)
         }
         ConfigFormat::KeyValue => {
-            format!("{} {}", directive_name, value)
+            format!("{} = {}", directive_name, value)
         }
     };
 
@@ -404,10 +405,10 @@ where
     // Write atomically
     match update_file_atomically(path, &new_content) {
         Ok(_) => {
-            // Success, remove backup
-            std::fs::remove_file(backup).map_err(|e| {
-                crate::error::HardeningError::Plugin(format!("Failed to remove backup file: {}", e))
-            })?;
+            // Success — cleanup backup (non-fatal if this fails)
+            if let Err(e) = std::fs::remove_file(backup) {
+                warn!("Failed to remove backup file: {}", e);
+            }
             Ok(())
         }
         Err(e) => {

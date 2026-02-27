@@ -19,35 +19,27 @@ pub(crate) use hardener_compliance::OutputFormat;
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
-
     /// Output format.
     #[arg(global = true, short, long, default_value = "text")]
     pub format: OutputFormat,
-
     /// Suppress non-essential output.
     #[arg(global = true, short, long)]
     pub quiet: bool,
-
     /// Path to configuration file.
     #[arg(global = true, short = 'C', long, value_name = "FILE")]
     pub config: Option<std::path::PathBuf>,
-
     /// Remote host to scan via SSH (user@host or host).
     #[arg(global = true, long, value_name = "HOST")]
     pub ssh: Option<String>,
-
     /// SSH port.
     #[arg(global = true, long, default_value = "22", value_name = "PORT")]
     pub port: u16,
-
     /// SSH identity file (private key).
     #[arg(global = true, long, value_name = "FILE")]
     pub ssh_key: Option<std::path::PathBuf>,
-
     /// SSH connection timeout in seconds.
     #[arg(global = true, long, default_value = "30", value_name = "SECONDS")]
     pub ssh_timeout: u64,
-
     /// Skip SSH host key verification (insecure).
     #[arg(global = true, long)]
     pub ssh_no_verify: bool,
@@ -192,7 +184,7 @@ pub enum SystemdAction {
         #[arg(long, value_name = "PATH")]
         binary: Option<std::path::PathBuf>,
 
-        /// Schedule in systemd calendar format (e.g., "daily", "*-*-* 02:00:00").
+        /// Schedule in systemd calendar format (e.g., "dail", "*-*-* 02:00:00").
         #[arg(short, long, default_value = "daily")]
         schedule: String,
     },
@@ -257,14 +249,6 @@ pub enum HistoryAction {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum ReportFormat {
-    Text,
-    Json,
-    Csv,
-    Html,
-}
-
 #[derive(ValueEnum, Clone, Default)]
 pub enum SeverityFilter {
     #[default]
@@ -291,6 +275,14 @@ pub enum ScanMode {
 mod tests {
     use super::*;
     use clap::Parser;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+    pub enum ReportFormat {
+        Text,
+        Json,
+        Csv,
+        Html,
+    }
 
     #[test]
     fn test_cli_parse_scan() {

@@ -72,8 +72,9 @@ pub async fn install(
     }
 
     let unit_dir = if user_mode {
-        let home = std::env::var("HOME").context("HOME environment variable not set")?;
-        PathBuf::from(home).join(".config/systemd/user")
+        dirs::home_dir()
+            .context("Could not determine home directory")?
+            .join(".config/systemd/user")
     } else {
         PathBuf::from("/etc/systemd/system")
     };
@@ -142,8 +143,9 @@ pub async fn uninstall(user_mode: bool, quiet: bool) -> Result<()> {
     }
 
     let unit_dir = if user_mode {
-        let home = std::env::var("HOME").context("HOME environment variable not set")?;
-        PathBuf::from(home).join(".config/systemd/user")
+        dirs::home_dir()
+            .context("Could not determine home directory")?
+            .join(".config/systemd/user")
     } else {
         PathBuf::from("/etc/systemd/system")
     };

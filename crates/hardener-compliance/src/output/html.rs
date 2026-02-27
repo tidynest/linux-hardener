@@ -67,24 +67,13 @@ impl ReportFormatter for HtmlFormatter {
         }
         html.push_str("</div>\n</div>\n");
 
-        // Group controls by section
-        let mut sections: std::collections::BTreeMap<&str, Vec<&crate::report::ControlResult>> =
-            std::collections::BTreeMap::new();
+        let sections_vec = super::group_controls_by_section(report);
 
-        for control in &report.report_controls {
-            sections
-                .entry(control.control_section.as_str())
-                .or_default()
-                .push(control);
-        }
-
-        // Controls Table by Section
-        for (section, controls) in &sections {
+        for (section, controls) in &sections_vec {
             html.push_str(&format!("<h2>{}</h2>\n", html_escape(section)));
             html.push_str("<table>\n");
             html.push_str(
-                "<thead><tr><th>Control
-  ID</th><th>Title</th><th>Status</th></tr></thead>\n",
+                "<thead><tr><th>Control ID</th><th>Title</th><th>Status</th></tr></thead>\n",
             );
             html.push_str("<tbody>\n");
 
@@ -110,8 +99,7 @@ impl ReportFormatter for HtmlFormatter {
                 {
                     for finding in &control.control_findings {
                         html.push_str(&format!(
-                            "<tr class=\"finding\"><td></td><td colspan=\"2\">→ [{}]
-  {}</td></tr>\n",
+                            "<tr class=\"finding\"><td></td><td colspan=\"2\">→ [{}] {}</td></tr>\n",
                             html_escape(&finding.finding_severity.to_string()),
                             html_escape(&finding.finding_title)
                         ));

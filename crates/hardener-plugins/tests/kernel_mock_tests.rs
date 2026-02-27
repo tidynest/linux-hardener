@@ -1,6 +1,6 @@
 //! Kernel plugin tests using MockExecutor.
 //!
-//! These tests verify plugin behavior without touching the real /proc/sys filesystem.
+//! These tests verify plugin behaviour without touching the real /proc/sys filesystem.
 
 use hardener_common::types::{PluginId, Severity};
 use hardener_core::{
@@ -204,7 +204,7 @@ async fn test_kernel_scan_finding_structure() {
     assert_eq!(finding.finding_id, "kernel_kernel_randomize_va_space");
     assert_eq!(finding.finding_current_value, "0");
     assert_eq!(finding.finding_recommended_value, "2");
-    assert_eq!(finding.finding_severity, Severity::Medium);
+    assert_eq!(finding.finding_severity, Severity::High);
     assert!(
         finding.finding_title.contains("kernel.randomize_va_space"),
         "finding title should mention param name, got: {}",
@@ -270,7 +270,7 @@ async fn test_kernel_validate_writable_params() {
 
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = KernelHardeningPlugin::new();
-    let config = hardener_core::PluginConfig::default();
+    let config = PluginConfig::default();
 
     let result = plugin.validate(&ctx, &config).await.unwrap();
 
@@ -302,7 +302,7 @@ async fn test_kernel_validate_readonly_params() {
 
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = KernelHardeningPlugin::new();
-    let config = hardener_core::PluginConfig::default();
+    let config = PluginConfig::default();
 
     let result = plugin.validate(&ctx, &config).await.unwrap();
 
@@ -333,7 +333,7 @@ async fn test_kernel_validate_missing_params() {
     let executor = MockExecutor::new(); // Empty - no params
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = KernelHardeningPlugin::new();
-    let config = hardener_core::PluginConfig::default();
+    let config = PluginConfig::default();
 
     let result = plugin.validate(&ctx, &config).await.unwrap();
 

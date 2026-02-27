@@ -73,7 +73,7 @@ impl ConfigLoader {
         }
 
         // 5. Apply environment variable overrides
-        let config = Self::apply_env_overrides(config);
+        let config = Self::apply_env_overrides(config)?;
 
         // 6. Validate all directive values before returning
         crate::config_validation::validate_config(&config)?;
@@ -96,7 +96,7 @@ impl ConfigLoader {
         }
 
         let overlay = Self::load_from_file(path)?;
-        Ok(Self::merge_configs(base, overlay))
+        Self::merge_configs(base, overlay)
     }
 
     /// Returns true when the process is running with effective UID 0.
@@ -126,6 +126,11 @@ impl ConfigLoader {
 
     /// Maximum config file size (1 MiB). Prevents OOM from oversized files.
     const MAX_CONFIG_SIZE: u64 = 1_048_576;
+
+    /// Maximum directives per plugin section. Prevents DoS via config bloat.
+    const MAX_DIRECTIVES_PER_PLUGIN: usize = 500;
+    /// Maximum exceptions per plugin section.
+    const MAX_EXCEPTIONS_PER_PLUGIN: usize = 200;
 
     /// Load configuration from a TOML file.
     fn load_from_file(path: &Path) -> Result<HardenerConfig> {
@@ -162,18 +167,18 @@ impl ConfigLoader {
     }
 
     /// Merge two configs, with `overlay` taking precedence.
-    fn merge_configs(base: HardenerConfig, overlay: HardenerConfig) -> HardenerConfig {
-        HardenerConfig {
+    fn merge_configs(base: HardenerConfig, overlay: HardenerConfig) -> Result<HardenerConfig> {
+        Ok(HardenerConfig {
             global: Self::merge_global(base.global, overlay.global),
-            ssh: Self::merge_plugin(base.ssh, overlay.ssh),
-            kernel: Self::merge_plugin(base.kernel, overlay.kernel),
-            firewall: Self::merge_plugin(base.firewall, overlay.firewall),
-            pam: Self::merge_plugin(base.pam, overlay.pam),
-            audit: Self::merge_plugin(base.audit, overlay.audit),
-            mac: Self::merge_plugin(base.mac, overlay.mac),
-            permissions: Self::merge_plugin(base.permissions, overlay.permissions),
-            services: Self::merge_plugin(base.services, overlay.services),
-        }
+            ssh: Self::merge_plugin(base.ssh, overlay.ssh)?,
+            kernel: Self::merge_plugin(base.kernel, overlay.kernel)?,
+            firewall: Self::merge_plugin(base.firewall, overlay.firewall)?,
+            pam: Self::merge_plugin(base.pam, overlay.pam)?,
+            audit: Self::merge_plugin(base.audit, overlay.audit)?,
+            mac: Self::merge_plugin(base.mac, overlay.mac)?,
+            permissions: Self::merge_plugin(base.permissions, overlay.permissions)?,
+            services: Self::merge_plugin(base.services, overlay.services)?,
+        })
     }
 
     /// Merge global configs.
@@ -193,8 +198,8 @@ impl ConfigLoader {
         }
     }
 
-    /// Merge plugin configs.
-    fn merge_plugin(base: PluginConfig, overlay: PluginConfig) -> PluginConfig {
+    /// Merge plugin configs, enforcing size limits.
+    fn merge_plugin(base: PluginConfig, overlay: PluginConfig) -> Result<PluginConfig> {
         let mut directives = base.directives;
         directives.extend(overlay.directives);
         let mut custom_directives = base.custom_directives;
@@ -202,31 +207,68 @@ impl ConfigLoader {
         let mut exceptions = base.exceptions;
         exceptions.extend(overlay.exceptions);
 
-        PluginConfig {
+        let total_directives = directives.len() + custom_directives.len();
+        if total_directives > Self::MAX_DIRECTIVES_PER_PLUGIN {
+            return Err(HardeningError::Config(format!(
+                "Plugin config exceeds directive limit ({total_directives} > {})",
+                Self::MAX_DIRECTIVES_PER_PLUGIN
+            )));
+        }
+        if exceptions.len() > Self::MAX_EXCEPTIONS_PER_PLUGIN {
+            return Err(HardeningError::Config(format!(
+                "Plugin config exceeds exception limit ({} > {})",
+                exceptions.len(),
+                Self::MAX_EXCEPTIONS_PER_PLUGIN,
+            )));
+        }
+
+        Ok(PluginConfig {
             enabled: overlay.enabled,
             directives,
             custom_directives,
             exceptions,
-        }
+        })
     }
 
     /// Apply environment variable overrides.
-    fn apply_env_overrides(mut config: HardenerConfig) -> HardenerConfig {
+    fn apply_env_overrides(mut config: HardenerConfig) -> Result<HardenerConfig> {
         if let Ok(disabled) = std::env::var(Self::ENV_DISABLED_PLUGINS) {
-            config.global.disabled_plugins = Self::parse_env_list(&disabled);
+            config.global.disabled_plugins =
+                Self::parse_and_validate_env_list(&disabled, Self::ENV_DISABLED_PLUGINS)?;
         }
         if let Ok(enabled) = std::env::var(Self::ENV_ENABLED_PLUGINS) {
-            config.global.enabled_plugins = Self::parse_env_list(&enabled);
+            config.global.enabled_plugins =
+                Self::parse_and_validate_env_list(&enabled, Self::ENV_ENABLED_PLUGINS)?;
         }
-        config
+        Ok(config)
     }
 
-    fn parse_env_list(input: &str) -> Vec<String> {
-        input
+    const KNOWN_PLUGIN_IDS: &'static [&'static str] = &[
+        "audit-hardening",
+        "firewall-hardening",
+        "kernel-hardening",
+        "mac-hardening",
+        "pam-hardening",
+        "permissions-hardening",
+        "service-minimisation",
+        "ssh-hardening",
+    ];
+
+    fn parse_and_validate_env_list(input: &str, var_name: &str) -> Result<Vec<String>> {
+        let ids: Vec<String> = input
             .split(',')
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
-            .collect()
+            .collect();
+
+        for id in &ids {
+            if !Self::KNOWN_PLUGIN_IDS.contains(&id.as_str()) {
+                return Err(HardeningError::Config(format!(
+                    "Unknown plugin ID '{id}' in {var_name}"
+                )));
+            }
+        }
+        Ok(ids)
     }
 }
 
@@ -288,7 +330,7 @@ mod tests {
         overlay.global.disabled_plugins = vec!["ssh-hardening".to_string()];
         overlay.ssh.enabled = false;
 
-        let merged = ConfigLoader::merge_configs(base, overlay);
+        let merged = ConfigLoader::merge_configs(base, overlay).unwrap();
         assert_eq!(
             merged.global.disabled_plugins,
             vec!["ssh-hardening".to_string()]
@@ -309,7 +351,7 @@ mod tests {
             .directives
             .insert("PermitRootLogin".to_string(), "no".to_string());
 
-        let merged = ConfigLoader::merge_configs(base, overlay);
+        let merged = ConfigLoader::merge_configs(base, overlay).unwrap();
         assert_eq!(merged.ssh.directives.get("MaxAuthTries").unwrap(), "3");
         assert_eq!(merged.ssh.directives.get("PermitRootLogin").unwrap(), "no");
     }

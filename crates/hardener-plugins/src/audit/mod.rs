@@ -445,7 +445,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
                     "Start auditd service: systemctl start auditd".to_string(),
                 ],
                 finding_severity: Severity::Critical,
-                finding_title: "Audit daemon not installed".to_string(),
+                finding_title: "Audit daemon is not installed".to_string(),
                 finding_compliance: get_audit_compliance_mappings("not_installed"),
                 finding_policy_exception: None,
             });
@@ -505,10 +505,9 @@ impl HardeningPlugin for AuditHardeningPlugin {
                 // Successfully read rules - check each required rule.
                 for rule in AUDIT_RULES {
                     // Check if this rule category is present in current rules.
-                    let rule_exists = current_rules.iter().any(|current_rule| {
-                        current_rule.contains(rule.audit_rule_category)
-                            && current_rule.contains("-k")
-                    });
+                    let rule_exists = current_rules
+                        .iter()
+                        .any(|current_rule| current_rule.contains(rule.audit_rule_category));
 
                     if !rule_exists {
                         findings.push(Finding {

@@ -32,6 +32,15 @@ pub fn error(format: &OutputFormat, message: &str) {
     }
 }
 
+pub fn warning(format: &OutputFormat, message: &str) {
+    match format {
+        OutputFormat::Json => {
+            eprintln!("{}", serde_json::json!({ "warning": message }));
+        }
+        _ => eprintln!("{} {}", "W".yellow(), message),
+    }
+}
+
 pub fn scan_results(
     format: &OutputFormat,
     results: &[(PluginMetadata, Vec<Finding>)],

@@ -80,7 +80,7 @@ pub async fn invoke_apply(
     config_path: Option<String>,
 ) -> Result<Vec<ApplyResult>, String> {
     let args = serde_wasm_bindgen::to_value(&serde_json::json!({
-        "plugin_ids": plugin_ids,
+        "pluginIds": plugin_ids,
         "configPath": config_path,
     }))
     .map_err(|e| format!("Failed to serialise arguments: {}", e))?;
@@ -100,7 +100,7 @@ pub async fn invoke_apply_dry_run(
     config_path: Option<String>,
 ) -> Result<Vec<ValidationReport>, String> {
     let args = serde_wasm_bindgen::to_value(&serde_json::json!({
-        "plugin_ids": plugin_ids,
+        "pluginIds": plugin_ids,
         "configPath": config_path,
     }))
     .map_err(|e| format!("Failed to serialise arguments: {}", e))?;
@@ -260,7 +260,7 @@ pub async fn invoke_rollback(
     config_path: Option<String>,
 ) -> Result<RollbackResult, String> {
     let args = serde_wasm_bindgen::to_value(&serde_json::json!({
-        "checkpoint_id": checkpoint_id,
+        "checkpointId": checkpoint_id,
         "configPath": config_path,
     }))
     .map_err(|e| format!("Failed to serialise arguments: {}", e))?;

@@ -30,26 +30,6 @@ impl AptPackageManager {
     fn execute_apt(&self, args: &[&str]) -> Result<String> {
         super::execute_command("apt-get", args)
     }
-
-    /// Executes a dpkg-query command and returns the output.
-    fn execute_dpkg_query(&self, args: &[&str]) -> Result<String> {
-        let output = Command::new("dpkg-query")
-            .args(args)
-            .output()
-            .map_err(|e| {
-                HardeningError::PackageManager(format!("Failed to execute dpkg-query: {}", e))
-            })?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(HardeningError::PackageManager(format!(
-                "dpkg-query failed: {}",
-                stderr
-            )));
-        }
-
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    }
 }
 
 impl PackageManager for AptPackageManager {
@@ -88,10 +68,13 @@ impl PackageManager for AptPackageManager {
     }
 
     fn list_installed(&self) -> Result<Vec<Package>> {
-        let output = self.execute_dpkg_query(&[
-            "-W",
-            "--showformat=${Package}\t${Version}\t${Architecture}\n",
-        ])?;
+        let output = super::execute_command(
+            "dpkg-guery",
+            &[
+                "-W",
+                "--showformat=${Package}\t${Version}\t${Architecture}\n",
+            ],
+        )?;
 
         let packages = output
             .lines()

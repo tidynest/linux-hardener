@@ -247,7 +247,7 @@ fn select_scenario() -> Result<Scenario> {
         5 => Scenario::Gdpr,
         6 => Scenario::All,
         7 => {
-            // Custom - select individual frameworks
+            // Custom-select individual frameworks
             let frameworks = select_frameworks()?;
             if frameworks.is_empty() {
                 return Err(anyhow!("At least one framework must be selected."));
@@ -367,18 +367,7 @@ fn confirm_selections(state: &WizardState) -> Result<bool> {
     // Show scenario
     if let Some(ref scenario) = state.scenario {
         let frameworks = scenario.frameworks();
-        let framework_names: Vec<&str> = frameworks
-            .iter()
-            .map(|f| match f {
-                ComplianceFramework::CIS => "CIS",
-                ComplianceFramework::STIG => "STIG",
-                ComplianceFramework::NIST => "NIST 800-53",
-                ComplianceFramework::PCIDSS => "PCI-DSS",
-                ComplianceFramework::HIPAA => "HIPAA",
-                ComplianceFramework::GDPR => "GDPR",
-                ComplianceFramework::ISO27001 => "ISO 27001",
-            })
-            .collect();
+        let framework_names: Vec<&str> = frameworks.iter().map(|f| f.full_name()).collect();
 
         println!("  {} {}", "Scenario:".bold(), scenario.name());
         println!("  {} {}", "Frameworks:".bold(), framework_names.join(", "));
@@ -576,13 +565,5 @@ fn framework_icon(framework: &ComplianceFramework) -> &'static str {
 }
 
 fn framework_display_name(framework: &ComplianceFramework) -> &'static str {
-    match framework {
-        ComplianceFramework::CIS => "CIS Benchmarks",
-        ComplianceFramework::STIG => "DISA STIG",
-        ComplianceFramework::NIST => "NIST 800-53",
-        ComplianceFramework::PCIDSS => "PCI-DSS",
-        ComplianceFramework::HIPAA => "HIPAA",
-        ComplianceFramework::GDPR => "GDPR Art. 32",
-        ComplianceFramework::ISO27001 => "ISO 27001",
-    }
+    framework.full_name()
 }

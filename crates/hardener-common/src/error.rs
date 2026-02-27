@@ -69,7 +69,8 @@ pub enum HardeningError {
 
 impl From<anyhow::Error> for HardeningError {
     fn from(err: anyhow::Error) -> Self {
-        HardeningError::Executor(err.to_string())
+        err.downcast::<HardeningError>()
+            .unwrap_or_else(|err| HardeningError::Executor(err.to_string()))
     }
 }
 

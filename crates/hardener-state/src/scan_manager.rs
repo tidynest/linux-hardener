@@ -371,8 +371,8 @@ fn category_to_str(category: &FindingCategory) -> &'static str {
 }
 
 /// Parses FindingCategory from database string.
-fn str_to_category(s: &str) -> FindingCategory {
-    match s {
+fn str_to_category(category: &str) -> FindingCategory {
+    match category {
         "audit" => FindingCategory::Audit,
         "authentication" => FindingCategory::Authentication,
         "cryptography" => FindingCategory::Cryptography,
@@ -381,7 +381,10 @@ fn str_to_category(s: &str) -> FindingCategory {
         "mac" => FindingCategory::MandatoryAccessControl,
         "network" => FindingCategory::Network,
         "services" => FindingCategory::Services,
-        _ => FindingCategory::Services, // Default fallback
+        other => {
+            tracing::warn!("Unknown finding category in database: {other:?}");
+            FindingCategory::Services
+        }
     }
 }
 
@@ -404,6 +407,9 @@ fn str_to_severity(s: &str) -> Severity {
         "medium" => Severity::Medium,
         "high" => Severity::High,
         "critical" => Severity::Critical,
-        _ => Severity::Info, // Default fallback
+        other => {
+            tracing::warn!("Unknown severity in database: {other:?}");
+            Severity::Info
+        }
     }
 }

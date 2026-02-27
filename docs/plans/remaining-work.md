@@ -1,6 +1,6 @@
 # Remaining Work — Linux System Hardener
 
-> **Last Updated:** 2026-02-26 | **Version:** 0.3.3 | **Target:** v1.0.0
+> **Last Updated:** 2026-02-27 | **Version:** 0.3.3 | **Target:** v1.0.0
 
 ---
 
@@ -25,87 +25,35 @@ All 6 items fixed. SSH path quoting (item 4) was already correct on inspection.
 
 ---
 
-## Open Work — Defence-in-Depth (Deferred SAM Items)
+## Resolved — Defence-in-Depth (Deferred SAM Items)
 
-These remain after the 53/53 remediation pass. Lower priority — hardening beyond the current threat model.
+6 of 7 items fixed. SAM-039 deferred to post-v1.0 (requires refactoring all commands into a Tauri plugin; existing PrivilegedOpGuard + pkexec + input validation is sufficient).
 
-| SAM-ID | Category | Description |
-|--------|----------|-------------|
-| SAM-039 | Capability | Define explicit Tauri capability ACLs for custom commands |
-| SAM-061 | Environment | Use passwd lookup instead of `$HOME` env var |
-| SAM-062 | DoS | Bound directive/exception map sizes after parsing |
-| SAM-063 | Config | Validate env var override plugin IDs against registry |
-| SAM-070 | CSP | Remove `unsafe-inline` from style-src |
-| SAM-074 | Frontend | Validate theme from localStorage against allowlist |
-| SAM-076 | Code Quality | Standardise IPC parameter key casing |
+| SAM-ID | Category | Fix |
+|--------|----------|-----|
+| SAM-061 | Environment | Replaced `env::var("HOME")` with `dirs::home_dir()` (passwd lookup) |
+| SAM-062 | DoS | Bounded directive/exception map sizes in `merge_plugin()` |
+| SAM-063 | Config | Env var plugin IDs validated against `KNOWN_PLUGIN_IDS` |
+| SAM-070 | CSP | Removed `'unsafe-inline'` from `style-src` |
+| SAM-074 | Frontend | Theme from localStorage validated against `THEMES` allowlist |
+| SAM-076 | Code Quality | Standardised all IPC parameter keys to camelCase |
 
 ---
 
-## Crate-Level Design Flags
+## Resolved — Crate-Level Design Flags
 
-Minor design issues found during the codebase audit. None are blocking.
+All 21 items fixed across 8 crates.
 
-### hardener-cli (4 remaining)
-
-| ID | Issue |
-|----|-------|
-| D2 | `get_checkpoint_manager()` duplicated in `checkpoint.rs` and `apply.rs`. |
-| D3 | `ReportFormat` enum defined but unused in production paths. |
-| D4 | Framework/format display-name match arms repeated 3 times in `report_wizard.rs`. |
-| D6 | Config parse errors silently swallowed in `apply.rs`. |
-
-### hardener-common (3 remaining)
-
-| ID | Issue |
-|----|-------|
-| D1 | `set_config_directive` KeyValue mode may not match all key=value formats. |
-| D2 | `safe_modify_file` silently continues when backup cleanup fails. |
-| D3 | `From<anyhow::Error>` maps all errors to `Executor` variant, losing context. |
-
-### hardener-compliance (2 remaining)
-
-| ID | Issue |
-|----|-------|
-| D2 | `format()` and `format_all()` duplicate ~30 lines in `csv.rs`. |
-| D3 | HTML sorts sections alphabetically, PDF sorts numerically. |
-
-### hardener-core (3 remaining)
-
-| ID | Issue |
-|----|-------|
-| F-01 | `shared_data` field has `#[allow(dead_code)]` — never read. |
-| F-02 | 4 methods repeat same read-lock acquisition in `registry.rs`. |
-| F-03 | `Arc<Box<dyn HardeningPlugin>>` double indirection. |
-
-### hardener-distro (2 remaining)
-
-| ID | Issue |
-|----|-------|
-| D1 | `PackageManager::remove()` takes `&str` but should take `&[&str]`. |
-| D3 | `execute_dpkg_query` duplicates command-execution pattern. |
-
-### hardener-plugins (4 remaining)
-
-| ID | Issue |
-|----|-------|
-| D1 | Audit scan matches by category name, not exact content — masking risk. |
-| D3 | Kernel `finding_impact` describes effort, not security impact. |
-| D4 | All 6 kernel params uniformly `Medium`; ASLR should be `High`. |
-| D6 | `_permission_owner`/`_permission_group` fields defined but never read. |
-| D7 | All 4 permission checks share uniform "Low" impact text. |
-
-### hardener-scheduler (2 remaining)
-
-| ID | Issue |
-|----|-------|
-| D1 | `started_at_utc()` returns epoch for invalid timestamps. |
-| D2 | `plugins()` returns empty vec for corrupted JSON. |
-
-### hardener-state (1 remaining)
-
-| ID | Issue |
-|----|-------|
-| D1 | Silent enum fallbacks for unknown status/severity strings. |
+| Crate | IDs | Summary |
+|-------|-----|---------|
+| hardener-cli | D2-D6 | Shared state helper; test-only enum; `full_name()` dedup; config warning |
+| hardener-common | D1-D3 | KeyValue separator; non-fatal backup cleanup; anyhow downcast |
+| hardener-compliance | D2-D3 | CSV row helper; shared section grouping + numerical sort |
+| hardener-core | F-01-F-03 | Dead field removed; `read_plugins()` helper; Arc single indirection |
+| hardener-distro | D1, D3 | Already fixed; removed duplicate command helper |
+| hardener-plugins | D1, D3-D7 | Audit match by content; kernel severity + impact text; dead fields; permission impact |
+| hardener-scheduler | D1-D2 | `Option` return for timestamps; `Result` return for plugins JSON |
+| hardener-state | D1 | `tracing::warn` on unknown enum values |
 
 ---
 
@@ -167,6 +115,7 @@ Minor design issues found during the codebase audit. None are blocking.
 
 ## Post-v1.0.0
 
+- SAM-039: Explicit Tauri capability ACLs (requires plugin refactor)
 - Multi-host management UI, historical trends, alert notifications
 - SSH password auth, parallel scanning, jump host support
 - Ansible/Puppet/Salt/Chef integration modules

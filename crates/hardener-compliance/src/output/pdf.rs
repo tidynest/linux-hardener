@@ -2,6 +2,7 @@
 //!
 //! Produces PDF compliance reports using the krilla library.
 
+use super::group_controls_by_section;
 use crate::output::ReportFormatter;
 use crate::report::ComplianceReport;
 use hardener_common::types::ControlStatus;
@@ -11,7 +12,6 @@ use krilla::page::PageSettings;
 use krilla::paint::{Fill, FillRule};
 use krilla::text::{Font, TextDirection};
 use krilla::{Document, color};
-use std::collections::BTreeMap;
 
 /// Embedded font data (NotoSans).
 const FONT_DATA: &[u8] = include_bytes!("../fonts/NotoSans-Regular.ttf");
@@ -153,22 +153,7 @@ fn generate_pdf(report: &ComplianceReport) -> Vec<u8> {
     let mut document = Document::new();
     let mut y = YTracker::new();
 
-    // Group controls by section for organised output
-    let mut sections: BTreeMap<&str, Vec<&crate::report::ControlResult>> = BTreeMap::new();
-    for control in &report.report_controls {
-        sections
-            .entry(control.control_section.as_str())
-            .or_default()
-            .push(control);
-    }
-
-    // Sort sections by their first control ID (numerical order) rather than alphabetically
-    let mut sections_vec: Vec<_> = sections.into_iter().collect();
-    sections_vec.sort_by(|a, b| {
-        let id_a = a.1.first().map(|c| c.control_id.as_str()).unwrap_or("");
-        let id_b = b.1.first().map(|c| c.control_id.as_str()).unwrap_or("");
-        compare_control_ids(id_a, id_b)
-    });
+    let sections_vec = group_controls_by_section(report);
 
     // Start first page
     let mut page = document.start_page_with(PageSettings::new(PAGE_WIDTH, PAGE_HEIGHT));
@@ -633,21 +618,6 @@ fn truncate_string(s: &str, max_chars: usize) -> String {
     } else {
         s.to_string()
     }
-}
-
-/// Compares two control IDs numerically (e.g., "1.5.1" < "1.5.2" < "1.5.10").
-fn compare_control_ids(a: &str, b: &str) -> std::cmp::Ordering {
-    let parts_a: Vec<u32> = a.split('.').filter_map(|s| s.parse().ok()).collect();
-    let parts_b: Vec<u32> = b.split('.').filter_map(|s| s.parse().ok()).collect();
-
-    for (pa, pb) in parts_a.iter().zip(parts_b.iter()) {
-        match pa.cmp(pb) {
-            std::cmp::Ordering::Equal => continue,
-            other => return other,
-        }
-    }
-
-    parts_a.len().cmp(&parts_b.len())
 }
 
 #[cfg(test)]

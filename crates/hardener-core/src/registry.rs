@@ -11,7 +11,7 @@ use std::{
 use crate::plugin::{HardeningPlugin, PluginMetadata};
 
 /// Type alias for a thread-safe collection of registered plugins.
-type PluginMap = Arc<RwLock<HashMap<PluginId, Arc<Box<dyn HardeningPlugin>>>>>;
+type PluginMap = Arc<RwLock<HashMap<PluginId, Arc<dyn HardeningPlugin>>>>;
 
 /// Registry for managing hardening plugins.
 ///
@@ -27,6 +27,17 @@ impl PluginRegistry {
         Self {
             plugins: Arc::new(RwLock::new(HashMap::new())),
         }
+    }
+
+    /// Acquires a read lock on the plugin map.
+    fn read_plugins(
+        &self,
+    ) -> Result<std::sync::RwLockReadGuard<'_, HashMap<PluginId, Arc<dyn HardeningPlugin>>>> {
+        self.plugins.read().map_err(|e| {
+            hardener_common::error::HardeningError::Plugin(format!(
+                "Failed to acquire read lock: {e}"
+            ))
+        })
     }
 
     /// Registers a new plugin in the registry.
@@ -50,20 +61,15 @@ impl PluginRegistry {
             )));
         }
 
-        plugins.insert(plugin_id, Arc::new(plugin));
+        plugins.insert(plugin_id, Arc::from(plugin));
         Ok(())
     }
 
     /// Retrieves a plugin by its ID
     ///
     /// Returns `None` if no plugin with the given ID exists.
-    pub fn get(&self, id: &PluginId) -> Result<Option<Arc<Box<dyn HardeningPlugin>>>> {
-        let plugins = self.plugins.read().map_err(|e| {
-            hardener_common::error::HardeningError::Plugin(format!(
-                "Failed to acquire read lock: {}",
-                e
-            ))
-        })?;
+    pub fn get(&self, id: &PluginId) -> Result<Option<Arc<dyn HardeningPlugin>>> {
+        let plugins = self.read_plugins()?;
 
         Ok(plugins.get(id).cloned())
     }
@@ -72,12 +78,7 @@ impl PluginRegistry {
     ///
     /// Returns a vector sorted by plugin ID.
     pub fn list(&self) -> Result<Vec<PluginMetadata>> {
-        let plugins = self.plugins.read().map_err(|e| {
-            hardener_common::error::HardeningError::Plugin(format!(
-                "Failed to acquire read lock: {}",
-                e
-            ))
-        })?;
+        let plugins = self.read_plugins()?;
 
         let mut metadata_list: Vec<PluginMetadata> =
             plugins.values().map(|plugin| plugin.metadata()).collect();
@@ -90,24 +91,14 @@ impl PluginRegistry {
 
     /// Returns the number of registered plugins.
     pub fn count(&self) -> Result<usize> {
-        let plugins = self.plugins.read().map_err(|e| {
-            hardener_common::error::HardeningError::Plugin(format!(
-                "Failed to acquire read lock: {}",
-                e
-            ))
-        })?;
+        let plugins = self.read_plugins()?;
 
         Ok(plugins.len())
     }
 
     /// Checks if a plugin with the given ID is registered.
     pub fn contains(&self, id: &PluginId) -> Result<bool> {
-        let plugins = self.plugins.read().map_err(|e| {
-            hardener_common::error::HardeningError::Plugin(format!(
-                "Failed to acquire read lock: {}",
-                e
-            ))
-        })?;
+        let plugins = self.read_plugins()?;
 
         Ok(plugins.contains_key(id))
     }

@@ -22,90 +22,48 @@ impl Default for CsvFormatter {
     }
 }
 
+const CSV_HEADER: &str = "Framework,Framework Name,Framework Description,Control ID,Control Title,Section,Status,Finding Count\n";
+
 impl ReportFormatter for CsvFormatter {
     fn format(&self, report: &ComplianceReport) -> String {
-        let mut output = String::new();
-
-        // CSV Header
-        output.push_str(
-            "Framework,Framework Name,Framework Description,Control ID,Control Title,Section,Status,Finding Count\n",
-        );
-
-        // Framework metadata
-        let framework_name = escape_csv_field(report.report_framework.full_name());
-        let framework_desc = escape_csv_field(report.report_framework.description());
-
-        // Data rows
-        for control in &report.report_controls {
-            let status_str = match control.control_status {
-                ControlStatus::Pass => "PASS",
-                ControlStatus::Fail => "FAIL",
-                ControlStatus::NotApplicable => "N/A",
-                ControlStatus::ManualReview => "MANUAL",
-            };
-
-            // Escape CSV fields that might contain commas or quotes
-            let title_escaped = escape_csv_field(&control.control_title);
-            let section_escaped = escape_csv_field(&control.control_section);
-
-            let framework_escaped = escape_csv_field(&report.report_framework.to_string());
-            let control_id_escaped = escape_csv_field(&control.control_id);
-
-            output.push_str(&format!(
-                "{},{},{},{},{},{},{},{}\n",
-                framework_escaped,
-                framework_name,
-                framework_desc,
-                control_id_escaped,
-                title_escaped,
-                section_escaped,
-                status_str,
-                control.control_findings.len()
-            ));
-        }
-
+        let mut output = String::from(CSV_HEADER);
+        write_report_rows(&mut output, report);
         output
     }
 
     fn format_all(&self, reports: &[ComplianceReport]) -> String {
-        let mut output = String::new();
-
-        // CSV Header (once)
-        output.push_str(
-            "Framework,Framework Name,Framework Description,Control ID,Control Title,Section,Status,Finding Count\n",
-        );
-
-        // Data rows from all reports
+        let mut output = String::from(CSV_HEADER);
         for report in reports {
-            let framework_name = escape_csv_field(report.report_framework.full_name());
-            let framework_desc = escape_csv_field(report.report_framework.description());
-
-            for control in &report.report_controls {
-                let status_str = match control.control_status {
-                    ControlStatus::Pass => "PASS",
-                    ControlStatus::Fail => "FAIL",
-                    ControlStatus::NotApplicable => "N/A",
-                    ControlStatus::ManualReview => "MANUAL",
-                };
-
-                let title_escaped = escape_csv_field(&control.control_title);
-                let section_escaped = escape_csv_field(&control.control_section);
-
-                output.push_str(&format!(
-                    "{},{},{},{},{},{},{},{}\n",
-                    report.report_framework,
-                    framework_name,
-                    framework_desc,
-                    control.control_id,
-                    title_escaped,
-                    section_escaped,
-                    status_str,
-                    control.control_findings.len()
-                ));
-            }
+            write_report_rows(&mut output, report);
         }
-
         output
+    }
+}
+
+fn write_report_rows(output: &mut String, report: &ComplianceReport) {
+    let framework_escaped = escape_csv_field(&report.report_framework.to_string());
+    let framework_name = escape_csv_field(report.report_framework.full_name());
+    let framework_description = escape_csv_field(report.report_framework.description());
+
+    for control in &report.report_controls {
+        let status_str = match control.control_status {
+            ControlStatus::Pass => "PASS",
+            ControlStatus::Fail => "FAIL",
+            ControlStatus::NotApplicable => "N/A",
+            ControlStatus::ManualReview => "MANUAL",
+        };
+
+        output.push_str(&format!(
+            "{},{},{},{},{},{},{},{}\n",
+            framework_escaped,
+            framework_name,
+            framework_description,
+            escape_csv_field(&control.control_id),
+            escape_csv_field(&control.control_title),
+            escape_csv_field(&control.control_section),
+            status_str,
+            control.control_findings.len(),
+        ));
     }
 }
 

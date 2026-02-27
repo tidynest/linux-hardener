@@ -75,11 +75,12 @@ fn apply_theme(theme: &str) {
     }
 }
 
-/// Get theme from localStorage.
+/// Get theme from localStorage, validated against known themes.
 fn get_stored_theme() -> Option<String> {
     web_sys::window()
         .and_then(|w| w.local_storage().ok().flatten())
         .and_then(|storage| storage.get_item("theme").ok().flatten())
+        .filter(|t| THEMES.iter().any(|(id, _)| *id == t.as_str()))
 }
 
 /// Save theme to localStorage.
