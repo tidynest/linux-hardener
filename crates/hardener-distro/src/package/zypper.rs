@@ -1,8 +1,7 @@
 //! Zypper package manager implementation for SUSE systems.
 
 use super::{Package, PackageManager};
-use hardener_common::error::{HardeningError, Result};
-use std::process::Command;
+use hardener_common::error::Result;
 
 /// Zypper package manager implementation.
 pub struct ZypperPackageManager;
@@ -39,33 +38,21 @@ impl PackageManager for ZypperPackageManager {
     }
 
     fn install(&self, packages: &[&str]) -> Result<()> {
-        if packages.is_empty() {
-            return Ok(());
-        }
-
-        // Validate all package names before executing command
-        super::validate_package_names(packages, super::PackageNameRules::Rpm)?;
-
-        let mut args = vec!["--non-interactive", "install"];
-        args.extend(packages);
-
-        self.execute_zypper(&args)?;
-        Ok(())
+        super::run_package_command(
+            "zypper",
+            &["--non-interactive", "install"],
+            packages,
+            super::PackageNameRules::Rpm,
+        )
     }
 
     fn remove(&self, packages: &[&str]) -> Result<()> {
-        if packages.is_empty() {
-            return Ok(());
-        }
-
-        // Validate all package names before executing command
-        super::validate_package_names(packages, super::PackageNameRules::Rpm)?;
-
-        let mut args = vec!["--non-interactive", "remove"];
-        args.extend(packages);
-
-        self.execute_zypper(&args)?;
-        Ok(())
+        super::run_package_command(
+            "zypper",
+            &["--non-interactive", "remove"],
+            packages,
+            super::PackageNameRules::Rpm,
+        )
     }
 
     fn list_installed(&self) -> Result<Vec<Package>> {
@@ -81,16 +68,7 @@ impl PackageManager for ZypperPackageManager {
     }
 
     fn is_installed(&self, package: &str) -> Result<bool> {
-        super::validate_package_name(package, super::PackageNameRules::Rpm)?;
-
-        let result = Command::new("rpm")
-            .args(["-q", package])
-            .output()
-            .map_err(|e| {
-                HardeningError::PackageManager(format!("Failed to query package {}", e))
-            })?;
-
-        Ok(result.status.success())
+        super::rpm_is_installed(package)
     }
 
     fn security_updates(&self) -> Result<Vec<Package>> {

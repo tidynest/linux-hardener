@@ -112,6 +112,35 @@ pub fn parse_rpm_package_list(output: &str) -> Vec<Package> {
         .collect()
 }
 
+/// Common implementation for install/remove operations across package managers.
+///
+/// Validates package names, builds the argument list, and executes the command.
+pub(crate) fn run_package_command(
+    command: &str,
+    flags: &[&str],
+    packages: &[&str],
+    rules: PackageNameRules,
+) -> Result<()> {
+    if packages.is_empty() {
+        return Ok(());
+    }
+    validate_package_names(packages, rules)?;
+    let mut args = Vec::from(flags);
+    args.extend(packages);
+    execute_command(command, &args)?;
+    Ok(())
+}
+
+/// Checks if a package is installed via rpm query (shared by DNF and Zypper).
+pub(crate) fn rpm_is_installed(package: &str) -> Result<bool> {
+    validate_package_name(package, PackageNameRules::Rpm)?;
+    let result = std::process::Command::new("rpm")
+        .args(["-q", package])
+        .output()
+        .map_err(|e| HardeningError::PackageManager(format!("Failed to query package: {}", e)))?;
+    Ok(result.status.success())
+}
+
 /// Trait for package manager operations across different distributions.
 ///
 /// This trait provides a common interface for package management operations

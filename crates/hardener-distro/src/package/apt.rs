@@ -39,32 +39,21 @@ impl PackageManager for AptPackageManager {
     }
 
     fn install(&self, packages: &[&str]) -> Result<()> {
-        if packages.is_empty() {
-            return Ok(());
-        }
-
-        // Validate all package names before executing command
-        super::validate_package_names(packages, super::PackageNameRules::Debian)?;
-
-        let mut args = vec!["install", "-y"];
-        args.extend(packages);
-
-        self.execute_apt(&args)?;
-        Ok(())
+        super::run_package_command(
+            "apt-get",
+            &["install", "-y"],
+            packages,
+            super::PackageNameRules::Debian,
+        )
     }
 
     fn remove(&self, packages: &[&str]) -> Result<()> {
-        if packages.is_empty() {
-            return Ok(());
-        }
-
-        super::validate_package_names(packages, super::PackageNameRules::Debian)?;
-
-        let mut args = vec!["remove", "-y"];
-        args.extend(packages);
-
-        self.execute_apt(&args)?;
-        Ok(())
+        super::run_package_command(
+            "apt-get",
+            &["remove", "-y"],
+            packages,
+            super::PackageNameRules::Debian,
+        )
     }
 
     fn list_installed(&self) -> Result<Vec<Package>> {

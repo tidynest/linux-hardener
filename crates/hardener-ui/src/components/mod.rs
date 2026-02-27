@@ -5,6 +5,7 @@ mod configure_section;
 mod finding_detail;
 mod findings_grid;
 mod findings_tab;
+pub(crate) mod form_helpers;
 mod history_section;
 mod host_form;
 mod host_list;

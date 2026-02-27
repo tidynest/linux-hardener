@@ -39,33 +39,21 @@ impl PackageManager for PacmanPackageManager {
     }
 
     fn install(&self, packages: &[&str]) -> Result<()> {
-        if packages.is_empty() {
-            return Ok(());
-        }
-
-        // Validate all package names before executing command
-        super::validate_package_names(packages, super::PackageNameRules::Arch)?;
-
-        let mut args = vec!["-S", "--noconfirm"];
-        args.extend(packages);
-
-        self.execute_pacman(&args)?;
-        Ok(())
+        super::run_package_command(
+            "pacman",
+            &["-S", "--noconfirm"],
+            packages,
+            super::PackageNameRules::Arch,
+        )
     }
 
     fn remove(&self, packages: &[&str]) -> Result<()> {
-        if packages.is_empty() {
-            return Ok(());
-        }
-
-        // Validate all package names before executing command
-        super::validate_package_names(packages, super::PackageNameRules::Arch)?;
-
-        let mut args = vec!["-R", "--noconfirm"];
-        args.extend(packages);
-
-        self.execute_pacman(&args)?;
-        Ok(())
+        super::run_package_command(
+            "pacman",
+            &["-R", "--noconfirm"],
+            packages,
+            super::PackageNameRules::Arch,
+        )
     }
 
     fn list_installed(&self) -> Result<Vec<Package>> {

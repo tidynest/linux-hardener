@@ -131,13 +131,7 @@ pub fn ScheduleSection() -> impl IntoView {
                         class="toggle-input"
                         prop:checked=move || enabled.get()
                         on:change=move |event| {
-                            use leptos::wasm_bindgen::JsCast;
-                            let checked = event
-                                .target()
-                                .and_then(|t| t.dyn_into::<web_sys::HtmlInputElement>().ok())
-                                .map(|el| el.checked())
-                                .unwrap_or(false);
-                            enabled.set(checked);
+                            enabled.set(crate::components::form_helpers::checkbox_checked(&event));
                         }
                     />
                     "Enable scheduled scanning"
@@ -151,13 +145,7 @@ pub fn ScheduleSection() -> impl IntoView {
                     class="form-select"
                     prop:value=move || selected_preset.get()
                     on:change=move |event| {
-                        use leptos::wasm_bindgen::JsCast;
-                        let value = event
-                            .target()
-                            .and_then(|t| t.dyn_into::<web_sys::HtmlSelectElement>().ok())
-                            .map(|el| el.value())
-                            .unwrap_or_default();
-                        selected_preset.set(value);
+                        selected_preset.set(crate::components::form_helpers::select_value(&event));
                     }
                 >
                     {SCHEDULE_PRESETS
@@ -190,13 +178,7 @@ pub fn ScheduleSection() -> impl IntoView {
                         placeholder="0 0 2 * * *"
                         prop:value=move || custom_cron.get()
                         on:input=move |event| {
-                            use leptos::wasm_bindgen::JsCast;
-                            let value = event
-                                .target()
-                                .and_then(|t| t.dyn_into::<web_sys::HtmlInputElement>().ok())
-                                .map(|el| el.value())
-                                .unwrap_or_default();
-                            custom_cron.set(value);
+                            custom_cron.set(crate::components::form_helpers::input_value(&event));
                         }
                     />
                     <span class="form-hint">"Format: sec min hour day month weekday"</span>
@@ -238,13 +220,7 @@ pub fn ScheduleSection() -> impl IntoView {
                     class="form-select"
                     prop:value=move || min_severity.get()
                     on:change=move |event| {
-                        use leptos::wasm_bindgen::JsCast;
-                        let value = event
-                            .target()
-                            .and_then(|t| t.dyn_into::<web_sys::HtmlSelectElement>().ok())
-                            .map(|el| el.value())
-                            .unwrap_or_default();
-                        min_severity.set(value);
+                        min_severity.set(crate::components::form_helpers::select_value(&event));
                     }
                 >
                     <option value="critical">"Critical"</option>

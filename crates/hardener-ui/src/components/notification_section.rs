@@ -114,13 +114,7 @@ pub fn NotificationSection() -> impl IntoView {
                         class="toggle-input"
                         prop:checked=move || email_enabled.get()
                         on:change=move |event| {
-                            use leptos::wasm_bindgen::JsCast;
-                            let checked = event
-                                .target()
-                                .and_then(|t| t.dyn_into::<web_sys::HtmlInputElement>().ok())
-                                .map(|el| el.checked())
-                                .unwrap_or(false);
-                            email_enabled.set(checked);
+                            email_enabled.set(crate::components::form_helpers::checkbox_checked(&event));
                         }
                     />
                     "Enable email notifications"
@@ -136,13 +130,7 @@ pub fn NotificationSection() -> impl IntoView {
                         placeholder="admin@example.com, ops@example.com"
                         prop:value=move || email_recipients.get()
                         on:input=move |event| {
-                            use leptos::wasm_bindgen::JsCast;
-                            let value = event
-                                .target()
-                                .and_then(|t| t.dyn_into::<web_sys::HtmlInputElement>().ok())
-                                .map(|el| el.value())
-                                .unwrap_or_default();
-                            email_recipients.set(value);
+                            email_recipients.set(crate::components::form_helpers::input_value(&event));
                         }
                     />
                     <span class="form-hint">"Comma-separated email addresses"</span>
@@ -155,13 +143,7 @@ pub fn NotificationSection() -> impl IntoView {
                         placeholder="hardener@example.com"
                         prop:value=move || email_from.get()
                         on:input=move |event| {
-                            use leptos::wasm_bindgen::JsCast;
-                            let value = event
-                                .target()
-                                .and_then(|t| t.dyn_into::<web_sys::HtmlInputElement>().ok())
-                                .map(|el| el.value())
-                                .unwrap_or_default();
-                            email_from.set(value);
+                            email_from.set(crate::components::form_helpers::input_value(&event));
                         }
                     />
                 </div>
@@ -177,13 +159,7 @@ pub fn NotificationSection() -> impl IntoView {
                         class="toggle-input"
                         prop:checked=move || webhook_enabled.get()
                         on:change=move |event| {
-                            use leptos::wasm_bindgen::JsCast;
-                            let checked = event
-                                .target()
-                                .and_then(|t| t.dyn_into::<web_sys::HtmlInputElement>().ok())
-                                .map(|el| el.checked())
-                                .unwrap_or(false);
-                            webhook_enabled.set(checked);
+                            webhook_enabled.set(crate::components::form_helpers::checkbox_checked(&event));
                         }
                     />
                     "Enable webhook notifications"
@@ -199,13 +175,7 @@ pub fn NotificationSection() -> impl IntoView {
                         placeholder="https://hooks.slack.com/services/..."
                         prop:value=move || webhook_url.get()
                         on:input=move |event| {
-                            use leptos::wasm_bindgen::JsCast;
-                            let value = event
-                                .target()
-                                .and_then(|t| t.dyn_into::<web_sys::HtmlInputElement>().ok())
-                                .map(|el| el.value())
-                                .unwrap_or_default();
-                            webhook_url.set(value);
+                            webhook_url.set(crate::components::form_helpers::input_value(&event));
                         }
                     />
                 </div>
@@ -215,13 +185,7 @@ pub fn NotificationSection() -> impl IntoView {
                         class="form-select"
                         prop:value=move || webhook_format.get()
                         on:change=move |event| {
-                            use leptos::wasm_bindgen::JsCast;
-                            let value = event
-                                .target()
-                                .and_then(|t| t.dyn_into::<web_sys::HtmlSelectElement>().ok())
-                                .map(|el| el.value())
-                                .unwrap_or_default();
-                            webhook_format.set(value);
+                            webhook_format.set(crate::components::form_helpers::select_value(&event));
                         }
                     >
                         <option value="generic">"Generic JSON"</option>
