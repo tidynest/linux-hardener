@@ -72,7 +72,7 @@ The tool is designed for system administrators, DevOps engineers, and security p
 ### Test Coverage
 
 ```
-Total Tests: 418+ passing (Rust) + 84 GUI tests (Playwright)
+Total Tests: 514+ passing (Rust) + 84 GUI tests (Playwright)
 ├── Plugin Tests: 48 + 80 mock tests
 ├── Core Tests: 59 + 14 mock executor tests
 ├── Compliance Tests: 46
@@ -583,4 +583,4 @@ This project draws inspiration from established security tools including:
 **Contact**: tidynest@proton.me
 **Repository**: https://github.com/tidynest/linux-system-hardener
 
-**Last Updated**: 2026-02-24
+**Last Updated**: 2026-02-27

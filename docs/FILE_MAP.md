@@ -525,76 +525,40 @@ pub async fn invoke_pick_config_file() -> Result<Option<String>, String>;
 | `src/validation.rs` | IPC input validation layer | `validate_ipc_string()`, `validate_plugin_ids()`, `validate_checkpoint_id()`, `validate_checkpoint_name()`, `validate_privileged_config_path()`, `validate_user_config_path()`, `validate_output_path()`, `validate_ssh_key_path()` |
 
 ### Tauri Commands
-
 ```rust
-// Core scan/apply/rollback
-#[tauri::command]
-pub async fn run_scan(plugin_ids: Option<Vec<String>>, config_path: Option<String>) -> Result<Vec<ScanResult>, String>
-#[tauri::command]
-pub async fn run_apply(plugin_ids: Vec<String>, config_path: Option<String>) -> Result<Vec<ApplyResult>, String>
-#[tauri::command]
-pub async fn run_apply_dry_run(plugin_ids: Vec<String>, config_path: Option<String>) -> Result<Vec<ValidationReport>, String>
-#[tauri::command]
-pub async fn run_rollback(checkpoint_id: String, config_path: Option<String>) -> Result<RollbackResult, String>
-
-// Checkpoints
-#[tauri::command]
-pub async fn get_checkpoints() -> Result<Vec<CheckpointInfo>, String>
-// Note: Reads from BOTH user (~/.local/share/linux-hardener/checkpoints.db) AND
-// system (/var/lib/linux-hardener/checkpoints.db) databases to merge checkpoints
-// from privileged (pkexec) and non-privileged operations
-#[tauri::command]
+pub async fn connect_remote(name: String,
+    state: tauri::State<'_, RemoteState>,) -> Result<RemoteConnectionStatus, String>
 pub async fn create_checkpoint(name: String) -> Result<String, String>
-#[tauri::command]
 pub async fn delete_checkpoint(checkpoint_id: String) -> Result<bool, String>
-#[tauri::command]
-pub async fn get_checkpoint_detail(checkpoint_id: String) -> Result<CheckpointDetail, String>
-
-// Compliance reports
-#[tauri::command]
-pub async fn generate_compliance_report(frameworks: Vec<String>) -> Result<Vec<ComplianceReport>, String>
-#[tauri::command]
-pub async fn export_compliance_report(frameworks: Vec<String>, format: String, output_path: Option<String>) -> Result<String, String>
-
-// Scan history
-#[tauri::command]
-pub async fn get_scan_history(limit: Option<i32>) -> Result<Vec<ScanSessionInfo>, String>
-#[tauri::command]
-pub async fn get_scan_session(session_id: String) -> Result<Vec<ScanResult>, String>
-#[tauri::command]
-pub async fn get_latest_scan() -> Result<Option<Vec<ScanResult>>, String>
-
-// Plugins
-#[tauri::command]
-pub async fn list_plugins() -> Result<Vec<PluginMetadata>, String>
-
-// Remote scanning
-#[tauri::command]
-pub async fn list_remote_hosts() -> Result<Vec<RemoteHostProfile>, String>
-#[tauri::command]
-pub async fn save_remote_host(profile: RemoteHostProfile) -> Result<(), String>
-#[tauri::command]
 pub async fn delete_remote_host(name: String) -> Result<(), String>
-#[tauri::command]
-pub async fn connect_remote(name: String, state: tauri::State<'_, RemoteState>) -> Result<RemoteConnectionStatus, String>
-#[tauri::command]
 pub async fn disconnect_remote(state: tauri::State<'_, RemoteState>) -> Result<(), String>
-#[tauri::command]
-pub async fn run_remote_scan(plugin_ids: Option<Vec<String>>, state: tauri::State<'_, RemoteState>) -> Result<Vec<ScanResult>, String>
-
-// Scheduler
-#[tauri::command]
+pub async fn export_compliance_report(frameworks: Vec<String>,
+    format: String,
+    output_path: Option<String>,) -> Result<String, String>
+pub async fn generate_compliance_report(frameworks: Vec<String>,) -> Result<Vec<ComplianceReport>, String>
+pub async fn get_checkpoint_detail(checkpoint_id: String) -> Result<CheckpointDetail, String>
+pub async fn get_checkpoints() -> Result<Vec<CheckpointInfo>, String>
+pub async fn get_latest_scan() -> Result<Option<Vec<ScanResult>>, String>
+pub async fn get_scan_history(limit: Option<i32>) -> Result<Vec<ScanSessionInfo>, String>
+pub async fn get_scan_session(session_id: String) -> Result<Vec<ScanResult>, String>
 pub async fn get_scheduler_config() -> Result<hardener_types::scheduler::SchedulerUiConfig, String>
-#[tauri::command]
-pub async fn save_scheduler_config(config: hardener_types::scheduler::SchedulerUiConfig) -> Result<String, String>
-#[tauri::command]
-pub async fn test_notification() -> Result<hardener_types::scheduler::TestNotificationResult, String>
-
-// Config file picker
-#[tauri::command]
-pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
-#[tauri::command]
+pub async fn list_plugins() -> Result<Vec<PluginMetadata>, String>
+pub async fn list_remote_hosts() -> Result<Vec<RemoteHostProfile>, String>
 pub async fn pick_config_file(app: tauri::AppHandle) -> Result<Option<String>, String>
+pub async fn run_apply(plugin_ids: Vec<String>,
+    config_path: Option<String>,) -> Result<Vec<ApplyResult>, String>
+pub async fn run_apply_dry_run(plugin_ids: Vec<String>,
+    config_path: Option<String>,) -> Result<Vec<ValidationReport>, String>
+pub async fn run_remote_scan(plugin_ids: Option<Vec<String>>,
+    state: tauri::State<'_, RemoteState>,) -> Result<Vec<ScanResult>, String>
+pub async fn run_rollback(checkpoint_id: String,
+    config_path: Option<String>,) -> Result<RollbackResult, String>
+pub async fn run_scan(plugin_ids: Option<Vec<String>>,
+    config_path: Option<String>,) -> Result<Vec<ScanResult>, String>
+pub async fn save_remote_host(profile: RemoteHostProfile) -> Result<(), String>
+pub async fn save_scheduler_config(config: hardener_types::scheduler::SchedulerUiConfig,) -> Result<String, String>
+pub async fn test_notification() -> Result<hardener_types::scheduler::TestNotificationResult, String>
+pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 ```
 
 ---
@@ -799,4 +763,4 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | `hardener-common/src/types.rs` | Added `FindingPolicyException` struct |
 | `hardener-cli/src/cli.rs` | Added `--config`, `--audit`, `--compliance`, `--exit-code` flags, `ScanMode` enum |
 
-**Last Updated**: 2026-02-25
+**Last Updated**: 2026-02-27
