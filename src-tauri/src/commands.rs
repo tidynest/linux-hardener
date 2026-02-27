@@ -172,6 +172,16 @@ fn hardener_config_path() -> Result<std::path::PathBuf, String> {
     user_config.ok_or_else(|| "Cannot determine config directory".to_string())
 }
 
+/// Returns the user-writable config path (~/.config/linux-hardener/config.toml).
+///
+/// For write operations (scheduler save, etc.), we always target the user
+/// config directory. The system config at /etc/linux-hardener/ is read-only.
+fn writable_config_path() -> Result<std::path::PathBuf, String> {
+    dirs::config_dir()
+        .map(|p| p.join("linux-hardener").join("config.toml"))
+        .ok_or_else(|| "Cannot determine config directory".to_string())
+}
+
 /// Loads host profiles from TOML config file.
 fn load_hosts_config() -> Result<HostsConfig, String> {
     let path = hosts_config_path()?;
@@ -1267,18 +1277,23 @@ pub async fn save_scheduler_config(
         validate_ipc_string(recipient, "email_recipient")?;
     }
 
-    let path = hardener_config_path()?;
+    let write_path = writable_config_path()?;
 
-    if let Some(parent) = path.parent() {
+    if let Some(parent) = write_path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| safe_err(format!("Failed to create config directory: {e}")))?;
     }
 
-    let content = if path.exists() {
-        std::fs::read_to_string(&path)
+    // Read existing config (user file first, fall back to system config as template)
+    let content = if write_path.exists() {
+        std::fs::read_to_string(&write_path)
             .map_err(|e| safe_err(format!("Failed to read config: {e}")))?
     } else {
-        String::new()
+        hardener_config_path()
+            .ok()
+            .filter(|p| p.exists())
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .unwrap_or_default()
     };
 
     let mut document: toml_edit::DocumentMut = content
@@ -1293,7 +1308,7 @@ pub async fn save_scheduler_config(
 
     document["scheduler"] = scheduler_table.as_item().clone();
 
-    std::fs::write(&path, document.to_string())
+    std::fs::write(&write_path, document.to_string())
         .map_err(|e| safe_err(format!("Failed to write config: {e}")))?;
 
     Ok("Configuration saved".to_string())

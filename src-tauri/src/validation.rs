@@ -37,7 +37,7 @@ const KNOWN_PLUGIN_PREFIXES: &[&str] = &[
     "mac",
     "pam",
     "permissions",
-    "services",
+    "service",
     "ssh",
 ];
 

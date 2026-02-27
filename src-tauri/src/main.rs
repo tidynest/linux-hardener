@@ -13,7 +13,8 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 fn main() {
     // Prevent WebKitGTK compositing crash on Wayland (Hyprland, Sway, etc.)
-    std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+    // SAFETY: Called before any threads are spawned (start of main).
+    unsafe { std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1") };
 
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())
