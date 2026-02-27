@@ -5,8 +5,8 @@
 | Version | Supported          |
 | ------- | ------------------ |
 | 0.3.x   | :white_check_mark: |
-| 0.2.x   | :white_check_mark: |
-| 0.1.x   | :white_check_mark: |
+| 0.2.x   | :x:                |
+| 0.1.x   | :x:                |
 
 ## Reporting a Vulnerability
 
@@ -78,11 +78,11 @@ This tool is designed to harden systems against common attack vectors, but is **
 
 ### Known Limitations
 
-1. **Race Conditions**: The tool does not currently lock configuration files during modification. Concurrent edits could cause conflicts.
+1. **Race Conditions**: Configuration file locking is implemented for `sshd_config` via an exclusive advisory `flock` held across the full read-modify-write cycle. Other configuration files do not currently use advisory locking.
 
-2. **Symbolic Links**: The tool follows symbolic links, which could potentially be exploited in certain scenarios.
+2. **Symbolic Links**: The permissions plugin uses `O_NOFOLLOW` with `fchmod` on local targets to prevent TOCTOU symlink substitution. Backup creation refuses to follow or overwrite symlinks at the destination. Remote execution paths fall back to the executor's `chmod` command and do not carry this guarantee.
 
-3. **External Dependencies**: The tool relies on system utilities (`sysctl`, `systemctl`, etc.) which must be trusted.
+3. **External Dependencies**: System utilities (`sysctl`, `systemctl`, etc.) are resolved via a trusted binary path allowlist (`/usr/bin`, `/usr/sbin`, `/bin`, `/sbin`, `/usr/local/bin`, `/usr/local/sbin`) rather than the ambient `PATH`, preventing PATH-substitution attacks (CWE-426). The binaries themselves must still be trusted.
 
 4. **Distribution Detection**: Relies on `/etc/os-release` which could be spoofed on a compromised system.
 
@@ -125,6 +125,14 @@ The project follows these security practices:
 - No use of `unsafe` Rust without justification
 - Error handling avoids information disclosure
 - Sensitive data is not logged
+- All IPC inputs are validated (length limits, control character rejection, allowlist-based plugin IDs) with 47 dedicated tests
+- Signing keys are encrypted at rest using AES-256-GCM with HKDF-SHA256 derived from the machine identity
+- System binaries are resolved via a trusted path allowlist, not the ambient `PATH` environment variable
+- Privileged IPC operations are rate-limited (5-second cooldown) with mutual exclusion to prevent concurrent privilege escalation attempts
+- Error messages are sanitised before reaching the frontend to avoid leaking internal filesystem paths (CWE-209)
+- HTML report output escapes all dynamic fields to prevent XSS
+- File writes use atomic tempfile-and-rename to prevent partial write exposure
+- Advisory exclusive file locking is held across read-modify-write cycles on files where concurrent modification is a risk
 
 ## Security Hardening This Tool Provides
 
@@ -183,4 +191,4 @@ For security concerns: **tidynest@proton.me**
 
 For general issues: [GitHub Issues](https://github.com/tidynest/linux-system-hardener/issues)
 
-**Last Updated**: 2026-02-24
+**Last Updated**: 2026-02-27

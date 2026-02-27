@@ -84,8 +84,8 @@ All 21 items fixed across 8 crates.
 
 ### Phase 2 — Quality
 
-- [ ] Review `SECURITY.md` completeness
-- [ ] Write install/upgrade guide per distro family
+- [x] Review `SECURITY.md` completeness — corrected 3 stale Known Limitations, added 8 security practices, updated version table
+- [x] Write install/upgrade guide per distro family — `docs/INSTALL.md` covers all 5 families + source + binary + troubleshooting
 - [ ] Final cross-distro validation run
 - [ ] Verify musl binary on all 5 distros
 
