@@ -59,7 +59,9 @@ The tool is designed for system administrators, DevOps engineers, and security p
 
 - **Desktop Application**: Tauri-based native app with Leptos (Rust) frontend
 - **Web Interface**: Runs in browser via Trunk (WASM)
-- **Dark Terminal Theme**: Professional security-focused aesthetic with colour-coded severity states
+- **Dark Terminal Theme**: Professional security-focused aesthetic with colour-coded severity states (7 themes including WCAG AAA High Contrast)
+- **Keyboard Navigation**: Full keyboard control — Ctrl+1-5 (pages), Alt+T (themes), Escape (close), F11 (fullscreen), Arrow keys (tabs and grids)
+- **ARIA Accessibility**: WAI-ARIA tabs, skip link, `aria-selected`, `aria-live` regions, focus management
 - **Progressive Disclosure**: Simple overview with drill-down for details
 - **Real-time Feedback**: Live scan progress and results
 
@@ -67,12 +69,12 @@ The tool is designed for system administrators, DevOps engineers, and security p
 
 ## Project Status
 
-**Current Phase**: Production Release (v1.0.0)
+**Current Phase**: Production Release (v1.0.2)
 
 ### Test Coverage
 
 ```
-Total Tests: 514+ passing (Rust) + 84 GUI tests (Playwright)
+Total Tests: 514+ passing (Rust) + 84 Playwright + 95 Desktop + 21 Node.js
 ├── Plugin Tests: 48 + 80 mock tests
 ├── Core Tests: 59 + 14 mock executor tests
 ├── Compliance Tests: 46
@@ -82,6 +84,9 @@ Total Tests: 514+ passing (Rust) + 84 GUI tests (Playwright)
 ├── Distro Tests: 13
 ├── SSH Integration Tests: 24
 ├── GUI Tests: 84 Playwright (Web UI, 7 categories, 5 distros)
+├── Desktop UX Tests: 49 (tauri-ux-test.sh — keyboard nav, themes, ARIA, focus)
+├── Desktop Functional Tests: 46 (tauri-functional-test.sh — all pages and IPC)
+├── Node.js GUI Tests: 21 (run-tests.mjs — keyboard, clipboard, TabBar)
 └── Coverage: >90%
 ```
 
@@ -398,6 +403,17 @@ See [docs/SSH_REMOTE_SCANNING.md](docs/SSH_REMOTE_SCANNING.md) for complete SSH 
 5. Click "Apply Selected" (requires root password)
 6. Use "Checkpoints" to rollback if needed
 
+**Keyboard shortcuts:**
+
+| Shortcut | Action |
+|----------|--------|
+| Ctrl+1-5 | Navigate to Dashboard/Analysis/Hardening/Remote/Scheduler |
+| Alt+T | Cycle through themes |
+| Escape | Close detail panels, exit fullscreen |
+| F11 | Toggle fullscreen |
+| Arrow keys | Navigate tab bars and findings grid |
+| Enter/Space | Open finding detail |
+
 ---
 
 ## Configuration
@@ -598,4 +614,4 @@ This project draws inspiration from established security tools including:
 **Contact**: tidynest@proton.me
 **Repository**: https://github.com/tidynest/linux-system-hardener
 
-**Last Updated**: 2026-02-27
+**Last Updated**: 2026-02-28

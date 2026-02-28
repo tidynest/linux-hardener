@@ -1,6 +1,6 @@
 # Linux System Hardener - File Map
 
-**Last Updated:** 2026-02-26
+**Last Updated:** 2026-02-28
 
 This document lists all source files with their purpose and key exports.
 
@@ -401,6 +401,8 @@ pub struct ScanRunner {
 | `src/types.rs` | Re-exports from hardener-types | `pub use hardener_types::*` (ApplyResult, Change, ChangeType, ComplianceFramework, ComplianceMapping, ComplianceReport, ComplianceSummary, ConfigSummary, ControlResult, ControlStatus, FileRestoreAction, FileRestoreResult, Finding, FindingCategory, FindingPolicyException, PluginId, PluginMetadata, RollbackResult, ScanResult, Severity, ValidationIssue, ValidationReport), scheduler re-exports (SchedulerUiConfig, NotificationUiConfig, EmailUiConfig, WebhookUiConfig, TestNotificationResult), `CheckpointInfo`, `ScanSessionInfo`, `CheckpointDetail`, `CheckpointFileInfo` |
 | `src/state/mod.rs` | Reactive state | `AppState` |
 | `src/tauri_bindings.rs` | Tauri command bindings | `tauri_available`, `invoke_scan`, `invoke_apply`, `invoke_apply_dry_run`, `invoke_generate_report`, `invoke_export_report`, `invoke_get_latest_scan`, `invoke_get_checkpoints`, `invoke_create_checkpoint`, `invoke_delete_checkpoint`, `invoke_get_scan_history`, `invoke_get_scan_session`, `invoke_get_checkpoint_detail`, `invoke_rollback`, `invoke_list_remote_hosts`, `invoke_save_remote_host`, `invoke_delete_remote_host`, `invoke_connect_remote`, `invoke_disconnect_remote`, `invoke_remote_scan`, `invoke_get_scheduler_config`, `invoke_save_scheduler_config`, `invoke_test_notification`, `invoke_validate_config`, `invoke_pick_config_file` |
+| `src/keyboard.rs` | Global keyboard event handler | Ctrl+1-5 page nav, Alt+T theme cycle, Escape close, F11 fullscreen |
+| `src/navigation.rs` | Navigation signal helpers | Page routing helpers for keyboard and UI nav |
 | `src/utils/mod.rs` | Utils module exports | Re-exports (mock_data) |
 | `src/utils/mock_data.rs` | Development mocks | Mock data generators |
 | `src/pages/mod.rs` | Pages module exports | `DashboardPage`, `AnalysisPage`, `HardeningPage` |
@@ -441,6 +443,8 @@ pub struct ScanRunner {
 | `src/components/schedule_section.rs` | Cron schedule configuration form | `ScheduleSection` |
 | `src/components/notification_section.rs` | Email and webhook notification config | `NotificationSection` |
 | `src/components/config_file_card.rs` | Config file picker card component (text input, browse, validation) | `ConfigFileCard` |
+| `src/components/clipboard.rs` | Copy-to-clipboard button with async Clipboard API | `CopyButton` |
+| `src/components/confirm_delete.rs` | Inline delete confirmation component | `ConfirmDelete` |
 | `src/components/form_helpers.rs` | Shared JsCast event extraction helpers | `input_value()`, `checkbox_checked()`, `select_value()` |
 
 **Note**: This crate depends only on `hardener-types` for shared types to ensure WASM compatibility. External dependencies include Leptos (WASM framework), wasm-bindgen, and web-sys for browser APIs.
@@ -724,9 +728,9 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 
 ---
 
-## GUI Tests (Playwright)
+## GUI Tests (Playwright + Desktop)
 
-84 Playwright tests validate the Web UI across 5 distributions. Tests use a Tauri IPC mock to simulate backend commands without requiring the desktop app.
+84 Playwright tests validate the Web UI across 5 distributions. 95 desktop tests validate the Tauri app via Hyprland keyboard/screenshot automation. 21 Node.js tests validate desktop UX features via Playwright.
 
 ### Test Files
 
@@ -736,6 +740,10 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | `gui-tests/playwright.config.js` | Playwright configuration (base URL, browser, timeouts) |
 | `gui-tests/tauri-mock.js` | Tauri IPC mock (`window.__TAURI__`) covering all IPC commands |
 | `gui-tests/spa-server.py` | SPA-aware HTTP server (port 8787, client-side routing) |
+| `gui-tests/run-tests.mjs` | Node.js Playwright test orchestrator (21 tests: keyboard nav, themes, ARIA, clipboard, TabBar) |
+| `gui-tests/tauri-functional-test.sh` | Hyprland-based functional tests (46 tests: scan, apply, checkpoints, scheduler, remote, themes) |
+| `gui-tests/tauri-ux-test.sh` | Hyprland-based UX tests (49 tests: keyboard nav, tab bars, detail panels, fullscreen, skip link) |
+| `gui-tests/debug-tabs.mjs` | Tab system debugging helper |
 | `gui-tests/tests/helpers.js` | Shared test helpers and utilities |
 | `gui-tests/tests/dashboard.spec.js` | T-DASH-01..09 (9 tests): score, scan trigger, navigation, activity |
 | `gui-tests/tests/analysis.spec.js` | T-FIND-01..10, T-COMP-01..08 (18 tests): findings + compliance |
@@ -763,4 +771,4 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | `hardener-common/src/types.rs` | Added `FindingPolicyException` struct |
 | `hardener-cli/src/cli.rs` | Added `--config`, `--audit`, `--compliance`, `--exit-code` flags, `ScanMode` enum |
 
-**Last Updated**: 2026-02-27
+**Last Updated**: 2026-02-28

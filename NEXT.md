@@ -2,9 +2,9 @@
 
 ---
 
-## Current State (as of 2026-02-25)
+## Current State (as of 2026-02-28)
 
-All major audit items are resolved. Project is feature-complete for v0.4.0; focus is now on v1.0.0 production readiness.
+**v1.0.2 released.** All major features complete. Recent work merged two feature branches into main: CLI crash fixes + desktop UX enhancements (keyboard nav, ARIA, clipboard, TabBar, 95 automated desktop tests).
 
 ### Completed milestones:
 
@@ -24,6 +24,8 @@ All major audit items are resolved. Project is feature-complete for v0.4.0; focu
 - **Security remediation** (2026-02-26) — all 53 security findings resolved (see `docs/security-audit/REMEDIATION_TRACKER.md`)
 - **Code quality pass** (2026-02-27) — 27 code quality findings fixed, shared helper extraction, 10 packaging fixes
 - **Documentation** (2026-02-27) — SECURITY.md updated, INSTALL.md created for 5 distro families
+- **v1.0.2 merged branches** (2026-02-28) — `cli-ux-perfection` (CLI crash fixes, stderr routing, idempotent dirs, user-mode systemd) + `feature/desktop-testing-ux` (keyboard nav, ARIA, clipboard, TabBar migration, 95 desktop tests)
+- **Desktop tests**: 49 UX tests + 46 functional tests + 21 Node.js tests all passing
 - **505+ unit tests pass**, clippy clean, native + WASM builds clean
 
 ### Trait refactor summary (commits `81c13ad`, `d029629`, `b87fb1c`):
@@ -119,7 +121,7 @@ See `docs/GUI_CLI_PARITY_PLAN.md` — all 6 phases complete.
 - **8 Security Plugins**: Kernel, SSH, Firewall, PAM, Services, Audit, Permissions, MAC
 - **505+ Passing Tests**
 - **Multi-Distribution Support**: Debian, Red Hat, Arch, SUSE families
-- **Current Version**: 0.3.3 (Development Release)
+- **Current Version**: 1.0.2 (Production Release)
 - **WASM Support**: GUI frontend compiles to `wasm32-unknown-unknown`
 
 For version history and detailed feature tracking, see [ROADMAP.md](ROADMAP.md).
@@ -191,4 +193,4 @@ hardener-scheduler
 
 *This document is prepared for continuity between development sessions.*
 
-**Last Updated**: 2026-02-27
+**Last Updated**: 2026-02-28

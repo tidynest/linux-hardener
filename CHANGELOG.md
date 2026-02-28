@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-02-28
+
+### Fixed (CLI)
+- **Daemon status crash**: `daemon status` no longer panics when no scan history exists
+- **Checkpoint list crash**: `checkpoint list` handles empty database gracefully
+- **Report wizard crash**: Interactive wizard no longer panics on empty scan results
+- **Stderr routing**: Progress messages now sent to stderr, keeping stdout clean for piping (`report` command)
+- **Idempotent directory creation**: State initialisation no longer fails if directories already exist
+- **User-mode systemd**: `systemd install --user` now generates correct user-scoped unit paths
+
+### Added (Desktop UX)
+- **Keyboard navigation**: Global shortcuts — Ctrl+1-5 (page nav), Alt+T (theme cycle), Escape (close panels/fullscreen), F11 (fullscreen)
+- **ARIA accessibility**: Full WAI-ARIA tabs pattern (`role="tab"`, `role="tablist"`, `role="tabpanel"`), skip link, `aria-selected`, `aria-live` regions
+- **Shared TabBar component**: Reusable `TabBar` with keyboard nav (ArrowLeft/Right, Home, End) and ARIA, migrated Analysis and Hardening pages
+- **CopyButton component**: Async Clipboard API integration with visual feedback for compliance reports
+- **ConfirmDelete component**: Inline delete confirmation to prevent accidental checkpoint deletion
+- **Findings grid keyboard nav**: Arrow keys, Enter/Space to open detail, full focus management
+- **95 automated desktop tests**: `tauri-ux-test.sh` (49 tests), `tauri-functional-test.sh` (46 tests), `run-tests.mjs` (21 Playwright tests)
+
+### Changed
+- **TabBar migration**: Analysis page (Findings/Compliance/History) and Hardening page (Configure/History) now use shared `TabBar` component instead of page-specific tab implementations
+- **Focus management**: Tab focus race condition resolved; keyboard focus properly tracked across tab switches
+
+## [1.0.1] - 2026-02-27
+
+### Fixed
+- Source checksum updated for AUR package
+
 ## [1.0.0] - 2026-02-27
 
 ### 1.0.0 — Production Release
@@ -497,6 +525,8 @@ Configuration file support with layered loading, compliance framework reporting 
 
 ## Version History
 
+- **1.0.2** (2026-02-28): CLI crash fixes, desktop UX enhancements (keyboard nav, ARIA, clipboard, 95 tests)
+- **1.0.1** (2026-02-27): AUR source checksum fix
 - **1.0.0** (2026-02-27): First stable production release
 - **0.3.3** (2026-02-25): Distribution validation complete (5 distributions across 4 families)
 - **0.3.2** (2025-12-09): GUI major redesign, bug fixes, accessibility
@@ -505,6 +535,8 @@ Configuration file support with layered loading, compliance framework reporting 
 - **0.2.0** (2025-11-28): Compliance frameworks, PDF reports, configuration system
 - **0.1.0** (2025-11-25): Initial development release
 
+[1.0.2]: https://github.com/tidynest/linux-system-hardener/compare/v1.0.1...v1.0.2
+[1.0.1]: https://github.com/tidynest/linux-system-hardener/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/tidynest/linux-system-hardener/compare/v0.3.3...v1.0.0
 [0.3.3]: https://github.com/tidynest/linux-system-hardener/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/tidynest/linux-system-hardener/compare/v0.3.1...v0.3.2
@@ -513,4 +545,4 @@ Configuration file support with layered loading, compliance framework reporting 
 [0.2.0]: https://github.com/tidynest/linux-system-hardener/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tidynest/linux-system-hardener/releases/tag/v0.1.0
 
-**Last Updated**: 2026-02-27
+**Last Updated**: 2026-02-28

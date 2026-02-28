@@ -468,6 +468,24 @@ User clicks "Apply"
 
 ---
 
+### v1.0.2 — CLI Fixes & Desktop UX ✅
+
+| Feature | Description | Priority | Status |
+|---------|-------------|----------|--------|
+| CLI crash fixes | daemon status, checkpoint list, wizard crashes | Critical | ✅ Complete |
+| Stderr routing | Progress to stderr for clean piping | High | ✅ Complete |
+| Idempotent dirs | State init no longer fails if dirs exist | High | ✅ Complete |
+| User-mode systemd | Correct user-scoped unit paths | Medium | ✅ Complete |
+| Keyboard navigation | Ctrl+1-5, Alt+T, Escape, F11, Arrow keys | High | ✅ Complete |
+| ARIA accessibility | WAI-ARIA tabs, skip link, aria-selected/live | High | ✅ Complete |
+| Shared TabBar | Reusable TabBar with keyboard nav + ARIA | High | ✅ Complete |
+| CopyButton | Async Clipboard API for compliance reports | Medium | ✅ Complete |
+| ConfirmDelete | Inline delete confirmation | Medium | ✅ Complete |
+| Findings grid keyboard | Arrow/Enter/Space navigation for findings | Medium | ✅ Complete |
+| Desktop test suites | 95 tests (49 UX + 46 functional) + 21 Node.js | High | ✅ Complete |
+
+---
+
 ## Future Enhancements
 
 Features planned for post-v1.0.0 releases.
@@ -639,4 +657,4 @@ When working on new features:
 
 ---
 
-**Last Updated**: 2026-02-27
+**Last Updated**: 2026-02-28
