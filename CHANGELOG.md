@@ -7,24 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.3] - 2026-02-28
-
-### Added (Testing Infrastructure)
-- **Parallel test runners**: 4 new scripts for concurrent cross-distro testing
-  - `run-gui-tests-parallel.sh` — Web UI tests across 5 distros simultaneously
-  - `run-cross-distro-tests-parallel.sh` — CLI tests across 5 distros simultaneously
-  - `run-desktop-tests.sh` — Tauri desktop GUI tests (auto-starts app)
-  - `run-all-tests-parallel.sh` — Master runner with `--desktop` flag
-- **Scripts documentation**: `scripts/README.md` expanded with +207 lines covering all parallel test workflows
-
-### Fixed (GUI Tests)
-- **TabBar selector migration**: GUI tests now use `getByRole('tab', { name: '...' })` instead of deprecated `.section-btn` class selectors
-  - Aligns with Analysis and Hardening pages' migration to shared `TabBar` component (v1.0.2)
-  - Affects `hardening.spec.js`, `themes.spec.js`, `errors.spec.js`, `helpers.js`
-
-### Changed
-- Removed unused theme screenshots from `pics-debug/`
-
 ## [1.0.2] - 2026-02-28
 
 ### Fixed (CLI)
@@ -543,7 +525,6 @@ Configuration file support with layered loading, compliance framework reporting 
 
 ## Version History
 
-- **1.0.3** (2026-02-28): Parallel test runners, GUI test selector fixes for TabBar component
 - **1.0.2** (2026-02-28): CLI crash fixes, desktop UX enhancements (keyboard nav, ARIA, clipboard, 95 tests)
 - **1.0.1** (2026-02-27): AUR source checksum fix
 - **1.0.0** (2026-02-27): First stable production release
@@ -554,7 +535,6 @@ Configuration file support with layered loading, compliance framework reporting 
 - **0.2.0** (2025-11-28): Compliance frameworks, PDF reports, configuration system
 - **0.1.0** (2025-11-25): Initial development release
 
-[1.0.3]: https://github.com/tidynest/linux-system-hardener/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/tidynest/linux-system-hardener/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/tidynest/linux-system-hardener/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/tidynest/linux-system-hardener/compare/v0.3.3...v1.0.0
