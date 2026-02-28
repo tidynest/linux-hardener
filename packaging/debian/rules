@@ -1,30 +1,50 @@
 #!/usr/bin/make -f
 export CARGO_HOME = $(CURDIR)/debian/.cargo
 
+# Strip GCC LTO from CFLAGS — incompatible with Rust linkers
+export CFLAGS := $(CFLAGS:-flto=auto=)
+export CXXFLAGS := $(CXXFLAGS:-flto=auto=)
+
 %:
 	dh $@
 
 override_dh_auto_build:
+	# Build CLI (static musl)
 	cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli
-	cd src-tauri && cargo build --release
+	# Build WASM frontend (Tauri embeds from dist/)
+	cd crates/hardener-ui && trunk build --release --public-url="." && cd ../..
+	# Build desktop app
+	cd src-tauri && cargo build --release --features tauri/custom-protocol
 
 override_dh_auto_install:
+	# CLI binary
 	install -Dm755 target/x86_64-unknown-linux-musl/release/hardener \
 	    debian/linux-system-hardener/usr/bin/hardener
+	# Desktop binary + wrapper (WebKit Wayland workaround)
 	install -Dm755 src-tauri/target/release/linux-hardener-desktop \
-	    debian/linux-system-hardener/usr/bin/linux-hardener-desktop
+	    debian/linux-system-hardener/usr/lib/linux-hardener/linux-hardener-desktop
+	echo '#!/bin/sh' > debian/linux-system-hardener/usr/bin/linux-hardener-desktop
+	echo 'export WEBKIT_DISABLE_COMPOSITING_MODE=1' >> debian/linux-system-hardener/usr/bin/linux-hardener-desktop
+	echo 'exec /usr/lib/linux-hardener/linux-hardener-desktop "$$@"' >> debian/linux-system-hardener/usr/bin/linux-hardener-desktop
+	chmod 755 debian/linux-system-hardener/usr/bin/linux-hardener-desktop
+	# Systemd units
 	install -Dm644 systemd/linux-hardener.service \
 	    debian/linux-system-hardener/usr/lib/systemd/system/linux-hardener.service
 	install -Dm644 systemd/linux-hardener.timer \
 	    debian/linux-system-hardener/usr/lib/systemd/system/linux-hardener.timer
+	# Desktop entry
 	install -Dm644 data/linux-hardener.desktop \
 	    debian/linux-system-hardener/usr/share/applications/linux-hardener.desktop
+	# Man page
 	install -Dm644 data/hardener.1 \
 	    debian/linux-system-hardener/usr/share/man/man1/hardener.1
+	# Polkit policy
 	install -Dm644 data/com.tidynest.linux-hardener.policy \
 	    debian/linux-system-hardener/usr/share/polkit-1/actions/com.tidynest.linux-hardener.policy
+	# Config
 	install -Dm644 data/config.toml.example \
 	    debian/linux-system-hardener/etc/linux-hardener/config.toml
+	# Directories
 	install -dm755 debian/linux-system-hardener/etc/linux-hardener
 	install -dm755 debian/linux-system-hardener/var/lib/linux-hardener
 	install -dm700 debian/linux-system-hardener/var/log/linux-hardener

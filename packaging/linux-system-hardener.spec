@@ -1,5 +1,5 @@
 Name:           linux-system-hardener
-Version:        1.0.0
+Version:        1.0.3
 Release:        1%{?dist}
 Summary:        Linux security automation: scanning, hardening, and rollback
 License:        Apache-2.0
@@ -8,9 +8,10 @@ Source0:        %{url}/archive/refs/tags/v%{version}.tar.gz#/%{name}-%{version}.
 
 BuildRequires:  cargo rust gcc openssl-devel libxcb-devel libxkbcommon-devel
 BuildRequires:  gtk3-devel webkit2gtk4.1-devel pkg-config librsvg2-devel
-BuildRequires:  desktop-file-utils
+BuildRequires:  desktop-file-utils trunk
 
 Requires:       glibc openssl-libs gtk3 libxcb libxkbcommon systemd
+Requires:       polkit
 
 %description
 Linux System Hardener automates security through scanning, hardening, and
@@ -21,14 +22,32 @@ MAC, permissions, services) with multi-distribution support.
 %setup -q
 
 %build
+# Strip GCC LTO from CFLAGS — incompatible with Rust linkers
+export CFLAGS="${CFLAGS//-flto=auto/}"
+export CXXFLAGS="${CXXFLAGS//-flto=auto/}"
+
+# Build CLI (static musl)
 cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli
-cd src-tauri && cargo build --release
+
+# Build WASM frontend (Tauri embeds from dist/)
+cd crates/hardener-ui && trunk build --release --public-url="." && cd ../..
+
+# Build desktop app
+cd src-tauri && cargo build --release --features tauri/custom-protocol
 
 %install
 install -Dm755 target/x86_64-unknown-linux-musl/release/hardener \
     %{buildroot}%{_bindir}/hardener
+
+# Desktop binary + wrapper (WebKit Wayland workaround)
 install -Dm755 src-tauri/target/release/linux-hardener-desktop \
-    %{buildroot}%{_bindir}/linux-hardener-desktop
+    %{buildroot}%{_libdir}/linux-hardener/linux-hardener-desktop
+cat > %{buildroot}%{_bindir}/linux-hardener-desktop << 'WRAPPER'
+#!/bin/sh
+export WEBKIT_DISABLE_COMPOSITING_MODE=1
+exec /usr/lib/linux-hardener/linux-hardener-desktop "$@"
+WRAPPER
+chmod 755 %{buildroot}%{_bindir}/linux-hardener-desktop
 
 install -Dm644 systemd/linux-hardener.service \
     %{buildroot}%{_unitdir}/linux-hardener.service
@@ -69,6 +88,7 @@ systemctl daemon-reload || true
 %doc data/config.toml.example
 %{_bindir}/hardener
 %{_bindir}/linux-hardener-desktop
+%{_libdir}/linux-hardener/linux-hardener-desktop
 %{_unitdir}/linux-hardener.service
 %{_unitdir}/linux-hardener.timer
 %{_datadir}/applications/linux-hardener.desktop
@@ -78,8 +98,18 @@ systemctl daemon-reload || true
 %dir %{_sysconfdir}/linux-hardener
 %dir %{_localstatedir}/lib/linux-hardener
 %dir %attr(700,root,root) %{_localstatedir}/log/linux-hardener
+%dir %{_libdir}/linux-hardener
 
 %changelog
+* Fri Feb 28 2026 Eric Jingryd <tidynest@proton.me> - 1.0.3-1
+- v1.0.3: Parallel test runners, GUI test selector fixes
+
+* Fri Feb 28 2026 Eric Jingryd <tidynest@proton.me> - 1.0.2-1
+- v1.0.2: CLI crash fixes, desktop UX (keyboard nav, ARIA, clipboard)
+- Added trunk build dependency for WASM frontend
+- Added wrapper script for WebKit Wayland workaround
+- Added polkit runtime dependency
+
 * Fri Feb 27 2026 Eric Jingryd <tidynest@proton.me> - 1.0.0-1
 - v1.0.0 release: 8 hardening plugins, CLI + GUI, multi-distro support
 
