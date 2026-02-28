@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-02-28
+
 ### Added (Testing Infrastructure)
 - **Parallel test runners**: 4 new scripts for concurrent cross-distro testing
   - `run-gui-tests-parallel.sh` — Web UI tests across 5 distros simultaneously
