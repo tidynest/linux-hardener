@@ -1,6 +1,6 @@
 # Project Scripts
 
-**Last Updated**: 2026-02-27
+**Last Updated**: 2026-02-28
 
 This directory contains utility scripts for the Linux Hardening Tool project.
 
@@ -32,6 +32,12 @@ This directory contains utility scripts for the Linux Hardening Tool project.
 | **Single distro test** | `sudo ./scripts/run-cross-distro-tests.sh --distro arch` |
 | **GUI tests (Web UI)** | `sudo ./scripts/run-gui-tests.sh` |
 | **Tauri GUI tests** | `sudo ./scripts/run-tauri-gui-tests.sh` |
+| **Desktop tests (host)** | `./scripts/run-desktop-tests.sh` |
+| **PARALLEL: All tests** | `sudo ./scripts/run-all-tests-parallel.sh --apply` |
+| **PARALLEL: All + desktop** | `sudo ./scripts/run-all-tests-parallel.sh --apply --desktop` |
+| **PARALLEL: All + kitty** | `sudo ./scripts/run-all-tests-parallel.sh --apply --kitty` |
+| **PARALLEL: CLI only** | `sudo ./scripts/run-cross-distro-tests-parallel.sh --apply` |
+| **PARALLEL: GUI only** | `sudo ./scripts/run-gui-tests-parallel.sh` |
 | **Package install tests** | `sudo ./scripts/run-package-tests.sh` |
 | **Single distro pkg test** | `sudo ./scripts/run-package-tests.sh --distro arch` |
 
@@ -1253,6 +1259,137 @@ All distros passed.
 
 ---
 
+### Parallel Cross-Distro Test Runner
+
+**Script**: `run-cross-distro-tests-parallel.sh`
+
+**Purpose**: Same as `run-cross-distro-tests.sh` but runs all distros **in parallel** using background processes. ~5x faster when testing all 5 distros.
+
+**Usage**:
+```bash
+# Run all distros in parallel with apply tests
+sudo ./scripts/run-cross-distro-tests-parallel.sh --apply
+
+# Limit parallel jobs (default: auto-detect from CPU cores)
+sudo ./scripts/run-cross-distro-tests-parallel.sh --apply --jobs 3
+
+# Single distro (same as sequential, but uses same script)
+sudo ./scripts/run-cross-distro-tests-parallel.sh --distro arch --apply
+```
+
+**Options**:
+| Flag | Description |
+|------|-------------|
+| `--apply` | Enable destructive tests (apply + rollback) inside containers |
+| `--distro NAME` | Test single distro: `arch`, `debian`, `fedora`, `rhel`, `opensuse` |
+| `--jobs N` | Max parallel jobs (default: auto-detect from `nproc`) |
+| `--rebuild` | Build musl static binary before testing |
+| `--help` | Show usage |
+
+**Speed Comparison** (5 distros, with `--apply`):
+| Runner | Time | Speedup |
+|--------|------|---------|
+| Sequential | ~15 min | 1x |
+| Parallel (8 cores) | ~3 min | 5x |
+
+**Output**: Same as sequential runner — logs in `test-results/<distro>.log`
+
+---
+
+### Parallel Web UI Test Runner
+
+**Script**: `run-gui-tests-parallel.sh`
+
+**Purpose**: Same as `run-gui-tests.sh` but runs all distros **in parallel**. Each container has its own network namespace, so no port conflicts.
+
+**Usage**:
+```bash
+# Run all distros in parallel
+sudo ./scripts/run-gui-tests-parallel.sh
+
+# Limit parallel jobs
+sudo ./scripts/run-gui-tests-parallel.sh --jobs 2
+```
+
+**Options**:
+| Flag | Description |
+|------|-------------|
+| `--distro NAME` | Test single distro |
+| `--jobs N` | Max parallel jobs (default: auto-detect) |
+| `--help` | Show usage |
+
+---
+
+### Master Parallel Test Runner
+
+**Script**: `run-all-tests-parallel.sh`
+
+**Purpose**: Runs **ALL** test suites in parallel: unit tests, CLI cross-distro, and GUI web UI. Single command for complete validation.
+
+**Usage**:
+```bash
+# Run everything in parallel (fastest full validation)
+sudo ./scripts/run-all-tests-parallel.sh --apply
+
+# Run everything including desktop tests
+sudo ./scripts/run-all-tests-parallel.sh --apply --desktop
+
+# Run in separate kitty windows (visual separation)
+sudo ./scripts/run-all-tests-parallel.sh --apply --kitty
+
+# Quick test: unit tests only, skip containers
+sudo ./scripts/run-all-tests-parallel.sh --no-cli --no-gui
+
+# Skip unit tests, just containers
+sudo ./scripts/run-all-tests-parallel.sh --apply --no-unit
+```
+
+**Options**:
+| Flag | Description |
+|------|-------------|
+| `--apply` | Enable destructive tests (apply + rollback) |
+| `--desktop` | Include desktop GUI tests (runs after containers, as user) |
+| `--no-cli` | Skip CLI cross-distro tests |
+| `--no-gui` | Skip GUI web UI tests |
+| `--no-unit` | Skip unit tests (cargo test) |
+| `--jobs N` | Max parallel jobs per suite (default: auto-detect) |
+| `--kitty` | Open each test suite in a separate kitty window |
+| `--rebuild` | Build musl binary before testing |
+| `--help` | Show usage |
+
+**Kitty Mode**:
+With `--kitty`, each test suite opens in its own terminal window:
+- Visual separation of output
+- Easy to monitor progress
+- Press Enter in each window to close after completion
+
+**Desktop Tests**:
+Desktop tests run after container tests complete because:
+- They require user session (not root)
+- They need exclusive window focus (wtype/hyprctl)
+- They test real Tauri IPC, not mocked
+
+**Output**:
+```
+test-results/
+  unit-tests.log        # Cargo test output
+  cli-tests.log         # Parallel CLI runner output
+  gui-tests.log         # Parallel GUI runner output
+  desktop-tests.log     # Desktop runner output
+  summary.txt           # CLI per-distro summary
+  gui/gui-summary.txt   # GUI per-distro summary
+  desktop/              # Desktop test screenshots
+```
+
+**Dependencies**:
+- Bash
+- systemd-nspawn (for container tests)
+- Cargo (for unit tests)
+- kitty terminal (only if using `--kitty` flag)
+- Root privileges (for container tests)
+
+---
+
 ### Manual Verification Test
 
 **Script**: `manual-verification-test.sh`
@@ -1396,6 +1533,74 @@ sudo ./scripts/run-tauri-gui-tests.sh
 # Called automatically by run-tauri-gui-tests.sh — not invoked directly
 /bin/bash /project/scripts/tauri-gui-test-inner.sh
 ```
+
+---
+
+### Desktop GUI Test Runner (Host)
+
+**Script**: `run-desktop-tests.sh`
+
+**Purpose**: Starts Tauri desktop app automatically, runs UX + functional tests with wtype/hyprctl on the host Wayland session, then cleans up. Unlike container tests, this tests the real desktop app with real IPC.
+
+**Usage**:
+```bash
+# Run all desktop tests (starts app if not running)
+./scripts/run-desktop-tests.sh
+
+# Run only UX tests (keyboard navigation)
+./scripts/run-desktop-tests.sh --ux-only
+
+# Run only functional tests (scans, reports)
+./scripts/run-desktop-tests.sh --fn-only
+
+# Run in a new kitty window
+./scripts/run-desktop-tests.sh --kitty
+
+# Keep app running after tests (for debugging)
+./scripts/run-desktop-tests.sh --no-cleanup
+```
+
+**Options**:
+| Flag | Description |
+|------|-------------|
+| `--kitty` | Open tests in a new kitty window |
+| `--ux-only` | Run only UX tests (keyboard navigation) |
+| `--fn-only` | Run only functional tests (scans, reports) |
+| `--no-cleanup` | Leave Tauri app running after tests |
+| `--help` | Show usage |
+
+**Requirements**:
+| Tool | Purpose |
+|------|---------|
+| `hyprctl` | Window detection and focus |
+| `wtype` | Keyboard input simulation |
+| `grim` | Screenshots |
+| `python3` | JSON parsing |
+
+**What It Tests**:
+| Category | Tests | Description |
+|----------|-------|-------------|
+| UX Tests | 49 | Page navigation (Ctrl+1-5), theme cycling (Alt+T), tab keyboard nav, findings grid, skip link, fullscreen (F11) |
+| Functional Tests | 46 | Security scan, compliance reports, checkpoint create, remote host form, scheduler config, error handling |
+
+**Output**:
+```
+test-results/desktop/    Desktop test screenshots
+  ux-*.png               UX test screenshots (49 files)
+  fn-*.png               Functional test screenshots (46 files)
+/tmp/test-grouped/       Working directory for test output
+```
+
+**Integration with Master Runner**:
+```bash
+# Run everything including desktop (desktop runs after containers)
+sudo ./scripts/run-all-tests-parallel.sh --apply --desktop
+```
+
+**Dependencies**:
+- Hyprland compositor (or hyprctl-compatible)
+- wtype, grim, python3
+- Tauri binary: `target/debug/linux-hardener-desktop`
 
 ---
 

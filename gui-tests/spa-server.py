@@ -7,29 +7,30 @@ doesn't match a real file, serves index.html (SPA fallback routing).
 import http.server
 import os
 import sys
+import socketserver
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8787
 
 
 class SPAHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
-        # Strip query string for file lookup
         path = self.path.split("?")[0]
-
-        # Serve real files normally (JS, CSS, WASM, images, etc.)
         local_path = os.path.join(os.getcwd(), path.lstrip("/"))
         if os.path.isfile(local_path):
             return super().do_GET()
-
-        # SPA fallback: serve index.html for all non-file routes
         self.path = "/index.html"
         return super().do_GET()
 
     def log_message(self, format, *args):
-        pass  # Suppress request logging
+        pass
+
+
+class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
 
 
 if __name__ == "__main__":
-    server = http.server.HTTPServer(("127.0.0.1", PORT), SPAHandler)
+    server = ThreadedHTTPServer(("127.0.0.1", PORT), SPAHandler)
     print(f"SPA server on http://127.0.0.1:{PORT}", flush=True)
     server.serve_forever()

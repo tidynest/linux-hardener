@@ -31,7 +31,7 @@ test.describe('Error Handling', () => {
   // T-ERR-03: Checkpoint load error shows error banner
   test('T-ERR-03: checkpoint error shows error banner', async ({ page }) => {
     await loadApp(page, '/hardening', 'error_mode=checkpoint');
-    await page.locator('.section-btn', { hasText: 'History' }).click();
+    await page.getByRole('tab', { name: 'History' }).click();
     // Checkpoint loading should fail
     const banner = page.locator('.error-banner');
     await expect(banner).toBeVisible({ timeout: 10000 });

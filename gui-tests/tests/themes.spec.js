@@ -102,7 +102,7 @@ const STATES = [
     name: 'hardening-history',
     setup: async (page) => {
       await loadApp(page, '/hardening');
-      await page.locator('.section-btn', { hasText: 'History' }).click();
+      await page.getByRole('tab', { name: 'History' }).click();
       await page.waitForSelector('.history-section', { timeout: 10000 });
     },
   },

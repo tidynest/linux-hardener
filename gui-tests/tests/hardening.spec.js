@@ -139,8 +139,8 @@ test.describe('Configure', () => {
 test.describe('History', () => {
   test.beforeEach(async ({ page }) => {
     await loadApp(page, '/hardening');
-    // Switch to History section
-    await page.locator('.section-btn', { hasText: 'History' }).click();
+    // Switch to History tab (TabBar uses role="tab")
+    await page.getByRole('tab', { name: 'History' }).click();
   });
 
   // T-HIST-01: History section visible
@@ -192,13 +192,13 @@ test.describe('History', () => {
   // T-HIST-06: After apply, shows success status
   test('T-HIST-06: after apply, shows success with change count', async ({ page }) => {
     // Switch back to Configure, trigger apply
-    await page.locator('.section-btn', { hasText: 'Configure' }).click();
+    await page.getByRole('tab', { name: 'Configure' }).click();
     await page.getByRole('button', { name: /Preview Changes/i }).click();
     await expect(page.locator('.preview-panel')).toBeVisible({ timeout: 10000 });
     await page.getByRole('button', { name: /Confirm & Apply/i }).click();
     // Wait for apply to complete, switch to History
     await page.waitForTimeout(2000);
-    await page.locator('.section-btn', { hasText: 'History' }).click();
+    await page.getByRole('tab', { name: 'History' }).click();
     // Verify apply result displayed
     const summary = page.locator('.result-summary-card');
     await expect(summary).toBeVisible({ timeout: 10000 });
