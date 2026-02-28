@@ -28,7 +28,11 @@ pub fn HardeningPage() -> impl IntoView {
             TabDef {
                 id: "history",
                 label: "History",
-                badge: if has_history() { Some(state.apply_results.get().len()) } else { None },
+                badge: if has_history() {
+                    Some(state.apply_results.get().len())
+                } else {
+                    None
+                },
             },
         ]
     };

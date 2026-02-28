@@ -38,8 +38,12 @@ pub fn AnalysisPage() -> impl IntoView {
 
                     // Auto-generate compliance reports for all frameworks (consistent with Dashboard)
                     let frameworks = vec![
-                        "cis".into(), "stig".into(), "nist".into(),
-                        "pci-dss".into(), "hipaa".into(), "gdpr".into(),
+                        "cis".into(),
+                        "stig".into(),
+                        "nist".into(),
+                        "pci-dss".into(),
+                        "hipaa".into(),
+                        "gdpr".into(),
                     ];
                     match invoke_generate_report(frameworks).await {
                         Ok(reports) => app_state.compliance_reports.set(reports),

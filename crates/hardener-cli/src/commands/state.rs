@@ -89,10 +89,7 @@ pub fn effective_user() -> String {
 pub async fn get_audit_logger() -> Option<hardener_state::AuditLogger> {
     let log_path = if nix::unistd::getuid().is_root() {
         fs::create_dir_all("/var/log/linux-hardener").ok()?;
-        let _ = fs::set_permissions(
-            "/var/log/linux-hardener",
-            fs::Permissions::from_mode(0o700),
-        );
+        let _ = fs::set_permissions("/var/log/linux-hardener", fs::Permissions::from_mode(0o700));
         SYSTEM_LOG_PATH.to_string()
     } else {
         let dir = dirs::data_local_dir()

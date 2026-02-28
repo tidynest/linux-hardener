@@ -99,10 +99,8 @@ pub fn use_global_keyboard(app_state: AppState) {
 
     // Attach to document — runs once, cleaned up on dispose
     if let Some(document) = web_sys::window().and_then(|w| w.document()) {
-        let _ = document.add_event_listener_with_callback(
-            "keydown",
-            handler.as_ref().unchecked_ref(),
-        );
+        let _ =
+            document.add_event_listener_with_callback("keydown", handler.as_ref().unchecked_ref());
     }
 
     // Leak the closure so it lives as long as the app
@@ -199,7 +197,9 @@ fn trigger_global_scan(app_state: AppState) {
                 }
             }
             Err(e) => {
-                app_state.error_message.set(Some(format!("Scan failed: {e}")));
+                app_state
+                    .error_message
+                    .set(Some(format!("Scan failed: {e}")));
             }
         }
         app_state.is_scanning.set(false);
@@ -208,9 +208,15 @@ fn trigger_global_scan(app_state: AppState) {
 
 /// Cycle to the next theme in order.
 fn cycle_theme() {
-    let Some(window) = web_sys::window() else { return };
-    let Some(document) = window.document() else { return };
-    let Some(root) = document.document_element() else { return };
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let Some(document) = window.document() else {
+        return;
+    };
+    let Some(root) = document.document_element() else {
+        return;
+    };
 
     // Determine current theme
     let current = root
@@ -218,10 +224,7 @@ fn cycle_theme() {
         .unwrap_or_else(|| "default".to_string());
 
     // Find next in cycle
-    let current_idx = THEME_CYCLE
-        .iter()
-        .position(|&t| t == current)
-        .unwrap_or(0);
+    let current_idx = THEME_CYCLE.iter().position(|&t| t == current).unwrap_or(0);
     let next_idx = (current_idx + 1) % THEME_CYCLE.len();
     let next_theme = THEME_CYCLE[next_idx];
 

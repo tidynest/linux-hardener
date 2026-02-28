@@ -107,7 +107,9 @@ pub fn FindingsGrid(
 /// Move focus to the previous (up=true) or next (up=false) sibling `<tr>`.
 fn focus_sibling_row(ev: &web_sys::KeyboardEvent, up: bool) {
     let Some(target) = ev.target() else { return };
-    let Some(row) = target.dyn_ref::<web_sys::HtmlElement>() else { return };
+    let Some(row) = target.dyn_ref::<web_sys::HtmlElement>() else {
+        return;
+    };
 
     let sibling = if up {
         row.previous_element_sibling()

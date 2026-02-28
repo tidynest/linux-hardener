@@ -1,8 +1,8 @@
 //! Clipboard helpers for copy-to-clipboard buttons.
 
 use leptos::prelude::*;
-use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::closure::Closure;
 
 /// Copies `text` to the system clipboard via the async Clipboard API.
 ///
