@@ -2,7 +2,7 @@
 //!
 //! Provides a sectioned interface for configuring and applying hardening.
 
-use crate::components::{ConfigureSection, HistorySection};
+use crate::components::{ConfigureSection, HistorySection, TabBar, TabDef, TabPanel};
 use crate::state::AppState;
 use leptos::prelude::*;
 
@@ -18,6 +18,21 @@ pub fn HardeningPage() -> impl IntoView {
     // Show indicator only when there are apply results to review
     let has_history = move || !state.apply_results.get().is_empty();
 
+    let tabs = move || {
+        vec![
+            TabDef {
+                id: "configure",
+                label: "Configure",
+                badge: None,
+            },
+            TabDef {
+                id: "history",
+                label: "History",
+                badge: if has_history() { Some(state.apply_results.get().len()) } else { None },
+            },
+        ]
+    };
+
     view! {
         <article class="hardening-page">
             <header class="hardening-header">
@@ -28,55 +43,15 @@ pub fn HardeningPage() -> impl IntoView {
                 </p>
             </header>
 
-            <nav class="section-toggle" role="tablist">
-                <button
-                    role="tab"
-                    aria-selected=move || (active_section.get() == 0).to_string()
-                    aria-controls="panel-configure"
-                    tabindex=move || if active_section.get() == 0 { 0 } else { -1 }
-                    class=move || {
-                        if active_section.get() == 0 {
-                            "section-btn section-active"
-                        } else {
-                            "section-btn"
-                        }
-                    }
-                    on:click=move |_| active_section.set(0)
-                >
-                    "Configure"
-                </button>
-                <button
-                    role="tab"
-                    aria-selected=move || (active_section.get() == 1).to_string()
-                    aria-controls="panel-history"
-                    tabindex=move || if active_section.get() == 1 { 0 } else { -1 }
-                    class=move || {
-                        if active_section.get() == 1 {
-                            "section-btn section-active"
-                        } else {
-                            "section-btn"
-                        }
-                    }
-                    on:click=move |_| active_section.set(1)
-                >
-                    "History"
-                    <Show when=has_history>
-                        <span class="history-indicator"></span>
-                    </Show>
-                </button>
-            </nav>
+            <TabBar tabs=tabs() active_tab=active_section aria_label="Hardening sections" />
 
             <div class="section-content">
-                <Show when=move || active_section.get() == 0>
-                    <div id="panel-configure" role="tabpanel">
-                        <ConfigureSection />
-                    </div>
-                </Show>
-                <Show when=move || active_section.get() == 1>
-                    <div id="panel-history" role="tabpanel">
-                        <HistorySection />
-                    </div>
-                </Show>
+                <TabPanel id="configure" index=0 active_tab=active_section>
+                    <ConfigureSection />
+                </TabPanel>
+                <TabPanel id="history" index=1 active_tab=active_section>
+                    <HistorySection />
+                </TabPanel>
             </div>
         </article>
     }
