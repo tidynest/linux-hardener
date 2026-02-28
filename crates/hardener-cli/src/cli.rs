@@ -168,6 +168,7 @@ pub enum DaemonAction {
     /// Show daemon status and recent scan history.
     Status {
         /// Number of recent sessions to show.
+        #[arg(short, long, default_value = "10")]
         limit: u32,
     },
 }

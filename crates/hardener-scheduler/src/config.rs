@@ -42,8 +42,10 @@ pub struct SchedulerConfig {
     /// Minimum severity to include in results.
     pub min_severity: String,
     /// Storage configuration.
+    #[serde(default)]
     pub storage: StorageConfig,
     /// Notification configuration.
+    #[serde(default)]
     pub notifications: NotificationConfig,
 }
 

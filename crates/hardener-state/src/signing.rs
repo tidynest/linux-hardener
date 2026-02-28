@@ -153,17 +153,15 @@ impl CheckpointSigner {
     /// Key derivation: HKDF-SHA256 over `/etc/machine-id` content,
     /// providing encryption at rest without interactive passphrases.
     fn save_key(key_path: &Path, signing_key: &SigningKey) -> Result<()> {
-        use std::fs::{DirBuilder, OpenOptions};
+        use std::fs::OpenOptions;
         use std::io::Write;
-        use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
-        // Ensure parent directory exists
+        // Ensure parent directory exists (idempotent)
         if let Some(parent) = key_path.parent() {
-            DirBuilder::new()
-                .recursive(true)
-                .mode(0o700)
-                .create(parent)
-                .map_err(HardeningError::System)?;
+            std::fs::create_dir_all(parent).map_err(HardeningError::System)?;
+            let perms = std::fs::Permissions::from_mode(0o700);
+            let _ = std::fs::set_permissions(parent, perms);
         }
 
         let encrypted = Self::encrypt_key(&signing_key.to_bytes())?;

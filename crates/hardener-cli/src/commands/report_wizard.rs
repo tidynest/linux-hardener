@@ -3,6 +3,7 @@
 //! Provides a guided CLI experience for generating compliance reports.
 
 use super::report::run_scan;
+use crate::cli::OutputFormat as CliOutputFormat;
 use anyhow::{Result, anyhow};
 use chrono::Local;
 use colored::Colorize;
@@ -140,7 +141,7 @@ pub async fn run(quiet: bool) -> Result<()> {
     // Step 3: Run scan
     println!("\n{}", "Running security scan...".cyan());
     let executor: Arc<dyn SystemExecutor> = Arc::new(LocalExecutor::new());
-    let findings = run_scan(false, executor).await?;
+    let findings = run_scan(false, executor, &CliOutputFormat::Text).await?;
     println!(
         "{}",
         format!(
@@ -246,14 +247,16 @@ fn select_scenario() -> Result<Scenario> {
         4 => Scenario::Financial,
         5 => Scenario::Gdpr,
         6 => Scenario::All,
-        7 => {
-            // Custom-select individual frameworks
+        7 => loop {
             let frameworks = select_frameworks()?;
-            if frameworks.is_empty() {
-                return Err(anyhow!("At least one framework must be selected."));
+            if !frameworks.is_empty() {
+                break Scenario::Custom(frameworks);
             }
-            Scenario::Custom(frameworks)
-        }
+            println!(
+                "{}",
+                "At least one framework must be selected. Try again.".yellow()
+            );
+        },
         _ => Scenario::Server,
     };
 

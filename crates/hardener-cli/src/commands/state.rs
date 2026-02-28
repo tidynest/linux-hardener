@@ -2,7 +2,8 @@
 
 use anyhow::Result;
 use hardener_state::{CheckpointManager, CheckpointSigner, init_db};
-use std::{fs, os::unix::fs::DirBuilderExt, path::PathBuf};
+use std::os::unix::fs::PermissionsExt;
+use std::{fs, path::PathBuf};
 
 /// Root signing key directory, separate from checkpoint data.
 const SYSTEM_KEY_DIR: &str = "/etc/linux-hardener";
@@ -26,14 +27,10 @@ fn resolve_paths() -> Result<(PathBuf, PathBuf)> {
         let db_path = PathBuf::from(SYSTEM_DATA_DIR).join("checkpoints.db");
         let key_path = PathBuf::from(SYSTEM_KEY_DIR).join("signing.key");
 
-        fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(SYSTEM_KEY_DIR)?;
-        fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o755)
-            .create(SYSTEM_DATA_DIR)?;
+        fs::create_dir_all(SYSTEM_KEY_DIR)?;
+        let _ = fs::set_permissions(SYSTEM_KEY_DIR, fs::Permissions::from_mode(0o700));
+        fs::create_dir_all(SYSTEM_DATA_DIR)?;
+        let _ = fs::set_permissions(SYSTEM_DATA_DIR, fs::Permissions::from_mode(0o755));
 
         migrate_legacy_key(&key_path)?;
 
@@ -42,7 +39,7 @@ fn resolve_paths() -> Result<(PathBuf, PathBuf)> {
         let data_dir = dirs::data_local_dir()
             .map(|p| p.join("linux-hardener"))
             .unwrap_or_else(|| PathBuf::from(".linux-hardener"));
-        fs::create_dir(&data_dir)?;
+        fs::create_dir_all(&data_dir)?;
         Ok((
             data_dir.join("checkpoints.db"),
             data_dir.join("signing.key"),
@@ -91,11 +88,11 @@ pub fn effective_user() -> String {
 /// Non-root: `$XDG_DATA_HOME/linux-hardener/audit.log`
 pub async fn get_audit_logger() -> Option<hardener_state::AuditLogger> {
     let log_path = if nix::unistd::getuid().is_root() {
-        fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create("/var/log/linux-hardener")
-            .ok()?;
+        fs::create_dir_all("/var/log/linux-hardener").ok()?;
+        let _ = fs::set_permissions(
+            "/var/log/linux-hardener",
+            fs::Permissions::from_mode(0o700),
+        );
         SYSTEM_LOG_PATH.to_string()
     } else {
         let dir = dirs::data_local_dir()

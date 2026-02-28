@@ -25,6 +25,8 @@ pub struct SystemdGenerator {
     calendar: String,
     /// Description for the units.
     description: String,
+    /// Whether generating for user-mode (`systemctl --user`).
+    user_mode: bool,
 }
 
 impl SystemdGenerator {
@@ -39,6 +41,7 @@ impl SystemdGenerator {
             config_path: None,
             calendar: calendar.into(),
             description: "Linux System Hardener scheduled security scan".to_string(),
+            user_mode: false,
         }
     }
 
@@ -54,6 +57,12 @@ impl SystemdGenerator {
         self
     }
 
+    /// Enables user-mode generation (omits privileged security directives).
+    pub fn with_user_mode(mut self, user: bool) -> Self {
+        self.user_mode = user;
+        self
+    }
+
     /// Generates the `.service` unit file content.
     pub fn generate_service(&self) -> String {
         let exec_start = match &self.config_path {
@@ -65,30 +74,44 @@ impl SystemdGenerator {
             None => format!("{} daemon run-once", self.binary_path.display()),
         };
 
+        // User services cannot use privileged sandboxing directives
+        let security = if self.user_mode {
+            "NoNewPrivileges=true".to_string()
+        } else {
+            "# Security hardening\n\
+             NoNewPrivileges=true\n\
+             ProtectSystem=strict\n\
+             ProtectHome=read-only\n\
+             PrivateTemp=true\n\
+             ReadWritePaths=/var/lib/linux-hardener"
+                .to_string()
+        };
+
+        let wanted_by = if self.user_mode {
+            "default.target"
+        } else {
+            "multi-user.target"
+        };
+
         format!(
-            r#"[Unit]
-Description={description}
-Documentation=https://github.com/tidynest/linux-system-hardener
-After=network.target
-
-[Service]
-Type=oneshot
-ExecStart={exec_start}
-StandardOutput=journal
-StandardError=journal
-
-# Security hardening
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=read-only
-PrivateTemp=true
-ReadWritePaths=/var/lib/linux-hardener
-
-[Install]
-WantedBy=multi-user.target
-"#,
+            "[Unit]\n\
+             Description={description}\n\
+             Documentation=https://github.com/tidynest/linux-system-hardener\n\
+             After=network.target\n\
+             \n\
+             [Service]\n\
+             Type=oneshot\n\
+             ExecStart={exec_start}\n\
+             StandardOutput=journal\n\
+             StandardError=journal\n\
+             {security}\n\
+             \n\
+             [Install]\n\
+             WantedBy={wanted_by}\n",
             description = self.description,
             exec_start = exec_start,
+            security = security,
+            wanted_by = wanted_by,
         )
     }
 

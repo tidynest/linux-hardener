@@ -17,7 +17,7 @@ pub async fn run(
     framework: Option<String>,
     report_format: String,
     output: Option<String>,
-    _cli_format: CliOutputFormat,
+    cli_format: CliOutputFormat,
     quiet: bool,
     executor: Arc<dyn SystemExecutor>,
 ) -> Result<()> {
@@ -65,7 +65,7 @@ pub async fn run(
     }
 
     // Run scan to get findings
-    let findings = run_scan(quiet, executor).await?;
+    let findings = run_scan(quiet, executor, &cli_format).await?;
 
     if !quiet {
         println!("Generating compliance report...\n");
@@ -139,15 +139,17 @@ pub async fn run(
 pub async fn run_scan(
     quiet: bool,
     executor: Arc<dyn SystemExecutor>,
+    cli_format: &CliOutputFormat,
 ) -> Result<Vec<hardener_core::plugin::Finding>> {
     let registry = create_plugin_registry();
     let ctx = Context::with_executor(executor);
 
     let plugins = registry.list()?;
     let mut all_findings = Vec::new();
+    let show_progress = !quiet && *cli_format == CliOutputFormat::Text;
 
     for metadata in &plugins {
-        if !quiet {
+        if show_progress {
             eprint!("  Scanning {}... ", metadata.plugin_name);
         }
 
@@ -156,12 +158,12 @@ pub async fn run_scan(
                 Ok(result) => {
                     let count = result.scan_findings.len();
                     all_findings.extend(result.scan_findings);
-                    if !quiet {
+                    if show_progress {
                         eprintln!("{} finding(s)", count);
                     }
                 }
                 Err(e) => {
-                    if !quiet {
+                    if show_progress {
                         eprintln!("error: {}", e);
                     }
                 }

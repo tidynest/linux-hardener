@@ -66,7 +66,7 @@ pub async fn install(
     let binary = resolve_binary_path(None)?;
     let calendar = resolve_calendar(&schedule);
 
-    let mut generator = SystemdGenerator::new(binary, calendar);
+    let mut generator = SystemdGenerator::new(binary, calendar).with_user_mode(user_mode);
     if let Some(cfg) = config_path {
         generator = generator.with_config(cfg);
     }
