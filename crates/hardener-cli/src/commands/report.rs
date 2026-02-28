@@ -30,8 +30,8 @@ pub async fn run(
     } else {
         // Interactive mode - for now default to Server
         if !quiet {
-            println!("No scenario specified, using 'server' (CIS + STIG)");
-            println!(
+            eprintln!("No scenario specified, using 'server' (CIS + STIG)");
+            eprintln!(
                 "Use --scenario or --framework to specify. Run 'hardener report --help' for options.\n"
             );
         }
@@ -61,14 +61,14 @@ pub async fn run(
     };
 
     if !quiet {
-        println!("Running security scan...");
+        eprintln!("Running security scan...");
     }
 
     // Run scan to get findings
     let findings = run_scan(quiet, executor, &cli_format).await?;
 
     if !quiet {
-        println!("Generating compliance report...\n");
+        eprintln!("Generating compliance report...");
     }
 
     // Generate reports
@@ -116,7 +116,7 @@ pub async fn run(
             fs::write(&final_path, &formatted)?;
         }
         if !quiet {
-            println!("Report saved to: {}", final_path);
+            eprintln!("Report saved to: {}", final_path);
         }
     } else if output_format == OutputFormat::Pdf {
         // PDF requires file output - generate timestamped filename
@@ -126,7 +126,7 @@ pub async fn run(
         let bytes = hardener_compliance::output::PdfFormatter::new().format_bytes(&reports[0]);
         fs::write(&filename, bytes)?;
         if !quiet {
-            println!("Report saved to: {}", filename);
+            eprintln!("Report saved to: {}", filename);
         }
     } else {
         let mut stdout = io::stdout().lock();
