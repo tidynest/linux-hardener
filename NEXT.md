@@ -4,7 +4,7 @@
 
 ## Current State (as of 2026-02-28)
 
-**v1.0.2 released.** All major features complete. Recent work merged two feature branches into main: CLI crash fixes + desktop UX enhancements (keyboard nav, ARIA, clipboard, TabBar, 95 automated desktop tests).
+**v1.0.3 released.** All major features complete. Recent work added parallel test runners and fixed GUI test selectors for TabBar component migration.
 
 ### Completed milestones:
 
@@ -24,9 +24,10 @@
 - **Security remediation** (2026-02-26) — all 53 security findings resolved (see `docs/security-audit/REMEDIATION_TRACKER.md`)
 - **Code quality pass** (2026-02-27) — 27 code quality findings fixed, shared helper extraction, 10 packaging fixes
 - **Documentation** (2026-02-27) — SECURITY.md updated, INSTALL.md created for 5 distro families
+- **v1.0.3 parallel test runners** (2026-02-28) — `run-gui-tests-parallel.sh`, `run-cross-distro-tests-parallel.sh`, `run-desktop-tests.sh`, `run-all-tests-parallel.sh`
 - **v1.0.2 merged branches** (2026-02-28) — `cli-ux-perfection` (CLI crash fixes, stderr routing, idempotent dirs, user-mode systemd) + `feature/desktop-testing-ux` (keyboard nav, ARIA, clipboard, TabBar migration, 95 desktop tests)
 - **Desktop tests**: 49 UX tests + 46 functional tests + 21 Node.js tests all passing
-- **505+ unit tests pass**, clippy clean, native + WASM builds clean
+- **514+ unit tests pass**, clippy clean, native + WASM builds clean
 
 ### Trait refactor summary (commits `81c13ad`, `d029629`, `b87fb1c`):
 
@@ -119,9 +120,9 @@ See `docs/GUI_CLI_PARITY_PLAN.md` — all 6 phases complete.
 
 - **11 Crates** (10 core + 1 Tauri app)
 - **8 Security Plugins**: Kernel, SSH, Firewall, PAM, Services, Audit, Permissions, MAC
-- **505+ Passing Tests**
+- **514+ Passing Tests**
 - **Multi-Distribution Support**: Debian, Red Hat, Arch, SUSE families
-- **Current Version**: 1.0.2 (Production Release)
+- **Current Version**: 1.0.3 (Production Release)
 - **WASM Support**: GUI frontend compiles to `wasm32-unknown-unknown`
 
 For version history and detailed feature tracking, see [ROADMAP.md](ROADMAP.md).
