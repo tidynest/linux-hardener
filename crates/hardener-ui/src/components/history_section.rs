@@ -2,7 +2,7 @@
 //!
 //! Displays apply results and checkpoint management.
 
-use crate::components::{Card, CopyButton, HeadingLevel};
+use crate::components::{Card, ConfirmDeleteButton, CopyButton, HeadingLevel};
 use crate::state::AppState;
 use crate::tauri_bindings::{
     invoke_create_checkpoint, invoke_delete_checkpoint, invoke_get_checkpoint_detail,
@@ -345,54 +345,11 @@ pub fn HistorySection() -> impl IntoView {
                                             >
                                                 "Rollback"
                                             </button>
-                                            {
-                                                let delete_id_show = delete_id.clone();
-                                                let delete_id_confirm = delete_id.clone();
-                                                let is_confirming = move || {
-                                                    pending_delete.get().as_deref() == Some(delete_id_show.as_str())
-                                                };
-                                                view! {
-                                                    <Show
-                                                        when=is_confirming
-                                                        fallback={
-                                                            let id = delete_id.clone();
-                                                            move || view! {
-                                                                <button
-                                                                    class="btn btn-danger btn-small"
-                                                                    on:click={
-                                                                        let id = id.clone();
-                                                                        move |_| pending_delete.set(Some(id.clone()))
-                                                                    }
-                                                                >
-                                                                    "Delete"
-                                                                </button>
-                                                            }
-                                                        }
-                                                    >
-                                                        <span class="confirm-delete-inline">
-                                                            <span class="confirm-delete-label">"Delete?"</span>
-                                                            <button
-                                                                class="btn btn-danger btn-small"
-                                                                on:click={
-                                                                    let id = delete_id_confirm.clone();
-                                                                    move |_| {
-                                                                        pending_delete.set(None);
-                                                                        handle_delete(id.clone());
-                                                                    }
-                                                                }
-                                                            >
-                                                                "Confirm"
-                                                            </button>
-                                                            <button
-                                                                class="btn btn-secondary btn-small"
-                                                                on:click=move |_| pending_delete.set(None)
-                                                            >
-                                                                "Cancel"
-                                                            </button>
-                                                        </span>
-                                                    </Show>
-                                                }
-                                            }
+                                            <ConfirmDeleteButton
+                                                item_key=delete_id.clone()
+                                                pending=pending_delete
+                                                on_confirm=Callback::new(move |id: String| handle_delete(id))
+                                            />
                                         </td>
                                     </tr>
                                     // Expansion row for checkpoint detail

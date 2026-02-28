@@ -31,6 +31,9 @@ pub fn TabBar(
 ) -> impl IntoView {
     let tab_count = tabs.len();
 
+    // Pre-compute tab DOM IDs so the keyboard handler can focus by index
+    let tab_ids: Vec<String> = tabs.iter().map(|t| format!("tab-{}", t.id)).collect();
+
     // WAI-ARIA Tabs keyboard handler: Arrow keys cycle, Home/End jump
     let on_keydown = move |ev: web_sys::KeyboardEvent| {
         let current = active_tab.get_untracked();
@@ -46,12 +49,13 @@ pub fn TabBar(
             ev.prevent_default();
             active_tab.set(idx);
 
-            // Move DOM focus to the newly active tab button
-            if let Some(document) = web_sys::window().and_then(|w| w.document())
-                && let Some(el) = document.query_selector("[role='tab'][aria-selected='true']").ok().flatten()
-                && let Ok(html) = el.dyn_into::<web_sys::HtmlElement>()
+            // Focus by known element ID — avoids race with aria-selected re-render
+            if let Some(el) = web_sys::window()
+                .and_then(|w| w.document())
+                .and_then(|d| d.get_element_by_id(&tab_ids[idx]))
+                .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
             {
-                let _ = html.focus();
+                let _ = el.focus();
             }
         }
     };

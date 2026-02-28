@@ -1,5 +1,6 @@
 mod card;
 mod clipboard;
+mod confirm_delete;
 mod compliance_tab;
 mod config_file_card;
 mod configure_section;
@@ -26,6 +27,7 @@ mod theme_toggle;
 pub use card::CardVariant;
 pub use card::{Card, HeadingLevel};
 pub use clipboard::CopyButton;
+pub use confirm_delete::ConfirmDeleteButton;
 pub use compliance_tab::ComplianceTab;
 pub use config_file_card::ConfigFileCard;
 pub use configure_section::ConfigureSection;

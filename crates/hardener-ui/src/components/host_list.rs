@@ -4,6 +4,7 @@
 //! The connected host is visually highlighted. An "Add Host" button
 //! at the bottom triggers the parent's edit callback with `None`.
 
+use crate::components::ConfirmDeleteButton;
 use crate::state::AppState;
 use crate::tauri_bindings::{
     invoke_connect_remote, invoke_delete_remote_host, invoke_list_remote_hosts,
@@ -161,54 +162,11 @@ pub fn HostList(#[prop(into)] on_edit: Callback<Option<RemoteHostProfile>>) -> i
                                         >
                                             "Edit"
                                         </button>
-                                        {
-                                            let name_show = delete_name.clone();
-                                            let name_confirm = delete_name.clone();
-                                            let is_confirming = move || {
-                                                pending_delete.get().as_deref() == Some(name_show.as_str())
-                                            };
-                                            view! {
-                                                <Show
-                                                    when=is_confirming
-                                                    fallback={
-                                                        let n = delete_name.clone();
-                                                        move || view! {
-                                                            <button
-                                                                class="btn btn-danger btn-small"
-                                                                on:click={
-                                                                    let n = n.clone();
-                                                                    move |_| pending_delete.set(Some(n.clone()))
-                                                                }
-                                                            >
-                                                                "Delete"
-                                                            </button>
-                                                        }
-                                                    }
-                                                >
-                                                    <span class="confirm-delete-inline">
-                                                        <span class="confirm-delete-label">"Delete?"</span>
-                                                        <button
-                                                            class="btn btn-danger btn-small"
-                                                            on:click={
-                                                                let n = name_confirm.clone();
-                                                                move |_| {
-                                                                    pending_delete.set(None);
-                                                                    handle_delete(n.clone());
-                                                                }
-                                                            }
-                                                        >
-                                                            "Confirm"
-                                                        </button>
-                                                        <button
-                                                            class="btn btn-secondary btn-small"
-                                                            on:click=move |_| pending_delete.set(None)
-                                                        >
-                                                            "Cancel"
-                                                        </button>
-                                                    </span>
-                                                </Show>
-                                            }
-                                        }
+                                        <ConfirmDeleteButton
+                                            item_key=delete_name.clone()
+                                            pending=pending_delete
+                                            on_confirm=Callback::new(move |name: String| handle_delete(name))
+                                        />
                                     </div>
                                 </li>
                             }
