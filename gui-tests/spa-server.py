@@ -15,8 +15,8 @@ PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8787
 class SPAHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?")[0]
-        local_path = os.path.join(os.getcwd(), path.lstrip("/"))
-        if os.path.isfile(local_path):
+        local_path = os.path.realpath(os.path.join(os.getcwd(), path.lstrip("/")))
+        if local_path.startswith(os.getcwd()) and os.path.isfile(local_path):
             return super().do_GET()
         self.path = "/index.html"
         return super().do_GET()
