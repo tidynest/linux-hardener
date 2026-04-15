@@ -2013,7 +2013,7 @@ checksum = "17e2ac29387b1aa07a1e448f7bb4f35b500787971e965b02842b900afa5c8f6f"
 
 [[package]]
 name = "hardener-cli"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2037,7 +2037,7 @@ dependencies = [
 
 [[package]]
 name = "hardener-common"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "anyhow",
  "hardener-types",
@@ -2051,7 +2051,7 @@ dependencies = [
 
 [[package]]
 name = "hardener-compliance"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "chrono",
  "clap",
@@ -2065,7 +2065,7 @@ dependencies = [
 
 [[package]]
 name = "hardener-core"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2087,7 +2087,7 @@ dependencies = [
 
 [[package]]
 name = "hardener-distro"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "hardener-common",
  "serde",
@@ -2095,7 +2095,7 @@ dependencies = [
 
 [[package]]
 name = "hardener-plugins"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "async-trait",
  "chrono",
@@ -2108,7 +2108,7 @@ dependencies = [
 
 [[package]]
 name = "hardener-scheduler"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "async-trait",
  "chrono",
@@ -2136,7 +2136,7 @@ dependencies = [
 
 [[package]]
 name = "hardener-state"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "chrono",
  "ed25519-dalek",
@@ -2157,7 +2157,7 @@ dependencies = [
 
 [[package]]
 name = "hardener-types"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "chrono",
  "serde",
@@ -2165,7 +2165,7 @@ dependencies = [
 
 [[package]]
 name = "hardener-ui"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "hardener-types",
  "js-sys",
@@ -3084,7 +3084,7 @@ checksum = "bfae20f6b19ad527b550c223fddc3077a547fc70cda94b9b566575423fd303ee"
 
 [[package]]
 name = "linux-hardener-desktop"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "chrono",
  "dirs",
@@ -4815,9 +4815,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.10"
+version = "0.103.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df33b2b81ac578cabaf06b89b0631153a3f416b0a886e8a7a1707fb51abbd1ef"
+checksum = "8279bb85272c9f10811ae6a6c547ff594d6a7f3c6c6b02ee9726d1d0dcfcdd06"
 dependencies = [
  "ring",
  "rustls-pki-types",
