@@ -263,8 +263,16 @@ Version is defined in the workspace root and inherited by all crates:
 | `Cargo.toml` | `workspace.package.version` | Rust crate version |
 | `CHANGELOG.md` | `## [X.Y.Z]` | Release documentation |
 | `src-tauri/tauri.conf.json` | `version` | Desktop app version |
+| `packaging/PKGBUILD` | `pkgver` (reset `pkgrel=1`) | Arch/AUR package version |
+| `packaging/linux-system-hardener.spec` | `Version:` + `%changelog` | RPM package version |
+| `packaging/debian/changelog` | top stanza `(X.Y.Z-1)` | Debian package version |
 
 All crates use `version.workspace = true` to inherit the workspace version.
+`Cargo.lock` workspace entries are refreshed with `cargo update --workspace` after the bump.
+
+**AUR** (separate repo `ssh://aur@aur.archlinux.org/linux-system-hardener.git`): after the
+`vX.Y.Z` tag is pushed, bump `pkgver`, run `updpkgsums` to fill `sha256sums` from the tag
+tarball, regenerate `.SRCINFO` (`makepkg --printsrcinfo > .SRCINFO`), then commit and push.
 
 ---
 
@@ -301,6 +309,7 @@ Before any release:
 - [ ] CHANGELOG.md is updated
 - [ ] Documentation is current
 - [ ] Security audit passes (`cargo audit`)
+- [ ] Dependency policy passes (`cargo deny check` — licenses, advisories, bans)
 - [ ] Working directory is clean
 - [ ] On `main` branch
 
@@ -341,4 +350,4 @@ For release issues:
 3. Consult this document
 4. Open an issue if needed
 
-**Last Updated**: 2026-02-22
+**Last Updated**: 2026-05-24
