@@ -1,5 +1,5 @@
 Name:           linux-system-hardener
-Version:        1.0.3
+Version:        1.0.5
 Release:        1%{?dist}
 Summary:        Linux security automation: scanning, hardening, and rollback
 License:        Apache-2.0
@@ -101,6 +101,13 @@ systemctl daemon-reload || true
 %dir %{_libdir}/linux-hardener
 
 %changelog
+* Sun May 24 2026 Eric Jingryd <tidynest@proton.me> - 1.0.5-1
+- v1.0.5: Security — patch tauri (CVE-2026-42184), lettre (RUSTSEC-2026-0141),
+  and rustls-webpki (RUSTSEC-2026-0104) advisories
+
+* Wed Apr 15 2026 Eric Jingryd <tidynest@proton.me> - 1.0.4-1
+- v1.0.4: Rust edition 2024; dependency refresh
+
 * Fri Feb 28 2026 Eric Jingryd <tidynest@proton.me> - 1.0.3-1
 - v1.0.3: Parallel test runners, GUI test selector fixes
 

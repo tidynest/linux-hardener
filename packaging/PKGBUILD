@@ -1,6 +1,6 @@
 # Maintainer: Eric Jingryd <tidynest@proton.me>
 pkgname=linux-system-hardener
-pkgver=1.0.4
+pkgver=1.0.5
 pkgrel=1
 pkgdesc="Linux security automation: scanning, hardening, and rollback across 8 domains"
 arch=('x86_64')
@@ -34,7 +34,9 @@ makedepends=(
     'pkg-config'
 )
 source=("$pkgname-$pkgver.tar.gz::https://github.com/tidynest/$pkgname/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('a909b96509b54b6c9419f0b2deb1f07af028492a1169fe0ab6399deffef345c9')
+# sha256 of the v1.0.5 source tarball — regenerate once the tag is pushed:
+#   updpkgsums  &&  makepkg --printsrcinfo > .SRCINFO
+sha256sums=('SKIP')
 
 build() {
     cd "$pkgname-$pkgver"

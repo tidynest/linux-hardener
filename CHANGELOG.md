@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-05-24
+
+### Security
+- **CVE-2026-42184 / GHSA-7gmj-67g7-phm9** — Updated `tauri` 2.9.5 → 2.11.2, fixing an origin-confusion flaw that could let remote pages invoke local-only IPC commands.
+- **RUSTSEC-2026-0141** — Updated `lettre` 0.11.19 → 0.11.22 (TLS hostname verification bypass in the Boring TLS backend; not exposed — the project builds `lettre` with the rustls backend).
+- **RUSTSEC-2026-0104** — Updated `rustls-webpki` 0.103.12 → 0.103.13 (reachable panic when parsing a certificate revocation list).
+
 ## [1.0.4] - 2026-04-15
 
 ### Changed
@@ -560,6 +567,9 @@ Configuration file support with layered loading, compliance framework reporting 
 - **0.2.0** (2025-11-28): Compliance frameworks, PDF reports, configuration system
 - **0.1.0** (2025-11-25): Initial development release
 
+[Unreleased]: https://github.com/tidynest/linux-system-hardener/compare/v1.0.5...HEAD
+[1.0.5]: https://github.com/tidynest/linux-system-hardener/compare/v1.0.4...v1.0.5
+[1.0.4]: https://github.com/tidynest/linux-system-hardener/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/tidynest/linux-system-hardener/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/tidynest/linux-system-hardener/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/tidynest/linux-system-hardener/compare/v1.0.0...v1.0.1

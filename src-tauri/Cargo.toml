@@ -19,7 +19,7 @@ hardener-scheduler = { workspace = true }
 hardener-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tauri = { version = "2.9.3", features = [] }
+tauri = { version = "2.11.1", features = [] }
 tauri-plugin-dialog = "2"
 toml = { workspace = true }
 toml_edit = "0.22"

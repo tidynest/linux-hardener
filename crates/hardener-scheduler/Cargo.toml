@@ -26,7 +26,7 @@ sqlx = { workspace = true, features = ["derive"] }
 reqwest = { version = "0.12.24", default-features = false, features = ["json", "rustls-tls"] }
 
 # Email
-lettre = { version = "0.11.19", default-features = false, features = ["tokio1", "tokio1-rustls-tls", "smtp-transport", "builder"] }
+lettre = { version = "0.11.22", default-features = false, features = ["tokio1", "tokio1-rustls-tls", "smtp-transport", "builder"] }
 
 # Serialisation
 serde      = { workspace = true }
