@@ -80,7 +80,9 @@ never fail. **Phase 1 is Done** — unassessed controls report `ManualReview`
 instead of a false `Pass` (`frameworks::AUTOMATED_FRAMEWORKS` is the source of
 truth). **Phase 2:** give plugin findings real multi-framework mappings so those
 frameworks genuinely pass/fail. Touches all 8 plugins' `get_*_compliance_mappings`
-and `AUTOMATED_FRAMEWORKS`. Accuracy-critical — get mappings reviewed.
+and `AUTOMATED_FRAMEWORKS`. Accuracy-critical — get mappings reviewed. Design
+proposal (model options + sourcing strategy, awaiting decision):
+[docs/plans/2026-06-19-compliance-coverage-phase2.md](docs/plans/2026-06-19-compliance-coverage-phase2.md).
 
 ### P1 — SSH crypto-algorithm hardening
 
