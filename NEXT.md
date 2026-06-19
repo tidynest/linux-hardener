@@ -94,6 +94,17 @@ hard-setting an algorithm the local sshd doesn't know makes it refuse to start
 and can lock out SSH. Also drop the obsolete `Protocol 2` directive (ignored by
 modern OpenSSH).
 
+**Implementation note (2026-06-19 investigation):** `SshHardeningPlugin::apply`
+is not cleanly unit-testable today — it takes a real `std::fs` `flock` on the
+real `/etc/ssh/sshd_config`, so the only apply test is `#[ignore]` (root-only)
+and `MockExecutor` errors on unregistered commands. To keep the `sshd -t` gate
+verifiable, extract a pure `validate_sshd_config(executor, candidate) -> Result<()>`
+helper (writes a temp file, runs `sshd -t -f <temp>`, cleans up) and TDD *that*
+with `MockExecutor::with_command`; wire it into `apply()` before the write as a
+small call (integration stays covered by the `#[ignore]` root test). This change
+is behaviour-changing on the critical apply path — land it with review, not
+unattended.
+
 ### P1 — ISO/IEC 27001:2022 framework
 
 `ISO27001` is in the enum but `get_controls` returns empty. Implement an
