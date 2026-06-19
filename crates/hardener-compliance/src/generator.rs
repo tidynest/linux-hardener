@@ -58,11 +58,17 @@ impl ReportGenerator {
                     .cloned()
                     .collect();
 
-                // Determine status: if there are findings, the control failed
-                let status = if related_findings.is_empty() {
+                // Determine status. A mapped finding always means the control
+                // failed. With no finding, the control passes only if the engine
+                // actually assesses this framework; otherwise the absence of a
+                // finding proves nothing, so it requires manual review rather
+                // than a misleading automatic pass.
+                let status = if !related_findings.is_empty() {
+                    ControlStatus::Fail
+                } else if frameworks::is_automated(framework) {
                     ControlStatus::Pass
                 } else {
-                    ControlStatus::Fail
+                    ControlStatus::ManualReview
                 };
 
                 ControlResult {
@@ -131,13 +137,24 @@ mod tests {
         // Server scenario includes CIS and STIG
         assert_eq!(reports.len(), 2);
 
-        // With no findings, all controls should pass
+        // With no findings nothing can fail, but only automatically-assessed
+        // frameworks may report a clean pass. CIS is assessed (all controls
+        // pass); STIG is not yet wired, so its controls require manual review
+        // rather than being silently certified as compliant.
         for report in &reports {
             assert_eq!(report.report_summary.summary_failing, 0);
-            assert_eq!(
-                report.report_summary.summary_passing,
-                report.report_summary.summary_total_controls
-            );
+            match report.report_framework {
+                ComplianceFramework::CIS => assert_eq!(
+                    report.report_summary.summary_passing,
+                    report.report_summary.summary_total_controls,
+                    "assessed framework passes all controls on a clean system"
+                ),
+                _ => assert_eq!(
+                    report.report_summary.summary_manual_review,
+                    report.report_summary.summary_total_controls,
+                    "unassessed framework flags every control for manual review"
+                ),
+            }
         }
     }
 
