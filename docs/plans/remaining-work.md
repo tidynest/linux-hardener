@@ -1,6 +1,11 @@
 # Remaining Work — Linux System Hardener
 
 > **Last Updated:** 2026-02-27 | **Version:** 1.0.2
+>
+> ⚠️ **Superseded (2026-06-19).** This snapshot predates the v1.0.0–v1.0.5
+> releases and its "gap to v1.0.0" framing is historical. For the current state
+> and the live task list see [NEXT.md](../../NEXT.md) and [ROADMAP.md](../../ROADMAP.md).
+> Retained for history.
 
 ---
 
