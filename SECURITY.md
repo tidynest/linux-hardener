@@ -87,6 +87,10 @@ This tool is designed to harden systems against common attack vectors, but is **
 
 4. **Distribution Detection**: Relies on `/etc/os-release` which could be spoofed on a compromised system.
 
+5. **SSH Cryptographic Algorithms**: The SSH plugin hardens authentication and protocol directives but does **not** yet enforce `KexAlgorithms`, `Ciphers` or `MACs`. It therefore does not mandate AEAD-only ciphers or post-quantum key exchange (`mlkem768x25519-sha256`, the OpenSSH 10+ default); hosts retain their OpenSSH defaults for these. Tracked as a P1 task in `NEXT.md`.
+
+6. **Compliance Coverage**: Only the CIS framework is automatically assessed; STIG, NIST, PCI-DSS, HIPAA and GDPR controls are reported as `ManualReview` until per-control mappings are added. Do not treat a `ManualReview` result as compliant.
+
 ### SSH Remote Scanning Security
 
 The SSH remote scanning feature (`--ssh` flag) has these security considerations:
@@ -121,7 +125,7 @@ The Tauri desktop application uses `pkexec` (polkit) for operations that require
 
 The project follows these security practices:
 
-- All dependencies are regularly audited (`cargo audit`)
+- All dependencies are regularly audited (`cargo audit` and `cargo-deny`; a global pre-push gate blocks advisories, and `deny.toml` pins the licence/advisory policy)
 - Code is reviewed before merging
 - No use of `unsafe` Rust without justification
 - Error handling avoids information disclosure

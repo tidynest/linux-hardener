@@ -2,9 +2,17 @@
 
 This document tracks validation testing across supported Linux distributions.
 
-**Version:** 0.3.3
+**Codebase version at last full validation:** 1.0.3 (results below)
 **Validation Started:** 2026-02-23
 **Validation Complete:** 2026-02-23
+
+> **Currency note (2026-06-19):** the results below reflect the distro releases
+> available at validation time. Newer stable releases have since shipped —
+> **Debian 13 "Trixie", Ubuntu 26.04 LTS, Fedora 44, RHEL 10, openSUSE Leap 16** —
+> and have **not** yet been re-validated end-to-end. Family-based detection means
+> the hardener still routes them correctly, but a fresh validation run on the
+> current releases is tracked as a P3 task in `NEXT.md`. **openSUSE Leap 15.x
+> reached end-of-life in April 2026** — re-pin the SUSE container target to Leap 16.
 
 ---
 

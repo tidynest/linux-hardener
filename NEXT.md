@@ -2,9 +2,17 @@
 
 ---
 
-## Current State (as of 2026-02-28)
+## Current State (as of 2026-06-19)
 
-**v1.0.3 released.** All major features complete. Recent work added parallel test runners and fixed GUI test selectors for TabBar component migration.
+**v1.0.5 released.** All major features complete. Since v1.0.3: edition 2024
+(v1.0.4) and a security dependency pass (v1.0.5 — `tauri` 2.11.2, `lettre`
+0.11.22, `rustls-webpki` 0.103.13; cargo-deny gate added).
+
+**Open audit finding (2026-06-19):** compliance reporting only *automatically
+assesses* CIS — every plugin tags findings with CIS control IDs only, so STIG,
+NIST, PCI-DSS, HIPAA and GDPR reports previously showed 100% compliance on any
+system. Phase-1 fix landed (unassessed controls now report `ManualReview`, not
+`Pass`); phase-2 (real multi-framework mappings) is the top open task below.
 
 ### Completed milestones:
 
@@ -61,6 +69,60 @@
 ---
 
 ## What's next (priority order)
+
+> Refreshed 2026-06-19 from a full state + online-currency audit. Items are open
+> unless marked Done.
+
+### P0 — Compliance assessment coverage (phase 2)
+
+Findings only carry CIS control IDs, so STIG/NIST/PCI-DSS/HIPAA/GDPR controls can
+never fail. **Phase 1 is Done** — unassessed controls report `ManualReview`
+instead of a false `Pass` (`frameworks::AUTOMATED_FRAMEWORKS` is the source of
+truth). **Phase 2:** give plugin findings real multi-framework mappings so those
+frameworks genuinely pass/fail. Touches all 8 plugins' `get_*_compliance_mappings`
+and `AUTOMATED_FRAMEWORKS`. Accuracy-critical — get mappings reviewed.
+
+### P1 — SSH crypto-algorithm hardening
+
+The SSH plugin hardens 8 directives but sets no `KexAlgorithms`/`Ciphers`/`MACs`.
+Add them, including post-quantum key exchange (`mlkem768x25519-sha256`, the
+default since OpenSSH 10.0; `sntrup761x25519-sha512` fallback). **Safety:** detect
+supported algorithms (`ssh -Q kex`) and validate with `sshd -t` before restart —
+hard-setting an algorithm the local sshd doesn't know makes it refuse to start
+and can lock out SSH. Also drop the obsolete `Protocol 2` directive (ignored by
+modern OpenSSH).
+
+### P1 — ISO/IEC 27001:2022 framework
+
+`ISO27001` is in the enum but `get_controls` returns empty. Implement an
+`iso27001.rs` catalogue for the 93 Annex A:2022 controls (4 themes; the 34
+Technological controls are the load-bearing set for a hardener). Only meaningful
+once phase-2 coverage lets findings map to it — sequence after P0, else it is a
+7th catalogue that always reports `ManualReview`.
+
+### P2 — RHEL 10 compliance profiles
+
+DISA RHEL 10 STIG V1R1 (2026-06-02) and CIS RHEL 10 v1.0.1 now exist. Distro
+detection already routes RHEL 10 through the Red Hat family; add the profile data.
+
+### P2 — Multi-host SSH management
+
+Single-host remote SSH scanning is complete; multi-host is sequential-only. Add
+host profiles, parallel scanning, trend history and regression alerts (see the
+limitations table in `docs/SSH_REMOTE_SCANNING.md`).
+
+### P3 — Maintenance / currency
+
+| Item | Detail | Status |
+|------|--------|--------|
+| Distro validation refresh | Re-validate on Debian 13, Fedora 44, RHEL 10, openSUSE Leap 16 (Leap 15 reached EOL April 2026) | ⬜ Pending |
+| `tauri` 2.11.2 → 2.11.3 | Latest patch (2026-06-17); no CVE, routine bump | ⬜ Pending |
+| External security audit | Third-party review | ⬜ Pending |
+| Performance optimisation | Scan speed improvements | ⬜ Pending |
+
+---
+
+## Completed in earlier sessions
 
 ### 1. PluginConfig wiring — COMPLETED (2026-02-23)
 
@@ -122,7 +184,7 @@ See `docs/GUI_CLI_PARITY_PLAN.md` — all 6 phases complete.
 - **8 Security Plugins**: Kernel, SSH, Firewall, PAM, Services, Audit, Permissions, MAC
 - **514+ Passing Tests**
 - **Multi-Distribution Support**: Debian, Red Hat, Arch, SUSE families
-- **Current Version**: 1.0.3 (Production Release)
+- **Current Version**: 1.0.5 (Production Release)
 - **WASM Support**: GUI frontend compiles to `wasm32-unknown-unknown`
 
 For version history and detailed feature tracking, see [ROADMAP.md](ROADMAP.md).
@@ -194,4 +256,4 @@ hardener-scheduler
 
 *This document is prepared for continuity between development sessions.*
 
-**Last Updated**: 2026-02-28
+**Last Updated**: 2026-06-19

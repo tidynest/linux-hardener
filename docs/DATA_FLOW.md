@@ -1,7 +1,7 @@
 # Linux System Hardener - Data Flow Documentation
 
-**Last Updated:** 2026-02-28
-**Version:** 1.0.2
+**Last Updated:** 2026-06-19
+**Version:** 1.0.5
 
 This document describes the data flow for all major operations in the system.
 
@@ -420,10 +420,12 @@ struct Finding {
 │      ├─ Find related findings via ComplianceMapping          │
 │      │   (finding.finding_compliance contains mappings)      │
 │      ├─ Determine status:                                    │
-│      │   • Pass: No related findings                         │
-│      │   • Fail: Has related findings                        │
-│      │   • ManualReview: Needs human verification            │
-│      │   • NotApplicable: Not relevant to this system        │
+│      │   • Fail: has related findings                        │
+│      │   • Pass: no findings AND framework is automatically   │
+│      │     assessed (frameworks::AUTOMATED_FRAMEWORKS = CIS)  │
+│      │   • ManualReview: no findings, framework NOT assessed  │
+│      │     (STIG/NIST/PCI-DSS/HIPAA/GDPR — no false Pass)     │
+│      │   • NotApplicable: not relevant to this system        │
 │      └─ Create ControlResult                                 │
 └────────┬─────────────────────────────────────────────────────┘
          │

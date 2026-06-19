@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Compliance reporting no longer fabricates compliance.** Control pass/fail is
+  derived from scan findings, which every plugin tags with CIS control IDs only.
+  The report generator previously marked any control with no mapped finding as
+  `Pass`, so STIG, NIST, PCI-DSS, HIPAA and GDPR reports showed 100% compliance
+  on every system — even one with critical findings. Controls of frameworks the
+  engine does not yet assess automatically are now reported as `ManualReview`
+  rather than a misleading `Pass`. `frameworks::AUTOMATED_FRAMEWORKS` is the
+  single source of truth for automated coverage (CIS today); per-control
+  multi-framework coverage is tracked as follow-up work.
+
 ## [1.0.5] - 2026-05-24
 
 ### Security

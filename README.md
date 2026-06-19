@@ -1,7 +1,7 @@
 # Linux System Hardener
 
 **Author**: Eric Jingryd
-**Version**: 1.0.3
+**Version**: 1.0.5
 **License**: Apache-2.0
 
 A comprehensive Linux security automation tool with multi-distribution support, built in Rust. Provides automated security scanning, hardening, and compliance reporting with full rollback capabilities.
@@ -15,7 +15,9 @@ Linux System Hardener automates the process of securing Linux servers and workst
 - **Scanning** systems for security misconfigurations
 - **Applying** hardening recommendations automatically
 - **Rolling back** changes safely using checkpoint snapshots
-- **Reporting** compliance status against security frameworks
+- **Reporting** compliance status — automated assessment against the CIS
+  Benchmarks, with control catalogues for STIG, NIST 800-53, PCI-DSS, HIPAA and
+  GDPR (controls not yet automatically assessed are flagged for manual review)
 
 The tool is designed for system administrators, DevOps engineers, and security professionals who need to maintain secure Linux infrastructure at scale.
 
@@ -48,12 +50,19 @@ The tool is designed for system administrators, DevOps engineers, and security p
 
 | Distribution | Package Manager | Init System | Status |
 |--------------|-----------------|-------------|--------|
-| Ubuntu 22.04+ | apt | systemd | Supported |
-| Debian 12+ | apt | systemd | Supported |
-| Fedora 39+ | dnf | systemd | Supported |
-| RHEL 9+ | dnf | systemd | Supported |
-| Arch Linux | pacman | systemd | Supported |
-| openSUSE Leap 15.5+ | zypper | systemd | Supported |
+| Ubuntu 22.04 LTS+ (incl. 26.04) | apt | systemd | Supported |
+| Debian 12+ (incl. 13 "Trixie") | apt | systemd | Supported |
+| Fedora 40+ (incl. 44) | dnf | systemd | Supported |
+| RHEL 9+ (incl. 10) | dnf | systemd | Supported |
+| Arch Linux (rolling) | pacman | systemd | Supported |
+| openSUSE Leap 15.6 / 16, Tumbleweed | zypper | systemd | Supported |
+
+> Support is **family-based**: detection maps any release of the Debian, Red Hat,
+> Arch or SUSE families to the same hardening behaviour, so current releases
+> (Debian 13, Ubuntu 26.04, Fedora 44, RHEL 10, openSUSE Leap 16) are covered
+> automatically. openSUSE Leap 15.x reached end-of-life in April 2026; use Leap
+> 16. See [docs/DISTRIBUTION_VALIDATION.md](docs/DISTRIBUTION_VALIDATION.md) for
+> the specific versions last validated end-to-end.
 
 ### User Interface
 
@@ -69,7 +78,7 @@ The tool is designed for system administrators, DevOps engineers, and security p
 
 ## Project Status
 
-**Current Phase**: Production Release (v1.0.3)
+**Current Phase**: Production Release (v1.0.5)
 
 ### Test Coverage
 
@@ -77,7 +86,7 @@ The tool is designed for system administrators, DevOps engineers, and security p
 Total Tests: 514+ passing (Rust) + 84 Playwright + 95 Desktop + 21 Node.js
 ├── Plugin Tests: 48 + 80 mock tests
 ├── Core Tests: 59 + 14 mock executor tests
-├── Compliance Tests: 46
+├── Compliance Tests: 49
 ├── State Tests: 29
 ├── Scheduler Tests: 57 (daemon, runner, notifications, systemd)
 ├── CLI Tests: 31

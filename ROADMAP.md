@@ -499,18 +499,36 @@ Features planned for post-v1.0.0 releases.
 | Salt states | SaltStack state integration | Low | ⬜ Pending |
 | Chef recipes | Chef cookbook integration | Low | ⬜ Pending |
 
+### Compliance Assessment Coverage
+
+Today only CIS is **automatically assessed** — every plugin tags its findings
+with CIS control IDs. Other frameworks ship a control catalogue but no finding
+maps to them, so their controls report `ManualReview` (see
+`frameworks::AUTOMATED_FRAMEWORKS`). The phase-2 work is to give findings real
+multi-framework mappings so STIG/NIST/PCI-DSS/HIPAA/GDPR controls genuinely
+pass/fail.
+
+| Task | Description | Priority | Status |
+|------|-------------|----------|--------|
+| Honest manual-review status | Stop reporting unassessed controls as `Pass` | High | ✅ Complete |
+| Per-control multi-framework mappings | Plugins emit STIG/NIST/PCI-DSS/HIPAA/GDPR control IDs alongside CIS | High | ⬜ Pending |
+
 ### Additional Compliance Frameworks
 
 | Framework | Description | Priority | Status |
 |-----------|-------------|----------|--------|
-| ISO 27001 | Information security management | Low | ⬜ Pending |
-| SOC 2 | Service organisation controls | Low | ⬜ Pending |
-| FedRAMP | Federal Risk and Authorization | Low | ⬜ Pending |
+| ISO/IEC 27001:2022 | 93 Annex A controls across 4 themes (Organizational, People, Physical, Technological); map the Technological theme to plugin findings. Catalogue stub exists (`ISO27001` returns empty) | Medium | ⬜ Pending |
+| SOC 2 | Service organisation controls (AICPA Trust Services Criteria) | Low | ⬜ Pending |
+| FedRAMP | Federal Risk and Authorization Management Program | Low | ⬜ Pending |
+| NIST SP 800-171 | Add alongside 800-53; support Rev 2 (currently mandated) and Rev 3 (2024) | Low | ⬜ Pending |
 
 ### Advanced Features
 
 | Feature | Description | Priority | Status |
 |---------|-------------|----------|--------|
+| SSH crypto-algorithm hardening | Harden `KexAlgorithms`/`Ciphers`/`MACs`, incl. post-quantum kex (`mlkem768x25519-sha256`, default in OpenSSH 10). Must detect supported algorithms (`ssh -Q kex`) and run `sshd -t` before restart to avoid lockout | High | ⬜ Pending |
+| RHEL 10 compliance profiles | DISA RHEL 10 STIG V1R1 (2026-06) and CIS RHEL 10 v1.0.1 now exist | Medium | ⬜ Pending |
+| Multi-host SSH management | Manage/monitor multiple hosts from one UI: host profiles, parallel scanning, trend history, regression alerts | Medium | ⬜ Pending |
 | Security audit (external) | Third-party security review | Medium | ⬜ Pending |
 | Performance optimisation | Scan speed improvements | Medium | ⬜ Pending |
 | Internationalisation | Multi-language support | Low | ⬜ Pending |
@@ -634,14 +652,20 @@ The compliance module (`hardener-compliance`) is designed for reuse:
 
 ### Supported Compliance Frameworks
 
-| Framework | Controls | Description |
-|-----------|----------|-------------|
-| CIS | 38 | Center for Internet Security Benchmarks |
-| STIG | 20 | DISA Security Technical Implementation Guides |
-| NIST 800-53 | 20 | US Federal security controls |
-| PCI-DSS | 22 | Payment Card Industry standards |
-| HIPAA | 14 | Healthcare security requirements |
-| GDPR | 12 | EU data protection (Article 32) |
+The "Controls" column is the size of each framework's control **catalogue**.
+"Assessed" indicates whether plugin findings are mapped to the framework so
+controls genuinely pass/fail; unassessed frameworks report `ManualReview`
+(see Compliance Assessment Coverage above).
+
+| Framework | Controls | Assessed | Description |
+|-----------|----------|----------|-------------|
+| CIS | 38 | ✅ Yes | Center for Internet Security Benchmarks |
+| STIG | 20 | ⬜ Catalogue only | DISA Security Technical Implementation Guides |
+| NIST 800-53 | 20 | ⬜ Catalogue only | US Federal security controls (Rev 5) |
+| PCI-DSS | 22 | ⬜ Catalogue only | Payment Card Industry standards (v4.0) |
+| HIPAA | 14 | ⬜ Catalogue only | Healthcare security requirements |
+| GDPR | 12 | ⬜ Catalogue only | EU data protection (Article 32) |
+| ISO/IEC 27001:2022 | 0 | ⬜ Not implemented | Catalogue stub returns empty — see Additional Compliance Frameworks |
 
 ---
 
@@ -657,4 +681,4 @@ When working on new features:
 
 ---
 
-**Last Updated**: 2026-02-28
+**Last Updated**: 2026-06-19
