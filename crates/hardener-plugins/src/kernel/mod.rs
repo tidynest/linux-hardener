@@ -134,68 +134,225 @@ const KERNEL_PARAMS: &[(&str, &str, &str, Severity)] = &[
     ),
 ];
 
+/// Builds a NIST 800-53 Rev 5 mapping. Title/section follow the project's
+/// authoritative definitions in `hardener-compliance/src/frameworks/nist.rs`.
+fn nist(id: &str, title: &str, section: &str) -> ComplianceMapping {
+    ComplianceMapping {
+        compliance_framework: ComplianceFramework::NIST,
+        compliance_control_id: id.to_string(),
+        compliance_control_title: title.to_string(),
+        compliance_section: Some(section.to_string()),
+    }
+}
+
+/// Builds a DISA STIG mapping. `id` is the RHEL 8 STIG identifier, which shares
+/// its numeric tail with the SSG `stigid@ol8` reference cited per check.
+fn stig(id: &str, title: &str) -> ComplianceMapping {
+    ComplianceMapping {
+        compliance_framework: ComplianceFramework::STIG,
+        compliance_control_id: id.to_string(),
+        compliance_control_title: title.to_string(),
+        compliance_section: Some("DISA STIG".to_string()),
+    }
+}
+
+/// Builds a PCI-DSS v4.0 mapping. Control id/title/section follow the project's
+/// authoritative definitions in `hardener-compliance/src/frameworks/pci.rs`.
+fn pcidss(id: &str, title: &str, section: &str) -> ComplianceMapping {
+    ComplianceMapping {
+        compliance_framework: ComplianceFramework::PCIDSS,
+        compliance_control_id: id.to_string(),
+        compliance_control_title: title.to_string(),
+        compliance_section: Some(section.to_string()),
+    }
+}
+
 /// Returns compliance mappings for a given kernel parameter.
+///
+/// CIS entries are the project's existing benchmark mappings. STIG/NIST/PCI-DSS
+/// entries are sourced from the matching ComplianceAsCode/SSG rule's
+/// `references:` block (rule id cited per check). NIST titles/sections and
+/// PCI-DSS v4.0 ids/titles are reconciled with the project's own framework
+/// definitions in `hardener-compliance/src/frameworks/`. A framework is omitted
+/// for a check only when the SSG rule carries no reference for it.
 fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
     match param_name {
-        "kernel.randomize_va_space" => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "1.5.1".to_string(),
-            compliance_control_title: "Ensure address space layout randomisation (ASLR) is enabled"
-                .to_string(),
-            compliance_section: Some("Initial Setup".to_string()),
-        }],
-        "kernel.kptr_restrict" => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "1.5.4".to_string(),
-            compliance_control_title: "Ensure kernel pointers are restricted".to_string(),
-            compliance_section: Some("Initial Setup".to_string()),
-        }],
-        "kernel.dmesg_restrict" => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "1.5.4".to_string(),
-            compliance_control_title: "Ensure kernel pointers are restricted".to_string(),
-            compliance_section: Some("Initial Setup".to_string()),
-        }],
-        "kernel.yama.ptrace_scope" => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "1.5.2".to_string(),
-            compliance_control_title: "Ensure ptrace_scope is restricted".to_string(),
-            compliance_section: Some("Initial Setup".to_string()),
-        }],
-        "fs.suid_dumpable" => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "1.5.3".to_string(),
-            compliance_control_title: "Ensure core dumps are restricted".to_string(),
-            compliance_section: Some("Initial Setup".to_string()),
-        }],
-        "fs.protected_hardlinks" | "fs.protected_symlinks" => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "1.6.1".to_string(),
-            compliance_control_title: "Ensure filesystem hardening is configured".to_string(),
-            compliance_section: Some("Initial Setup".to_string()),
-        }],
-        "net.ipv4.conf.all.rp_filter" | "net.ipv4.conf.default.rp_filter" => {
-            vec![ComplianceMapping {
+        "kernel.randomize_va_space" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "1.5.1".to_string(),
+                compliance_control_title:
+                    "Ensure address space layout randomisation (ASLR) is enabled".to_string(),
+                compliance_section: Some("Initial Setup".to_string()),
+            },
+            // SSG: sysctl_kernel_randomize_va_space
+            // refs: nist SC-30/CM-6(a) (SI-16 is the Rev 5 memory-protection
+            // control for ASLR), pcidss Req-2.2.1, stigid@ol8 OL08-00-010430
+            stig(
+                "RHEL-08-010430",
+                "Implement address space layout randomization",
+            ),
+            nist(
+                "SI-16",
+                "Memory Protection",
+                "System and Information Integrity",
+            ),
+            nist("CM-6", "Configuration Settings", "Configuration Management"),
+            pcidss(
+                "2.2.6",
+                "System security parameters are configured to prevent misuse",
+                "Secure Configurations",
+            ),
+        ],
+        "kernel.kptr_restrict" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "1.5.4".to_string(),
+                compliance_control_title: "Ensure kernel pointers are restricted".to_string(),
+                compliance_section: Some("Initial Setup".to_string()),
+            },
+            // SSG: sysctl_kernel_kptr_restrict
+            // refs: nist SC-30/CM-6(a), stigid@ol8 OL08-00-040283 (no pcidss)
+            stig(
+                "RHEL-08-040283",
+                "Restrict exposed kernel pointer addresses access",
+            ),
+            nist("CM-6", "Configuration Settings", "Configuration Management"),
+        ],
+        "kernel.dmesg_restrict" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "1.5.4".to_string(),
+                compliance_control_title: "Ensure kernel pointers are restricted".to_string(),
+                compliance_section: Some("Initial Setup".to_string()),
+            },
+            // SSG: sysctl_kernel_dmesg_restrict
+            // refs: nist SI-11(a)/SI-11(b), stigid@ol8 OL08-00-010375 (no pcidss)
+            stig(
+                "RHEL-08-010375",
+                "Restrict access to the kernel message buffer",
+            ),
+            nist(
+                "SI-11",
+                "Error Handling",
+                "System and Information Integrity",
+            ),
+        ],
+        "kernel.yama.ptrace_scope" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "1.5.2".to_string(),
+                compliance_control_title: "Ensure ptrace_scope is restricted".to_string(),
+                compliance_section: Some("Initial Setup".to_string()),
+            },
+            // SSG: sysctl_kernel_yama_ptrace_scope
+            // refs: nist SC-7(10), stigid@ol8 OL08-00-040282 (no pcidss)
+            stig(
+                "RHEL-08-040282",
+                "Restrict usage of ptrace to descendant processes",
+            ),
+            nist(
+                "SC-7",
+                "Boundary Protection",
+                "System and Communications Protection",
+            ),
+        ],
+        "fs.suid_dumpable" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "1.5.3".to_string(),
+                compliance_control_title: "Ensure core dumps are restricted".to_string(),
+                compliance_section: Some("Initial Setup".to_string()),
+            },
+            // SSG: sysctl_fs_suid_dumpable
+            // refs: nist SI-11(a)/SI-11(b) (no stigid@ol8, no pcidss)
+            nist(
+                "SI-11",
+                "Error Handling",
+                "System and Information Integrity",
+            ),
+        ],
+        "fs.protected_hardlinks" | "fs.protected_symlinks" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "1.6.1".to_string(),
+                compliance_control_title: "Ensure filesystem hardening is configured".to_string(),
+                compliance_section: Some("Initial Setup".to_string()),
+            },
+            // SSG: sysctl_fs_protected_hardlinks / sysctl_fs_protected_symlinks
+            // refs: nist CM-6(a)/AC-6(1), stigid@ol8 OL08-00-010374 /
+            // OL08-00-010373 (no pcidss)
+            stig("RHEL-08-010374", "Enforce DAC on hardlinks and symlinks"),
+            nist("CM-6", "Configuration Settings", "Configuration Management"),
+            nist("AC-6", "Least Privilege", "Access Control"),
+        ],
+        "net.ipv4.conf.all.rp_filter" | "net.ipv4.conf.default.rp_filter" => vec![
+            ComplianceMapping {
                 compliance_framework: ComplianceFramework::CIS,
                 compliance_control_id: "3.2.7".to_string(),
                 compliance_control_title: "Ensure reverse path filtering is enabled".to_string(),
                 compliance_section: Some("Network Configuration".to_string()),
-            }]
-        }
-        "net.ipv4.tcp_syncookies" => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "3.2.8".to_string(),
-            compliance_control_title: "Ensure TCP SYN cookies is enabled".to_string(),
-            compliance_section: Some("Network Configuration".to_string()),
-        }],
-        "net.ipv4.conf.all.accept_source_route" | "net.ipv4.conf.default.accept_source_route" => {
-            vec![ComplianceMapping {
+            },
+            // SSG: sysctl_net_ipv4_conf_all_rp_filter (and _default_)
+            // refs: nist CM-7(a)/CM-7(b)/CM-6(a)/SC-7(a), pcidss Req-1.4.3
+            // (all-interfaces), stigid@ol8 OL08-00-040285 (all-interfaces only)
+            stig(
+                "RHEL-08-040285",
+                "Use reverse path filtering on all IPv4 interfaces",
+            ),
+            nist("CM-7", "Least Functionality", "Configuration Management"),
+            nist(
+                "SC-7",
+                "Boundary Protection",
+                "System and Communications Protection",
+            ),
+            pcidss(
+                "1.4.1",
+                "NSCs are implemented between trusted and untrusted networks",
+                "Network Security Controls",
+            ),
+        ],
+        "net.ipv4.tcp_syncookies" => vec![
+            ComplianceMapping {
                 compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "3.2.1".to_string(),
-                compliance_control_title: "Ensure source routed packets are not accepted"
-                    .to_string(),
+                compliance_control_id: "3.2.8".to_string(),
+                compliance_control_title: "Ensure TCP SYN cookies is enabled".to_string(),
                 compliance_section: Some("Network Configuration".to_string()),
-            }]
+            },
+            // SSG: sysctl_net_ipv4_tcp_syncookies
+            // refs: nist SC-5(1)/SC-5(2)/SC-5(3)(a)/CM-7/CM-6(a), pcidss
+            // Req-1.4.1 (no stigid@ol8)
+            nist(
+                "SC-5",
+                "Denial-of-Service Protection",
+                "System and Communications Protection",
+            ),
+            pcidss(
+                "1.4.1",
+                "NSCs are implemented between trusted and untrusted networks",
+                "Network Security Controls",
+            ),
+        ],
+        "net.ipv4.conf.all.accept_source_route" | "net.ipv4.conf.default.accept_source_route" => {
+            vec![
+                ComplianceMapping {
+                    compliance_framework: ComplianceFramework::CIS,
+                    compliance_control_id: "3.2.1".to_string(),
+                    compliance_control_title: "Ensure source routed packets are not accepted"
+                        .to_string(),
+                    compliance_section: Some("Network Configuration".to_string()),
+                },
+                // SSG: sysctl_net_ipv4_conf_all_accept_source_route (and _default_)
+                // refs: nist CM-7(a)/CM-7(b)/SC-5/SC-7(a), stigid@ol8
+                // OL08-00-040239 (all) / OL08-00-040249 (default) (no pcidss)
+                stig("RHEL-08-040239", "Do not accept source-routed IPv4 packets"),
+                nist("CM-7", "Least Functionality", "Configuration Management"),
+                nist(
+                    "SC-7",
+                    "Boundary Protection",
+                    "System and Communications Protection",
+                ),
+            ]
         }
         _ => vec![],
     }
@@ -527,5 +684,33 @@ impl HardeningPlugin for KernelHardeningPlugin {
             validation_report_issues: issues,
             validation_report_estimated_changes: estimated_changes,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Confirms a representative kernel check now carries multi-framework
+    /// mappings: CIS (existing) plus STIG and NIST sourced from SSG.
+    #[test]
+    fn aslr_maps_cis_stig_and_nist() {
+        let mappings = get_compliance_mappings("kernel.randomize_va_space");
+
+        let frameworks: Vec<ComplianceFramework> =
+            mappings.iter().map(|m| m.compliance_framework).collect();
+
+        assert!(
+            frameworks.contains(&ComplianceFramework::CIS),
+            "CIS mapping must be preserved"
+        );
+        assert!(
+            frameworks.contains(&ComplianceFramework::STIG),
+            "STIG mapping must be added"
+        );
+        assert!(
+            frameworks.contains(&ComplianceFramework::NIST),
+            "NIST mapping must be added"
+        );
     }
 }

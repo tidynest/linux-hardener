@@ -107,3 +107,31 @@ fn clean_system_does_not_fabricate_compliance_for_unassessed_frameworks() {
         "clean system still cannot auto-certify STIG — manual review"
     );
 }
+
+#[test]
+fn finding_with_noncatalog_framework_mapping_surfaces_as_failure() {
+    // Plugin findings carry framework control IDs sourced from upstream guidance
+    // (ComplianceAsCode) whose scheme differs from the curated catalog. A STIG
+    // mapping to an id absent from stig.rs must still produce a real failure,
+    // not be silently dropped — otherwise the multi-framework mappings are inert.
+    let mut finding = insecure_root_login();
+    finding.finding_compliance.push(ComplianceMapping {
+        compliance_framework: ComplianceFramework::STIG,
+        compliance_control_id: "OL08-00-010550".to_string(), // not in the catalog
+        compliance_control_title: "Disable SSH root login (STIG)".to_string(),
+        compliance_section: Some("Access Control".to_string()),
+    });
+
+    let report = report_for(ComplianceFramework::STIG, &[finding]);
+    assert!(
+        report.report_summary.summary_failing >= 1,
+        "a STIG-mapped insecure finding must fail even if its id is not in the catalog"
+    );
+    assert!(
+        report
+            .report_controls
+            .iter()
+            .any(|c| c.control_id == "OL08-00-010550"),
+        "the non-catalog control must appear in the report"
+    );
+}

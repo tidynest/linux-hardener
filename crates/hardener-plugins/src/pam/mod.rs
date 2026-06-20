@@ -38,36 +38,250 @@ impl PamHardeningPlugin {
     }
 }
 
+/// Builds a single [`ComplianceMapping`] under the shared "Access Control" section.
+///
+/// Keeps the per-check mapping tables below terse and free of repetition.
+fn pam_mapping(framework: ComplianceFramework, control_id: &str, title: &str) -> ComplianceMapping {
+    ComplianceMapping {
+        compliance_framework: framework,
+        compliance_control_id: control_id.to_string(),
+        compliance_control_title: title.to_string(),
+        compliance_section: Some("Access Control".to_string()),
+    }
+}
+
 /// Returns compliance mappings for PAM findings.
+///
+/// Multi-framework control IDs are sourced from the ComplianceAsCode/SSG rule
+/// `references:` blocks for the matching SSG rule (cited per arm). NIST IDs use
+/// 800-53 Rev 5 base controls; STIG IDs are the RHEL 8 DISA STIG group IDs;
+/// PCI-DSS uses v4.0 requirement numbers. A framework is omitted where the SSG
+/// rule carries no authoritative mapping for it.
 fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
     match check_name {
-        name if name.contains("minlen") || name.contains("complexity") => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "5.3.1".to_string(),
-            compliance_control_title: "Ensure password creation requirements are configured"
-                .to_string(),
-            compliance_section: Some("Access Control".to_string()),
-        }],
-        name if name.contains("lockout") || name.contains("deny") => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "5.3.2".to_string(),
-            compliance_control_title: "Ensure lockout for failed password attempts is configured"
-                .to_string(),
-            compliance_section: Some("Access Control".to_string()),
-        }],
-        name if name.contains("remember") || name.contains("reuse") => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "5.3.3".to_string(),
-            compliance_control_title: "Ensure password reuse is limited".to_string(),
-            compliance_section: Some("Access Control".to_string()),
-        }],
-        _ => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "5.3.1".to_string(),
-            compliance_control_title: "Ensure password creation requirements are configured"
-                .to_string(),
-            compliance_section: Some("Access Control".to_string()),
-        }],
+        // SSG: accounts_password_pam_minlen (stigid RHEL-08-020230)
+        name if name.contains("minlen") || name.contains("complexity") => vec![
+            pam_mapping(
+                ComplianceFramework::CIS,
+                "5.3.1",
+                "Ensure password creation requirements are configured",
+            ),
+            pam_mapping(
+                ComplianceFramework::STIG,
+                "RHEL-08-020230",
+                "RHEL 8 passwords must have a minimum of 15 characters",
+            ),
+            pam_mapping(
+                ComplianceFramework::NIST,
+                "IA-5(1)(a)",
+                "Authenticator Management | Password-Based Authentication",
+            ),
+            pam_mapping(
+                ComplianceFramework::PCIDSS,
+                "8.2.3",
+                "Strong passwords and passphrases",
+            ),
+        ],
+        // SSG: accounts_password_pam_dcredit (stigid RHEL-08-020130)
+        name if name.contains("dcredit") => vec![
+            pam_mapping(
+                ComplianceFramework::CIS,
+                "5.3.1",
+                "Ensure password creation requirements are configured",
+            ),
+            pam_mapping(
+                ComplianceFramework::STIG,
+                "RHEL-08-020130",
+                "RHEL 8 must enforce password complexity by requiring at least one numeric character",
+            ),
+            pam_mapping(
+                ComplianceFramework::NIST,
+                "IA-5(1)(a)",
+                "Authenticator Management | Password-Based Authentication",
+            ),
+            pam_mapping(
+                ComplianceFramework::PCIDSS,
+                "8.2.3",
+                "Strong passwords and passphrases",
+            ),
+        ],
+        // SSG: accounts_password_pam_ucredit (stigid RHEL-08-020110)
+        name if name.contains("ucredit") => vec![
+            pam_mapping(
+                ComplianceFramework::CIS,
+                "5.3.1",
+                "Ensure password creation requirements are configured",
+            ),
+            pam_mapping(
+                ComplianceFramework::STIG,
+                "RHEL-08-020110",
+                "RHEL 8 must enforce password complexity by requiring at least one uppercase character",
+            ),
+            pam_mapping(
+                ComplianceFramework::NIST,
+                "IA-5(1)(a)",
+                "Authenticator Management | Password-Based Authentication",
+            ),
+            pam_mapping(
+                ComplianceFramework::PCIDSS,
+                "8.2.3",
+                "Strong passwords and passphrases",
+            ),
+        ],
+        // SSG: accounts_password_pam_lcredit (stigid RHEL-08-020120)
+        name if name.contains("lcredit") => vec![
+            pam_mapping(
+                ComplianceFramework::CIS,
+                "5.3.1",
+                "Ensure password creation requirements are configured",
+            ),
+            pam_mapping(
+                ComplianceFramework::STIG,
+                "RHEL-08-020120",
+                "RHEL 8 must enforce password complexity by requiring at least one lowercase character",
+            ),
+            pam_mapping(
+                ComplianceFramework::NIST,
+                "IA-5(1)(a)",
+                "Authenticator Management | Password-Based Authentication",
+            ),
+            pam_mapping(
+                ComplianceFramework::PCIDSS,
+                "8.2.3",
+                "Strong passwords and passphrases",
+            ),
+        ],
+        // SSG: accounts_password_pam_ocredit (stigid RHEL-08-020280). No PCI-DSS in SSG.
+        name if name.contains("ocredit") => vec![
+            pam_mapping(
+                ComplianceFramework::CIS,
+                "5.3.1",
+                "Ensure password creation requirements are configured",
+            ),
+            pam_mapping(
+                ComplianceFramework::STIG,
+                "RHEL-08-020280",
+                "RHEL 8 must enforce password complexity by requiring at least one special character",
+            ),
+            pam_mapping(
+                ComplianceFramework::NIST,
+                "IA-5(1)(a)",
+                "Authenticator Management | Password-Based Authentication",
+            ),
+        ],
+        // SSG: accounts_password_pam_maxrepeat (stigid RHEL-08-020150). No PCI-DSS in SSG.
+        name if name.contains("maxrepeat") => vec![
+            pam_mapping(
+                ComplianceFramework::CIS,
+                "5.3.1",
+                "Ensure password creation requirements are configured",
+            ),
+            pam_mapping(
+                ComplianceFramework::STIG,
+                "RHEL-08-020150",
+                "RHEL 8 passwords must not contain more than three consecutive repeating characters",
+            ),
+            pam_mapping(
+                ComplianceFramework::NIST,
+                "IA-5(1)(a)",
+                "Authenticator Management | Password-Based Authentication",
+            ),
+        ],
+        // SSG: accounts_passwords_pam_faillock_deny (stigid RHEL-08-020011)
+        name if name.contains("lockout") || name.contains("deny") => vec![
+            pam_mapping(
+                ComplianceFramework::CIS,
+                "5.3.2",
+                "Ensure lockout for failed password attempts is configured",
+            ),
+            pam_mapping(
+                ComplianceFramework::STIG,
+                "RHEL-08-020011",
+                "RHEL 8 must automatically lock an account when three unsuccessful logon attempts occur",
+            ),
+            pam_mapping(
+                ComplianceFramework::NIST,
+                "AC-7(a)",
+                "Unsuccessful Logon Attempts",
+            ),
+            pam_mapping(
+                ComplianceFramework::PCIDSS,
+                "8.1.6",
+                "Limit repeated access attempts by locking out the user ID",
+            ),
+        ],
+        // SSG: accounts_password_pam_pwhistory_remember. SSG rule carries no
+        // NIST/STIG/PCI-DSS reference, so only CIS is mapped (no guessing).
+        name if name.contains("remember") || name.contains("reuse") => vec![pam_mapping(
+            ComplianceFramework::CIS,
+            "5.3.3",
+            "Ensure password reuse is limited",
+        )],
+        // SSG: accounts_maximum_age_login_defs (stigid RHEL-08-020200)
+        name if name.contains("PASS_MAX_DAYS") => vec![
+            pam_mapping(
+                ComplianceFramework::CIS,
+                "5.4.1.1",
+                "Ensure password expiration is 365 days or less",
+            ),
+            pam_mapping(
+                ComplianceFramework::STIG,
+                "RHEL-08-020200",
+                "RHEL 8 user account passwords must have a 60-day maximum password lifetime restriction",
+            ),
+            pam_mapping(
+                ComplianceFramework::NIST,
+                "IA-5(1)(d)",
+                "Authenticator Management | Password-Based Authentication",
+            ),
+            pam_mapping(
+                ComplianceFramework::PCIDSS,
+                "8.2.4",
+                "Change user passwords/passphrases at least once every 90 days",
+            ),
+        ],
+        // SSG: accounts_minimum_age_login_defs (stigid RHEL-08-020190). No PCI-DSS in SSG.
+        name if name.contains("PASS_MIN_DAYS") => vec![
+            pam_mapping(
+                ComplianceFramework::CIS,
+                "5.4.1.2",
+                "Ensure minimum days between password changes is configured",
+            ),
+            pam_mapping(
+                ComplianceFramework::STIG,
+                "RHEL-08-020190",
+                "RHEL 8 passwords for new users must have a minimum of 24 hours between password changes",
+            ),
+            pam_mapping(
+                ComplianceFramework::NIST,
+                "IA-5(1)(d)",
+                "Authenticator Management | Password-Based Authentication",
+            ),
+        ],
+        // SSG: accounts_password_warn_age_login_defs. SSG rule carries no STIG, so
+        // STIG is omitted; NIST and PCI-DSS are mapped from its references block.
+        name if name.contains("PASS_WARN_AGE") => vec![
+            pam_mapping(
+                ComplianceFramework::CIS,
+                "5.4.1.3",
+                "Ensure password expiration warning days is 7 or more",
+            ),
+            pam_mapping(
+                ComplianceFramework::NIST,
+                "IA-5(1)(d)",
+                "Authenticator Management | Password-Based Authentication",
+            ),
+            pam_mapping(
+                ComplianceFramework::PCIDSS,
+                "8.2.4",
+                "Change user passwords/passphrases at least once every 90 days",
+            ),
+        ],
+        _ => vec![pam_mapping(
+            ComplianceFramework::CIS,
+            "5.3.1",
+            "Ensure password creation requirements are configured",
+        )],
     }
 }
 
@@ -691,4 +905,32 @@ fn apply_directive_to_content(content: &str, directive_name: &str, secure_value:
     }
 
     lines.join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Confirms a representative PAM finding (minimum password length) now
+    /// carries multi-framework mappings: CIS (existing) plus STIG, NIST and
+    /// PCI-DSS sourced from the SSG `accounts_password_pam_minlen` rule.
+    #[test]
+    fn pam_minlen_maps_cis_stig_nist_and_pcidss() {
+        let frameworks: Vec<ComplianceFramework> = get_pam_compliance_mappings("minlen")
+            .iter()
+            .map(|m| m.compliance_framework)
+            .collect();
+
+        for expected in [
+            ComplianceFramework::CIS,
+            ComplianceFramework::STIG,
+            ComplianceFramework::NIST,
+            ComplianceFramework::PCIDSS,
+        ] {
+            assert!(
+                frameworks.contains(&expected),
+                "minlen must map framework {expected:?}"
+            );
+        }
+    }
 }

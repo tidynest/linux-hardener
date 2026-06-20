@@ -38,27 +38,63 @@ impl ServicesHardeningPlugin {
     }
 }
 
+/// Builds a single [`ComplianceMapping`] under the shared "Services" section.
+///
+/// Keeps the per-service mapping table below terse and free of repetition.
+fn service_mapping(
+    framework: ComplianceFramework,
+    control_id: &str,
+    title: &str,
+) -> ComplianceMapping {
+    ComplianceMapping {
+        compliance_framework: framework,
+        compliance_control_id: control_id.to_string(),
+        compliance_control_title: title.to_string(),
+        compliance_section: Some("Services".to_string()),
+    }
+}
+
 /// Returns compliance mappings for service findings.
+///
+/// Multi-framework control IDs are sourced from the ComplianceAsCode/SSG rule
+/// `references:` blocks for the matching service/package rule (cited per arm).
+/// NIST IDs use 800-53 Rev 5 base controls. The SSG service-disable rules for
+/// these daemons carry no STIG or PCI-DSS reference, so those frameworks are
+/// omitted rather than guessed.
 fn get_service_compliance_mappings(service_name: &str) -> Vec<ComplianceMapping> {
     match service_name {
-        "xinetd" => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "2.1.1".to_string(),
-            compliance_control_title: "Ensure xinetd is not installed".to_string(),
-            compliance_section: Some("Services".to_string()),
-        }],
-        "avahi-daemon" | "avahi" => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "2.2.3".to_string(),
-            compliance_control_title: "Ensure Avahi Server is not installed".to_string(),
-            compliance_section: Some("Services".to_string()),
-        }],
-        "cups" | "cupsd" => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "2.2.4".to_string(),
-            compliance_control_title: "Ensure CUPS is not installed".to_string(),
-            compliance_section: Some("Services".to_string()),
-        }],
+        // SSG: package_xinetd_removed
+        "xinetd" => vec![
+            service_mapping(
+                ComplianceFramework::CIS,
+                "2.1.1",
+                "Ensure xinetd is not installed",
+            ),
+            service_mapping(ComplianceFramework::NIST, "CM-7", "Least Functionality"),
+        ],
+        // SSG: service_avahi-daemon_disabled
+        "avahi-daemon" | "avahi" => vec![
+            service_mapping(
+                ComplianceFramework::CIS,
+                "2.2.3",
+                "Ensure Avahi Server is not installed",
+            ),
+            service_mapping(ComplianceFramework::NIST, "CM-7", "Least Functionality"),
+        ],
+        // SSG: service_cups_disabled
+        "cups" | "cupsd" => vec![
+            service_mapping(
+                ComplianceFramework::CIS,
+                "2.2.4",
+                "Ensure CUPS is not installed",
+            ),
+            service_mapping(ComplianceFramework::NIST, "CM-7", "Least Functionality"),
+        ],
+        // SSG: service_bluetooth_disabled (NIST AC-18 wireless access + CM-7).
+        "bluetooth" => vec![
+            service_mapping(ComplianceFramework::NIST, "AC-18", "Wireless Access"),
+            service_mapping(ComplianceFramework::NIST, "CM-7", "Least Functionality"),
+        ],
         _ => vec![],
     }
 }
@@ -495,5 +531,34 @@ impl HardeningPlugin for ServicesHardeningPlugin {
             validation_report_issues: issues,
             validation_report_plugin_id: self.metadata().plugin_id,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Confirms a representative service finding (xinetd) now carries a NIST
+    /// mapping (`CM-7`, from the SSG `package_xinetd_removed` rule) alongside
+    /// the existing CIS mapping.
+    ///
+    /// STIG and PCI-DSS are intentionally not asserted: the SSG service-disable
+    /// and package-removal rules for these daemons carry no STIG or PCI-DSS
+    /// reference, so those frameworks are omitted rather than invented.
+    #[test]
+    fn service_xinetd_maps_cis_and_nist() {
+        let frameworks: Vec<ComplianceFramework> = get_service_compliance_mappings("xinetd")
+            .iter()
+            .map(|m| m.compliance_framework)
+            .collect();
+
+        assert!(
+            frameworks.contains(&ComplianceFramework::CIS),
+            "xinetd must preserve its CIS mapping"
+        );
+        assert!(
+            frameworks.contains(&ComplianceFramework::NIST),
+            "xinetd must add a NIST mapping"
+        );
     }
 }

@@ -382,26 +382,104 @@ async fn reload_audit_rules(ctx: &Context) -> Result<()> {
 }
 
 /// Returns compliance mappings for audit findings.
+///
+/// Multi-framework mappings are sourced from ComplianceAsCode/SSG rule
+/// `references:` blocks (see `// SSG:` comments). NIST IDs are 800-53 Rev 5
+/// (AU-* audit family); PCI-DSS is v4.0 (Requirement 10 — logging); STIG IDs
+/// are the SSG-declared RHEL-family `stigid@ol8` values (the Oracle Linux 8
+/// STIG mirrors the RHEL 8 STIG content). STIG is omitted for the generic
+/// "rules"/"config" bucket because the concrete `stigid@` differs per audit
+/// rule, so no single ID applies.
 fn get_audit_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
     match finding_type {
-        "not_installed" => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "4.1.1.1".to_string(),
-            compliance_control_title: "Ensure auditd is installed".to_string(),
-            compliance_section: Some("Logging and Auditing".to_string()),
-        }],
-        "not_enabled" | "not_running" => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "4.1.1.2".to_string(),
-            compliance_control_title: "Ensure auditd service is enabled and running".to_string(),
-            compliance_section: Some("Logging and Auditing".to_string()),
-        }],
-        "config" | "rules" => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "4.1.2.1".to_string(),
-            compliance_control_title: "Ensure audit log storage size is configured".to_string(),
-            compliance_section: Some("Logging and Auditing".to_string()),
-        }],
+        // SSG: package_audit_installed
+        // (nist: AU-2(a),AU-12(2),AU-14,...; pcidss: Req-10.1; stigid@ol8: OL08-00-030180)
+        "not_installed" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "4.1.1.1".to_string(),
+                compliance_control_title: "Ensure auditd is installed".to_string(),
+                compliance_section: Some("Logging and Auditing".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::NIST,
+                compliance_control_id: "AU-2(a)".to_string(),
+                compliance_control_title: "Event Logging".to_string(),
+                compliance_section: Some("Audit and Accountability".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::STIG,
+                compliance_control_id: "OL08-00-030180".to_string(),
+                compliance_control_title: "The audit package must be installed".to_string(),
+                compliance_section: Some("Audit and Accountability".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::PCIDSS,
+                compliance_control_id: "10.1".to_string(),
+                compliance_control_title: "Implement audit trails to link access to system \
+                                           components"
+                    .to_string(),
+                compliance_section: Some("Track and Monitor Access".to_string()),
+            },
+        ],
+        // SSG: service_auditd_enabled
+        // (nist: AU-3,AU-12(c),...; pcidss: Req-10.1; stigid@ol8: OL08-00-030181)
+        "not_enabled" | "not_running" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "4.1.1.2".to_string(),
+                compliance_control_title: "Ensure auditd service is enabled and running"
+                    .to_string(),
+                compliance_section: Some("Logging and Auditing".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::NIST,
+                compliance_control_id: "AU-12(c)".to_string(),
+                compliance_control_title: "Audit Record Generation".to_string(),
+                compliance_section: Some("Audit and Accountability".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::STIG,
+                compliance_control_id: "OL08-00-030181".to_string(),
+                compliance_control_title: "The auditd service must be enabled and running"
+                    .to_string(),
+                compliance_section: Some("Audit and Accountability".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::PCIDSS,
+                compliance_control_id: "10.1".to_string(),
+                compliance_control_title: "Implement audit trails to link access to system \
+                                           components"
+                    .to_string(),
+                compliance_section: Some("Track and Monitor Access".to_string()),
+            },
+        ],
+        // SSG: audit_rules_* family (e.g. audit_rules_usergroup_modification_*,
+        // audit_rules_dac_modification_*, audit_rules_file_deletion_events_*).
+        // The whole family shares nist: AU-12(c),AU-2(d),CM-6(a) and maps to
+        // PCI-DSS Requirement 10 (audit trail). The CIS id below is retained
+        // from the prior implementation.
+        "config" | "rules" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "4.1.2.1".to_string(),
+                compliance_control_title: "Ensure audit log storage size is configured".to_string(),
+                compliance_section: Some("Logging and Auditing".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::NIST,
+                compliance_control_id: "AU-12(c)".to_string(),
+                compliance_control_title: "Audit Record Generation".to_string(),
+                compliance_section: Some("Audit and Accountability".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::PCIDSS,
+                compliance_control_id: "10.2.7".to_string(),
+                compliance_control_title: "Record audit trail entries for security-relevant events"
+                    .to_string(),
+                compliance_section: Some("Track and Monitor Access".to_string()),
+            },
+        ],
         _ => vec![],
     }
 }
@@ -834,5 +912,48 @@ impl HardeningPlugin for AuditHardeningPlugin {
             validation_report_issues: issues,
             validation_report_plugin_id: self.metadata().plugin_id,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A representative audit check (`not_installed`) must now carry
+    /// multi-framework mappings: the existing CIS control plus NIST 800-53,
+    /// STIG, and PCI-DSS sourced from SSG `package_audit_installed`.
+    #[test]
+    fn auditd_install_has_multi_framework_mappings() {
+        let mappings = get_audit_compliance_mappings("not_installed");
+
+        let has = |fw| mappings.iter().any(|m| m.compliance_framework == fw);
+        assert!(
+            has(ComplianceFramework::CIS),
+            "CIS mapping must be retained"
+        );
+        assert!(
+            has(ComplianceFramework::NIST),
+            "NIST mapping must be present"
+        );
+        assert!(
+            has(ComplianceFramework::STIG),
+            "STIG mapping must be present"
+        );
+        assert!(
+            has(ComplianceFramework::PCIDSS),
+            "PCI-DSS mapping must be present"
+        );
+
+        // Verify the exact SSG-sourced STIG and NIST identifiers.
+        let stig = mappings
+            .iter()
+            .find(|m| m.compliance_framework == ComplianceFramework::STIG)
+            .unwrap();
+        assert_eq!(stig.compliance_control_id, "OL08-00-030180");
+        let nist = mappings
+            .iter()
+            .find(|m| m.compliance_framework == ComplianceFramework::NIST)
+            .unwrap();
+        assert_eq!(nist.compliance_control_id, "AU-2(a)");
     }
 }

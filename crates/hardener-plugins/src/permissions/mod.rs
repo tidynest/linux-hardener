@@ -156,34 +156,114 @@ async fn check_path_permissions(ctx: &Context, directive: &PermissionDirective) 
 }
 
 /// Returns compliance mappings for permission findings.
+///
+/// Multi-framework mappings are sourced from ComplianceAsCode/SSG rule
+/// `references:` blocks (see `// SSG:` comments). NIST IDs are 800-53 Rev 5;
+/// PCI-DSS is v4.0. STIG is deliberately omitted for the account files below:
+/// the SSG rules `file_permissions_etc_{passwd,shadow,group,gshadow}` declare
+/// no `stigid@` — DISA covers them only via the parent SRG
+/// (`SRG-OS-000480-GPOS-00227`), so there is no concrete STIG control ID to
+/// cite without inventing one.
 fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
     match path {
-        "/etc/passwd" => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "6.1.2".to_string(),
-            compliance_control_title: "Ensure permissions on /etc/passwd are configured"
+        // SSG: file_permissions_etc_passwd (nist: AC-6(1),CM-6(a); pcidss: Req-8.7.c)
+        "/etc/passwd" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "6.1.2".to_string(),
+                compliance_control_title: "Ensure permissions on /etc/passwd are configured"
+                    .to_string(),
+                compliance_section: Some("System Maintenance".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::NIST,
+                compliance_control_id: "AC-6(1)".to_string(),
+                compliance_control_title:
+                    "Least Privilege - Authorize Access to Security Functions".to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::PCIDSS,
+                compliance_control_id: "8.7.c".to_string(),
+                compliance_control_title: "Restrict access to system component databases and files"
+                    .to_string(),
+                compliance_section: Some("Identify and Authenticate Access".to_string()),
+            },
+        ],
+        // SSG: file_permissions_etc_shadow (nist: AC-6(1),CM-6(a); pcidss: Req-8.7.c)
+        "/etc/shadow" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "6.1.3".to_string(),
+                compliance_control_title: "Ensure permissions on /etc/shadow are configured"
+                    .to_string(),
+                compliance_section: Some("System Maintenance".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::NIST,
+                compliance_control_id: "AC-6(1)".to_string(),
+                compliance_control_title:
+                    "Least Privilege - Authorize Access to Security Functions".to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::PCIDSS,
+                compliance_control_id: "8.7.c".to_string(),
+                compliance_control_title: "Restrict access to system component databases and files"
+                    .to_string(),
+                compliance_section: Some("Identify and Authenticate Access".to_string()),
+            },
+        ],
+        // SSG: file_permissions_etc_group (nist: AC-6(1),CM-6(a); pcidss: Req-8.7.c)
+        "/etc/group" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "6.1.4".to_string(),
+                compliance_control_title: "Ensure permissions on /etc/group are configured"
+                    .to_string(),
+                compliance_section: Some("System Maintenance".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::NIST,
+                compliance_control_id: "AC-6(1)".to_string(),
+                compliance_control_title:
+                    "Least Privilege - Authorize Access to Security Functions".to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::PCIDSS,
+                compliance_control_id: "8.7.c".to_string(),
+                compliance_control_title: "Restrict access to system component databases and files"
+                    .to_string(),
+                compliance_section: Some("Identify and Authenticate Access".to_string()),
+            },
+        ],
+        // SSG: file_permissions_etc_gshadow (nist: AC-6(1),CM-6(a); no pcidss declared)
+        "/etc/gshadow" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "6.1.5".to_string(),
+                compliance_control_title: "Ensure permissions on /etc/gshadow are configured"
+                    .to_string(),
+                compliance_section: Some("System Maintenance".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::NIST,
+                compliance_control_id: "AC-6(1)".to_string(),
+                compliance_control_title:
+                    "Least Privilege - Authorize Access to Security Functions".to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+        ],
+        // SSG: directory_permissions_sshd_config_d (nist: AC-17(a),AC-6(1),CM-6(a);
+        // no stigid/pcidss declared). This is a live-scanned path; the prior
+        // implementation returned no mappings for it.
+        "/etc/ssh" => vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::NIST,
+            compliance_control_id: "AC-17(a)".to_string(),
+            compliance_control_title: "Remote Access - Usage Restrictions and Configuration"
                 .to_string(),
-            compliance_section: Some("System Maintenance".to_string()),
-        }],
-        "/etc/shadow" => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "6.1.3".to_string(),
-            compliance_control_title: "Ensure permissions on /etc/shadow are configured"
-                .to_string(),
-            compliance_section: Some("System Maintenance".to_string()),
-        }],
-        "/etc/group" => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "6.1.4".to_string(),
-            compliance_control_title: "Ensure permissions on /etc/group are configured".to_string(),
-            compliance_section: Some("System Maintenance".to_string()),
-        }],
-        "/etc/gshadow" => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "6.1.5".to_string(),
-            compliance_control_title: "Ensure permissions on /etc/gshadow are configured"
-                .to_string(),
-            compliance_section: Some("System Maintenance".to_string()),
+            compliance_section: Some("Access Control".to_string()),
         }],
         _ => vec![],
     }
@@ -529,5 +609,40 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
             validation_report_issues: issues,
             validation_report_estimated_changes: estimated_changes,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A representative permissions check (`/etc/shadow`) must now carry
+    /// multi-framework mappings: the existing CIS control plus NIST 800-53
+    /// and PCI-DSS sourced from SSG `file_permissions_etc_shadow`. STIG is
+    /// intentionally absent because that SSG rule declares no `stigid@`.
+    #[test]
+    fn shadow_has_multi_framework_mappings() {
+        let mappings = get_permissions_compliance_mappings("/etc/shadow");
+
+        let has = |fw| mappings.iter().any(|m| m.compliance_framework == fw);
+        assert!(
+            has(ComplianceFramework::CIS),
+            "CIS mapping must be retained"
+        );
+        assert!(
+            has(ComplianceFramework::NIST),
+            "NIST mapping must be present"
+        );
+        assert!(
+            has(ComplianceFramework::PCIDSS),
+            "PCI-DSS mapping must be present"
+        );
+
+        // Verify the exact SSG-sourced identifiers.
+        let nist = mappings
+            .iter()
+            .find(|m| m.compliance_framework == ComplianceFramework::NIST)
+            .unwrap();
+        assert_eq!(nist.compliance_control_id, "AC-6(1)");
     }
 }

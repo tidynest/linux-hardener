@@ -83,13 +83,51 @@ pub trait FirewallBackend: Send + Sync {
 }
 
 /// Returns compliance mappings for firewall findings.
+///
+/// CIS is the project's existing benchmark mapping. STIG/NIST/PCI-DSS entries
+/// are sourced from the matching ComplianceAsCode/SSG rule's `references:`
+/// block; NIST titles/sections and the PCI-DSS v4.0 id/title are reconciled
+/// with the project's framework definitions in
+/// `hardener-compliance/src/frameworks/`.
 fn get_firewall_compliance_mappings() -> Vec<ComplianceMapping> {
-    vec![ComplianceMapping {
-        compliance_framework: ComplianceFramework::CIS,
-        compliance_control_id: "3.4.1.2".to_string(),
-        compliance_control_title: "Ensure firewall service is enabled and running".to_string(),
-        compliance_section: Some("Network Configuration".to_string()),
-    }]
+    vec![
+        ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "3.4.1.2".to_string(),
+            compliance_control_title: "Ensure firewall service is enabled and running".to_string(),
+            compliance_section: Some("Network Configuration".to_string()),
+        },
+        // SSG: service_firewalld_enabled
+        // refs: nist AC-4/CM-7(b)/CA-3(5)/SC-7(21)/CM-6(a), stigid@ol8
+        // OL08-00-040101. SSG carries no pcidss ref; PCI-DSS v4.0 1.4.1 is the
+        // network-security-controls requirement a host firewall satisfies (see
+        // hardener-compliance/src/frameworks/pci.rs).
+        ComplianceMapping {
+            compliance_framework: ComplianceFramework::STIG,
+            compliance_control_id: "RHEL-08-040101".to_string(),
+            compliance_control_title: "A firewall must be enabled and active".to_string(),
+            compliance_section: Some("DISA STIG".to_string()),
+        },
+        ComplianceMapping {
+            compliance_framework: ComplianceFramework::NIST,
+            compliance_control_id: "SC-7".to_string(),
+            compliance_control_title: "Boundary Protection".to_string(),
+            compliance_section: Some("System and Communications Protection".to_string()),
+        },
+        ComplianceMapping {
+            compliance_framework: ComplianceFramework::NIST,
+            compliance_control_id: "CM-7".to_string(),
+            compliance_control_title: "Least Functionality".to_string(),
+            compliance_section: Some("Configuration Management".to_string()),
+        },
+        ComplianceMapping {
+            compliance_framework: ComplianceFramework::PCIDSS,
+            compliance_control_id: "1.4.1".to_string(),
+            compliance_control_title: "NSCs are implemented between trusted and untrusted networks"
+                .to_string(),
+            compliance_section: Some("Network Security Controls".to_string()),
+        },
+    ]
 }
 
 /// Returns sensible default firewall rules for hardening.
@@ -476,5 +514,33 @@ impl HardeningPlugin for FirewallHardeningPlugin {
             validation_report_issues: issues,
             validation_report_estimated_changes: estimated_changes,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Confirms the firewall finding now carries multi-framework mappings:
+    /// CIS (existing) plus STIG and NIST sourced from SSG.
+    #[test]
+    fn firewall_maps_cis_stig_and_nist() {
+        let mappings = get_firewall_compliance_mappings();
+
+        let frameworks: Vec<ComplianceFramework> =
+            mappings.iter().map(|m| m.compliance_framework).collect();
+
+        assert!(
+            frameworks.contains(&ComplianceFramework::CIS),
+            "CIS mapping must be preserved"
+        );
+        assert!(
+            frameworks.contains(&ComplianceFramework::STIG),
+            "STIG mapping must be added"
+        );
+        assert!(
+            frameworks.contains(&ComplianceFramework::NIST),
+            "NIST mapping must be added"
+        );
     }
 }

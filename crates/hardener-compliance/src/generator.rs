@@ -43,7 +43,7 @@ impl ReportGenerator {
         let all_controls = frameworks::get_controls(framework);
 
         // Map each control to its result based on findings
-        let controls: Vec<ControlResult> = all_controls
+        let mut controls: Vec<ControlResult> = all_controls
             .iter()
             .map(|control| {
                 // Find all findings that map to this control
@@ -83,6 +83,41 @@ impl ReportGenerator {
                 }
             })
             .collect();
+
+        // Surface failures the curated catalog does not list. Plugin findings
+        // carry control IDs sourced from upstream guidance (e.g. ComplianceAsCode),
+        // whose identifier scheme need not match this framework's catalog. A
+        // finding-referenced control that is absent from the catalog is still a
+        // real failure and must appear in the report rather than be dropped.
+        let mut seen: std::collections::HashSet<String> =
+            controls.iter().map(|c| c.control_id.clone()).collect();
+        for mapping in findings.iter().flat_map(|f| &f.finding_compliance) {
+            if mapping.compliance_framework != *framework
+                || !seen.insert(mapping.compliance_control_id.clone())
+            {
+                continue;
+            }
+            let related: Vec<Finding> = findings
+                .iter()
+                .filter(|f| {
+                    f.finding_compliance.iter().any(|c| {
+                        c.compliance_framework == *framework
+                            && c.compliance_control_id == mapping.compliance_control_id
+                    })
+                })
+                .cloned()
+                .collect();
+            controls.push(ControlResult {
+                control_id: mapping.compliance_control_id.clone(),
+                control_title: mapping.compliance_control_title.clone(),
+                control_section: mapping
+                    .compliance_section
+                    .clone()
+                    .unwrap_or_else(|| "General".to_string()),
+                control_status: ControlStatus::Fail,
+                control_findings: related,
+            });
+        }
 
         // Calculate summary statistics
         let summary = ComplianceSummary::from_controls(&controls);

@@ -188,28 +188,75 @@ impl MacHardeningPlugin {
 }
 
 /// Returns compliance mappings for MAC findings.
+///
+/// Multi-framework mappings are sourced from ComplianceAsCode/SSG rule
+/// `references:` blocks (see `// SSG:` comments). NIST IDs are 800-53 Rev 5;
+/// STIG IDs are the SSG-declared RHEL-family `stigid@ol8` values (the Oracle
+/// Linux 8 STIG mirrors the RHEL 8 STIG content). NIST `AC-3` (access
+/// enforcement) is the controlling MAC family in `selinux_state` and applies
+/// equally to the AppArmor and "no MAC" findings, which are the same control
+/// expressed for a different implementation. STIG and PCI-DSS are omitted for
+/// the AppArmor and "no-mac-system" findings: the relevant SSG rules
+/// (`all_apparmor_profiles_enforced`, `package_apparmor_installed`) declare no
+/// `stigid@`/`pcidss`, and `selinux_state` itself declares no `pcidss`.
 fn get_mac_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
     match finding_type {
-        "no-mac-system" => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "1.6.1.1".to_string(),
-            compliance_control_title: "Ensure SELinux or AppArmor is installed".to_string(),
-            compliance_section: Some("Mandatory Access Control".to_string()),
-        }],
-        "selinux-not-enforcing" => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "1.6.1.4".to_string(),
-            compliance_control_title: "Ensure the SELinux mode is enforcing or AppArmor is enabled"
-                .to_string(),
-            compliance_section: Some("Mandatory Access Control".to_string()),
-        }],
-        "apparmor-complain-mode" | "apparmor-no-profiles" => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "1.6.1.4".to_string(),
-            compliance_control_title: "Ensure the SELinux mode is enforcing or AppArmor is enabled"
-                .to_string(),
-            compliance_section: Some("Mandatory Access Control".to_string()),
-        }],
+        // SSG: package_apparmor_installed / package_selinux (CIS only); MAC absence
+        // maps to NIST AC-3 access enforcement (per selinux_state).
+        "no-mac-system" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "1.6.1.1".to_string(),
+                compliance_control_title: "Ensure SELinux or AppArmor is installed".to_string(),
+                compliance_section: Some("Mandatory Access Control".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::NIST,
+                compliance_control_id: "AC-3".to_string(),
+                compliance_control_title: "Access Enforcement".to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+        ],
+        // SSG: selinux_state (nist: AC-3,AC-3(3)(a),AU-9,SC-7(21); stigid@ol8: OL08-00-010170)
+        "selinux-not-enforcing" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "1.6.1.4".to_string(),
+                compliance_control_title:
+                    "Ensure the SELinux mode is enforcing or AppArmor is enabled".to_string(),
+                compliance_section: Some("Mandatory Access Control".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::NIST,
+                compliance_control_id: "AC-3".to_string(),
+                compliance_control_title: "Access Enforcement".to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::STIG,
+                compliance_control_id: "OL08-00-010170".to_string(),
+                compliance_control_title: "SELinux must be in enforcing mode".to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+        ],
+        // SSG: all_apparmor_profiles_enforced (CIS only). NIST AC-3 access
+        // enforcement applies — this is the AppArmor expression of the same
+        // MAC-not-enforced control as selinux-not-enforcing.
+        "apparmor-complain-mode" | "apparmor-no-profiles" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "1.6.1.4".to_string(),
+                compliance_control_title:
+                    "Ensure the SELinux mode is enforcing or AppArmor is enabled".to_string(),
+                compliance_section: Some("Mandatory Access Control".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::NIST,
+                compliance_control_id: "AC-3".to_string(),
+                compliance_control_title: "Access Enforcement".to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+        ],
         _ => vec![],
     }
 }
@@ -577,5 +624,44 @@ impl HardeningPlugin for MacHardeningPlugin {
             validation_report_issues: issues,
             validation_report_estimated_changes: estimated_changes,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A representative MAC check (`selinux-not-enforcing`) must now carry
+    /// multi-framework mappings: the existing CIS control plus NIST 800-53 and
+    /// STIG sourced from SSG `selinux_state`.
+    #[test]
+    fn selinux_enforcing_has_multi_framework_mappings() {
+        let mappings = get_mac_compliance_mappings("selinux-not-enforcing");
+
+        let has = |fw| mappings.iter().any(|m| m.compliance_framework == fw);
+        assert!(
+            has(ComplianceFramework::CIS),
+            "CIS mapping must be retained"
+        );
+        assert!(
+            has(ComplianceFramework::NIST),
+            "NIST mapping must be present"
+        );
+        assert!(
+            has(ComplianceFramework::STIG),
+            "STIG mapping must be present"
+        );
+
+        // Verify the exact SSG-sourced STIG and NIST identifiers.
+        let stig = mappings
+            .iter()
+            .find(|m| m.compliance_framework == ComplianceFramework::STIG)
+            .unwrap();
+        assert_eq!(stig.compliance_control_id, "OL08-00-010170");
+        let nist = mappings
+            .iter()
+            .find(|m| m.compliance_framework == ComplianceFramework::NIST)
+            .unwrap();
+        assert_eq!(nist.compliance_control_id, "AC-3");
     }
 }
