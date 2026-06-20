@@ -14,7 +14,6 @@ use std::time::Duration;
 
 /// Per-severity tally of one host's findings.
 // Consumed by the batch-scan command wired up in a later task.
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct SeverityCounts {
     pub critical: usize,
@@ -23,7 +22,6 @@ pub struct SeverityCounts {
     pub low: usize,
 }
 
-#[allow(dead_code)]
 impl SeverityCounts {
     pub fn total(&self) -> usize {
         self.critical + self.high + self.medium + self.low
@@ -45,7 +43,6 @@ impl SeverityCounts {
 }
 
 /// Outcome of scanning one host.
-#[allow(dead_code)]
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "status", rename_all = "lowercase")]
 pub enum HostStatus {
@@ -61,7 +58,6 @@ pub enum HostStatus {
 
 /// One host's batch result. `name` is the inventory name (or target for ad-hoc
 /// hosts); `target` is `user@host:port` for display.
-#[allow(dead_code)]
 #[derive(Clone, Debug, Serialize)]
 pub struct HostOutcome {
     pub name: String,
@@ -71,7 +67,6 @@ pub struct HostOutcome {
 }
 
 /// Tiered exit code: 0 = all clean, 1 = findings present, 2 = any host errored.
-#[allow(dead_code)]
 pub fn exit_code(outcomes: &[HostOutcome]) -> i32 {
     let mut code = 0;
     for o in outcomes {
@@ -86,7 +81,6 @@ pub fn exit_code(outcomes: &[HostOutcome]) -> i32 {
 
 /// Parses an ad-hoc `--ssh user@host` target into a profile. Port and key come
 /// from the global SSH flags (defaults applied by the caller).
-#[allow(dead_code)]
 pub fn parse_inline(
     target: &str,
     port: u16,
@@ -110,7 +104,6 @@ pub fn parse_inline(
 /// Resolves the host set to scan from inventory selection plus inline hosts.
 /// De-duplicates by `name`, inventory taking precedence. Unknown `--host` names
 /// are an error so a typo never silently scans nothing.
-#[allow(dead_code)]
 pub fn resolve_hosts(
     inventory: &HostsConfig,
     all: bool,
@@ -146,7 +139,6 @@ pub fn resolve_hosts(
 }
 
 /// Aggregate rollup across all hosts, for the summary line and JSON.
-#[allow(dead_code)]
 #[derive(Debug, Default, Serialize, PartialEq, Eq)]
 pub struct BatchSummary {
     pub hosts_total: usize,
@@ -159,7 +151,6 @@ pub struct BatchSummary {
     pub total: usize,
 }
 
-#[allow(dead_code)]
 impl BatchSummary {
     pub fn from_outcomes(outcomes: &[HostOutcome]) -> Self {
         let mut s = BatchSummary {
@@ -184,7 +175,6 @@ impl BatchSummary {
 }
 
 /// Renders the human-readable table + rollup line.
-#[allow(dead_code)]
 pub fn render_text(outcomes: &[HostOutcome]) -> String {
     let mut out = String::new();
     out.push_str("HOST            TARGET                     STATUS   CRIT HIGH MED LOW TOTAL\n");
@@ -224,7 +214,6 @@ pub fn render_text(outcomes: &[HostOutcome]) -> String {
 }
 
 /// Renders the machine-readable JSON document.
-#[allow(dead_code)]
 pub fn render_json(outcomes: &[HostOutcome]) -> String {
     let doc = serde_json::json!({
         "hosts": outcomes,
@@ -235,7 +224,6 @@ pub fn render_json(outcomes: &[HostOutcome]) -> String {
 
 /// Builds the core SSH config for one host profile, applying global key/timeout
 /// fallbacks for hosts (chiefly ad-hoc) that do not specify their own.
-#[allow(dead_code)]
 fn host_ssh_config(p: &RemoteHostProfile, timeout: u64) -> hardener_core::SshConfig {
     SshConnectionConfig {
         user: p.user.clone(),
@@ -249,7 +237,6 @@ fn host_ssh_config(p: &RemoteHostProfile, timeout: u64) -> hardener_core::SshCon
 }
 
 /// Builds the `user@host:port` display string for a profile.
-#[allow(dead_code)]
 fn display_target(p: &RemoteHostProfile) -> String {
     match &p.user {
         Some(user) => format!("{}@{}:{}", user, p.hostname, p.port),
@@ -284,7 +271,6 @@ async fn scan_with_executor(
 }
 
 /// Connects to one host then scans it, capturing any connection error.
-#[allow(dead_code)]
 async fn scan_one(profile: RemoteHostProfile, timeout: u64) -> HostOutcome {
     let target = display_target(&profile);
     match SshExecutor::connect(host_ssh_config(&profile, timeout)).await {
@@ -301,7 +287,6 @@ async fn scan_one(profile: RemoteHostProfile, timeout: u64) -> HostOutcome {
 
 /// Scans all profiles with at most `concurrency` running at once, preserving the
 /// input order in the returned vec.
-#[allow(dead_code)]
 async fn scan_all(
     profiles: Vec<RemoteHostProfile>,
     concurrency: usize,
@@ -335,6 +320,49 @@ async fn scan_all(
         }
     }
     results
+}
+
+/// CLI entry point for `hardener batch scan`.
+#[allow(clippy::too_many_arguments)]
+pub async fn run(
+    all: bool,
+    host: Vec<String>,
+    ssh: Vec<String>,
+    concurrency: usize,
+    format: CliOutputFormat,
+    output: Option<String>,
+    quiet: bool,
+    global_key: Option<String>,
+    global_timeout: u64,
+    global_no_verify: bool,
+) -> anyhow::Result<()> {
+    let inventory = hardener_core::inventory::load()
+        .map_err(|e| anyhow!("failed to load host inventory: {e}"))?;
+
+    let inline: Vec<RemoteHostProfile> = ssh
+        .iter()
+        .map(|t| parse_inline(t, 22, global_key.clone(), !global_no_verify))
+        .collect();
+    let profiles = resolve_hosts(&inventory, all, &host, inline)?;
+
+    if !quiet {
+        eprintln!("Scanning {} host(s)...", profiles.len());
+    }
+
+    let outcomes = scan_all(profiles, concurrency, global_timeout).await;
+
+    let rendered = match format {
+        CliOutputFormat::Json => render_json(&outcomes),
+        _ => render_text(&outcomes),
+    };
+    match output {
+        Some(path) => {
+            std::fs::write(&path, &rendered).map_err(|e| anyhow!("failed to write {path}: {e}"))?
+        }
+        None => println!("{rendered}"),
+    }
+
+    std::process::exit(exit_code(&outcomes));
 }
 
 #[cfg(test)]

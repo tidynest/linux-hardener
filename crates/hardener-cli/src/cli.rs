@@ -123,6 +123,12 @@ pub enum Command {
         interactive: bool,
     },
 
+    /// Scan multiple remote hosts in one run.
+    Batch {
+        #[command(subcommand)]
+        action: BatchAction,
+    },
+
     /// Manage the scheduled scanning daemon.
     Daemon {
         #[command(subcommand)]
@@ -139,6 +145,28 @@ pub enum Command {
     History {
         #[command(subcommand)]
         action: HistoryAction,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum BatchAction {
+    /// Scan selected hosts concurrently and print an aggregate report.
+    Scan {
+        /// Scan every host in the inventory.
+        #[arg(long, conflicts_with = "host")]
+        all: bool,
+
+        /// Inventory host name to scan (comma-separated or repeated).
+        #[arg(long, value_delimiter = ',')]
+        host: Vec<String>,
+
+        /// Ad-hoc host not in the inventory (user@host, repeatable).
+        #[arg(long)]
+        ssh: Vec<String>,
+
+        /// Maximum hosts scanned in parallel.
+        #[arg(long, default_value_t = 8)]
+        concurrency: usize,
     },
 }
 

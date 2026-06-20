@@ -7,7 +7,9 @@ mod ssh_config;
 
 use anyhow::Result;
 use clap::Parser;
-use cli::{CheckpointAction, Cli, Command, DaemonAction, HistoryAction, SystemdAction};
+use cli::{
+    BatchAction, CheckpointAction, Cli, Command, DaemonAction, HistoryAction, SystemdAction,
+};
 use commands::scan::ScanOptions;
 use hardener_core::{LocalExecutor, SshExecutor, executor::SystemExecutor};
 use ssh_config::SshConnectionConfig;
@@ -18,7 +20,9 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // Create executor based on SSH flags
-    let executor: Arc<dyn SystemExecutor> = if let Some(ref ssh_target) = cli.ssh {
+    let executor: Arc<dyn SystemExecutor> = if matches!(cli.command, Command::Batch { .. }) {
+        Arc::new(LocalExecutor::new()) // unused by batch; avoids a global SSH connect
+    } else if let Some(ref ssh_target) = cli.ssh {
         let ssh_config = SshConnectionConfig::from_cli(
             ssh_target,
             cli.port,
@@ -117,6 +121,30 @@ async fn main() -> Result<()> {
                 .await
             }
         }
+        Command::Batch { action } => match action {
+            BatchAction::Scan {
+                all,
+                host,
+                ssh,
+                concurrency,
+            } => {
+                commands::batch::run(
+                    all,
+                    host,
+                    ssh,
+                    concurrency,
+                    cli.format,
+                    None,
+                    cli.quiet,
+                    cli.ssh_key
+                        .as_ref()
+                        .map(|p| p.to_string_lossy().to_string()),
+                    cli.ssh_timeout,
+                    cli.ssh_no_verify,
+                )
+                .await
+            }
+        },
         Command::Daemon { action } => match action {
             DaemonAction::Start => commands::daemon::start(cli.format, cli.quiet).await,
             DaemonAction::RunOnce => commands::daemon::run_once(cli.format, cli.quiet).await,
