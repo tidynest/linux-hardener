@@ -36,6 +36,46 @@ impl SeverityCounts {
     }
 }
 
+/// Outcome of scanning one host.
+#[allow(dead_code)]
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "status", rename_all = "lowercase")]
+pub enum HostStatus {
+    Scanned {
+        counts: SeverityCounts,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        findings: Vec<Finding>,
+    },
+    Failed {
+        error: String,
+    },
+}
+
+/// One host's batch result. `name` is the inventory name (or target for ad-hoc
+/// hosts); `target` is `user@host:port` for display.
+#[allow(dead_code)]
+#[derive(Clone, Debug, Serialize)]
+pub struct HostOutcome {
+    pub name: String,
+    pub target: String,
+    #[serde(flatten)]
+    pub status: HostStatus,
+}
+
+/// Tiered exit code: 0 = all clean, 1 = findings present, 2 = any host errored.
+#[allow(dead_code)]
+pub fn exit_code(outcomes: &[HostOutcome]) -> i32 {
+    let mut code = 0;
+    for o in outcomes {
+        match &o.status {
+            HostStatus::Failed { .. } => return 2,
+            HostStatus::Scanned { counts, .. } if counts.total() > 0 => code = 1,
+            HostStatus::Scanned { .. } => {}
+        }
+    }
+    code
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -56,6 +96,38 @@ mod tests {
             finding_compliance: vec![],
             finding_policy_exception: None,
         }
+    }
+
+    fn scanned(total_high: usize) -> HostOutcome {
+        HostOutcome {
+            name: "h".into(),
+            target: "u@h:22".into(),
+            status: HostStatus::Scanned {
+                counts: SeverityCounts {
+                    high: total_high,
+                    ..Default::default()
+                },
+                findings: vec![],
+            },
+        }
+    }
+
+    fn failed() -> HostOutcome {
+        HostOutcome {
+            name: "h".into(),
+            target: "u@h:22".into(),
+            status: HostStatus::Failed {
+                error: "boom".into(),
+            },
+        }
+    }
+
+    #[test]
+    fn exit_code_tiers() {
+        assert_eq!(exit_code(&[scanned(0)]), 0);
+        assert_eq!(exit_code(&[scanned(0), scanned(3)]), 1);
+        assert_eq!(exit_code(&[scanned(3), failed()]), 2);
+        assert_eq!(exit_code(&[]), 0);
     }
 
     #[test]
