@@ -114,6 +114,15 @@ fn pam_iso_secure_auth() -> ComplianceMapping {
 /// authentication: HIPAA §164.308(a)(5)(ii)(D) (Password Management), GDPR
 /// "TM-AUTH" (Article 32 technical measure), and ISO 27001 Annex A 8.5 (Secure
 /// authentication, "Technological" theme).
+/// Every compliance mapping this plugin can emit, across all PAM/login.defs
+/// directives it assesses. Aggregated into the engine's coverage set.
+pub fn coverage() -> Vec<ComplianceMapping> {
+    PAM_DIRECTIVES
+        .iter()
+        .flat_map(|d| get_pam_compliance_mappings(d.pam_directive_name))
+        .collect()
+}
+
 fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
     match check_name {
         // SSG: accounts_password_pam_minlen (stigid RHEL-08-020230)

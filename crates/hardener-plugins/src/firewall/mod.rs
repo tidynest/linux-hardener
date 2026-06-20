@@ -124,6 +124,12 @@ fn iso(id: &str, title: &str, theme: &str) -> ComplianceMapping {
 /// with the project's framework definitions in
 /// `hardener-compliance/src/frameworks/`. HIPAA/GDPR/ISO 27001 entries map the
 /// host firewall to data-in-transit and network-security controls.
+/// Every compliance mapping this plugin can emit. The firewall plugin raises a
+/// single fixed mapping set, so coverage is exactly that set.
+pub fn coverage() -> Vec<ComplianceMapping> {
+    get_firewall_compliance_mappings()
+}
+
 fn get_firewall_compliance_mappings() -> Vec<ComplianceMapping> {
     vec![
         ComplianceMapping {

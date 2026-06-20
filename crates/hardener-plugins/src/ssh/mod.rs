@@ -342,6 +342,21 @@ impl SshHardeningPlugin {
 }
 
 /// Returns compliance mappings for a given SSH directive.
+/// Every compliance mapping this plugin can emit, across all SSH config and
+/// crypto directives it assesses. Aggregated into the engine's coverage set.
+pub fn coverage() -> Vec<ComplianceMapping> {
+    SSH_DIRECTIVES
+        .iter()
+        .map(|d| d.ssh_directive_name)
+        .chain(
+            SSH_CRYPTO_DIRECTIVES
+                .iter()
+                .map(|d| d.crypto_directive_name),
+        )
+        .flat_map(get_ssh_compliance_mappings)
+        .collect()
+}
+
 fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
     match directive_name {
         "PermitRootLogin" => vec![

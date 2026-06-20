@@ -164,6 +164,15 @@ async fn check_path_permissions(ctx: &Context, directive: &PermissionDirective) 
 /// no `stigid@` — DISA covers them only via the parent SRG
 /// (`SRG-OS-000480-GPOS-00227`), so there is no concrete STIG control ID to
 /// cite without inventing one.
+/// Every compliance mapping this plugin can emit, across all critical paths it
+/// assesses. Aggregated into the engine's automated-coverage set.
+pub fn coverage() -> Vec<ComplianceMapping> {
+    CRITICAL_PERMISSIONS
+        .iter()
+        .flat_map(|p| get_permissions_compliance_mappings(p.permission_path))
+        .collect()
+}
+
 fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
     match path {
         // SSG: file_permissions_etc_passwd (nist: AC-6(1),CM-6(a); pcidss: Req-8.7.c)

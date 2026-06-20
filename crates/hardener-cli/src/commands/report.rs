@@ -71,8 +71,9 @@ pub async fn run(
         eprintln!("Generating compliance report...");
     }
 
-    // Generate reports
-    let generator = ReportGenerator::new(config);
+    // Generate reports. The coverage set is what the plugins actually assess —
+    // it tells the generator which controls may report Pass/Fail vs ManualReview.
+    let generator = ReportGenerator::new(config, hardener_plugins::compliance_coverage());
     let reports = generator.generate(&findings);
 
     // Format output

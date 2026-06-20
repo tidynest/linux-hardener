@@ -8,10 +8,20 @@
 
 ## TL;DR
 
-A long compliance bug was found, proven, and fully fixed this session, and SSH
-crypto hardening was added. **All work has been merged into `main` locally and
-is NOT pushed to any remote.** The next session's agreed top priority is
-**Multi-host SSH**, followed by everything else listed under "Remaining work".
+A long compliance bug was found, proven, and fully fixed across phases 1–3
+(honest status → multi-framework mappings → derive catalogues + Option B), and
+SSH crypto hardening was added. **All work has been merged into `main` locally
+and is NOT pushed to any remote.** With the compliance reconciliation now
+complete, the next session's agreed top priority is **Multi-host SSH**, followed
+by everything else listed under "Remaining work".
+
+> **Update 2026-06-20:** the "Derive + Option B" task below is **DONE** (see
+> CHANGELOG *Unreleased* → "Plugin-declared compliance coverage" / "Accurate
+> Pass". Coverage is now per-control via `hardener_plugins::compliance_coverage()`
+> injected into `ReportGenerator`; non-CIS catalogues are derived from coverage
+> and the hand-written `stig/nist/pci/hipaa/gdpr.rs` are deleted; CIS + ISO 27001
+> stay curated. Builds + tests + clippy + fmt clean; verified end-to-end with
+> `hardener report --framework STIG`. **Next priority is now Multi-host SSH.**
 
 The headline bug: compliance reports only ever assessed CIS. Every plugin tagged
 its findings with CIS control IDs only, and the report generator marked any

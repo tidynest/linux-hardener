@@ -1,8 +1,14 @@
 # Compliance Coverage — Phase 2 Design Proposal
 
-> **Status:** PROPOSAL for review — no code written from this yet.
-> **Date:** 2026-06-19 · **Author:** maintainer · **Decision needed:** coverage model (§2)
-> **Depends on:** phase-1 honest-status fix (done — `frameworks::AUTOMATED_FRAMEWORKS`).
+> **Status:** IMPLEMENTED (2026-06-20). Option B adopted as recommended; coverage
+> is plugin-declared via `coverage()` per plugin, aggregated by
+> `hardener_plugins::compliance_coverage()` and injected into `ReportGenerator`.
+> Non-CIS catalogues are derived from coverage (hand-written `stig/nist/pci/hipaa/
+> gdpr.rs` deleted); CIS + ISO 27001 stay curated. Checked-passing controls now
+> report `Pass` for every framework.
+> **Date:** 2026-06-19 · **Author:** maintainer
+> **Superseded API:** the phase-1 `frameworks::AUTOMATED_FRAMEWORKS`/`is_automated`
+> flag is removed in favour of per-control coverage.
 
 ## 1. Problem
 

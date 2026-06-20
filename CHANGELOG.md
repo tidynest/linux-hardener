@@ -17,8 +17,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (sourced from ComplianceAsCode/SSG and the project catalogues) alongside CIS,
   so every framework genuinely fails on insecure systems instead of only
   reporting `ManualReview`. A wrong mapping can only cause a false *failure*,
-  never a false pass. (Showing `Pass` for checked-passing controls of non-CIS
-  frameworks remains optional follow-up work.)
+  never a false pass.
+- **Plugin-declared compliance coverage (single source of truth).** Each plugin
+  now exposes `coverage()` — the complete set of `(framework, control)` it can
+  assess — aggregated by `hardener_plugins::compliance_coverage()` and injected
+  into the report generator. This replaces the framework-level
+  `AUTOMATED_FRAMEWORKS` flag with per-control coverage, so partial framework
+  support is reported honestly.
+- **Accurate `Pass` for hardened systems.** A control the engine assesses and
+  finds compliant now reports `Pass` for *every* framework, not just CIS — so a
+  genuinely hardened host scores accurately instead of being buried under
+  `ManualReview`.
 - **SSH crypto-algorithm hardening.** The SSH plugin now hardens `KexAlgorithms`,
   `Ciphers` and `MACs`, including post-quantum key exchange
   (`mlkem768x25519-sha256`). It auto-detects what the host's OpenSSH supports
@@ -32,16 +41,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   control IDs only. The report generator marked any control with no mapped
   finding as `Pass`, so STIG, NIST, PCI-DSS, HIPAA and GDPR reports showed 100%
   compliance on every system — even one with critical findings. Controls of
-  frameworks the engine does not yet assess automatically are now reported as
-  `ManualReview` rather than a misleading `Pass`. `frameworks::AUTOMATED_FRAMEWORKS`
-  is the single source of truth for automated coverage (CIS today). The generator
-  also surfaces finding-referenced controls that are absent from a framework's
-  curated catalogue, so mappings using upstream (SSG) identifier schemes still
-  produce real failures.
+  frameworks the engine does not assess are now reported as `ManualReview` rather
+  than a misleading `Pass`. Assessment is driven by the plugin-declared coverage
+  set (see Added), not a misleading automatic pass. The generator also surfaces
+  finding-referenced controls absent from a framework's catalogue, so a wrong
+  mapping can only ever over-report a failure.
+
+### Changed
+- **Non-CIS catalogues are derived from plugin coverage.** The hand-written
+  STIG / NIST 800-53 / PCI-DSS / HIPAA / GDPR catalogues — whose identifier
+  schemes diverged from the upstream (SSG) IDs the plugins emit, producing
+  duplicate and `ManualReview`-only noise — are removed. Each of those
+  frameworks' reports now lists exactly the controls the engine assesses, on a
+  single identifier scheme. CIS and ISO/IEC 27001:2022 keep their curated
+  catalogues (the full standard, with unassessed controls flagged
+  `ManualReview`).
 
 ### Removed
 - **Obsolete SSH `Protocol 2` directive.** Modern OpenSSH ignores the `Protocol`
   keyword (SSHv1 was removed years ago), so enforcing it was vestigial.
+- **Hand-written non-CIS framework catalogues** (`frameworks/{stig,nist,pci,
+  hipaa,gdpr}.rs`) and the `AUTOMATED_FRAMEWORKS` / `is_automated` API, replaced
+  by coverage-derived catalogues and per-control coverage (see above).
 
 ## [1.0.5] - 2026-05-24
 

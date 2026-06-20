@@ -390,6 +390,25 @@ async fn reload_audit_rules(ctx: &Context) -> Result<()> {
 /// STIG mirrors the RHEL 8 STIG content). STIG is omitted for the generic
 /// "rules"/"config" bucket because the concrete `stigid@` differs per audit
 /// rule, so no single ID applies.
+/// Finding types the audit plugin can raise — the keys understood by
+/// [`get_audit_compliance_mappings`]. Keep in sync with that match.
+const AUDIT_FINDING_TYPES: &[&str] = &[
+    "not_installed",
+    "not_enabled",
+    "not_running",
+    "config",
+    "rules",
+];
+
+/// Every compliance mapping this plugin can emit, across all finding types it
+/// raises. Aggregated into the engine's automated-coverage set.
+pub fn coverage() -> Vec<ComplianceMapping> {
+    AUDIT_FINDING_TYPES
+        .iter()
+        .flat_map(|&t| get_audit_compliance_mappings(t))
+        .collect()
+}
+
 fn get_audit_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
     match finding_type {
         // SSG: package_audit_installed

@@ -148,6 +148,32 @@ pub fn create_plugin_registry() -> hardener_core::PluginRegistry {
     registry
 }
 
+/// The complete set of compliance controls the engine automatically assesses.
+///
+/// This is the union of every `(framework, control)` mapping any plugin can
+/// emit, deduplicated by `(framework, control_id)`. It is the single source of
+/// truth for the report generator: a control present here is assessed (so it can
+/// report `Pass`/`Fail`), while one absent is reported as `ManualReview` rather
+/// than fabricating a pass. Callers (CLI, Tauri, scheduler) pass this into
+/// `ReportGenerator` so the compliance crate stays independent of the plugins.
+pub fn compliance_coverage() -> Vec<hardener_common::types::ComplianceMapping> {
+    let mut seen = std::collections::HashSet::new();
+    [
+        audit::coverage(),
+        firewall::coverage(),
+        kernel::coverage(),
+        mac::coverage(),
+        pam::coverage(),
+        permissions::coverage(),
+        services::coverage(),
+        ssh::coverage(),
+    ]
+    .into_iter()
+    .flatten()
+    .filter(|m| seen.insert((m.compliance_framework, m.compliance_control_id.clone())))
+    .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use hardener_core::plugin::HardeningPlugin;
@@ -184,5 +210,31 @@ mod tests {
         // Test dependencies
         let deps = plugin.dependencies();
         assert_eq!(deps.len(), 0);
+    }
+
+    #[test]
+    fn compliance_coverage_spans_multiple_frameworks() {
+        use std::collections::HashSet;
+        let coverage = crate::compliance_coverage();
+        assert!(!coverage.is_empty(), "plugins must declare coverage");
+
+        // Entries are deduplicated by (framework, control_id).
+        let unique: HashSet<_> = coverage
+            .iter()
+            .map(|m| (m.compliance_framework, m.compliance_control_id.as_str()))
+            .collect();
+        assert_eq!(
+            unique.len(),
+            coverage.len(),
+            "coverage must be deduplicated"
+        );
+
+        // CIS is fully wired; at least one non-CIS framework must also be covered
+        // or the multi-framework reports would all collapse to manual review.
+        let frameworks: HashSet<_> = coverage.iter().map(|m| m.compliance_framework).collect();
+        assert!(
+            frameworks.len() >= 2,
+            "coverage must span multiple frameworks"
+        );
     }
 }

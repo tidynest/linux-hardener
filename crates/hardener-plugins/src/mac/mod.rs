@@ -199,6 +199,24 @@ impl MacHardeningPlugin {
 /// the AppArmor and "no-mac-system" findings: the relevant SSG rules
 /// (`all_apparmor_profiles_enforced`, `package_apparmor_installed`) declare no
 /// `stigid@`/`pcidss`, and `selinux_state` itself declares no `pcidss`.
+/// Finding types the MAC plugin can raise — the keys understood by
+/// [`get_mac_compliance_mappings`]. Keep in sync with that match.
+const MAC_FINDING_TYPES: &[&str] = &[
+    "no-mac-system",
+    "selinux-not-enforcing",
+    "apparmor-complain-mode",
+    "apparmor-no-profiles",
+];
+
+/// Every compliance mapping this plugin can emit, across all finding types it
+/// raises. Aggregated into the engine's automated-coverage set.
+pub fn coverage() -> Vec<ComplianceMapping> {
+    MAC_FINDING_TYPES
+        .iter()
+        .flat_map(|&t| get_mac_compliance_mappings(t))
+        .collect()
+}
+
 fn get_mac_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
     match finding_type {
         // SSG: package_apparmor_installed / package_selinux (CIS only); MAC absence

@@ -1,17 +1,36 @@
 //! Regression tests for honest compliance assessment.
 //!
-//! A control that the hardening engine does not automatically assess must be
-//! reported as `ManualReview`, never as a green `Pass`. Today only CIS findings
-//! are emitted by plugins, so every other framework's controls are unassessed
-//! and must surface as "manual review" — not a false "100% compliant".
+//! Two invariants this suite locks in:
+//!
+//! 1. **No false pass.** A control the hardening engine does not assess must be
+//!    reported as `ManualReview`, never a green `Pass`. "Assessed" is declared by
+//!    the engine's coverage set (`hardener_plugins::compliance_coverage()`),
+//!    injected into the generator — not inferred from the absence of a finding.
+//! 2. **Option B.** A control that *is* assessed and has no finding reports
+//!    `Pass`, so a genuinely hardened system scores accurately rather than being
+//!    buried under manual review.
+//!
+//! Coverage is built synthetically here so the cases are deterministic and the
+//! compliance crate stays independent of the plugins crate.
 
-use hardener_common::types::{ComplianceFramework, ComplianceMapping, FindingCategory, Severity};
+use hardener_common::types::{
+    ComplianceFramework, ComplianceMapping, ControlStatus, FindingCategory, Severity,
+};
 use hardener_compliance::config::OutputFormat;
 use hardener_compliance::{ComplianceReport, ReportConfig, ReportGenerator, Scenario};
 use hardener_core::plugin::Finding;
 
-/// A finding for an insecure `PermitRootLogin`, carrying only a CIS mapping —
-/// exactly what the SSH plugin emits today.
+fn mapping(framework: ComplianceFramework, id: &str) -> ComplianceMapping {
+    ComplianceMapping {
+        compliance_framework: framework,
+        compliance_control_id: id.to_string(),
+        compliance_control_title: format!("Control {id}"),
+        compliance_section: Some("Access Control".to_string()),
+    }
+}
+
+/// An insecure `PermitRootLogin` finding, tagged for both CIS and STIG — the
+/// shape the SSH plugin now emits (multi-framework mappings).
 fn insecure_root_login() -> Finding {
     Finding {
         finding_category: FindingCategory::Network,
@@ -24,22 +43,27 @@ fn insecure_root_login() -> Finding {
         finding_remediation_steps: vec!["Set PermitRootLogin no".to_string()],
         finding_severity: Severity::Critical,
         finding_title: "Insecure SSH setting: PermitRootLogin".to_string(),
-        finding_compliance: vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "5.2.10".to_string(),
-            compliance_control_title: "Ensure SSH root login is disabled".to_string(),
-            compliance_section: Some("Access Control".to_string()),
-        }],
+        finding_compliance: vec![
+            mapping(ComplianceFramework::CIS, "5.2.10"),
+            mapping(ComplianceFramework::STIG, "RHEL-08-010550"),
+        ],
         finding_policy_exception: None,
     }
 }
 
-fn report_for(framework: ComplianceFramework, findings: &[Finding]) -> ComplianceReport {
-    ReportGenerator::new(ReportConfig {
-        scenario: Scenario::Custom(vec![framework]),
-        formats: vec![OutputFormat::Text],
-        output_dir: None,
-    })
+fn report_for(
+    framework: ComplianceFramework,
+    coverage: Vec<ComplianceMapping>,
+    findings: &[Finding],
+) -> ComplianceReport {
+    ReportGenerator::new(
+        ReportConfig {
+            scenario: Scenario::Custom(vec![framework]),
+            formats: vec![OutputFormat::Text],
+            output_dir: None,
+        },
+        coverage,
+    )
     .generate(findings)
     .into_iter()
     .next()
@@ -47,27 +71,20 @@ fn report_for(framework: ComplianceFramework, findings: &[Finding]) -> Complianc
 }
 
 #[test]
-fn unassessed_framework_reports_manual_review_not_false_pass() {
-    // An insecure system, evaluated against a framework the engine does NOT
-    // automatically assess (only CIS is wired today).
-    let report = report_for(ComplianceFramework::STIG, &[insecure_root_login()]);
+fn unassessed_curated_controls_are_manual_review_not_false_pass() {
+    // CIS ships a curated catalogue. With an empty coverage set the engine
+    // assesses nothing, so every control must require manual review — never a
+    // fabricated "100% compliant".
+    let report = report_for(ComplianceFramework::CIS, vec![], &[]);
     let s = &report.report_summary;
 
-    assert!(s.summary_total_controls > 0, "STIG has a control catalog");
-    // The honest result: no automated pass, no automated fail — manual review.
-    assert_eq!(
-        s.summary_passing, 0,
-        "must NOT mark unassessed controls as passing"
-    );
-    assert_eq!(
-        s.summary_failing, 0,
-        "no STIG finding mappings exist to fail on"
-    );
+    assert!(s.summary_total_controls > 0, "CIS has a curated catalogue");
+    assert_eq!(s.summary_passing, 0, "nothing assessed must not pass");
+    assert_eq!(s.summary_failing, 0, "no findings to fail on");
     assert_eq!(
         s.summary_manual_review, s.summary_total_controls,
         "every unassessed control must be flagged for manual review"
     );
-    // And crucially: not a false "100% compliant".
     assert_ne!(
         s.summary_score_percentage, 100.0,
         "must not claim full compliance"
@@ -75,63 +92,87 @@ fn unassessed_framework_reports_manual_review_not_false_pass() {
 }
 
 #[test]
-fn cis_is_assessed_so_it_still_passes_and_fails_normally() {
-    // CIS is automatically assessed: an insecure finding must FAIL its control,
-    // and the remaining CIS controls must still PASS (not regress to manual review).
-    let report = report_for(ComplianceFramework::CIS, &[insecure_root_login()]);
+fn assessed_passing_control_reports_pass() {
+    // Option B: a covered control with no finding is a genuine pass.
+    let report = report_for(
+        ComplianceFramework::CIS,
+        vec![mapping(ComplianceFramework::CIS, "1.5.1")],
+        &[],
+    );
+    let control = report
+        .report_controls
+        .iter()
+        .find(|c| c.control_id == "1.5.1")
+        .expect("covered control present");
+    assert_eq!(control.control_status, ControlStatus::Pass);
+    // Uncovered curated controls remain manual review, not pass.
+    assert!(report.report_summary.summary_manual_review >= 1);
+}
+
+#[test]
+fn assessed_failing_control_reports_fail() {
+    let report = report_for(
+        ComplianceFramework::CIS,
+        vec![mapping(ComplianceFramework::CIS, "5.2.10")],
+        &[insecure_root_login()],
+    );
+    let control = report
+        .report_controls
+        .iter()
+        .find(|c| c.control_id == "5.2.10")
+        .expect("covered control present");
+    assert_eq!(control.control_status, ControlStatus::Fail);
+}
+
+#[test]
+fn derived_framework_reports_only_assessed_controls() {
+    // STIG has no curated catalogue: its controls are derived from coverage.
+    // A clean system reports every covered control as Pass — Option B — and
+    // introduces no manual-review noise from controls the engine never checks.
+    let coverage = vec![
+        mapping(ComplianceFramework::STIG, "RHEL-08-010430"),
+        mapping(ComplianceFramework::STIG, "RHEL-08-010550"),
+    ];
+    let report = report_for(ComplianceFramework::STIG, coverage, &[]);
     let s = &report.report_summary;
 
-    assert!(
-        s.summary_failing >= 1,
-        "CIS must detect the insecure finding"
-    );
-    assert!(s.summary_passing >= 1, "other CIS controls still pass");
-    assert_eq!(
-        s.summary_manual_review, 0,
-        "CIS controls are assessed, never manual review"
-    );
+    assert_eq!(s.summary_total_controls, 2);
+    assert_eq!(s.summary_passing, 2);
+    assert_eq!(s.summary_manual_review, 0);
 }
 
 #[test]
-fn clean_system_does_not_fabricate_compliance_for_unassessed_frameworks() {
-    // No findings at all (a clean scan). CIS = all pass; STIG = all manual review.
-    let cis = report_for(ComplianceFramework::CIS, &[]);
-    assert_eq!(
-        cis.report_summary.summary_passing, cis.report_summary.summary_total_controls,
-        "clean system passes all assessed CIS controls"
+fn derived_framework_fails_on_insecure_finding() {
+    let coverage = vec![mapping(ComplianceFramework::STIG, "RHEL-08-010550")];
+    let report = report_for(
+        ComplianceFramework::STIG,
+        coverage,
+        &[insecure_root_login()],
     );
-
-    let stig = report_for(ComplianceFramework::STIG, &[]);
-    assert_eq!(
-        stig.report_summary.summary_manual_review, stig.report_summary.summary_total_controls,
-        "clean system still cannot auto-certify STIG — manual review"
-    );
-}
-
-#[test]
-fn finding_with_noncatalog_framework_mapping_surfaces_as_failure() {
-    // Plugin findings carry framework control IDs sourced from upstream guidance
-    // (ComplianceAsCode) whose scheme differs from the curated catalog. A STIG
-    // mapping to an id absent from stig.rs must still produce a real failure,
-    // not be silently dropped — otherwise the multi-framework mappings are inert.
-    let mut finding = insecure_root_login();
-    finding.finding_compliance.push(ComplianceMapping {
-        compliance_framework: ComplianceFramework::STIG,
-        compliance_control_id: "OL08-00-010550".to_string(), // not in the catalog
-        compliance_control_title: "Disable SSH root login (STIG)".to_string(),
-        compliance_section: Some("Access Control".to_string()),
-    });
-
-    let report = report_for(ComplianceFramework::STIG, &[finding]);
     assert!(
         report.report_summary.summary_failing >= 1,
-        "a STIG-mapped insecure finding must fail even if its id is not in the catalog"
+        "a STIG-mapped insecure finding must fail"
     );
+}
+
+#[test]
+fn noncatalogue_finding_mapping_surfaces_as_failure() {
+    // Safe-failure invariant: a finding referencing a control that is in neither
+    // the catalogue nor the coverage set must still produce a real failure, never
+    // be silently dropped. A wrong mapping can only ever over-report a failure.
+    let mut finding = insecure_root_login();
+    finding.finding_compliance.push(mapping(
+        ComplianceFramework::STIG,
+        "OL08-00-999999", // not in coverage, no curated catalogue
+    ));
+    let report = report_for(ComplianceFramework::STIG, vec![], &[finding]);
+
+    assert!(report.report_summary.summary_failing >= 1);
     assert!(
         report
             .report_controls
             .iter()
-            .any(|c| c.control_id == "OL08-00-010550"),
-        "the non-catalog control must appear in the report"
+            .any(|c| c.control_id == "OL08-00-999999"),
+        "the non-catalogue control must appear in the report"
     );
 }

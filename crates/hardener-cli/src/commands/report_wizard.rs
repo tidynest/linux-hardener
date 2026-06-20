@@ -165,7 +165,7 @@ pub async fn run(quiet: bool) -> Result<()> {
         output_dir: None,
     };
 
-    let generator = ReportGenerator::new(config);
+    let generator = ReportGenerator::new(config, hardener_plugins::compliance_coverage());
     let reports = generator.generate(&findings);
 
     // Step 5: Output reports

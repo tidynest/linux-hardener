@@ -410,23 +410,26 @@ struct Finding {
          │
          ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  ReportGenerator::generate(findings, framework)              │
-│  ├─ Load framework control definitions                       │
-│  │   • CIS: 35+ controls                                     │
-│  │   • NIST: 20+ controls                                    │
-│  │   • STIG: 20+ controls                                    │
-│  │   • etc.                                                  │
+│  ReportGenerator::new(config, coverage).generate(findings)   │
+│  coverage = hardener_plugins::compliance_coverage()          │
+│   (union of every plugin's coverage() — the assessed set)    │
+│  ├─ Build control catalogue:                                 │
+│  │   • CIS / ISO 27001: curated catalogue (full standard)    │
+│  │   • STIG/NIST/PCI/HIPAA/GDPR: derived from coverage       │
+│  │     (single id scheme, only assessed controls)            │
 │  └─ For each control:                                        │
 │      ├─ Find related findings via ComplianceMapping          │
 │      │   (finding.finding_compliance contains mappings)      │
 │      ├─ Determine status:                                    │
 │      │   • Fail: has related findings                        │
-│      │   • Pass: no findings AND framework is automatically   │
-│      │     assessed (frameworks::AUTOMATED_FRAMEWORKS = CIS)  │
-│      │   • ManualReview: no findings, framework NOT assessed  │
-│      │     (STIG/NIST/PCI-DSS/HIPAA/GDPR — no false Pass)     │
-│      │   • NotApplicable: not relevant to this system        │
+│      │   • Pass: no findings AND control in coverage set      │
+│      │     (Option B — true for every framework)             │
+│      │   • ManualReview: no findings, control NOT in coverage │
+│      │     (curated CIS/ISO controls the engine can't assess) │
+│      │   • NotApplicable: not relevant to this system         │
 │      └─ Create ControlResult                                 │
+│  Safe-failure net: a finding-referenced id absent from the   │
+│  catalogue is appended as Fail (never dropped/false-passed).  │
 └────────┬─────────────────────────────────────────────────────┘
          │
          ▼

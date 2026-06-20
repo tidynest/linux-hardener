@@ -130,6 +130,15 @@ fn service_iso_networks() -> ComplianceMapping {
 /// Network-exposed daemons (Bluetooth, Avahi/mDNS) additionally map ISO 8.20
 /// (Networks security). HIPAA is omitted — none of these daemons map cleanly to
 /// a Security Rule specification.
+/// Every compliance mapping this plugin can emit, across all services it
+/// assesses. Aggregated into the engine's automated-coverage set.
+pub fn coverage() -> Vec<ComplianceMapping> {
+    UNNECESSARY_SERVICES
+        .iter()
+        .flat_map(|s| get_service_compliance_mappings(s.service_name))
+        .collect()
+}
+
 fn get_service_compliance_mappings(service_name: &str) -> Vec<ComplianceMapping> {
     match service_name {
         // SSG: package_xinetd_removed

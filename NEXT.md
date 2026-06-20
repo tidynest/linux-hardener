@@ -75,22 +75,29 @@ system. Phase-1 fix landed (unassessed controls now report `ManualReview`, not
 
 ### P0 — Compliance assessment coverage (phase 2)
 
-**Phase 1 — Done.** Unassessed controls report `ManualReview` not a false `Pass`
-(`frameworks::AUTOMATED_FRAMEWORKS`).
+**Phase 1 — Done.** Unassessed controls report `ManualReview` not a false `Pass`.
 
 **Phase 2 — Done.** All 8 plugins now tag findings with STIG, NIST 800-53,
 PCI-DSS, HIPAA, GDPR and ISO 27001:2022 control IDs (sourced from
 ComplianceAsCode/SSG and the project catalogues, cited inline) alongside CIS, so
-every framework fails on insecure systems. The report generator surfaces
-finding-referenced controls that are absent from a framework's curated catalogue,
-so SSG-scheme IDs still produce real failures. Failure mode is safe: a wrong
-mapping causes a false *fail*, never a false pass. Design notes:
+every framework fails on insecure systems. Failure mode is safe: a wrong mapping
+causes a false *fail*, never a false pass. Design notes:
 [docs/plans/2026-06-19-compliance-coverage-phase2.md](docs/plans/2026-06-19-compliance-coverage-phase2.md).
 
-**Phase 2 — remaining follow-ups (not lost):**
-- **Catalogue reconciliation** — non-CIS catalogues (`stig.rs` uses `V-230xxx`, plugins use SSG `OL08-`/`RHEL-08-`/NIST-enhancement ids) use different id schemes. Findings now surface regardless, but a report can show two id styles + catalogue `ManualReview` noise. Reconcile to one scheme (or derive catalogues from plugin coverage) for clean reports.
-- **Option B (Pass for checked-passing controls)** — currently a hardened system shows non-CIS controls as `ManualReview`, not `Pass`. Per-control coverage set would let checked controls show `Pass`. Optional UX upgrade.
+**Phase 3 (derive + Option B) — Done.** Coverage is now per-control and
+plugin-declared: each plugin exposes `coverage()`, aggregated by
+`hardener_plugins::compliance_coverage()` and injected into `ReportGenerator`
+(the framework-level `AUTOMATED_FRAMEWORKS`/`is_automated` API is gone). A
+control the engine assesses reports `Pass`/`Fail` for *every* framework (Option
+B); one it does not assess reports `ManualReview`. Non-CIS catalogues
+(`stig.rs`/`nist.rs`/`pci.rs`/`hipaa.rs`/`gdpr.rs`) are deleted and derived from
+coverage, so each report uses a single id scheme with no placeholder noise. CIS
+and ISO 27001 keep their curated catalogues (full standard, unassessed controls →
+`ManualReview`). Verified end-to-end (`hardener report --framework STIG`).
+
+**Compliance — remaining follow-ups (not lost):**
 - **HIPAA/GDPR confidence** — those mappings are interpretive (GDPR Art.32 / project TM-* scheme; HIPAA §164); review for accuracy when convenient.
+- **CIS catalogue hygiene** — 4 CIS ids the plugins emit (`1.6.1`, `5.2.14–16`) are not in the curated `cis.rs` catalogue, so they only appear when they fail. Add them to the catalogue (or fold CIS into the derive path) for full Option-B `Pass` visibility.
 
 ### P1 — SSH crypto-algorithm hardening — Done
 
