@@ -721,4 +721,53 @@ mod tests {
         );
         assert!(matches!(out[2].status, HostStatus::Scanned { .. }));
     }
+
+    #[tokio::test]
+    async fn scan_all_preserves_order_and_isolates_failures() {
+        // Three unreachable hosts (loopback port 1 is always refused). Each must
+        // come back Failed, in input order, with none lost — exercising the real
+        // spawn -> bounded-collect -> assemble_ordered wiring end to end.
+        let hosts: Vec<RemoteHostProfile> = ["alpha", "bravo", "charlie"]
+            .iter()
+            .map(|name| RemoteHostProfile {
+                name: (*name).to_string(),
+                hostname: "127.0.0.1".to_string(),
+                user: Some("nobody".to_string()),
+                port: 1,
+                key_file: None,
+                host_key_checking: false,
+            })
+            .collect();
+
+        let out = scan_all(hosts, 2, 1).await;
+
+        assert_eq!(out.len(), 3, "every host appears, none dropped");
+        assert_eq!(
+            out.iter().map(|o| o.name.as_str()).collect::<Vec<_>>(),
+            ["alpha", "bravo", "charlie"],
+            "output preserves input order despite concurrent completion",
+        );
+        assert!(
+            out.iter()
+                .all(|o| matches!(o.status, HostStatus::Failed { .. })),
+            "unreachable hosts are isolated as Failed, not aborting the batch",
+        );
+    }
+
+    #[test]
+    fn text_render_failed_row_shows_error() {
+        let out = render_text(&[HostOutcome {
+            name: "cache".into(),
+            target: "u@cache:22".into(),
+            status: HostStatus::Failed {
+                error: "connection refused".into(),
+            },
+        }]);
+        assert!(out.contains("cache"));
+        assert!(
+            out.contains("connection refused"),
+            "failed row must surface the error"
+        );
+        assert!(out.contains("FAILED"));
+    }
 }
