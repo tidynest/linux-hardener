@@ -123,6 +123,12 @@ pub enum Command {
         interactive: bool,
     },
 
+    /// Scan multiple remote hosts in one run.
+    Batch {
+        #[command(subcommand)]
+        action: BatchAction,
+    },
+
     /// Manage the scheduled scanning daemon.
     Daemon {
         #[command(subcommand)]
@@ -139,6 +145,32 @@ pub enum Command {
     History {
         #[command(subcommand)]
         action: HistoryAction,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum BatchAction {
+    /// Scan selected hosts concurrently and print an aggregate report.
+    Scan {
+        /// Scan every host in the inventory.
+        #[arg(long, conflicts_with = "host")]
+        all: bool,
+
+        /// Inventory host name to scan (comma-separated or repeated).
+        #[arg(long, value_delimiter = ',')]
+        host: Vec<String>,
+
+        /// Ad-hoc host not in the inventory (user@host, repeatable).
+        #[arg(long)]
+        ssh: Vec<String>,
+
+        /// Maximum hosts scanned in parallel.
+        #[arg(long, default_value_t = 8)]
+        concurrency: usize,
+
+        /// Write the report to a file instead of stdout.
+        #[arg(long)]
+        output: Option<String>,
     },
 }
 
@@ -512,6 +544,84 @@ mod tests {
             }
         } else {
             panic!("Expected History command");
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_batch_scan_all() {
+        let cli = Cli::parse_from(["hardener", "batch", "scan", "--all"]);
+        assert!(matches!(cli.command, Command::Batch { .. }));
+        if let Command::Batch {
+            action: BatchAction::Scan { all, .. },
+        } = cli.command
+        {
+            assert!(all);
+        } else {
+            panic!("Expected Batch Scan command");
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_batch_host_comma() {
+        let cli = Cli::parse_from(["hardener", "batch", "scan", "--host", "web-01,db-02"]);
+        if let Command::Batch {
+            action: BatchAction::Scan { host, .. },
+        } = cli.command
+        {
+            assert_eq!(host, vec!["web-01", "db-02"]);
+        } else {
+            panic!("Expected Batch Scan command");
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_batch_all_conflicts_host() {
+        assert!(
+            Cli::try_parse_from(["hardener", "batch", "scan", "--all", "--host", "x"]).is_err()
+        );
+    }
+
+    #[test]
+    fn test_cli_parse_batch_defaults_and_output() {
+        let cli = Cli::parse_from(["hardener", "batch", "scan", "--ssh", "u@h"]);
+        if let Command::Batch {
+            action:
+                BatchAction::Scan {
+                    concurrency,
+                    output,
+                    ..
+                },
+        } = cli.command
+        {
+            assert_eq!(concurrency, 8);
+            assert!(output.is_none());
+        } else {
+            panic!("Expected Batch Scan command");
+        }
+
+        let cli = Cli::parse_from([
+            "hardener",
+            "batch",
+            "scan",
+            "--all",
+            "--output",
+            "/tmp/x",
+            "--concurrency",
+            "4",
+        ]);
+        if let Command::Batch {
+            action:
+                BatchAction::Scan {
+                    concurrency,
+                    output,
+                    ..
+                },
+        } = cli.command
+        {
+            assert_eq!(output, Some("/tmp/x".to_string()));
+            assert_eq!(concurrency, 4);
+        } else {
+            panic!("Expected Batch Scan command");
         }
     }
 

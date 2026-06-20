@@ -142,16 +142,6 @@ pub struct ActiveConnection {
     pub info: RemoteConnectionInfo,
 }
 
-/// Returns the path to the hosts config file (~/.config/linux-hardener/hosts.toml).
-fn hosts_config_path() -> Result<std::path::PathBuf, String> {
-    let config_dir = dirs::config_dir()
-        .ok_or_else(|| "Cannot determine config directory".to_string())?
-        .join("linux-hardener");
-    std::fs::create_dir_all(&config_dir)
-        .map_err(|e| safe_err(format!("Failed to create config directory: {e}")))?;
-    Ok(config_dir.join("hosts.toml"))
-}
-
 /// Returns the path to the main hardener config file.
 ///
 /// Checks the user config directory first, then falls back to the system-wide
@@ -182,24 +172,14 @@ fn writable_config_path() -> Result<std::path::PathBuf, String> {
         .ok_or_else(|| "Cannot determine config directory".to_string())
 }
 
-/// Loads host profiles from TOML config file.
+/// Loads host profiles from the shared inventory file.
 fn load_hosts_config() -> Result<HostsConfig, String> {
-    let path = hosts_config_path()?;
-    if !path.exists() {
-        return Ok(HostsConfig::default());
-    }
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| safe_err(format!("Failed to read hosts config: {e}")))?;
-    toml::from_str(&content).map_err(|e| safe_err(format!("Failed to parse hosts config: {e}")))
+    hardener_core::inventory::load().map_err(|e| safe_err(e.to_string()))
 }
 
-/// Saves host profiles to TOML config file.
+/// Saves host profiles to the shared inventory file.
 fn save_hosts_config(config: &HostsConfig) -> Result<(), String> {
-    let path = hosts_config_path()?;
-    let content = toml::to_string_pretty(config)
-        .map_err(|e| safe_err(format!("Failed to serialise hosts config: {e}")))?;
-    std::fs::write(&path, content)
-        .map_err(|e| safe_err(format!("Failed to write hosts config: {e}")))
+    hardener_core::inventory::save(config).map_err(|e| safe_err(e.to_string()))
 }
 
 /// Checkpoint information returned to the frontend.

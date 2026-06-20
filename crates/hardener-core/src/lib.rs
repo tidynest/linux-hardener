@@ -13,6 +13,7 @@ pub mod config_validation;
 #[cfg(feature = "system")]
 pub mod context;
 pub mod executor;
+pub mod inventory;
 #[cfg(feature = "system")]
 pub mod plugin_manager;
 #[cfg(feature = "system")]
