@@ -139,6 +139,94 @@ pub fn resolve_hosts(
     Ok(selected)
 }
 
+/// Aggregate rollup across all hosts, for the summary line and JSON.
+#[allow(dead_code)]
+#[derive(Debug, Default, Serialize, PartialEq, Eq)]
+pub struct BatchSummary {
+    pub hosts_total: usize,
+    pub hosts_scanned: usize,
+    pub hosts_failed: usize,
+    pub critical: usize,
+    pub high: usize,
+    pub medium: usize,
+    pub low: usize,
+    pub total: usize,
+}
+
+#[allow(dead_code)]
+impl BatchSummary {
+    pub fn from_outcomes(outcomes: &[HostOutcome]) -> Self {
+        let mut s = BatchSummary {
+            hosts_total: outcomes.len(),
+            ..Default::default()
+        };
+        for o in outcomes {
+            match &o.status {
+                HostStatus::Scanned { counts, .. } => {
+                    s.hosts_scanned += 1;
+                    s.critical += counts.critical;
+                    s.high += counts.high;
+                    s.medium += counts.medium;
+                    s.low += counts.low;
+                }
+                HostStatus::Failed { .. } => s.hosts_failed += 1,
+            }
+        }
+        s.total = s.critical + s.high + s.medium + s.low;
+        s
+    }
+}
+
+/// Renders the human-readable table + rollup line.
+#[allow(dead_code)]
+pub fn render_text(outcomes: &[HostOutcome]) -> String {
+    let mut out = String::new();
+    out.push_str("HOST            TARGET                     STATUS   CRIT HIGH MED LOW TOTAL\n");
+    for o in outcomes {
+        match &o.status {
+            HostStatus::Scanned { counts, .. } => out.push_str(&format!(
+                "{:<15} {:<26} {:<8} {:>4} {:>4} {:>3} {:>3} {:>5}\n",
+                o.name,
+                o.target,
+                "ok",
+                counts.critical,
+                counts.high,
+                counts.medium,
+                counts.low,
+                counts.total(),
+            )),
+            HostStatus::Failed { error } => out.push_str(&format!(
+                "{:<15} {:<26} {:<8} {}\n",
+                o.name, o.target, "FAILED", error,
+            )),
+        }
+    }
+    let s = BatchSummary::from_outcomes(outcomes);
+    out.push_str("---\n");
+    out.push_str(&format!(
+        "{} hosts: {} scanned, {} failed · findings: {} crit, {} high, {} med, {} low ({} total)\n",
+        s.hosts_total,
+        s.hosts_scanned,
+        s.hosts_failed,
+        s.critical,
+        s.high,
+        s.medium,
+        s.low,
+        s.total,
+    ));
+    out
+}
+
+/// Renders the machine-readable JSON document.
+#[allow(dead_code)]
+pub fn render_json(outcomes: &[HostOutcome]) -> String {
+    let doc = serde_json::json!({
+        "hosts": outcomes,
+        "summary": BatchSummary::from_outcomes(outcomes),
+    });
+    serde_json::to_string_pretty(&doc).unwrap_or_else(|_| "{}".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -262,5 +350,31 @@ mod tests {
             }
         );
         assert_eq!(c.total(), 4);
+    }
+
+    #[test]
+    fn summary_aggregates() {
+        let outcomes = vec![scanned(2), failed(), scanned(0)];
+        let s = BatchSummary::from_outcomes(&outcomes);
+        assert_eq!(s.hosts_total, 3);
+        assert_eq!(s.hosts_scanned, 2);
+        assert_eq!(s.hosts_failed, 1);
+        assert_eq!(s.high, 2);
+        assert_eq!(s.total, 2);
+    }
+
+    #[test]
+    fn text_render_has_rollup() {
+        let text = render_text(&[scanned(1), failed()]);
+        assert!(text.contains("FAILED"));
+        assert!(text.contains("2 hosts: 1 scanned, 1 failed"));
+    }
+
+    #[test]
+    fn json_render_is_valid() {
+        let json = render_json(&[scanned(1)]);
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["summary"]["hosts_scanned"], 1);
+        assert_eq!(v["hosts"][0]["status"], "scanned");
     }
 }
