@@ -216,6 +216,42 @@ fn get_mac_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "Access Enforcement".to_string(),
                 compliance_section: Some("Access Control".to_string()),
             },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(a)(1)".to_string(),
+                compliance_control_title: "Access Control".to_string(),
+                compliance_section: Some("Technical Safeguards".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(c)(1)".to_string(),
+                compliance_control_title: "Integrity".to_string(),
+                compliance_section: Some("Technical Safeguards".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "TM-AC".to_string(),
+                compliance_control_title: "Access Control".to_string(),
+                compliance_section: Some("Technical Measures".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "TM-SH".to_string(),
+                compliance_control_title: "System Hardening".to_string(),
+                compliance_section: Some("Technical Measures".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::ISO27001,
+                compliance_control_id: "8.3".to_string(),
+                compliance_control_title: "Information access restriction".to_string(),
+                compliance_section: Some("Technological".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::ISO27001,
+                compliance_control_id: "5.15".to_string(),
+                compliance_control_title: "Access control".to_string(),
+                compliance_section: Some("Organizational".to_string()),
+            },
         ],
         // SSG: selinux_state (nist: AC-3,AC-3(3)(a),AU-9,SC-7(21); stigid@ol8: OL08-00-010170)
         "selinux-not-enforcing" => vec![
@@ -238,6 +274,42 @@ fn get_mac_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "SELinux must be in enforcing mode".to_string(),
                 compliance_section: Some("Access Control".to_string()),
             },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(a)(1)".to_string(),
+                compliance_control_title: "Access Control".to_string(),
+                compliance_section: Some("Technical Safeguards".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(c)(1)".to_string(),
+                compliance_control_title: "Integrity".to_string(),
+                compliance_section: Some("Technical Safeguards".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "TM-AC".to_string(),
+                compliance_control_title: "Access Control".to_string(),
+                compliance_section: Some("Technical Measures".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "TM-SH".to_string(),
+                compliance_control_title: "System Hardening".to_string(),
+                compliance_section: Some("Technical Measures".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::ISO27001,
+                compliance_control_id: "8.3".to_string(),
+                compliance_control_title: "Information access restriction".to_string(),
+                compliance_section: Some("Technological".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::ISO27001,
+                compliance_control_id: "5.15".to_string(),
+                compliance_control_title: "Access control".to_string(),
+                compliance_section: Some("Organizational".to_string()),
+            },
         ],
         // SSG: all_apparmor_profiles_enforced (CIS only). NIST AC-3 access
         // enforcement applies — this is the AppArmor expression of the same
@@ -255,6 +327,42 @@ fn get_mac_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
                 compliance_control_id: "AC-3".to_string(),
                 compliance_control_title: "Access Enforcement".to_string(),
                 compliance_section: Some("Access Control".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(a)(1)".to_string(),
+                compliance_control_title: "Access Control".to_string(),
+                compliance_section: Some("Technical Safeguards".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(c)(1)".to_string(),
+                compliance_control_title: "Integrity".to_string(),
+                compliance_section: Some("Technical Safeguards".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "TM-AC".to_string(),
+                compliance_control_title: "Access Control".to_string(),
+                compliance_section: Some("Technical Measures".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "TM-SH".to_string(),
+                compliance_control_title: "System Hardening".to_string(),
+                compliance_section: Some("Technical Measures".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::ISO27001,
+                compliance_control_id: "8.3".to_string(),
+                compliance_control_title: "Information access restriction".to_string(),
+                compliance_section: Some("Technological".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::ISO27001,
+                compliance_control_id: "5.15".to_string(),
+                compliance_control_title: "Access control".to_string(),
+                compliance_section: Some("Organizational".to_string()),
             },
         ],
         _ => vec![],
@@ -663,5 +771,38 @@ mod tests {
             .find(|m| m.compliance_framework == ComplianceFramework::NIST)
             .unwrap();
         assert_eq!(nist.compliance_control_id, "AC-3");
+    }
+
+    /// MAC enforcement findings must also carry HIPAA, GDPR and ISO/IEC
+    /// 27001:2022 mappings alongside the existing CIS/NIST/STIG set. ISO uses
+    /// both the Technological (8.3) and Organizational (5.15) access clauses.
+    #[test]
+    fn selinux_enforcing_has_privacy_and_iso_mappings() {
+        let mappings = get_mac_compliance_mappings("selinux-not-enforcing");
+
+        let has = |fw| mappings.iter().any(|m| m.compliance_framework == fw);
+        assert!(has(ComplianceFramework::HIPAA), "HIPAA must be present");
+        assert!(has(ComplianceFramework::GDPR), "GDPR must be present");
+        assert!(
+            has(ComplianceFramework::ISO27001),
+            "ISO 27001 must be present"
+        );
+
+        // Both ISO access-control clauses (technological + organizational).
+        let iso_ids: Vec<&str> = mappings
+            .iter()
+            .filter(|m| m.compliance_framework == ComplianceFramework::ISO27001)
+            .map(|m| m.compliance_control_id.as_str())
+            .collect();
+        assert!(iso_ids.contains(&"8.3"), "ISO 8.3 must be present");
+        assert!(iso_ids.contains(&"5.15"), "ISO 5.15 must be present");
+
+        // HIPAA integrity safeguard must be present for MAC enforcement.
+        assert!(
+            mappings
+                .iter()
+                .any(|m| m.compliance_framework == ComplianceFramework::HIPAA
+                    && m.compliance_control_id == "164.312(c)(1)")
+        );
     }
 }

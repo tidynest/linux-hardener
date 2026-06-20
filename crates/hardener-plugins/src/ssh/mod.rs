@@ -4,7 +4,7 @@
 //! It focuses on critical authentication and protocol security including:
 //! - Disabling root login
 //! - Enforcing key-based authentication
-//! - Restricting protocol versions
+//! - Restricting to strong cryptographic algorithms
 //! - Limiting authentication attempts.
 //!
 //! The plugin reads the sshd_config file, compares against secure baselines,
@@ -58,12 +58,6 @@ const SSH_DIRECTIVES: &[SshConfigDirective] = &[
         ssh_directive_name: "PermitEmptyPasswords",
         ssh_secure_value: "no",
         ssh_description: "Disallow empty passwords",
-        ssh_severity: Severity::Critical,
-    },
-    SshConfigDirective {
-        ssh_directive_name: "Protocol",
-        ssh_secure_value: "2",
-        ssh_description: "Use only SSH protocol version 2",
         ssh_severity: Severity::Critical,
     },
     SshConfigDirective {
@@ -350,48 +344,205 @@ impl SshHardeningPlugin {
 /// Returns compliance mappings for a given SSH directive.
 fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
     match directive_name {
-        "PermitRootLogin" => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "5.2.10".to_string(),
-            compliance_control_title: "Ensure SSH root login is disabled".to_string(),
-            compliance_section: Some("Access Control".to_string()),
-        }],
-        "PasswordAuthentication" => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "5.2.11".to_string(),
-            compliance_control_title: "Ensure SSH PasswordAuthentication is disabled".to_string(),
-            compliance_section: Some("Access Control".to_string()),
-        }],
-        "PermitEmptyPasswords" => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "5.2.11".to_string(),
-            compliance_control_title: "Ensure SSH PermitEmptyPasswords is disabled".to_string(),
-            compliance_section: Some("Access Control".to_string()),
-        }],
-        "Protocol" => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "5.2.4".to_string(),
-            compliance_control_title: "Ensure SSH Protocol is set to 2".to_string(),
-            compliance_section: Some("Access Control".to_string()),
-        }],
-        "MaxAuthTries" => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "5.2.7".to_string(),
-            compliance_control_title: "Ensure SSH MaxAuthTries is set to 4 or less".to_string(),
-            compliance_section: Some("Access Control".to_string()),
-        }],
-        "X11Forwarding" => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "5.2.6".to_string(),
-            compliance_control_title: "Ensure SSH X11 forwarding is disabled".to_string(),
-            compliance_section: Some("Access Control".to_string()),
-        }],
-        "ClientAliveInterval" | "ClientAliveCountMax" => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::CIS,
-            compliance_control_id: "5.2.13".to_string(),
-            compliance_control_title: "Ensure SSH Idle Timeout Interval is configured".to_string(),
-            compliance_section: Some("Access Control".to_string()),
-        }],
+        "PermitRootLogin" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "5.2.10".to_string(),
+                compliance_control_title: "Ensure SSH root login is disabled".to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(a)(1)".to_string(),
+                compliance_control_title: "Implement technical policies for access to ePHI"
+                    .to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(d)".to_string(),
+                compliance_control_title:
+                    "Implement procedures to verify person or entity identity".to_string(),
+                compliance_section: Some("Authentication".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "TM-AUTH".to_string(),
+                compliance_control_title: "Authentication - Verify user identity".to_string(),
+                compliance_section: Some("Technical Measures".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "TM-SH".to_string(),
+                compliance_control_title: "System Hardening - Reduce attack surface".to_string(),
+                compliance_section: Some("Technical Measures".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::ISO27001,
+                compliance_control_id: "8.5".to_string(),
+                compliance_control_title: "Secure authentication".to_string(),
+                compliance_section: Some("Technological".to_string()),
+            },
+        ],
+        "PasswordAuthentication" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "5.2.11".to_string(),
+                compliance_control_title: "Ensure SSH PasswordAuthentication is disabled"
+                    .to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(d)".to_string(),
+                compliance_control_title:
+                    "Implement procedures to verify person or entity identity".to_string(),
+                compliance_section: Some("Authentication".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.308(a)(5)(ii)(D)".to_string(),
+                compliance_control_title: "Password Management".to_string(),
+                compliance_section: Some("Administrative Safeguards".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "TM-AUTH".to_string(),
+                compliance_control_title: "Authentication - Verify user identity".to_string(),
+                compliance_section: Some("Technical Measures".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "TM-SH".to_string(),
+                compliance_control_title: "System Hardening - Reduce attack surface".to_string(),
+                compliance_section: Some("Technical Measures".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::ISO27001,
+                compliance_control_id: "8.5".to_string(),
+                compliance_control_title: "Secure authentication".to_string(),
+                compliance_section: Some("Technological".to_string()),
+            },
+        ],
+        "PermitEmptyPasswords" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "5.2.11".to_string(),
+                compliance_control_title: "Ensure SSH PermitEmptyPasswords is disabled".to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(d)".to_string(),
+                compliance_control_title:
+                    "Implement procedures to verify person or entity identity".to_string(),
+                compliance_section: Some("Authentication".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.308(a)(5)(ii)(D)".to_string(),
+                compliance_control_title: "Password Management".to_string(),
+                compliance_section: Some("Administrative Safeguards".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "TM-AUTH".to_string(),
+                compliance_control_title: "Authentication - Verify user identity".to_string(),
+                compliance_section: Some("Technical Measures".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "TM-SH".to_string(),
+                compliance_control_title: "System Hardening - Reduce attack surface".to_string(),
+                compliance_section: Some("Technical Measures".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::ISO27001,
+                compliance_control_id: "8.5".to_string(),
+                compliance_control_title: "Secure authentication".to_string(),
+                compliance_section: Some("Technological".to_string()),
+            },
+        ],
+        "MaxAuthTries" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "5.2.7".to_string(),
+                compliance_control_title: "Ensure SSH MaxAuthTries is set to 4 or less".to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(d)".to_string(),
+                compliance_control_title:
+                    "Implement procedures to verify person or entity identity".to_string(),
+                compliance_section: Some("Authentication".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "TM-AUTH".to_string(),
+                compliance_control_title: "Authentication - Verify user identity".to_string(),
+                compliance_section: Some("Technical Measures".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "TM-SH".to_string(),
+                compliance_control_title: "System Hardening - Reduce attack surface".to_string(),
+                compliance_section: Some("Technical Measures".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::ISO27001,
+                compliance_control_id: "8.5".to_string(),
+                compliance_control_title: "Secure authentication".to_string(),
+                compliance_section: Some("Technological".to_string()),
+            },
+        ],
+        "X11Forwarding" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "5.2.6".to_string(),
+                compliance_control_title: "Ensure SSH X11 forwarding is disabled".to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "TM-SH".to_string(),
+                compliance_control_title: "System Hardening - Reduce attack surface".to_string(),
+                compliance_section: Some("Technical Measures".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::ISO27001,
+                compliance_control_id: "8.20".to_string(),
+                compliance_control_title: "Networks security".to_string(),
+                compliance_section: Some("Technological".to_string()),
+            },
+        ],
+        "ClientAliveInterval" | "ClientAliveCountMax" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "5.2.13".to_string(),
+                compliance_control_title: "Ensure SSH Idle Timeout Interval is configured"
+                    .to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(a)(2)(iii)".to_string(),
+                compliance_control_title: "Automatic Logoff".to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "TM-SH".to_string(),
+                compliance_control_title: "System Hardening - Reduce attack surface".to_string(),
+                compliance_section: Some("Technical Measures".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::ISO27001,
+                compliance_control_id: "8.20".to_string(),
+                compliance_control_title: "Networks security".to_string(),
+                compliance_section: Some("Technological".to_string()),
+            },
+        ],
         "KexAlgorithms" => vec![
             ComplianceMapping {
                 compliance_framework: ComplianceFramework::CIS,
@@ -412,6 +563,38 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
                 compliance_control_id: "SC-13".to_string(),
                 compliance_control_title: "Cryptographic Protection".to_string(),
                 compliance_section: Some("System and Communications Protection".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(e)(1)".to_string(),
+                compliance_control_title:
+                    "Implement technical security measures for ePHI transmission".to_string(),
+                compliance_section: Some("Transmission Security".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(e)(2)(ii)".to_string(),
+                compliance_control_title: "Encryption for transmission".to_string(),
+                compliance_section: Some("Transmission Security".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "Art.32(1)(a)".to_string(),
+                compliance_control_title: "Pseudonymisation and encryption of personal data"
+                    .to_string(),
+                compliance_section: Some("Security of Processing".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "TM-NW".to_string(),
+                compliance_control_title: "Network Security - Protect data in transit".to_string(),
+                compliance_section: Some("Technical Measures".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::ISO27001,
+                compliance_control_id: "8.24".to_string(),
+                compliance_control_title: "Use of cryptography".to_string(),
+                compliance_section: Some("Technological".to_string()),
             },
         ],
         "Ciphers" => vec![
@@ -434,6 +617,38 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "Transmission Confidentiality and Integrity".to_string(),
                 compliance_section: Some("System and Communications Protection".to_string()),
             },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(e)(1)".to_string(),
+                compliance_control_title:
+                    "Implement technical security measures for ePHI transmission".to_string(),
+                compliance_section: Some("Transmission Security".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(e)(2)(ii)".to_string(),
+                compliance_control_title: "Encryption for transmission".to_string(),
+                compliance_section: Some("Transmission Security".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "Art.32(1)(a)".to_string(),
+                compliance_control_title: "Pseudonymisation and encryption of personal data"
+                    .to_string(),
+                compliance_section: Some("Security of Processing".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "TM-NW".to_string(),
+                compliance_control_title: "Network Security - Protect data in transit".to_string(),
+                compliance_section: Some("Technical Measures".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::ISO27001,
+                compliance_control_id: "8.24".to_string(),
+                compliance_control_title: "Use of cryptography".to_string(),
+                compliance_section: Some("Technological".to_string()),
+            },
         ],
         "MACs" => vec![
             ComplianceMapping {
@@ -454,6 +669,38 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
                 compliance_control_id: "SC-8".to_string(),
                 compliance_control_title: "Transmission Confidentiality and Integrity".to_string(),
                 compliance_section: Some("System and Communications Protection".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(e)(1)".to_string(),
+                compliance_control_title:
+                    "Implement technical security measures for ePHI transmission".to_string(),
+                compliance_section: Some("Transmission Security".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(e)(2)(ii)".to_string(),
+                compliance_control_title: "Encryption for transmission".to_string(),
+                compliance_section: Some("Transmission Security".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "Art.32(1)(a)".to_string(),
+                compliance_control_title: "Pseudonymisation and encryption of personal data"
+                    .to_string(),
+                compliance_section: Some("Security of Processing".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "TM-NW".to_string(),
+                compliance_control_title: "Network Security - Protect data in transit".to_string(),
+                compliance_section: Some("Technical Measures".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::ISO27001,
+                compliance_control_id: "8.24".to_string(),
+                compliance_control_title: "Use of cryptography".to_string(),
+                compliance_section: Some("Technological".to_string()),
             },
         ],
         _ => vec![],

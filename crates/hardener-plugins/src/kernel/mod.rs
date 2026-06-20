@@ -167,6 +167,40 @@ fn pcidss(id: &str, title: &str, section: &str) -> ComplianceMapping {
     }
 }
 
+/// Builds a HIPAA Security Rule (45 CFR §164.312) technical-safeguards mapping.
+/// `id` is the official CFR citation; `title` the safeguard standard name.
+fn hipaa(id: &str, title: &str) -> ComplianceMapping {
+    ComplianceMapping {
+        compliance_framework: ComplianceFramework::HIPAA,
+        compliance_control_id: id.to_string(),
+        compliance_control_title: title.to_string(),
+        compliance_section: Some("Technical Safeguards".to_string()),
+    }
+}
+
+/// Builds a GDPR Article 32 ("Security of processing") technical-measure
+/// mapping. `id` is the project's technical-measure tag (e.g. `TM-SH` system
+/// hardening, `TM-NW` network protection); `title` the measure description.
+fn gdpr(id: &str, title: &str) -> ComplianceMapping {
+    ComplianceMapping {
+        compliance_framework: ComplianceFramework::GDPR,
+        compliance_control_id: id.to_string(),
+        compliance_control_title: title.to_string(),
+        compliance_section: Some("Article 32 - Security of Processing".to_string()),
+    }
+}
+
+/// Builds an ISO/IEC 27001:2022 Annex A control mapping. `id`/`title` use the
+/// official clause number and control name; `section` is the control theme.
+fn iso(id: &str, title: &str, theme: &str) -> ComplianceMapping {
+    ComplianceMapping {
+        compliance_framework: ComplianceFramework::ISO27001,
+        compliance_control_id: id.to_string(),
+        compliance_control_title: title.to_string(),
+        compliance_section: Some(theme.to_string()),
+    }
+}
+
 /// Returns compliance mappings for a given kernel parameter.
 ///
 /// CIS entries are the project's existing benchmark mappings. STIG/NIST/PCI-DSS
@@ -203,6 +237,11 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 "System security parameters are configured to prevent misuse",
                 "Secure Configurations",
             ),
+            // Cross-framework: memory-protection hardening defends integrity of
+            // the operating environment processing protected data.
+            hipaa("164.312(c)(1)", "Integrity"),
+            gdpr("TM-SH", "System hardening of processing systems"),
+            iso("8.9", "Configuration management", "Technological"),
         ],
         "kernel.kptr_restrict" => vec![
             ComplianceMapping {
@@ -218,6 +257,9 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 "Restrict exposed kernel pointer addresses access",
             ),
             nist("CM-6", "Configuration Settings", "Configuration Management"),
+            hipaa("164.312(c)(1)", "Integrity"),
+            gdpr("TM-SH", "System hardening of processing systems"),
+            iso("8.9", "Configuration management", "Technological"),
         ],
         "kernel.dmesg_restrict" => vec![
             ComplianceMapping {
@@ -237,6 +279,9 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 "Error Handling",
                 "System and Information Integrity",
             ),
+            hipaa("164.312(c)(1)", "Integrity"),
+            gdpr("TM-SH", "System hardening of processing systems"),
+            iso("8.9", "Configuration management", "Technological"),
         ],
         "kernel.yama.ptrace_scope" => vec![
             ComplianceMapping {
@@ -256,6 +301,9 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 "Boundary Protection",
                 "System and Communications Protection",
             ),
+            hipaa("164.312(c)(1)", "Integrity"),
+            gdpr("TM-SH", "System hardening of processing systems"),
+            iso("8.9", "Configuration management", "Technological"),
         ],
         "fs.suid_dumpable" => vec![
             ComplianceMapping {
@@ -271,6 +319,9 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 "Error Handling",
                 "System and Information Integrity",
             ),
+            hipaa("164.312(c)(1)", "Integrity"),
+            gdpr("TM-SH", "System hardening of processing systems"),
+            iso("8.9", "Configuration management", "Technological"),
         ],
         "fs.protected_hardlinks" | "fs.protected_symlinks" => vec![
             ComplianceMapping {
@@ -285,6 +336,9 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
             stig("RHEL-08-010374", "Enforce DAC on hardlinks and symlinks"),
             nist("CM-6", "Configuration Settings", "Configuration Management"),
             nist("AC-6", "Least Privilege", "Access Control"),
+            hipaa("164.312(c)(1)", "Integrity"),
+            gdpr("TM-SH", "System hardening of processing systems"),
+            iso("8.9", "Configuration management", "Technological"),
         ],
         "net.ipv4.conf.all.rp_filter" | "net.ipv4.conf.default.rp_filter" => vec![
             ComplianceMapping {
@@ -311,6 +365,12 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 "NSCs are implemented between trusted and untrusted networks",
                 "Network Security Controls",
             ),
+            // Cross-framework: anti-spoofing protects integrity/security of data
+            // in transit across the network boundary.
+            hipaa("164.312(e)(1)", "Transmission security"),
+            gdpr("TM-SH", "System hardening of processing systems"),
+            gdpr("TM-NW", "Network-level protection of processing systems"),
+            iso("8.20", "Networks security", "Technological"),
         ],
         "net.ipv4.tcp_syncookies" => vec![
             ComplianceMapping {
@@ -332,6 +392,10 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 "NSCs are implemented between trusted and untrusted networks",
                 "Network Security Controls",
             ),
+            hipaa("164.312(e)(1)", "Transmission security"),
+            gdpr("TM-SH", "System hardening of processing systems"),
+            gdpr("TM-NW", "Network-level protection of processing systems"),
+            iso("8.20", "Networks security", "Technological"),
         ],
         "net.ipv4.conf.all.accept_source_route" | "net.ipv4.conf.default.accept_source_route" => {
             vec![
@@ -352,6 +416,10 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                     "Boundary Protection",
                     "System and Communications Protection",
                 ),
+                hipaa("164.312(e)(1)", "Transmission security"),
+                gdpr("TM-SH", "System hardening of processing systems"),
+                gdpr("TM-NW", "Network-level protection of processing systems"),
+                iso("8.20", "Networks security", "Technological"),
             ]
         }
         _ => vec![],
@@ -712,5 +780,43 @@ mod tests {
             frameworks.contains(&ComplianceFramework::NIST),
             "NIST mapping must be added"
         );
+    }
+
+    /// Confirms the memory-protection check additionally carries the data-
+    /// protection frameworks (HIPAA integrity, GDPR system hardening, ISO 27001)
+    /// alongside the existing CIS/STIG/NIST/PCI-DSS mappings.
+    #[test]
+    fn aslr_maps_hipaa_gdpr_and_iso27001() {
+        let mappings = get_compliance_mappings("kernel.randomize_va_space");
+
+        let frameworks: Vec<ComplianceFramework> =
+            mappings.iter().map(|m| m.compliance_framework).collect();
+
+        assert!(
+            frameworks.contains(&ComplianceFramework::HIPAA),
+            "HIPAA mapping must be added"
+        );
+        assert!(
+            frameworks.contains(&ComplianceFramework::GDPR),
+            "GDPR mapping must be added"
+        );
+        assert!(
+            frameworks.contains(&ComplianceFramework::ISO27001),
+            "ISO 27001 mapping must be added"
+        );
+
+        // ISO 27001 control for sysctl hardening is clause 8.9 (Configuration
+        // management), and the HIPAA citation is the §164.312 integrity standard.
+        let iso = mappings
+            .iter()
+            .find(|m| m.compliance_framework == ComplianceFramework::ISO27001)
+            .expect("ISO 27001 mapping present");
+        assert_eq!(iso.compliance_control_id, "8.9");
+
+        let hipaa = mappings
+            .iter()
+            .find(|m| m.compliance_framework == ComplianceFramework::HIPAA)
+            .expect("HIPAA mapping present");
+        assert_eq!(hipaa.compliance_control_id, "164.312(c)(1)");
     }
 }

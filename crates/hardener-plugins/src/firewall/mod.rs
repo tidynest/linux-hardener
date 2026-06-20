@@ -82,13 +82,48 @@ pub trait FirewallBackend: Send + Sync {
     fn get_default_rules(&self) -> Vec<Rule>;
 }
 
+/// Builds a HIPAA Security Rule (45 CFR §164.312) technical-safeguards mapping.
+/// `id` is the official CFR citation; `title` the safeguard standard name.
+fn hipaa(id: &str, title: &str) -> ComplianceMapping {
+    ComplianceMapping {
+        compliance_framework: ComplianceFramework::HIPAA,
+        compliance_control_id: id.to_string(),
+        compliance_control_title: title.to_string(),
+        compliance_section: Some("Technical Safeguards".to_string()),
+    }
+}
+
+/// Builds a GDPR Article 32 ("Security of processing") technical-measure
+/// mapping. `id` is the project's technical-measure tag (e.g. `TM-SH` system
+/// hardening, `TM-NW` network protection); `title` the measure description.
+fn gdpr(id: &str, title: &str) -> ComplianceMapping {
+    ComplianceMapping {
+        compliance_framework: ComplianceFramework::GDPR,
+        compliance_control_id: id.to_string(),
+        compliance_control_title: title.to_string(),
+        compliance_section: Some("Article 32 - Security of Processing".to_string()),
+    }
+}
+
+/// Builds an ISO/IEC 27001:2022 Annex A control mapping. `id`/`title` use the
+/// official clause number and control name; `section` is the control theme.
+fn iso(id: &str, title: &str, theme: &str) -> ComplianceMapping {
+    ComplianceMapping {
+        compliance_framework: ComplianceFramework::ISO27001,
+        compliance_control_id: id.to_string(),
+        compliance_control_title: title.to_string(),
+        compliance_section: Some(theme.to_string()),
+    }
+}
+
 /// Returns compliance mappings for firewall findings.
 ///
 /// CIS is the project's existing benchmark mapping. STIG/NIST/PCI-DSS entries
 /// are sourced from the matching ComplianceAsCode/SSG rule's `references:`
 /// block; NIST titles/sections and the PCI-DSS v4.0 id/title are reconciled
 /// with the project's framework definitions in
-/// `hardener-compliance/src/frameworks/`.
+/// `hardener-compliance/src/frameworks/`. HIPAA/GDPR/ISO 27001 entries map the
+/// host firewall to data-in-transit and network-security controls.
 fn get_firewall_compliance_mappings() -> Vec<ComplianceMapping> {
     vec![
         ComplianceMapping {
@@ -127,6 +162,13 @@ fn get_firewall_compliance_mappings() -> Vec<ComplianceMapping> {
                 .to_string(),
             compliance_section: Some("Network Security Controls".to_string()),
         },
+        // Cross-framework: a host firewall enforces the network boundary that
+        // protects data in transit and governs reachable network services.
+        hipaa("164.312(e)(1)", "Transmission security"),
+        gdpr("TM-SH", "System hardening of processing systems"),
+        gdpr("TM-NW", "Network-level protection of processing systems"),
+        iso("8.20", "Networks security", "Technological"),
+        iso("8.21", "Security of network services", "Technological"),
     ]
 }
 
@@ -542,5 +584,44 @@ mod tests {
             frameworks.contains(&ComplianceFramework::NIST),
             "NIST mapping must be added"
         );
+    }
+
+    /// Confirms the firewall finding additionally carries the data-protection
+    /// frameworks (HIPAA transmission security, GDPR network protection, ISO
+    /// 27001) alongside the existing CIS/STIG/NIST/PCI-DSS mappings.
+    #[test]
+    fn firewall_maps_hipaa_gdpr_and_iso27001() {
+        let mappings = get_firewall_compliance_mappings();
+
+        let frameworks: Vec<ComplianceFramework> =
+            mappings.iter().map(|m| m.compliance_framework).collect();
+
+        assert!(
+            frameworks.contains(&ComplianceFramework::HIPAA),
+            "HIPAA mapping must be added"
+        );
+        assert!(
+            frameworks.contains(&ComplianceFramework::GDPR),
+            "GDPR mapping must be added"
+        );
+        assert!(
+            frameworks.contains(&ComplianceFramework::ISO27001),
+            "ISO 27001 mapping must be added"
+        );
+
+        // Networks-security control 8.20 must be present for a network boundary
+        // control, and HIPAA maps to the transmission-security standard.
+        assert!(
+            mappings
+                .iter()
+                .any(|m| m.compliance_framework == ComplianceFramework::ISO27001
+                    && m.compliance_control_id == "8.20"),
+            "ISO 27001 clause 8.20 (Networks security) must be present"
+        );
+        let hipaa = mappings
+            .iter()
+            .find(|m| m.compliance_framework == ComplianceFramework::HIPAA)
+            .expect("HIPAA mapping present");
+        assert_eq!(hipaa.compliance_control_id, "164.312(e)(1)");
     }
 }

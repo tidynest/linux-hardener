@@ -46,12 +46,73 @@ fn service_mapping(
     control_id: &str,
     title: &str,
 ) -> ComplianceMapping {
+    service_mapping_in(framework, control_id, title, "Services")
+}
+
+/// Builds a [`ComplianceMapping`] under an explicit section.
+///
+/// Used for frameworks whose catalogue groups controls differently from the
+/// default "Services" section — notably ISO/IEC 27001:2022, whose Annex A
+/// controls live under the "Technological" theme.
+fn service_mapping_in(
+    framework: ComplianceFramework,
+    control_id: &str,
+    title: &str,
+    section: &str,
+) -> ComplianceMapping {
     ComplianceMapping {
         compliance_framework: framework,
         compliance_control_id: control_id.to_string(),
         compliance_control_title: title.to_string(),
-        compliance_section: Some("Services".to_string()),
+        compliance_section: Some(section.to_string()),
     }
+}
+
+/// GDPR mapping for service-minimisation controls.
+///
+/// Disabling unnecessary daemons is a system-hardening technical measure for
+/// security of processing under Article 32; "TM-SH" is the project's
+/// system-hardening technical-measure tag.
+fn service_gdpr_hardening() -> ComplianceMapping {
+    service_mapping(
+        ComplianceFramework::GDPR,
+        "TM-SH",
+        "Technical measure: system hardening",
+    )
+}
+
+/// ISO/IEC 27001:2022 Annex A mappings for removing/disabling unneeded daemons.
+///
+/// Maps to 8.19 (Installation of software on operational systems) and 8.9
+/// (Configuration management); both sit under the "Technological" theme.
+fn service_iso_minimisation() -> [ComplianceMapping; 2] {
+    [
+        service_mapping_in(
+            ComplianceFramework::ISO27001,
+            "8.19",
+            "Installation of software on operational systems",
+            "Technological",
+        ),
+        service_mapping_in(
+            ComplianceFramework::ISO27001,
+            "8.9",
+            "Configuration management",
+            "Technological",
+        ),
+    ]
+}
+
+/// ISO/IEC 27001:2022 Annex A mapping for disabling network-exposed services.
+///
+/// Control 8.20 (Networks security) covers reducing exposure from network
+/// daemons such as Bluetooth and the Avahi/mDNS responder; "Technological" theme.
+fn service_iso_networks() -> ComplianceMapping {
+    service_mapping_in(
+        ComplianceFramework::ISO27001,
+        "8.20",
+        "Networks security",
+        "Technological",
+    )
 }
 
 /// Returns compliance mappings for service findings.
@@ -61,40 +122,69 @@ fn service_mapping(
 /// NIST IDs use 800-53 Rev 5 base controls. The SSG service-disable rules for
 /// these daemons carry no STIG or PCI-DSS reference, so those frameworks are
 /// omitted rather than guessed.
+///
+/// GDPR and ISO/IEC 27001:2022 apply to every mapped daemon as service
+/// minimisation: GDPR "TM-SH" (Article 32 system-hardening technical measure)
+/// and ISO 27001 Annex A 8.19 (Installation of software on operational systems)
+/// plus 8.9 (Configuration management), both under the "Technological" theme.
+/// Network-exposed daemons (Bluetooth, Avahi/mDNS) additionally map ISO 8.20
+/// (Networks security). HIPAA is omitted — none of these daemons map cleanly to
+/// a Security Rule specification.
 fn get_service_compliance_mappings(service_name: &str) -> Vec<ComplianceMapping> {
     match service_name {
         // SSG: package_xinetd_removed
-        "xinetd" => vec![
+        "xinetd" => [
             service_mapping(
                 ComplianceFramework::CIS,
                 "2.1.1",
                 "Ensure xinetd is not installed",
             ),
             service_mapping(ComplianceFramework::NIST, "CM-7", "Least Functionality"),
-        ],
-        // SSG: service_avahi-daemon_disabled
-        "avahi-daemon" | "avahi" => vec![
+            service_gdpr_hardening(),
+        ]
+        .into_iter()
+        .chain(service_iso_minimisation())
+        .collect(),
+        // SSG: service_avahi-daemon_disabled. Avahi is an mDNS network responder,
+        // so ISO 8.20 (Networks security) applies in addition to minimisation.
+        "avahi-daemon" | "avahi" => [
             service_mapping(
                 ComplianceFramework::CIS,
                 "2.2.3",
                 "Ensure Avahi Server is not installed",
             ),
             service_mapping(ComplianceFramework::NIST, "CM-7", "Least Functionality"),
-        ],
+            service_gdpr_hardening(),
+            service_iso_networks(),
+        ]
+        .into_iter()
+        .chain(service_iso_minimisation())
+        .collect(),
         // SSG: service_cups_disabled
-        "cups" | "cupsd" => vec![
+        "cups" | "cupsd" => [
             service_mapping(
                 ComplianceFramework::CIS,
                 "2.2.4",
                 "Ensure CUPS is not installed",
             ),
             service_mapping(ComplianceFramework::NIST, "CM-7", "Least Functionality"),
-        ],
+            service_gdpr_hardening(),
+        ]
+        .into_iter()
+        .chain(service_iso_minimisation())
+        .collect(),
         // SSG: service_bluetooth_disabled (NIST AC-18 wireless access + CM-7).
-        "bluetooth" => vec![
+        // Bluetooth is a wireless network interface, so ISO 8.20 (Networks
+        // security) applies in addition to minimisation.
+        "bluetooth" => [
             service_mapping(ComplianceFramework::NIST, "AC-18", "Wireless Access"),
             service_mapping(ComplianceFramework::NIST, "CM-7", "Least Functionality"),
-        ],
+            service_gdpr_hardening(),
+            service_iso_networks(),
+        ]
+        .into_iter()
+        .chain(service_iso_minimisation())
+        .collect(),
         _ => vec![],
     }
 }
@@ -559,6 +649,43 @@ mod tests {
         assert!(
             frameworks.contains(&ComplianceFramework::NIST),
             "xinetd must add a NIST mapping"
+        );
+    }
+
+    /// Confirms a representative disabled service (bluetooth) now carries the
+    /// governance-framework mappings: ISO/IEC 27001:2022 (8.20 Networks security
+    /// plus the 8.19/8.9 minimisation pair, under "Technological") and GDPR
+    /// "TM-SH". HIPAA is intentionally absent — no service maps cleanly to a
+    /// HIPAA Security Rule specification.
+    #[test]
+    fn service_bluetooth_maps_iso_and_gdpr() {
+        let mappings = get_service_compliance_mappings("bluetooth");
+        let frameworks: Vec<ComplianceFramework> =
+            mappings.iter().map(|m| m.compliance_framework).collect();
+
+        assert!(
+            frameworks.contains(&ComplianceFramework::ISO27001),
+            "bluetooth must add an ISO 27001 mapping"
+        );
+        assert!(
+            frameworks.contains(&ComplianceFramework::GDPR),
+            "bluetooth must add a GDPR mapping"
+        );
+        assert!(
+            !frameworks.contains(&ComplianceFramework::HIPAA),
+            "services carry no HIPAA mapping"
+        );
+
+        // Bluetooth, being network-exposed, must carry the Networks security
+        // control filed under the "Technological" theme.
+        let iso_networks = mappings.iter().find(|m| {
+            m.compliance_framework == ComplianceFramework::ISO27001
+                && m.compliance_control_id == "8.20"
+        });
+        let iso_networks = iso_networks.expect("bluetooth must map ISO 8.20");
+        assert_eq!(
+            iso_networks.compliance_section.as_deref(),
+            Some("Technological")
         );
     }
 }

@@ -189,6 +189,30 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
                     .to_string(),
                 compliance_section: Some("Identify and Authenticate Access".to_string()),
             },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(a)(1)".to_string(),
+                compliance_control_title: "Access Control".to_string(),
+                compliance_section: Some("Technical Safeguards".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(c)(1)".to_string(),
+                compliance_control_title: "Integrity".to_string(),
+                compliance_section: Some("Technical Safeguards".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "TM-AC".to_string(),
+                compliance_control_title: "Access Control".to_string(),
+                compliance_section: Some("Technical Measures".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::ISO27001,
+                compliance_control_id: "8.3".to_string(),
+                compliance_control_title: "Information access restriction".to_string(),
+                compliance_section: Some("Technological".to_string()),
+            },
         ],
         // SSG: file_permissions_etc_shadow (nist: AC-6(1),CM-6(a); pcidss: Req-8.7.c)
         "/etc/shadow" => vec![
@@ -212,6 +236,30 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "Restrict access to system component databases and files"
                     .to_string(),
                 compliance_section: Some("Identify and Authenticate Access".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(a)(1)".to_string(),
+                compliance_control_title: "Access Control".to_string(),
+                compliance_section: Some("Technical Safeguards".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(c)(1)".to_string(),
+                compliance_control_title: "Integrity".to_string(),
+                compliance_section: Some("Technical Safeguards".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "TM-AC".to_string(),
+                compliance_control_title: "Access Control".to_string(),
+                compliance_section: Some("Technical Measures".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::ISO27001,
+                compliance_control_id: "8.3".to_string(),
+                compliance_control_title: "Information access restriction".to_string(),
+                compliance_section: Some("Technological".to_string()),
             },
         ],
         // SSG: file_permissions_etc_group (nist: AC-6(1),CM-6(a); pcidss: Req-8.7.c)
@@ -237,6 +285,30 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
                     .to_string(),
                 compliance_section: Some("Identify and Authenticate Access".to_string()),
             },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(a)(1)".to_string(),
+                compliance_control_title: "Access Control".to_string(),
+                compliance_section: Some("Technical Safeguards".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(c)(1)".to_string(),
+                compliance_control_title: "Integrity".to_string(),
+                compliance_section: Some("Technical Safeguards".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "TM-AC".to_string(),
+                compliance_control_title: "Access Control".to_string(),
+                compliance_section: Some("Technical Measures".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::ISO27001,
+                compliance_control_id: "8.3".to_string(),
+                compliance_control_title: "Information access restriction".to_string(),
+                compliance_section: Some("Technological".to_string()),
+            },
         ],
         // SSG: file_permissions_etc_gshadow (nist: AC-6(1),CM-6(a); no pcidss declared)
         "/etc/gshadow" => vec![
@@ -254,17 +326,62 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
                     "Least Privilege - Authorize Access to Security Functions".to_string(),
                 compliance_section: Some("Access Control".to_string()),
             },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(a)(1)".to_string(),
+                compliance_control_title: "Access Control".to_string(),
+                compliance_section: Some("Technical Safeguards".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(c)(1)".to_string(),
+                compliance_control_title: "Integrity".to_string(),
+                compliance_section: Some("Technical Safeguards".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "TM-AC".to_string(),
+                compliance_control_title: "Access Control".to_string(),
+                compliance_section: Some("Technical Measures".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::ISO27001,
+                compliance_control_id: "8.3".to_string(),
+                compliance_control_title: "Information access restriction".to_string(),
+                compliance_section: Some("Technological".to_string()),
+            },
         ],
         // SSG: directory_permissions_sshd_config_d (nist: AC-17(a),AC-6(1),CM-6(a);
         // no stigid/pcidss declared). This is a live-scanned path; the prior
         // implementation returned no mappings for it.
-        "/etc/ssh" => vec![ComplianceMapping {
-            compliance_framework: ComplianceFramework::NIST,
-            compliance_control_id: "AC-17(a)".to_string(),
-            compliance_control_title: "Remote Access - Usage Restrictions and Configuration"
-                .to_string(),
-            compliance_section: Some("Access Control".to_string()),
-        }],
+        "/etc/ssh" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::NIST,
+                compliance_control_id: "AC-17(a)".to_string(),
+                compliance_control_title: "Remote Access - Usage Restrictions and Configuration"
+                    .to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(a)(1)".to_string(),
+                compliance_control_title: "Access Control".to_string(),
+                compliance_section: Some("Technical Safeguards".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "TM-AC".to_string(),
+                compliance_control_title: "Access Control".to_string(),
+                compliance_section: Some("Technical Measures".to_string()),
+            },
+            // Privileged sshd config directory → ISO 8.2 (privileged access rights).
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::ISO27001,
+                compliance_control_id: "8.2".to_string(),
+                compliance_control_title: "Privileged access rights".to_string(),
+                compliance_section: Some("Technological".to_string()),
+            },
+        ],
         _ => vec![],
     }
 }
@@ -644,5 +761,41 @@ mod tests {
             .find(|m| m.compliance_framework == ComplianceFramework::NIST)
             .unwrap();
         assert_eq!(nist.compliance_control_id, "AC-6(1)");
+    }
+
+    /// Sensitive-file permission checks must also carry HIPAA, GDPR and
+    /// ISO/IEC 27001:2022 mappings alongside the existing CIS/NIST/PCI-DSS set.
+    #[test]
+    fn shadow_has_privacy_and_iso_mappings() {
+        let mappings = get_permissions_compliance_mappings("/etc/shadow");
+
+        let has = |fw| mappings.iter().any(|m| m.compliance_framework == fw);
+        assert!(has(ComplianceFramework::HIPAA), "HIPAA must be present");
+        assert!(has(ComplianceFramework::GDPR), "GDPR must be present");
+        assert!(
+            has(ComplianceFramework::ISO27001),
+            "ISO 27001 must be present"
+        );
+
+        // ISO control must be the access-restriction clause for sensitive files.
+        let iso = mappings
+            .iter()
+            .find(|m| m.compliance_framework == ComplianceFramework::ISO27001)
+            .unwrap();
+        assert_eq!(iso.compliance_control_id, "8.3");
+
+        // HIPAA must include both the access-control and integrity safeguards.
+        assert!(
+            mappings
+                .iter()
+                .any(|m| m.compliance_framework == ComplianceFramework::HIPAA
+                    && m.compliance_control_id == "164.312(a)(1)")
+        );
+        assert!(
+            mappings
+                .iter()
+                .any(|m| m.compliance_framework == ComplianceFramework::HIPAA
+                    && m.compliance_control_id == "164.312(c)(1)")
+        );
     }
 }

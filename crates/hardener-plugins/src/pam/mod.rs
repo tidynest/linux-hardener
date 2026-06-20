@@ -42,12 +42,63 @@ impl PamHardeningPlugin {
 ///
 /// Keeps the per-check mapping tables below terse and free of repetition.
 fn pam_mapping(framework: ComplianceFramework, control_id: &str, title: &str) -> ComplianceMapping {
+    pam_mapping_in(framework, control_id, title, "Access Control")
+}
+
+/// Builds a [`ComplianceMapping`] under an explicit section.
+///
+/// Used for frameworks whose catalogue groups controls differently from the
+/// default "Access Control" section — notably ISO/IEC 27001:2022, whose Annex A
+/// controls live under the "Technological" theme.
+fn pam_mapping_in(
+    framework: ComplianceFramework,
+    control_id: &str,
+    title: &str,
+    section: &str,
+) -> ComplianceMapping {
     ComplianceMapping {
         compliance_framework: framework,
         compliance_control_id: control_id.to_string(),
         compliance_control_title: title.to_string(),
-        compliance_section: Some("Access Control".to_string()),
+        compliance_section: Some(section.to_string()),
     }
+}
+
+/// HIPAA Security Rule mapping for PAM password-management controls.
+///
+/// All PAM password quality/ageing/history/lockout checks implement the
+/// addressable Password Management specification at 45 CFR §164.308(a)(5)(ii)(D).
+fn pam_hipaa_password_mgmt() -> ComplianceMapping {
+    pam_mapping(
+        ComplianceFramework::HIPAA,
+        "164.308(a)(5)(ii)(D)",
+        "Password Management",
+    )
+}
+
+/// GDPR mapping for PAM authentication-strength controls.
+///
+/// Strong authentication is a technical measure for security of processing
+/// under Article 32; "TM-AUTH" is the project's authentication technical-measure tag.
+fn pam_gdpr_auth() -> ComplianceMapping {
+    pam_mapping(
+        ComplianceFramework::GDPR,
+        "TM-AUTH",
+        "Technical measure: authentication strength",
+    )
+}
+
+/// ISO/IEC 27001:2022 Annex A mapping for PAM authentication controls.
+///
+/// Control 8.5 (Secure authentication) covers password policy, account lockout
+/// and authentication strength; it sits under the "Technological" theme.
+fn pam_iso_secure_auth() -> ComplianceMapping {
+    pam_mapping_in(
+        ComplianceFramework::ISO27001,
+        "8.5",
+        "Secure authentication",
+        "Technological",
+    )
 }
 
 /// Returns compliance mappings for PAM findings.
@@ -57,6 +108,12 @@ fn pam_mapping(framework: ComplianceFramework, control_id: &str, title: &str) ->
 /// 800-53 Rev 5 base controls; STIG IDs are the RHEL 8 DISA STIG group IDs;
 /// PCI-DSS uses v4.0 requirement numbers. A framework is omitted where the SSG
 /// rule carries no authoritative mapping for it.
+///
+/// HIPAA, GDPR and ISO/IEC 27001:2022 apply uniformly to every PAM
+/// authentication check, since each one strengthens password management /
+/// authentication: HIPAA §164.308(a)(5)(ii)(D) (Password Management), GDPR
+/// "TM-AUTH" (Article 32 technical measure), and ISO 27001 Annex A 8.5 (Secure
+/// authentication, "Technological" theme).
 fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
     match check_name {
         // SSG: accounts_password_pam_minlen (stigid RHEL-08-020230)
@@ -81,6 +138,9 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
                 "8.2.3",
                 "Strong passwords and passphrases",
             ),
+            pam_hipaa_password_mgmt(),
+            pam_gdpr_auth(),
+            pam_iso_secure_auth(),
         ],
         // SSG: accounts_password_pam_dcredit (stigid RHEL-08-020130)
         name if name.contains("dcredit") => vec![
@@ -104,6 +164,9 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
                 "8.2.3",
                 "Strong passwords and passphrases",
             ),
+            pam_hipaa_password_mgmt(),
+            pam_gdpr_auth(),
+            pam_iso_secure_auth(),
         ],
         // SSG: accounts_password_pam_ucredit (stigid RHEL-08-020110)
         name if name.contains("ucredit") => vec![
@@ -127,6 +190,9 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
                 "8.2.3",
                 "Strong passwords and passphrases",
             ),
+            pam_hipaa_password_mgmt(),
+            pam_gdpr_auth(),
+            pam_iso_secure_auth(),
         ],
         // SSG: accounts_password_pam_lcredit (stigid RHEL-08-020120)
         name if name.contains("lcredit") => vec![
@@ -150,6 +216,9 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
                 "8.2.3",
                 "Strong passwords and passphrases",
             ),
+            pam_hipaa_password_mgmt(),
+            pam_gdpr_auth(),
+            pam_iso_secure_auth(),
         ],
         // SSG: accounts_password_pam_ocredit (stigid RHEL-08-020280). No PCI-DSS in SSG.
         name if name.contains("ocredit") => vec![
@@ -168,6 +237,9 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
                 "IA-5(1)(a)",
                 "Authenticator Management | Password-Based Authentication",
             ),
+            pam_hipaa_password_mgmt(),
+            pam_gdpr_auth(),
+            pam_iso_secure_auth(),
         ],
         // SSG: accounts_password_pam_maxrepeat (stigid RHEL-08-020150). No PCI-DSS in SSG.
         name if name.contains("maxrepeat") => vec![
@@ -186,6 +258,9 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
                 "IA-5(1)(a)",
                 "Authenticator Management | Password-Based Authentication",
             ),
+            pam_hipaa_password_mgmt(),
+            pam_gdpr_auth(),
+            pam_iso_secure_auth(),
         ],
         // SSG: accounts_passwords_pam_faillock_deny (stigid RHEL-08-020011)
         name if name.contains("lockout") || name.contains("deny") => vec![
@@ -209,14 +284,22 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
                 "8.1.6",
                 "Limit repeated access attempts by locking out the user ID",
             ),
+            pam_hipaa_password_mgmt(),
+            pam_gdpr_auth(),
+            pam_iso_secure_auth(),
         ],
         // SSG: accounts_password_pam_pwhistory_remember. SSG rule carries no
         // NIST/STIG/PCI-DSS reference, so only CIS is mapped (no guessing).
-        name if name.contains("remember") || name.contains("reuse") => vec![pam_mapping(
-            ComplianceFramework::CIS,
-            "5.3.3",
-            "Ensure password reuse is limited",
-        )],
+        name if name.contains("remember") || name.contains("reuse") => vec![
+            pam_mapping(
+                ComplianceFramework::CIS,
+                "5.3.3",
+                "Ensure password reuse is limited",
+            ),
+            pam_hipaa_password_mgmt(),
+            pam_gdpr_auth(),
+            pam_iso_secure_auth(),
+        ],
         // SSG: accounts_maximum_age_login_defs (stigid RHEL-08-020200)
         name if name.contains("PASS_MAX_DAYS") => vec![
             pam_mapping(
@@ -239,6 +322,9 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
                 "8.2.4",
                 "Change user passwords/passphrases at least once every 90 days",
             ),
+            pam_hipaa_password_mgmt(),
+            pam_gdpr_auth(),
+            pam_iso_secure_auth(),
         ],
         // SSG: accounts_minimum_age_login_defs (stigid RHEL-08-020190). No PCI-DSS in SSG.
         name if name.contains("PASS_MIN_DAYS") => vec![
@@ -257,6 +343,9 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
                 "IA-5(1)(d)",
                 "Authenticator Management | Password-Based Authentication",
             ),
+            pam_hipaa_password_mgmt(),
+            pam_gdpr_auth(),
+            pam_iso_secure_auth(),
         ],
         // SSG: accounts_password_warn_age_login_defs. SSG rule carries no STIG, so
         // STIG is omitted; NIST and PCI-DSS are mapped from its references block.
@@ -276,12 +365,20 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
                 "8.2.4",
                 "Change user passwords/passphrases at least once every 90 days",
             ),
+            pam_hipaa_password_mgmt(),
+            pam_gdpr_auth(),
+            pam_iso_secure_auth(),
         ],
-        _ => vec![pam_mapping(
-            ComplianceFramework::CIS,
-            "5.3.1",
-            "Ensure password creation requirements are configured",
-        )],
+        _ => vec![
+            pam_mapping(
+                ComplianceFramework::CIS,
+                "5.3.1",
+                "Ensure password creation requirements are configured",
+            ),
+            pam_hipaa_password_mgmt(),
+            pam_gdpr_auth(),
+            pam_iso_secure_auth(),
+        ],
     }
 }
 
@@ -932,5 +1029,37 @@ mod tests {
                 "minlen must map framework {expected:?}"
             );
         }
+    }
+
+    /// Confirms the same representative PAM finding (minimum password length)
+    /// also carries the governance-framework mappings added alongside the
+    /// technical ones: ISO/IEC 27001:2022 8.5 (under the "Technological"
+    /// theme), HIPAA §164.308(a)(5)(ii)(D) and GDPR "TM-AUTH". Existing CIS /
+    /// STIG / NIST / PCI-DSS mappings are left intact (asserted above).
+    #[test]
+    fn pam_minlen_maps_iso_hipaa_and_gdpr() {
+        let mappings = get_pam_compliance_mappings("minlen");
+        let frameworks: Vec<ComplianceFramework> =
+            mappings.iter().map(|m| m.compliance_framework).collect();
+
+        for expected in [
+            ComplianceFramework::ISO27001,
+            ComplianceFramework::HIPAA,
+            ComplianceFramework::GDPR,
+        ] {
+            assert!(
+                frameworks.contains(&expected),
+                "minlen must map framework {expected:?}"
+            );
+        }
+
+        // The ISO 27001 control must be filed under the "Technological" theme,
+        // not the PAM default "Access Control" section.
+        let iso = mappings
+            .iter()
+            .find(|m| m.compliance_framework == ComplianceFramework::ISO27001)
+            .expect("minlen must carry an ISO 27001 mapping");
+        assert_eq!(iso.compliance_control_id, "8.5");
+        assert_eq!(iso.compliance_section.as_deref(), Some("Technological"));
     }
 }

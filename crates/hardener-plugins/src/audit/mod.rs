@@ -421,6 +421,30 @@ fn get_audit_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
                     .to_string(),
                 compliance_section: Some("Track and Monitor Access".to_string()),
             },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(b)".to_string(),
+                compliance_control_title: "Audit Controls".to_string(),
+                compliance_section: Some("Technical Safeguards".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.308(a)(1)(ii)(D)".to_string(),
+                compliance_control_title: "Information System Activity Review".to_string(),
+                compliance_section: Some("Administrative Safeguards".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "TM-AU".to_string(),
+                compliance_control_title: "Audit Logging".to_string(),
+                compliance_section: Some("Technical Measures".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::ISO27001,
+                compliance_control_id: "8.15".to_string(),
+                compliance_control_title: "Logging".to_string(),
+                compliance_section: Some("Technological".to_string()),
+            },
         ],
         // SSG: service_auditd_enabled
         // (nist: AU-3,AU-12(c),...; pcidss: Req-10.1; stigid@ol8: OL08-00-030181)
@@ -453,6 +477,30 @@ fn get_audit_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
                     .to_string(),
                 compliance_section: Some("Track and Monitor Access".to_string()),
             },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(b)".to_string(),
+                compliance_control_title: "Audit Controls".to_string(),
+                compliance_section: Some("Technical Safeguards".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.308(a)(1)(ii)(D)".to_string(),
+                compliance_control_title: "Information System Activity Review".to_string(),
+                compliance_section: Some("Administrative Safeguards".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "TM-AU".to_string(),
+                compliance_control_title: "Audit Logging".to_string(),
+                compliance_section: Some("Technical Measures".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::ISO27001,
+                compliance_control_id: "8.15".to_string(),
+                compliance_control_title: "Logging".to_string(),
+                compliance_section: Some("Technological".to_string()),
+            },
         ],
         // SSG: audit_rules_* family (e.g. audit_rules_usergroup_modification_*,
         // audit_rules_dac_modification_*, audit_rules_file_deletion_events_*).
@@ -478,6 +526,37 @@ fn get_audit_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "Record audit trail entries for security-relevant events"
                     .to_string(),
                 compliance_section: Some("Track and Monitor Access".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(b)".to_string(),
+                compliance_control_title: "Audit Controls".to_string(),
+                compliance_section: Some("Technical Safeguards".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.308(a)(1)(ii)(D)".to_string(),
+                compliance_control_title: "Information System Activity Review".to_string(),
+                compliance_section: Some("Administrative Safeguards".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "TM-AU".to_string(),
+                compliance_control_title: "Audit Logging".to_string(),
+                compliance_section: Some("Technical Measures".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::ISO27001,
+                compliance_control_id: "8.15".to_string(),
+                compliance_control_title: "Logging".to_string(),
+                compliance_section: Some("Technological".to_string()),
+            },
+            // Audit rules actively monitor security-relevant events → ISO 8.16.
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::ISO27001,
+                compliance_control_id: "8.16".to_string(),
+                compliance_control_title: "Monitoring activities".to_string(),
+                compliance_section: Some("Technological".to_string()),
             },
         ],
         _ => vec![],
@@ -955,5 +1034,49 @@ mod tests {
             .find(|m| m.compliance_framework == ComplianceFramework::NIST)
             .unwrap();
         assert_eq!(nist.compliance_control_id, "AU-2(a)");
+    }
+
+    /// Audit findings must also carry HIPAA, GDPR and ISO/IEC 27001:2022
+    /// logging mappings alongside the existing CIS/NIST/STIG/PCI-DSS set.
+    #[test]
+    fn auditd_install_has_privacy_and_iso_mappings() {
+        let mappings = get_audit_compliance_mappings("not_installed");
+
+        let has = |fw| mappings.iter().any(|m| m.compliance_framework == fw);
+        assert!(has(ComplianceFramework::HIPAA), "HIPAA must be present");
+        assert!(has(ComplianceFramework::GDPR), "GDPR must be present");
+        assert!(
+            has(ComplianceFramework::ISO27001),
+            "ISO 27001 must be present"
+        );
+
+        // ISO logging clause for audit controls.
+        let iso = mappings
+            .iter()
+            .find(|m| m.compliance_framework == ComplianceFramework::ISO27001)
+            .unwrap();
+        assert_eq!(iso.compliance_control_id, "8.15");
+
+        // HIPAA must include the Audit Controls safeguard.
+        assert!(
+            mappings
+                .iter()
+                .any(|m| m.compliance_framework == ComplianceFramework::HIPAA
+                    && m.compliance_control_id == "164.312(b)")
+        );
+    }
+
+    /// The audit-rules bucket additionally maps to ISO 8.16 (monitoring
+    /// activities), since live rules actively monitor security events.
+    #[test]
+    fn audit_rules_map_to_iso_monitoring() {
+        let mappings = get_audit_compliance_mappings("rules");
+        assert!(
+            mappings
+                .iter()
+                .any(|m| m.compliance_framework == ComplianceFramework::ISO27001
+                    && m.compliance_control_id == "8.16"),
+            "audit rules must map to ISO 8.16 monitoring activities"
+        );
     }
 }

@@ -2,7 +2,7 @@
 //!
 //! These tests verify plugin behavior without touching the real filesystem.
 
-use hardener_common::types::{PluginId, Severity};
+use hardener_common::types::{ComplianceFramework, PluginId, Severity};
 use hardener_core::executor::CommandOutput;
 use hardener_core::{Context, MockExecutor, SystemExecutor, plugin::HardeningPlugin};
 use hardener_plugins::ssh::{
@@ -22,7 +22,6 @@ fn secure_ssh_executor() -> MockExecutor {
 PermitRootLogin no
 PasswordAuthentication no
 PermitEmptyPasswords no
-Protocol 2
 MaxAuthTries 3
 X11Forwarding no
 ClientAliveInterval 300
@@ -185,8 +184,8 @@ async fn test_ssh_scan_missing_directives_flagged() {
         "missing PermitEmptyPasswords should be flagged"
     );
     assert!(
-        finding_ids.contains(&"ssh-protocol"),
-        "missing Protocol should be flagged"
+        finding_ids.contains(&"ssh-maxauthtries"),
+        "missing MaxAuthTries should be flagged"
     );
 
     // Verify "not set" current value
@@ -329,6 +328,33 @@ async fn test_ssh_scan_compliance_mappings() {
         cis_mapping.compliance_control_title.contains("root login"),
         "CIS mapping title should mention root login, got: {}",
         cis_mapping.compliance_control_title
+    );
+
+    // PermitRootLogin must now also map to ISO 27001:2022 secure authentication.
+    let iso_mapping = root_login
+        .finding_compliance
+        .iter()
+        .find(|m| m.compliance_framework == ComplianceFramework::ISO27001)
+        .expect("PermitRootLogin should have an ISO 27001 mapping");
+    assert_eq!(iso_mapping.compliance_control_id, "8.5");
+    assert_eq!(
+        iso_mapping.compliance_control_title,
+        "Secure authentication"
+    );
+
+    // ...and to a HIPAA technical safeguard (person/entity authentication).
+    assert!(
+        root_login
+            .finding_compliance
+            .iter()
+            .any(|m| m.compliance_framework == ComplianceFramework::HIPAA
+                && m.compliance_control_id == "164.312(d)"),
+        "PermitRootLogin should have a HIPAA 164.312(d) mapping, got: {:?}",
+        root_login
+            .finding_compliance
+            .iter()
+            .map(|m| (&m.compliance_framework, &m.compliance_control_id))
+            .collect::<Vec<_>>()
     );
 }
 
