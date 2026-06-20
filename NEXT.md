@@ -8,11 +8,12 @@
 (v1.0.4) and a security dependency pass (v1.0.5 — `tauri` 2.11.2, `lettre`
 0.11.22, `rustls-webpki` 0.103.13; cargo-deny gate added).
 
-**Open audit finding (2026-06-19):** compliance reporting only *automatically
-assesses* CIS — every plugin tags findings with CIS control IDs only, so STIG,
-NIST, PCI-DSS, HIPAA and GDPR reports previously showed 100% compliance on any
-system. Phase-1 fix landed (unassessed controls now report `ManualReview`, not
-`Pass`); phase-2 (real multi-framework mappings) is the top open task below.
+**Open audit finding (2026-06-19):** compliance reporting initially *automatically
+assesses* CIS only — every plugin tagged findings with CIS control IDs, so for
+STIG, NIST, PCI-DSS, HIPAA and GDPR the unmapped controls defaulted to `Pass`,
+reporting coverage the engine had not yet evaluated. Phase-1 fix landed
+(unassessed controls now report `ManualReview`, not `Pass`); phase-2 (real
+multi-framework mappings) is the top open task below.
 
 ### Completed milestones:
 

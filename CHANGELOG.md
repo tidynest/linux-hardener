@@ -42,16 +42,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and validates the candidate config with `sshd -t` before restarting.
 
 ### Fixed
-- **Compliance reporting no longer fabricates compliance.** Control pass/fail is
-  derived from scan findings, which every plugin previously tagged with CIS
-  control IDs only. The report generator marked any control with no mapped
-  finding as `Pass`, so STIG, NIST, PCI-DSS, HIPAA and GDPR reports showed 100%
-  compliance on every system — even one with critical findings. Controls of
-  frameworks the engine does not assess are now reported as `ManualReview` rather
-  than a misleading `Pass`. Assessment is driven by the plugin-declared coverage
-  set (see Added), not a misleading automatic pass. The generator also surfaces
-  finding-referenced controls absent from a framework's catalogue, so a wrong
-  mapping can only ever over-report a failure.
+- **Honest reporting for not-yet-assessed frameworks.** Control results are
+  derived from scan findings, which initially carried CIS control IDs only. For
+  frameworks without mappings yet (STIG, NIST, PCI-DSS, HIPAA, GDPR), a control
+  with no matching finding previously defaulted to `Pass`, reporting coverage the
+  engine had not actually evaluated. Such controls now report `ManualReview`
+  until a mapping exists, and the generator surfaces any finding-referenced
+  control missing from a framework's catalogue — so an incomplete mapping can
+  only ever over-report a failure, never a pass.
 
 ### Changed
 - **Non-CIS catalogues are derived from plugin coverage.** The hand-written

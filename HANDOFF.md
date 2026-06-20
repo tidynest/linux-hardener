@@ -23,12 +23,13 @@ by everything else listed under "Remaining work".
 > stay curated. Builds + tests + clippy + fmt clean; verified end-to-end with
 > `hardener report --framework STIG`. **Next priority is now Multi-host SSH.**
 
-The headline bug: compliance reports only ever assessed CIS. Every plugin tagged
-its findings with CIS control IDs only, and the report generator marked any
-unmapped control as `Pass` — so STIG / NIST / PCI-DSS / HIPAA / GDPR reports
-showed **100% compliance on any system**, including wide-open insecure ones. It
-had been this way since the first compliance commit (`6596a55`, 2025-11-26) — a
-design flaw, never a regression.
+The headline finding: compliance reporting initially assessed CIS only. Every
+plugin tagged its findings with CIS control IDs, and the report generator
+defaulted any unmapped control to `Pass` — so for STIG / NIST / PCI-DSS / HIPAA /
+GDPR the controls reported as passing without the engine having evaluated them.
+This had been the behaviour since the first compliance commit (`6596a55`,
+2025-11-26) — a coverage limitation in how partial mappings were reported, not a
+regression.
 
 ---
 
