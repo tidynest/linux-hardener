@@ -285,6 +285,22 @@ async fn scan_one(profile: RemoteHostProfile, timeout: u64) -> HostOutcome {
     }
 }
 
+/// Overlays completed `(index, outcome)` results onto the input-ordered pre-fill.
+/// Slots whose task never reported (panicked/dropped) keep their placeholder, so
+/// the result is always input-length and in input order regardless of completion
+/// order.
+fn assemble_ordered(
+    mut prefill: Vec<HostOutcome>,
+    completed: Vec<(usize, HostOutcome)>,
+) -> Vec<HostOutcome> {
+    for (idx, outcome) in completed {
+        if let Some(slot) = prefill.get_mut(idx) {
+            *slot = outcome;
+        }
+    }
+    prefill
+}
+
 /// Scans all profiles with at most `concurrency` running at once, preserving the
 /// input order in the returned vec.
 async fn scan_all(
@@ -295,7 +311,7 @@ async fn scan_all(
     use tokio::sync::Semaphore;
     // Pre-fill every slot so a panicked task surfaces as a visible Failed host
     // rather than silently vanishing (which would desync the rollup count).
-    let mut results: Vec<HostOutcome> = profiles
+    let prefill: Vec<HostOutcome> = profiles
         .iter()
         .map(|p| HostOutcome {
             name: p.name.clone(),
@@ -314,12 +330,13 @@ async fn scan_all(
             (idx, scan_one(profile, timeout).await)
         });
     }
+    let mut completed: Vec<(usize, HostOutcome)> = Vec::new();
     while let Some(res) = set.join_next().await {
-        if let Ok((idx, outcome)) = res {
-            results[idx] = outcome;
+        if let Ok(pair) = res {
+            completed.push(pair);
         }
     }
-    results
+    assemble_ordered(prefill, completed)
 }
 
 /// Options for `hardener batch scan`.
@@ -432,6 +449,27 @@ mod tests {
             target: "u@h:22".into(),
             status: HostStatus::Failed {
                 error: "boom".into(),
+            },
+        }
+    }
+
+    fn scanned_named(name: &str, counts: SeverityCounts) -> HostOutcome {
+        HostOutcome {
+            name: name.into(),
+            target: format!("u@{name}:22"),
+            status: HostStatus::Scanned {
+                counts,
+                findings: vec![],
+            },
+        }
+    }
+
+    fn failed_named(name: &str) -> HostOutcome {
+        HostOutcome {
+            name: name.into(),
+            target: format!("u@{name}:22"),
+            status: HostStatus::Failed {
+                error: "did not complete".into(),
             },
         }
     }
@@ -557,5 +595,130 @@ mod tests {
     async fn scan_all_empty_is_empty() {
         let out = scan_all(vec![], 4, 1).await;
         assert!(out.is_empty());
+    }
+
+    #[test]
+    fn parse_inline_without_user() {
+        let p = parse_inline("host.only", 22, None, true);
+        assert!(p.user.is_none());
+        assert_eq!(p.hostname, "host.only");
+        assert_eq!(p.name, "host.only");
+        assert!(p.host_key_checking);
+    }
+
+    #[test]
+    fn resolve_inline_only() {
+        let r = resolve_hosts(
+            &HostsConfig::default(),
+            false,
+            &[],
+            vec![parse_inline("ops@cache", 22, None, true)],
+        )
+        .unwrap();
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].name, "cache");
+    }
+
+    #[test]
+    fn resolve_multiple_names_preserve_order() {
+        let r = resolve_hosts(&inv(), false, &["db-02".into(), "web-01".into()], vec![]).unwrap();
+        let names: Vec<&str> = r.iter().map(|h| h.name.as_str()).collect();
+        assert_eq!(names, ["db-02", "web-01"]);
+    }
+
+    #[test]
+    fn resolve_all_plus_noncolliding_inline() {
+        let r = resolve_hosts(
+            &inv(),
+            true,
+            &[],
+            vec![parse_inline("u@extra", 22, None, true)],
+        )
+        .unwrap();
+        assert_eq!(r.len(), 3);
+        assert_eq!(r[2].name, "extra");
+    }
+
+    #[test]
+    fn counts_exclude_info() {
+        let f = vec![finding(Severity::Info), finding(Severity::Critical)];
+        let c = SeverityCounts::from_findings(&f);
+        assert_eq!(c.critical, 1);
+        assert_eq!(c.total(), 1);
+    }
+
+    #[test]
+    fn summary_mixed_severities() {
+        let s = BatchSummary::from_outcomes(&[scanned_named(
+            "a",
+            SeverityCounts {
+                critical: 1,
+                high: 2,
+                medium: 3,
+                low: 4,
+            },
+        )]);
+        assert_eq!(s.critical, 1);
+        assert_eq!(s.high, 2);
+        assert_eq!(s.medium, 3);
+        assert_eq!(s.low, 4);
+        assert_eq!(s.total, 10);
+        assert_eq!(s.hosts_scanned, 1);
+        assert_eq!(s.hosts_failed, 0);
+    }
+
+    #[test]
+    fn text_render_scanned_row_shows_counts() {
+        let text = render_text(&[scanned_named(
+            "web-01",
+            SeverityCounts {
+                high: 2,
+                ..Default::default()
+            },
+        )]);
+        assert!(text.contains("web-01"));
+        // The scanned row carries the high count and the row total (both 2 here).
+        let row = text
+            .lines()
+            .find(|l| l.contains("web-01"))
+            .expect("scanned row present");
+        assert!(row.contains('2'), "row should show the count: {row}");
+    }
+
+    #[test]
+    fn json_failed_host_shape() {
+        let json = render_json(&[failed_named("cache")]);
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["hosts"][0]["status"], "failed");
+        assert!(v["hosts"][0]["error"].is_string());
+        assert!(
+            v["hosts"][0]["counts"].is_null(),
+            "failed host has no counts"
+        );
+        assert!(
+            v["hosts"][0]["findings"].is_null(),
+            "failed host has no findings"
+        );
+    }
+
+    #[test]
+    fn assemble_ordered_preserves_order_and_keeps_placeholder() {
+        let prefill = vec![failed_named("a"), failed_named("b"), failed_named("c")];
+        // completed out of order, and index 1 ("b") never reports
+        let completed = vec![
+            (2, scanned_named("c", SeverityCounts::default())),
+            (0, scanned_named("a", SeverityCounts::default())),
+        ];
+        let out = assemble_ordered(prefill, completed);
+        assert_eq!(out.len(), 3);
+        assert_eq!(out[0].name, "a");
+        assert_eq!(out[1].name, "b");
+        assert_eq!(out[2].name, "c");
+        assert!(matches!(out[0].status, HostStatus::Scanned { .. }));
+        assert!(
+            matches!(out[1].status, HostStatus::Failed { .. }),
+            "dropped task keeps placeholder"
+        );
+        assert!(matches!(out[2].status, HostStatus::Scanned { .. }));
     }
 }
