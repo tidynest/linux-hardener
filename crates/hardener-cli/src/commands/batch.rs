@@ -1,7 +1,9 @@
 //! `hardener batch scan` — scan many remote hosts concurrently.
 
+use anyhow::{Result, anyhow, bail};
 use hardener_common::types::Severity;
 use hardener_core::plugin::Finding;
+use hardener_types::remote::{HostsConfig, RemoteHostProfile};
 use serde::Serialize;
 
 /// Per-severity tally of one host's findings.
@@ -76,6 +78,67 @@ pub fn exit_code(outcomes: &[HostOutcome]) -> i32 {
     code
 }
 
+/// Parses an ad-hoc `--ssh user@host` target into a profile. Port and key come
+/// from the global SSH flags (defaults applied by the caller).
+#[allow(dead_code)]
+pub fn parse_inline(
+    target: &str,
+    port: u16,
+    key_file: Option<String>,
+    verify: bool,
+) -> RemoteHostProfile {
+    let (user, hostname) = match target.split_once('@') {
+        Some((u, h)) => (Some(u.to_string()), h.to_string()),
+        None => (None, target.to_string()),
+    };
+    RemoteHostProfile {
+        name: hostname.clone(),
+        hostname,
+        user,
+        port,
+        key_file,
+        host_key_checking: verify,
+    }
+}
+
+/// Resolves the host set to scan from inventory selection plus inline hosts.
+/// De-duplicates by `name`, inventory taking precedence. Unknown `--host` names
+/// are an error so a typo never silently scans nothing.
+#[allow(dead_code)]
+pub fn resolve_hosts(
+    inventory: &HostsConfig,
+    all: bool,
+    names: &[String],
+    inline: Vec<RemoteHostProfile>,
+) -> Result<Vec<RemoteHostProfile>> {
+    let mut selected: Vec<RemoteHostProfile> = if all {
+        inventory.hosts.clone()
+    } else {
+        names
+            .iter()
+            .map(|n| {
+                inventory
+                    .hosts
+                    .iter()
+                    .find(|h| &h.name == n)
+                    .cloned()
+                    .ok_or_else(|| anyhow!("unknown host '{n}' (not in inventory)"))
+            })
+            .collect::<Result<Vec<_>>>()?
+    };
+
+    for profile in inline {
+        if !selected.iter().any(|h| h.name == profile.name) {
+            selected.push(profile);
+        }
+    }
+
+    if selected.is_empty() {
+        bail!("no hosts selected: use --all, --host <names>, or --ssh <user@host>");
+    }
+    Ok(selected)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -128,6 +191,56 @@ mod tests {
         assert_eq!(exit_code(&[scanned(0), scanned(3)]), 1);
         assert_eq!(exit_code(&[scanned(3), failed()]), 2);
         assert_eq!(exit_code(&[]), 0);
+    }
+
+    fn inv() -> HostsConfig {
+        HostsConfig {
+            hosts: vec![profile("web-01"), profile("db-02")],
+        }
+    }
+    fn profile(name: &str) -> RemoteHostProfile {
+        RemoteHostProfile {
+            name: name.into(),
+            hostname: format!("{name}.local"),
+            user: Some("admin".into()),
+            port: 22,
+            key_file: None,
+            host_key_checking: true,
+        }
+    }
+
+    #[test]
+    fn resolve_all_returns_inventory() {
+        let r = resolve_hosts(&inv(), true, &[], vec![]).unwrap();
+        assert_eq!(r.len(), 2);
+    }
+    #[test]
+    fn resolve_named_subset() {
+        let r = resolve_hosts(&inv(), false, &["db-02".into()], vec![]).unwrap();
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].name, "db-02");
+    }
+    #[test]
+    fn resolve_unknown_name_errors() {
+        assert!(resolve_hosts(&inv(), false, &["nope".into()], vec![]).is_err());
+    }
+    #[test]
+    fn resolve_dedups_inline_against_inventory() {
+        let inline = vec![parse_inline("admin@web-01", 22, None, true)];
+        let r = resolve_hosts(&inv(), true, &[], inline).unwrap();
+        assert_eq!(r.len(), 2, "inline duplicate of inventory host is dropped");
+    }
+    #[test]
+    fn resolve_empty_errors() {
+        assert!(resolve_hosts(&HostsConfig::default(), false, &[], vec![]).is_err());
+    }
+    #[test]
+    fn parse_inline_splits_user() {
+        let p = parse_inline("root@10.0.0.5", 2222, None, false);
+        assert_eq!(p.user.as_deref(), Some("root"));
+        assert_eq!(p.hostname, "10.0.0.5");
+        assert_eq!(p.port, 2222);
+        assert!(!p.host_key_checking);
     }
 
     #[test]

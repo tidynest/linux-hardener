@@ -19,6 +19,7 @@ hardener-core = { path = "../hardener-core" }
 hardener-plugins = { path = "../hardener-plugins" }
 hardener-scheduler = { path = "../hardener-scheduler" }
 hardener-state = { path = "../hardener-state" }
+hardener-types = { workspace = true }
 
 # CLI
 clap = { version = "4.5.53", features = ["derive", "color", "env"] }
