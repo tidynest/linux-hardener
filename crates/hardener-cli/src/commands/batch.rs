@@ -1,10 +1,16 @@
 //! `hardener batch scan` — scan many remote hosts concurrently.
 
+use crate::cli::OutputFormat as CliOutputFormat;
+use crate::commands::report::run_scan;
+use crate::ssh_config::SshConnectionConfig;
 use anyhow::{Result, anyhow, bail};
 use hardener_common::types::Severity;
 use hardener_core::plugin::Finding;
+use hardener_core::{SshExecutor, executor::SystemExecutor};
 use hardener_types::remote::{HostsConfig, RemoteHostProfile};
 use serde::Serialize;
+use std::sync::Arc;
+use std::time::Duration;
 
 /// Per-severity tally of one host's findings.
 // Consumed by the batch-scan command wired up in a later task.
@@ -227,6 +233,99 @@ pub fn render_json(outcomes: &[HostOutcome]) -> String {
     serde_json::to_string_pretty(&doc).unwrap_or_else(|_| "{}".to_string())
 }
 
+/// Builds the core SSH config for one host profile, applying global key/timeout
+/// fallbacks for hosts (chiefly ad-hoc) that do not specify their own.
+#[allow(dead_code)]
+fn host_ssh_config(p: &RemoteHostProfile, timeout: u64) -> hardener_core::SshConfig {
+    SshConnectionConfig {
+        user: p.user.clone(),
+        host: p.hostname.clone(),
+        port: p.port,
+        identity_file: p.key_file.as_ref().map(std::path::PathBuf::from),
+        timeout: Duration::from_secs(timeout),
+        strict_host_key_checking: p.host_key_checking,
+    }
+    .to_core_config()
+}
+
+/// Scans one host using an already-built executor. Split out so tests can inject
+/// a `MockExecutor`; production callers pass a connected `SshExecutor`.
+async fn scan_with_executor(
+    name: String,
+    target: String,
+    executor: Arc<dyn SystemExecutor>,
+) -> HostOutcome {
+    match run_scan(true, executor, &CliOutputFormat::Json).await {
+        Ok(findings) => {
+            let counts = SeverityCounts::from_findings(&findings);
+            HostOutcome {
+                name,
+                target,
+                status: HostStatus::Scanned { counts, findings },
+            }
+        }
+        Err(e) => HostOutcome {
+            name,
+            target,
+            status: HostStatus::Failed {
+                error: e.to_string(),
+            },
+        },
+    }
+}
+
+/// Connects to one host then scans it, capturing any connection error.
+#[allow(dead_code)]
+async fn scan_one(profile: RemoteHostProfile, timeout: u64) -> HostOutcome {
+    let target = SshConnectionConfig {
+        user: profile.user.clone(),
+        host: profile.hostname.clone(),
+        port: profile.port,
+        identity_file: None,
+        timeout: Duration::from_secs(timeout),
+        strict_host_key_checking: profile.host_key_checking,
+    }
+    .display();
+    match SshExecutor::connect(host_ssh_config(&profile, timeout)).await {
+        Ok(exec) => scan_with_executor(profile.name, target, Arc::new(exec)).await,
+        Err(e) => HostOutcome {
+            name: profile.name,
+            target,
+            status: HostStatus::Failed {
+                error: e.to_string(),
+            },
+        },
+    }
+}
+
+/// Scans all profiles with at most `concurrency` running at once, preserving the
+/// input order in the returned vec.
+#[allow(dead_code)]
+async fn scan_all(
+    profiles: Vec<RemoteHostProfile>,
+    concurrency: usize,
+    timeout: u64,
+) -> Vec<HostOutcome> {
+    use tokio::sync::Semaphore;
+    let permits = Arc::new(Semaphore::new(concurrency.max(1)));
+    let mut set = tokio::task::JoinSet::new();
+    for (idx, profile) in profiles.into_iter().enumerate() {
+        let permits = permits.clone();
+        set.spawn(async move {
+            let _permit = permits.acquire_owned().await.expect("semaphore open");
+            (idx, scan_one(profile, timeout).await)
+        });
+    }
+    let mut indexed: Vec<(usize, HostOutcome)> = Vec::new();
+    while let Some(res) = set.join_next().await {
+        if let Ok(pair) = res {
+            indexed.push(pair);
+        }
+    }
+    indexed.sort_by_key(|(i, _)| *i);
+    indexed.into_iter().map(|(_, o)| o).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -376,5 +475,17 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(v["summary"]["hosts_scanned"], 1);
         assert_eq!(v["hosts"][0]["status"], "scanned");
+    }
+
+    #[tokio::test]
+    async fn scan_with_mock_executor_yields_scanned() {
+        use hardener_core::MockExecutor;
+        use std::sync::Arc;
+        let exec = Arc::new(MockExecutor::new());
+        let outcome = scan_with_executor("h".into(), "u@h:22".into(), exec).await;
+        assert!(
+            matches!(outcome.status, HostStatus::Scanned { .. }),
+            "a mock executor should yield a Scanned outcome, not a connection failure",
+        );
     }
 }

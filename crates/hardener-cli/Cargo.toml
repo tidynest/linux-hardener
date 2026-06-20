@@ -25,7 +25,7 @@ hardener-types = { workspace = true }
 clap = { version = "4.5.53", features = ["derive", "color", "env"] }
 
 # Async runtime
-tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync"] }
 
 # Output formatting
 colored = "3.0.0"
