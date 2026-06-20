@@ -322,40 +322,55 @@ async fn scan_all(
     results
 }
 
+/// Options for `hardener batch scan`.
+pub struct BatchOptions {
+    pub all: bool,
+    pub host: Vec<String>,
+    pub ssh: Vec<String>,
+    pub concurrency: usize,
+    pub format: CliOutputFormat,
+    pub output: Option<String>,
+    pub quiet: bool,
+    pub global_key: Option<String>,
+    pub global_timeout: u64,
+    pub global_no_verify: bool,
+}
+
 /// CLI entry point for `hardener batch scan`.
-#[allow(clippy::too_many_arguments)]
-pub async fn run(
-    all: bool,
-    host: Vec<String>,
-    ssh: Vec<String>,
-    concurrency: usize,
-    format: CliOutputFormat,
-    output: Option<String>,
-    quiet: bool,
-    global_key: Option<String>,
-    global_timeout: u64,
-    global_no_verify: bool,
-) -> anyhow::Result<()> {
-    let inventory = hardener_core::inventory::load()
-        .map_err(|e| anyhow!("failed to load host inventory: {e}"))?;
+pub async fn run(opts: BatchOptions) -> anyhow::Result<()> {
+    let inventory = match hardener_core::inventory::load() {
+        Ok(inv) => inv,
+        Err(e) => {
+            eprintln!("failed to load host inventory: {e}");
+            std::process::exit(2);
+        }
+    };
 
-    let inline: Vec<RemoteHostProfile> = ssh
+    let inline: Vec<RemoteHostProfile> = opts
+        .ssh
         .iter()
-        .map(|t| parse_inline(t, 22, global_key.clone(), !global_no_verify))
+        .map(|t| parse_inline(t, 22, opts.global_key.clone(), !opts.global_no_verify))
         .collect();
-    let profiles = resolve_hosts(&inventory, all, &host, inline)?;
 
-    if !quiet {
+    let profiles = match resolve_hosts(&inventory, opts.all, &opts.host, inline) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(2);
+        }
+    };
+
+    if !opts.quiet {
         eprintln!("Scanning {} host(s)...", profiles.len());
     }
 
-    let outcomes = scan_all(profiles, concurrency, global_timeout).await;
+    let outcomes = scan_all(profiles, opts.concurrency, opts.global_timeout).await;
 
-    let rendered = match format {
+    let rendered = match opts.format {
         CliOutputFormat::Json => render_json(&outcomes),
         _ => render_text(&outcomes),
     };
-    match output {
+    match opts.output {
         Some(path) => {
             std::fs::write(&path, &rendered).map_err(|e| anyhow!("failed to write {path}: {e}"))?
         }

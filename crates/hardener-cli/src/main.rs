@@ -128,20 +128,21 @@ async fn main() -> Result<()> {
                 ssh,
                 concurrency,
             } => {
-                commands::batch::run(
+                commands::batch::run(commands::batch::BatchOptions {
                     all,
                     host,
                     ssh,
                     concurrency,
-                    cli.format,
-                    None,
-                    cli.quiet,
-                    cli.ssh_key
+                    format: cli.format,
+                    output: None,
+                    quiet: cli.quiet,
+                    global_key: cli
+                        .ssh_key
                         .as_ref()
                         .map(|p| p.to_string_lossy().to_string()),
-                    cli.ssh_timeout,
-                    cli.ssh_no_verify,
-                )
+                    global_timeout: cli.ssh_timeout,
+                    global_no_verify: cli.ssh_no_verify,
+                })
                 .await
             }
         },
