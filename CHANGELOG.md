@@ -7,16 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Multi-framework compliance mappings.** All 8 plugins now tag findings with
+  STIG, NIST 800-53 and PCI-DSS control IDs (sourced from ComplianceAsCode/SSG)
+  alongside CIS, so those frameworks genuinely fail on insecure systems instead
+  of only reporting `ManualReview`. A wrong mapping can only cause a false
+  *failure*, never a false pass. (HIPAA/GDPR mappings and showing `Pass` for
+  checked-passing controls remain follow-up work.)
+- **SSH crypto-algorithm hardening.** The SSH plugin now hardens `KexAlgorithms`,
+  `Ciphers` and `MACs`, including post-quantum key exchange
+  (`mlkem768x25519-sha256`). It auto-detects what the host's OpenSSH supports
+  (`ssh -Q …`) and only ever writes the intersection with a strong allow-list, so
+  it cannot set an unknown algorithm (no lockout) or a weak one (no downgrade),
+  and validates the candidate config with `sshd -t` before restarting.
+
 ### Fixed
 - **Compliance reporting no longer fabricates compliance.** Control pass/fail is
-  derived from scan findings, which every plugin tags with CIS control IDs only.
-  The report generator previously marked any control with no mapped finding as
-  `Pass`, so STIG, NIST, PCI-DSS, HIPAA and GDPR reports showed 100% compliance
-  on every system — even one with critical findings. Controls of frameworks the
-  engine does not yet assess automatically are now reported as `ManualReview`
-  rather than a misleading `Pass`. `frameworks::AUTOMATED_FRAMEWORKS` is the
-  single source of truth for automated coverage (CIS today); per-control
-  multi-framework coverage is tracked as follow-up work.
+  derived from scan findings, which every plugin previously tagged with CIS
+  control IDs only. The report generator marked any control with no mapped
+  finding as `Pass`, so STIG, NIST, PCI-DSS, HIPAA and GDPR reports showed 100%
+  compliance on every system — even one with critical findings. Controls of
+  frameworks the engine does not yet assess automatically are now reported as
+  `ManualReview` rather than a misleading `Pass`. `frameworks::AUTOMATED_FRAMEWORKS`
+  is the single source of truth for automated coverage (CIS today). The generator
+  also surfaces finding-referenced controls that are absent from a framework's
+  curated catalogue, so mappings using upstream (SSG) identifier schemes still
+  produce real failures.
 
 ## [1.0.5] - 2026-05-24
 

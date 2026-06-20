@@ -75,35 +75,35 @@ system. Phase-1 fix landed (unassessed controls now report `ManualReview`, not
 
 ### P0 — Compliance assessment coverage (phase 2)
 
-Findings only carry CIS control IDs, so STIG/NIST/PCI-DSS/HIPAA/GDPR controls can
-never fail. **Phase 1 is Done** — unassessed controls report `ManualReview`
-instead of a false `Pass` (`frameworks::AUTOMATED_FRAMEWORKS` is the source of
-truth). **Phase 2:** give plugin findings real multi-framework mappings so those
-frameworks genuinely pass/fail. Touches all 8 plugins' `get_*_compliance_mappings`
-and `AUTOMATED_FRAMEWORKS`. Accuracy-critical — get mappings reviewed. Design
-proposal (model options + sourcing strategy, awaiting decision):
+**Phase 1 — Done.** Unassessed controls report `ManualReview` not a false `Pass`
+(`frameworks::AUTOMATED_FRAMEWORKS`).
+
+**Phase 2 — Done (core).** All 8 plugins now tag findings with STIG, NIST 800-53
+and PCI-DSS control IDs (sourced from ComplianceAsCode/SSG, cited inline)
+alongside CIS, so those frameworks fail on insecure systems. The report
+generator surfaces finding-referenced controls that are absent from a framework's
+curated catalogue, so SSG-scheme IDs still produce real failures. Failure mode is
+safe: a wrong mapping causes a false *fail*, never a false pass. Design notes:
 [docs/plans/2026-06-19-compliance-coverage-phase2.md](docs/plans/2026-06-19-compliance-coverage-phase2.md).
 
-### P1 — SSH crypto-algorithm hardening
+**Phase 2 — remaining follow-ups (not lost):**
+- **HIPAA / GDPR mappings** — agents focused on STIG/NIST/PCI; HIPAA/GDPR still CIS-only (those reports stay `ManualReview`). Interpretive mappings; lower confidence.
+- **Catalogue reconciliation** — non-CIS catalogues (`stig.rs` uses `V-230xxx`, plugins use SSG `OL08-`/`RHEL-08-`/NIST-enhancement ids) use different id schemes. Findings now surface regardless, but a report can show two id styles + catalogue `ManualReview` noise. Reconcile to one scheme (or derive catalogues from plugin coverage) for clean reports.
+- **Option B (Pass for checked-passing controls)** — currently a hardened system shows non-CIS controls as `ManualReview`, not `Pass`. Per-control coverage set would let checked controls show `Pass`. Optional UX upgrade.
 
-The SSH plugin hardens 8 directives but sets no `KexAlgorithms`/`Ciphers`/`MACs`.
-Add them, including post-quantum key exchange (`mlkem768x25519-sha256`, the
-default since OpenSSH 10.0; `sntrup761x25519-sha512` fallback). **Safety:** detect
-supported algorithms (`ssh -Q kex`) and validate with `sshd -t` before restart —
-hard-setting an algorithm the local sshd doesn't know makes it refuse to start
-and can lock out SSH. Also drop the obsolete `Protocol 2` directive (ignored by
-modern OpenSSH).
+### P1 — SSH crypto-algorithm hardening — Done
 
-**Implementation note (2026-06-19 investigation):** `SshHardeningPlugin::apply`
-is not cleanly unit-testable today — it takes a real `std::fs` `flock` on the
-real `/etc/ssh/sshd_config`, so the only apply test is `#[ignore]` (root-only)
-and `MockExecutor` errors on unregistered commands. To keep the `sshd -t` gate
-verifiable, extract a pure `validate_sshd_config(executor, candidate) -> Result<()>`
-helper (writes a temp file, runs `sshd -t -f <temp>`, cleans up) and TDD *that*
-with `MockExecutor::with_command`; wire it into `apply()` before the write as a
-small call (integration stays covered by the `#[ignore]` root test). This change
-is behaviour-changing on the critical apply path — land it with review, not
-unattended.
+The SSH plugin now hardens `KexAlgorithms`/`Ciphers`/`MACs` including post-quantum
+kex (`mlkem768x25519-sha256`, `sntrup761x25519-sha512`). It auto-detects host
+support via `ssh -Q kex|cipher|mac` and writes only the intersection with a strong
+allow-list (`select_algorithms`) — so it can never set an unknown algorithm (no
+lockout) or a weak one (no downgrade); empty intersection → leave host default.
+`validate_sshd_config` runs `sshd -t -f <temp>` before any write/restart and
+aborts on failure. Pure helpers are unit-tested with `MockExecutor`.
+
+**Small follow-ups (not lost):** drop the obsolete `Protocol 2` directive (left
+as-is to avoid regression); consider an `#[ignore]` root integration test for the
+full apply path (still flock-bound, see git history).
 
 ### P1 — ISO/IEC 27001:2022 framework
 
