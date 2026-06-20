@@ -6,6 +6,7 @@
 pub mod cis;
 pub mod gdpr;
 pub mod hipaa;
+pub mod iso27001;
 pub mod nist;
 pub mod pci;
 pub mod stig;
@@ -41,6 +42,6 @@ pub fn get_controls(framework: &ComplianceFramework) -> Vec<ComplianceMapping> {
         ComplianceFramework::PCIDSS => pci::get_controls(),
         ComplianceFramework::HIPAA => hipaa::get_controls(),
         ComplianceFramework::GDPR => gdpr::get_controls(),
-        ComplianceFramework::ISO27001 => vec![], // Future
+        ComplianceFramework::ISO27001 => iso27001::get_controls(),
     }
 }
