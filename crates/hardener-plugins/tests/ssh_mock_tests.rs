@@ -3,11 +3,17 @@
 //! These tests verify plugin behavior without touching the real filesystem.
 
 use hardener_common::types::{PluginId, Severity};
+use hardener_core::executor::CommandOutput;
 use hardener_core::{Context, MockExecutor, SystemExecutor, plugin::HardeningPlugin};
-use hardener_plugins::ssh::SshHardeningPlugin;
+use hardener_plugins::ssh::{
+    SshHardeningPlugin, select_algorithms, supported_algorithms, validate_sshd_config,
+};
 use std::sync::Arc;
 
 /// Creates a mock executor with a typical secure SSH config.
+///
+/// Includes strong crypto directives so the baseline scan reports no findings.
+/// Each crypto value uses only algorithms from the plugin's strong allow-list.
 fn secure_ssh_executor() -> MockExecutor {
     MockExecutor::new().with_file(
         "/etc/ssh/sshd_config",
@@ -21,6 +27,9 @@ MaxAuthTries 3
 X11Forwarding no
 ClientAliveInterval 300
 ClientAliveCountMax 2
+KexAlgorithms curve25519-sha256,diffie-hellman-group16-sha512
+Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com
+MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
 "#,
     )
 }
@@ -358,4 +367,168 @@ async fn test_ssh_scan_with_remote_executor() {
 
     let result = plugin.scan(&ctx).await.unwrap();
     assert!(result.scan_success, "remote SSH scan should succeed");
+}
+
+// === Cryptographic-algorithm hardening (anti-lockout) tests ===
+
+/// Convenience: build a successful CommandOutput from stdout.
+fn ok_output(stdout: &str) -> CommandOutput {
+    CommandOutput {
+        stdout: stdout.to_string(),
+        stderr: String::new(),
+        exit_code: 0,
+    }
+}
+
+#[test]
+fn test_select_algorithms_returns_intersection_in_desired_order() {
+    // Desired strong list (subset of a real KexAlgorithms allow-list).
+    let desired = [
+        "mlkem768x25519-sha256",
+        "sntrup761x25519-sha512",
+        "curve25519-sha256",
+        "diffie-hellman-group16-sha512",
+    ];
+    // Host supports a DIFFERENT order, plus extra/legacy algorithms we must drop.
+    let supported = vec![
+        "diffie-hellman-group14-sha1".to_string(), // weak — not in desired
+        "curve25519-sha256".to_string(),
+        "diffie-hellman-group16-sha512".to_string(),
+        "mlkem768x25519-sha256".to_string(),
+    ];
+
+    let selected = select_algorithms(&desired, &supported);
+
+    // Only the intersection, and in DESIRED order (not host order).
+    assert_eq!(
+        selected,
+        vec![
+            "mlkem768x25519-sha256".to_string(),
+            "curve25519-sha256".to_string(),
+            "diffie-hellman-group16-sha512".to_string(),
+        ],
+        "must preserve desired order and drop unsupported/weak algorithms"
+    );
+
+    // Anti-lockout guarantee: every emitted algorithm is host-supported.
+    for algo in &selected {
+        assert!(
+            supported.contains(algo),
+            "emitted algorithm {algo} is not supported by the host"
+        );
+    }
+    // Anti-downgrade guarantee: every emitted algorithm is in the strong list.
+    for algo in &selected {
+        assert!(
+            desired.contains(&algo.as_str()),
+            "emitted algorithm {algo} is not in the strong desired list"
+        );
+    }
+    // The weak host algorithm must never appear.
+    assert!(
+        !selected.iter().any(|a| a == "diffie-hellman-group14-sha1"),
+        "weak algorithm leaked into selection"
+    );
+}
+
+#[test]
+fn test_select_algorithms_no_overlap_returns_empty() {
+    let desired = ["chacha20-poly1305@openssh.com", "aes256-gcm@openssh.com"];
+    // Host only offers legacy ciphers we never want.
+    let supported = vec!["aes128-cbc".to_string(), "3des-cbc".to_string()];
+
+    let selected = select_algorithms(&desired, &supported);
+
+    assert!(
+        selected.is_empty(),
+        "no overlap must yield empty so the caller skips the directive (keeps host default)"
+    );
+}
+
+#[tokio::test]
+async fn test_supported_algorithms_parses_ssh_q_output() {
+    // `ssh -Q kex` prints one algorithm per line.
+    let executor = MockExecutor::new().with_command(
+        "ssh",
+        &["-Q", "kex"],
+        ok_output(
+            "curve25519-sha256\nmlkem768x25519-sha256\n\n  diffie-hellman-group16-sha512  \n",
+        ),
+    );
+
+    let algos = supported_algorithms(&executor, "kex").await;
+
+    assert_eq!(
+        algos,
+        vec![
+            "curve25519-sha256".to_string(),
+            "mlkem768x25519-sha256".to_string(),
+            "diffie-hellman-group16-sha512".to_string(),
+        ],
+        "should split lines, trim whitespace and drop blank lines"
+    );
+}
+
+#[tokio::test]
+async fn test_supported_algorithms_unavailable_returns_empty() {
+    // `ssh -Q` not registered at all -> executor errors -> treated as "no support".
+    let executor = MockExecutor::new();
+
+    let algos = supported_algorithms(&executor, "cipher").await;
+
+    assert!(
+        algos.is_empty(),
+        "missing ssh binary must yield empty (caller then leaves host default)"
+    );
+}
+
+/// Reconstructs the deterministic temp path `validate_sshd_config` writes to so
+/// the exact `sshd -t -f <path>` invocation can be registered with MockExecutor.
+/// Mirrors the implementation: `<temp_dir>/linux-hardener-sshd-validate-<pid>.conf`.
+fn sshd_validate_temp_path() -> String {
+    std::env::temp_dir()
+        .join(format!(
+            "linux-hardener-sshd-validate-{}.conf",
+            std::process::id()
+        ))
+        .to_string_lossy()
+        .to_string()
+}
+
+#[tokio::test]
+async fn test_validate_sshd_config_ok_when_sshd_t_succeeds() {
+    // `sshd -t -f <temp>` exits 0 -> validation passes.
+    let temp = sshd_validate_temp_path();
+    let executor = MockExecutor::new().with_command("sshd", &["-t", "-f", &temp], ok_output(""));
+
+    let result = validate_sshd_config(&executor, "PermitRootLogin no\n").await;
+
+    assert!(
+        result.is_ok(),
+        "validation should succeed when sshd -t exits 0, got: {result:?}"
+    );
+}
+
+#[tokio::test]
+async fn test_validate_sshd_config_err_when_sshd_t_fails() {
+    // `sshd -t` exits non-zero (bad config) -> validation must return Err so the
+    // caller aborts the apply and never restarts the daemon (no lockout).
+    let temp = sshd_validate_temp_path();
+    let executor = MockExecutor::new().with_command(
+        "sshd",
+        &["-t", "-f", &temp],
+        CommandOutput {
+            stdout: String::new(),
+            stderr: "bad configuration line 1".to_string(),
+            exit_code: 255,
+        },
+    );
+
+    let result = validate_sshd_config(&executor, "ThisIsNotAValidDirective\n").await;
+
+    let err = result.expect_err("validation must fail when sshd -t exits non-zero");
+    assert!(
+        err.to_string().contains("sshd -t rejected"),
+        "error should describe the rejection, got: {err}"
+    );
 }

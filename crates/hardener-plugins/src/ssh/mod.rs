@@ -92,6 +92,196 @@ const SSH_DIRECTIVES: &[SshConfigDirective] = &[
     },
 ];
 
+/// A single cryptographic-algorithm directive (KexAlgorithms / Ciphers / MACs).
+///
+/// Unlike [`SshConfigDirective`], these have no fixed secure value: the value is
+/// computed at apply time as the intersection of [`Self::crypto_desired`] (a
+/// hardcoded strong allow-list) with the algorithms the local sshd actually
+/// supports (queried via `ssh -Q`). This guarantees we never emit an algorithm
+/// the host cannot parse — which would make `sshd` refuse to start (lockout).
+#[derive(Clone, Debug)]
+struct SshCryptoDirective {
+    /// The directive name as it appears in sshd_config.
+    crypto_directive_name: &'static str,
+    /// The argument passed to `ssh -Q` to enumerate host-supported algorithms.
+    crypto_query_arg: &'static str,
+    /// Strong, modern allow-list in preference order. The emitted value is
+    /// always a subset of this list, so a downgrade can never be produced.
+    crypto_desired: &'static [&'static str],
+    /// Human-readable purpose for findings/changes.
+    crypto_description: &'static str,
+    /// Severity if the directive is unset or contains weak algorithms.
+    crypto_severity: Severity,
+}
+
+/// Strong key-exchange algorithms (post-quantum + curve25519 + large MODP DH).
+///
+/// Source: OpenSSH 10 defaults and Mozilla "Modern" SSH guidance. PQ hybrids
+/// first, then curve25519, then SHA-512 group16/18 as a fallback for hosts that
+/// lack the newer KEX. No SHA-1, no group14, no GSSAPI.
+const SSH_DESIRED_KEX: &[&str] = &[
+    "mlkem768x25519-sha256",
+    "sntrup761x25519-sha512",
+    "curve25519-sha256",
+    "curve25519-sha256@libssh.org",
+    "diffie-hellman-group16-sha512",
+    "diffie-hellman-group18-sha512",
+];
+
+/// Strong ciphers (AEAD only): ChaCha20-Poly1305 and AES-GCM.
+const SSH_DESIRED_CIPHERS: &[&str] = &[
+    "chacha20-poly1305@openssh.com",
+    "aes256-gcm@openssh.com",
+    "aes128-gcm@openssh.com",
+];
+
+/// Strong MACs (encrypt-then-MAC only). Only relevant for non-AEAD ciphers,
+/// but set explicitly so a weak MAC can never be negotiated.
+const SSH_DESIRED_MACS: &[&str] = &[
+    "hmac-sha2-512-etm@openssh.com",
+    "hmac-sha2-256-etm@openssh.com",
+    "umac-128-etm@openssh.com",
+];
+
+/// Cryptographic directives hardened via host-capability intersection.
+const SSH_CRYPTO_DIRECTIVES: &[SshCryptoDirective] = &[
+    SshCryptoDirective {
+        crypto_directive_name: "KexAlgorithms",
+        crypto_query_arg: "kex",
+        crypto_desired: SSH_DESIRED_KEX,
+        crypto_description: "Restrict SSH key exchange to strong (PQ/curve25519) algorithms",
+        crypto_severity: Severity::High,
+    },
+    SshCryptoDirective {
+        crypto_directive_name: "Ciphers",
+        crypto_query_arg: "cipher",
+        crypto_desired: SSH_DESIRED_CIPHERS,
+        crypto_description: "Restrict SSH ciphers to AEAD (ChaCha20-Poly1305 / AES-GCM)",
+        crypto_severity: Severity::High,
+    },
+    SshCryptoDirective {
+        crypto_directive_name: "MACs",
+        crypto_query_arg: "mac",
+        crypto_desired: SSH_DESIRED_MACS,
+        crypto_description: "Restrict SSH MACs to strong encrypt-then-MAC algorithms",
+        crypto_severity: Severity::Medium,
+    },
+];
+
+/// Queries the local SSH implementation for the algorithms it supports in a
+/// given category via `ssh -Q <query_arg>` and returns them as a list.
+///
+/// One algorithm is printed per line. Returns an empty vector if the command is
+/// unavailable or fails — callers treat "no known support" as "set nothing",
+/// which keeps the host default rather than risking an unparseable value.
+pub async fn supported_algorithms(
+    executor: &dyn hardener_core::SystemExecutor,
+    query_arg: &str,
+) -> Vec<String> {
+    match executor.execute_command("ssh", &["-Q", query_arg]).await {
+        Ok(output) if output.success() => output
+            .stdout
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(str::to_string)
+            .collect(),
+        Ok(output) => {
+            warn!("`ssh -Q {}` failed: {}", query_arg, output.stderr);
+            Vec::new()
+        }
+        Err(e) => {
+            warn!("`ssh -Q {}` could not be executed: {}", query_arg, e);
+            Vec::new()
+        }
+    }
+}
+
+/// Returns the intersection of `desired` with `supported`, preserving the
+/// preference order of `desired`.
+///
+/// This is the anti-lockout guarantee: because the result is always a subset of
+/// the hardcoded strong `desired` list, no weak algorithm can ever be emitted;
+/// because every element is also present in `supported`, we never hand `sshd` an
+/// algorithm it cannot parse. An empty result means "host supports none of our
+/// strong choices" — the caller then skips the directive entirely.
+pub fn select_algorithms(desired: &[&str], supported: &[String]) -> Vec<String> {
+    desired
+        .iter()
+        .filter(|algo| supported.iter().any(|s| s == *algo))
+        .map(|algo| algo.to_string())
+        .collect()
+}
+
+/// Validates a candidate sshd_config by writing it to a temporary path and
+/// running `sshd -t -f <temp>`.
+///
+/// This runs before the real config is ever written, so a config that would
+/// make the daemon refuse to start is rejected here — no write, no restart, no
+/// lockout. The temporary file is always removed, including on the error paths.
+pub async fn validate_sshd_config(
+    executor: &dyn hardener_core::SystemExecutor,
+    candidate: &str,
+) -> Result<()> {
+    let temp_path = std::env::temp_dir().join(format!(
+        "linux-hardener-sshd-validate-{}.conf",
+        std::process::id()
+    ));
+
+    executor
+        .write_file(&temp_path, candidate)
+        .await
+        .map_err(|e| {
+            hardener_common::error::HardeningError::Plugin(format!(
+                "Failed to write temp sshd_config for validation: {}",
+                e
+            ))
+        })?;
+
+    let temp_str = temp_path.to_string_lossy().to_string();
+    let result = executor
+        .execute_command("sshd", &["-t", "-f", &temp_str])
+        .await;
+
+    // Best-effort cleanup; never let cleanup failure mask the validation result.
+    if let Err(e) = std::fs::remove_file(&temp_path) {
+        warn!(
+            "Failed to remove temp sshd_config {}: {}",
+            temp_path.display(),
+            e
+        );
+    }
+
+    match result {
+        Ok(output) if output.success() => Ok(()),
+        Ok(output) => Err(hardener_common::error::HardeningError::Plugin(format!(
+            "sshd -t rejected candidate config: {}",
+            output.stderr.trim()
+        ))),
+        Err(e) => Err(hardener_common::error::HardeningError::Plugin(format!(
+            "Failed to execute `sshd -t`: {}",
+            e
+        ))),
+    }
+}
+
+/// Returns true if a crypto directive's current value contains only strong
+/// algorithms from the desired allow-list. A missing value, or any token not in
+/// the allow-list, is considered insecure (used by `scan`).
+fn crypto_value_is_secure(current: Option<&str>, desired: &[&str]) -> bool {
+    match current {
+        None => false,
+        Some(value) => {
+            let tokens: Vec<&str> = value
+                .split([',', ' '])
+                .map(str::trim)
+                .filter(|t| !t.is_empty())
+                .collect();
+            !tokens.is_empty() && tokens.iter().all(|t| desired.contains(t))
+        }
+    }
+}
+
 /// SSH hardening plugin implementing OpenSSH configuration management.
 pub struct SshHardeningPlugin;
 
@@ -202,6 +392,70 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
             compliance_control_title: "Ensure SSH Idle Timeout Interval is configured".to_string(),
             compliance_section: Some("Access Control".to_string()),
         }],
+        "KexAlgorithms" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "5.2.14".to_string(),
+                compliance_control_title: "Ensure only strong Key Exchange algorithms are used"
+                    .to_string(),
+                compliance_section: Some("Cryptography".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::STIG,
+                compliance_control_id: "V-230290".to_string(),
+                compliance_control_title:
+                    "SSH daemon must be configured to use FIPS-approved key exchange".to_string(),
+                compliance_section: Some("Cryptography".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::NIST,
+                compliance_control_id: "SC-13".to_string(),
+                compliance_control_title: "Cryptographic Protection".to_string(),
+                compliance_section: Some("System and Communications Protection".to_string()),
+            },
+        ],
+        "Ciphers" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "5.2.15".to_string(),
+                compliance_control_title: "Ensure only strong Ciphers are used".to_string(),
+                compliance_section: Some("Cryptography".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::STIG,
+                compliance_control_id: "V-230291".to_string(),
+                compliance_control_title:
+                    "SSH daemon must be configured to use FIPS-approved ciphers".to_string(),
+                compliance_section: Some("Cryptography".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::NIST,
+                compliance_control_id: "SC-8".to_string(),
+                compliance_control_title: "Transmission Confidentiality and Integrity".to_string(),
+                compliance_section: Some("System and Communications Protection".to_string()),
+            },
+        ],
+        "MACs" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "5.2.16".to_string(),
+                compliance_control_title: "Ensure only strong MAC algorithms are used".to_string(),
+                compliance_section: Some("Cryptography".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::STIG,
+                compliance_control_id: "V-230292".to_string(),
+                compliance_control_title: "SSH daemon must be configured to use FIPS-approved MACs"
+                    .to_string(),
+                compliance_section: Some("Cryptography".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::NIST,
+                compliance_control_id: "SC-8".to_string(),
+                compliance_control_title: "Transmission Confidentiality and Integrity".to_string(),
+                compliance_section: Some("System and Communications Protection".to_string()),
+            },
+        ],
         _ => vec![],
     }
 }
@@ -288,6 +542,50 @@ impl HardeningPlugin for SshHardeningPlugin {
                         directive.ssh_directive_name,
                     ),
                     finding_compliance: get_ssh_compliance_mappings(directive.ssh_directive_name),
+                    finding_policy_exception: None,
+                });
+            }
+        }
+
+        // Check cryptographic directives. These are insecure if unset OR if they
+        // contain any algorithm outside the strong allow-list (i.e. a weak/legacy
+        // cipher, KEX or MAC is enabled).
+        for crypto in SSH_CRYPTO_DIRECTIVES {
+            let current_value = parse_config_value(
+                &config_content,
+                crypto.crypto_directive_name,
+                ConfigFormat::SpaceSeparated,
+                false,
+            );
+
+            if !crypto_value_is_secure(current_value.as_deref(), crypto.crypto_desired) {
+                findings.push(Finding {
+                    finding_category: FindingCategory::Network,
+                    finding_current_value: current_value.unwrap_or_else(|| "not set".to_string()),
+                    finding_description: crypto.crypto_description.to_string(),
+                    finding_explanation: format!(
+                        "The SSH directive '{}' is unset or permits weak algorithms. {}",
+                        crypto.crypto_directive_name, crypto.crypto_description,
+                    ),
+                    finding_id: format!("ssh-{}", crypto.crypto_directive_name.to_lowercase()),
+                    finding_impact:
+                        "Weak SSH cryptography can allow session decryption or downgrade attacks"
+                            .to_string(),
+                    finding_recommended_value: crypto.crypto_desired.join(","),
+                    finding_remediation_steps: vec![
+                        format!(
+                            "Restrict {} to strong algorithms supported by the host",
+                            crypto.crypto_directive_name,
+                        ),
+                        "Validate with: sshd -t".to_string(),
+                        "Restart SSH service: systemctl restart sshd".to_string(),
+                    ],
+                    finding_severity: crypto.crypto_severity,
+                    finding_title: format!(
+                        "Weak or unset SSH cryptography: {}",
+                        crypto.crypto_directive_name,
+                    ),
+                    finding_compliance: get_ssh_compliance_mappings(crypto.crypto_directive_name),
                     finding_policy_exception: None,
                 });
             }
@@ -460,7 +758,110 @@ impl HardeningPlugin for SshHardeningPlugin {
             }
         }
 
-        // Step 5: Write modified configuration using executor.
+        // Step 5b: Apply cryptographic directives via host-capability intersection.
+        // For each crypto directive, query what the local sshd supports and emit
+        // only (desired strong ∩ supported). This can never produce a weak algo
+        // (subset of the hardcoded allow-list) nor one the host cannot parse.
+        for crypto in SSH_CRYPTO_DIRECTIVES {
+            if let Some(exception) = config.has_valid_exception(crypto.crypto_directive_name) {
+                info!(
+                    "Skipping {} — exception: {}",
+                    crypto.crypto_directive_name, exception.reason
+                );
+                changes.push(Change {
+                    change_description: format!(
+                        "{}: skipped (exception: {})",
+                        crypto.crypto_directive_name, exception.reason
+                    ),
+                    change_type: ChangeType::ConfigFile,
+                    change_success: true,
+                    change_error: None,
+                });
+                continue;
+            }
+
+            let supported =
+                supported_algorithms(ctx.executor().as_ref(), crypto.crypto_query_arg).await;
+            let selected = select_algorithms(crypto.crypto_desired, &supported);
+
+            // Empty intersection: the host supports none of our strong choices.
+            // Leave the host default untouched rather than writing an invalid
+            // (empty) value that sshd would reject.
+            if selected.is_empty() {
+                warn!(
+                    "No supported strong algorithms for {}; leaving host default",
+                    crypto.crypto_directive_name
+                );
+                changes.push(Change {
+                    change_description: format!(
+                        "{}: skipped (no strong algorithm supported by host)",
+                        crypto.crypto_directive_name
+                    ),
+                    change_type: ChangeType::ConfigFile,
+                    change_success: true,
+                    change_error: None,
+                });
+                continue;
+            }
+
+            let target_value = selected.join(",");
+            let original_value = parse_config_value(
+                &config_content,
+                crypto.crypto_directive_name,
+                ConfigFormat::SpaceSeparated,
+                false,
+            );
+
+            if original_value.as_deref() != Some(target_value.as_str()) {
+                config_content = set_config_directive(
+                    &config_content,
+                    crypto.crypto_directive_name,
+                    &target_value,
+                    ConfigFormat::SpaceSeparated,
+                    false,
+                );
+                changes.push(Change {
+                    change_description: format!(
+                        "{}: {} -> {}",
+                        crypto.crypto_directive_name,
+                        original_value.unwrap_or_else(|| "not set".to_string()),
+                        target_value
+                    ),
+                    change_type: ChangeType::ConfigFile,
+                    change_success: true,
+                    change_error: None,
+                });
+                info!(
+                    "Applied SSH crypto directive: {} = {}",
+                    crypto.crypto_directive_name, target_value
+                );
+            }
+        }
+
+        // Step 5c: Validate the candidate config with `sshd -t` BEFORE touching
+        // the live file. If sshd would refuse to start, abort here: no write, no
+        // restart — the running daemon and its config are left fully intact, so
+        // there is no lockout path.
+        if let Err(e) = validate_sshd_config(ctx.executor().as_ref(), &config_content).await {
+            error!("Candidate sshd_config failed validation, aborting apply: {e}");
+            changes.push(Change {
+                change_description: "Candidate sshd_config rejected by `sshd -t`; \
+                    no changes written, service not restarted"
+                    .to_string(),
+                change_type: ChangeType::ConfigFile,
+                change_success: false,
+                change_error: Some(e.to_string()),
+            });
+            return Ok(ApplyResult {
+                apply_plugin_id: plugin_id,
+                apply_success: false,
+                apply_changes: changes,
+                apply_checkpoint_id: checkpoint_id,
+                apply_error: Some(format!("sshd config validation failed: {e}")),
+            });
+        }
+
+        // Step 6: Write modified configuration using executor.
         match ctx
             .executor()
             .write_file(Path::new(config_path), &config_content)
@@ -486,7 +887,8 @@ impl HardeningPlugin for SshHardeningPlugin {
             }
         }
 
-        // Step 6: Restart SSH service to apply changes.
+        // Step 7: Restart SSH service to apply changes. Only reached after the
+        // candidate config passed `sshd -t`, so a restart cannot lock us out.
         match Self::restart_ssh_service(ctx).await {
             Ok(_) => {
                 changes.push(Change {
