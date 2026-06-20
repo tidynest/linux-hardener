@@ -162,25 +162,58 @@ hardener --ssh root@server rollback abc123
 
 Batch Scanning Multiple Hosts
 
-Use a shell loop to scan multiple hosts:
+The `hardener batch scan` command scans many hosts in a single run, connecting to
+them concurrently and printing a per-host table followed by a fleet rollup. This
+replaces the older shell-loop pattern with bounded parallelism and CI-friendly
+exit codes.
 
-#!/bin/bash
-HOSTS="web1 web2 db1 db2"
+Host Inventory
 
-for host in $HOSTS; do
-    echo "=== Scanning $host ==="
-    hardener --ssh root@$host --format json scan > "scan-$host.json"
-done
+Hosts are read from the inventory file:
 
-Or generate reports for a fleet:
+~/.config/linux-hardener/hosts.toml
 
-#!/bin/bash
-for host in $(cat hosts.txt); do
-    hardener --ssh root@$host report \
-        --framework cis \
-        --report-format pdf \
-        --output "reports/${host}-cis.pdf"
-done
+This file is shared with the desktop GUI — hosts you add through the GUI's host
+list appear here, and entries you hand-edit appear in the GUI. You can also scan
+ad-hoc hosts that are not in the inventory with the --ssh flag.
+
+Selecting Hosts
+
+# Scan every host in the inventory
+hardener batch scan --all
+
+# Scan named inventory hosts (comma-separated or repeated)
+hardener batch scan --host web-01,db-02
+hardener batch scan --host web-01 --host db-02
+
+# Scan an ad-hoc host not in the inventory (repeatable)
+hardener batch scan --ssh admin@10.0.0.5
+
+# Machine-readable output for automation (global --format flag)
+hardener --format json batch scan --all
+
+# Raise the parallelism (default is 8 concurrent hosts)
+hardener batch scan --all --concurrency 16
+
+The --all and --host flags are mutually exclusive. Output honours the global
+--format (text or json) and --quiet flags.
+
+Exit Codes
+
+`batch scan` returns a tiered exit code so it can gate CI pipelines:
+
+| CODE | MEANING                                                        |
+|------|----------------------------------------------------------------|
+|  0   | All selected hosts were reachable and had no findings          |
+|  1   | All hosts reachable, but at least one host has findings         |
+|  2   | At least one host errored/was unreachable, or a usage error    |
+|      | (no hosts selected, unknown --host name)                       |
+
+Planned Follow-ups
+
+The current release covers concurrent fleet scanning. Scan-history persistence,
+per-host trend tracking, regression alerts, and a desktop multi-host view are
+planned for future releases and are not part of this release.
 
 Troubleshooting
 
@@ -289,17 +322,21 @@ Limitations
 
 Current limitations of SSH remote scanning:
 
-| Limitation           | Description                             |
-|----------------------|-----------------------------------------|
-| No parallel scanning | Hosts are scanned sequentially          |
-| No jump host support | Cannot use bastion/jump hosts (yet)     |
-| Local checkpoints    | Checkpoint data stored on local machine |
+| Limitation           | Description                                    |
+|----------------------|------------------------------------------------|
+| No jump host support | Cannot use bastion/jump hosts (yet)            |
+| Local checkpoints    | Checkpoint data stored on local machine        |
+| No history/trends    | Batch scans are not yet persisted for trending |
+
+Parallel multi-host scanning is available via `hardener batch scan` — see
+*Batch Scanning Multiple Hosts* above.
 
 Future Enhancements
 
 Planned for future releases:
-- Parallel multi-host scanning
+- Scan-history persistence and per-host trend tracking for batch scans
+- Regression alerts and a desktop multi-host view
 - Jump host / bastion support
 - Remote checkpoint storage option
 
-**Last Updated**: 2026-02-27
+**Last Updated**: 2026-06-20

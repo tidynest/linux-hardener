@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Multi-host batch scanning.** `hardener batch scan` scans many hosts at once
+  (`--all`, `--host a,b`, ad-hoc `--ssh user@host`) with bounded concurrency
+  (`--concurrency`), a per-host + rollup report (text or `--format json`), and
+  tiered CI exit codes (0 clean / 1 findings / 2 host or usage error). The host
+  inventory (`~/.config/linux-hardener/hosts.toml`) is now shared between the CLI
+  and the desktop GUI via `hardener_core::inventory`.
 - **ISO/IEC 27001:2022 compliance framework.** The empty `ISO27001` stub is
   replaced with the full 93-control Annex A:2022 catalogue (Organizational,
   People, Physical, Technological themes), and plugin findings map to the

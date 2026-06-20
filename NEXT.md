@@ -121,9 +121,15 @@ detection already routes RHEL 10 through the Red Hat family; add the profile dat
 
 ### P2 — Multi-host SSH management
 
-Single-host remote SSH scanning is complete; multi-host is sequential-only. Add
-host profiles, parallel scanning, trend history and regression alerts (see the
-limitations table in `docs/SSH_REMOTE_SCANNING.md`).
+CLI batch-scan slice — **Done.** `hardener batch scan` scans many hosts
+concurrently (`--all` / `--host` from the shared inventory, ad-hoc `--ssh`,
+`--concurrency`), with a per-host + rollup report and tiered CI exit codes
+(0 clean / 1 findings / 2 host or usage error). The inventory
+(`~/.config/linux-hardener/hosts.toml`) is shared with the desktop GUI.
+
+Remaining slices (still pending): scan-history persistence, per-host trend
+tracking, regression alerts, `batch report` / `batch apply` subcommands, and a
+desktop multi-host view.
 
 ### P3 — Maintenance / currency
 

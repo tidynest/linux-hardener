@@ -47,6 +47,16 @@ hardener \- comprehensive Linux security automation tool with multi-distribution
 .IR FRAMEWORK ]
 .
 .br
+.B hardener batch scan
+.RB [ \-\-all ]
+.RB [ \-\-host
+.IR NAMES ]
+.RB [ \-\-ssh
+.IR USER@HOST ]
+.RB [ \-\-concurrency
+.IR N ]
+.
+.br
 .B hardener daemon
 .RI [ start | run\-once | status ]
 .
@@ -123,6 +133,21 @@ List all available security plugins with their metadata.
 .TP
 .B report
 Generate compliance reports against industry security frameworks.
+.TP
+.B batch scan
+Scan multiple remote hosts concurrently in a single run.
+Hosts are taken from the inventory file
+.RB ( \-\-all
+or
+.BR \-\-host )
+or supplied ad-hoc with
+.BR \-\-ssh .
+Prints a per-host table and a fleet rollup, and returns a tiered exit status
+suitable for CI.
+See
+.B Batch Scan Options
+and
+.BR "EXIT STATUS" .
 .TP
 .B daemon
 Manage the scheduled scanning daemon.
@@ -269,6 +294,33 @@ Write the report to the specified file path instead of stdout.
 .BR \-i ", " \-\-interactive
 Launch the interactive report wizard.
 .
+.SS Batch Scan Options
+.TP
+.B \-\-all
+Scan every host in the inventory file.
+Mutually exclusive with
+.BR \-\-host .
+.TP
+.BI \-\-host " NAMES"
+Inventory host name(s) to scan.
+Accepts a comma-separated list and may be given multiple times.
+.TP
+.BI \-\-ssh " USER@HOST"
+Ad-hoc host to scan that is not in the inventory.
+May be given multiple times.
+.TP
+.BI \-\-concurrency " N"
+Maximum number of hosts to scan in parallel.
+Default:
+.BR 8 .
+.PP
+Output honours the global
+.B \-\-format
+.RB ( text " or " json )
+and
+.B \-\-quiet
+options.
+.
 .SH FILES
 .TP
 .I /etc/linux-hardener/config.toml
@@ -278,6 +330,11 @@ Settings here apply to all users and require root privileges to modify.
 .I ~/.config/linux-hardener/config.toml
 Per-user configuration file.
 Overrides system-wide settings for the current user.
+.TP
+.I ~/.config/linux-hardener/hosts.toml
+Host inventory for
+.BR "batch scan" .
+Shared with the desktop GUI's host list; may also be hand-edited.
 .TP
 .I /var/lib/linux-hardener/
 System state directory.
@@ -299,6 +356,22 @@ is not set, the exit status does not reflect whether findings exist.
 An error occurred, or findings exist when
 .B \-\-exit\-code
 is specified.
+.PP
+For
+.BR "batch scan" ,
+the exit status is tiered:
+.TP
+.B 0
+All selected hosts were reachable and had no findings.
+.TP
+.B 1
+All hosts were reachable, but at least one host has findings.
+.TP
+.B 2
+At least one host errored or was unreachable, or a usage error occurred
+(no hosts selected, unknown
+.B \-\-host
+name).
 .
 .SH EXAMPLES
 Scan all plugins and display results as text:
@@ -371,6 +444,22 @@ Scan a remote host on a non-standard SSH port:
 .RS
 .nf
 hardener scan \-\-ssh admin@server.example.com \-\-port 2222
+.fi
+.RE
+.PP
+Scan every inventory host concurrently and emit JSON for CI:
+.PP
+.RS
+.nf
+hardener \-\-format json batch scan \-\-all
+.fi
+.RE
+.PP
+Scan two named inventory hosts with higher parallelism:
+.PP
+.RS
+.nf
+hardener batch scan \-\-host web\-01,db\-02 \-\-concurrency 16
 .fi
 .RE
 .PP
