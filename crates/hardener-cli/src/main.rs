@@ -127,6 +127,7 @@ async fn main() -> Result<()> {
                 host,
                 ssh,
                 concurrency,
+                output,
             } => {
                 commands::batch::run(commands::batch::BatchOptions {
                     all,
@@ -134,7 +135,7 @@ async fn main() -> Result<()> {
                     ssh,
                     concurrency,
                     format: cli.format,
-                    output: None,
+                    output,
                     quiet: cli.quiet,
                     global_key: cli
                         .ssh_key

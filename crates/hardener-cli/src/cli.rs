@@ -167,6 +167,10 @@ pub enum BatchAction {
         /// Maximum hosts scanned in parallel.
         #[arg(long, default_value_t = 8)]
         concurrency: usize,
+
+        /// Write the report to a file instead of stdout.
+        #[arg(long)]
+        output: Option<String>,
     },
 }
 

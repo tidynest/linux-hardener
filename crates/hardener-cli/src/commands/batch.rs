@@ -352,13 +352,23 @@ pub async fn run(opts: BatchOptions) -> anyhow::Result<()> {
         .map(|t| parse_inline(t, 22, opts.global_key.clone(), !opts.global_no_verify))
         .collect();
 
-    let profiles = match resolve_hosts(&inventory, opts.all, &opts.host, inline) {
+    let mut profiles = match resolve_hosts(&inventory, opts.all, &opts.host, inline) {
         Ok(p) => p,
         Err(e) => {
             eprintln!("{e}");
             std::process::exit(2);
         }
     };
+
+    // The global --ssh-key fills the gap for any host (chiefly inventory hosts)
+    // that does not define its own key. Ad-hoc hosts already carry it.
+    if let Some(key) = opts.global_key.as_ref() {
+        for profile in profiles.iter_mut() {
+            if profile.key_file.is_none() {
+                profile.key_file = Some(key.clone());
+            }
+        }
+    }
 
     if !opts.quiet {
         eprintln!("Scanning {} host(s)...", profiles.len());
