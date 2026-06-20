@@ -15,9 +15,10 @@ Linux System Hardener automates the process of securing Linux servers and workst
 - **Scanning** systems for security misconfigurations
 - **Applying** hardening recommendations automatically
 - **Rolling back** changes safely using checkpoint snapshots
-- **Reporting** compliance status — automated assessment against the CIS
-  Benchmarks, with control catalogues for STIG, NIST 800-53, PCI-DSS, HIPAA and
-  GDPR (controls not yet automatically assessed are flagged for manual review)
+- **Reporting** compliance status against CIS, STIG, NIST 800-53, PCI-DSS,
+  HIPAA, GDPR and ISO/IEC 27001:2022 — findings are mapped to each framework's
+  controls (controls the engine cannot automatically assess are flagged for
+  manual review rather than assumed compliant)
 
 The tool is designed for system administrators, DevOps engineers, and security professionals who need to maintain secure Linux infrastructure at scale.
 
@@ -86,7 +87,7 @@ The tool is designed for system administrators, DevOps engineers, and security p
 Total Tests: 514+ passing (Rust) + 84 Playwright + 95 Desktop + 21 Node.js
 ├── Plugin Tests: 48 + 80 mock tests
 ├── Core Tests: 59 + 14 mock executor tests
-├── Compliance Tests: 49
+├── Compliance Tests: 55
 ├── State Tests: 29
 ├── Scheduler Tests: 57 (daemon, runner, notifications, systemd)
 ├── CLI Tests: 31

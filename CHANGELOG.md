@@ -8,12 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **ISO/IEC 27001:2022 compliance framework.** The empty `ISO27001` stub is
+  replaced with the full 93-control Annex A:2022 catalogue (Organizational,
+  People, Physical, Technological themes), and plugin findings map to the
+  Technological controls — so ISO 27001 reports now assess real system state.
 - **Multi-framework compliance mappings.** All 8 plugins now tag findings with
-  STIG, NIST 800-53 and PCI-DSS control IDs (sourced from ComplianceAsCode/SSG)
-  alongside CIS, so those frameworks genuinely fail on insecure systems instead
-  of only reporting `ManualReview`. A wrong mapping can only cause a false
-  *failure*, never a false pass. (HIPAA/GDPR mappings and showing `Pass` for
-  checked-passing controls remain follow-up work.)
+  STIG, NIST 800-53, PCI-DSS, HIPAA, GDPR and ISO 27001:2022 control IDs
+  (sourced from ComplianceAsCode/SSG and the project catalogues) alongside CIS,
+  so every framework genuinely fails on insecure systems instead of only
+  reporting `ManualReview`. A wrong mapping can only cause a false *failure*,
+  never a false pass. (Showing `Pass` for checked-passing controls of non-CIS
+  frameworks remains optional follow-up work.)
 - **SSH crypto-algorithm hardening.** The SSH plugin now hardens `KexAlgorithms`,
   `Ciphers` and `MACs`, including post-quantum key exchange
   (`mlkem768x25519-sha256`). It auto-detects what the host's OpenSSH supports
@@ -33,6 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   also surfaces finding-referenced controls that are absent from a framework's
   curated catalogue, so mappings using upstream (SSG) identifier schemes still
   produce real failures.
+
+### Removed
+- **Obsolete SSH `Protocol 2` directive.** Modern OpenSSH ignores the `Protocol`
+  keyword (SSHv1 was removed years ago), so enforcing it was vestigial.
 
 ## [1.0.5] - 2026-05-24
 

@@ -78,18 +78,19 @@ system. Phase-1 fix landed (unassessed controls now report `ManualReview`, not
 **Phase 1 — Done.** Unassessed controls report `ManualReview` not a false `Pass`
 (`frameworks::AUTOMATED_FRAMEWORKS`).
 
-**Phase 2 — Done (core).** All 8 plugins now tag findings with STIG, NIST 800-53
-and PCI-DSS control IDs (sourced from ComplianceAsCode/SSG, cited inline)
-alongside CIS, so those frameworks fail on insecure systems. The report
-generator surfaces finding-referenced controls that are absent from a framework's
-curated catalogue, so SSG-scheme IDs still produce real failures. Failure mode is
-safe: a wrong mapping causes a false *fail*, never a false pass. Design notes:
+**Phase 2 — Done.** All 8 plugins now tag findings with STIG, NIST 800-53,
+PCI-DSS, HIPAA, GDPR and ISO 27001:2022 control IDs (sourced from
+ComplianceAsCode/SSG and the project catalogues, cited inline) alongside CIS, so
+every framework fails on insecure systems. The report generator surfaces
+finding-referenced controls that are absent from a framework's curated catalogue,
+so SSG-scheme IDs still produce real failures. Failure mode is safe: a wrong
+mapping causes a false *fail*, never a false pass. Design notes:
 [docs/plans/2026-06-19-compliance-coverage-phase2.md](docs/plans/2026-06-19-compliance-coverage-phase2.md).
 
 **Phase 2 — remaining follow-ups (not lost):**
-- **HIPAA / GDPR mappings** — agents focused on STIG/NIST/PCI; HIPAA/GDPR still CIS-only (those reports stay `ManualReview`). Interpretive mappings; lower confidence.
 - **Catalogue reconciliation** — non-CIS catalogues (`stig.rs` uses `V-230xxx`, plugins use SSG `OL08-`/`RHEL-08-`/NIST-enhancement ids) use different id schemes. Findings now surface regardless, but a report can show two id styles + catalogue `ManualReview` noise. Reconcile to one scheme (or derive catalogues from plugin coverage) for clean reports.
 - **Option B (Pass for checked-passing controls)** — currently a hardened system shows non-CIS controls as `ManualReview`, not `Pass`. Per-control coverage set would let checked controls show `Pass`. Optional UX upgrade.
+- **HIPAA/GDPR confidence** — those mappings are interpretive (GDPR Art.32 / project TM-* scheme; HIPAA §164); review for accuracy when convenient.
 
 ### P1 — SSH crypto-algorithm hardening — Done
 
@@ -101,17 +102,17 @@ lockout) or a weak one (no downgrade); empty intersection → leave host default
 `validate_sshd_config` runs `sshd -t -f <temp>` before any write/restart and
 aborts on failure. Pure helpers are unit-tested with `MockExecutor`.
 
-**Small follow-ups (not lost):** drop the obsolete `Protocol 2` directive (left
-as-is to avoid regression); consider an `#[ignore]` root integration test for the
-full apply path (still flock-bound, see git history).
+**Small follow-up (not lost):** consider an `#[ignore]` root integration test for
+the full apply path (still flock-bound, see git history). (Obsolete `Protocol 2`
+directive now removed.)
 
-### P1 — ISO/IEC 27001:2022 framework
+### P1 — ISO/IEC 27001:2022 framework — Done
 
-`ISO27001` is in the enum but `get_controls` returns empty. Implement an
-`iso27001.rs` catalogue for the 93 Annex A:2022 controls (4 themes; the 34
-Technological controls are the load-bearing set for a hardener). Only meaningful
-once phase-2 coverage lets findings map to it — sequence after P0, else it is a
-7th catalogue that always reports `ManualReview`.
+`iso27001.rs` now defines the 93 Annex A:2022 controls across the 4 themes
+(Organizational 37, People 8, Physical 14, Technological 34) with official clause
+numbers and titles, wired into `frameworks::get_controls`. Plugin findings map to
+the Technological controls (8.24 crypto, 8.5 auth, 8.20 networks, 8.15 logging,
+8.9 config, 8.3 access), so ISO 27001 reports assess real state.
 
 ### P2 — RHEL 10 compliance profiles
 

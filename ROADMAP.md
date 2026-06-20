@@ -511,13 +511,15 @@ pass/fail.
 | Task | Description | Priority | Status |
 |------|-------------|----------|--------|
 | Honest manual-review status | Stop reporting unassessed controls as `Pass` | High | ✅ Complete |
-| Per-control multi-framework mappings | Plugins emit STIG/NIST/PCI-DSS/HIPAA/GDPR control IDs alongside CIS | High | ⬜ Pending |
+| Per-control multi-framework mappings | Plugins emit STIG/NIST/PCI-DSS/HIPAA/GDPR/ISO 27001 control IDs alongside CIS | High | ✅ Complete |
+| Catalogue id reconciliation | Unify catalogue vs SSG-scheme ids for clean reports | Low | ⬜ Pending |
+| Option B — `Pass` for checked-passing controls | Per-control coverage set (currently non-CIS show `ManualReview`) | Low | ⬜ Pending |
 
 ### Additional Compliance Frameworks
 
 | Framework | Description | Priority | Status |
 |-----------|-------------|----------|--------|
-| ISO/IEC 27001:2022 | 93 Annex A controls across 4 themes (Organizational, People, Physical, Technological); map the Technological theme to plugin findings. Catalogue stub exists (`ISO27001` returns empty) | Medium | ⬜ Pending |
+| ISO/IEC 27001:2022 | 93 Annex A controls across 4 themes; catalogue implemented and findings mapped to the Technological theme | Medium | ✅ Complete |
 | SOC 2 | Service organisation controls (AICPA Trust Services Criteria) | Low | ⬜ Pending |
 | FedRAMP | Federal Risk and Authorization Management Program | Low | ⬜ Pending |
 | NIST SP 800-171 | Add alongside 800-53; support Rev 2 (currently mandated) and Rev 3 (2024) | Low | ⬜ Pending |
@@ -654,18 +656,20 @@ The compliance module (`hardener-compliance`) is designed for reuse:
 
 The "Controls" column is the size of each framework's control **catalogue**.
 "Assessed" indicates whether plugin findings are mapped to the framework so
-controls genuinely pass/fail; unassessed frameworks report `ManualReview`
-(see Compliance Assessment Coverage above).
+controls genuinely pass/fail. All frameworks are now finding-mapped; on a
+hardened system non-CIS controls show `ManualReview` rather than `Pass` until
+the optional per-control coverage upgrade lands (see Compliance Assessment
+Coverage above).
 
 | Framework | Controls | Assessed | Description |
 |-----------|----------|----------|-------------|
 | CIS | 38 | ✅ Yes | Center for Internet Security Benchmarks |
-| STIG | 20 | ⬜ Catalogue only | DISA Security Technical Implementation Guides |
-| NIST 800-53 | 20 | ⬜ Catalogue only | US Federal security controls (Rev 5) |
-| PCI-DSS | 22 | ⬜ Catalogue only | Payment Card Industry standards (v4.0) |
-| HIPAA | 14 | ⬜ Catalogue only | Healthcare security requirements |
-| GDPR | 12 | ⬜ Catalogue only | EU data protection (Article 32) |
-| ISO/IEC 27001:2022 | 0 | ⬜ Not implemented | Catalogue stub returns empty — see Additional Compliance Frameworks |
+| STIG | 20 | ✅ Yes | DISA Security Technical Implementation Guides |
+| NIST 800-53 | 20 | ✅ Yes | US Federal security controls (Rev 5) |
+| PCI-DSS | 22 | ✅ Yes | Payment Card Industry standards (v4.0) |
+| HIPAA | 14 | ✅ Yes | Healthcare security requirements |
+| GDPR | 12 | ✅ Yes | EU data protection (Article 32) |
+| ISO/IEC 27001:2022 | 93 | ✅ Yes | Information security management (Annex A, 4 themes) |
 
 ---
 
