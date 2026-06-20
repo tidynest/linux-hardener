@@ -248,6 +248,15 @@ fn host_ssh_config(p: &RemoteHostProfile, timeout: u64) -> hardener_core::SshCon
     .to_core_config()
 }
 
+/// Builds the `user@host:port` display string for a profile.
+#[allow(dead_code)]
+fn display_target(p: &RemoteHostProfile) -> String {
+    match &p.user {
+        Some(user) => format!("{}@{}:{}", user, p.hostname, p.port),
+        None => format!("{}:{}", p.hostname, p.port),
+    }
+}
+
 /// Scans one host using an already-built executor. Split out so tests can inject
 /// a `MockExecutor`; production callers pass a connected `SshExecutor`.
 async fn scan_with_executor(
@@ -277,15 +286,7 @@ async fn scan_with_executor(
 /// Connects to one host then scans it, capturing any connection error.
 #[allow(dead_code)]
 async fn scan_one(profile: RemoteHostProfile, timeout: u64) -> HostOutcome {
-    let target = SshConnectionConfig {
-        user: profile.user.clone(),
-        host: profile.hostname.clone(),
-        port: profile.port,
-        identity_file: None,
-        timeout: Duration::from_secs(timeout),
-        strict_host_key_checking: profile.host_key_checking,
-    }
-    .display();
+    let target = display_target(&profile);
     match SshExecutor::connect(host_ssh_config(&profile, timeout)).await {
         Ok(exec) => scan_with_executor(profile.name, target, Arc::new(exec)).await,
         Err(e) => HostOutcome {
@@ -307,6 +308,18 @@ async fn scan_all(
     timeout: u64,
 ) -> Vec<HostOutcome> {
     use tokio::sync::Semaphore;
+    // Pre-fill every slot so a panicked task surfaces as a visible Failed host
+    // rather than silently vanishing (which would desync the rollup count).
+    let mut results: Vec<HostOutcome> = profiles
+        .iter()
+        .map(|p| HostOutcome {
+            name: p.name.clone(),
+            target: display_target(p),
+            status: HostStatus::Failed {
+                error: "scan task did not complete".to_string(),
+            },
+        })
+        .collect();
     let permits = Arc::new(Semaphore::new(concurrency.max(1)));
     let mut set = tokio::task::JoinSet::new();
     for (idx, profile) in profiles.into_iter().enumerate() {
@@ -316,14 +329,12 @@ async fn scan_all(
             (idx, scan_one(profile, timeout).await)
         });
     }
-    let mut indexed: Vec<(usize, HostOutcome)> = Vec::new();
     while let Some(res) = set.join_next().await {
-        if let Ok(pair) = res {
-            indexed.push(pair);
+        if let Ok((idx, outcome)) = res {
+            results[idx] = outcome;
         }
     }
-    indexed.sort_by_key(|(i, _)| *i);
-    indexed.into_iter().map(|(_, o)| o).collect()
+    results
 }
 
 #[cfg(test)]
@@ -487,5 +498,11 @@ mod tests {
             matches!(outcome.status, HostStatus::Scanned { .. }),
             "a mock executor should yield a Scanned outcome, not a connection failure",
         );
+    }
+
+    #[tokio::test]
+    async fn scan_all_empty_is_empty() {
+        let out = scan_all(vec![], 4, 1).await;
+        assert!(out.is_empty());
     }
 }
