@@ -42,6 +42,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and validates the candidate config with `sshd -t` before restarting.
 
 ### Fixed
+- **Removed an unsourced CIS mapping.** The kernel plugin tagged
+  `fs.protected_hardlinks` / `fs.protected_symlinks` with CIS `1.6.1`, but the
+  upstream SSG rules (`sysctl_fs_protected_hardlinks/symlinks`) carry no CIS
+  reference, and `1.6.1` is the Mandatory Access Control subsection header (the
+  curated catalogue already lists `1.6.1.1`–`1.6.1.4` there). The mapping is
+  dropped; the sourced NIST `CM-6(a)`/`AC-6(1)` and STIG `OL08-00-010373/4`
+  mappings are kept.
 - **Desktop compliance commands build again.** The phase-3 coverage change gave
   `ReportGenerator::new` a second `coverage` parameter but the Tauri
   `generate_compliance_report` / `export_compliance_report` commands still called

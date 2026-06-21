@@ -333,15 +333,11 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
             iso("8.9", "Configuration management", "Technological"),
         ],
         "fs.protected_hardlinks" | "fs.protected_symlinks" => vec![
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::CIS,
-                compliance_control_id: "1.6.1".to_string(),
-                compliance_control_title: "Ensure filesystem hardening is configured".to_string(),
-                compliance_section: Some("Initial Setup".to_string()),
-            },
             // SSG: sysctl_fs_protected_hardlinks / sysctl_fs_protected_symlinks
             // refs: nist CM-6(a)/AC-6(1), stigid@ol8 OL08-00-010374 /
-            // OL08-00-010373 (no pcidss)
+            // OL08-00-010373. SSG carries NO cis reference for these sysctls, so
+            // no CIS mapping is emitted (a prior `1.6.1` here was unsourced and
+            // collided with the curated MAC controls 1.6.1.1-.4).
             stig("RHEL-08-010374", "Enforce DAC on hardlinks and symlinks"),
             nist("CM-6", "Configuration Settings", "Configuration Management"),
             nist("AC-6", "Least Privilege", "Access Control"),
