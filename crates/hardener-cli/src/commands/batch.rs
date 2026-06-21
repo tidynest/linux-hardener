@@ -79,17 +79,26 @@ pub fn exit_code(outcomes: &[HostOutcome]) -> i32 {
     code
 }
 
-/// Parses an ad-hoc `--ssh user@host` target into a profile. Port and key come
-/// from the global SSH flags (defaults applied by the caller).
+/// Parses an ad-hoc `--ssh user@host[:port]` target into a profile. A `:port`
+/// suffix overrides `port` (the caller's default); the key comes from the global
+/// SSH flags. ponytail: unbracketed IPv6 keeps its default port (no unambiguous
+/// `host:port` form); pass bracketed `[addr]` support only if a user needs it.
 pub fn parse_inline(
     target: &str,
     port: u16,
     key_file: Option<String>,
     verify: bool,
 ) -> RemoteHostProfile {
-    let (user, hostname) = match target.split_once('@') {
-        Some((u, h)) => (Some(u.to_string()), h.to_string()),
-        None => (None, target.to_string()),
+    let (user, rest) = match target.split_once('@') {
+        Some((u, h)) => (Some(u.to_string()), h),
+        None => (None, target),
+    };
+    let (hostname, port) = match rest.rsplit_once(':') {
+        Some((host, p)) if !host.contains(':') => match p.parse::<u16>() {
+            Ok(parsed) => (host.to_string(), parsed),
+            Err(_) => (rest.to_string(), port),
+        },
+        _ => (rest.to_string(), port),
     };
     RemoteHostProfile {
         name: hostname.clone(),
@@ -530,6 +539,38 @@ mod tests {
         assert_eq!(p.hostname, "10.0.0.5");
         assert_eq!(p.port, 2222);
         assert!(!p.host_key_checking);
+    }
+
+    #[test]
+    fn parse_inline_port_suffix_overrides_default() {
+        let p = parse_inline("root@10.0.0.5:2200", 22, None, true);
+        assert_eq!(p.user.as_deref(), Some("root"));
+        assert_eq!(p.hostname, "10.0.0.5", "host stripped of :port");
+        assert_eq!(p.port, 2200, ":port suffix overrides the default");
+    }
+
+    #[test]
+    fn parse_inline_port_suffix_without_user() {
+        let p = parse_inline("web-01:2022", 22, None, true);
+        assert_eq!(p.user, None);
+        assert_eq!(p.hostname, "web-01");
+        assert_eq!(p.port, 2022);
+    }
+
+    #[test]
+    fn parse_inline_non_numeric_suffix_is_part_of_host() {
+        // A trailing ":word" is not a port; keep it in the host, use the default.
+        let p = parse_inline("host:notaport", 22, None, true);
+        assert_eq!(p.hostname, "host:notaport");
+        assert_eq!(p.port, 22);
+    }
+
+    #[test]
+    fn parse_inline_bare_ipv6_keeps_default_port() {
+        // Unbracketed IPv6 has no unambiguous :port form; leave it intact.
+        let p = parse_inline("::1", 22, None, true);
+        assert_eq!(p.hostname, "::1");
+        assert_eq!(p.port, 22);
     }
 
     #[test]

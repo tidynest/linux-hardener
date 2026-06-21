@@ -189,6 +189,9 @@ hardener batch scan --host web-01 --host db-02
 # Scan an ad-hoc host not in the inventory (repeatable)
 hardener batch scan --ssh admin@10.0.0.5
 
+# Ad-hoc host on a non-default SSH port (user@host:port)
+hardener batch scan --ssh admin@10.0.0.5:2222
+
 # Machine-readable output for automation (global --format flag)
 hardener --format json batch scan --all
 
