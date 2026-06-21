@@ -97,7 +97,7 @@ and ISO 27001 keep their curated catalogues (full standard, unassessed controls 
 `ManualReview`). Verified end-to-end (`hardener report --framework STIG`).
 
 **Compliance — remaining follow-ups (not lost):**
-- **HIPAA/GDPR confidence** — those mappings are interpretive (GDPR Art.32 / project TM-* scheme; HIPAA §164); review for accuracy when convenient.
+- **HIPAA/GDPR confidence** — review done (2026-06-20). Inventoried all HIPAA/GDPR mappings (8 plugins) and SSG-cross-checked the questionable ones. SSH/PAM/audit/firewall/permissions/MAC/services sound; GDPR `TM-*` scheme + `Art.32(1)(a)` (encryption→SSH crypto only) consistent. **Fixed:** kernel cited HIPAA `164.312(c)(1)` (Integrity) on exploit-mitigation sysctls — re-cited the SSG-referenced ones (ASLR/`dmesg_restrict`/`suid_dumpable`) to `164.312(a)(1)` and dropped the unsourced ones (`kptr_restrict`/`ptrace_scope`/`protected_*links`). **Optional follow-up:** permissions/MAC also use `(c)(1)` (defensible — credential/policy integrity), could align to SSG's `164.312(a)` later.
 - **CIS catalogue hygiene** — done. `5.2.14`–`5.2.16` (strong Kex/Ciphers/MACs) are now in the curated `cis.rs`. Note: Option-B `Pass` visibility was *already* working for any plugin-emitted CIS id via the phase-3 coverage merge (the generator folds coverage into the catalogue for CIS too) — the curated entries are for standard completeness, not to fix a missing `Pass`. The bare CIS `1.6.1` the kernel plugin emitted for `fs.protected_hardlinks/symlinks` has been **removed**: the upstream SSG rules carry no CIS reference (only NIST/STIG), so the mapping was unsourced and collided with the curated `1.6.1.1`–`1.6.1.4` MAC controls. Sourced NIST/STIG mappings retained.
 
 ### P1 — SSH crypto-algorithm hardening — Done

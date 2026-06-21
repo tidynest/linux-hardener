@@ -246,9 +246,10 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 "System security parameters are configured to prevent misuse",
                 "Secure Configurations",
             ),
-            // Cross-framework: memory-protection hardening defends integrity of
-            // the operating environment processing protected data.
-            hipaa("164.312(c)(1)", "Integrity"),
+            // SSG maps this rule's hipaa to 164.312(a) (access control), not the
+            // integrity standard: restricting memory layout guards access to the
+            // operating environment processing protected data.
+            hipaa("164.312(a)(1)", "Access control"),
             gdpr("TM-SH", "System hardening of processing systems"),
             iso("8.9", "Configuration management", "Technological"),
         ],
@@ -260,13 +261,13 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 compliance_section: Some("Initial Setup".to_string()),
             },
             // SSG: sysctl_kernel_kptr_restrict
-            // refs: nist SC-30/CM-6(a), stigid@ol8 OL08-00-040283 (no pcidss)
+            // refs: nist SC-30/CM-6(a), stigid@ol8 OL08-00-040283
+            // (no pcidss; SSG carries no hipaa ref, so none is emitted)
             stig(
                 "RHEL-08-040283",
                 "Restrict exposed kernel pointer addresses access",
             ),
             nist("CM-6", "Configuration Settings", "Configuration Management"),
-            hipaa("164.312(c)(1)", "Integrity"),
             gdpr("TM-SH", "System hardening of processing systems"),
             iso("8.9", "Configuration management", "Technological"),
         ],
@@ -288,7 +289,8 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 "Error Handling",
                 "System and Information Integrity",
             ),
-            hipaa("164.312(c)(1)", "Integrity"),
+            // SSG hipaa cites 164.312(a) (access control) for this rule.
+            hipaa("164.312(a)(1)", "Access control"),
             gdpr("TM-SH", "System hardening of processing systems"),
             iso("8.9", "Configuration management", "Technological"),
         ],
@@ -300,7 +302,8 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 compliance_section: Some("Initial Setup".to_string()),
             },
             // SSG: sysctl_kernel_yama_ptrace_scope
-            // refs: nist SC-7(10), stigid@ol8 OL08-00-040282 (no pcidss)
+            // refs: nist SC-7(10), stigid@ol8 OL08-00-040282
+            // (no pcidss; SSG carries no hipaa ref, so none is emitted)
             stig(
                 "RHEL-08-040282",
                 "Restrict usage of ptrace to descendant processes",
@@ -310,7 +313,6 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 "Boundary Protection",
                 "System and Communications Protection",
             ),
-            hipaa("164.312(c)(1)", "Integrity"),
             gdpr("TM-SH", "System hardening of processing systems"),
             iso("8.9", "Configuration management", "Technological"),
         ],
@@ -322,13 +324,14 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 compliance_section: Some("Initial Setup".to_string()),
             },
             // SSG: sysctl_fs_suid_dumpable
-            // refs: nist SI-11(a)/SI-11(b) (no stigid@ol8, no pcidss)
+            // refs: nist SI-11(a)/SI-11(b) (no stigid@ol8, no pcidss);
+            // SSG hipaa cites 164.312(a) (access control)
             nist(
                 "SI-11",
                 "Error Handling",
                 "System and Information Integrity",
             ),
-            hipaa("164.312(c)(1)", "Integrity"),
+            hipaa("164.312(a)(1)", "Access control"),
             gdpr("TM-SH", "System hardening of processing systems"),
             iso("8.9", "Configuration management", "Technological"),
         ],
@@ -341,7 +344,7 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
             stig("RHEL-08-010374", "Enforce DAC on hardlinks and symlinks"),
             nist("CM-6", "Configuration Settings", "Configuration Management"),
             nist("AC-6", "Least Privilege", "Access Control"),
-            hipaa("164.312(c)(1)", "Integrity"),
+            // SSG carries no hipaa ref for these sysctls, so none is emitted.
             gdpr("TM-SH", "System hardening of processing systems"),
             iso("8.9", "Configuration management", "Technological"),
         ],
@@ -788,7 +791,7 @@ mod tests {
     }
 
     /// Confirms the memory-protection check additionally carries the data-
-    /// protection frameworks (HIPAA integrity, GDPR system hardening, ISO 27001)
+    /// protection frameworks (HIPAA access control, GDPR system hardening, ISO 27001)
     /// alongside the existing CIS/STIG/NIST/PCI-DSS mappings.
     #[test]
     fn aslr_maps_hipaa_gdpr_and_iso27001() {
@@ -811,7 +814,8 @@ mod tests {
         );
 
         // ISO 27001 control for sysctl hardening is clause 8.9 (Configuration
-        // management), and the HIPAA citation is the §164.312 integrity standard.
+        // management); the HIPAA citation is the §164.312(a)(1) access-control
+        // standard, matching the SSG reference for this rule.
         let iso = mappings
             .iter()
             .find(|m| m.compliance_framework == ComplianceFramework::ISO27001)
@@ -822,6 +826,6 @@ mod tests {
             .iter()
             .find(|m| m.compliance_framework == ComplianceFramework::HIPAA)
             .expect("HIPAA mapping present");
-        assert_eq!(hipaa.compliance_control_id, "164.312(c)(1)");
+        assert_eq!(hipaa.compliance_control_id, "164.312(a)(1)");
     }
 }
