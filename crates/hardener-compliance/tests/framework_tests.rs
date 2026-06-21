@@ -38,6 +38,20 @@ fn test_cis_controls_have_required_fields() {
 }
 
 #[test]
+fn test_cis_ssh_crypto_controls_are_curated() {
+    // 5.2.14-16 (strong Kex/Ciphers/MACs) are real consecutive CIS controls the
+    // SSH plugin assesses; the curated SSH block must list them so the standard
+    // is complete rather than relying on the coverage-merge to surface them.
+    let ids: std::collections::HashSet<_> = frameworks::cis::get_controls()
+        .into_iter()
+        .map(|c| c.compliance_control_id)
+        .collect();
+    for id in ["5.2.14", "5.2.15", "5.2.16"] {
+        assert!(ids.contains(id), "curated CIS catalogue must include {id}");
+    }
+}
+
+#[test]
 fn test_iso27001_controls_not_empty() {
     let controls = frameworks::iso27001::get_controls();
     assert!(

@@ -168,6 +168,25 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
             compliance_control_title: "Ensure SSH Idle Timeout Interval is configured".to_string(),
             compliance_section: Some("Access Control".to_string()),
         },
+        ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "5.2.14".to_string(),
+            compliance_control_title: "Ensure only strong Key Exchange algorithms are used"
+                .to_string(),
+            compliance_section: Some("Access Control".to_string()),
+        },
+        ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "5.2.15".to_string(),
+            compliance_control_title: "Ensure only strong Ciphers are used".to_string(),
+            compliance_section: Some("Access Control".to_string()),
+        },
+        ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "5.2.16".to_string(),
+            compliance_control_title: "Ensure only strong MAC algorithms are used".to_string(),
+            compliance_section: Some("Access Control".to_string()),
+        },
         // 5.3 Configure PAM
         ComplianceMapping {
             compliance_framework: ComplianceFramework::CIS,
