@@ -829,7 +829,7 @@ pub async fn generate_compliance_report(
         output_dir: None,
     };
 
-    let generator = ReportGenerator::new(config);
+    let generator = ReportGenerator::new(config, hardener_plugins::compliance_coverage());
     Ok(generator.generate(&all_findings))
 }
 
@@ -861,7 +861,7 @@ pub async fn export_compliance_report(
         output_dir: None,
     };
 
-    let generator = ReportGenerator::new(config);
+    let generator = ReportGenerator::new(config, hardener_plugins::compliance_coverage());
     let reports = generator.generate(&all_findings);
 
     // Format reports
