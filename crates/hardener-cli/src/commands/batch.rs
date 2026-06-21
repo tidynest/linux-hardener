@@ -263,14 +263,14 @@ async fn open_batch_history() -> Option<Arc<ScanHistoryManager>> {
     let path = match load_scheduler_config() {
         Ok(config) => config.storage.database_path,
         Err(e) => {
-            warn!("batch history disabled: {e}");
+            warn!("batch history disabled: scheduler config unavailable: {e}");
             return None;
         }
     };
     match ScanHistoryManager::new(&path).await {
         Ok(manager) => Some(Arc::new(manager)),
         Err(e) => {
-            warn!("batch history disabled: {e}");
+            warn!("batch history disabled: history database open failed: {e}");
             None
         }
     }
@@ -347,6 +347,9 @@ async fn scan_one(
     let target = display_target(&profile);
     // host_key: inventory hosts have a friendly name; ad-hoc hosts (parse_inline)
     // set name == hostname, so fall back to the user@host:port target for those.
+    // Limitation: an inventory host deliberately named after its own hostname
+    // (name == hostname, e.g. "10.0.0.1") is indistinguishable from an ad-hoc
+    // host and so is keyed by user@host:port rather than the bare name.
     let host_key = if profile.name == profile.hostname {
         target.clone()
     } else {
