@@ -186,9 +186,9 @@ impl WebhookNotifier {
     /// Builds the JSON payload based on the endpoint format.
     fn build_payload(&self, summary: &ScanSummary) -> serde_json::Value {
         match self.endpoint.format {
-            WebhookFormat::Slack => self.build_slack_payload(summary),
-            WebhookFormat::Discord => self.build_discord_payload(summary),
-            WebhookFormat::Generic => self.build_generic_payload(summary),
+            WebhookFormat::Slack => Self::build_slack_payload(summary),
+            WebhookFormat::Discord => Self::build_discord_payload(summary),
+            WebhookFormat::Generic => Self::build_generic_payload(summary),
         }
     }
 
@@ -219,13 +219,18 @@ impl WebhookNotifier {
     }
 
     /// Builds Slack-formatted payload with attachment.
-    fn build_slack_payload(&self, summary: &ScanSummary) -> serde_json::Value {
+    fn build_slack_payload(summary: &ScanSummary) -> serde_json::Value {
+        let marker = if summary.regression.is_some() {
+            "[REGRESSION] "
+        } else {
+            ""
+        };
         serde_json::json!({
             "attachments": [{
                 "color": Self::severity_colour(summary),
                 "title": format!(
-                    "Security Scan: {} findings on {}",
-                    summary.total_findings, summary.host
+                    "{}Security Scan: {} findings on {}",
+                    marker, summary.total_findings, summary.host
                 ),
                 "fields": [
                     {
@@ -255,12 +260,17 @@ impl WebhookNotifier {
     }
 
     /// Builds Discord-formatted payload with embed.
-    fn build_discord_payload(&self, summary: &ScanSummary) -> serde_json::Value {
+    fn build_discord_payload(summary: &ScanSummary) -> serde_json::Value {
+        let marker = if summary.regression.is_some() {
+            "[REGRESSION] "
+        } else {
+            ""
+        };
         serde_json::json!({
             "embeds": [{
                 "title": format!(
-                    "Security Scan: {} findings on {}",
-                    summary.total_findings, summary.host
+                    "{}Security Scan: {} findings on {}",
+                    marker, summary.total_findings, summary.host
                 ),
                 "color": Self::discord_colour(summary),
                 "fields": [
@@ -291,7 +301,7 @@ impl WebhookNotifier {
     }
 
     /// Builds generic JSON payload with full details.
-    fn build_generic_payload(&self, summary: &ScanSummary) -> serde_json::Value {
+    pub(crate) fn build_generic_payload(summary: &ScanSummary) -> serde_json::Value {
         serde_json::json!({
             "event": "security_scan_completed",
             "host": summary.host,
@@ -307,6 +317,14 @@ impl WebhookNotifier {
             },
             "json_path": summary.json_path,
             "had_errors": summary.had_errors,
+            "regression": summary.regression.as_ref().map(|r| serde_json::json!({
+                "previous_started_at": r.previous_started_at,
+                "previous_total": r.previous_total,
+                "delta_critical": r.delta_critical,
+                "delta_high": r.delta_high,
+                "delta_medium": r.delta_medium,
+                "delta_low": r.delta_low,
+            })),
         })
     }
 }
@@ -582,6 +600,24 @@ mod tests {
             headers: std::collections::HashMap::new(),
         };
         assert!(WebhookNotifier::new(endpoint).is_none());
+    }
+
+    #[test]
+    fn generic_payload_includes_regression_when_present() {
+        let mut s = make_test_summary(1, 0, 0, 0);
+        // No regression -> the key is present but JSON null.
+        assert!(WebhookNotifier::build_generic_payload(&s)["regression"].is_null());
+
+        s.regression = Some(crate::runner::RegressionInfo {
+            previous_started_at: 0,
+            previous_total: 0,
+            delta_critical: 1,
+            delta_high: 0,
+            delta_medium: 0,
+            delta_low: 0,
+        });
+        let payload = WebhookNotifier::build_generic_payload(&s);
+        assert_eq!(payload["regression"]["delta_critical"], 1);
     }
 
     /// Helper to create a test summary.
