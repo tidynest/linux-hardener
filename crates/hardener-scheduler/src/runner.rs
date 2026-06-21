@@ -314,7 +314,7 @@ impl ScanRunner {
         };
 
         if let Some(ref dispatcher) = self.dispatcher {
-            let results = dispatcher.dispatch(&final_summary).await;
+            let results = dispatcher.dispatch(&final_summary, None).await;
             let success_count = results.iter().filter(|r| r.success).count();
             let fail_count = results.len() - success_count;
             if !results.is_empty() {

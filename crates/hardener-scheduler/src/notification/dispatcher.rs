@@ -4,8 +4,7 @@
 //! and logs all notification attempts to the database.
 
 use super::{
-    NotificationResult, Notifier, email::EmailNotifier, meets_severity_threshold, parse_severity,
-    webhook::WebhookNotifier,
+    NotificationResult, Notifier, email::EmailNotifier, parse_severity, webhook::WebhookNotifier,
 };
 use crate::config::NotificationConfig;
 use crate::db::ScanHistoryManager;
@@ -16,11 +15,13 @@ use tracing::{debug, info, warn};
 /// Dispatches notifications to all configured channels.
 pub struct NotificationDispatcher {
     /// All active notifiers.
-    notifiers: Vec<Box<dyn Notifier>>,
+    pub(crate) notifiers: Vec<Box<dyn Notifier>>,
     /// Minimum severity to trigger notifications.
     min_severity: hardener_common::types::Severity,
     /// Database for logging attempts.
     db: Arc<ScanHistoryManager>,
+    /// Active notification trigger mode.
+    mode: crate::config::NotifyMode,
 }
 
 impl NotificationDispatcher {
@@ -63,23 +64,30 @@ impl NotificationDispatcher {
             notifiers,
             min_severity,
             db,
+            mode: config.notify_mode,
         }
     }
 
     /// Dispatches notifications for a completed scan.
     ///
-    /// - Checks severity before sending
-    /// - Sends to all configured channels sequentially
-    /// - Logs each attempt to the database
+    /// Calls `alert_decision` to decide whether to send and whether the scan
+    /// regressed. When a regression is detected, the summary is annotated with
+    /// the regression context before being forwarded to each channel.
     ///
-    /// Returns results from all notification attempts.
-    pub async fn dispatch(&self, summary: &ScanSummary) -> Vec<NotificationResult> {
-        // Check severity threshold
-        if !meets_severity_threshold(summary, self.min_severity) {
-            debug!(
-                "Skipping notifications: no findings at or above {:?}",
-                self.min_severity
-            );
+    /// `previous` is the host's most recent prior completed session (if any).
+    /// Pass `None` when the history lookup was skipped or failed.
+    ///
+    /// Returns results from all notification attempts (empty when no-send).
+    pub async fn dispatch(
+        &self,
+        summary: &ScanSummary,
+        previous: Option<&crate::db::ScanSession>,
+    ) -> Vec<NotificationResult> {
+        let (send, regression) =
+            crate::notification::alert_decision(self.mode, self.min_severity, previous, summary);
+
+        if !send {
+            debug!("Skipping notifications: alert_decision returned no-send");
             return Vec::new();
         }
 
@@ -88,18 +96,28 @@ impl NotificationDispatcher {
             return Vec::new();
         }
 
+        // Annotate with regression context when present (clone only then).
+        let annotated;
+        let summary = if regression.is_some() {
+            annotated = ScanSummary {
+                regression,
+                ..summary.clone()
+            };
+            &annotated
+        } else {
+            summary
+        };
+
         info!(
-            "Dispatching notifications for session {} ({} findings)",
-            summary.session_id, summary.total_findings
+            "Dispatching notifications for session {} ({} findings, regression={})",
+            summary.session_id,
+            summary.total_findings,
+            summary.regression.is_some()
         );
 
         let mut results = Vec::with_capacity(self.notifiers.len());
-
-        // Send to each channel and log results
         for notifier in &self.notifiers {
             let result = notifier.send(summary).await;
-
-            // Log to database
             let status = if result.success { "sent" } else { "failed" };
             if let Err(e) = self
                 .db
@@ -113,7 +131,6 @@ impl NotificationDispatcher {
             {
                 warn!("Failed to log notification attempt: {}", e);
             }
-
             if result.success {
                 info!("Notification sent via {}", result.channel);
             } else {
@@ -123,10 +140,8 @@ impl NotificationDispatcher {
                     result.error.as_deref().unwrap_or("unknown error")
                 );
             }
-
             results.push(result);
         }
-
         results
     }
 
@@ -138,5 +153,77 @@ impl NotificationDispatcher {
     /// Returns true if any notifiers are configured.
     pub fn has_notifiers(&self) -> bool {
         !self.notifiers.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{NotificationConfig, NotifyMode};
+    use crate::db::ScanHistoryManager;
+    use crate::notification::Notifier;
+    use crate::runner::ScanSummary;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    struct MockNotifier;
+    #[async_trait::async_trait]
+    impl Notifier for MockNotifier {
+        async fn send(&self, _summary: &ScanSummary) -> NotificationResult {
+            NotificationResult::ok("mock")
+        }
+        fn channel(&self) -> &str {
+            "mock"
+        }
+    }
+
+    fn summary(critical: usize) -> ScanSummary {
+        ScanSummary {
+            session_id: "s".into(),
+            host: "h".into(),
+            plugins_scanned: vec![],
+            total_findings: critical,
+            critical_count: critical,
+            high_count: 0,
+            medium_count: 0,
+            low_count: 0,
+            info_count: 0,
+            json_path: None,
+            json_hash: None,
+            had_errors: false,
+            regression: None,
+        }
+    }
+
+    async fn dispatcher_with(mode: NotifyMode) -> NotificationDispatcher {
+        let dir = tempdir().unwrap();
+        let db = Arc::new(
+            ScanHistoryManager::new(&dir.path().join("t.db"))
+                .await
+                .unwrap(),
+        );
+        let config = NotificationConfig {
+            notify_min_severity: "critical".into(),
+            notify_mode: mode,
+            ..Default::default()
+        };
+        let mut d = NotificationDispatcher::new(&config, db);
+        d.notifiers.push(Box::new(MockNotifier));
+        d
+    }
+
+    #[tokio::test]
+    async fn regression_mode_silent_without_previous() {
+        let d = dispatcher_with(NotifyMode::Regression).await;
+        // First scan (no previous): even with criticals, regression mode is quiet.
+        let results = d.dispatch(&summary(3), None).await;
+        assert!(results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn findings_mode_sends_on_threshold() {
+        let d = dispatcher_with(NotifyMode::Findings).await;
+        let results = d.dispatch(&summary(1), None).await;
+        assert_eq!(results.len(), 1);
     }
 }
