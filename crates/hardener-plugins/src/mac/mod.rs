@@ -241,12 +241,6 @@ fn get_mac_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
                 compliance_section: Some("Technical Safeguards".to_string()),
             },
             ComplianceMapping {
-                compliance_framework: ComplianceFramework::HIPAA,
-                compliance_control_id: "164.312(c)(1)".to_string(),
-                compliance_control_title: "Integrity".to_string(),
-                compliance_section: Some("Technical Safeguards".to_string()),
-            },
-            ComplianceMapping {
                 compliance_framework: ComplianceFramework::GDPR,
                 compliance_control_id: "TM-AC".to_string(),
                 compliance_control_title: "Access Control".to_string(),
@@ -299,12 +293,6 @@ fn get_mac_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
                 compliance_section: Some("Technical Safeguards".to_string()),
             },
             ComplianceMapping {
-                compliance_framework: ComplianceFramework::HIPAA,
-                compliance_control_id: "164.312(c)(1)".to_string(),
-                compliance_control_title: "Integrity".to_string(),
-                compliance_section: Some("Technical Safeguards".to_string()),
-            },
-            ComplianceMapping {
                 compliance_framework: ComplianceFramework::GDPR,
                 compliance_control_id: "TM-AC".to_string(),
                 compliance_control_title: "Access Control".to_string(),
@@ -350,12 +338,6 @@ fn get_mac_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
                 compliance_framework: ComplianceFramework::HIPAA,
                 compliance_control_id: "164.312(a)(1)".to_string(),
                 compliance_control_title: "Access Control".to_string(),
-                compliance_section: Some("Technical Safeguards".to_string()),
-            },
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::HIPAA,
-                compliance_control_id: "164.312(c)(1)".to_string(),
-                compliance_control_title: "Integrity".to_string(),
                 compliance_section: Some("Technical Safeguards".to_string()),
             },
             ComplianceMapping {
@@ -815,9 +797,17 @@ mod tests {
         assert!(iso_ids.contains(&"8.3"), "ISO 8.3 must be present");
         assert!(iso_ids.contains(&"5.15"), "ISO 5.15 must be present");
 
-        // HIPAA integrity safeguard must be present for MAC enforcement.
+        // HIPAA access-control safeguard for MAC enforcement. SSG cites
+        // 164.312(a) (not the integrity standard) for SELinux state, so
+        // 164.312(c)(1) is intentionally absent.
         assert!(
             mappings
+                .iter()
+                .any(|m| m.compliance_framework == ComplianceFramework::HIPAA
+                    && m.compliance_control_id == "164.312(a)(1)")
+        );
+        assert!(
+            !mappings
                 .iter()
                 .any(|m| m.compliance_framework == ComplianceFramework::HIPAA
                     && m.compliance_control_id == "164.312(c)(1)")

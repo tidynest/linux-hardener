@@ -205,12 +205,6 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
                 compliance_section: Some("Technical Safeguards".to_string()),
             },
             ComplianceMapping {
-                compliance_framework: ComplianceFramework::HIPAA,
-                compliance_control_id: "164.312(c)(1)".to_string(),
-                compliance_control_title: "Integrity".to_string(),
-                compliance_section: Some("Technical Safeguards".to_string()),
-            },
-            ComplianceMapping {
                 compliance_framework: ComplianceFramework::GDPR,
                 compliance_control_id: "TM-AC".to_string(),
                 compliance_control_title: "Access Control".to_string(),
@@ -250,12 +244,6 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
                 compliance_framework: ComplianceFramework::HIPAA,
                 compliance_control_id: "164.312(a)(1)".to_string(),
                 compliance_control_title: "Access Control".to_string(),
-                compliance_section: Some("Technical Safeguards".to_string()),
-            },
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::HIPAA,
-                compliance_control_id: "164.312(c)(1)".to_string(),
-                compliance_control_title: "Integrity".to_string(),
                 compliance_section: Some("Technical Safeguards".to_string()),
             },
             ComplianceMapping {
@@ -301,12 +289,6 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
                 compliance_section: Some("Technical Safeguards".to_string()),
             },
             ComplianceMapping {
-                compliance_framework: ComplianceFramework::HIPAA,
-                compliance_control_id: "164.312(c)(1)".to_string(),
-                compliance_control_title: "Integrity".to_string(),
-                compliance_section: Some("Technical Safeguards".to_string()),
-            },
-            ComplianceMapping {
                 compliance_framework: ComplianceFramework::GDPR,
                 compliance_control_id: "TM-AC".to_string(),
                 compliance_control_title: "Access Control".to_string(),
@@ -339,12 +321,6 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
                 compliance_framework: ComplianceFramework::HIPAA,
                 compliance_control_id: "164.312(a)(1)".to_string(),
                 compliance_control_title: "Access Control".to_string(),
-                compliance_section: Some("Technical Safeguards".to_string()),
-            },
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::HIPAA,
-                compliance_control_id: "164.312(c)(1)".to_string(),
-                compliance_control_title: "Integrity".to_string(),
                 compliance_section: Some("Technical Safeguards".to_string()),
             },
             ComplianceMapping {
@@ -793,7 +769,10 @@ mod tests {
             .unwrap();
         assert_eq!(iso.compliance_control_id, "8.3");
 
-        // HIPAA must include both the access-control and integrity safeguards.
+        // HIPAA is the access-control safeguard. The integrity standard
+        // 164.312(c)(1) is intentionally absent: SSG carries no HIPAA reference
+        // for these file-permission rules, so the access-control citation stands
+        // alone (aligned with the SSG preference for 164.312(a)).
         assert!(
             mappings
                 .iter()
@@ -801,7 +780,7 @@ mod tests {
                     && m.compliance_control_id == "164.312(a)(1)")
         );
         assert!(
-            mappings
+            !mappings
                 .iter()
                 .any(|m| m.compliance_framework == ComplianceFramework::HIPAA
                     && m.compliance_control_id == "164.312(c)(1)")

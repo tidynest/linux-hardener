@@ -49,8 +49,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   HIPAA it cites `164.312(a)` (Access Control), never `(c)(1)`, and for several it
   carries no HIPAA reference at all. ASLR, `dmesg_restrict` and `suid_dumpable`
   are re-cited to `164.312(a)(1)`; `kptr_restrict`, `yama.ptrace_scope` and
-  `protected_hardlinks/symlinks` (no SSG HIPAA reference) drop the mapping. NIST,
-  STIG, CIS, GDPR and ISO mappings are unchanged.
+  `protected_hardlinks/symlinks` (no SSG HIPAA reference) drop the mapping. The
+  permissions plugin (credential files) and MAC plugin, which already carried
+  `164.312(a)(1)` alongside the `(c)(1)` citation, drop the redundant `(c)(1)` to
+  match the same SSG preference. NIST, STIG, CIS, GDPR and ISO mappings are
+  unchanged.
 - **Removed an unsourced CIS mapping.** The kernel plugin tagged
   `fs.protected_hardlinks` / `fs.protected_symlinks` with CIS `1.6.1`, but the
   upstream SSG rules (`sysctl_fs_protected_hardlinks/symlinks`) carry no CIS
