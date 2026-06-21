@@ -198,6 +198,23 @@ impl ScanHistoryManager {
             .map_err(|e| HardeningError::Database(e.to_string()))
     }
 
+    /// Returns the host's most recent completed session that is not `exclude_id`
+    /// (i.e. the one before the just-completed scan), if any.
+    pub async fn previous_completed_session(
+        &self,
+        host: &str,
+        exclude_id: &str,
+    ) -> Result<Option<ScanSession>> {
+        let filter = SessionFilter {
+            host: Some(host.to_string()),
+            status: Some("completed".to_string()),
+            limit: Some(2),
+            ..Default::default()
+        };
+        let sessions = self.list_sessions(&filter).await?;
+        Ok(sessions.into_iter().find(|s| s.id != exclude_id))
+    }
+
     /// Retrieves findings for a session.
     pub async fn get_findings(&self, session_id: &str) -> Result<Vec<ScanFindingRow>> {
         sqlx::query_as::<_, ScanFindingRow>(
@@ -722,5 +739,42 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(mode.to_lowercase(), "wal", "history pool must use WAL");
+    }
+
+    #[tokio::test]
+    async fn previous_completed_session_returns_prior() {
+        let dir = tempdir().unwrap();
+        let manager = ScanHistoryManager::new(&dir.path().join("t.db"))
+            .await
+            .unwrap();
+
+        // Single completed session: nothing precedes it.
+        let first = manager.create_session("schedule", "h", &[]).await.unwrap();
+        manager
+            .complete_session(&first, &[], None, None)
+            .await
+            .unwrap();
+        assert!(
+            manager
+                .previous_completed_session("h", &first)
+                .await
+                .unwrap()
+                .is_none()
+        );
+
+        // A second session: excluding it returns the other one (the prior scan).
+        // With exactly two sessions this is deterministic regardless of any
+        // started_at tie — there is only one candidate left after the exclusion.
+        let second = manager.create_session("schedule", "h", &[]).await.unwrap();
+        manager
+            .complete_session(&second, &[], None, None)
+            .await
+            .unwrap();
+        let prev = manager
+            .previous_completed_session("h", &second)
+            .await
+            .unwrap()
+            .expect("has a previous");
+        assert_eq!(prev.id, first);
     }
 }

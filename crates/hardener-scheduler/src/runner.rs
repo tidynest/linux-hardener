@@ -314,7 +314,19 @@ impl ScanRunner {
         };
 
         if let Some(ref dispatcher) = self.dispatcher {
-            let results = dispatcher.dispatch(&final_summary, None).await;
+            // Best-effort: a history-lookup failure must never fail the scan.
+            let previous = match self
+                .db
+                .previous_completed_session(&self.host, &session_id)
+                .await
+            {
+                Ok(p) => p,
+                Err(e) => {
+                    warn!("Regression lookup failed (continuing): {}", e);
+                    None
+                }
+            };
+            let results = dispatcher.dispatch(&final_summary, previous.as_ref()).await;
             let success_count = results.iter().filter(|r| r.success).count();
             let fail_count = results.len() - success_count;
             if !results.is_empty() {
