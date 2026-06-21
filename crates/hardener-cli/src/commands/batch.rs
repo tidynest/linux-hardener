@@ -303,6 +303,9 @@ async fn persist_host(
         .await
     {
         warn!("batch history: complete_session for {host_key} failed: {e}");
+        // Mark the half-written session failed so it doesn't linger as a ghost
+        // `running` row; still best-effort, so ignore any error from this too.
+        let _ = history.fail_session(&session_id, &e.to_string()).await;
     }
 }
 
