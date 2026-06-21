@@ -1,203 +1,190 @@
-# Session Handoff — 2026-06-19
+# Session Handoff — 2026-06-21
 
 > **Read this first.** Point-in-time handoff for the next development session and
 > assistant. Living task list is [NEXT.md](NEXT.md); roadmap is [ROADMAP.md](ROADMAP.md).
-> Project is **v1.0.5**.
+> Project is **v1.0.5** (a backlog of changes has accumulated under CHANGELOG
+> `[Unreleased]` — a version cut is a reasonable near-term housekeeping step).
 
 ---
 
 ## TL;DR
 
-A long compliance bug was found, proven, and fully fixed across phases 1–3
-(honest status → multi-framework mappings → derive catalogues + Option B), and
-SSH crypto hardening was added. **All work has been merged into `main` locally
-and is NOT pushed to any remote.** With the compliance reconciliation now
-complete, the next session's agreed top priority is **Multi-host SSH**, followed
-by everything else listed under "Remaining work".
+Two bodies of work completed since the 2026-06-19 handoff, **all merged to `main`
+and pushed to both remotes** (GitHub + GitLab at `ef415f2`):
 
-> **Update 2026-06-20:** the "Derive + Option B" task below is **DONE** (see
-> CHANGELOG *Unreleased* → "Plugin-declared compliance coverage" / "Accurate
-> Pass". Coverage is now per-control via `hardener_plugins::compliance_coverage()`
-> injected into `ReportGenerator`; non-CIS catalogues are derived from coverage
-> and the hand-written `stig/nist/pci/hipaa/gdpr.rs` are deleted; CIS + ISO 27001
-> stay curated. Builds + tests + clippy + fmt clean; verified end-to-end with
-> `hardener report --framework STIG`. **Next priority is now Multi-host SSH.**
+1. **Compliance-mapping accuracy — finished end-to-end.** CIS catalogue hygiene,
+   an unsourced CIS id removed, HIPAA citations corrected against upstream SSG,
+   and GDPR verified clean. The compliance reporting is now both *honest* (no
+   false passes) and *credible* (mappings match their sources).
+2. **Multi-host SSH — slice 1 (per-host history persistence) shipped.** Built via
+   the full brainstorm → spec → plan → subagent-driven execution → review flow.
+   `hardener batch scan` now persists each host's results to the scan-history
+   database, keyed by host, and they read back with `history list --host <key>`.
 
-The headline finding: compliance reporting initially assessed CIS only. Every
-plugin tagged its findings with CIS control IDs, and the report generator
-defaulted any unmapped control to `Pass` — so for STIG / NIST / PCI-DSS / HIPAA /
-GDPR the controls reported as passing without the engine having evaluated them.
-This had been the behaviour since the first compliance commit (`6596a55`,
-2025-11-26) — a coverage limitation in how partial mappings were reported, not a
-regression.
+**Next agreed priority: per-host trend tracking** (Multi-host slice 2) — the
+natural follow-on now that per-host history is persisted.
 
 ---
 
-## What shipped this session (now on `main`, local only)
+## What shipped this session (on `main`, pushed)
 
-1. **Honest status fix** — controls the engine doesn't assess now report
-   `ManualReview`, never a false `Pass`. `frameworks::AUTOMATED_FRAMEWORKS` (CIS
-   only) is the single source of truth for "what is automatically assessed".
-2. **Multi-framework mappings** — all 8 plugins now tag findings with **STIG,
-   NIST 800-53, PCI-DSS, HIPAA, GDPR and ISO 27001:2022** control IDs alongside
-   CIS. So every framework now genuinely fails on insecure systems.
-3. **ISO/IEC 27001:2022** — implemented `frameworks/iso27001.rs` (93 Annex A
-   controls, 4 themes) and wired it in (was an empty stub).
-4. **Generator augmentation** — surfaces finding-referenced controls that aren't
-   in a framework's curated catalogue, so mappings using upstream (SSG) id
-   schemes still produce real failures (see "Known wrinkles" → catalogue ids).
-5. **SSH crypto hardening** — `KexAlgorithms` / `Ciphers` / `MACs` incl.
-   post-quantum kex. Auto-detects host support (`ssh -Q kex|cipher|mac`) and
-   writes only the strong-allow-list ∩ supported set (no lockout, no downgrade);
-   validates with `sshd -t` before any write/restart. Removed obsolete
-   `Protocol 2`.
-6. **Docs** — CHANGELOG, NEXT, ROADMAP, README, DATA_FLOW, SECURITY,
-   DISTRIBUTION_VALIDATION all updated; phase-2 design proposal added.
+Commit range `2ac00c0`..`ef415f2`. Two themes:
 
-**Verification at handoff:** `hardener-plugins`, `hardener-compliance`,
-`hardener-cli` all build + test + clippy + fmt clean (55 compliance tests, 35
-CLI tests, full plugin suite). See "How to verify" below.
+### A. Compliance-mapping accuracy
 
----
+| Commit | Change |
+|--------|--------|
+| `95c21ae` | Curate CIS SSH crypto controls `5.2.14`–`5.2.16` (Kex/Ciphers/MACs) into `cis.rs`. NOTE the phase-3 coverage-merge already gave Option-B `Pass` for these — the curated entries are standard *completeness*, not a Pass fix. |
+| `ac3b7a0` | Parse a `:port` suffix in ad-hoc `batch --ssh user@host:port` (was always 22). IPv6-safe; bracketed `[::1]:port` is the documented ceiling. |
+| `44941e0` | Fix the desktop crate: Tauri compliance commands still called the pre-phase-3 1-arg `ReportGenerator::new`. Ported to `(config, compliance_coverage())`. Also bumped `tauri` 2.11.2→2.11.3 (lockfile). The old "desktop won't build / frontend dist" note was **stale** — `crates/hardener-ui/dist` exists; this API break was the real blocker. |
+| `9dc4ed5` | Remove the kernel plugin's **unsourced** CIS `1.6.1` on `fs.protected_*links` — upstream SSG carries no CIS ref for those sysctls, and `1.6.1` is the MAC subsection header (curated has `1.6.1.1-.4`). Kept the sourced NIST/STIG. |
+| `1f83629` | Correct HIPAA on kernel exploit-mitigation sysctls: `164.312(c)(1)` (Integrity) was wrong. SSG cites `164.312(a)` where it maps these at all, never `(c)(1)`. Re-cited ASLR/`dmesg_restrict`/`suid_dumpable` → `(a)(1)`; dropped the SSG-unsourced `kptr_restrict`/`ptrace_scope`/`protected_*links`. |
+| `c6bbb51` | Align permissions/MAC HIPAA: both already carried `164.312(a)(1)` next to a `(c)(1)`; dropped the redundant `(c)(1)` to match SSG's `(a)` preference. Tests now assert `(c)(1)` is absent. |
 
-## Decisions made by the user (apply these next session)
+GDPR was reviewed and found **clean** — the `TM-*` scheme is the project's own and
+internally consistent; `Art.32(1)(a)` is correctly scoped to SSH crypto only.
 
-| Topic | Decision |
-|-------|----------|
-| Catalogue reconciliation | **Derive catalogues from plugin coverage** (one source of truth — not hand-rewrite). |
-| Option B (`Pass` for checked-passing) | **Yes, implement it** — pairs with the derive work (same plumbing). |
-| Integration of this session's work | **Merge to main, no push** (done). |
-| Next priority | **Multi-host SSH**, then all remaining work. |
+### B. Multi-host SSH — per-host history persistence (slice 1)
+
+Commits `946b27c`..`ef415f2`. Spec at
+`docs/superpowers/specs/2026-06-21-per-host-history-persistence-design.md`;
+plan at `docs/superpowers/plans/2026-06-21-per-host-history-persistence.md`
+(both untracked — `docs/superpowers/` is gitignored).
+
+- `946b27c` — **WAL + busy_timeout** on the history pool (`hardener-scheduler/src/db.rs`) so concurrent per-host writes are safe.
+- `b680108` — `report.rs` `scan_grouped()` returns `Vec<(PluginMetadata, Vec<Finding>)>` so `plugin_id` survives; `run_scan` flattens it (signature unchanged); `finding_to_scan_finding` moved to `report.rs` `pub(crate)` (shared by `scan` + `batch`).
+- `14dca62` — `batch.rs` threads `Option<Arc<ScanHistoryManager>>` + `host_key`; `persist_host` writes a `create_session("batch", host_key, plugins)` → `complete_session` per host, **best-effort**.
+- `606a9ab`, `ef415f2` — review follow-ups: differentiated the two history-disabled warnings; `fail_session` if completion errors (no orphaned `running` rows).
+
+**Verification at handoff:** 147 `hardener-scheduler` + `hardener-cli` tests pass;
+clippy + fmt clean; `cargo build --workspace` (incl. desktop bin) clean.
 
 ---
 
-## Start here next session: Derive + Option B (do these together)
+## Start here next session: per-host trend tracking (Multi-host slice 2)
 
-These two share one mechanism, so build them as a unit. Design notes:
-[docs/plans/2026-06-19-compliance-coverage-phase2.md](docs/plans/2026-06-19-compliance-coverage-phase2.md).
+**Goal:** surface a per-host security-score timeline (and likely a CLI view) from
+the history now being persisted.
 
-Goal: each non-CIS framework's catalogue should *be* the set of controls the
-plugins actually map to (not a separate hand-written list), and a control the
-engine checked-and-passed should show `Pass` rather than `ManualReview`.
+**Entry point:** `hardener_scheduler::db` already stores every batch/CLI scan as a
+session row (`host_identifier`, `started_at`, `status`, counts) plus its findings.
+A trend is `(host_key, timestamp, score, severity counts)` over those rows.
 
-Suggested approach:
-1. Expose plugin coverage — add a way to enumerate every `(framework, control_id,
-   title, section)` the plugins can emit (e.g. a `compliance_coverage()` on the
-   `HardeningPlugin` trait, or a free function per plugin aggregated in
-   `hardener-plugins`). `hardener-compliance` must not depend on
-   `hardener-plugins`, so inject the coverage set from the caller (CLI / Tauri /
-   scheduler all build the plugin registry) OR confirm the dep direction allows a
-   direct call.
-2. Derive non-CIS catalogues from that coverage set (replaces the hand-written
-   `stig.rs` / `nist.rs` / `pci.rs` / `hipaa.rs` / `gdpr.rs` catalogues — those
-   can then be deleted). CIS keeps its curated catalogue.
-3. Generator: a control is `Pass`/`Fail` if it is in the coverage set (assessed),
-   else `ManualReview`. This makes the catalogue and findings share one id scheme
-   (clean reports) **and** gives Option B for free (checked-passing → `Pass`).
-4. Keep the safe-failure invariant (below) and update
-   `crates/hardener-compliance/tests/assessment_honesty.rs`.
+**The one deliberately-deferred decision** (from the slice-1 spec's "out of scope"
+and the NEXT.md follow-up): the **score/severity storage shape** —
+1. *Derive on query* from the persisted findings/sessions (no new table), or
+2. a denormalised `scan_scores` table recorded at scan time (the old
+   `2026-03-27-multi-host-management.md` plan's approach).
 
----
+Brainstorm this first (it's a real fork), then spec → plan → execute like slice 1.
+The scoring function and `SeverityCounts` already exist; a query-derived first cut
+is the lazier path and keeps storage decisions reversible.
 
-## Remaining work (full list — nothing is lost)
-
-In priority order per the user:
-
-1. **Catalogue reconciliation (derive) + Option B** — see above. Do first.
-2. **Multi-host SSH** — manage many machines from one place: host list/profiles,
-   parallel scanning, per-host history/trends, regression alerts. Single-host
-   remote SSH already works (`crates/hardener-core/src/executor/ssh.rs`,
-   `crates/hardener-cli/src/ssh_config.rs`, `docs/SSH_REMOTE_SCANNING.md`). This
-   is a large feature (data model + UI + orchestration), not a one-pass job.
-   Design sketch exists under `docs/superpowers/plans/` (gitignored).
-3. **RHEL 10 / per-version profiles** — current STIG/CIS mappings are RHEL-8/SSG
-   flavoured and applied generically to the whole Red Hat family. RHEL 10 STIG
-   V1R1 (2026-06-02) and CIS RHEL 10 v1.0.1 now exist with different ids.
-   Deciding to select benchmark ids per OS version is an architecture choice.
-4. **Distro re-validation** — re-run the cross-distro sweep on current releases:
-   Debian 13, Fedora 44, RHEL 10, openSUSE Leap 16 (Leap 15 is EOL since Apr
-   2026). Needs `systemd-nspawn` containers + root — a human runs this, not the
-   agent, on the host.
-5. **More frameworks** — SOC 2 and/or FedRAMP (and NIST SP 800-171 alongside
-   800-53), following the existing framework pattern.
-6. **HIPAA/GDPR mapping accuracy review** — those mappings are interpretive
-   (GDPR Art.32 / the project's `TM-*` scheme; HIPAA §164). Worth a review pass.
-7. **Routine** — bump `tauri` 2.11.2 → 2.11.3 (no CVE); add an `#[ignore]`
-   root integration test for the SSH `apply()` path (still flock-bound).
+**Also resolve while here:** the **Debug-vs-Display** serialisation follow-up
+(below) — it touches the same persisted columns trends will read, so decide it
+before trend data accumulates further.
 
 ---
 
 ## Architecture the next assistant needs
 
-**Compliance data flow:** scanner → `Finding`s (only failures produce findings).
-Each `Finding` carries `finding_compliance: Vec<ComplianceMapping>` tagging the
-controls it violates. `ReportGenerator` (`crates/hardener-compliance/src/
-generator.rs`) walks each framework's `get_controls()` catalogue and marks each
-control `Fail` (a finding maps to it) / `Pass` (no finding **and** framework is
-in `AUTOMATED_FRAMEWORKS`) / `ManualReview` (otherwise), plus it appends any
-finding-referenced control absent from the catalogue as a `Fail`.
+**Two SQLite databases — don't conflate them:**
+- `hardener_state::db` → `checkpoints.db` — checkpoints / rollback / audit trail.
+  Has its *own* `scan_sessions` table **without** a host column. Not the history store.
+- `hardener_scheduler::db` → `scheduler.db` — **the scan-history store**, host-aware.
+  This is what `scan`, `history`, and now `batch` use.
 
-**Key files:**
-- `crates/hardener-compliance/src/frameworks/mod.rs` — `AUTOMATED_FRAMEWORKS`,
-  `is_automated()`, `get_controls()` dispatch.
-- `crates/hardener-compliance/src/generator.rs` — the Pass/Fail/ManualReview
-  logic + the non-catalogue augmentation.
-- `crates/hardener-compliance/src/frameworks/iso27001.rs` — new 93-control
-  catalogue (pattern to follow for SOC 2 / FedRAMP).
-- `crates/hardener-plugins/src/*/mod.rs` — each plugin's
-  `get_*_compliance_mappings()` is where framework ids are attached to findings.
-- `crates/hardener-plugins/src/ssh/mod.rs` — `select_algorithms()` (anti-lockout
-  intersection), `supported_algorithms()` (`ssh -Q`), `validate_sshd_config()`
-  (`sshd -t`).
+**`hardener_scheduler::db::ScanHistoryManager` (the history API):**
+- `new(path)` — pool now opens with **WAL** + 5s `busy_timeout`.
+- `create_session(trigger_type, host, plugins) -> session_id` (`host` = the `host_identifier` column).
+- `complete_session(id, &[ScanFinding], json_path, hash)` / `fail_session(id, error)`.
+- `list_sessions(&SessionFilter { host, status, since, until, limit })` — host-filtered reads already exist (`history list --host` is wired to this).
+
+**Batch persistence (`crates/hardener-cli/src/commands/batch.rs`):**
+- `scan_all` → `scan_one` → `scan_with_executor` thread `Option<Arc<ScanHistoryManager>>`.
+- `host_key` = inventory `name`, else `user@host:port` for ad-hoc (heuristic: ad-hoc profiles have `name == hostname`).
+- `persist_host` is best-effort (returns `()`, logs via `warn!`, can never change a `HostOutcome`).
+
+**Scan helper (`crates/hardener-cli/src/commands/report.rs`):**
+- `scan_grouped()` keeps per-plugin grouping; `run_scan()` flattens it; `finding_to_scan_finding()` is the shared `Finding -> ScanFinding` converter (`pub(crate)`).
+
+**Compliance (unchanged this session except the mapping fixes):**
+- Per-control coverage: each plugin's `coverage()` is aggregated by
+  `hardener_plugins::compliance_coverage()` and **injected** into
+  `ReportGenerator::new(config, coverage)` (CLI, desktop, scheduler all do this).
+- `generator.rs` folds coverage into the catalogue for *every* framework (incl. CIS):
+  covered → `Pass`/`Fail`, else `ManualReview`.
+- Curated catalogues: **CIS + ISO 27001 only** (`frameworks::curated_controls`).
+  Non-CIS are derived from coverage.
+- HIPAA / GDPR / ISO are the project's **interpretive** layer (SSG rarely carries
+  them); CIS/STIG/NIST/PCI are sourced from ComplianceAsCode/SSG and cited inline.
 
 ---
 
 ## Invariants & gotchas (do not break)
 
-- **Safe-failure invariant:** a wrong/imperfect compliance mapping must only ever
-  cause a false *failure*, never a false *pass*. Preserve this — it is what makes
-  the mappings safe to extend. Prefer omitting a mapping over guessing.
-- **Source mappings, don't invent:** control ids come from ComplianceAsCode/SSG
-  (`github.com/ComplianceAsCode/content`, the rule `references:` blocks) and the
-  project catalogues. Cite the SSG rule id in a `// SSG:` comment.
-- **Tauri desktop crate** now type-checks clean (`cargo check -p
-  linux-hardener-desktop`). The earlier "won't build" note was partly stale: a
-  built `crates/hardener-ui/dist` already exists, so the real blocker was an
-  unported phase-3 API break (the Tauri compliance commands still called the
-  one-arg `ReportGenerator::new`). Fixed 2026-06-20. A full bundled `tauri build`
-  still re-runs `trunk build --release` via `beforeBuildCommand`; `cargo
-  check`/`cargo build -p linux-hardener-desktop` use the existing `dist/`.
-- **`SshHardeningPlugin::apply` is not cleanly unit-testable** — it takes a real
-  `std::fs` flock on the real `/etc/ssh/sshd_config`; its only full test is
-  `#[ignore]` (root). Test pure helpers with `MockExecutor` instead.
-- **British-spelling linter** flags official NIST/ISO control titles
-  (e.g. "Authorize Access to Security Functions"). These are kept in the official
-  (American) spelling on purpose — fidelity to the standard beats house style.
-  The ~90 pre-existing naming warnings are not from this work; the pre-commit
-  gate passes with 0 errors.
-- **Project conventions:** no AI attribution anywhere (commits/code/comments);
-  run `cargo fmt` before commits; use Rust let-chains, never nested `if`;
-  British spelling in prose; never run Playwright/GUI tests on the host (nspawn
-  containers only).
+- **Best-effort persistence:** a history-write failure must never change a scan
+  result. `persist_host` has no error return path — keep it that way.
+- **Safe-failure compliance mappings:** a wrong/imperfect mapping may only ever
+  cause a false *failure*, never a false *pass*. Source ids from
+  ComplianceAsCode/SSG (`github.com/ComplianceAsCode/content`, the rule
+  `references:` blocks) and cite the rule id in a `// SSG:` comment. Prefer
+  *omitting* a mapping over guessing — the HIPAA fixes this session followed
+  exactly this (verified via `gh api` on the rule.yml files).
+- **`host_key` limitations:** renaming an inventory host starts a fresh timeline
+  (the key *is* the identity); an inventory host deliberately named after its own
+  hostname is keyed by `user@host:port` (documented in `scan_one`).
+- **Debt — Debug vs Display serialisation (OPEN):** `finding_to_scan_finding`
+  writes `severity`/`category` to history via `{:?}` (`"Critical"`, `"FileSystem"`),
+  not the official `Display` strings (`"CRITICAL"`, `"File System"`). Pre-existing
+  (single-host `scan` writes the same), so switching needs a one-time decision on
+  existing rows. Tracked in NEXT.md; resolve alongside the trends slice.
+- **Pre-commit gate (`rust-sec-ci`):** prints ~91 production + ~42 test naming
+  warnings (abbreviations, a few British-spelling flags on *official* NIST/ISO
+  control titles kept on purpose). These are pre-existing and harmless — the gate
+  passes at **0 errors**. Don't "fix" them.
+- **Two remotes, one push:** `origin` has a dual push URL (GitHub **and** GitLab),
+  so `git push origin main` publishes to both. The pre-*push* gate runs
+  fmt/clippy/cargo-audit; fix the report or `git push --no-verify`, never disable
+  `core.hooksPath`.
+- **Desktop crate builds** (`cargo check/build -p linux-hardener-desktop`) because
+  `crates/hardener-ui/dist` exists; a full bundled `tauri build` still re-runs
+  `trunk build --release` via `beforeBuildCommand`.
+- **Conventions:** no AI attribution anywhere (commits/code/comments); `cargo fmt`
+  before commits; Rust let-chains, never nested `if`; British spelling in prose;
+  never run Playwright/GUI tests on the host (nspawn containers only);
+  `docs/superpowers/` is gitignored (specs/plans live there untracked).
 
 ---
 
 ## How to verify
 
 ```bash
-cargo build  -p hardener-plugins -p hardener-compliance -p hardener-cli
-cargo test   -p hardener-plugins -p hardener-compliance -p hardener-cli
-cargo clippy -p hardener-plugins -p hardener-compliance --all-targets
+cargo test  -p hardener-scheduler -p hardener-cli -p hardener-plugins -p hardener-compliance
+cargo clippy -p hardener-scheduler -p hardener-cli --all-targets
 cargo fmt --check
+cargo build --workspace          # incl. the desktop bin (dist already built)
 ```
-All should be clean. (A full `cargo build --workspace` fails only on the Tauri
-desktop bin for the frontend-dist reason above.)
+All clean at handoff.
+
+---
+
+## Remaining work (priority order, from NEXT.md)
+
+1. **Multi-host SSH — per-host trend tracking** (slice 2). *Start here.*
+2. Multi-host SSH — regression alerts (needs trends first).
+3. Multi-host SSH — `batch report` / `batch apply` subcommands.
+4. Multi-host SSH — desktop multi-host view (largest GUI effort).
+5. Debug-vs-Display history serialisation decision (small; do with trends).
+6. RHEL 10 / per-version compliance profiles; cross-distro re-validation (needs containers + root, human-run).
+7. More frameworks (SOC 2 / FedRAMP / NIST 800-171); deeper HIPAA/GDPR interpretive review.
+8. Version cut for the accumulated `[Unreleased]` changelog; external security audit.
 
 ---
 
 ## Git state at handoff
 
-- This session's work (12 commits) was fast-forward **merged into `main` locally**.
-- **Nothing is pushed** — `main` is ahead of all remotes; pushing is the user's call.
-- The work was developed on worktree branch `worktree-fix+compliance-framework-mapping`
-  (now equal to `main`); that worktree can be removed when convenient.
+- `main` = `ef415f2`, **pushed to both remotes** (GitHub + GitLab); working tree
+  clean apart from two unrelated untracked paths (`.rust-sec-ci.toml`,
+  `docs/superpowers/`).
+- The `feat/per-host-history-persistence` branch was FF-merged and deleted.
