@@ -15,7 +15,7 @@ use tracing::{debug, info, warn};
 /// Dispatches notifications to all configured channels.
 pub struct NotificationDispatcher {
     /// All active notifiers.
-    pub(crate) notifiers: Vec<Box<dyn Notifier>>,
+    notifiers: Vec<Box<dyn Notifier>>,
     /// Minimum severity to trigger notifications.
     min_severity: hardener_common::types::Severity,
     /// Database for logging attempts.
@@ -96,7 +96,7 @@ impl NotificationDispatcher {
             return Vec::new();
         }
 
-        // Annotate with regression context when present (clone only then).
+        // Rebind summary to an annotated clone only when a regression is present; the non-regression path sends the original with no allocation.
         let annotated;
         let summary = if regression.is_some() {
             annotated = ScanSummary {

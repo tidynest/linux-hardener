@@ -168,7 +168,7 @@ impl ScanHistoryManager {
             sql.push_str(" AND started_at <= ?");
         }
 
-        sql.push_str(" ORDER BY started_at DESC");
+        sql.push_str(" ORDER BY started_at DESC, rowid DESC");
 
         if filter.limit.is_some() {
             sql.push_str(" LIMIT ?");
