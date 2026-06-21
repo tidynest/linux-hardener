@@ -1,16 +1,20 @@
 //! `hardener batch scan` — scan many remote hosts concurrently.
 
 use crate::cli::OutputFormat as CliOutputFormat;
-use crate::commands::report::run_scan;
+use crate::commands::daemon::load_scheduler_config;
+use crate::commands::report::{finding_to_scan_finding, scan_grouped};
 use crate::ssh_config::SshConnectionConfig;
 use anyhow::{Result, anyhow, bail};
 use hardener_common::types::Severity;
 use hardener_core::plugin::Finding;
-use hardener_core::{SshExecutor, executor::SystemExecutor};
+use hardener_core::{PluginMetadata, SshExecutor, executor::SystemExecutor};
+use hardener_scheduler::ScanHistoryManager;
+use hardener_scheduler::db::ScanFinding;
 use hardener_types::remote::{HostsConfig, RemoteHostProfile};
 use serde::Serialize;
 use std::sync::Arc;
 use std::time::Duration;
+use tracing::warn;
 
 /// Per-severity tally of one host's findings.
 // Consumed by the batch-scan command wired up in a later task.
@@ -253,15 +257,70 @@ fn display_target(p: &RemoteHostProfile) -> String {
     }
 }
 
+/// Opens the shared history database for batch persistence. Best-effort: on any
+/// error, returns `None` and batch scanning proceeds without persistence.
+async fn open_batch_history() -> Option<Arc<ScanHistoryManager>> {
+    let path = match load_scheduler_config() {
+        Ok(config) => config.storage.database_path,
+        Err(e) => {
+            warn!("batch history disabled: {e}");
+            return None;
+        }
+    };
+    match ScanHistoryManager::new(&path).await {
+        Ok(manager) => Some(Arc::new(manager)),
+        Err(e) => {
+            warn!("batch history disabled: {e}");
+            None
+        }
+    }
+}
+
+/// Persists one host's grouped scan results as a completed session. Best-effort:
+/// failures are logged and never affect the host's scan outcome.
+async fn persist_host(
+    history: &ScanHistoryManager,
+    host_key: &str,
+    grouped: &[(PluginMetadata, Vec<Finding>)],
+) {
+    let plugins: Vec<String> = grouped
+        .iter()
+        .map(|(m, _)| m.plugin_id.to_string())
+        .collect();
+    let session_id = match history.create_session("batch", host_key, &plugins).await {
+        Ok(id) => id,
+        Err(e) => {
+            warn!("batch history: create_session for {host_key} failed: {e}");
+            return;
+        }
+    };
+    let findings: Vec<ScanFinding> = grouped
+        .iter()
+        .flat_map(|(meta, fs)| fs.iter().map(move |f| finding_to_scan_finding(meta, f)))
+        .collect();
+    if let Err(e) = history
+        .complete_session(&session_id, &findings, None, None)
+        .await
+    {
+        warn!("batch history: complete_session for {host_key} failed: {e}");
+    }
+}
+
 /// Scans one host using an already-built executor. Split out so tests can inject
 /// a `MockExecutor`; production callers pass a connected `SshExecutor`.
 async fn scan_with_executor(
     name: String,
     target: String,
+    host_key: String,
     executor: Arc<dyn SystemExecutor>,
+    history: Option<Arc<ScanHistoryManager>>,
 ) -> HostOutcome {
-    match run_scan(true, executor, &CliOutputFormat::Json).await {
-        Ok(findings) => {
+    match scan_grouped(true, executor, &CliOutputFormat::Json).await {
+        Ok(grouped) => {
+            if let Some(history) = &history {
+                persist_host(history, &host_key, &grouped).await;
+            }
+            let findings: Vec<Finding> = grouped.into_iter().flat_map(|(_, f)| f).collect();
             let counts = SeverityCounts::from_findings(&findings);
             HostOutcome {
                 name,
@@ -280,10 +339,23 @@ async fn scan_with_executor(
 }
 
 /// Connects to one host then scans it, capturing any connection error.
-async fn scan_one(profile: RemoteHostProfile, timeout: u64) -> HostOutcome {
+async fn scan_one(
+    profile: RemoteHostProfile,
+    timeout: u64,
+    history: Option<Arc<ScanHistoryManager>>,
+) -> HostOutcome {
     let target = display_target(&profile);
+    // host_key: inventory hosts have a friendly name; ad-hoc hosts (parse_inline)
+    // set name == hostname, so fall back to the user@host:port target for those.
+    let host_key = if profile.name == profile.hostname {
+        target.clone()
+    } else {
+        profile.name.clone()
+    };
     match SshExecutor::connect(host_ssh_config(&profile, timeout)).await {
-        Ok(exec) => scan_with_executor(profile.name, target, Arc::new(exec)).await,
+        Ok(exec) => {
+            scan_with_executor(profile.name, target, host_key, Arc::new(exec), history).await
+        }
         Err(e) => HostOutcome {
             name: profile.name,
             target,
@@ -316,6 +388,7 @@ async fn scan_all(
     profiles: Vec<RemoteHostProfile>,
     concurrency: usize,
     timeout: u64,
+    history: Option<Arc<ScanHistoryManager>>,
 ) -> Vec<HostOutcome> {
     use tokio::sync::Semaphore;
     // Pre-fill every slot so a panicked task surfaces as a visible Failed host
@@ -334,9 +407,10 @@ async fn scan_all(
     let mut set = tokio::task::JoinSet::new();
     for (idx, profile) in profiles.into_iter().enumerate() {
         let permits = permits.clone();
+        let history = history.clone();
         set.spawn(async move {
             let _permit = permits.acquire_owned().await.expect("semaphore open");
-            (idx, scan_one(profile, timeout).await)
+            (idx, scan_one(profile, timeout, history).await)
         });
     }
     let mut completed: Vec<(usize, HostOutcome)> = Vec::new();
@@ -400,7 +474,8 @@ pub async fn run(opts: BatchOptions) -> anyhow::Result<()> {
         eprintln!("Scanning {} host(s)...", profiles.len());
     }
 
-    let outcomes = scan_all(profiles, opts.concurrency, opts.global_timeout).await;
+    let history = open_batch_history().await;
+    let outcomes = scan_all(profiles, opts.concurrency, opts.global_timeout, history).await;
 
     let rendered = match opts.format {
         CliOutputFormat::Json => render_json(&outcomes),
@@ -625,7 +700,8 @@ mod tests {
         use hardener_core::MockExecutor;
         use std::sync::Arc;
         let exec = Arc::new(MockExecutor::new());
-        let outcome = scan_with_executor("h".into(), "u@h:22".into(), exec).await;
+        let outcome =
+            scan_with_executor("h".into(), "u@h:22".into(), "u@h:22".into(), exec, None).await;
         assert!(
             matches!(outcome.status, HostStatus::Scanned { .. }),
             "a mock executor should yield a Scanned outcome, not a connection failure",
@@ -634,7 +710,7 @@ mod tests {
 
     #[tokio::test]
     async fn scan_all_empty_is_empty() {
-        let out = scan_all(vec![], 4, 1).await;
+        let out = scan_all(vec![], 4, 1, None).await;
         assert!(out.is_empty());
     }
 
@@ -780,7 +856,7 @@ mod tests {
             })
             .collect();
 
-        let out = scan_all(hosts, 2, 1).await;
+        let out = scan_all(hosts, 2, 1, None).await;
 
         assert_eq!(out.len(), 3, "every host appears, none dropped");
         assert_eq!(
@@ -810,5 +886,73 @@ mod tests {
             "failed row must surface the error"
         );
         assert!(out.contains("FAILED"));
+    }
+
+    #[tokio::test]
+    async fn batch_scan_persists_session_per_host() {
+        use hardener_core::MockExecutor;
+        use hardener_scheduler::ScanHistoryManager;
+        use hardener_scheduler::db::SessionFilter;
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        let mgr = Arc::new(
+            ScanHistoryManager::new(&dir.path().join("scheduler.db"))
+                .await
+                .unwrap(),
+        );
+
+        let exec = Arc::new(MockExecutor::new());
+        let outcome = scan_with_executor(
+            "web-01".into(),
+            "root@web-01:22".into(),
+            "web-01".into(),
+            exec,
+            Some(mgr.clone()),
+        )
+        .await;
+        assert!(matches!(outcome.status, HostStatus::Scanned { .. }));
+
+        // One completed session was persisted under the host_key.
+        let sessions = mgr
+            .list_sessions(&SessionFilter {
+                host: Some("web-01".into()),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(sessions.len(), 1, "one session persisted for the host");
+        assert_eq!(sessions[0].host_identifier, "web-01");
+        assert_eq!(sessions[0].status, "completed");
+    }
+
+    #[tokio::test]
+    async fn batch_persistence_handles_concurrent_hosts() {
+        use hardener_core::MockExecutor;
+        use hardener_scheduler::ScanHistoryManager;
+        use hardener_scheduler::db::SessionFilter;
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        let mgr = Arc::new(
+            ScanHistoryManager::new(&dir.path().join("scheduler.db"))
+                .await
+                .unwrap(),
+        );
+
+        // Persist three hosts concurrently through the shared manager (exercises WAL).
+        let mut set = tokio::task::JoinSet::new();
+        for i in 0..3 {
+            let mgr = mgr.clone();
+            set.spawn(async move {
+                let exec = Arc::new(MockExecutor::new());
+                let key = format!("host-{i}");
+                scan_with_executor(key.clone(), format!("u@{key}:22"), key, exec, Some(mgr)).await
+            });
+        }
+        while set.join_next().await.is_some() {}
+
+        let all = mgr.list_sessions(&SessionFilter::default()).await.unwrap();
+        assert_eq!(all.len(), 3, "all concurrent host sessions persisted");
     }
 }

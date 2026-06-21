@@ -46,3 +46,9 @@ dialoguer = { version = "0.12.0", features = ["fuzzy-select"]}
 
 # SSH
 openssh = "0.11.5"
+
+# Logging
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
