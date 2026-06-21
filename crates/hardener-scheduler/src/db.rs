@@ -510,6 +510,13 @@ pub fn trend_direction(prev: SeverityTuple, cur: SeverityTuple) -> &'static str 
     }
 }
 
+/// Returns true when `cur` is a worse posture than `prev`: more or higher-severity
+/// findings, by the tuple's severity priority. Pre-zero both with `above_floor`
+/// to ignore severities below a threshold.
+pub fn is_worse(prev: SeverityTuple, cur: SeverityTuple) -> bool {
+    cur > prev
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -671,6 +678,13 @@ mod tests {
         // A single new critical is worse, even when everything else drops.
         assert_eq!(trend_direction((0, 9, 9, 9, 9), (1, 0, 0, 0, 0)), "worse");
         assert_eq!(trend_direction((2, 1, 0, 0, 0), (2, 1, 0, 0, 0)), "same");
+    }
+
+    #[test]
+    fn is_worse_follows_severity_priority() {
+        assert!(is_worse((0, 0, 0, 0, 0), (1, 0, 0, 0, 0))); // a new critical
+        assert!(!is_worse((1, 0, 0, 0, 0), (0, 9, 9, 9, 9))); // fewer criticals is not worse
+        assert!(!is_worse((2, 1, 0, 0, 0), (2, 1, 0, 0, 0))); // unchanged
     }
 
     #[test]

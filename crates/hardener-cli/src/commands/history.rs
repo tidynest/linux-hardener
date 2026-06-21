@@ -8,7 +8,7 @@ use anyhow::{Result, anyhow};
 use chrono::{DateTime, Local, Utc};
 use hardener_scheduler::{
     ScanHistoryManager,
-    db::{ScanFindingRow, ScanSession, SessionFilter, trend_direction},
+    db::{ScanFindingRow, ScanSession, SessionFilter, is_worse, trend_direction},
 };
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -262,7 +262,7 @@ fn find_regressions(sessions: &[ScanSession]) -> Vec<Regression> {
             let [current, previous] = scans[..] else {
                 return None;
             };
-            (trend_direction(previous.severity_tuple(), current.severity_tuple()) == "worse")
+            is_worse(previous.severity_tuple(), current.severity_tuple())
                 .then(|| Regression::new(host, previous, current))
         })
         .collect()

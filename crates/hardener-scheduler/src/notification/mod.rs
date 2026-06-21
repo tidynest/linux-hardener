@@ -8,7 +8,7 @@ pub mod email;
 pub mod webhook;
 
 use crate::config::NotifyMode;
-use crate::db::{ScanSession, above_floor, trend_direction};
+use crate::db::{ScanSession, above_floor, is_worse};
 use crate::runner::{RegressionInfo, ScanSummary};
 use async_trait::async_trait;
 use hardener_common::types::Severity;
@@ -110,10 +110,10 @@ pub fn alert_decision(
 
     let regressed = matches!(mode, NotifyMode::Regression | NotifyMode::Both)
         && previous.is_some_and(|p| {
-            trend_direction(
+            is_worse(
                 above_floor(p.severity_tuple(), floor),
                 above_floor(current.severity_tuple(), floor),
-            ) == "worse"
+            )
         });
 
     let info = if regressed {
@@ -374,5 +374,14 @@ mod tests {
             alert_decision(NotifyMode::Both, Severity::Critical, Some(&prev), &worse);
         assert!(send);
         assert!(info.is_some());
+    }
+
+    #[test]
+    fn both_mode_absolute_without_previous() {
+        // Both mode, first scan with findings at/above the floor: sends, not annotated.
+        let cur = make_summary(1, 0, 0, 0);
+        let (send, info) = alert_decision(NotifyMode::Both, Severity::Critical, None, &cur);
+        assert!(send);
+        assert!(info.is_none());
     }
 }
