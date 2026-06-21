@@ -135,9 +135,22 @@ concurrently (`--all` / `--host` from the shared inventory, ad-hoc `--ssh`,
 (0 clean / 1 findings / 2 host or usage error). The inventory
 (`~/.config/linux-hardener/hosts.toml`) is shared with the desktop GUI.
 
-Remaining slices (still pending): scan-history persistence, per-host trend
-tracking, regression alerts, `batch report` / `batch apply` subcommands, and a
-desktop multi-host view.
+Per-host history persistence slice — **Done.** `batch scan` persists each host's
+results to the scheduler history db keyed by host (inventory name, or
+`user@host:port` for ad-hoc hosts), best-effort; the pool uses SQLite WAL for safe
+concurrent writes. Read back with `history list --host <key>`. Spec/plan under
+`docs/superpowers/`.
+
+Remaining slices (still pending): per-host trend tracking, regression alerts,
+`batch report` / `batch apply` subcommands, and a desktop multi-host view.
+
+**Follow-up (from review):** `finding_to_scan_finding` (now in `report.rs`)
+serialises `severity`/`category` to the history db via `{:?}` (Debug), which
+yields variant identifiers (`"Critical"`, `"FileSystem"`) rather than the official
+`Display` strings (`"CRITICAL"`, `"File System"`) and would shift if a variant is
+renamed. Pre-existing (single-host `scan` writes the same), so switching to
+`Display` needs a one-time decision about existing persisted rows — defer to a
+dedicated change, not the trends slice.
 
 ### P3 — Maintenance / currency
 

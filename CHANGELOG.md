@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Batch scan persists per-host history.** `hardener batch scan` now records each
+  host's results to the scan-history database keyed by host (the inventory name,
+  or `user@host:port` for ad-hoc `--ssh` hosts); read them back with
+  `hardener history list --host <key>`. Persistence is best-effort — a history
+  write failure never changes a host's scan result. The history pool now uses
+  SQLite WAL so concurrent per-host writes are safe.
 - **Multi-host batch scanning.** `hardener batch scan` scans many hosts at once
   (`--all`, `--host a,b`, ad-hoc `--ssh user@host`) with bounded concurrency
   (`--concurrency`), a per-host + rollup report (text or `--format json`), and
