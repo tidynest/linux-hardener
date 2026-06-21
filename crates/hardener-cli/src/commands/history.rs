@@ -11,6 +11,7 @@ use hardener_scheduler::{
     db::{ScanFindingRow, ScanSession, SessionFilter},
 };
 use serde::Serialize;
+use std::cmp::Ordering;
 use std::path::PathBuf;
 
 /// Lists recent scan sessions.
@@ -75,6 +76,131 @@ pub async fn list(
     }
 
     Ok(())
+}
+
+/// Shows a per-host security trend: completed scans oldest-first, each with its
+/// change from the previous scan. Derived on query from the persisted sessions —
+/// no separate score is stored.
+pub async fn trends(format: OutputFormat, quiet: bool, host: &str, limit: u32) -> Result<()> {
+    let db = open_database().await?;
+
+    let filter = SessionFilter {
+        host: Some(host.to_string()),
+        status: Some("completed".to_string()),
+        limit: Some(limit),
+        ..Default::default()
+    };
+
+    // list_sessions returns newest-first; a trend reads oldest-first.
+    let mut sessions = db
+        .list_sessions(&filter)
+        .await
+        .map_err(|e| anyhow!("Failed to list sessions: {}", e))?;
+    sessions.reverse();
+
+    let points: Vec<TrendPoint> = sessions
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            let prev = i.checked_sub(1).map(|p| &sessions[p]);
+            TrendPoint {
+                session_id: s.id.clone(),
+                started_at: s.started_at,
+                total: s.total_findings,
+                critical: s.critical_count,
+                high: s.high_count,
+                medium: s.medium_count,
+                low: s.low_count,
+                info: s.info_count,
+                delta_total: prev.map(|p| s.total_findings - p.total_findings),
+                direction: prev.map(|p| trend_direction(severity_key(p), severity_key(s))),
+            }
+        })
+        .collect();
+
+    match format {
+        OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&points)?),
+        _ => {
+            if points.is_empty() {
+                if !quiet {
+                    println!("No completed scans for host '{}'", host);
+                }
+                return Ok(());
+            }
+
+            println!("Security trend for host '{}' (oldest first):\n", host);
+            println!(
+                "{:<19}  {:>5} {:>4} {:>4} {:>4} {:>4}  {:>7}  Trend",
+                "Started", "Total", "Crit", "High", "Med", "Low", "Δtotal"
+            );
+            println!("{}", "-".repeat(72));
+
+            for p in &points {
+                let delta = p
+                    .delta_total
+                    .map(|d| format!("{:+}", d))
+                    .unwrap_or_else(|| "—".to_string());
+                println!(
+                    "{:<19}  {:>5} {:>4} {:>4} {:>4} {:>4}  {:>7}  {}",
+                    format_timestamp(p.started_at),
+                    p.total,
+                    p.critical,
+                    p.high,
+                    p.medium,
+                    p.low,
+                    delta,
+                    p.direction.unwrap_or("baseline"),
+                );
+            }
+
+            if !quiet {
+                println!("\n{} scan(s) over time.", points.len());
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Severity counts as a priority-ordered key (critical first) for comparison.
+fn severity_key(s: &ScanSession) -> (i32, i32, i32, i32, i32) {
+    (
+        s.critical_count,
+        s.high_count,
+        s.medium_count,
+        s.low_count,
+        s.info_count,
+    )
+}
+
+/// Direction the posture moved between two scans, by severity priority: fewer or
+/// less-severe findings is "better". A single new critical outranks any number
+/// of lower-severity improvements.
+fn trend_direction(
+    prev: (i32, i32, i32, i32, i32),
+    cur: (i32, i32, i32, i32, i32),
+) -> &'static str {
+    match cur.cmp(&prev) {
+        Ordering::Less => "better",
+        Ordering::Greater => "worse",
+        Ordering::Equal => "same",
+    }
+}
+
+/// One point in a per-host trend: a completed scan plus its change from the
+/// previous (older) scan. `delta_total`/`direction` are `None` for the first.
+#[derive(Serialize)]
+struct TrendPoint {
+    session_id: String,
+    started_at: i64,
+    total: i32,
+    critical: i32,
+    high: i32,
+    medium: i32,
+    low: i32,
+    info: i32,
+    delta_total: Option<i32>,
+    direction: Option<&'static str>,
 }
 
 /// Shows details of a specific scan session.
@@ -252,5 +378,20 @@ fn truncate_string(s: &str, max_len: usize) -> String {
     } else {
         let end = max_len.saturating_sub(3);
         format!("{}...", chars[..end].iter().collect::<String>())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::trend_direction;
+
+    #[test]
+    fn trend_direction_uses_severity_priority() {
+        // Fewer criticals is better, even when lower severities rise.
+        assert_eq!(trend_direction((1, 0, 0, 0, 0), (0, 5, 5, 5, 5)), "better");
+        // A single new critical is worse, even when everything else drops.
+        assert_eq!(trend_direction((0, 9, 9, 9, 9), (1, 0, 0, 0, 0)), "worse");
+        // Identical counts are flat.
+        assert_eq!(trend_direction((2, 1, 0, 0, 0), (2, 1, 0, 0, 0)), "same");
     }
 }

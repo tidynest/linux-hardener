@@ -265,6 +265,17 @@ pub enum HistoryAction {
         status: Option<String>,
     },
 
+    /// Show a per-host security trend (findings over time, oldest first).
+    Trends {
+        /// Host identifier to chart (inventory name, or user@host:port for ad-hoc).
+        #[arg(long)]
+        host: String,
+
+        /// Maximum number of scans to include.
+        #[arg(short, long, default_value = "20")]
+        limit: u32,
+    },
+
     /// Show details of a specific scan session.
     Show {
         /// Session ID (UUID) to display.

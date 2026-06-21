@@ -141,16 +141,25 @@ results to the scheduler history db keyed by host (inventory name, or
 concurrent writes. Read back with `history list --host <key>`. Spec/plan under
 `docs/superpowers/`.
 
-Remaining slices (still pending): per-host trend tracking, regression alerts,
+Per-host trend tracking slice — **Done.** `hardener history trends --host <key>`
+derives a per-host timeline on query from the persisted sessions (no new table,
+no stored score): completed scans oldest-first with per-severity counts, the
+change in total findings, and a `better`/`worse`/`same` direction computed by
+severity priority. `--format json` emits the points. Unit-tested direction logic
+plus a live render against a real host.
+
+Remaining slices (still pending): regression alerts (builds on trends),
 `batch report` / `batch apply` subcommands, and a desktop multi-host view.
 
 **Follow-up (from review):** `finding_to_scan_finding` (now in `report.rs`)
 serialises `severity`/`category` to the history db via `{:?}` (Debug), which
 yields variant identifiers (`"Critical"`, `"FileSystem"`) rather than the official
 `Display` strings (`"CRITICAL"`, `"File System"`) and would shift if a variant is
-renamed. Pre-existing (single-host `scan` writes the same), so switching to
-`Display` needs a one-time decision about existing persisted rows — defer to a
-dedicated change, not the trends slice.
+renamed. Pre-existing (single-host `scan` writes the same). Trends are **not**
+affected — they read the numeric `*_count` columns, which `complete_session`
+derives case-insensitively, not the per-finding severity string. Switching to
+`Display` still needs a one-time decision about existing persisted rows; defer to
+a dedicated change.
 
 ### P3 — Maintenance / currency
 

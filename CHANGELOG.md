@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Per-host security trend.** `hardener history trends --host <key>` charts a
+  host's completed scans oldest-first — per-severity counts, the change in total
+  findings, and a per-scan direction (`better`/`worse`/`same`) computed by
+  severity priority (a new critical outranks any number of lower-severity
+  improvements). Derived on query from the persisted scan history; no score is
+  stored. `--format json` emits the trend points for automation.
 - **Batch scan persists per-host history.** `hardener batch scan` now records each
   host's results to the scan-history database keyed by host (the inventory name,
   or `user@host:port` for ad-hoc `--ssh` hosts); read them back with
