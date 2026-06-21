@@ -6,8 +6,13 @@
 use chrono::{DateTime, Utc};
 use hardener_common::error::{HardeningError, Result};
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, SqlitePool, query_as, sqlite::SqlitePoolOptions};
+use sqlx::{
+    FromRow, SqlitePool, query_as,
+    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
+};
 use std::path::Path;
+use std::str::FromStr;
+use std::time::Duration;
 
 /// Manages scan history persistence in SQLite.
 pub struct ScanHistoryManager {
@@ -25,9 +30,13 @@ impl ScanHistoryManager {
         }
 
         let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
+        let options = SqliteConnectOptions::from_str(&db_url)
+            .map_err(|e| HardeningError::Database(e.to_string()))?
+            .journal_mode(SqliteJournalMode::Wal)
+            .busy_timeout(Duration::from_secs(5));
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
-            .connect(&db_url)
+            .connect_with(options)
             .await
             .map_err(|e| HardeningError::Database(e.to_string()))?;
 
@@ -602,5 +611,17 @@ mod tests {
             .await
             .unwrap();
         // Notifications are logged - no assertion needed, just verify no error
+    }
+
+    #[tokio::test]
+    async fn pool_uses_wal_journal_mode() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("wal.db");
+        let manager = ScanHistoryManager::new(&db_path).await.unwrap();
+        let mode: String = sqlx::query_scalar("PRAGMA journal_mode")
+            .fetch_one(&manager.pool)
+            .await
+            .unwrap();
+        assert_eq!(mode.to_lowercase(), "wal", "history pool must use WAL");
     }
 }
