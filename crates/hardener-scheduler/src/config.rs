@@ -88,12 +88,27 @@ impl Default for StorageConfig {
     }
 }
 
+/// Which notification triggers are active.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum NotifyMode {
+    /// Alert when this scan has findings at or above `notify_min_severity` (current behaviour).
+    #[default]
+    Findings,
+    /// Alert only when this scan is worse than the host's previous scan (quiet until change).
+    Regression,
+    /// Alert on either of the above; a regression scan is annotated as such.
+    Both,
+}
+
 /// Notification channel settings.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct NotificationConfig {
     /// Minimum severity to trigger notifications.
     pub notify_min_severity: String,
+    /// Which notification triggers are active.
+    pub notify_mode: NotifyMode,
     /// Email notification settings.
     pub email: EmailConfig,
     /// Webhook notification settings.
@@ -214,6 +229,19 @@ mod tests {
         let json = r#""slack""#;
         let format: WebhookFormat = serde_json::from_str(json).unwrap();
         assert_eq!(format, WebhookFormat::Slack);
+    }
+
+    #[test]
+    fn notify_mode_defaults_to_findings_and_round_trips() {
+        // Omitted field deserialises to the default (Findings).
+        let cfg: NotificationConfig = toml::from_str("").unwrap();
+        assert_eq!(cfg.notify_mode, NotifyMode::Findings);
+
+        let cfg: NotificationConfig = toml::from_str(r#"notify_mode = "regression""#).unwrap();
+        assert_eq!(cfg.notify_mode, NotifyMode::Regression);
+
+        let cfg: NotificationConfig = toml::from_str(r#"notify_mode = "both""#).unwrap();
+        assert_eq!(cfg.notify_mode, NotifyMode::Both);
     }
 
     #[test]
