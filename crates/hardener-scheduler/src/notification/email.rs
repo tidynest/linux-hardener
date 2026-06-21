@@ -18,6 +18,73 @@ use tracing::{debug, error};
 /// Environment variable for SMTP password.
 const SMTP_PASSWORD_ENV: &str = "HARDENER_SMTP_PASSWORD";
 
+/// Formats the email subject; prefixes `[REGRESSION]` when the scan regressed.
+fn format_subject(summary: &ScanSummary) -> String {
+    let severity = if summary.critical_count > 0 {
+        "CRITICAL"
+    } else if summary.high_count > 0 {
+        "HIGH"
+    } else if summary.medium_count > 0 {
+        "MEDIUM"
+    } else {
+        "LOW"
+    };
+    let host = EmailNotifier::sanitise_for_header(&summary.host);
+    let prefix = if summary.regression.is_some() {
+        "[REGRESSION] "
+    } else {
+        ""
+    };
+    format!(
+        "{}[{}] Security Scan: {} findings on {}",
+        prefix, severity, summary.total_findings, host
+    )
+}
+
+/// Formats the email body; appends a regression block when present.
+fn format_body(summary: &ScanSummary) -> String {
+    let mut body = String::with_capacity(1024);
+    body.push_str("Linux System Hardener - Security Scan Report\n");
+    body.push_str("============================================\n\n");
+    body.push_str(&format!("Host: {}\n", summary.host));
+    body.push_str(&format!("Session ID: {}\n", summary.session_id));
+    body.push_str(&format!(
+        "Plugins scanned: {}\n\n",
+        summary.plugins_scanned.join(", ")
+    ));
+
+    if let Some(ref r) = summary.regression {
+        body.push_str("⚠ REGRESSION since the previous scan\n");
+        body.push_str("------------------------------------\n");
+        body.push_str(&format!(
+            "  Critical: {:+}  High: {:+}  Medium: {:+}  Low: {:+}\n",
+            r.delta_critical, r.delta_high, r.delta_medium, r.delta_low
+        ));
+        body.push_str(&format!(
+            "  Previous total: {} findings\n\n",
+            r.previous_total
+        ));
+    }
+
+    body.push_str("Findings Summary\n");
+    body.push_str("----------------\n");
+    body.push_str(&format!("  Critical: {}\n", summary.critical_count));
+    body.push_str(&format!("  High:     {}\n", summary.high_count));
+    body.push_str(&format!("  Medium:   {}\n", summary.medium_count));
+    body.push_str(&format!("  Low:      {}\n", summary.low_count));
+    body.push_str(&format!("  Info:     {}\n", summary.info_count));
+    body.push_str("  ─────────────\n");
+    body.push_str(&format!("  Total:    {}\n\n", summary.total_findings));
+
+    if let Some(ref path) = summary.json_path {
+        body.push_str(&format!("Full report: {}\n", path));
+    }
+    if summary.had_errors {
+        body.push_str("\n⚠ Some plugins encountered errors during scanning.\n");
+    }
+    body
+}
+
 /// Sends email notification via SMTP.
 pub struct EmailNotifier {
     config: EmailConfig,
@@ -83,7 +150,7 @@ impl EmailNotifier {
     }
 
     /// Strips control characters from a string to prevent SMTP header injection.
-    fn sanitise_for_header(s: &str) -> String {
+    pub(crate) fn sanitise_for_header(s: &str) -> String {
         s.chars()
             .filter(|c| !c.is_ascii_control() || *c == '\t')
             .collect()
@@ -91,56 +158,12 @@ impl EmailNotifier {
 
     /// Formats the email subject line.
     fn format_subject(&self, summary: &ScanSummary) -> String {
-        let severity = if summary.critical_count > 0 {
-            "CRITICAL"
-        } else if summary.high_count > 0 {
-            "HIGH"
-        } else if summary.medium_count > 0 {
-            "MEDIUM"
-        } else {
-            "LOW"
-        };
-
-        let host = Self::sanitise_for_header(&summary.host);
-        format!(
-            "[{}] Security Scan: {} findings on {}",
-            severity, summary.total_findings, host
-        )
+        format_subject(summary)
     }
 
     /// Formats the email body with scan details.
     fn format_body(&self, summary: &ScanSummary) -> String {
-        let mut body = String::with_capacity(1024);
-
-        body.push_str("Linux System Hardener - Security Scan Report\n");
-        body.push_str("============================================\n\n");
-
-        body.push_str(&format!("Host: {}\n", summary.host));
-        body.push_str(&format!("Session ID: {}\n", summary.session_id));
-        body.push_str(&format!(
-            "Plugins scanned: {}\n\n",
-            summary.plugins_scanned.join(", ")
-        ));
-
-        body.push_str("Findings Summary\n");
-        body.push_str("----------------\n");
-        body.push_str(&format!("  Critical: {}\n", summary.critical_count));
-        body.push_str(&format!("  High:     {}\n", summary.high_count));
-        body.push_str(&format!("  Medium:   {}\n", summary.medium_count));
-        body.push_str(&format!("  Low:      {}\n", summary.low_count));
-        body.push_str(&format!("  Info:     {}\n", summary.info_count));
-        body.push_str("  ─────────────\n");
-        body.push_str(&format!("  Total:    {}\n\n", summary.total_findings));
-
-        if let Some(ref path) = summary.json_path {
-            body.push_str(&format!("Full report: {}\n", path));
-        }
-
-        if summary.had_errors {
-            body.push_str("\n⚠ Some plugins encountered errors during scanning.\n");
-        }
-
-        body
+        format_body(summary)
     }
 }
 
@@ -201,5 +224,52 @@ impl Notifier for EmailNotifier {
 
     fn channel(&self) -> &str {
         "email"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runner::{RegressionInfo, ScanSummary};
+
+    fn summary(regression: Option<RegressionInfo>) -> ScanSummary {
+        ScanSummary {
+            session_id: "s".into(),
+            host: "host1".into(),
+            plugins_scanned: vec!["kernel".into()],
+            total_findings: 3,
+            critical_count: 2,
+            high_count: 1,
+            medium_count: 0,
+            low_count: 0,
+            info_count: 0,
+            json_path: None,
+            json_hash: None,
+            had_errors: false,
+            regression,
+        }
+    }
+
+    #[test]
+    fn subject_and_body_plain_without_regression() {
+        let s = summary(None);
+        assert!(!format_subject(&s).contains("REGRESSION"));
+        assert!(!format_body(&s).contains("REGRESSION"));
+    }
+
+    #[test]
+    fn subject_and_body_show_regression() {
+        let s = summary(Some(RegressionInfo {
+            previous_started_at: 0,
+            previous_total: 1,
+            delta_critical: 1,
+            delta_high: 0,
+            delta_medium: 0,
+            delta_low: 0,
+        }));
+        assert!(format_subject(&s).starts_with("[REGRESSION]"));
+        let body = format_body(&s);
+        assert!(body.contains("REGRESSION since the previous scan"));
+        assert!(body.contains("Critical: +1"));
     }
 }
