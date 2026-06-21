@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reports hosts whose latest completed scan is worse than the previous one (by the
   same severity priority as trends) and exits `1` when any regression is found, so
   it can gate CI; `0` when clean. `--format json` emits the regression records.
+- **Scheduled-scan regression alerts.** The scheduler can now notify (email/webhook)
+  when a scheduled scan is *worse than the host's previous scan*, not only when it
+  has findings above a threshold. New `notify_mode` setting: `findings` (default,
+  unchanged behaviour), `regression` (quiet until the posture worsens), or `both`.
+  Regressions are measured at the existing `notify_min_severity` floor and the
+  alert is annotated with the per-severity deltas. Self-deduping — fires only on
+  the scan where the posture changes.
 - **Batch scan persists per-host history.** `hardener batch scan` now records each
   host's results to the scan-history database keyed by host (the inventory name,
   or `user@host:port` for ad-hoc `--ssh` hosts); read them back with

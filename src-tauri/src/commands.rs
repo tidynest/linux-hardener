@@ -1370,6 +1370,7 @@ pub async fn test_notification() -> Result<hardener_types::scheduler::TestNotifi
         json_path: None,
         json_hash: None,
         had_errors: false,
+        regression: None,
     };
 
     let dispatcher = hardener_scheduler::NotificationDispatcher::new(
@@ -1377,7 +1378,7 @@ pub async fn test_notification() -> Result<hardener_types::scheduler::TestNotifi
         std::sync::Arc::new(db_manager),
     );
 
-    let results = dispatcher.dispatch(&summary).await;
+    let results = dispatcher.dispatch(&summary, None).await;
 
     if results.is_empty() {
         return Ok(hardener_types::scheduler::TestNotificationResult {

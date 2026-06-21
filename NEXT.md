@@ -156,9 +156,14 @@ The detection core (`find_regressions`) is reusable by a future scheduler-driven
 alert; wiring regressions into the daemon's email/webhook notifications is the
 remaining, larger half of "alerts".
 
-Remaining slices (still pending): scheduler-driven regression notifications
-(email/webhook on a scheduled scan that regresses), `batch report` / `batch apply`
-subcommands, and a desktop multi-host view.
+Scheduler regression notifications slice — **Done.** The daemon notifies via the
+configured email/webhook channels when a scheduled scan regresses against the
+host's previous scan. `notify_mode` = `findings` (default) / `regression` /
+`both`; measured at the `notify_min_severity` floor; self-deduping. Spec + plan
+under `docs/superpowers/`.
+
+Remaining slices (still pending): `batch report` / `batch apply` subcommands, and
+a desktop multi-host view.
 
 **Follow-up (from review):** `finding_to_scan_finding` (now in `report.rs`)
 serialises `severity`/`category` to the history db via `{:?}` (Debug), which
