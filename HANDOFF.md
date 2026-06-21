@@ -25,10 +25,9 @@ Three Multi-host SSH slices shipped this session, **all merged to `main`** (FF):
    spec → plan → subagent-driven (6 units, 2-stage review each + a final
    whole-feature review).
 
-**Git state:** `main` = `639a637` (+ this correction). **Ahead of origin and NOT
-yet pushed** — the assistant session had no SSH key, so `git push origin main`
-(dual URL → GitHub + GitLab) is left to the human. The pre-push `rust-sec-ci` gate
-will run on that push.
+**Git state:** feature + docs **pushed to both remotes** (GitHub + GitLab) at
+`bab98d4`; `origin/main == main`. (This very correction is a trailing docs commit —
+fold it into the next push.)
 
 **Next agreed priority:** `batch report` / `batch apply` subcommands, then the
 desktop multi-host view (largest GUI effort).
@@ -154,10 +153,9 @@ All clean at handoff (96 scheduler + 71 CLI tests pass).
 
 ## Git state at handoff
 
-- `main` = `639a637` plus this correction; **NOT yet pushed** — ahead of origin,
-  run `git push origin main` to publish to both remotes (GitHub + GitLab via the
-  dual push URL). The assistant session lacked the SSH key. Working tree clean
-  apart from untracked `.rust-sec-ci.toml` and `docs/superpowers/`.
+- `main` **pushed to both remotes** (GitHub + GitLab) at `bab98d4`; `origin/main ==
+  main`. This handoff correction is a trailing docs commit — push it whenever.
+  Working tree clean apart from untracked `.rust-sec-ci.toml` and `docs/superpowers/`.
 - Branch `feat/scheduler-regression-notifications` was FF-merged and deleted.
 - Spec/plan for this session's feature:
   `docs/superpowers/specs/2026-06-22-scheduler-regression-notifications-design.md`,
