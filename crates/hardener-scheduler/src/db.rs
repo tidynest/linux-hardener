@@ -5,11 +5,13 @@
 
 use chrono::{DateTime, Utc};
 use hardener_common::error::{HardeningError, Result};
+use hardener_common::types::Severity;
 use serde::{Deserialize, Serialize};
 use sqlx::{
     FromRow, SqlitePool, query_as,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
 };
+use std::cmp::Ordering;
 use std::path::Path;
 use std::str::FromStr;
 use std::time::Duration;
@@ -382,6 +384,17 @@ pub struct ScanSession {
 }
 
 impl ScanSession {
+    /// Severity counts as a priority-ordered tuple (critical first).
+    pub fn severity_tuple(&self) -> SeverityTuple {
+        (
+            self.critical_count as i64,
+            self.high_count as i64,
+            self.medium_count as i64,
+            self.low_count as i64,
+            self.info_count as i64,
+        )
+    }
+
     /// Returns the session start time as a DateTime.
     pub fn started_at_utc(&self) -> DateTime<Utc> {
         DateTime::from_timestamp(self.started_at, 0).unwrap_or_default()
@@ -466,6 +479,34 @@ impl SeverityCounts {
             }
         }
         counts
+    }
+}
+
+/// Severity counts as a priority-ordered tuple: (critical, high, medium, low, info).
+/// Lexicographic comparison of two tuples reflects security priority — a single
+/// new critical outranks any number of lower-severity changes.
+pub type SeverityTuple = (i64, i64, i64, i64, i64);
+
+/// Zeroes the counts below `floor`, keeping only severities at or above it.
+/// `Info` keeps everything; `Critical` keeps only the critical count.
+pub fn above_floor(t: SeverityTuple, floor: Severity) -> SeverityTuple {
+    let (c, h, m, l, i) = t;
+    match floor {
+        Severity::Critical => (c, 0, 0, 0, 0),
+        Severity::High => (c, h, 0, 0, 0),
+        Severity::Medium => (c, h, m, 0, 0),
+        Severity::Low => (c, h, m, l, 0),
+        Severity::Info => (c, h, m, l, i),
+    }
+}
+
+/// Direction the posture moved between two scans, by severity priority: fewer or
+/// less-severe findings is "better".
+pub fn trend_direction(prev: SeverityTuple, cur: SeverityTuple) -> &'static str {
+    match cur.cmp(&prev) {
+        Ordering::Less => "better",
+        Ordering::Greater => "worse",
+        Ordering::Equal => "same",
     }
 }
 
@@ -611,6 +652,50 @@ mod tests {
             .await
             .unwrap();
         // Notifications are logged - no assertion needed, just verify no error
+    }
+
+    #[test]
+    fn above_floor_zeroes_sub_floor_levels() {
+        let t = (1, 2, 3, 4, 5); // critical, high, medium, low, info
+        assert_eq!(above_floor(t, Severity::Critical), (1, 0, 0, 0, 0));
+        assert_eq!(above_floor(t, Severity::High), (1, 2, 0, 0, 0));
+        assert_eq!(above_floor(t, Severity::Medium), (1, 2, 3, 0, 0));
+        assert_eq!(above_floor(t, Severity::Low), (1, 2, 3, 4, 0));
+        assert_eq!(above_floor(t, Severity::Info), (1, 2, 3, 4, 5));
+    }
+
+    #[test]
+    fn trend_direction_uses_severity_priority() {
+        // Fewer criticals is better, even when lower severities rise.
+        assert_eq!(trend_direction((1, 0, 0, 0, 0), (0, 5, 5, 5, 5)), "better");
+        // A single new critical is worse, even when everything else drops.
+        assert_eq!(trend_direction((0, 9, 9, 9, 9), (1, 0, 0, 0, 0)), "worse");
+        assert_eq!(trend_direction((2, 1, 0, 0, 0), (2, 1, 0, 0, 0)), "same");
+    }
+
+    #[test]
+    fn severity_tuple_reads_session_counts() {
+        let mut s = ScanSession {
+            id: "x".into(),
+            started_at: 0,
+            completed_at: None,
+            status: "completed".into(),
+            trigger_type: "batch".into(),
+            host_identifier: "h".into(),
+            plugins_scanned: String::new(),
+            total_findings: 0,
+            critical_count: 1,
+            high_count: 2,
+            medium_count: 3,
+            low_count: 4,
+            info_count: 5,
+            error_message: None,
+            json_file_path: None,
+            hash: None,
+        };
+        assert_eq!(s.severity_tuple(), (1, 2, 3, 4, 5));
+        s.critical_count = 0;
+        assert_eq!(s.severity_tuple(), (0, 2, 3, 4, 5));
     }
 
     #[tokio::test]
