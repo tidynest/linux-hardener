@@ -276,6 +276,15 @@ pub enum HistoryAction {
         limit: u32,
     },
 
+    /// Report hosts whose latest scan is worse than the previous one.
+    ///
+    /// Exits 1 when any regression is found (so it can gate CI); 0 otherwise.
+    Regressions {
+        /// Limit to a single host identifier (default: check every host).
+        #[arg(long)]
+        host: Option<String>,
+    },
+
     /// Show details of a specific scan session.
     Show {
         /// Session ID (UUID) to display.

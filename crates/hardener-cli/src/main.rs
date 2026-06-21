@@ -177,6 +177,9 @@ async fn main() -> Result<()> {
             HistoryAction::Trends { host, limit } => {
                 commands::history::trends(cli.format, cli.quiet, &host, limit).await
             }
+            HistoryAction::Regressions { host } => {
+                commands::history::regressions(cli.format, cli.quiet, host).await
+            }
             HistoryAction::Show { session_id } => {
                 commands::history::show(&session_id, cli.format, cli.quiet).await
             }

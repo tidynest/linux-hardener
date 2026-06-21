@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   severity priority (a new critical outranks any number of lower-severity
   improvements). Derived on query from the persisted scan history; no score is
   stored. `--format json` emits the trend points for automation.
+- **Regression detection / CI gate.** `hardener history regressions [--host <key>]`
+  reports hosts whose latest completed scan is worse than the previous one (by the
+  same severity priority as trends) and exits `1` when any regression is found, so
+  it can gate CI; `0` when clean. `--format json` emits the regression records.
 - **Batch scan persists per-host history.** `hardener batch scan` now records each
   host's results to the scan-history database keyed by host (the inventory name,
   or `user@host:port` for ad-hoc `--ssh` hosts); read them back with

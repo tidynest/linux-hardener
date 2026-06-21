@@ -148,8 +148,17 @@ change in total findings, and a `better`/`worse`/`same` direction computed by
 severity priority. `--format json` emits the points. Unit-tested direction logic
 plus a live render against a real host.
 
-Remaining slices (still pending): regression alerts (builds on trends),
-`batch report` / `batch apply` subcommands, and a desktop multi-host view.
+Regression alerts slice — **Done (CLI).** `hardener history regressions [--host]`
+compares each host's two newest completed scans and reports the ones whose latest
+is worse (same severity-priority compare as trends), exiting `1` when any
+regression is found so it can gate CI (`0` otherwise). Unit-tested detection.
+The detection core (`find_regressions`) is reusable by a future scheduler-driven
+alert; wiring regressions into the daemon's email/webhook notifications is the
+remaining, larger half of "alerts".
+
+Remaining slices (still pending): scheduler-driven regression notifications
+(email/webhook on a scheduled scan that regresses), `batch report` / `batch apply`
+subcommands, and a desktop multi-host view.
 
 **Follow-up (from review):** `finding_to_scan_finding` (now in `report.rs`)
 serialises `severity`/`category` to the history db via `{:?}` (Debug), which
