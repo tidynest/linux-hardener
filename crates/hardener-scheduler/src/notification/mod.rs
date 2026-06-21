@@ -7,7 +7,9 @@ pub mod dispatcher;
 pub mod email;
 pub mod webhook;
 
-use crate::runner::ScanSummary;
+use crate::config::NotifyMode;
+use crate::db::{ScanSession, above_floor, trend_direction};
+use crate::runner::{RegressionInfo, ScanSummary};
 use async_trait::async_trait;
 use hardener_common::types::Severity;
 
@@ -88,6 +90,39 @@ pub fn meets_severity_threshold(summary: &ScanSummary, min_severity: Severity) -
         }
         Severity::Info => summary.total_findings > 0,
     }
+}
+
+/// Decides whether a completed scan should notify, and whether it is a regression.
+///
+/// Pure: no IO. `floor` is the already-resolved severity floor (the dispatcher's
+/// `min_severity`). `previous` is the host's prior completed scan, if any.
+///
+/// Returns `(should_send, regression_context)`. A regression at the floor always
+/// also satisfies the absolute threshold, so `Both` never double-sends.
+pub fn alert_decision(
+    mode: NotifyMode,
+    floor: Severity,
+    previous: Option<&ScanSession>,
+    current: &ScanSummary,
+) -> (bool, Option<RegressionInfo>) {
+    let absolute = matches!(mode, NotifyMode::Findings | NotifyMode::Both)
+        && meets_severity_threshold(current, floor);
+
+    let regressed = matches!(mode, NotifyMode::Regression | NotifyMode::Both)
+        && previous.is_some_and(|p| {
+            trend_direction(
+                above_floor(p.severity_tuple(), floor),
+                above_floor(current.severity_tuple(), floor),
+            ) == "worse"
+        });
+
+    let info = if regressed {
+        previous.map(|p| RegressionInfo::new(p, current))
+    } else {
+        None
+    };
+
+    (absolute || regressed, info)
 }
 
 #[cfg(test)]
@@ -239,5 +274,105 @@ mod tests {
         assert!(!meets_severity_threshold(&empty, Severity::Medium));
         assert!(!meets_severity_threshold(&empty, Severity::Low));
         assert!(!meets_severity_threshold(&empty, Severity::Info));
+    }
+
+    use crate::config::NotifyMode;
+    use crate::db::ScanSession;
+
+    fn prev_session(critical: i32, high: i32, medium: i32, low: i32) -> ScanSession {
+        ScanSession {
+            id: "prev".into(),
+            started_at: 100,
+            completed_at: Some(100),
+            status: "completed".into(),
+            trigger_type: "schedule".into(),
+            host_identifier: "h".into(),
+            plugins_scanned: String::new(),
+            total_findings: critical + high + medium + low,
+            critical_count: critical,
+            high_count: high,
+            medium_count: medium,
+            low_count: low,
+            info_count: 0,
+            error_message: None,
+            json_file_path: None,
+            hash: None,
+        }
+    }
+
+    #[test]
+    fn findings_mode_matches_threshold_no_annotation() {
+        // Findings mode ignores history: sends iff threshold met, never annotates.
+        let prev = prev_session(0, 0, 0, 0);
+        let cur = make_summary(1, 0, 0, 0); // 1 critical
+        let (send, info) =
+            alert_decision(NotifyMode::Findings, Severity::Critical, Some(&prev), &cur);
+        assert!(send);
+        assert!(info.is_none());
+
+        let clean = make_summary(0, 0, 0, 0);
+        let (send, _) = alert_decision(
+            NotifyMode::Findings,
+            Severity::Critical,
+            Some(&prev),
+            &clean,
+        );
+        assert!(!send);
+    }
+
+    #[test]
+    fn regression_mode_quiet_until_worse() {
+        let prev = prev_session(1, 0, 0, 0); // already 1 critical
+        // Same posture: no alert even though threshold is met.
+        let same = make_summary(1, 0, 0, 0);
+        let (send, _) = alert_decision(
+            NotifyMode::Regression,
+            Severity::Critical,
+            Some(&prev),
+            &same,
+        );
+        assert!(!send);
+
+        // Worse: a new critical -> alert + annotation.
+        let worse = make_summary(2, 0, 0, 0);
+        let (send, info) = alert_decision(
+            NotifyMode::Regression,
+            Severity::Critical,
+            Some(&prev),
+            &worse,
+        );
+        assert!(send);
+        let info = info.expect("regression annotated");
+        assert_eq!(info.delta_critical, 1);
+    }
+
+    #[test]
+    fn regression_first_scan_never_alerts() {
+        let cur = make_summary(5, 0, 0, 0);
+        let (send, _) = alert_decision(NotifyMode::Regression, Severity::Critical, None, &cur);
+        assert!(!send);
+    }
+
+    #[test]
+    fn regression_respects_floor() {
+        let prev = prev_session(0, 0, 0, 3); // 3 low
+        let cur = make_summary(0, 0, 0, 5); // 5 low — worse only at Low level
+        // Floor High: low changes are below the floor -> not a regression.
+        let (send, _) = alert_decision(NotifyMode::Regression, Severity::High, Some(&prev), &cur);
+        assert!(!send);
+        // Floor Low: counts -> regression.
+        let (send, info) = alert_decision(NotifyMode::Regression, Severity::Low, Some(&prev), &cur);
+        assert!(send);
+        assert_eq!(info.unwrap().delta_low, 2);
+    }
+
+    #[test]
+    fn both_mode_alerts_and_annotates_on_regression() {
+        let prev = prev_session(1, 0, 0, 0);
+        let worse = make_summary(2, 0, 0, 0);
+        let (send, info) =
+            alert_decision(NotifyMode::Both, Severity::Critical, Some(&prev), &worse);
+        assert!(send);
+        assert!(info.is_some());
     }
 }
