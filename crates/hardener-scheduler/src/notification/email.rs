@@ -18,6 +18,13 @@ use tracing::{debug, error};
 /// Environment variable for SMTP password.
 const SMTP_PASSWORD_ENV: &str = "HARDENER_SMTP_PASSWORD";
 
+/// Strips control characters from a string to prevent SMTP header injection.
+fn sanitise_for_header(s: &str) -> String {
+    s.chars()
+        .filter(|c| !c.is_ascii_control() || *c == '\t')
+        .collect()
+}
+
 /// Formats the email subject; prefixes `[REGRESSION]` when the scan regressed.
 fn format_subject(summary: &ScanSummary) -> String {
     let severity = if summary.critical_count > 0 {
@@ -29,7 +36,7 @@ fn format_subject(summary: &ScanSummary) -> String {
     } else {
         "LOW"
     };
-    let host = EmailNotifier::sanitise_for_header(&summary.host);
+    let host = sanitise_for_header(&summary.host);
     let prefix = if summary.regression.is_some() {
         "[REGRESSION] "
     } else {
@@ -149,13 +156,6 @@ impl EmailNotifier {
         Some(transport)
     }
 
-    /// Strips control characters from a string to prevent SMTP header injection.
-    pub(crate) fn sanitise_for_header(s: &str) -> String {
-        s.chars()
-            .filter(|c| !c.is_ascii_control() || *c == '\t')
-            .collect()
-    }
-
     /// Formats the email subject line.
     fn format_subject(&self, summary: &ScanSummary) -> String {
         format_subject(summary)
@@ -260,16 +260,17 @@ mod tests {
     #[test]
     fn subject_and_body_show_regression() {
         let s = summary(Some(RegressionInfo {
-            previous_started_at: 0,
+            previous_started_at: 1_700_000_000,
             previous_total: 1,
             delta_critical: 1,
-            delta_high: 0,
+            delta_high: -2,
             delta_medium: 0,
             delta_low: 0,
         }));
-        assert!(format_subject(&s).starts_with("[REGRESSION]"));
+        assert!(format_subject(&s).starts_with("[REGRESSION] "));
         let body = format_body(&s);
         assert!(body.contains("REGRESSION since the previous scan"));
         assert!(body.contains("Critical: +1"));
+        assert!(body.contains("High: -2"));
     }
 }

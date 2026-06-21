@@ -15,6 +15,15 @@ use tracing::{debug, error, warn};
 /// HTTP request timeout for webhook endpoint.
 const WEBHOOK_TIMEOUT_SECS: u64 = 30;
 
+/// Returns the regression label prefix when the scan regressed, or `""` otherwise.
+fn regression_marker(summary: &ScanSummary) -> &'static str {
+    if summary.regression.is_some() {
+        "[REGRESSION] "
+    } else {
+        ""
+    }
+}
+
 /// Returns `true` if the address is loopback, private, link-local, or unspecified.
 fn is_blocked_addr(addr: std::net::IpAddr) -> bool {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -220,11 +229,7 @@ impl WebhookNotifier {
 
     /// Builds Slack-formatted payload with attachment.
     fn build_slack_payload(summary: &ScanSummary) -> serde_json::Value {
-        let marker = if summary.regression.is_some() {
-            "[REGRESSION] "
-        } else {
-            ""
-        };
+        let marker = regression_marker(summary);
         serde_json::json!({
             "attachments": [{
                 "color": Self::severity_colour(summary),
@@ -261,11 +266,7 @@ impl WebhookNotifier {
 
     /// Builds Discord-formatted payload with embed.
     fn build_discord_payload(summary: &ScanSummary) -> serde_json::Value {
-        let marker = if summary.regression.is_some() {
-            "[REGRESSION] "
-        } else {
-            ""
-        };
+        let marker = regression_marker(summary);
         serde_json::json!({
             "embeds": [{
                 "title": format!(
@@ -609,7 +610,7 @@ mod tests {
         assert!(WebhookNotifier::build_generic_payload(&s)["regression"].is_null());
 
         s.regression = Some(crate::runner::RegressionInfo {
-            previous_started_at: 0,
+            previous_started_at: 1_700_000_000,
             previous_total: 0,
             delta_critical: 1,
             delta_high: 0,
@@ -618,6 +619,48 @@ mod tests {
         });
         let payload = WebhookNotifier::build_generic_payload(&s);
         assert_eq!(payload["regression"]["delta_critical"], 1);
+    }
+
+    #[test]
+    fn slack_title_marks_regression() {
+        let mut s = make_test_summary(1, 0, 0, 0);
+        s.regression = Some(crate::runner::RegressionInfo {
+            previous_started_at: 1_700_000_000,
+            previous_total: 0,
+            delta_critical: 1,
+            delta_high: 0,
+            delta_medium: 0,
+            delta_low: 0,
+        });
+        let v = WebhookNotifier::build_slack_payload(&s);
+        assert!(
+            v["attachments"][0]["title"]
+                .as_str()
+                .unwrap_or("")
+                .starts_with("[REGRESSION] "),
+            "Slack attachment title must start with '[REGRESSION] '"
+        );
+    }
+
+    #[test]
+    fn discord_title_marks_regression() {
+        let mut s = make_test_summary(1, 0, 0, 0);
+        s.regression = Some(crate::runner::RegressionInfo {
+            previous_started_at: 1_700_000_000,
+            previous_total: 0,
+            delta_critical: 1,
+            delta_high: 0,
+            delta_medium: 0,
+            delta_low: 0,
+        });
+        let v = WebhookNotifier::build_discord_payload(&s);
+        assert!(
+            v["embeds"][0]["title"]
+                .as_str()
+                .unwrap_or("")
+                .starts_with("[REGRESSION] "),
+            "Discord embed title must start with '[REGRESSION] '"
+        );
     }
 
     /// Helper to create a test summary.
