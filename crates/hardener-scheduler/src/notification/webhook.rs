@@ -599,6 +599,7 @@ mod tests {
             json_path: None,
             json_hash: None,
             had_errors: false,
+            regression: None,
         }
     }
 }

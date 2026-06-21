@@ -5,7 +5,7 @@
 
 use crate::{
     config::SchedulerConfig,
-    db::{ScanFinding, ScanHistoryManager, SeverityCounts},
+    db::{ScanFinding, ScanHistoryManager, ScanSession, SeverityCounts, SeverityTuple},
     json_store::JsonStore,
     notification::dispatcher::NotificationDispatcher,
 };
@@ -40,6 +40,34 @@ impl TriggerType {
     }
 }
 
+/// Context describing how a scan regressed against the host's previous scan.
+#[derive(Clone, Debug, Serialize)]
+pub struct RegressionInfo {
+    /// Start time of the previous (better) scan.
+    pub previous_started_at: i64,
+    /// Total findings in the previous scan.
+    pub previous_total: i32,
+    /// Change in each severity vs the previous scan (positive = worse).
+    pub delta_critical: i64,
+    pub delta_high: i64,
+    pub delta_medium: i64,
+    pub delta_low: i64,
+}
+
+impl RegressionInfo {
+    /// Builds the delta between a previous session and the current summary.
+    pub fn new(previous: &ScanSession, current: &ScanSummary) -> RegressionInfo {
+        RegressionInfo {
+            previous_started_at: previous.started_at,
+            previous_total: previous.total_findings,
+            delta_critical: current.critical_count as i64 - previous.critical_count as i64,
+            delta_high: current.high_count as i64 - previous.high_count as i64,
+            delta_medium: current.medium_count as i64 - previous.medium_count as i64,
+            delta_low: current.low_count as i64 - previous.low_count as i64,
+        }
+    }
+}
+
 /// Summary of a completed scan for notification purposes.
 #[derive(Clone, Debug, Serialize)]
 pub struct ScanSummary {
@@ -63,6 +91,22 @@ pub struct ScanSummary {
     pub json_hash: Option<String>,
     /// Whether any plugins failed during scan.
     pub had_errors: bool,
+    /// Regression context, set only when this scan regressed against the previous one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub regression: Option<RegressionInfo>,
+}
+
+impl ScanSummary {
+    /// Severity counts as a priority-ordered tuple (critical first).
+    pub fn severity_tuple(&self) -> SeverityTuple {
+        (
+            self.critical_count as i64,
+            self.high_count as i64,
+            self.medium_count as i64,
+            self.low_count as i64,
+            self.info_count as i64,
+        )
+    }
 }
 
 /// Executes scans and persists results.
@@ -349,6 +393,7 @@ impl ScanRunner {
             json_path: None,
             json_hash: None,
             had_errors,
+            regression: None,
         }
     }
 
