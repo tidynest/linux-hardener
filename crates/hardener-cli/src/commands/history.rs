@@ -8,10 +8,9 @@ use anyhow::{Result, anyhow};
 use chrono::{DateTime, Local, Utc};
 use hardener_scheduler::{
     ScanHistoryManager,
-    db::{ScanFindingRow, ScanSession, SessionFilter},
+    db::{ScanFindingRow, ScanSession, SessionFilter, trend_direction},
 };
 use serde::Serialize;
-use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -114,7 +113,7 @@ pub async fn trends(format: OutputFormat, quiet: bool, host: &str, limit: u32) -
                 low: s.low_count,
                 info: s.info_count,
                 delta_total: prev.map(|p| s.total_findings - p.total_findings),
-                direction: prev.map(|p| trend_direction(severity_key(p), severity_key(s))),
+                direction: prev.map(|p| trend_direction(p.severity_tuple(), s.severity_tuple())),
             }
         })
         .collect();
@@ -161,31 +160,6 @@ pub async fn trends(format: OutputFormat, quiet: bool, host: &str, limit: u32) -
     }
 
     Ok(())
-}
-
-/// Severity counts as a priority-ordered key (critical first) for comparison.
-fn severity_key(s: &ScanSession) -> (i32, i32, i32, i32, i32) {
-    (
-        s.critical_count,
-        s.high_count,
-        s.medium_count,
-        s.low_count,
-        s.info_count,
-    )
-}
-
-/// Direction the posture moved between two scans, by severity priority: fewer or
-/// less-severe findings is "better". A single new critical outranks any number
-/// of lower-severity improvements.
-fn trend_direction(
-    prev: (i32, i32, i32, i32, i32),
-    cur: (i32, i32, i32, i32, i32),
-) -> &'static str {
-    match cur.cmp(&prev) {
-        Ordering::Less => "better",
-        Ordering::Greater => "worse",
-        Ordering::Equal => "same",
-    }
 }
 
 /// One point in a per-host trend: a completed scan plus its change from the
@@ -288,7 +262,7 @@ fn find_regressions(sessions: &[ScanSession]) -> Vec<Regression> {
             let [current, previous] = scans[..] else {
                 return None;
             };
-            (trend_direction(severity_key(previous), severity_key(current)) == "worse")
+            (trend_direction(previous.severity_tuple(), current.severity_tuple()) == "worse")
                 .then(|| Regression::new(host, previous, current))
         })
         .collect()
@@ -505,16 +479,6 @@ fn truncate_string(s: &str, max_len: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn trend_direction_uses_severity_priority() {
-        // Fewer criticals is better, even when lower severities rise.
-        assert_eq!(trend_direction((1, 0, 0, 0, 0), (0, 5, 5, 5, 5)), "better");
-        // A single new critical is worse, even when everything else drops.
-        assert_eq!(trend_direction((0, 9, 9, 9, 9), (1, 0, 0, 0, 0)), "worse");
-        // Identical counts are flat.
-        assert_eq!(trend_direction((2, 1, 0, 0, 0), (2, 1, 0, 0, 0)), "same");
-    }
 
     fn session(host: &str, started_at: i64, critical: i32, high: i32) -> ScanSession {
         ScanSession {
