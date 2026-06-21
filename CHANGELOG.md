@@ -42,6 +42,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and validates the candidate config with `sshd -t` before restarting.
 
 ### Fixed
+- **Desktop compliance commands build again.** The phase-3 coverage change gave
+  `ReportGenerator::new` a second `coverage` parameter but the Tauri
+  `generate_compliance_report` / `export_compliance_report` commands still called
+  the one-argument form, so the desktop crate failed to compile. Both now inject
+  `hardener_plugins::compliance_coverage()`, matching the CLI. (The frontend
+  `dist/` already exists, so this was the desktop crate's only build blocker.)
+- **Ad-hoc batch SSH targets honour a `:port` suffix.** `hardener batch scan
+  --ssh user@host:2222` now connects on the given port instead of always
+  defaulting to 22; an unbracketed IPv6 literal keeps the default port (it has no
+  unambiguous `host:port` form).
 - **Honest reporting for not-yet-assessed frameworks.** Control results are
   derived from scan findings, which initially carried CIS control IDs only. For
   frameworks without mappings yet (STIG, NIST, PCI-DSS, HIPAA, GDPR), a control
@@ -52,6 +62,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only ever over-report a failure, never a pass.
 
 ### Changed
+- **`tauri` 2.11.2 → 2.11.3.** Routine patch bump (no CVE); pulls the matching
+  `tauri-runtime`/`tauri-utils`/`wry` updates in the lockfile.
+- **Curated CIS SSH section completed.** The curated CIS catalogue now lists the
+  strong-crypto SSH controls `5.2.14`–`5.2.16` (Key Exchange, Ciphers, MACs)
+  alongside the existing `5.2.x` entries, so the SSH plugin's crypto assessment
+  is reflected in the curated standard rather than surfacing only via the
+  coverage merge.
 - **Non-CIS catalogues are derived from plugin coverage.** The hand-written
   STIG / NIST 800-53 / PCI-DSS / HIPAA / GDPR catalogues — whose identifier
   schemes diverged from the upstream (SSG) IDs the plugins emit, producing

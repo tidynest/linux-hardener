@@ -160,9 +160,13 @@ finding-referenced control absent from the catalogue as a `Fail`.
 - **Source mappings, don't invent:** control ids come from ComplianceAsCode/SSG
   (`github.com/ComplianceAsCode/content`, the rule `references:` blocks) and the
   project catalogues. Cite the SSG rule id in a `// SSG:` comment.
-- **Tauri desktop bin won't build** until the WASM frontend is built
-  (`trunk build` → `crates/hardener-ui/dist`). This is pre-existing and unrelated
-  to compliance/plugins/CLI, which all build fine. Don't chase it as a regression.
+- **Tauri desktop crate** now type-checks clean (`cargo check -p
+  linux-hardener-desktop`). The earlier "won't build" note was partly stale: a
+  built `crates/hardener-ui/dist` already exists, so the real blocker was an
+  unported phase-3 API break (the Tauri compliance commands still called the
+  one-arg `ReportGenerator::new`). Fixed 2026-06-20. A full bundled `tauri build`
+  still re-runs `trunk build --release` via `beforeBuildCommand`; `cargo
+  check`/`cargo build -p linux-hardener-desktop` use the existing `dist/`.
 - **`SshHardeningPlugin::apply` is not cleanly unit-testable** — it takes a real
   `std::fs` flock on the real `/etc/ssh/sshd_config`; its only full test is
   `#[ignore]` (root). Test pure helpers with `MockExecutor` instead.

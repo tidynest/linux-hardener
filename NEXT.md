@@ -98,7 +98,7 @@ and ISO 27001 keep their curated catalogues (full standard, unassessed controls 
 
 **Compliance — remaining follow-ups (not lost):**
 - **HIPAA/GDPR confidence** — those mappings are interpretive (GDPR Art.32 / project TM-* scheme; HIPAA §164); review for accuracy when convenient.
-- **CIS catalogue hygiene** — 4 CIS ids the plugins emit (`1.6.1`, `5.2.14–16`) are not in the curated `cis.rs` catalogue, so they only appear when they fail. Add them to the catalogue (or fold CIS into the derive path) for full Option-B `Pass` visibility.
+- **CIS catalogue hygiene** — partly done. `5.2.14`–`5.2.16` (strong Kex/Ciphers/MACs) are now in the curated `cis.rs`. Note: Option-B `Pass` visibility was *already* working for any plugin-emitted CIS id via the phase-3 coverage merge (the generator folds coverage into the catalogue for CIS too) — the curated entries are for standard completeness, not to fix a missing `Pass`. **Open question:** the kernel plugin tags `fs.protected_hardlinks/symlinks` with bare CIS `1.6.1` ("filesystem hardening", section "Initial Setup"), but `1.6.1` is the CIS *Mandatory Access Control* subsection header — the curated catalogue already lists `1.6.1.1`–`1.6.1.4` for SELinux/AppArmor there. This looks like a plugin mis-mapping (likely should be a `1.5.x` sysctl id); decide whether to re-map the plugin rather than enshrine `1.6.1` in the catalogue.
 
 ### P1 — SSH crypto-algorithm hardening — Done
 
@@ -144,7 +144,8 @@ desktop multi-host view.
 | Item | Detail | Status |
 |------|--------|--------|
 | Distro validation refresh | Re-validate on Debian 13, Fedora 44, RHEL 10, openSUSE Leap 16 (Leap 15 reached EOL April 2026) | ⬜ Pending |
-| `tauri` 2.11.2 → 2.11.3 | Latest patch (2026-06-17); no CVE, routine bump | ⬜ Pending |
+| `tauri` 2.11.2 → 2.11.3 | Latest patch (2026-06-17); no CVE, routine bump | ✅ Done (lockfile, 2026-06-20) |
+| Desktop crate compile fix | Tauri compliance commands ported to the phase-3 `ReportGenerator::new(config, coverage)` signature; `cargo check -p linux-hardener-desktop` clean | ✅ Done (2026-06-20) |
 | External security audit | Third-party review | ⬜ Pending |
 | Performance optimisation | Scan speed improvements | ⬜ Pending |
 
