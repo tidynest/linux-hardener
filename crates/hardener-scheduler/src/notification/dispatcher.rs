@@ -115,6 +115,23 @@ impl NotificationDispatcher {
             summary.regression.is_some()
         );
 
+        self.send_to_notifiers(summary).await
+    }
+
+    /// Sends `summary` to every configured channel unconditionally, bypassing the
+    /// mode/severity decision in `dispatch`. Used by the "test notification"
+    /// feature, which must verify the channels regardless of notify_mode/threshold.
+    /// Returns an empty vec only when no channels are configured.
+    pub async fn send_test(&self, summary: &ScanSummary) -> Vec<NotificationResult> {
+        if self.notifiers.is_empty() {
+            return Vec::new();
+        }
+        self.send_to_notifiers(summary).await
+    }
+
+    /// Sends `summary` to every notifier and logs each attempt. This is the
+    /// shared inner loop used by both `dispatch` and `send_test`.
+    async fn send_to_notifiers(&self, summary: &ScanSummary) -> Vec<NotificationResult> {
         let mut results = Vec::with_capacity(self.notifiers.len());
         for notifier in &self.notifiers {
             let result = notifier.send(summary).await;
@@ -225,5 +242,13 @@ mod tests {
         let d = dispatcher_with(NotifyMode::Findings).await;
         let results = d.dispatch(&summary(1), None).await;
         assert_eq!(results.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn send_test_bypasses_decision_gate() {
+        let d = dispatcher_with(NotifyMode::Regression).await;
+        // dispatch would suppress (regression mode, no previous), but send_test must send.
+        assert!(d.dispatch(&summary(3), None).await.is_empty());
+        assert_eq!(d.send_test(&summary(3)).await.len(), 1);
     }
 }

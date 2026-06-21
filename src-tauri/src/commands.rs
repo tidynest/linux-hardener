@@ -1378,7 +1378,7 @@ pub async fn test_notification() -> Result<hardener_types::scheduler::TestNotifi
         std::sync::Arc::new(db_manager),
     );
 
-    let results = dispatcher.dispatch(&summary, None).await;
+    let results = dispatcher.send_test(&summary).await;
 
     if results.is_empty() {
         return Ok(hardener_types::scheduler::TestNotificationResult {
