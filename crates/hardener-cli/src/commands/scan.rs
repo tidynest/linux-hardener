@@ -2,6 +2,7 @@
 
 use crate::cli::{OutputFormat, ScanMode, SeverityFilter};
 use crate::commands::daemon::load_scheduler_config;
+use crate::commands::report::finding_to_scan_finding;
 use crate::output;
 use anyhow::Result;
 use hardener_common::types::Severity;
@@ -203,31 +204,6 @@ async fn open_history_db() -> Result<ScanHistoryManager> {
     ScanHistoryManager::new(&config.storage.database_path)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to open history database: {}", e))
-}
-
-/// Converts a core `Finding` + plugin metadata into a scheduler `ScanFinding`.
-fn finding_to_scan_finding(meta: &PluginMetadata, finding: &Finding) -> ScanFinding {
-    ScanFinding {
-        plugin_id: meta.plugin_id.to_string(),
-        finding_id: finding.finding_id.clone(),
-        severity: format!("{:?}", finding.finding_severity),
-        title: finding.finding_title.clone(),
-        description: Some(finding.finding_description.clone()),
-        current_value: Some(finding.finding_current_value.clone()),
-        recommended_value: Some(finding.finding_recommended_value.clone()),
-        category: Some(format!("{:?}", finding.finding_category)),
-        compliance_mappings: if finding.finding_compliance.is_empty() {
-            None
-        } else {
-            Some(
-                finding
-                    .finding_compliance
-                    .iter()
-                    .map(|c| format!("{} {}", c.compliance_framework, c.compliance_control_id))
-                    .collect(),
-            )
-        },
-    }
 }
 
 #[cfg(test)]
