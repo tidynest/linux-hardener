@@ -200,6 +200,10 @@ impl ScanHistoryManager {
 
     /// Returns the host's most recent completed session that is not `exclude_id`
     /// (i.e. the one before the just-completed scan), if any.
+    ///
+    /// Assumes the caller passes the just-completed (newest) scan as `exclude_id`:
+    /// it reads only the two newest completed sessions, so "previous" is correct
+    /// as long as `exclude_id` is one of them.
     pub async fn previous_completed_session(
         &self,
         host: &str,
@@ -528,8 +532,8 @@ pub fn trend_direction(prev: SeverityTuple, cur: SeverityTuple) -> &'static str 
 }
 
 /// Returns true when `cur` is a worse posture than `prev`: more or higher-severity
-/// findings, by the tuple's severity priority. Pre-zero both with `above_floor`
-/// to ignore severities below a threshold.
+/// findings, by the tuple's severity priority. Callers pre-zero both with
+/// `above_floor` to ignore severities below a threshold.
 pub fn is_worse(prev: SeverityTuple, cur: SeverityTuple) -> bool {
     cur > prev
 }
