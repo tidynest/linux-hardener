@@ -162,8 +162,17 @@ host's previous scan. `notify_mode` = `findings` (default) / `regression` /
 `both`; measured at the `notify_min_severity` floor; self-deduping. Spec + plan
 under `docs/superpowers/`.
 
-Remaining slices (still pending): `batch report` / `batch apply` subcommands, and
-a desktop multi-host view.
+Batch report slice — **Done.** `hardener batch report` assesses many hosts against
+a compliance framework (`--framework`) or scenario preset (`--scenario`,
+defaulting to `server`) concurrently and prints a fleet posture table (per
+`(host, framework)`: score + pass/fail/manual/N-A counts) plus a per-framework
+rollup. Tiered exit code (0 compliant / 1 failing control / 2 host error) gates
+CI; `--format json` and `--output` supported. Reuses the `batch scan` engine
+verbatim (connection, concurrency, isolation, history persistence). Spec/plan
+under `docs/superpowers/`.
+
+Remaining slices (still pending): `batch apply` subcommand, and a desktop
+multi-host view.
 
 **Follow-up (from review):** `finding_to_scan_finding` (now in `report.rs`)
 serialises `severity`/`category` to the history db via `{:?}` (Debug), which

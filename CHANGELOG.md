@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`hardener batch report`** — assess multiple hosts against a compliance
+  framework or scenario in one concurrent run, printing a fleet posture table
+  (host × framework → score and pass/fail/manual/N-A control counts) with a
+  tiered exit code (0 compliant / 1 failing control / 2 host error) for CI
+  gating. Reuses the `batch scan` engine; `--format json` and `--output`
+  supported.
 - **Per-host security trend.** `hardener history trends --host <key>` charts a
   host's completed scans oldest-first — per-severity counts, the change in total
   findings, and a per-scan direction (`better`/`worse`/`same`) computed by
