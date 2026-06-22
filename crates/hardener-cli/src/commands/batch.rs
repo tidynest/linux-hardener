@@ -6,7 +6,7 @@ use crate::commands::report::{finding_to_scan_finding, scan_grouped};
 use crate::ssh_config::SshConnectionConfig;
 use anyhow::{Result, anyhow, bail};
 use hardener_common::types::Severity;
-use hardener_compliance::{ReportConfig, ReportGenerator, Scenario};
+use hardener_compliance::{ReportConfig, ReportGenerator};
 use hardener_core::plugin::Finding;
 use hardener_core::{PluginMetadata, SshExecutor, executor::SystemExecutor};
 use hardener_scheduler::ScanHistoryManager;
@@ -452,42 +452,18 @@ pub async fn run_report(opts: BatchReportOptions) -> anyhow::Result<()> {
         }
     };
 
-    let inventory = match hardener_core::inventory::load() {
-        Ok(inv) => inv,
-        Err(e) => {
-            eprintln!("failed to load host inventory: {e}");
-            std::process::exit(2);
-        }
-    };
-
-    let inline: Vec<RemoteHostProfile> = opts
-        .ssh
-        .iter()
-        .map(|t| parse_inline(t, 22, opts.global_key.clone(), !opts.global_no_verify))
-        .collect();
-
-    let mut profiles = match resolve_hosts(&inventory, opts.all, &opts.host, inline) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("{e}");
-            std::process::exit(2);
-        }
-    };
-
-    if let Some(key) = opts.global_key.as_ref() {
-        for profile in profiles.iter_mut() {
-            if profile.key_file.is_none() {
-                profile.key_file = Some(key.clone());
-            }
-        }
-    }
-
-    if !opts.quiet {
-        eprintln!("Assessing {} host(s)...", profiles.len());
-    }
-
-    let history = open_batch_history().await;
-    let outcomes = scan_all(profiles, opts.concurrency, opts.global_timeout, history).await;
+    let outcomes = resolve_and_scan(
+        opts.all,
+        &opts.host,
+        &opts.ssh,
+        opts.concurrency,
+        opts.quiet,
+        opts.global_key,
+        opts.global_timeout,
+        opts.global_no_verify,
+        "Assessing",
+    )
+    .await;
 
     let generator = ReportGenerator::new(
         ReportConfig {
@@ -723,8 +699,23 @@ pub struct BatchOptions {
     pub global_no_verify: bool,
 }
 
-/// CLI entry point for `hardener batch scan`.
-pub async fn run(opts: BatchOptions) -> anyhow::Result<()> {
+/// Resolves the selected host profiles (inventory + inline `--ssh`), applies the
+/// global key fallback, then scans them all concurrently with best-effort history
+/// persistence. Shared by `batch scan` and `batch report` so the host-resolution
+/// path lives in one place. `verb` is the present participle shown in the
+/// progress line ("Scanning" / "Assessing").
+#[allow(clippy::too_many_arguments)]
+async fn resolve_and_scan(
+    all: bool,
+    host: &[String],
+    ssh: &[String],
+    concurrency: usize,
+    quiet: bool,
+    global_key: Option<String>,
+    global_timeout: u64,
+    global_no_verify: bool,
+    verb: &str,
+) -> Vec<HostOutcome> {
     let inventory = match hardener_core::inventory::load() {
         Ok(inv) => inv,
         Err(e) => {
@@ -733,13 +724,12 @@ pub async fn run(opts: BatchOptions) -> anyhow::Result<()> {
         }
     };
 
-    let inline: Vec<RemoteHostProfile> = opts
-        .ssh
+    let inline: Vec<RemoteHostProfile> = ssh
         .iter()
-        .map(|t| parse_inline(t, 22, opts.global_key.clone(), !opts.global_no_verify))
+        .map(|t| parse_inline(t, 22, global_key.clone(), !global_no_verify))
         .collect();
 
-    let mut profiles = match resolve_hosts(&inventory, opts.all, &opts.host, inline) {
+    let mut profiles = match resolve_hosts(&inventory, all, host, inline) {
         Ok(p) => p,
         Err(e) => {
             eprintln!("{e}");
@@ -749,7 +739,7 @@ pub async fn run(opts: BatchOptions) -> anyhow::Result<()> {
 
     // The global --ssh-key fills the gap for any host (chiefly inventory hosts)
     // that does not define its own key. Ad-hoc hosts already carry it.
-    if let Some(key) = opts.global_key.as_ref() {
+    if let Some(key) = global_key.as_ref() {
         for profile in profiles.iter_mut() {
             if profile.key_file.is_none() {
                 profile.key_file = Some(key.clone());
@@ -757,12 +747,28 @@ pub async fn run(opts: BatchOptions) -> anyhow::Result<()> {
         }
     }
 
-    if !opts.quiet {
-        eprintln!("Scanning {} host(s)...", profiles.len());
+    if !quiet {
+        eprintln!("{verb} {} host(s)...", profiles.len());
     }
 
     let history = open_batch_history().await;
-    let outcomes = scan_all(profiles, opts.concurrency, opts.global_timeout, history).await;
+    scan_all(profiles, concurrency, global_timeout, history).await
+}
+
+/// CLI entry point for `hardener batch scan`.
+pub async fn run(opts: BatchOptions) -> anyhow::Result<()> {
+    let outcomes = resolve_and_scan(
+        opts.all,
+        &opts.host,
+        &opts.ssh,
+        opts.concurrency,
+        opts.quiet,
+        opts.global_key,
+        opts.global_timeout,
+        opts.global_no_verify,
+        "Scanning",
+    )
+    .await;
 
     let rendered = match opts.format {
         CliOutputFormat::Json => render_json(&outcomes),
@@ -782,6 +788,7 @@ pub async fn run(opts: BatchOptions) -> anyhow::Result<()> {
 mod tests {
     use super::*;
     use hardener_common::types::{FindingCategory, Severity};
+    use hardener_compliance::Scenario;
 
     fn posture(failing: usize) -> FrameworkPosture {
         FrameworkPosture {
@@ -915,14 +922,28 @@ mod tests {
             report_exit_code(&[assessed_report("a", vec![posture(3)])]),
             1
         );
-        // A host error dominates a failing control -> 2
+        // A host error dominates a failing control -> 2 (failed last)
         assert_eq!(
             report_exit_code(&[assessed_report("a", vec![posture(3)]), failed_report("b")]),
             2
         );
-        // Manual-review only (no failing) is NOT a failure -> 0
+        // A host error dominates regardless of order -> 2 (failed first)
         assert_eq!(
-            report_exit_code(&[assessed_report("a", vec![posture(0)])]),
+            report_exit_code(&[failed_report("b"), assessed_report("a", vec![posture(3)])]),
+            2
+        );
+        // Manual-review present but zero failing is NOT a failure -> 0
+        let manual_only = FrameworkPosture {
+            framework: "CIS".into(),
+            score: 80.0,
+            passing: 7,
+            failing: 0,
+            manual_review: 5,
+            not_applicable: 0,
+            total: 12,
+        };
+        assert_eq!(
+            report_exit_code(&[assessed_report("a", vec![manual_only])]),
             0
         );
         // Empty -> 0

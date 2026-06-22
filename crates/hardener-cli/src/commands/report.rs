@@ -216,18 +216,18 @@ pub(crate) fn resolve_scenario(
     quiet: bool,
 ) -> Result<Scenario> {
     if let Some(fw) = framework {
-        Ok(Scenario::Custom(vec![parse_framework(&fw)?]))
-    } else if let Some(sc) = scenario {
-        parse_scenario(&sc)
-    } else {
-        if !quiet {
-            eprintln!("No scenario specified, using 'server' (CIS + STIG)");
-            eprintln!(
-                "Use --scenario or --framework to specify. Run 'hardener report --help' for options.\n"
-            );
-        }
-        Ok(Scenario::Server)
+        return Ok(Scenario::Custom(vec![parse_framework(&fw)?]));
     }
+    if let Some(sc) = scenario {
+        return parse_scenario(&sc);
+    }
+    if !quiet {
+        eprintln!("No scenario specified, using 'server' (CIS + STIG)");
+        eprintln!(
+            "Use --scenario or --framework to specify. Run 'hardener report --help' for options.\n"
+        );
+    }
+    Ok(Scenario::Server)
 }
 
 fn parse_scenario(s: &str) -> Result<Scenario> {
