@@ -5,6 +5,7 @@ use crate::checkpoint::{
 };
 use crate::{Checkpoint, CheckpointSigner};
 use hardener_common::error::{HardeningError, Result};
+use hardener_common::executor::SystemExecutor;
 use sqlx::{Row, SqlitePool};
 use std::path::Path;
 
@@ -29,6 +30,16 @@ const DEFAULT_ROLLBACK_PREFIXES: &[&str] = &[
     "/root",
     "/boot",
 ];
+
+/// Bundled header fields passed to `store_checkpoint` to stay within the argument-count lint.
+struct CheckpointHeader<'a> {
+    id: &'a CheckpointId,
+    name: &'a str,
+    timestamp: i64,
+    username: &'a str,
+    signature: &'a [u8],
+    host_key: &'a str,
+}
 
 /// Manages checkpoint creation, storage, and retrieval.
 ///
@@ -109,61 +120,62 @@ impl CheckpointManager {
         CheckpointId::new(format!("cp_{}_{:08x}", timestamp, random_suffix))
     }
 
-    /// Captures the current state of a single file (not a directory).
+    /// Captures the current state of a single file (not a directory) via the executor.
     ///
-    /// Records file content, permissions, and ownership.
-    ///
-    /// # Arguments
-    /// * `file_path` - Path to the file to capture
-    ///
-    /// # Errors
-    /// Returns an error if the file cannot be read or metadata cannot be accessed.
-    fn capture_single_file(&self, file_path: &Path) -> Result<FileState> {
-        use std::fs::File;
-        use std::io::Read;
-        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    /// Records file content, permissions, and ownership.  An unreadable file's content
+    /// is stored as `None`; absent files are represented with all-zero metadata.
+    async fn capture_single_file(
+        &self,
+        executor: &dyn SystemExecutor,
+        file_path: &Path,
+    ) -> Result<FileState> {
+        let meta = executor
+            .file_metadata(file_path)
+            .await
+            .map_err(|e| HardeningError::System(std::io::Error::other(e)))?;
 
-        // Open file once — all subsequent operations use this handle,
-        // eliminating the TOCTOU window between exists/metadata/read.
-        let mut file = match File::open(file_path) {
-            Ok(f) => f,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(FileState {
-                    file_path: file_path.to_string_lossy().to_string(),
-                    file_content: None,
-                    file_permissions: 0,
-                    file_owner_uid: 0,
-                    file_owner_gid: 0,
-                });
-            }
-            Err(e) => return Err(HardeningError::System(e)),
-        };
+        if !meta.exists {
+            return Ok(FileState {
+                file_path: file_path.to_string_lossy().to_string(),
+                file_content: None,
+                file_permissions: 0,
+                file_owner_uid: 0,
+                file_owner_gid: 0,
+            });
+        }
 
-        // Metadata and content from the same open file descriptor
-        let file_metadata = file.metadata().map_err(HardeningError::System)?;
-        let mut file_content = Vec::new();
-        file.read_to_end(&mut file_content)
-            .map_err(HardeningError::System)?;
+        // Content is best-effort: unreadable files are stored with content=None.
+        let file_content = executor
+            .read_file(file_path)
+            .await
+            .ok()
+            .map(|s| s.into_bytes());
 
         Ok(FileState {
             file_path: file_path.to_string_lossy().to_string(),
-            file_content: Some(file_content),
-            file_permissions: file_metadata.permissions().mode(),
-            file_owner_uid: file_metadata.uid(),
-            file_owner_gid: file_metadata.gid(),
+            file_content,
+            file_permissions: meta.mode,
+            file_owner_uid: meta.uid,
+            file_owner_gid: meta.gid,
         })
     }
 
-    /// Captures metadata for a directory entry without reading contents.
+    /// Captures metadata for a path without reading contents.
     ///
     /// Records permissions and ownership but sets `file_content` to `None`.
     /// The directory type bit (`0o40000`) in `file_permissions` distinguishes
     /// this from "didn't exist" entries (which have `file_permissions: 0`).
-    fn capture_directory_entry(&self, dir_path: &Path) -> Result<FileState> {
-        use std::fs;
-        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    async fn capture_directory_entry(
+        &self,
+        executor: &dyn SystemExecutor,
+        dir_path: &Path,
+    ) -> Result<FileState> {
+        let meta = executor
+            .file_metadata(dir_path)
+            .await
+            .map_err(|e| HardeningError::System(std::io::Error::other(e)))?;
 
-        if !dir_path.exists() {
+        if !meta.exists {
             return Ok(FileState {
                 file_path: dir_path.to_string_lossy().to_string(),
                 file_content: None,
@@ -173,33 +185,30 @@ impl CheckpointManager {
             });
         }
 
-        let metadata = fs::symlink_metadata(dir_path).map_err(HardeningError::System)?;
-
         Ok(FileState {
             file_path: dir_path.to_string_lossy().to_string(),
             file_content: None,
-            file_permissions: metadata.permissions().mode(),
-            file_owner_uid: metadata.uid(),
-            file_owner_gid: metadata.gid(),
+            file_permissions: meta.mode,
+            file_owner_uid: meta.uid,
+            file_owner_gid: meta.gid,
         })
     }
 
-    /// Captures the current state of a file or directory.
+    /// Captures the current state of a file or directory via the executor.
     ///
     /// If the path is a directory, recursively captures all files within it.
     /// Records file content, permissions, and ownership for each file.
-    ///
-    /// # Arguments
-    /// * `file_path` - Path to the file or directory to capture
-    ///
-    /// # Errors
-    /// Returns an error if files cannot be read or metadata cannot be accessed.
-    fn capture_file_state(&self, file_path: &Path) -> Result<Vec<FileState>> {
-        use std::fs;
+    async fn capture_file_state(
+        &self,
+        executor: &dyn SystemExecutor,
+        file_path: &Path,
+    ) -> Result<Vec<FileState>> {
+        let meta = executor
+            .file_metadata(file_path)
+            .await
+            .map_err(|e| HardeningError::System(std::io::Error::other(e)))?;
 
-        // Check if path exists
-        if !file_path.exists() {
-            // Path doesn't exist - record that fact as a single entry
+        if !meta.exists {
             return Ok(vec![FileState {
                 file_path: file_path.to_string_lossy().to_string(),
                 file_content: None,
@@ -209,37 +218,38 @@ impl CheckpointManager {
             }]);
         }
 
-        let metadata = fs::symlink_metadata(file_path).map_err(HardeningError::System)?;
-
-        if metadata.is_dir() {
-            // Recursively capture all files in directory
-            self.capture_directory_recursive(file_path)
+        if meta.is_dir {
+            self.capture_directory_recursive(executor, file_path).await
         } else {
-            // Single file
-            Ok(vec![self.capture_single_file(file_path)?])
+            Ok(vec![self.capture_single_file(executor, file_path).await?])
         }
     }
 
-    /// Recursively captures all files within a directory.
-    fn capture_directory_recursive(&self, dir_path: &Path) -> Result<Vec<FileState>> {
-        use std::fs;
+    /// Recursively captures all files within a directory via the executor.
+    async fn capture_directory_recursive(
+        &self,
+        executor: &dyn SystemExecutor,
+        dir_path: &Path,
+    ) -> Result<Vec<FileState>> {
+        let mut file_states = vec![self.capture_directory_entry(executor, dir_path).await?];
 
-        let mut file_states = vec![self.capture_directory_entry(dir_path)?];
+        let children = executor
+            .read_dir(dir_path)
+            .await
+            .map_err(|e| HardeningError::System(std::io::Error::other(e)))?;
 
-        let entries = fs::read_dir(dir_path).map_err(HardeningError::System)?;
+        for child in children {
+            let child_meta = executor
+                .file_metadata(&child)
+                .await
+                .map_err(|e| HardeningError::System(std::io::Error::other(e)))?;
 
-        for entry in entries {
-            let entry = entry.map_err(HardeningError::System)?;
-            let path = entry.path();
-
-            if path.is_dir() {
-                // Recurse into subdirectory
-                let sub_states = self.capture_directory_recursive(&path)?;
+            if child_meta.is_dir {
+                let sub_states =
+                    Box::pin(self.capture_directory_recursive(executor, &child)).await?;
                 file_states.extend(sub_states);
             } else {
-                // Capture file
-                let state = self.capture_single_file(&path)?;
-                file_states.push(state);
+                file_states.push(self.capture_single_file(executor, &child).await?);
             }
         }
 
@@ -308,41 +318,44 @@ impl CheckpointManager {
         self.signer.sign(&digest)
     }
 
-    /// Creates a new checkpoint capturing the state of specified files.
+    /// Creates a new checkpoint capturing the state of the specified files.
+    ///
+    /// File content, permissions, and ownership are read via `executor`, so the
+    /// snapshot reflects the state of the host that executor targets.
     ///
     /// # Arguments
-    /// * `checkpoint_name` - Human-readable name for the checkpoint
-    /// * `file_paths` - List of file paths to capture
+    /// * `executor` - Executor for file I/O (local or remote via SSH)
+    /// * `checkpoint_name` - Human-readable label for this checkpoint
+    /// * `file_paths` - Paths to capture (directories are captured recursively)
     ///
     /// # Errors
-    /// Returns an error if files cannot be read or database operation fails.
+    /// Returns an error if files cannot be read or the database operation fails.
     pub async fn create_checkpoint(
         &self,
+        executor: &dyn SystemExecutor,
         checkpoint_name: &str,
         file_paths: &[&Path],
     ) -> Result<CheckpointId> {
         use std::time::{SystemTime, UNIX_EPOCH};
 
-        // Generate unique ID
         let checkpoint_id = Self::generate_checkpoint_id();
-
-        // Get current timestamp
         let checkpoint_timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i64;
-
-        // Get current username
         let checkpoint_username = std::env::var("USER").unwrap_or_else(|_| "unknown".to_string());
+        let host_key = if executor.is_remote() {
+            executor.description()
+        } else {
+            "local".to_string()
+        };
 
-        // Capture file states (handles both files and directories)
         let mut file_states = Vec::new();
         for file_path in file_paths {
-            let states = self.capture_file_state(file_path)?;
+            let states = self.capture_file_state(executor, file_path).await?;
             file_states.extend(states);
         }
 
-        // Generate cryptographic signature over checkpoint data
         let checkpoint_signature = self.generate_signature(
             &checkpoint_id,
             checkpoint_name,
@@ -351,26 +364,26 @@ impl CheckpointManager {
             &file_states,
         )?;
 
-        // Store checkpoint in database
-        self.store_checkpoint(
-            &checkpoint_id,
-            checkpoint_name,
-            checkpoint_timestamp,
-            &checkpoint_username,
-            &checkpoint_signature,
-            &file_states,
-        )
-        .await?;
+        let header = CheckpointHeader {
+            id: &checkpoint_id,
+            name: checkpoint_name,
+            timestamp: checkpoint_timestamp,
+            username: &checkpoint_username,
+            signature: &checkpoint_signature,
+            host_key: &host_key,
+        };
+        self.store_checkpoint(header, &file_states).await?;
 
         Ok(checkpoint_id)
     }
 
     /// Creates a checkpoint capturing only metadata (permissions/ownership) for each path.
     ///
-    /// Unlike `create_checkpoint`, this does not read file contents or recurse
-    /// into directories. Suitable for plugins that only modify mode bits.
+    /// Unlike `create_checkpoint`, this does not read file contents or recurse into
+    /// directories. Suitable for plugins that only modify mode bits or ownership.
     pub async fn create_checkpoint_metadata_only(
         &self,
+        executor: &dyn SystemExecutor,
         checkpoint_name: &str,
         file_paths: &[&Path],
     ) -> Result<CheckpointId> {
@@ -382,10 +395,15 @@ impl CheckpointManager {
             .unwrap_or_default()
             .as_secs() as i64;
         let checkpoint_username = std::env::var("USER").unwrap_or_else(|_| "unknown".to_string());
+        let host_key = if executor.is_remote() {
+            executor.description()
+        } else {
+            "local".to_string()
+        };
 
         let mut file_states = Vec::new();
         for file_path in file_paths {
-            file_states.push(self.capture_directory_entry(file_path)?);
+            file_states.push(self.capture_directory_entry(executor, file_path).await?);
         }
 
         let checkpoint_signature = self.generate_signature(
@@ -396,15 +414,15 @@ impl CheckpointManager {
             &file_states,
         )?;
 
-        self.store_checkpoint(
-            &checkpoint_id,
-            checkpoint_name,
-            checkpoint_timestamp,
-            &checkpoint_username,
-            &checkpoint_signature,
-            &file_states,
-        )
-        .await?;
+        let header = CheckpointHeader {
+            id: &checkpoint_id,
+            name: checkpoint_name,
+            timestamp: checkpoint_timestamp,
+            username: &checkpoint_username,
+            signature: &checkpoint_signature,
+            host_key: &host_key,
+        };
+        self.store_checkpoint(header, &file_states).await?;
 
         Ok(checkpoint_id)
     }
@@ -412,11 +430,7 @@ impl CheckpointManager {
     /// Stores checkpoint and file states in the database.
     async fn store_checkpoint(
         &self,
-        checkpoint_id: &CheckpointId,
-        checkpoint_name: &str,
-        checkpoint_timestamp: i64,
-        checkpoint_username: &str,
-        checkpoint_signature: &[u8],
+        header: CheckpointHeader<'_>,
         file_states: &[FileState],
     ) -> Result<()> {
         let mut tx = self
@@ -433,16 +447,18 @@ impl CheckpointManager {
                 timestamp,
                 username,
                 signature,
-                created_at
+                created_at,
+                host_key
                 )
-            VALUES (?, ?, ?, ?, ?, ?)",
+            VALUES (?, ?, ?, ?, ?, ?, ?)",
         )
-        .bind(checkpoint_id.as_str())
-        .bind(checkpoint_name)
-        .bind(checkpoint_timestamp)
-        .bind(checkpoint_username)
-        .bind(checkpoint_signature)
-        .bind(checkpoint_timestamp)
+        .bind(header.id.as_str())
+        .bind(header.name)
+        .bind(header.timestamp)
+        .bind(header.username)
+        .bind(header.signature)
+        .bind(header.timestamp)
+        .bind(header.host_key)
         .execute(&mut *tx)
         .await
         .map_err(|e| HardeningError::Database(e.to_string()))?;
@@ -460,7 +476,7 @@ impl CheckpointManager {
                 )
                 VALUES (?, ?, ?, ?, ?, ?)",
             )
-            .bind(checkpoint_id.as_str())
+            .bind(header.id.as_str())
             .bind(&file_state.file_path)
             .bind(&file_state.file_content)
             .bind(file_state.file_permissions)
@@ -496,7 +512,8 @@ impl CheckpointManager {
                 name,
                 timestamp,
                 username,
-                signature
+                signature,
+                host_key
             FROM checkpoints WHERE id = ?",
         )
         .bind(checkpoint_id.as_str())
@@ -510,6 +527,7 @@ impl CheckpointManager {
             checkpoint_timestamp: checkpoint_row.get("timestamp"),
             checkpoint_username: checkpoint_row.get("username"),
             checkpoint_signature: checkpoint_row.get("signature"),
+            host_key: checkpoint_row.get("host_key"),
         };
 
         // Retrieve file states
@@ -556,7 +574,8 @@ impl CheckpointManager {
                 name,
                 timestamp,
                 username,
-                signature
+                signature,
+                host_key
              FROM checkpoints
              ORDER BY timestamp DESC",
         )
@@ -572,6 +591,7 @@ impl CheckpointManager {
                 checkpoint_timestamp: row.get("timestamp"),
                 checkpoint_username: row.get("username"),
                 checkpoint_signature: row.get("signature"),
+                host_key: row.get("host_key"),
             });
         }
 
@@ -826,5 +846,133 @@ impl CheckpointManager {
             rollback_success: all_ok,
             rollback_files: files,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hardener_common::executor::MockExecutor;
+
+    /// Builds a CheckpointManager over a temporary in-memory SQLite database
+    /// with a freshly generated signing key — no filesystem privileges needed.
+    async fn test_manager() -> CheckpointManager {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db_path = dir.path().join("mgr_test.db");
+        let db_pool = crate::db::init_db(Some(&db_path)).await.expect("init_db");
+        let key_path = dir.path().join("test.key");
+        let signer = CheckpointSigner::new_with_path(&key_path).expect("signer");
+        // Keep `dir` alive for the duration of the test by leaking it into the heap.
+        // The OS reclaims the tempdir when the process exits.
+        std::mem::forget(dir);
+        CheckpointManager::new_with_signer(db_pool, signer).expect("manager")
+    }
+
+    #[tokio::test]
+    async fn create_checkpoint_captures_via_executor_and_tags_host() {
+        let exec = MockExecutor::new()
+            .remote()
+            .with_description("ssh://root@h")
+            .with_file("/etc/sysctl.conf", "kernel.kptr_restrict = 1\n");
+
+        let manager = test_manager().await;
+        let id = manager
+            .create_checkpoint(&exec, "t", &[std::path::Path::new("/etc/sysctl.conf")])
+            .await
+            .expect("create_checkpoint");
+
+        let (cp, file_states) = manager.get_checkpoint(&id).await.expect("get_checkpoint");
+        assert_eq!(cp.host_key, "ssh://root@h");
+        assert_eq!(file_states.len(), 1);
+        assert_eq!(
+            file_states[0].file_content.as_deref(),
+            Some(b"kernel.kptr_restrict = 1\n".as_ref()),
+        );
+        assert!(
+            exec.log()
+                .files_read
+                .iter()
+                .any(|p| p.ends_with("sysctl.conf"))
+        );
+    }
+
+    #[tokio::test]
+    async fn local_executor_tags_host_key_as_local() {
+        let exec = MockExecutor::new().with_file("/etc/test.conf", "v=1\n");
+
+        let manager = test_manager().await;
+        let id = manager
+            .create_checkpoint(
+                &exec,
+                "local-test",
+                &[std::path::Path::new("/etc/test.conf")],
+            )
+            .await
+            .expect("create_checkpoint");
+
+        let (cp, _) = manager.get_checkpoint(&id).await.expect("get_checkpoint");
+        assert_eq!(cp.host_key, "local");
+    }
+
+    #[tokio::test]
+    async fn absent_file_is_captured_as_missing_entry() {
+        let exec = MockExecutor::new(); // no files seeded
+
+        let manager = test_manager().await;
+        let id = manager
+            .create_checkpoint(
+                &exec,
+                "absent",
+                &[std::path::Path::new("/etc/no-such-file")],
+            )
+            .await
+            .expect("create_checkpoint");
+
+        let (_, file_states) = manager.get_checkpoint(&id).await.expect("get_checkpoint");
+        assert_eq!(file_states.len(), 1);
+        assert!(file_states[0].file_content.is_none());
+        assert_eq!(file_states[0].file_permissions, 0);
+    }
+
+    #[tokio::test]
+    async fn metadata_only_checkpoint_stores_no_content() {
+        let exec = MockExecutor::new().with_directory("/etc/pam.d");
+
+        let manager = test_manager().await;
+        let id = manager
+            .create_checkpoint_metadata_only(
+                &exec,
+                "meta-only",
+                &[std::path::Path::new("/etc/pam.d")],
+            )
+            .await
+            .expect("create_checkpoint_metadata_only");
+
+        let (_, file_states) = manager.get_checkpoint(&id).await.expect("get_checkpoint");
+        assert_eq!(file_states.len(), 1);
+        assert!(file_states[0].file_content.is_none());
+        assert_ne!(file_states[0].file_permissions, 0);
+    }
+
+    #[tokio::test]
+    async fn list_checkpoints_includes_host_key() {
+        let exec = MockExecutor::new()
+            .remote()
+            .with_description("ssh://root@target")
+            .with_file("/etc/ssh/sshd_config", "Port 22\n");
+
+        let manager = test_manager().await;
+        manager
+            .create_checkpoint(
+                &exec,
+                "listed",
+                &[std::path::Path::new("/etc/ssh/sshd_config")],
+            )
+            .await
+            .expect("create_checkpoint");
+
+        let list = manager.list_checkpoints().await.expect("list_checkpoints");
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].host_key, "ssh://root@target");
     }
 }

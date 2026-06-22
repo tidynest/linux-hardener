@@ -37,6 +37,8 @@ pub struct Checkpoint {
     pub checkpoint_username: String,
     /// Cryptographic signature for integrity verification.
     pub checkpoint_signature: Vec<u8>,
+    /// Host this checkpoint was captured from ("local" or e.g. "ssh://root@host").
+    pub host_key: String,
 }
 
 /// Represents the state of a single file at checkpoint time.
