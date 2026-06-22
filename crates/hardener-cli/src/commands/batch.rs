@@ -250,6 +250,103 @@ pub fn report_exit_code(reports: &[HostReport]) -> i32 {
     code
 }
 
+/// One framework's fleet-wide failing-control total, for the rollup line.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct FrameworkRollup {
+    pub framework: String,
+    pub failing: usize,
+}
+
+/// Aggregate rollup across all hosts: host tallies plus per-framework failing
+/// totals (grouped by framework, first-seen order preserved).
+#[derive(Debug, Default, PartialEq, Serialize)]
+pub struct ReportRollup {
+    pub hosts_total: usize,
+    pub hosts_assessed: usize,
+    pub hosts_failed: usize,
+    pub frameworks: Vec<FrameworkRollup>,
+}
+
+impl ReportRollup {
+    pub fn from_reports(reports: &[HostReport]) -> Self {
+        let mut r = ReportRollup {
+            hosts_total: reports.len(),
+            ..Default::default()
+        };
+        for report in reports {
+            match &report.status {
+                HostReportStatus::Failed { .. } => r.hosts_failed += 1,
+                HostReportStatus::Assessed { frameworks } => {
+                    r.hosts_assessed += 1;
+                    for f in frameworks {
+                        match r
+                            .frameworks
+                            .iter_mut()
+                            .find(|fr| fr.framework == f.framework)
+                        {
+                            Some(fr) => fr.failing += f.failing,
+                            None => r.frameworks.push(FrameworkRollup {
+                                framework: f.framework.clone(),
+                                failing: f.failing,
+                            }),
+                        }
+                    }
+                }
+            }
+        }
+        r
+    }
+}
+
+/// Renders the human-readable fleet posture table + rollup.
+pub fn render_report_text(reports: &[HostReport]) -> String {
+    let mut out = String::new();
+    out.push_str("HOST            FRAMEWORK   SCORE   PASS FAIL MANUAL  N/A\n");
+    for report in reports {
+        match &report.status {
+            HostReportStatus::Assessed { frameworks } => {
+                for f in frameworks {
+                    out.push_str(&format!(
+                        "{:<15} {:<11} {:>5.1}% {:>4} {:>4} {:>6} {:>4}\n",
+                        report.name,
+                        f.framework,
+                        f.score,
+                        f.passing,
+                        f.failing,
+                        f.manual_review,
+                        f.not_applicable,
+                    ));
+                }
+            }
+            HostReportStatus::Failed { error } => {
+                out.push_str(&format!("{:<15} {:<11} {}\n", report.name, "FAILED", error,))
+            }
+        }
+    }
+    let rollup = ReportRollup::from_reports(reports);
+    out.push_str("---\n");
+    out.push_str(&format!(
+        "{} of {} hosts assessed, {} failed\n",
+        rollup.hosts_assessed, rollup.hosts_total, rollup.hosts_failed,
+    ));
+    for f in &rollup.frameworks {
+        out.push_str(&format!(
+            "{}: {} failing controls across the fleet\n",
+            f.framework, f.failing,
+        ));
+    }
+    out
+}
+
+/// Renders the machine-readable JSON document.
+pub fn render_report_json(reports: &[HostReport]) -> String {
+    let doc = serde_json::json!({
+        "hosts": reports,
+        "summary": ReportRollup::from_reports(reports),
+    });
+    serde_json::to_string_pretty(&doc).unwrap_or_else(|_| "{}".to_string())
+}
+
 /// Renders the human-readable table + rollup line.
 pub fn render_text(outcomes: &[HostOutcome]) -> String {
     let mut out = String::new();
@@ -591,6 +688,53 @@ mod tests {
                 error: "refused".into(),
             },
         }
+    }
+
+    #[test]
+    fn report_rollup_aggregates_failing_per_framework() {
+        let reports = vec![
+            assessed_report("web-01", vec![posture(18)]),
+            assessed_report("db-02", vec![posture(6)]),
+            failed_report("cache"),
+        ];
+        let r = ReportRollup::from_reports(&reports);
+        assert_eq!(r.hosts_total, 3);
+        assert_eq!(r.hosts_assessed, 2);
+        assert_eq!(r.hosts_failed, 1);
+        assert_eq!(r.frameworks.len(), 1);
+        assert_eq!(r.frameworks[0].framework, "CIS");
+        assert_eq!(r.frameworks[0].failing, 24, "18 + 6 across the fleet");
+    }
+
+    #[test]
+    fn report_text_render_has_rows_and_rollup() {
+        let text = render_report_text(&[
+            assessed_report("web-01", vec![posture(18)]),
+            failed_report("cache"),
+        ]);
+        assert!(text.contains("web-01"));
+        assert!(text.contains("CIS"));
+        assert!(text.contains("FAILED"));
+        assert!(text.contains("refused"), "failed row surfaces the error");
+        assert!(text.contains("CIS: 18 failing controls"));
+    }
+
+    #[test]
+    fn report_json_render_is_valid_and_discriminates_status() {
+        let json = render_report_json(&[
+            assessed_report("web-01", vec![posture(18)]),
+            failed_report("cache"),
+        ]);
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["hosts"][0]["status"], "assessed");
+        assert_eq!(v["hosts"][0]["frameworks"][0]["framework"], "CIS");
+        assert_eq!(v["hosts"][1]["status"], "failed");
+        assert!(
+            v["hosts"][1]["frameworks"].is_null(),
+            "failed host has no frameworks"
+        );
+        assert_eq!(v["summary"]["hosts_assessed"], 1);
+        assert_eq!(v["summary"]["frameworks"][0]["failing"], 18);
     }
 
     #[test]
