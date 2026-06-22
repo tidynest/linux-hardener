@@ -31,6 +31,9 @@ Thumbs.db
 # MCP configuration (personal/machine-specific)
 .mcp.json
 
+# Local security CI gate configuration (machine-specific)
+.rust-sec-ci.toml
+
 # WASM build artifacts (entire dist/ is Trunk-generated)
 crates/hardener-ui/dist/
 
@@ -49,6 +52,7 @@ docs/archive/claude-code-configuration.md
 docs/archive/css-architecture.md
 docs/archive/tauri-plus-leptos-development-on-arch-linux-with-hyprland.md
 MCP_INSTRUCTIONS.md
+docs/superpowers/
 
 # Local development logs
 logs/
