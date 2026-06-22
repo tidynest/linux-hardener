@@ -6,10 +6,12 @@ use crate::commands::report::{finding_to_scan_finding, scan_grouped};
 use crate::ssh_config::SshConnectionConfig;
 use anyhow::{Result, anyhow, bail};
 use hardener_common::types::Severity;
+use hardener_compliance::{ReportConfig, ReportGenerator, Scenario};
 use hardener_core::plugin::Finding;
 use hardener_core::{PluginMetadata, SshExecutor, executor::SystemExecutor};
 use hardener_scheduler::ScanHistoryManager;
 use hardener_scheduler::db::ScanFinding;
+use hardener_types::ComplianceReport;
 use hardener_types::remote::{HostsConfig, RemoteHostProfile};
 use serde::Serialize;
 use std::sync::Arc;
@@ -185,6 +187,67 @@ impl BatchSummary {
         s.total = s.critical + s.high + s.medium + s.low;
         s
     }
+}
+
+/// One framework's assessed posture for a single host.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct FrameworkPosture {
+    pub framework: String,
+    pub score: f64,
+    pub passing: usize,
+    pub failing: usize,
+    pub manual_review: usize,
+    pub not_applicable: usize,
+    pub total: usize,
+}
+
+/// Whether a host was assessed or failed to scan.
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "status", rename_all = "lowercase")]
+pub enum HostReportStatus {
+    Assessed { frameworks: Vec<FrameworkPosture> },
+    Failed { error: String },
+}
+
+/// One host's compliance assessment outcome.
+#[derive(Clone, Debug, Serialize)]
+pub struct HostReport {
+    pub name: String,
+    pub target: String,
+    #[serde(flatten)]
+    pub status: HostReportStatus,
+}
+
+/// Flattens one framework's `ComplianceReport` into a tabulatable posture row.
+pub fn posture_from_report(report: &ComplianceReport) -> FrameworkPosture {
+    let s = &report.report_summary;
+    FrameworkPosture {
+        framework: report.report_framework.to_string(),
+        score: s.summary_score_percentage,
+        passing: s.summary_passing,
+        failing: s.summary_failing,
+        manual_review: s.summary_manual_review,
+        not_applicable: s.summary_not_applicable,
+        total: s.summary_total_controls,
+    }
+}
+
+/// Tiered exit code mirroring `batch scan`: 0 = every scanned host compliant
+/// (no failing controls), 1 = a failing control somewhere, 2 = a host errored.
+/// `ManualReview`/`NotApplicable` are not failures, so they never raise to 1.
+pub fn report_exit_code(reports: &[HostReport]) -> i32 {
+    let mut code = 0;
+    for r in reports {
+        match &r.status {
+            HostReportStatus::Failed { .. } => return 2,
+            HostReportStatus::Assessed { frameworks } => {
+                if frameworks.iter().any(|f| f.failing > 0) {
+                    code = 1;
+                }
+            }
+        }
+    }
+    code
 }
 
 /// Renders the human-readable table + rollup line.
@@ -501,6 +564,60 @@ pub async fn run(opts: BatchOptions) -> anyhow::Result<()> {
 mod tests {
     use super::*;
     use hardener_common::types::{FindingCategory, Severity};
+
+    fn posture(failing: usize) -> FrameworkPosture {
+        FrameworkPosture {
+            framework: "CIS".into(),
+            score: 90.0,
+            passing: 10,
+            failing,
+            manual_review: 2,
+            not_applicable: 0,
+            total: 12 + failing,
+        }
+    }
+    fn assessed_report(name: &str, frameworks: Vec<FrameworkPosture>) -> HostReport {
+        HostReport {
+            name: name.into(),
+            target: format!("u@{name}:22"),
+            status: HostReportStatus::Assessed { frameworks },
+        }
+    }
+    fn failed_report(name: &str) -> HostReport {
+        HostReport {
+            name: name.into(),
+            target: format!("u@{name}:22"),
+            status: HostReportStatus::Failed {
+                error: "refused".into(),
+            },
+        }
+    }
+
+    #[test]
+    fn report_exit_code_tiers() {
+        // All compliant -> 0
+        assert_eq!(
+            report_exit_code(&[assessed_report("a", vec![posture(0)])]),
+            0
+        );
+        // A failing control -> 1
+        assert_eq!(
+            report_exit_code(&[assessed_report("a", vec![posture(3)])]),
+            1
+        );
+        // A host error dominates a failing control -> 2
+        assert_eq!(
+            report_exit_code(&[assessed_report("a", vec![posture(3)]), failed_report("b")]),
+            2
+        );
+        // Manual-review only (no failing) is NOT a failure -> 0
+        assert_eq!(
+            report_exit_code(&[assessed_report("a", vec![posture(0)])]),
+            0
+        );
+        // Empty -> 0
+        assert_eq!(report_exit_code(&[]), 0);
+    }
 
     fn finding(sev: Severity) -> Finding {
         Finding {
