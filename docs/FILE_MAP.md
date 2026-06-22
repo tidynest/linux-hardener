@@ -1,6 +1,6 @@
 # Linux System Hardener - File Map
 
-**Last Updated:** 2026-02-28
+**Last Updated:** 2026-06-23
 
 This document lists all source files with their purpose and key exports.
 
@@ -59,7 +59,8 @@ pub struct ComplianceSummary { summary_total_controls, summary_passing, summary_
 | `src/commands/report_wizard.rs` | Interactive report wizard | `run_interactive()` |
 | `src/commands/daemon.rs` | Daemon management commands | `start()`, `run_once()`, `status()` |
 | `src/commands/systemd.rs` | Systemd unit file commands | `generate()`, `install()`, `uninstall()`, `status()` |
-| `src/commands/history.rs` | Scan history commands | `list()`, `show()`, `export()` |
+| `src/commands/history.rs` | Scan history commands | `list()`, `show()`, `export()`, `trends()`, `regressions()` |
+| `src/commands/batch.rs` | Multi-host concurrent scan/report/apply commands | `run_scan()`, `run_report()`, `BatchScanOptions`, `BatchReportOptions`, `resolve_and_scan()` |
 | `src/ssh_config.rs` | SSH connection config helper | `SshConnectionConfig` |
 | `src/commands/state.rs` | Shared state initialisation (DB + signing key paths) | `get_checkpoint_manager()`, `get_audit_logger()`, `effective_user()` |
 
@@ -78,10 +79,10 @@ pub struct ComplianceSummary { summary_total_controls, summary_passing, summary_
 | `src/config_loader.rs` | Config loading and merging | `ConfigLoader` |
 | `src/testing.rs` | MockPlugin builder for tests | `MockPlugin` |
 | `src/config_validation.rs` | Config directive validation at load time | `validate_config()`, per-plugin validators (kernel, SSH, firewall, PAM, permissions) |
-| `src/executor/mod.rs` | SystemExecutor trait and types | `SystemExecutor`, `CommandOutput`, `FileMetadata` |
+| `src/executor/mod.rs` | Re-exports executor abstraction from `hardener-common` | `SystemExecutor`, `CommandOutput`, `FileMetadata`, `MockExecutor` |
 | `src/executor/local.rs` | Local file/command operations | `LocalExecutor` |
 | `src/executor/ssh.rs` | SSH remote operations | `SshExecutor`, `SshConfig` |
-| `src/executor/mock.rs` | Virtual filesystem for testing | `MockExecutor` |
+| `src/inventory.rs` | Shared host-inventory persistence | `HostsConfig`, `load_hosts()`, `save_hosts()`, `default_hosts_path()` |
 
 ### Key Trait (plugin.rs)
 
@@ -109,8 +110,10 @@ pub trait HardeningPlugin: Send + Sync {
 | `src/logging.rs` | Logging setup | `init_logging()` |
 | `src/file_utils.rs` | File utilities | `update_file_atomically()`, `read_config_file()`, `set_config_directive()`, `create_timestamped_backup()` |
 | `src/binary_utils.rs` | Safe binary path resolution (CWE-426 prevention) | `resolve_binary()`, `TRUSTED_PATH` |
+| `src/executor/mod.rs` | Executor abstraction (trait + types) | `SystemExecutor`, `CommandOutput`, `FileMetadata` |
+| `src/executor/mock.rs` | Virtual filesystem for unit testing | `MockExecutor` |
 
-**Note**: Core types (Severity, FindingCategory, etc.) are now defined in `hardener-types` and re-exported here for backwards compatibility.
+**Note**: Core types (Severity, FindingCategory, etc.) are now defined in `hardener-types` and re-exported here for backwards compatibility. The executor abstraction (`SystemExecutor`, `CommandOutput`, `FileMetadata`, `MockExecutor`) relocated here from `hardener-core` and is re-exported from that crate for source compatibility.
 
 ---
 
@@ -203,13 +206,9 @@ pub struct FileState {
 | `src/report.rs` | Report types | `ComplianceReport`, `ControlResult`, `ComplianceSummary` |
 | `src/generator.rs` | Report generation | `ReportGenerator` |
 | `src/config.rs` | Report configuration | `ReportConfig` |
-| `src/frameworks/mod.rs` | Framework routing | `get_framework_controls()` |
-| `src/frameworks/cis.rs` | CIS Benchmark | CIS control mappings |
-| `src/frameworks/nist.rs` | NIST 800-53 | NIST control mappings |
-| `src/frameworks/stig.rs` | DISA STIG | STIG control mappings |
-| `src/frameworks/hipaa.rs` | HIPAA | HIPAA control mappings |
-| `src/frameworks/pci.rs` | PCI-DSS | PCI control mappings |
-| `src/frameworks/gdpr.rs` | GDPR | GDPR control mappings |
+| `src/frameworks/mod.rs` | Framework routing and curated catalogue aggregation | `get_controls()`, `curated_controls()` |
+| `src/frameworks/cis.rs` | CIS Benchmark curated catalogue | CIS control definitions |
+| `src/frameworks/iso27001.rs` | ISO/IEC 27001:2022 Annex A curated catalogue | 93 controls across 4 themes (Organizational, People, Physical, Technological) |
 | `src/output/mod.rs` | Formatter routing | `format_report()` |
 | `src/output/text.rs` | Text formatter | `TextFormatter` |
 | `src/output/json.rs` | JSON formatter | `JsonFormatter` |
@@ -771,4 +770,4 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | `hardener-common/src/types.rs` | Added `FindingPolicyException` struct |
 | `hardener-cli/src/cli.rs` | Added `--config`, `--audit`, `--compliance`, `--exit-code` flags, `ScanMode` enum |
 
-**Last Updated**: 2026-02-28
+**Last Updated**: 2026-06-23

@@ -126,6 +126,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   catalogues (the full standard, with unassessed controls flagged
   `ManualReview`).
 
+### Fixed
+- **Remote checkpoint capture and restore now operate on the remote host.**
+  Previously, `apply --ssh` and `rollback --ssh` would snapshot and restore files
+  on the controller rather than the target. Checkpoint operations now run through
+  the active `SystemExecutor`, so remote sessions correctly read and write files on
+  the remote. Checkpoints are keyed by host; rollback refuses to restore one host's
+  checkpoint onto another.
+
+### Changed
+- **Executor abstraction relocated to `hardener-common`.** `SystemExecutor`,
+  `FileMetadata`, `CommandOutput`, and `MockExecutor` now live in
+  `hardener-common` (under `executor/`), re-exported from `hardener-core` for
+  source compatibility. `SystemExecutor` gained a `read_dir` method;
+  `FileMetadata` gained `uid` and `gid` fields.
+
 ### Removed
 - **Obsolete SSH `Protocol 2` directive.** Modern OpenSSH ignores the `Protocol`
   keyword (SSHv1 was removed years ago), so enforcing it was vestigial.
@@ -707,4 +722,4 @@ Configuration file support with layered loading, compliance framework reporting 
 [0.2.0]: https://github.com/tidynest/linux-system-hardener/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tidynest/linux-system-hardener/releases/tag/v0.1.0
 
-**Last Updated**: 2026-02-28
+**Last Updated**: 2026-06-23

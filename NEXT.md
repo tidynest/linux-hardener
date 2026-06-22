@@ -171,7 +171,17 @@ CI; `--format json` and `--output` supported. Reuses the `batch scan` engine
 verbatim (connection, concurrency, isolation, history persistence). Spec/plan
 under `docs/superpowers/`.
 
-Remaining slices (still pending): `batch apply` subcommand, and a desktop
+Remote-correct checkpoints slice — **Done.** Checkpoint capture and restore
+now run through the active `SystemExecutor`, so `apply --ssh` and
+`rollback --ssh` snapshot and restore the **remote** host rather than the
+controller. Checkpoints are keyed by host; rollback refuses to restore one
+host's checkpoint onto another. The executor abstraction (`SystemExecutor`,
+`FileMetadata`, `CommandOutput`, `MockExecutor`) moved from `hardener-core`
+into `hardener-common` (re-exported from core for source compatibility);
+`SystemExecutor` gained `read_dir`, `FileMetadata` gained `uid`/`gid`.
+
+Remaining slices (still pending): `batch apply` subcommand (now **unblocked**
+— can build on host-keyed, executor-aware checkpoints), and a desktop
 multi-host view.
 
 **Follow-up (from review):** `finding_to_scan_finding` (now in `report.rs`)
@@ -330,4 +340,4 @@ hardener-scheduler
 
 *This document is prepared for continuity between development sessions.*
 
-**Last Updated**: 2026-06-19
+**Last Updated**: 2026-06-23
