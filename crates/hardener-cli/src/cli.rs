@@ -106,7 +106,7 @@ pub enum Command {
         #[arg(short, long)]
         scenario: Option<String>,
 
-        /// Specific framework to report on (cis, stig, nist, pcidss, hipaa, gdpr).
+        /// Specific framework to report on (cis, stig, nist, pcidss, hipaa, gdpr, iso27001).
         #[arg(long, conflicts_with = "scenario")]
         framework: Option<String>,
 
