@@ -395,6 +395,127 @@ pub fn render_json(outcomes: &[HostOutcome]) -> String {
     serde_json::to_string_pretty(&doc).unwrap_or_else(|_| "{}".to_string())
 }
 
+/// Maps one scanned host's findings through the report generator; passes a
+/// failed host straight through. The generator borrows `&self`, so one instance
+/// is shared across the whole fleet.
+pub fn host_report(outcome: HostOutcome, generator: &ReportGenerator) -> HostReport {
+    match outcome.status {
+        HostStatus::Scanned { findings, .. } => {
+            let frameworks = generator
+                .generate(&findings)
+                .iter()
+                .map(posture_from_report)
+                .collect();
+            HostReport {
+                name: outcome.name,
+                target: outcome.target,
+                status: HostReportStatus::Assessed { frameworks },
+            }
+        }
+        HostStatus::Failed { error } => HostReport {
+            name: outcome.name,
+            target: outcome.target,
+            status: HostReportStatus::Failed { error },
+        },
+    }
+}
+
+/// Options for `hardener batch report`.
+pub struct BatchReportOptions {
+    pub all: bool,
+    pub host: Vec<String>,
+    pub ssh: Vec<String>,
+    pub concurrency: usize,
+    pub framework: Option<String>,
+    pub scenario: Option<String>,
+    pub format: CliOutputFormat,
+    pub output: Option<String>,
+    pub quiet: bool,
+    pub global_key: Option<String>,
+    pub global_timeout: u64,
+    pub global_no_verify: bool,
+}
+
+/// CLI entry point for `hardener batch report`. Reuses the `batch scan` engine
+/// (`scan_all`) verbatim, then assesses each host's findings against the chosen
+/// framework/scenario and prints a fleet posture table.
+pub async fn run_report(opts: BatchReportOptions) -> anyhow::Result<()> {
+    let scenario = match crate::commands::report::resolve_scenario(
+        opts.framework,
+        opts.scenario,
+        opts.quiet,
+    ) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(2);
+        }
+    };
+
+    let inventory = match hardener_core::inventory::load() {
+        Ok(inv) => inv,
+        Err(e) => {
+            eprintln!("failed to load host inventory: {e}");
+            std::process::exit(2);
+        }
+    };
+
+    let inline: Vec<RemoteHostProfile> = opts
+        .ssh
+        .iter()
+        .map(|t| parse_inline(t, 22, opts.global_key.clone(), !opts.global_no_verify))
+        .collect();
+
+    let mut profiles = match resolve_hosts(&inventory, opts.all, &opts.host, inline) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(2);
+        }
+    };
+
+    if let Some(key) = opts.global_key.as_ref() {
+        for profile in profiles.iter_mut() {
+            if profile.key_file.is_none() {
+                profile.key_file = Some(key.clone());
+            }
+        }
+    }
+
+    if !opts.quiet {
+        eprintln!("Assessing {} host(s)...", profiles.len());
+    }
+
+    let history = open_batch_history().await;
+    let outcomes = scan_all(profiles, opts.concurrency, opts.global_timeout, history).await;
+
+    let generator = ReportGenerator::new(
+        ReportConfig {
+            scenario,
+            formats: vec![],
+            output_dir: None,
+        },
+        hardener_plugins::compliance_coverage(),
+    );
+    let reports: Vec<HostReport> = outcomes
+        .into_iter()
+        .map(|o| host_report(o, &generator))
+        .collect();
+
+    let rendered = match opts.format {
+        CliOutputFormat::Json => render_report_json(&reports),
+        _ => render_report_text(&reports),
+    };
+    match opts.output {
+        Some(path) => {
+            std::fs::write(&path, &rendered).map_err(|e| anyhow!("failed to write {path}: {e}"))?
+        }
+        None => println!("{rendered}"),
+    }
+
+    std::process::exit(report_exit_code(&reports));
+}
+
 /// Builds the core SSH config for one host profile, applying global key/timeout
 /// fallbacks for hosts (chiefly ad-hoc) that do not specify their own.
 fn host_ssh_config(p: &RemoteHostProfile, timeout: u64) -> hardener_core::SshConfig {
@@ -687,6 +808,51 @@ mod tests {
             status: HostReportStatus::Failed {
                 error: "refused".into(),
             },
+        }
+    }
+
+    fn report_config_server() -> ReportConfig {
+        ReportConfig {
+            scenario: Scenario::Server,
+            formats: vec![],
+            output_dir: None,
+        }
+    }
+
+    #[test]
+    fn host_report_assesses_scanned_and_passes_failures_through() {
+        let generator = ReportGenerator::new(
+            report_config_server(),
+            hardener_plugins::compliance_coverage(),
+        );
+
+        // A failed host is carried through untouched (no generator call).
+        let failed = host_report(failed(), &generator);
+        assert!(matches!(failed.status, HostReportStatus::Failed { .. }));
+
+        // A scanned host (empty findings) is assessed: every framework posture has
+        // coherent counts that sum to its total.
+        let scanned = HostOutcome {
+            name: "web-01".into(),
+            target: "u@web-01:22".into(),
+            status: HostStatus::Scanned {
+                counts: SeverityCounts::default(),
+                findings: vec![],
+            },
+        };
+        let report = host_report(scanned, &generator);
+        match report.status {
+            HostReportStatus::Assessed { frameworks } => {
+                assert!(!frameworks.is_empty(), "server scenario yields frameworks");
+                for f in &frameworks {
+                    assert_eq!(
+                        f.passing + f.failing + f.manual_review + f.not_applicable,
+                        f.total,
+                        "posture counts sum to total",
+                    );
+                }
+            }
+            HostReportStatus::Failed { .. } => panic!("scanned host should be assessed"),
         }
     }
 
