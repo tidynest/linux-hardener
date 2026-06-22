@@ -37,7 +37,7 @@
 //! ```
 
 use hardener_core::{
-    Context,
+    Context, SystemExecutor,
     executor::ssh::{SshConfig, SshExecutor},
     plugin::HardeningPlugin,
 };
@@ -306,4 +306,119 @@ async fn test_ssh_connection_wrong_port() {
 
     // Should fail - either connection refused or timeout
     assert!(result.is_err(), "Connection to wrong port should fail");
+}
+
+// =============================================================================
+// CHECKPOINT / ROLLBACK INTEGRATION
+// =============================================================================
+
+/// Builds a CheckpointManager backed by a temporary SQLite database and a
+/// freshly generated signing key — no root access or production paths needed.
+async fn test_checkpoint_manager() -> hardener_state::CheckpointManager {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db_path = dir.path().join("test_checkpoints.db");
+    let key_path = dir.path().join("test.key");
+
+    let db_pool = hardener_state::init_db(Some(&db_path))
+        .await
+        .expect("init_db");
+    let signer =
+        hardener_state::CheckpointSigner::new_with_path(&key_path).expect("CheckpointSigner");
+
+    // Keep the tempdir alive for the duration of the process.
+    std::mem::forget(dir);
+
+    hardener_state::CheckpointManager::new_with_signer(db_pool, signer).expect("CheckpointManager")
+}
+
+/// Verifies that a remote `apply` captures a checkpoint through the SSH executor
+/// and that `rollback` restores the original remote file byte-for-byte.
+///
+/// Requires a booted SSH container or host with `sshd` running and write
+/// access to `/etc/ssh/sshd_config`. See the module-level doc for setup.
+#[tokio::test]
+#[ignore = "requires SSH_TEST_HOST (booted container)"]
+async fn remote_apply_then_rollback_restores_remote_file() {
+    let Some(ssh_cfg) = get_ssh_config() else {
+        return;
+    };
+
+    let executor = std::sync::Arc::new(
+        SshExecutor::connect(ssh_cfg)
+            .await
+            .expect("SSH connect failed"),
+    );
+
+    let manager = test_checkpoint_manager().await;
+    let mut ctx = Context::with_executor_and_checkpoint(executor.clone(), manager);
+
+    let path = std::path::Path::new("/etc/ssh/sshd_config");
+
+    // Capture the remote file's content before any changes.
+    let before = executor
+        .read_file(path)
+        .await
+        .expect("read remote sshd_config before apply");
+
+    // Apply the SSH hardening plugin — this writes the hardened sshd_config
+    // and, because a CheckpointManager is present in the context, also
+    // captures a checkpoint of the original file via the SSH executor.
+    let plugin = SshHardeningPlugin::new();
+    let config = hardener_core::PluginConfig::default();
+    plugin
+        .apply(&mut ctx, &config)
+        .await
+        .expect("SSH plugin apply failed");
+
+    // The remote file must have changed after apply.
+    let after = executor
+        .read_file(path)
+        .await
+        .expect("read remote sshd_config after apply");
+    assert_ne!(
+        before, after,
+        "apply must change the remote sshd_config; \
+         if they are equal the plugin made no modifications"
+    );
+
+    // Retrieve the latest checkpoint (list is newest-first).
+    let manager = ctx
+        .checkpoint_manager()
+        .expect("CheckpointManager must be present")
+        .clone();
+
+    let checkpoints = manager
+        .list_checkpoints()
+        .await
+        .expect("list_checkpoints failed");
+    let latest_id = checkpoints
+        .first()
+        .expect("at least one checkpoint must exist after apply")
+        .checkpoint_id
+        .clone();
+
+    // Roll back through the SSH executor — writes must target the remote host.
+    let result = manager
+        .rollback(executor.as_ref(), &latest_id)
+        .await
+        .expect("rollback failed");
+    assert!(
+        result.rollback_success,
+        "rollback reported failure: {:?}",
+        result
+            .rollback_files
+            .iter()
+            .filter(|f| !f.restore_success)
+            .collect::<Vec<_>>()
+    );
+
+    // The remote file must now match the original content byte-for-byte.
+    let restored = executor
+        .read_file(path)
+        .await
+        .expect("read remote sshd_config after rollback");
+    assert_eq!(
+        before, restored,
+        "rollback must restore the remote file to its original content"
+    );
 }

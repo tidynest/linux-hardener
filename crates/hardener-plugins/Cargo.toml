@@ -12,3 +12,7 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
+
+[dev-dependencies]
+hardener-state = { path = "../hardener-state" }
+tempfile = { workspace = true }
