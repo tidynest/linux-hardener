@@ -4,4 +4,6 @@ pub mod local;
 #[cfg(feature = "system")]
 pub mod ssh;
 
-pub use hardener_common::executor::{CommandOutput, FileMetadata, MockExecutor, SystemExecutor};
+pub use hardener_common::executor::{
+    CommandOutput, FileMetadata, MockExecutor, SystemExecutor, host_key_for,
+};

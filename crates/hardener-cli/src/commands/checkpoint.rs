@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use anyhow::{Result, bail};
-use hardener_core::SystemExecutor;
+use hardener_core::{SystemExecutor, executor::host_key_for};
 use hardener_state::{ActionResult, ActionType, CheckpointId};
 
 use crate::cli::OutputFormat;
@@ -17,11 +17,7 @@ pub async fn list(
     executor: Arc<dyn SystemExecutor>,
 ) -> Result<()> {
     let manager = get_checkpoint_manager().await?;
-    let current_host = if executor.is_remote() {
-        executor.description()
-    } else {
-        "local".to_string()
-    };
+    let current_host = host_key_for(executor.as_ref());
 
     let checkpoints: Vec<_> = manager
         .list_checkpoints()

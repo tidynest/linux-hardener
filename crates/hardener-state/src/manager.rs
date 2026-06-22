@@ -5,7 +5,7 @@ use crate::checkpoint::{
 };
 use crate::{Checkpoint, CheckpointSigner};
 use hardener_common::error::{HardeningError, Result};
-use hardener_common::executor::SystemExecutor;
+use hardener_common::executor::{SystemExecutor, host_key_for};
 use sqlx::{Row, SqlitePool};
 use std::path::Path;
 
@@ -344,11 +344,7 @@ impl CheckpointManager {
             .unwrap_or_default()
             .as_secs() as i64;
         let checkpoint_username = std::env::var("USER").unwrap_or_else(|_| "unknown".to_string());
-        let host_key = if executor.is_remote() {
-            executor.description()
-        } else {
-            "local".to_string()
-        };
+        let host_key = host_key_for(executor);
 
         let mut file_states = Vec::new();
         for file_path in file_paths {
@@ -395,11 +391,7 @@ impl CheckpointManager {
             .unwrap_or_default()
             .as_secs() as i64;
         let checkpoint_username = std::env::var("USER").unwrap_or_else(|_| "unknown".to_string());
-        let host_key = if executor.is_remote() {
-            executor.description()
-        } else {
-            "local".to_string()
-        };
+        let host_key = host_key_for(executor);
 
         let mut file_states = Vec::new();
         for file_path in file_paths {
@@ -748,6 +740,12 @@ impl CheckpointManager {
         }
 
         // Restore permissions — best-effort; a failure is a warning, not a fatal error.
+        // ponytail: chmod/chown/rm run without sudo, so on a remote host these
+        // succeed only when the ssh user owns/can-modify the target (typically
+        // root). Non-root remote restore therefore degrades to content-only
+        // (content write itself uses `sudo tee`). The remote-root privilege model
+        // is owned by the `batch apply` slice (the apply.rs euid gate); revisit
+        // there if non-root remote restore is required.
         let mode_str = format!("{:o}", file_state.file_permissions & 0o7777);
         let chmod_warn = executor
             .execute_command("chmod", &[mode_str.as_str(), path_str])
@@ -804,11 +802,7 @@ impl CheckpointManager {
         let (checkpoint, file_states) = self.get_checkpoint(checkpoint_id).await?;
 
         // Cross-host guard: refuse to restore one host's checkpoint onto another.
-        let current_host = if executor.is_remote() {
-            executor.description()
-        } else {
-            "local".to_string()
-        };
+        let current_host = host_key_for(executor);
         if checkpoint.host_key != current_host {
             return Err(HardeningError::Config(format!(
                 "Checkpoint {} belongs to host '{}', but the current target is '{}'. \

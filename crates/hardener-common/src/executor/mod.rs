@@ -76,3 +76,15 @@ pub trait SystemExecutor: Send + Sync {
     /// Checks if a command exists on the system.
     async fn command_exists(&self, program: &str) -> Result<bool>;
 }
+
+/// Derives the host key used to scope checkpoints: the executor's description
+/// for a remote target, or `"local"` for the controller. Single source of truth
+/// for host-key derivation — capture, rollback, and the CLI all call it so the
+/// cross-host rollback guard can never drift between sites.
+pub fn host_key_for(executor: &dyn SystemExecutor) -> String {
+    if executor.is_remote() {
+        executor.description()
+    } else {
+        "local".to_string()
+    }
+}
