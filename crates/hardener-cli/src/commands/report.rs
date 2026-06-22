@@ -22,22 +22,8 @@ pub async fn run(
     quiet: bool,
     executor: Arc<dyn SystemExecutor>,
 ) -> Result<()> {
-    // Determine scenario/frameworks
-    let scenario = if let Some(fw) = framework {
-        let framework = parse_framework(&fw)?;
-        Scenario::Custom(vec![framework])
-    } else if let Some(sc) = scenario {
-        parse_scenario(&sc)?
-    } else {
-        // Interactive mode - for now default to Server
-        if !quiet {
-            eprintln!("No scenario specified, using 'server' (CIS + STIG)");
-            eprintln!(
-                "Use --scenario or --framework to specify. Run 'hardener report --help' for options.\n"
-            );
-        }
-        Scenario::Server
-    };
+    // Determine scenario/frameworks (shared with `batch report`).
+    let scenario = resolve_scenario(framework, scenario, quiet)?;
 
     // Determine output format
     let output_format = match report_format.to_lowercase().as_str() {
@@ -217,6 +203,30 @@ pub(crate) fn finding_to_scan_finding(meta: &PluginMetadata, finding: &Finding) 
                     .collect(),
             )
         },
+    }
+}
+
+/// Resolves the scenario to assess from the `--framework`/`--scenario` flags,
+/// defaulting to `server` (CIS + STIG) when neither is given. Shared by the
+/// single-host `report` and multi-host `batch report` commands so the two can
+/// never disagree on what a framework name means.
+pub(crate) fn resolve_scenario(
+    framework: Option<String>,
+    scenario: Option<String>,
+    quiet: bool,
+) -> Result<Scenario> {
+    if let Some(fw) = framework {
+        Ok(Scenario::Custom(vec![parse_framework(&fw)?]))
+    } else if let Some(sc) = scenario {
+        parse_scenario(&sc)
+    } else {
+        if !quiet {
+            eprintln!("No scenario specified, using 'server' (CIS + STIG)");
+            eprintln!(
+                "Use --scenario or --framework to specify. Run 'hardener report --help' for options.\n"
+            );
+        }
+        Ok(Scenario::Server)
     }
 }
 
