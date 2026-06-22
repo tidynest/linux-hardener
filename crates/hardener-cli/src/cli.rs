@@ -172,6 +172,39 @@ pub enum BatchAction {
         #[arg(long)]
         output: Option<String>,
     },
+
+    /// Assess selected hosts against a compliance framework and print a fleet
+    /// posture table.
+    Report {
+        /// Assess every host in the inventory.
+        #[arg(long, conflicts_with = "host")]
+        all: bool,
+
+        /// Inventory host name to assess (comma-separated or repeated).
+        #[arg(long, value_delimiter = ',')]
+        host: Vec<String>,
+
+        /// Ad-hoc host not in the inventory (user@host[:port], repeatable).
+        #[arg(long)]
+        ssh: Vec<String>,
+
+        /// Single framework: cis, stig, nist, pcidss, hipaa, gdpr, iso27001.
+        #[arg(long, conflicts_with = "scenario")]
+        framework: Option<String>,
+
+        /// Scenario preset: server, workstation, government, healthcare,
+        /// financial, gdpr, all.
+        #[arg(long)]
+        scenario: Option<String>,
+
+        /// Maximum hosts assessed in parallel.
+        #[arg(long, default_value_t = 8)]
+        concurrency: usize,
+
+        /// Write the report to a file instead of stdout.
+        #[arg(long)]
+        output: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -643,6 +676,38 @@ mod tests {
         } else {
             panic!("Expected Batch Scan command");
         }
+    }
+
+    #[test]
+    fn test_cli_parse_batch_report_framework() {
+        let cli = Cli::parse_from(["hardener", "batch", "report", "--all", "--framework", "cis"]);
+        if let Command::Batch {
+            action: BatchAction::Report { all, framework, .. },
+        } = cli.command
+        {
+            assert!(all);
+            assert_eq!(framework.as_deref(), Some("cis"));
+        } else {
+            panic!("Expected Batch Report command");
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_batch_report_framework_conflicts_scenario() {
+        assert!(
+            Cli::try_parse_from([
+                "hardener",
+                "batch",
+                "report",
+                "--all",
+                "--framework",
+                "cis",
+                "--scenario",
+                "server",
+            ])
+            .is_err(),
+            "--framework and --scenario are mutually exclusive",
+        );
     }
 
     #[test]
