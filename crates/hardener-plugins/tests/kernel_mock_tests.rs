@@ -265,6 +265,8 @@ async fn test_kernel_validate_writable_params() {
             is_dir: false,
             mode: 0o644, // rw-r--r-- (writable by owner)
             size: 2,
+            uid: 0,
+            gid: 0,
         },
     );
 
@@ -297,6 +299,8 @@ async fn test_kernel_validate_readonly_params() {
             is_dir: false,
             mode: 0o444, // r--r--r-- (read-only)
             size: 2,
+            uid: 0,
+            gid: 0,
         },
     );
 
@@ -528,6 +532,8 @@ async fn test_kernel_validate_skips_exceptions() {
             is_dir: false,
             mode: 0o644,
             size: 2,
+            uid: 0,
+            gid: 0,
         },
     );
 

@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub mod mock;
 pub use mock::MockExecutor;
@@ -30,6 +30,8 @@ pub struct FileMetadata {
     pub is_dir: bool,
     pub mode: u32,
     pub size: u64,
+    pub uid: u32,
+    pub gid: u32,
 }
 
 /// Trait for abstracting file and command operations.
@@ -59,6 +61,12 @@ pub trait SystemExecutor: Send + Sync {
 
     /// Gets file metadata.
     async fn file_metadata(&self, path: &Path) -> Result<FileMetadata>;
+
+    /// Lists the immediate children of a directory (non-recursive),
+    /// mirroring `std::fs::read_dir`. Returns absolute paths.
+    /// A missing or empty directory yields an empty vec; behaviour on a
+    /// non-directory path is executor-defined (callers gate with `file_metadata`).
+    async fn read_dir(&self, path: &Path) -> Result<Vec<PathBuf>>;
 
     // === Command Operations ===
 

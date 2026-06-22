@@ -110,6 +110,8 @@ impl MockExecutor {
                     is_dir: false,
                     mode: 0o644,
                     size: content.len() as u64,
+                    uid: 0,
+                    gid: 0,
                 },
             );
         self
@@ -143,6 +145,8 @@ impl MockExecutor {
                     is_dir: true,
                     mode: 0o755,
                     size: 0,
+                    uid: 0,
+                    gid: 0,
                 },
             );
         self
@@ -250,6 +254,8 @@ impl SystemExecutor for MockExecutor {
                     is_dir: false,
                     mode: 0o644,
                     size: content.len() as u64,
+                    uid: 0,
+                    gid: 0,
                 },
             );
         Ok(())
@@ -278,6 +284,8 @@ impl SystemExecutor for MockExecutor {
                 is_dir: false,
                 mode: 0,
                 size: 0,
+                uid: 0,
+                gid: 0,
             }))
     }
 
@@ -311,5 +319,46 @@ impl SystemExecutor for MockExecutor {
         // Fall back to checking if any command with this program is registered
         let commands = self.commands.lock().expect("commands mutex poisoned");
         Ok(commands.keys().any(|(p, _)| p == program))
+    }
+
+    async fn read_dir(&self, path: &Path) -> Result<Vec<PathBuf>> {
+        let meta = self.file_metadata.lock().expect("metadata mutex poisoned");
+        Ok(meta
+            .keys()
+            .filter(|child| child.parent() == Some(path))
+            .cloned()
+            .collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn mock_read_dir_returns_seeded_children() {
+        let exec = MockExecutor::new()
+            .with_directory("/etc/d")
+            .with_file("/etc/d/a", "1")
+            .with_file("/etc/d/b", "2")
+            .with_file("/etc/other", "3");
+        let mut got: Vec<String> = exec
+            .read_dir(std::path::Path::new("/etc/d"))
+            .await
+            .unwrap()
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        got.sort();
+        assert_eq!(got, vec!["/etc/d/a", "/etc/d/b"]);
+    }
+
+    #[tokio::test]
+    async fn mock_read_dir_missing_path_is_empty() {
+        let got = MockExecutor::new()
+            .read_dir(std::path::Path::new("/no/such/dir"))
+            .await
+            .unwrap();
+        assert!(got.is_empty());
     }
 }

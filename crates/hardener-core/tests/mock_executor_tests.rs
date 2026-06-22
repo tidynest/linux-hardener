@@ -170,6 +170,8 @@ async fn test_mock_executor_custom_file_metadata() {
         is_dir: false,
         mode: 0o600,
         size: 100,
+        uid: 0,
+        gid: 0,
     };
 
     let executor = MockExecutor::new().with_file_metadata("/etc/secret.key", "secret", custom_meta);

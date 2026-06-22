@@ -23,6 +23,8 @@ fn selinux_enforcing_executor() -> MockExecutor {
                 is_dir: true,
                 mode: 0o755,
                 size: 0,
+                uid: 0,
+                gid: 0,
             },
         )
         // AppArmor path doesn't exist
@@ -49,6 +51,8 @@ fn selinux_permissive_executor() -> MockExecutor {
                 is_dir: true,
                 mode: 0o755,
                 size: 0,
+                uid: 0,
+                gid: 0,
             },
         )
         .with_command(
@@ -74,6 +78,8 @@ fn selinux_disabled_executor() -> MockExecutor {
                 is_dir: true,
                 mode: 0o755,
                 size: 0,
+                uid: 0,
+                gid: 0,
             },
         )
         .with_command(
@@ -100,6 +106,8 @@ fn apparmor_enforcing_executor() -> MockExecutor {
                 is_dir: true,
                 mode: 0o755,
                 size: 0,
+                uid: 0,
+                gid: 0,
             },
         )
         // SELinux path doesn't exist (MockExecutor returns exists: false by default)
@@ -136,6 +144,8 @@ fn apparmor_complain_executor() -> MockExecutor {
                 is_dir: true,
                 mode: 0o755,
                 size: 0,
+                uid: 0,
+                gid: 0,
             },
         )
         .with_command(
@@ -397,6 +407,8 @@ async fn test_mac_scan_with_remote_executor() {
                 is_dir: true,
                 mode: 0o755,
                 size: 0,
+                uid: 0,
+                gid: 0,
             },
         )
         .with_command(

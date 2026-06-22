@@ -22,6 +22,8 @@ fn secure_permissions_executor() -> MockExecutor {
                 is_dir: true,
                 mode: 0o700,
                 size: 0,
+                uid: 0,
+                gid: 0,
             },
         )
         .with_file_metadata(
@@ -33,6 +35,8 @@ fn secure_permissions_executor() -> MockExecutor {
                 is_dir: true,
                 mode: 0o700,
                 size: 0,
+                uid: 0,
+                gid: 0,
             },
         )
         .with_file_metadata(
@@ -44,6 +48,8 @@ fn secure_permissions_executor() -> MockExecutor {
                 is_dir: true,
                 mode: 0o755,
                 size: 0,
+                uid: 0,
+                gid: 0,
             },
         )
         .with_file_metadata(
@@ -55,6 +61,8 @@ fn secure_permissions_executor() -> MockExecutor {
                 is_dir: false,
                 mode: 0o440,
                 size: 100,
+                uid: 0,
+                gid: 0,
             },
         )
         .with_file_metadata(
@@ -66,6 +74,8 @@ fn secure_permissions_executor() -> MockExecutor {
                 is_dir: true,
                 mode: 0o750,
                 size: 0,
+                uid: 0,
+                gid: 0,
             },
         )
 }
@@ -83,6 +93,8 @@ fn insecure_permissions_executor() -> MockExecutor {
                 is_dir: true,
                 mode: 0o755, // Too permissive
                 size: 0,
+                uid: 0,
+                gid: 0,
             },
         )
         // /boot is world-writable
@@ -95,6 +107,8 @@ fn insecure_permissions_executor() -> MockExecutor {
                 is_dir: true,
                 mode: 0o777, // Way too permissive
                 size: 0,
+                uid: 0,
+                gid: 0,
             },
         )
         // /etc/ssh is correct
@@ -107,6 +121,8 @@ fn insecure_permissions_executor() -> MockExecutor {
                 is_dir: true,
                 mode: 0o755,
                 size: 0,
+                uid: 0,
+                gid: 0,
             },
         )
         // /etc/sudoers is world-readable
@@ -119,6 +135,8 @@ fn insecure_permissions_executor() -> MockExecutor {
                 is_dir: false,
                 mode: 0o644, // Too permissive
                 size: 100,
+                uid: 0,
+                gid: 0,
             },
         )
     // /etc/sudoers.d is missing
@@ -208,6 +226,8 @@ async fn test_permissions_scan_finding_structure() {
             is_dir: true,
             mode: 0o755, // Wrong - should be 0o700
             size: 0,
+            uid: 0,
+            gid: 0,
         },
     );
 
@@ -275,6 +295,8 @@ async fn test_permissions_scan_sudoers_severity() {
             is_dir: false,
             mode: 0o644, // Wrong - should be 0o440
             size: 100,
+            uid: 0,
+            gid: 0,
         },
     );
 
@@ -304,6 +326,8 @@ async fn test_permissions_scan_logs_operations() {
             is_dir: true,
             mode: 0o700,
             size: 0,
+            uid: 0,
+            gid: 0,
         },
     );
 
@@ -374,6 +398,8 @@ async fn test_permissions_scan_with_remote_executor() {
                 is_dir: true,
                 mode: 0o755, // Insecure
                 size: 0,
+                uid: 0,
+                gid: 0,
             },
         );
 
@@ -416,6 +442,8 @@ async fn test_permissions_apply_detects_vfat_noop() {
                 is_dir: true,
                 mode: 0o755,
                 size: 0,
+                uid: 0,
+                gid: 0,
             },
         )
         .with_command(
@@ -467,6 +495,8 @@ async fn test_permissions_apply_respects_directives() {
                 is_dir: true,
                 mode: 0o777,
                 size: 0,
+                uid: 0,
+                gid: 0,
             },
         )
         .with_command(
@@ -523,6 +553,8 @@ async fn test_permissions_apply_skips_exceptions() {
             is_dir: true,
             mode: 0o777,
             size: 0,
+            uid: 0,
+            gid: 0,
         },
     );
 

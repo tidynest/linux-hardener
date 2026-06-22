@@ -4,7 +4,10 @@ use super::{CommandOutput, FileMetadata, SystemExecutor};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use openssh::{KnownHosts, Session, SessionBuilder};
-use std::{path::Path, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 /// SSH executor configuration.
 #[derive(Clone, Debug)]
@@ -165,7 +168,7 @@ impl SystemExecutor for SshExecutor {
 
     async fn file_metadata(&self, path: &Path) -> Result<FileMetadata> {
         let escaped = shell_escape(&path.display().to_string());
-        let cmd = format!("stat -c '%F %a %s' {escaped} 2>/dev/null || echo 'NOTFOUND'");
+        let cmd = format!("stat -c '%F %a %s %u %g' {escaped} 2>/dev/null || echo 'NOTFOUND'");
         let output = self.run_command(&cmd).await?;
 
         let stdout = output.stdout.trim();
@@ -176,15 +179,20 @@ impl SystemExecutor for SshExecutor {
                 is_dir: false,
                 mode: 0,
                 size: 0,
+                uid: 0,
+                gid: 0,
             });
         }
 
-        // Parse stat output: "regular file 644 1234"
-        let parts: Vec<&str> = stdout.rsplitn(3, ' ').collect();
-        if parts.len() >= 3 {
-            let size_str = parts[0];
-            let mode_str = parts[1];
-            let file_type = parts[2];
+        // Parse stat output: "%F %a %s %u %g" — file type may contain spaces so split from right.
+        // rsplitn(5, ' ') yields [gid, uid, size, mode, file_type] (reversed order).
+        let parts: Vec<&str> = stdout.rsplitn(5, ' ').collect();
+        if parts.len() >= 5 {
+            let gid_str = parts[0];
+            let uid_str = parts[1];
+            let size_str = parts[2];
+            let mode_str = parts[3];
+            let file_type = parts[4];
 
             Ok(FileMetadata {
                 exists: true,
@@ -192,10 +200,26 @@ impl SystemExecutor for SshExecutor {
                 is_dir: file_type.contains("directory"),
                 mode: u32::from_str_radix(mode_str, 8).unwrap_or(0),
                 size: size_str.parse().unwrap_or(0),
+                uid: uid_str.parse().unwrap_or(0),
+                gid: gid_str.parse().unwrap_or(0),
             })
         } else {
             anyhow::bail!("Failed to parse stat output: {}", stdout)
         }
+    }
+
+    async fn read_dir(&self, path: &Path) -> Result<Vec<PathBuf>> {
+        let escaped = shell_escape(&path.display().to_string());
+        // find prints one absolute path per line; config-dir entries never
+        // contain newlines. ponytail: newline-in-filename unsupported.
+        let cmd = format!("find {escaped} -mindepth 1 -maxdepth 1 2>/dev/null");
+        let output = self.run_command(&cmd).await?;
+        Ok(output
+            .stdout
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(PathBuf::from)
+            .collect())
     }
 
     async fn execute_command(&self, program: &str, args: &[&str]) -> Result<CommandOutput> {
