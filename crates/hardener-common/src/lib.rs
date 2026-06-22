@@ -5,6 +5,7 @@
 
 pub mod binary_utils;
 pub mod error;
+pub mod executor;
 pub mod file_utils;
 pub mod logging;
 pub mod types;

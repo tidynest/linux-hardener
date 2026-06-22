@@ -46,8 +46,7 @@ pub use context::{Context, PluginAuditEntry, SystemInfo};
 // Re-export executor types
 pub use executor::{
     local::LocalExecutor,
-    mock::MockExecutor,
-    {CommandOutput, FileMetadata, SystemExecutor},
+    {CommandOutput, FileMetadata, MockExecutor, SystemExecutor},
 };
 
 #[cfg(feature = "system")]
