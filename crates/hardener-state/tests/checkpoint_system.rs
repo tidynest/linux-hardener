@@ -1,6 +1,6 @@
 mod common;
 
-use common::TestFixture;
+use common::{DiskExecutor, TestFixture};
 
 /// Tests basic checkpoint creation and retrieval.
 ///
@@ -100,7 +100,7 @@ async fn test_rollback_restores_files() {
 
     fixture
         .fixture_checkpoint_manager
-        .rollback(&checkpoint_id)
+        .rollback(&DiskExecutor, &checkpoint_id)
         .await
         .expect("Failed to rollback");
 
@@ -239,7 +239,7 @@ async fn test_checkpoint_captures_and_restores_directory_permissions() {
 
     fixture
         .fixture_checkpoint_manager
-        .rollback(&checkpoint_id)
+        .rollback(&DiskExecutor, &checkpoint_id)
         .await
         .expect("Failed to rollback");
 
@@ -295,7 +295,7 @@ async fn test_metadata_only_checkpoint() {
 
     fixture
         .fixture_checkpoint_manager
-        .rollback(&checkpoint_id)
+        .rollback(&DiskExecutor, &checkpoint_id)
         .await
         .expect("Failed to rollback metadata-only checkpoint");
 

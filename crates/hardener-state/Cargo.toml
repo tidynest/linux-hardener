@@ -38,4 +38,6 @@ subtle = "2.6.1"
 zeroize = "1.8.2"
 
 [dev-dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
 tempfile = "3.23.0"

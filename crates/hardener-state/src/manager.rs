@@ -651,19 +651,22 @@ impl CheckpointManager {
             .verify(&digest, &checkpoint.checkpoint_signature)
     }
 
-    /// Restores a single file to its checkpointed state.
+    /// Restores a single file to its checkpointed state via the executor.
     ///
-    /// Validates the path against an allowlist and rejects symlinks before
-    /// performing any write. Returns the action taken and success/failure.
-    fn restore_file_state_tracked(
+    /// Validates the path against an allowlist and rejects symlinks (local check)
+    /// before performing any write. Returns the action taken and success/failure.
+    ///
+    /// chmod and chown are best-effort: a failure there is recorded as a warning
+    /// in the returned result but does NOT abort the overall rollback.
+    async fn restore_file_state_tracked(
         &self,
+        executor: &dyn SystemExecutor,
         file_state: &FileState,
     ) -> (FileRestoreAction, Result<()>) {
-        use std::{fs, os::unix::fs::PermissionsExt, path::Path};
-
         let path = Path::new(&file_state.file_path);
-
         let path_str = &file_state.file_path;
+
+        // --- Allowlist check (always runs; symlink check is local-only) ---
         if !path_str.starts_with('/')
             || path
                 .components()
@@ -681,6 +684,9 @@ impl CheckpointManager {
             );
         }
 
+        // Symlink traversal guard: only meaningful on the local filesystem.
+        // For remote executors the path does not exist locally, so is_symlink()
+        // returns false and we rely solely on the prefix allowlist above.
         if path.is_symlink() {
             if let Ok(resolved) = path.canonicalize() {
                 let resolved_str = resolved.to_string_lossy();
@@ -706,72 +712,114 @@ impl CheckpointManager {
             }
         }
 
-        // Determine what action this file needs.
-        let action = match (&file_state.file_content, path.is_dir()) {
-            (Some(_), _) => FileRestoreAction::Restored,
-            (None, true) => FileRestoreAction::PermissionsRestored,
-            (None, false) if file_state.file_permissions == 0 && path.exists() => {
-                FileRestoreAction::Removed
-            }
-            (None, false) => return (FileRestoreAction::Skipped, Ok(())),
+        // Determine the required action. `file_permissions` holds only the mode
+        // bits (`file_metadata` masks the S_IFDIR type bit off), so an existing
+        // metadata-only entry — a directory, or a file that was unreadable at
+        // capture — is "no content with non-zero permissions" and gets its
+        // permissions/owner re-applied. "No content with zero permissions" means
+        // the path did not exist at checkpoint time and must be removed.
+        let action = match &file_state.file_content {
+            Some(_) => FileRestoreAction::Restored,
+            None if file_state.file_permissions != 0 => FileRestoreAction::PermissionsRestored,
+            None => FileRestoreAction::Removed,
         };
 
-        // Remove files that didn't exist at checkpoint time
+        // Remove files that did not exist at checkpoint time.
         if matches!(action, FileRestoreAction::Removed) {
-            let result = fs::remove_file(path).map_err(HardeningError::System);
+            let result = executor
+                .execute_command("rm", &["-f", path_str])
+                .await
+                .map(|_| ())
+                .map_err(|e| HardeningError::Executor(e.to_string()));
             return (action, result);
         }
 
-        // Restore file content atomically to prevent partial writes on interruption
+        // Restore file content.
         if let Some(content) = &file_state.file_content {
             let content_str = String::from_utf8_lossy(content);
-            if let Err(e) = hardener_common::file_utils::update_file_atomically(path, &content_str)
-            {
-                return (action, Err(e));
+            if let Err(e) = executor.write_file(path, &content_str).await {
+                return (
+                    action,
+                    Err(HardeningError::Executor(format!(
+                        "Failed to write {path_str}: {e}"
+                    ))),
+                );
             }
         }
 
-        // Restore permissions
-        if let Err(e) = fs::set_permissions(
-            path,
-            fs::Permissions::from_mode(file_state.file_permissions),
-        ) {
-            return (action, Err(HardeningError::System(e)));
-        }
+        // Restore permissions — best-effort; a failure is a warning, not a fatal error.
+        let mode_str = format!("{:o}", file_state.file_permissions & 0o7777);
+        let chmod_warn = executor
+            .execute_command("chmod", &[mode_str.as_str(), path_str])
+            .await
+            .err()
+            .map(|e| format!("chmod {path_str}: {e}"));
 
-        // Restore ownership
-        let chown_result = nix::unistd::chown(
-            path,
-            Some(nix::unistd::Uid::from_raw(file_state.file_owner_uid)),
-            Some(nix::unistd::Gid::from_raw(file_state.file_owner_gid)),
-        )
-        .map_err(|e| HardeningError::Privilege(format!("Failed to restore ownership: {e}")));
+        // Restore ownership — best-effort.
+        let owner_str = format!(
+            "{}:{}",
+            file_state.file_owner_uid, file_state.file_owner_gid
+        );
+        let chown_warn = executor
+            .execute_command("chown", &[owner_str.as_str(), path_str])
+            .await
+            .err()
+            .map(|e| format!("chown {path_str}: {e}"));
 
-        (action, chown_result)
+        // Surface the first best-effort warning (if any) as a non-fatal error so
+        // it appears in the per-file restore_error field of RollbackResult.
+        let meta_result = match (chmod_warn, chown_warn) {
+            (Some(w), _) | (None, Some(w)) => Err(HardeningError::Executor(w)),
+            (None, None) => Ok(()),
+        };
+
+        (action, meta_result)
     }
 
-    /// Restores the system to a previous checkpoint state.
+    /// Restores the system to a previous checkpoint state via the executor.
     ///
-    /// This will restore all files captured in the checkpoint to their
-    /// original state, including content, permissions, and ownership.
+    /// Refuses to restore a checkpoint onto a different host than the one it was
+    /// captured from. File content is written through `executor` so that remote
+    /// rollbacks target the correct host.
     ///
     /// # Arguments
+    /// * `executor` - Executor targeting the host to restore
     /// * `checkpoint_id` - The checkpoint ID to restore
     ///
     /// # Security Implications
-    /// This function requires root privileges to restore file ownership.
-    /// Failed rollbacks may leave the system in an inconsistent state.
+    /// This function requires root privileges on the target host to restore
+    /// file ownership. Failed rollbacks may leave the system in an inconsistent state.
     ///
     /// # Errors
     /// Returns an error if:
-    /// - Checkpoint doesn't exist
+    /// - The checkpoint belongs to a different host than the executor targets
+    /// - The checkpoint doesn't exist or has been tampered with
     /// - File restoration fails
-    /// - Insufficient privileges
-    pub async fn rollback(&self, checkpoint_id: &CheckpointId) -> Result<RollbackResult> {
-        // Retrieve checkpoint and all file states
+    pub async fn rollback(
+        &self,
+        executor: &dyn SystemExecutor,
+        checkpoint_id: &CheckpointId,
+    ) -> Result<RollbackResult> {
+        // Retrieve checkpoint and all file states.
         let (checkpoint, file_states) = self.get_checkpoint(checkpoint_id).await?;
 
-        // Verify checkpoint integrity before restoring files
+        // Cross-host guard: refuse to restore one host's checkpoint onto another.
+        let current_host = if executor.is_remote() {
+            executor.description()
+        } else {
+            "local".to_string()
+        };
+        if checkpoint.host_key != current_host {
+            return Err(HardeningError::Config(format!(
+                "Checkpoint {} belongs to host '{}', but the current target is '{}'. \
+                 Refusing to restore one host's state onto another.",
+                checkpoint_id.as_str(),
+                checkpoint.host_key,
+                current_host,
+            )));
+        }
+
+        // Verify checkpoint integrity before restoring files.
         let digest = Self::generate_digest(
             &checkpoint.checkpoint_id,
             &checkpoint.checkpoint_name,
@@ -825,20 +873,18 @@ impl CheckpointManager {
 
         // Phase 2: Apply all file restores (pre-validated).
         let mut all_ok = true;
-        let files: Vec<_> = file_states
-            .iter()
-            .map(|fs| {
-                let (action, result) = self.restore_file_state_tracked(fs);
-                let success = result.is_ok();
-                all_ok &= success;
-                FileRestoreResult {
-                    restore_path: fs.file_path.clone(),
-                    restore_action: action,
-                    restore_success: success,
-                    restore_error: result.err().map(|e| e.to_string()),
-                }
-            })
-            .collect();
+        let mut files = Vec::with_capacity(file_states.len());
+        for fs in &file_states {
+            let (action, result) = self.restore_file_state_tracked(executor, fs).await;
+            let success = result.is_ok();
+            all_ok &= success;
+            files.push(FileRestoreResult {
+                restore_path: fs.file_path.clone(),
+                restore_action: action,
+                restore_success: success,
+                restore_error: result.err().map(|e| e.to_string()),
+            });
+        }
 
         Ok(RollbackResult {
             rollback_checkpoint_id: checkpoint_id.as_str().to_owned(),
@@ -915,6 +961,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn rollback_restores_directory_permissions_not_skipped() {
+        // A directory's captured mode (0o755) carries no S_IFDIR bit — `file_metadata`
+        // masks the type bit off. Rollback must still re-apply its permissions rather
+        // than skip or remove it. Regression guard for the masked-mode directory bug.
+        let ok = hardener_common::executor::CommandOutput {
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: 0,
+        };
+        let exec = MockExecutor::new()
+            .with_directory("/etc/pam.d")
+            .with_command("chmod", &["755", "/etc/pam.d"], ok.clone())
+            .with_command("chown", &["0:0", "/etc/pam.d"], ok);
+
+        let manager = test_manager().await;
+        let id = manager
+            .create_checkpoint_metadata_only(&exec, "dir", &[std::path::Path::new("/etc/pam.d")])
+            .await
+            .expect("create");
+        let result = manager.rollback(&exec, &id).await.expect("rollback");
+
+        assert!(result.rollback_success, "directory rollback should succeed");
+        let entry = result
+            .rollback_files
+            .iter()
+            .find(|f| f.restore_path.ends_with("pam.d"))
+            .expect("directory entry present");
+        assert!(
+            matches!(entry.restore_action, FileRestoreAction::PermissionsRestored),
+            "directory must have permissions restored, not skipped or removed"
+        );
+        assert!(
+            !exec.log().commands_executed.iter().any(|(p, _)| p == "rm"),
+            "directory must not be removed on rollback"
+        );
+    }
+
+    #[tokio::test]
     async fn absent_file_is_captured_as_missing_entry() {
         let exec = MockExecutor::new(); // no files seeded
 
@@ -974,5 +1058,91 @@ mod tests {
         let list = manager.list_checkpoints().await.expect("list_checkpoints");
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].host_key, "ssh://root@target");
+    }
+
+    /// Builds a CheckpointManager with a custom allowlist containing `/etc/x`.
+    async fn test_manager_with_etc_x() -> CheckpointManager {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db_path = dir.path().join("mgr_test.db");
+        let db_pool = crate::db::init_db(Some(&db_path)).await.expect("init_db");
+        let key_path = dir.path().join("test.key");
+        let signer = CheckpointSigner::new_with_path(&key_path).expect("signer");
+        std::mem::forget(dir);
+        CheckpointManager::new_with_allowlist(db_pool, signer, vec!["/etc/x".to_string()])
+            .expect("manager")
+    }
+
+    #[tokio::test]
+    async fn rollback_refuses_cross_host_checkpoint() {
+        let remote = MockExecutor::new()
+            .remote()
+            .with_description("ssh://a")
+            .with_file("/etc/x", "original\n");
+
+        let manager = test_manager_with_etc_x().await;
+        let id = manager
+            .create_checkpoint(&remote, "t", &[std::path::Path::new("/etc/x")])
+            .await
+            .expect("create_checkpoint");
+
+        // A local executor targets "local", but the checkpoint was for "ssh://a".
+        let local = MockExecutor::new();
+        let err = manager
+            .rollback(&local, &id)
+            .await
+            .expect_err("expected cross-host error");
+        assert!(
+            err.to_string().contains("Refusing to restore"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn rollback_restores_through_executor() {
+        use hardener_common::executor::CommandOutput;
+
+        // Seed the executor with the "original" file content and register
+        // chmod/chown so best-effort metadata commands succeed.
+        let exec = MockExecutor::new()
+            .with_file("/etc/x", "original\n")
+            .with_command(
+                "chmod",
+                &["644", "/etc/x"],
+                CommandOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            )
+            .with_command(
+                "chown",
+                &["0:0", "/etc/x"],
+                CommandOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            );
+
+        let manager = test_manager_with_etc_x().await;
+        let id = manager
+            .create_checkpoint(&exec, "t", &[std::path::Path::new("/etc/x")])
+            .await
+            .expect("create_checkpoint");
+
+        // Overwrite the file in the mock's in-memory store.
+        exec.write_file(std::path::Path::new("/etc/x"), "changed\n")
+            .await
+            .expect("write_file");
+
+        let result = manager.rollback(&exec, &id).await.expect("rollback");
+        assert!(result.rollback_success, "rollback_success should be true");
+
+        // The executor's write_file restores the content into the mock store.
+        let restored = exec
+            .read_file(std::path::Path::new("/etc/x"))
+            .await
+            .expect("read_file after rollback");
+        assert_eq!(restored, "original\n");
     }
 }

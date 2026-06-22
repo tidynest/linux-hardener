@@ -1,11 +1,103 @@
 //! Shared test utilities for checkpoint system tests.
 
-use hardener_common::executor::{FileMetadata, MockExecutor};
+use anyhow::{Result, anyhow};
+use async_trait::async_trait;
+use hardener_common::executor::{CommandOutput, FileMetadata, MockExecutor, SystemExecutor};
 use hardener_state::{CheckpointManager, init_db};
 use sqlx::SqlitePool;
 use std::fs::Permissions;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
+
+/// A minimal executor that performs real filesystem operations on the local host.
+///
+/// Used in integration tests where rollback must write back to disk so that
+/// assertions on real file contents remain valid.  Only the methods exercised
+/// by the rollback path are fully implemented; others return plausible values
+/// or errors.
+pub struct DiskExecutor;
+
+#[async_trait]
+impl SystemExecutor for DiskExecutor {
+    fn description(&self) -> String {
+        "local".to_string()
+    }
+
+    fn is_remote(&self) -> bool {
+        false
+    }
+
+    async fn read_file(&self, path: &Path) -> Result<String> {
+        std::fs::read_to_string(path).map_err(|e| anyhow!(e))
+    }
+
+    async fn read_file_optional(&self, path: &Path) -> Result<Option<String>> {
+        match std::fs::read_to_string(path) {
+            Ok(s) => Ok(Some(s)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(anyhow!(e)),
+        }
+    }
+
+    async fn write_file(&self, path: &Path, content: &str) -> Result<()> {
+        std::fs::write(path, content).map_err(|e| anyhow!(e))
+    }
+
+    async fn path_exists(&self, path: &Path) -> Result<bool> {
+        Ok(path.exists())
+    }
+
+    async fn file_metadata(&self, path: &Path) -> Result<FileMetadata> {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+        match std::fs::symlink_metadata(path) {
+            Ok(m) => Ok(FileMetadata {
+                exists: true,
+                is_file: m.is_file(),
+                is_dir: m.is_dir(),
+                mode: m.permissions().mode(),
+                size: m.len(),
+                uid: m.uid(),
+                gid: m.gid(),
+            }),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(FileMetadata {
+                exists: false,
+                is_file: false,
+                is_dir: false,
+                mode: 0,
+                size: 0,
+                uid: 0,
+                gid: 0,
+            }),
+            Err(e) => Err(anyhow!(e)),
+        }
+    }
+
+    async fn execute_command(&self, program: &str, args: &[&str]) -> Result<CommandOutput> {
+        let out = std::process::Command::new(program)
+            .args(args)
+            .output()
+            .map_err(|e| anyhow!("{program}: {e}"))?;
+        Ok(CommandOutput {
+            stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+            exit_code: out.status.code().unwrap_or(-1),
+        })
+    }
+
+    async fn command_exists(&self, program: &str) -> Result<bool> {
+        Ok(std::process::Command::new("which")
+            .arg(program)
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false))
+    }
+
+    async fn read_dir(&self, path: &Path) -> Result<Vec<PathBuf>> {
+        let entries = std::fs::read_dir(path).map_err(|e| anyhow!(e))?;
+        Ok(entries.flatten().map(|e| e.path()).collect())
+    }
+}
 
 /// Test fixture containing temporary directories and database.
 pub struct TestFixture {

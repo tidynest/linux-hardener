@@ -2121,11 +2121,13 @@ name = "hardener-common"
 version = "1.0.5"
 dependencies = [
  "anyhow",
+ "async-trait",
  "hardener-types",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.17",
+ "tokio",
  "tracing",
  "tracing-subscriber",
 ]
@@ -2219,6 +2221,8 @@ dependencies = [
 name = "hardener-state"
 version = "1.0.5"
 dependencies = [
+ "anyhow",
+ "async-trait",
  "chrono",
  "ed25519-dalek",
  "hardener-common",
