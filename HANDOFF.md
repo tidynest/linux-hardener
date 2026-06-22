@@ -1,4 +1,4 @@
-# Session Handoff — 2026-06-22
+# Session Handoff — 2026-06-22 (batch report shipped → batch apply next)
 
 > **Read this first.** Point-in-time handoff for the next development session and
 > assistant. Living task list is [NEXT.md](NEXT.md); roadmap is [ROADMAP.md](ROADMAP.md).
@@ -9,118 +9,146 @@
 
 ## TL;DR
 
-Three Multi-host SSH slices shipped this session, **all merged to `main`** (FF):
-
-1. **Per-host trend tracking (CLI).** `hardener history trends --host <key>` — a
-   derive-on-query timeline (completed scans oldest-first: per-severity counts,
-   Δtotal, and a `better`/`worse`/`same` direction by severity priority). No new
-   table, no stored score.
-2. **Regression CI gate (CLI).** `hardener history regressions [--host]` — compares
-   each host's two newest completed scans, exits `1` if any regressed (gate CI),
-   `0` clean. `--format json`.
-3. **Scheduler-driven regression notifications.** The daemon notifies via the
-   configured email/webhook channels when a scheduled scan is *worse than the
-   host's previous scan*. New `notify_mode` config: `findings` (default, old
-   behaviour) / `regression` (quiet-until-change) / `both`. Built brainstorm →
-   spec → plan → subagent-driven (6 units, 2-stage review each + a final
-   whole-feature review).
-
-**Git state:** feature + docs **pushed to both remotes** (GitHub + GitLab) at
-`bab98d4`; `origin/main == main`. (This very correction is a trailing docs commit —
-fold it into the next push.)
-
-**Next agreed priority:** `batch report` / `batch apply` subcommands, then the
-desktop multi-host view (largest GUI effort).
+- **Shipped this session:** `hardener batch report` (Multi-host SSH slice) — merged
+  to `main` (FF, 8 commits). Read-only fleet compliance assessment.
+- **Start here next:** `hardener batch apply` — the last batch subcommand. See the
+  **launchpad** below. **Begin with brainstorming** (it has real blast radius);
+  do NOT jump to code.
+- **Correction to prior handoffs (verified this session):** single-host *remote*
+  apply already works — `apply.rs` runs over any `SystemExecutor`, and the CLI
+  builds an `SshExecutor` from `--ssh`. So `sudo hardener --ssh user@host apply
+  --all` already hardens a remote host. `batch apply` is **not** net-new remote
+  plumbing; the open problems are narrower (privilege model, per-host
+  checkpoints, blast-radius UX) — detailed below.
+- **Git:** `main` at `9e9ddaa`, **9 commits ahead of `origin`, push pending** —
+  the assistant can't push (SSH passphrases); the user pushes. `origin` has a dual
+  push URL (GitHub + GitLab); one `git push origin main` hits both.
 
 ---
 
-## What shipped this session
+## What shipped this session — `hardener batch report`
 
-| Commits | Slice |
-|---------|-------|
-| `675b2fd` | `history trends --host` — per-host timeline (direct on main) |
-| `9ca0534` | `history regressions [--host]` — regression CI gate (direct on main) |
-| `9d3773e`..`6f506b7` (15) | scheduler regression notifications (branch, FF-merged + deleted) |
+Assess many hosts against a framework (`--framework`) or scenario preset
+(`--scenario`, default `server` = CIS + STIG) concurrently → a **fleet posture
+table** (one row per `(host, framework)`: compliance score + pass/fail/manual/N-A
+control counts) + a per-framework rollup. Tiered exit (`0` compliant / `1` any
+failing control / `2` any host error) gates CI. `--format json`, `--output`.
+**Read-only** — never mutates a host.
 
-### Scheduler regression notifications — architecture the next assistant needs
+**Architecture (thin by design):** a post-processor over `batch scan`, not a new
+engine. `scan_all` already returns per-host `Vec<Finding>`;
+`ReportGenerator::generate(&[Finding])` is pure over those. `run_report` →
+`resolve_and_scan(...)` (the shared host-resolve + concurrent-scan +
+history-persist block, **hoisted out of `batch scan`'s `run`** so both share one
+copy; takes a `verb` for the progress line) → one shared `ReportGenerator` →
+`host_report` per outcome (pure; `Failed` passed through untouched) →
+`render_report_{text,json}` + `ReportRollup` → `report_exit_code`.
+`resolve_scenario` (`commands/report.rs`, `pub(crate)`) is the single shared
+framework/scenario→`Scenario` resolver for both report commands.
 
-**Config** (`hardener-scheduler/src/config.rs`): `NotificationConfig` gains
-`notify_mode: NotifyMode` — enum `Findings` (`#[default]`) / `Regression` / `Both`,
-`#[serde(rename_all = "lowercase")]`. The struct keeps `#[derive(Default)]` +
-`#[serde(default)]`, so an omitted key deserialises to `Findings` (old behaviour;
-fully backward compatible).
+| Commits (FF-merged, branch `feat/batch-report` deleted) | |
+|---|---|
+| `47d5482` | extract shared `resolve_scenario` |
+| `7ccba14` | posture types + tiered `report_exit_code` |
+| `5e6ee26` | fleet rollup + text/json renderers |
+| `0c87c22` | `run_report` over the scan engine |
+| `e927d34` | review follow-up: hoist `resolve_and_scan`, flatten `resolve_scenario` |
+| `065d919` | `BatchAction::Report` CLI variant |
+| `fb9c873` | dispatch arm + CHANGELOG/NEXT |
+| `9e9ddaa` | multi-framework-per-host rollup test |
 
-**Shared severity-compare primitives** (`hardener-scheduler/src/db.rs`) — used by
-BOTH the CLI and the daemon (no duplication):
-- `SeverityTuple = (i64, i64, i64, i64, i64)` = (critical, high, medium, low, info).
-- `ScanSession::severity_tuple()`.
-- `above_floor(t, floor)` — zeroes counts below `floor` (Critical keeps only
-  critical; Info keeps all).
-- `trend_direction(prev, cur) -> &'static str` — `"better"`/`"worse"`/`"same"`;
-  used by the CLI `trends` *display* only.
-- `is_worse(prev, cur) -> bool` — `cur > prev`; the typed check used by all *logic*
-  (CLI `find_regressions` and the daemon). Callers pre-zero with `above_floor`.
+Spec/plan (untracked): `docs/superpowers/specs/2026-06-22-batch-report-design.md`,
+`docs/superpowers/plans/2026-06-22-batch-report.md`.
 
-**Policy** (`hardener-scheduler/src/notification/mod.rs`): pure
-`alert_decision(mode, floor, previous: Option<&ScanSession>, current: &ScanSummary)
--> (bool /*send*/, Option<RegressionInfo>)`:
-- `absolute = (Findings|Both) && meets_severity_threshold(current, floor)`
-- `regressed = (Regression|Both) && previous && is_worse(above_floor(prev,floor), above_floor(cur,floor))`
-- returns `(absolute || regressed, regressed ? Some(delta) : None)`.
-- A floor-regression always also meets the absolute threshold, so `Both` sends
-  once (annotated), never twice.
+---
 
-**Dispatch** (`notification/dispatcher.rs`): the dispatcher owns the decision.
-`dispatch(&self, summary, previous: Option<&ScanSession>)` resolves the floor ONCE
-at construction (empty `notify_min_severity` ⇒ `Critical`) and uses that same value
-for both the absolute and regression checks. It clones+annotates the summary only
-when a regression is present (non-regression path is allocation-free). `send_test`
-sends to all channels UNCONDITIONALLY (bypasses the gate) — used by the desktop
-"test notification" button so `notify_mode=regression` doesn't no-op it.
+## ▶ Launchpad: `hardener batch apply` (next slice)
 
-**Runner** (`runner.rs`): after `complete_session`, fetches
-`db.previous_completed_session(host, exclude_id)` and passes it to `dispatch`.
-**Best-effort** — a lookup `Err` becomes `None` (warn + continue); it can NEVER
-fail the scan.
+**Goal:** apply hardening to many remote hosts in one concurrent run. This is the
+**dangerous** batch command (it mutates production fleets), so it earns a full
+brainstorm → spec → plan → subagent-driven cycle. Do not shortcut it.
 
-**Rendering:** `RegressionInfo` (deltas = current − previous) on `ScanSummary`;
-email gets a `[REGRESSION]` subject prefix + a delta block; webhook generic payload
-gets a `regression` object (null when absent) and Slack/Discord get a
-`[REGRESSION] ` title marker.
+### What already exists (reuse, don't rebuild)
+
+- **Remote apply works single-host.** `commands/apply.rs::run(plugin_filter, all,
+  dry_run, format, quiet, executor)` runs `plugin.apply(&mut ctx, cfg)` (or
+  `plugin.validate` when `dry_run`) over whatever `executor` it's handed. The CLI
+  (`main.rs`) builds an `SshExecutor` from `--ssh`. The executor abstraction means
+  apply commands transparently run over SSH. So per-host apply = give `apply::run`
+  an `SshExecutor` for that host.
+- **The batch concurrency engine.** `commands/batch.rs` has `resolve_hosts` /
+  `parse_inline` (host-set resolution), `scan_one` / `scan_with_executor` (connect
+  via `SshExecutor` then do per-host work, failure-isolated), `scan_all` (bounded
+  concurrency via `Semaphore` + `JoinSet`, input-order preserved via
+  `assemble_ordered`), and `HostOutcome` (per-host result envelope, `Scanned` /
+  `Failed`). `resolve_and_scan` wraps resolve + `scan_all`. The **host iteration**
+  is fully reusable; only the per-host *operation* (scan vs apply) differs.
+- **Inventory + flags.** `--all` / `--host` / `--ssh` / `--concurrency` /
+  `--output`, global `--format`, `--ssh-key`, `--ssh-timeout`, `--ssh-no-verify`
+  are all already parsed and threaded for `batch scan`/`batch report` — mirror the
+  `BatchAction::Report` variant + dispatch arm.
+
+### The real open problems (the brainstorm must resolve these)
+
+1. **Privilege model.** `apply.rs:23` gates on **local** `geteuid().is_root()`
+   (`bail!` unless root or `--dry-run`). For a remote target that check is wrong —
+   root is needed on the **remote** host, as the SSH user. For `batch apply`,
+   either drop the local-euid gate for remote targets and rely on the remote
+   user's privileges (apply commands fail over SSH if unprivileged), or add an
+   explicit privilege precheck per host. Decide this deliberately; don't inherit
+   the local check blindly.
+2. **Per-host checkpoints & rollback.** Single-host apply builds a checkpoint
+   manager via `get_checkpoint_manager()` writing to the **local**
+   `/var/lib/linux-hardener/checkpoints.db` (`Context::with_executor_and_checkpoint`).
+   Across a fleet this needs a decision: where does each host's pre-apply
+   checkpoint live (local, keyed by host? remote, on each host?), and what does
+   rollback mean for a batch (roll back one failed host? the whole fleet? never
+   auto-roll-back, just report?). This is the crux of the design.
+3. **Blast-radius UX.** Recommend `--dry-run` (validate-only) as the **default**,
+   with real application requiring an explicit opt-in flag (e.g. `--apply` /
+   `--confirm`). A typo must not silently harden 50 production boxes. (Single-host
+   apply has no such guard because the local root + interactive context implies
+   intent; a fleet needs an explicit gate.)
+4. **Failure policy & exit codes.** Per-host isolation like `batch scan` (a failed
+   host is a row, never aborts the fleet), with a tiered exit. Note the
+   partial-apply reality: if host A succeeds and host B fails, A stays changed —
+   document it; do not attempt fleet-wide atomicity.
+5. **History/audit.** `batch scan`/`report` persist each host's scan to history
+   best-effort. Decide whether `batch apply` records apply actions to history/audit
+   per host (the single-host path already writes the local audit log).
+
+### Suggested first move
+`/ponytail` → brainstorm. The decomposition question is mostly settled (apply
+over the existing batch engine), so the brainstorm's real work is items 1–3 above
+(privilege, checkpoint/rollback, dry-run-default UX). Keep `batch apply` as its
+own sub-project; don't fold the desktop multi-host view into it.
 
 ---
 
 ## Invariants & gotchas (do not break)
 
-- **Best-effort persistence/notification:** a history-write, regression-lookup, or
-  notify failure must NEVER change a scan result. The lookup + dispatch run *after*
-  `complete_session`; keep the warn-and-continue shape.
-- **One floor:** the dispatcher resolves `notify_min_severity` (empty ⇒ Critical)
-  once; `alert_decision` uses that for both checks. Do NOT re-derive a floor
-  elsewhere (bare `parse_severity("")` returns Medium — a mismatch).
-- **Self-dedup is stateless:** a regression fires only on the transition scan
-  (the next scan's baseline is the now-worse state ⇒ `same` ⇒ silent). Do NOT add
-  an "already alerted" flag/table.
-- **Test notifications bypass the gate:** the desktop "test" path must use
-  `dispatcher.send_test(...)`, never `dispatch(...)`.
-- **`previous_completed_session` assumes the caller passes the newest scan** as
-  `exclude_id` (reads only the 2 newest completed sessions). True for the runner.
-- **`docs/superpowers/` is UNTRACKED, not gitignored** (prior handoffs said
-  gitignored — wrong; `git check-ignore` returns nothing and `git add -A` WOULD
-  catch specs/plans). Stage specs/plans out manually.
-- **Whole-workspace build catches what per-crate builds miss:** the plan missed a
-  4th `ScanSummary` site + a 2nd `dispatch` caller in `src-tauri`; only
-  `cargo build --workspace` surfaced them. Always run it before claiming done.
-- **Debug-vs-Display history serialisation (OPEN, in NEXT.md):**
-  `finding_to_scan_finding` writes `severity`/`category` via `{:?}` not `Display`.
-  Trends/regressions read the numeric `*_count` columns (case-insensitively
-  derived), so they are UNAFFECTED — it's a cosmetic per-finding string issue.
-- **Pre-commit gate (`rust-sec-ci`):** prints ~91 production + ~48 test naming
-  warnings (abbreviations, a few British-spelling flags on official control
-  titles). Pre-existing, 0 errors — do NOT "fix" them.
-- **Two remotes, one push:** `origin` has a dual push URL (GitHub + GitLab). The
-  pre-*push* gate runs fmt/clippy/cargo-audit; fix the report or
-  `git push --no-verify`, never disable `core.hooksPath`.
+- **`batch report`/`scan` are READ-ONLY.** Only `batch apply` may mutate — and only
+  behind the blast-radius gate decided in its brainstorm.
+- **Best-effort persistence:** a history-write/lookup/notify failure must NEVER
+  change a host's outcome or the exit code (inherited from `scan_all` /
+  `persist_host`). Keep the warn-and-continue shape.
+- **Per-host isolation:** a dead host becomes a `Failed` row (prefill +
+  `assemble_ordered`), never aborts the fleet.
+- **Honest assessment in `report_exit_code`:** only `failing > 0` raises to `1`;
+  `ManualReview`/`NotApplicable` are NEVER failures; any host error → `2`.
+- **One framework catalogue:** all framework/scenario parsing goes through
+  `resolve_scenario`. Don't add a second parse path.
+- **`hardener-cli` is a binary, not a lib:** test with `cargo test -p hardener-cli`
+  (NOT `--lib`). 79 unit tests.
+- **`Scenario` is imported in the `tests` module only** in `batch.rs` (the non-test
+  path infers the type). Don't hoist it (unused-import in the bin build).
+- **Pre-commit gate (`rust-sec-ci`):** ~91 production + ~48 test naming warnings
+  (abbreviations, a couple British-spelling flags on official control titles).
+  Pre-existing, **0 errors** — do NOT "fix" them.
+- **`docs/superpowers/` is UNTRACKED, not gitignored** (`git check-ignore` returns
+  nothing; `git add -A` WOULD catch specs/plans). Stage them out manually.
+- **`cargo build --workspace` catches what per-crate misses** (desktop bin `dist`
+  already built). Run it before claiming done.
 - **Conventions:** no AI attribution anywhere; `cargo fmt` before commits; Rust
   let-chains, never nested `if`; British spelling in prose; Playwright/GUI tests in
   nspawn containers only.
@@ -130,33 +158,39 @@ gets a `regression` object (null when absent) and Slack/Discord get a
 ## How to verify
 
 ```bash
-cargo test  -p hardener-scheduler -p hardener-cli
-cargo clippy -p hardener-scheduler -p hardener-cli --all-targets
+cargo test  -p hardener-cli              # 79 unit tests
+cargo clippy -p hardener-cli --all-targets
 cargo fmt --check
-cargo build --workspace          # incl. the desktop bin (dist already built)
+cargo build --workspace                  # incl. the desktop bin
+hardener batch report --ssh nobody@127.0.0.1:1 --framework cis --format json; echo $?   # failed host, exit 2
 ```
-All clean at handoff (96 scheduler + 71 CLI tests pass).
+All clean at handoff; full `cargo test --workspace` 0 failed.
 
 ---
 
 ## Remaining work (priority order, from NEXT.md)
 
-1. **Multi-host SSH — `batch report` / `batch apply` subcommands.** *Start here.*
-2. Multi-host SSH — desktop multi-host view (largest GUI effort).
-3. Debug-vs-Display history serialisation decision (small).
-4. RHEL 10 / per-version compliance profiles; cross-distro re-validation (needs
+1. **`batch apply`** — see the launchpad above. *Start here, brainstorm first.*
+2. Desktop multi-host view (largest GUI effort).
+3. **Trivial doc nit (background task flagged):** single-host `report --help`
+   `--framework` doc (`crates/hardener-cli/src/cli.rs` ~line 109) omits
+   `iso27001`; both commands parse it fine via the shared `parse_framework`. 1-word
+   fix.
+4. Debug-vs-Display history serialisation (`finding_to_scan_finding` writes
+   `severity`/`category` via `{:?}` not `Display`; pre-existing, cosmetic;
+   trends/regressions read the numeric `*_count` columns so they're unaffected).
+5. RHEL 10 / per-version compliance profiles; cross-distro re-validation (needs
    containers + root, human-run).
-5. More frameworks (SOC 2 / FedRAMP / NIST 800-171); deeper HIPAA/GDPR review.
-6. Version cut for the accumulated `[Unreleased]` changelog; external security audit.
+6. More frameworks (SOC 2 / FedRAMP / NIST 800-171); deeper HIPAA/GDPR review.
+7. Version cut for the accumulated `[Unreleased]` changelog; external security audit.
 
 ---
 
 ## Git state at handoff
 
-- `main` **pushed to both remotes** (GitHub + GitLab) at `bab98d4`; `origin/main ==
-  main`. This handoff correction is a trailing docs commit — push it whenever.
-  Working tree clean apart from untracked `.rust-sec-ci.toml` and `docs/superpowers/`.
-- Branch `feat/scheduler-regression-notifications` was FF-merged and deleted.
-- Spec/plan for this session's feature:
-  `docs/superpowers/specs/2026-06-22-scheduler-regression-notifications-design.md`,
-  `docs/superpowers/plans/2026-06-22-scheduler-regression-notifications.md` (untracked).
+- `main` at `9e9ddaa`, **9 commits ahead of `origin/main`, push pending** (user
+  pushes — SSH passphrases). One `git push origin main` reaches both GitHub and
+  GitLab (dual push URL). The pre-*push* gate runs fmt/clippy/cargo-audit; fix the
+  report or `git push --no-verify`, never disable `core.hooksPath`.
+- Branch `feat/batch-report` was FF-merged and deleted. Working tree clean apart
+  from untracked `.rust-sec-ci.toml` and `docs/superpowers/`.
