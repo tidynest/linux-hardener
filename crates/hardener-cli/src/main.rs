@@ -84,12 +84,15 @@ async fn main() -> Result<()> {
             .await
         }
         Command::Rollback { checkpoint_id } => {
-            commands::checkpoint::rollback(&checkpoint_id, cli.format, cli.quiet).await
+            commands::checkpoint::rollback(&checkpoint_id, cli.format, cli.quiet, executor.clone())
+                .await
         }
         Command::Checkpoint { action } => match action {
-            CheckpointAction::List => commands::checkpoint::list(cli.format, cli.quiet).await,
+            CheckpointAction::List => {
+                commands::checkpoint::list(cli.format, cli.quiet, executor.clone()).await
+            }
             CheckpointAction::Create { name } => {
-                commands::checkpoint::create(&name, cli.format, cli.quiet).await
+                commands::checkpoint::create(&name, cli.format, cli.quiet, executor.clone()).await
             }
             CheckpointAction::Delete { checkpoint_id } => {
                 commands::checkpoint::delete(&checkpoint_id, cli.format, cli.quiet).await

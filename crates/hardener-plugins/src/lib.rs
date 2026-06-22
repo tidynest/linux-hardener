@@ -34,7 +34,11 @@ pub fn rollback_files_from_checkpoint(
         ))
     })?;
 
-    rt.block_on(async { manager.rollback(&checkpoint_id).await })?;
+    rt.block_on(async {
+        manager
+            .rollback(ctx.executor().as_ref(), &checkpoint_id)
+            .await
+    })?;
 
     Ok(())
 }
@@ -63,7 +67,7 @@ pub async fn create_checkpoint_for_apply(
     };
 
     let checkpoint_id = manager
-        .create_checkpoint(checkpoint_name, file_paths)
+        .create_checkpoint(ctx.executor().as_ref(), checkpoint_name, file_paths)
         .await?;
 
     tracing::info!("Created checkpoint: {}", checkpoint_id.as_str());
@@ -89,7 +93,7 @@ pub async fn create_checkpoint_metadata_only_for_apply(
     };
 
     let checkpoint_id = manager
-        .create_checkpoint_metadata_only(checkpoint_name, file_paths)
+        .create_checkpoint_metadata_only(ctx.executor().as_ref(), checkpoint_name, file_paths)
         .await?;
 
     tracing::info!(

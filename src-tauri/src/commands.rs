@@ -696,7 +696,7 @@ pub async fn get_checkpoints() -> Result<Vec<CheckpointInfo>, String> {
     }
 
     // Sort by timestamp descending (newest first)
-    entries.sort_by(|(a, _), (b, _)| b.checkpoint_timestamp.cmp(&a.checkpoint_timestamp));
+    entries.sort_by_key(|(cp, _)| std::cmp::Reverse(cp.checkpoint_timestamp));
 
     // Verify each checkpoint's signature and build response
     let mut result = Vec::with_capacity(entries.len());

@@ -676,7 +676,9 @@ impl HardeningPlugin for KernelHardeningPlugin {
         let checkpoint_id = checkpoint.checkpoint_id.clone();
         let manager = manager.clone();
 
-        manager.rollback(&checkpoint_id).await?;
+        manager
+            .rollback(ctx.executor().as_ref(), &checkpoint_id)
+            .await?;
 
         info!("Kernel configuration files restored from checkpoint");
 

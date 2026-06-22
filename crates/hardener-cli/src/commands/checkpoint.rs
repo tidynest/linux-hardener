@@ -1,6 +1,9 @@
 //! Checkpoint commands — create, list, show, delete, and rollback operations.
 
+use std::sync::Arc;
+
 use anyhow::{Result, bail};
+use hardener_core::SystemExecutor;
 use hardener_state::{ActionResult, ActionType, CheckpointId};
 
 use crate::cli::OutputFormat;
@@ -8,15 +11,35 @@ use crate::output;
 
 use super::state::{effective_user, get_audit_logger, get_checkpoint_manager};
 
-pub async fn list(format: OutputFormat, _quiet: bool) -> Result<()> {
+pub async fn list(
+    format: OutputFormat,
+    _quiet: bool,
+    executor: Arc<dyn SystemExecutor>,
+) -> Result<()> {
     let manager = get_checkpoint_manager().await?;
-    let checkpoints = manager.list_checkpoints().await?;
+    let current_host = if executor.is_remote() {
+        executor.description()
+    } else {
+        "local".to_string()
+    };
+
+    let checkpoints: Vec<_> = manager
+        .list_checkpoints()
+        .await?
+        .into_iter()
+        .filter(|c| c.host_key == current_host)
+        .collect();
 
     output::checkpoint_list(&format, &checkpoints);
     Ok(())
 }
 
-pub async fn create(name: &str, format: OutputFormat, quiet: bool) -> Result<()> {
+pub async fn create(
+    name: &str,
+    format: OutputFormat,
+    quiet: bool,
+    executor: Arc<dyn SystemExecutor>,
+) -> Result<()> {
     if !nix::unistd::geteuid().is_root() {
         bail!("Root privileges required to create checkpoints.");
     }
@@ -30,7 +53,9 @@ pub async fn create(name: &str, format: OutputFormat, quiet: bool) -> Result<()>
         output::status(&format, &format!("Creating checkpoint: {}", name));
     }
 
-    let checkpoint_id = manager.create_checkpoint(name, &paths).await?;
+    let checkpoint_id = manager
+        .create_checkpoint(executor.as_ref(), name, &paths)
+        .await?;
 
     if let Some(logger) = get_audit_logger().await {
         let _ = logger
@@ -81,7 +106,12 @@ pub async fn show(checkpoint_id: &str, format: OutputFormat, _quiet: bool) -> Re
     Ok(())
 }
 
-pub async fn rollback(checkpoint_id: &str, format: OutputFormat, quiet: bool) -> Result<()> {
+pub async fn rollback(
+    checkpoint_id: &str,
+    format: OutputFormat,
+    quiet: bool,
+    executor: Arc<dyn SystemExecutor>,
+) -> Result<()> {
     if !nix::unistd::geteuid().is_root() {
         bail!("Root privileges required to rollback changes.");
     }
@@ -96,7 +126,7 @@ pub async fn rollback(checkpoint_id: &str, format: OutputFormat, quiet: bool) ->
         );
     }
 
-    let result = manager.rollback(&id).await?;
+    let result = manager.rollback(executor.as_ref(), &id).await?;
     output::rollback_result(&format, &result);
 
     let action_result = if result.rollback_success {

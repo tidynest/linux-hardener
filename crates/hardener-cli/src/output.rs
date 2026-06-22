@@ -184,12 +184,21 @@ pub fn checkpoint_list(format: &OutputFormat, checkpoints: &[Checkpoint]) {
             }
 
             println!("{}", "Checkpoints".bold());
-            println!("{}", "─".repeat(80));
+            println!("{}", "─".repeat(90));
+            println!(
+                "{:<36}  {:<24}  {:<12}  {}",
+                "ID".bold(),
+                "NAME".bold(),
+                "HOST".bold(),
+                "CREATED".bold()
+            );
+            println!("{}", "─".repeat(90));
             for cp in checkpoints {
                 println!(
-                    "{} {} ({})",
+                    "{:<36}  {:<24}  {:<12}  {}",
                     cp.checkpoint_id.as_str().cyan(),
                     cp.checkpoint_name,
+                    cp.host_key.dimmed(),
                     format_timestamp(cp.checkpoint_timestamp).dimmed()
                 );
             }
@@ -224,6 +233,7 @@ pub fn checkpoint_details(format: &OutputFormat, checkpoint: &Checkpoint, files:
             println!("{}", "─".repeat(60));
             println!("ID:        {}", checkpoint.checkpoint_id.as_str().cyan());
             println!("Name:      {}", checkpoint.checkpoint_name);
+            println!("Host:      {}", checkpoint.host_key);
             println!(
                 "Created:   {}",
                 format_timestamp(checkpoint.checkpoint_timestamp)
