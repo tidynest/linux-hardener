@@ -880,6 +880,35 @@ mod tests {
     }
 
     #[test]
+    fn report_rollup_groups_multiple_frameworks_per_host() {
+        // The default `server` scenario assesses each host against CIS + STIG, so
+        // the rollup must group per framework, accumulating across hosts.
+        let fw = |name: &str, failing: usize| FrameworkPosture {
+            framework: name.into(),
+            score: 90.0,
+            passing: 10,
+            failing,
+            manual_review: 0,
+            not_applicable: 0,
+            total: 10 + failing,
+        };
+        let reports = vec![
+            assessed_report("web", vec![fw("CIS", 3), fw("STIG", 1)]),
+            assessed_report("db", vec![fw("CIS", 2), fw("STIG", 4)]),
+        ];
+        let r = ReportRollup::from_reports(&reports);
+        assert_eq!(r.hosts_assessed, 2);
+        assert_eq!(r.frameworks.len(), 2, "CIS and STIG grouped separately");
+        assert_eq!(
+            r.frameworks[0].framework, "CIS",
+            "first-seen order preserved"
+        );
+        assert_eq!(r.frameworks[0].failing, 5, "CIS 3 + 2");
+        assert_eq!(r.frameworks[1].framework, "STIG");
+        assert_eq!(r.frameworks[1].failing, 5, "STIG 1 + 4");
+    }
+
+    #[test]
     fn report_text_render_has_rows_and_rollup() {
         let text = render_report_text(&[
             assessed_report("web-01", vec![posture(18)]),
