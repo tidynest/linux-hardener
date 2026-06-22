@@ -17,7 +17,8 @@ const SCHEMA: &str = r#"
         timestamp INTEGER NOT NULL,
         username TEXT NOT NULL,
         signature BLOB NOT NULL,
-        created_at INTEGER NOT NULL
+        created_at INTEGER NOT NULL,
+        host_key TEXT NOT NULL DEFAULT 'local'
     );
 
     CREATE TABLE IF NOT EXISTS file_states (
@@ -117,6 +118,21 @@ pub async fn init_db(db_path: Option<&Path>) -> Result<SqlitePool> {
         .await
         .map_err(|e| HardeningError::Database(e.to_string()))?;
 
+    // Migrate pre-host_key databases in place (idempotent).
+    let has_host_key: bool = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM pragma_table_info('checkpoints') WHERE name = 'host_key'",
+    )
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| HardeningError::Database(e.to_string()))?
+        > 0;
+    if !has_host_key {
+        sqlx::query("ALTER TABLE checkpoints ADD COLUMN host_key TEXT NOT NULL DEFAULT 'local'")
+            .execute(&pool)
+            .await
+            .map_err(|e| HardeningError::Database(e.to_string()))?;
+    }
+
     // Foreign key enforcement
     sqlx::query("PRAGMA foreign_keys = ON")
         .execute(&pool)
@@ -131,4 +147,43 @@ pub async fn init_db(db_path: Option<&Path>) -> Result<SqlitePool> {
         .map_err(HardeningError::System)?;
 
     Ok(pool)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn init_db_migrates_legacy_checkpoints_without_host_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("legacy.db");
+        let opts = sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(&db)
+            .create_if_missing(true);
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .connect_with(opts)
+            .await
+            .unwrap();
+        sqlx::query(
+            "CREATE TABLE checkpoints (id TEXT PRIMARY KEY, name TEXT NOT NULL, \
+             timestamp INTEGER NOT NULL, username TEXT NOT NULL, signature BLOB NOT NULL, \
+             created_at INTEGER NOT NULL)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO checkpoints VALUES ('cp1','n',0,'u',x'00',0)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        pool.close().await;
+
+        let pool = init_db(Some(&db)).await.unwrap();
+        let host_key: String =
+            sqlx::query_scalar("SELECT host_key FROM checkpoints WHERE id='cp1'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(host_key, "local");
+    }
 }
