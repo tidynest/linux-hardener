@@ -4,12 +4,140 @@ use crate::cli::OutputFormat;
 use crate::output;
 use anyhow::{Result, bail};
 use hardener_common::types::PluginId;
-use hardener_core::{ConfigLoader, Context, HardenerConfig, SystemExecutor};
+use hardener_core::{
+    ApplyResult, ConfigLoader, Context, HardenerConfig, PluginMetadata, SystemExecutor,
+    ValidationReport,
+};
 use hardener_plugins::create_plugin_registry;
-use hardener_state::{ActionResult, ActionType};
+use hardener_state::{ActionResult, ActionType, AuditLogger, CheckpointManager};
 use std::sync::Arc;
 
 use super::state::{get_audit_logger, get_checkpoint_manager};
+
+/// Result of running `apply_host` for one executor target.
+pub(crate) struct ApplyHostResult {
+    pub results: Vec<(PluginMetadata, ApplyResult)>,
+    pub validation_reports: Vec<ValidationReport>,
+    pub had_failure: bool,
+}
+
+/// Core apply/validate loop over a single executor target.
+///
+/// Handles plugin iteration, disabled-plugin skipping, audit logging, and
+/// result collection. Rendering and the CLI-level root gate live in `run`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn apply_host(
+    executor: Arc<dyn SystemExecutor>,
+    plugin_ids: &[PluginId],
+    dry_run: bool,
+    hardener_config: &HardenerConfig,
+    checkpoint: Option<CheckpointManager>,
+    audit: Option<AuditLogger>,
+    format: &OutputFormat,
+    quiet: bool,
+) -> ApplyHostResult {
+    let registry = create_plugin_registry();
+
+    let mut ctx = match (dry_run, checkpoint) {
+        (false, Some(mgr)) => Context::with_executor_and_checkpoint(executor, mgr),
+        _ => Context::with_executor(executor),
+    };
+    if let Some(logger) = audit {
+        ctx.set_audit_logger(logger);
+    }
+
+    let mut results = Vec::new();
+    let mut validation_reports = Vec::new();
+    let mut had_failure = false;
+
+    for plugin_id in plugin_ids {
+        let Ok(Some(plugin)) = registry.get(plugin_id) else {
+            had_failure = true;
+            if !quiet {
+                output::error(format, &format!("Plugin not found: {}", plugin_id.as_str()));
+            }
+            continue;
+        };
+
+        let id_str = plugin_id.as_str();
+        if !hardener_config.global.disabled_plugins.is_empty()
+            && hardener_config
+                .global
+                .disabled_plugins
+                .iter()
+                .any(|d| d == id_str)
+        {
+            if !quiet {
+                output::status(format, &format!("Skipping (disabled): {id_str}"));
+            }
+            continue;
+        }
+
+        let plugin_config = hardener_config.get_plugin_config(id_str);
+        let metadata = plugin.metadata();
+
+        if !quiet {
+            output::status(format, &format!("Applying: {}", metadata.plugin_name));
+        }
+
+        if dry_run {
+            match plugin.validate(&ctx, plugin_config).await {
+                Ok(report) => validation_reports.push(report),
+                Err(e) => {
+                    had_failure = true;
+                    if !quiet {
+                        output::error(
+                            format,
+                            &format!("Validation failed for {}: {e}", metadata.plugin_name),
+                        );
+                    }
+                }
+            }
+        } else {
+            match plugin.apply(&mut ctx, plugin_config).await {
+                Ok(result) => results.push((metadata, result)),
+                Err(e) => {
+                    had_failure = true;
+                    if !quiet {
+                        output::error(
+                            format,
+                            &format!("Failed to apply {}: {e}", metadata.plugin_name),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    if results.iter().any(|(_, r)| !r.apply_success) {
+        had_failure = true;
+    }
+
+    if let Some(logger) = ctx.audit_logger() {
+        let user = super::state::effective_user();
+        for (metadata, result) in &results {
+            let action_result = if result.apply_success {
+                ActionResult::Success
+            } else {
+                ActionResult::Failure
+            };
+            let _ = logger
+                .log_action(
+                    ActionType::Apply,
+                    user.clone(),
+                    metadata.plugin_name.clone(),
+                    action_result,
+                )
+                .await;
+        }
+    }
+
+    ApplyHostResult {
+        results,
+        validation_reports,
+        had_failure,
+    }
+}
 
 pub async fn run(
     plugin_filter: &[String],
@@ -28,19 +156,6 @@ pub async fn run(
         bail!("Specify plugins with --plugin or use --all to apply all plugins.");
     }
 
-    let registry = create_plugin_registry();
-
-    // Create context with checkpoint manager for automatic rollback support
-    let mut ctx = if !dry_run {
-        let manager = get_checkpoint_manager().await?;
-        Context::with_executor_and_checkpoint(executor, manager)
-    } else {
-        Context::with_executor(executor)
-    };
-    if let Some(logger) = get_audit_logger().await {
-        ctx.set_audit_logger(logger);
-    }
-
     let hardener_config = match ConfigLoader::new().load() {
         Ok(config) => config,
         Err(e) => {
@@ -51,6 +166,7 @@ pub async fn run(
         }
     };
 
+    let registry = create_plugin_registry();
     let plugins = registry.list()?;
     let plugin_ids: Vec<PluginId> = if all {
         plugins.iter().map(|m| m.plugin_id.clone()).collect()
@@ -74,103 +190,75 @@ pub async fn run(
         output::info(&format, "Dry run - no changes will be made");
     }
 
-    let mut results = Vec::new();
-    let mut validation_reports = Vec::new();
-    let mut had_failure = false;
-
-    for plugin_id in &plugin_ids {
-        if let Ok(Some(plugin)) = registry.get(plugin_id) {
-            // Skip disabled plugins
-            let id_str = plugin_id.as_str();
-            if !hardener_config.global.disabled_plugins.is_empty()
-                && hardener_config
-                    .global
-                    .disabled_plugins
-                    .iter()
-                    .any(|d| d == id_str)
-            {
-                if !quiet {
-                    output::status(&format, &format!("Skipping (disabled): {}", id_str));
-                }
-                continue;
-            }
-            let plugin_config = hardener_config.get_plugin_config(id_str);
-            let metadata = plugin.metadata();
-
-            if !quiet {
-                output::status(&format, &format!("Applying: {}", metadata.plugin_name));
-            }
-
-            if dry_run {
-                // Just validate without applying
-                match plugin.validate(&ctx, plugin_config).await {
-                    Ok(report) => {
-                        validation_reports.push(report);
-                    }
-                    Err(e) => {
-                        had_failure = true;
-                        output::error(
-                            &format,
-                            &format!("Validation failed for {}: {}", metadata.plugin_name, e),
-                        );
-                    }
-                }
-            } else {
-                match plugin.apply(&mut ctx, plugin_config).await {
-                    Ok(result) => {
-                        results.push((metadata, result));
-                    }
-                    Err(e) => {
-                        had_failure = true;
-                        output::error(
-                            &format,
-                            &format!("Failed to apply {}: {e}", metadata.plugin_name),
-                        );
-                    }
-                }
-            }
-        } else {
-            had_failure = true;
-            output::error(
-                &format,
-                &format!("Plugin not found: {}", plugin_id.as_str()),
-            );
-        }
-    }
-
-    if results.iter().any(|(_, r)| !r.apply_success) {
-        had_failure = true;
-    }
-
-    // Persistent audit log
-    if let Some(logger) = ctx.audit_logger() {
-        let user = super::state::effective_user();
-        for (metadata, result) in &results {
-            let action_result = if result.apply_success {
-                ActionResult::Success
-            } else {
-                ActionResult::Failure
-            };
-            let _ = logger
-                .log_action(
-                    ActionType::Apply,
-                    user.clone(),
-                    metadata.plugin_name.clone(),
-                    action_result,
-                )
-                .await;
-        }
-    }
+    let checkpoint = if dry_run {
+        None
+    } else {
+        Some(get_checkpoint_manager().await?)
+    };
+    let audit = get_audit_logger().await;
+    let result = apply_host(
+        executor,
+        &plugin_ids,
+        dry_run,
+        &hardener_config,
+        checkpoint,
+        audit,
+        &format,
+        quiet,
+    )
+    .await;
 
     if dry_run {
-        output::validation_reports(&format, &validation_reports);
+        output::validation_reports(&format, &result.validation_reports);
     } else {
-        output::apply_results(&format, &results);
+        output::apply_results(&format, &result.results);
     }
 
-    if had_failure {
+    if result.had_failure {
         bail!("One or more plugins failed to apply");
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hardener_common::executor::MockExecutor;
+
+    #[tokio::test]
+    async fn apply_host_dry_run_validates_without_mutation() {
+        let executor = Arc::new(MockExecutor::new());
+        let cfg = HardenerConfig::default();
+        let registry = create_plugin_registry();
+        let ids: Vec<_> = registry
+            .list()
+            .unwrap()
+            .into_iter()
+            .map(|m| m.plugin_id)
+            .collect();
+
+        let result = apply_host(
+            executor,
+            &ids,
+            true,
+            &cfg,
+            None,
+            None,
+            &OutputFormat::Json,
+            true,
+        )
+        .await;
+
+        assert!(
+            result.results.is_empty(),
+            "dry-run must not produce apply results"
+        );
+        // Some plugins may error against a bare MockExecutor (missing files/commands);
+        // assert we got at least one validation report and zero apply results.
+        assert!(
+            result.validation_reports.len() >= 1,
+            "dry-run should produce at least one validation report"
+        );
+    }
 }
