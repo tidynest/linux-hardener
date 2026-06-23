@@ -84,6 +84,19 @@ hardener \- comprehensive Linux security automation tool with multi-distribution
 .IR N ]
 .
 .br
+.B hardener batch rollback
+.RB [ \-\-all ]
+.RB [ \-\-host
+.IR NAMES ]
+.RB [ \-\-ssh
+.IR USER@HOST ]
+.RB [ \-\-plugin
+.IR PLUGIN ]
+.RB [ \-\-execute ]
+.RB [ \-\-concurrency
+.IR N ]
+.
+.br
 .B hardener daemon
 .RI [ start | run\-once | status ]
 .
@@ -209,6 +222,31 @@ On
 each host receives an automatic host-keyed checkpoint (for rollback via
 .BR "sudo hardener \-\-ssh <host> rollback" )
 and a best-effort audit-log entry.
+See
+.B Batch Apply Options
+and
+.BR "EXIT STATUS" .
+.TP
+.B batch rollback
+Roll back multiple hosts concurrently to their latest per-plugin checkpoint.
+.B Dry-run by default
+\(em previews per host which checkpoint(s) would be restored.
+Pass
+.B \-\-execute
+to perform the restore.
+The same per-host privilege probe as
+.B batch apply
+gates
+.BR \-\-execute ,
+isolating a non-privileged host as
+.I failed
+while the others proceed.
+Restores reuse the host-keyed checkpoints captured by
+.BR "batch apply" ,
+so a checkpoint is never restored onto a different host; each executed host
+receives a best-effort audit-log entry.
+.B \-\-plugin
+selects which plugins to roll back (default: all).
 See
 .B Batch Apply Options
 and
@@ -442,8 +480,9 @@ Overrides system-wide settings for the current user.
 Host inventory for
 .BR "batch scan" ,
 .BR "batch report" ,
+.BR "batch apply" ,
 and
-.BR "batch apply" .
+.BR "batch rollback" .
 Shared with the desktop GUI's host list; may also be hand-edited.
 .TP
 .I /var/lib/linux-hardener/
@@ -470,8 +509,9 @@ is specified.
 For
 .BR "batch scan" ,
 .BR "batch report" ,
-and
 .BR "batch apply" ,
+and
+.BR "batch rollback" ,
 the exit status is tiered:
 .TP
 .B 0
@@ -479,13 +519,15 @@ All selected hosts completed successfully with no failures or findings.
 .TP
 .B 1
 All hosts were reachable, but at least one host has findings
-.RB ( "batch scan" / "batch report" )
-or an apply/validation failure
-.RB ( "batch apply" ).
+.RB ( "batch scan" / "batch report" ),
+an apply/validation failure
+.RB ( "batch apply" ),
+or a checkpoint restore failure
+.RB ( "batch rollback" ).
 .TP
 .B 2
 At least one host errored, was unreachable, or failed a privilege probe
-.RB ( "batch apply \-\-execute" ),
+.RB ( "batch apply" " or " "batch rollback" " with " \-\-execute ),
 or a usage error occurred (no hosts selected, unknown
 .B \-\-host
 name).
@@ -585,6 +627,15 @@ Preview hardening changes across the entire fleet (dry-run, no modifications):
 .RS
 .nf
 hardener batch apply \-\-all
+.fi
+.RE
+.PP
+Preview a fleet-wide rollback of the SSH hardening, then execute it:
+.PP
+.RS
+.nf
+hardener batch rollback \-\-all \-\-plugin ssh
+sudo hardener batch rollback \-\-all \-\-plugin ssh \-\-execute
 .fi
 .RE
 .PP

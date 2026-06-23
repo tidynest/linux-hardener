@@ -188,9 +188,16 @@ that executes receives an automatic host-keyed checkpoint and a best-effort
 audit-log entry. Tiered exit: 0 all clean / 1 apply or validation failure /
 2 connect, privilege or usage error. Flags mirror `batch scan`.
 
-Remaining slices (still pending): fleet-wide `batch rollback`, and the desktop
-multi-host view. Emergency per-host rollback is available today via
-`sudo hardener --ssh <host> rollback`.
+Batch rollback slice — **Done.** `hardener batch rollback` rolls back many hosts
+concurrently to their latest per-plugin checkpoint
+(`<plugin>-hardening-pre-apply`). Dry-run by default; `--execute` restores. Same
+per-host privilege probe and isolation as `batch apply`; restores reuse the
+host-keyed checkpoints (a checkpoint is never restored onto a different host) and
+write a best-effort audit entry. Tiered exit: 0 all clean / 1 a checkpoint
+restore failure / 2 connect, privilege or usage error.
+
+Remaining slices (still pending): the desktop multi-host view. Emergency
+per-host rollback also remains available via `sudo hardener --ssh <host> rollback`.
 
 **Follow-up (from review):** `finding_to_scan_finding` (now in `report.rs`)
 serialises `severity`/`category` to the history db via `{:?}` (Debug), which

@@ -60,7 +60,7 @@ pub struct ComplianceSummary { summary_total_controls, summary_passing, summary_
 | `src/commands/daemon.rs` | Daemon management commands | `start()`, `run_once()`, `status()` |
 | `src/commands/systemd.rs` | Systemd unit file commands | `generate()`, `install()`, `uninstall()`, `status()` |
 | `src/commands/history.rs` | Scan history commands | `list()`, `show()`, `export()`, `trends()`, `regressions()` |
-| `src/commands/batch.rs` | Multi-host concurrent scan/report/apply commands | `run_scan()`, `run_report()`, `run_apply()`, `BatchScanOptions`, `BatchReportOptions`, `BatchApplyOptions`, `resolve_and_scan()` |
+| `src/commands/batch.rs` | Multi-host concurrent scan/report/apply/rollback commands | `run_scan()`, `run_report()`, `run_apply()`, `run_rollback()`, `BatchScanOptions`, `BatchReportOptions`, `BatchApplyOptions`, `BatchRollbackOptions`, `resolve_and_scan()`, `run_on_all()` |
 | `src/ssh_config.rs` | SSH connection config helper | `SshConnectionConfig` |
 | `src/commands/state.rs` | Shared state initialisation (DB + signing key paths) | `get_checkpoint_manager()`, `get_audit_logger()`, `effective_user()` |
 
@@ -168,7 +168,7 @@ const KERNEL_PARAMS: &[(&str, &str, &str)] = &[
 |------|---------|-------------|
 | `src/lib.rs` | Module exports | Re-exports |
 | `src/checkpoint.rs` | Checkpoint types | `Checkpoint`, `CheckpointId`, `FileState`; re-exports `RollbackResult`, `FileRestoreResult`, `FileRestoreAction` from `hardener-types` |
-| `src/manager.rs` | Checkpoint operations | `CheckpointManager`, `create_checkpoint_metadata_only()`, `capture_directory_entry()` |
+| `src/manager.rs` | Checkpoint operations | `CheckpointManager`, `create_checkpoint_metadata_only()`, `capture_directory_entry()`, `latest_named_for_host()` |
 | `src/audit.rs` | Audit logging | `AuditEntry`, `AuditLogger`, `ActionType` |
 | `src/hash_chain.rs` | Tamper detection | `HashChain` |
 | `src/signing.rs` | Cryptographic signing | `CheckpointSigner` |

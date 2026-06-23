@@ -424,12 +424,24 @@ hardener batch apply --all
 
 # Apply to two hosts, four at a time
 sudo hardener batch apply --host web-01,web-02 --execute --concurrency 4
+
+# Preview a fleet-wide rollback of the SSH hardening (dry-run)
+hardener batch rollback --all --plugin ssh
+
+# Roll the SSH change back on two hosts
+sudo hardener batch rollback --host web-01,web-02 --plugin ssh --execute
 ```
 
 `batch apply` is **dry-run by default**: it validates each host and reports what
 would change without making any modifications. Pass `--execute` to perform real
 changes. Each host is privilege-probed before executing; a host without uid 0 or
 passwordless `sudo` is isolated as failed while the rest proceed unaffected.
+
+`batch rollback` restores each host to the latest per-plugin checkpoint that
+`batch apply` captured. It is **dry-run by default** too: bare `batch rollback`
+previews which checkpoint(s) would be restored per host; `--execute` performs the
+restore. Restores are host-keyed (a host's checkpoint is never applied to another
+host) and privilege-gated on `--execute`.
 
 ### Desktop Application
 

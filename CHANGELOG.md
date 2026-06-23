@@ -17,6 +17,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   codes: 0 all clean, 1 any apply or validation failure, 2 any connect, privilege
   or usage error. Flags mirror `batch scan`: `--all`, `--host`, `--ssh`,
   `--plugin`, `--concurrency`, `--format`, `--output`, `--quiet`.
+- **`hardener batch rollback`** — roll back many hosts concurrently to their
+  latest per-plugin checkpoint (`<plugin>-hardening-pre-apply`). Dry-run by
+  default (previews per host which checkpoint(s) would be restored); pass
+  `--execute` to restore. Before executing on a host it probes for privilege
+  (uid 0 or passwordless `sudo`) and isolates a non-privileged host as failed
+  while the others proceed. Restores reuse the host-keyed checkpoints created by
+  `batch apply`, so a checkpoint is never restored onto a different host; each
+  `--execute` host gets a best-effort audit-log entry. Tiered exit codes: 0 all
+  clean, 1 any checkpoint restore failure, 2 any connect, privilege or usage
+  error. Flags mirror `batch apply`: `--all`, `--host`, `--ssh`, `--plugin`,
+  `--execute`, `--concurrency`, `--format`, `--output`, `--quiet`.
 - **`hardener batch report`** — assess multiple hosts against a compliance
   framework or scenario in one concurrent run, printing a fleet posture table
   (host × framework → score and pass/fail/manual/N-A control counts) with a
