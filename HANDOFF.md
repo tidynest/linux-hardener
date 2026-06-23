@@ -1,4 +1,4 @@
-# Session Handoff — 2026-06-23 (remote-correct checkpoints shipped → batch apply next)
+# Session Handoff — 2026-06-23 (batch apply shipped → batch rollback / desktop view next)
 
 > **Read this first.** Point-in-time handoff for the next development session and
 > assistant. Living task list is [NEXT.md](NEXT.md); roadmap is [ROADMAP.md](ROADMAP.md).
@@ -15,12 +15,19 @@
   latent bug (rollback was restoring the **controller**, never the remote target).
   Checkpoints are host-keyed; rollback refuses cross-host restore. 9 commits,
   `main` == `origin` == `4d5c6e6` on **both** remotes (github + gitlab `tidynest`).
-- **Start here next:** `hardener batch apply` — now genuinely unblocked. The
-  foundation it needed (per-host checkpoint/rollback that targets the right
-  machine, keyed by host) is exactly what this slice delivered. **Begin with
-  brainstorming** (real blast radius — it mutates production fleets); do NOT jump
-  to code.
-- **Why this slice came before batch apply:** brainstorming `batch apply`
+- **Shipped this session (latest):** `hardener batch apply` — apply hardening
+  across a fleet concurrently. **Dry-run default; `--execute` mutates.** Per-host
+  privilege probe (uid 0 or passwordless sudo) gates execute only + isolates a
+  non-privileged host; auto host-keyed checkpoints per host; per-host best-effort
+  audit; tiered exit (0/1/2). Built on a generalized engine (`run_on_all<T>`) and
+  a shared `apply_host` extracted from single-host `apply::run`. 13 commits
+  `0fc9f16..1721760`, FF-merged to `main`, branch deleted. **`main` is 13 ahead
+  of `origin` — PUSH PENDING** (one `git push origin main` hits github + gitlab).
+- **Start here next:** `hardener batch rollback` (fleet-wide) and/or the desktop
+  multi-host view (largest GUI slice). Both warrant their own brainstorm (real
+  blast radius / large surface). Emergency per-host rollback already works:
+  `sudo hardener --ssh <host> rollback`.
+- **Why batch apply came after the checkpoint fix:** brainstorming `batch apply`
   surfaced the checkpoint bug. Per the user's "max safety" call, the foundation
   was fixed first so `batch apply` builds on correct, host-keyed rollback.
 
