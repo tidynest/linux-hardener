@@ -1,5 +1,6 @@
 //! `hardener batch scan` — scan many remote hosts concurrently.
 
+use super::state::{effective_user, get_audit_logger, get_checkpoint_manager};
 use crate::cli::OutputFormat as CliOutputFormat;
 use crate::commands::daemon::load_scheduler_config;
 use crate::commands::report::{finding_to_scan_finding, scan_grouped};
@@ -7,12 +8,12 @@ use crate::ssh_config::SshConnectionConfig;
 use anyhow::{Result, anyhow, bail};
 use hardener_common::types::{PluginId, Severity};
 use hardener_compliance::{ReportConfig, ReportGenerator};
-use hardener_core::HardenerConfig;
 use hardener_core::plugin::Finding;
+use hardener_core::{ConfigLoader, HardenerConfig};
 use hardener_core::{PluginMetadata, SshExecutor, executor::SystemExecutor};
 use hardener_scheduler::ScanHistoryManager;
 use hardener_scheduler::db::ScanFinding;
-use hardener_state::CheckpointManager;
+use hardener_state::{ActionResult, ActionType, CheckpointManager};
 use hardener_types::ComplianceReport;
 use hardener_types::remote::{HostsConfig, RemoteHostProfile};
 use serde::Serialize;
@@ -806,7 +807,6 @@ pub struct ApplyOutcome {
 /// Result of applying (or validating) one host.
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "state", rename_all = "lowercase")]
-#[allow(dead_code)] // variants fully used by run_apply (Task 6)
 pub enum ApplyStatus {
     /// Dry-run: validated `plugins` plugins, `would_change` pending changes,
     /// `failed` plugins whose validation errored.
@@ -823,8 +823,6 @@ pub enum ApplyStatus {
 
 /// 0 = all clean, 1 = an apply/validation failure, 2 = a host-level error.
 /// Precedence 2 > 1 > 0.
-// used by run_apply (Task 6)
-#[allow(dead_code)]
 pub fn apply_exit_code(outcomes: &[ApplyOutcome]) -> i32 {
     let mut code = 0;
     for o in outcomes {
@@ -841,8 +839,6 @@ pub fn apply_exit_code(outcomes: &[ApplyOutcome]) -> i32 {
 
 /// Maps an `ApplyHostResult` to a host `ApplyStatus`. `execute` = true means the
 /// real apply path; false = dry-run (validation reports).
-// used by run_apply (Task 6)
-#[allow(dead_code)]
 fn status_from_result(execute: bool, result: &super::apply::ApplyHostResult) -> ApplyStatus {
     if execute {
         let ok = result
@@ -874,8 +870,6 @@ fn status_from_result(execute: bool, result: &super::apply::ApplyHostResult) -> 
     }
 }
 
-// used by run_apply (Task 6)
-#[allow(dead_code)]
 fn render_apply_text(outcomes: &[ApplyOutcome]) -> String {
     let mut out = String::from("Host                          Result\n");
     out.push_str("------------------------------------------------\n");
@@ -898,8 +892,6 @@ fn render_apply_text(outcomes: &[ApplyOutcome]) -> String {
     out
 }
 
-// used by run_apply (Task 6)
-#[allow(dead_code)]
 fn render_apply_json(outcomes: &[ApplyOutcome]) -> String {
     serde_json::to_string_pretty(outcomes).unwrap_or_else(|_| "[]".to_string())
 }
@@ -924,8 +916,6 @@ async fn is_privileged(executor: &dyn SystemExecutor) -> bool {
 
 /// Connects to one host, probes privilege (on execute path), then applies or
 /// validates all requested plugins.
-// called by run_apply (Task 6)
-#[allow(dead_code)]
 async fn apply_one(
     profile: RemoteHostProfile,
     timeout: u64,
@@ -972,6 +962,124 @@ async fn apply_one(
         target,
         status: status_from_result(execute, &result),
     }
+}
+
+/// Resolves a plugin filter to ids. Empty filter = every plugin. Short names
+/// (e.g. "kernel") expand to the full id ("kernel-hardening").
+fn resolve_plugin_ids(filter: &[String]) -> Vec<PluginId> {
+    let registry = hardener_plugins::create_plugin_registry();
+    let all = registry.list().unwrap_or_default();
+    if filter.is_empty() {
+        return all.iter().map(|m| m.plugin_id.clone()).collect();
+    }
+    filter
+        .iter()
+        .filter_map(|f| {
+            all.iter()
+                .find(|p| {
+                    p.plugin_id.as_str() == f || p.plugin_id.as_str().starts_with(&format!("{f}-"))
+                })
+                .map(|p| p.plugin_id.clone())
+        })
+        .collect()
+}
+
+/// Options for `hardener batch apply`.
+pub struct BatchApplyOptions {
+    pub all: bool,
+    pub host: Vec<String>,
+    pub ssh: Vec<String>,
+    pub plugin: Vec<String>,
+    pub execute: bool,
+    pub concurrency: usize,
+    pub format: CliOutputFormat,
+    pub output: Option<String>,
+    pub quiet: bool,
+    pub global_key: Option<String>,
+    pub global_timeout: u64,
+    pub global_no_verify: bool,
+}
+
+/// CLI entry point for `hardener batch apply`. Dry-run unless `--execute`.
+pub async fn run_apply(opts: BatchApplyOptions) -> anyhow::Result<()> {
+    let verb = if opts.execute {
+        "Applying to"
+    } else {
+        "Validating"
+    };
+    let profiles = resolve_profiles(
+        opts.all,
+        &opts.host,
+        &opts.ssh,
+        opts.global_key.clone(),
+        opts.global_no_verify,
+        opts.quiet,
+        verb,
+    );
+    if opts.execute && !opts.quiet {
+        eprintln!("--execute: applying to {} host(s)", profiles.len());
+    }
+
+    let plugin_ids = Arc::new(resolve_plugin_ids(&opts.plugin));
+    let config = Arc::new(ConfigLoader::new().load().unwrap_or_default());
+    let checkpoint = if opts.execute {
+        Some(get_checkpoint_manager().await?)
+    } else {
+        None
+    };
+    let timeout = opts.global_timeout;
+    let execute = opts.execute;
+
+    let outcomes = run_on_all(
+        profiles,
+        opts.concurrency,
+        |p| ApplyOutcome {
+            name: p.name.clone(),
+            target: display_target(p),
+            status: ApplyStatus::Failed {
+                error: "apply task did not complete".to_string(),
+            },
+        },
+        move |profile| {
+            let plugin_ids = plugin_ids.clone();
+            let config = config.clone();
+            let checkpoint = checkpoint.clone();
+            async move { apply_one(profile, timeout, execute, plugin_ids, config, checkpoint).await }
+        },
+    )
+    .await;
+
+    // Best-effort per-host audit (execute path only), sequential on a shared logger.
+    if execute && let Some(logger) = get_audit_logger().await {
+        let user = effective_user();
+        for o in &outcomes {
+            let result = match &o.status {
+                ApplyStatus::Applied { failed: 0, .. } => ActionResult::Success,
+                ApplyStatus::Validated { .. } => continue,
+                _ => ActionResult::Failure,
+            };
+            let _ = logger
+                .log_action(
+                    ActionType::Apply,
+                    user.clone(),
+                    format!("apply @ {}", o.target),
+                    result,
+                )
+                .await;
+        }
+    }
+
+    let rendered = match opts.format {
+        CliOutputFormat::Json => render_apply_json(&outcomes),
+        _ => render_apply_text(&outcomes),
+    };
+    match opts.output {
+        Some(path) => {
+            std::fs::write(&path, &rendered).map_err(|e| anyhow!("failed to write {path}: {e}"))?
+        }
+        None => println!("{rendered}"),
+    }
+    std::process::exit(apply_exit_code(&outcomes));
 }
 
 /// CLI entry point for `hardener batch scan`.
@@ -1674,6 +1782,15 @@ mod tests {
             host_key_checking: false,
         };
         assert_eq!(host_key_of(&adhoc, "root@10.0.0.9:22"), "root@10.0.0.9:22");
+    }
+
+    #[test]
+    fn resolve_plugin_ids_empty_means_all() {
+        let all = resolve_plugin_ids(&[]);
+        assert!(!all.is_empty(), "empty filter selects every plugin");
+        let one = resolve_plugin_ids(&["kernel".to_string()]);
+        assert_eq!(one.len(), 1, "short name resolves to one plugin");
+        assert!(one[0].as_str().starts_with("kernel"));
     }
 
     #[test]

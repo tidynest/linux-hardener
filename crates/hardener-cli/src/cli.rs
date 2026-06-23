@@ -205,6 +205,38 @@ pub enum BatchAction {
         #[arg(long)]
         output: Option<String>,
     },
+
+    /// Apply hardening to selected hosts concurrently. Dry-run (validate only)
+    /// unless --execute is given.
+    Apply {
+        /// Apply to every host in the inventory.
+        #[arg(long, conflicts_with = "host")]
+        all: bool,
+
+        /// Inventory host name to apply (comma-separated or repeated).
+        #[arg(long, value_delimiter = ',')]
+        host: Vec<String>,
+
+        /// Ad-hoc host not in the inventory (user@host[:port], repeatable).
+        #[arg(long)]
+        ssh: Vec<String>,
+
+        /// Apply only these plugins (comma-separated or repeated). Default: all.
+        #[arg(long, value_delimiter = ',')]
+        plugin: Vec<String>,
+
+        /// Actually apply changes. Without this flag, runs a dry-run.
+        #[arg(long)]
+        execute: bool,
+
+        /// Maximum hosts applied in parallel.
+        #[arg(long, default_value_t = 8)]
+        concurrency: usize,
+
+        /// Write the report to a file instead of stdout.
+        #[arg(long)]
+        output: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
