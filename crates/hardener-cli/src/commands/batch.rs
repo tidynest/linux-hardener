@@ -16,6 +16,7 @@ use hardener_types::remote::{HostsConfig, RemoteHostProfile};
 use serde::Serialize;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Semaphore;
 use tracing::warn;
 
 /// Per-severity tally of one host's findings.
@@ -645,9 +646,8 @@ async fn run_on_all<T, F, Fut>(
 where
     T: Send + 'static,
     F: Fn(RemoteHostProfile) -> Fut + Send + Sync + 'static,
-    Fut: std::future::Future<Output = T> + Send,
+    Fut: std::future::Future<Output = T> + Send + 'static,
 {
-    use tokio::sync::Semaphore;
     let prefilled: Vec<T> = profiles.iter().map(&prefill).collect();
     let permits = Arc::new(Semaphore::new(concurrency.max(1)));
     let op = Arc::new(op);
@@ -724,6 +724,8 @@ pub struct BatchOptions {
 /// applies the global key fallback, and prints the progress line. Shared by all
 /// batch subcommands so the host-resolution path lives in one place. `verb` is
 /// the present participle shown in the progress line ("Scanning" / "Assessing").
+/// Note: SSH-config args (`global_key`, `global_no_verify`) are grouped before
+/// `quiet`/`verb`; their order differs slightly from `resolve_and_scan`.
 #[allow(clippy::too_many_arguments)]
 fn resolve_profiles(
     all: bool,
@@ -1465,6 +1467,32 @@ mod tests {
         )
         .await;
         assert_eq!(out, vec!["h0", "h1", "h2"], "results stay in input order");
+    }
+
+    #[test]
+    fn host_key_of_uses_name_for_inventory_and_target_for_adhoc() {
+        // Inventory host: friendly name differs from hostname -> keyed by name.
+        let inv = RemoteHostProfile {
+            name: "web1".into(),
+            hostname: "10.0.0.5".into(),
+            user: Some("admin".into()),
+            port: 22,
+            key_file: None,
+            host_key_checking: true,
+        };
+        assert_eq!(host_key_of(&inv, "root@10.0.0.5:22"), "web1");
+
+        // Ad-hoc host: name == hostname (set by parse_inline) -> keyed by the
+        // full target string so different users/ports remain distinct.
+        let adhoc = RemoteHostProfile {
+            name: "10.0.0.9".into(),
+            hostname: "10.0.0.9".into(),
+            user: Some("root".into()),
+            port: 22,
+            key_file: None,
+            host_key_checking: false,
+        };
+        assert_eq!(host_key_of(&adhoc, "root@10.0.0.9:22"), "root@10.0.0.9:22");
     }
 
     #[tokio::test]
