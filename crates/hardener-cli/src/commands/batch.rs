@@ -1761,6 +1761,13 @@ mod tests {
             .with_command("id", &["-u"], ok("1000\n"))
             .with_command("sudo", &["-n", "true"], fail);
         assert!(!is_privileged(&nope).await);
+
+        // id -u errors (transport/IO) and sudo also unavailable -> fail closed
+        let broken = MockExecutor::new();
+        assert!(
+            !is_privileged(&broken).await,
+            "errors from both probes must fail closed"
+        );
     }
 
     #[tokio::test]
