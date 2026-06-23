@@ -3,8 +3,9 @@
 //! Uses SQLite to store checkpoint metadata and file states.
 
 use hardener_common::error::{HardeningError, Result};
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePoolOptions};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 /// Default location for the checkpoint database.
 const DEFAULT_DB_PATH: &str = "/var/lib/linux-hardener/checkpoints.db";
@@ -103,7 +104,9 @@ pub async fn init_db(db_path: Option<&Path>) -> Result<SqlitePool> {
     // Configure SQLite connection
     let options = SqliteConnectOptions::new()
         .filename(&path)
-        .create_if_missing(true);
+        .create_if_missing(true)
+        .busy_timeout(Duration::from_secs(5))
+        .journal_mode(SqliteJournalMode::Wal);
 
     // Create connection pool
     let pool = SqlitePoolOptions::new()
@@ -152,6 +155,23 @@ pub async fn init_db(db_path: Option<&Path>) -> Result<SqlitePool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn checkpoints_pool_uses_wal_journal() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let pool = init_db(Some(&dir.path().join("checkpoints.db")))
+            .await
+            .expect("init checkpoints db");
+        let mode: String = sqlx::query_scalar("PRAGMA journal_mode")
+            .fetch_one(&pool)
+            .await
+            .expect("journal_mode pragma");
+        assert_eq!(
+            mode.to_lowercase(),
+            "wal",
+            "checkpoints pool must use WAL for concurrent batch capture"
+        );
+    }
 
     #[tokio::test]
     async fn init_db_migrates_legacy_checkpoints_without_host_key() {

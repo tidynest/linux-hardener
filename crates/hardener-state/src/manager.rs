@@ -45,6 +45,7 @@ struct CheckpointHeader<'a> {
 ///
 /// The CheckpointManager handles all operations related to checkpoints,
 /// including creating snapshots of file states and storing them in the database.
+#[derive(Clone)]
 pub struct CheckpointManager {
     /// Database connection pool.
     db_pool: SqlitePool,

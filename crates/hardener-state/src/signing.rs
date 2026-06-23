@@ -17,6 +17,7 @@ const ENCRYPTED_KEY_MAGIC: &[u8; 4] = b"LSH1";
 /// Supports both signing and verification-only modes.
 /// When only a public key is available, sign operations will fail
 /// but verification still works — providing trust separation (SAM-014).
+#[derive(Clone)]
 pub struct CheckpointSigner {
     signing_key: Option<SigningKey>,
     verifying_key: VerifyingKey,
