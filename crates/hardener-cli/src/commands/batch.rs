@@ -896,6 +896,66 @@ fn render_apply_json(outcomes: &[ApplyOutcome]) -> String {
     serde_json::to_string_pretty(outcomes).unwrap_or_else(|_| "[]".to_string())
 }
 
+/// One host's rollback outcome.
+#[derive(Clone, Debug, Serialize)]
+pub struct RollbackOutcome {
+    pub name: String,
+    pub target: String,
+    pub status: RollbackStatus,
+}
+
+/// Result of rolling back (or previewing) one host.
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "state", rename_all = "lowercase")]
+pub enum RollbackStatus {
+    /// Dry-run: `checkpoints` checkpoints would be restored.
+    Previewed { checkpoints: usize },
+    /// Execute: `restored` checkpoints fully restored, `failed` had a restore error.
+    RolledBack { restored: usize, failed: usize },
+    /// No matching checkpoint for the selected plugins on this host.
+    NothingToDo,
+    /// Host-level error (connect / not privileged / selection query / usage).
+    Failed { error: String },
+}
+
+/// 0 = all clean, 1 = a checkpoint restore failed, 2 = a host-level error.
+/// Precedence 2 > 1 > 0.
+pub fn rollback_exit_code(outcomes: &[RollbackOutcome]) -> i32 {
+    let mut code = 0;
+    for o in outcomes {
+        let c = match &o.status {
+            RollbackStatus::Failed { .. } => 2,
+            RollbackStatus::RolledBack { failed, .. } if *failed > 0 => 1,
+            _ => 0,
+        };
+        code = code.max(c);
+    }
+    code
+}
+
+fn render_rollback_text(outcomes: &[RollbackOutcome]) -> String {
+    let mut out = String::from("Host                          Result\n");
+    out.push_str("------------------------------------------------\n");
+    for o in outcomes {
+        let line = match &o.status {
+            RollbackStatus::Previewed { checkpoints } => {
+                format!("would restore {checkpoints} checkpoint(s)")
+            }
+            RollbackStatus::RolledBack { restored, failed } => {
+                format!("rolled back {restored} ok, {failed} failed")
+            }
+            RollbackStatus::NothingToDo => "nothing to roll back".to_string(),
+            RollbackStatus::Failed { error } => format!("ERROR: {error}"),
+        };
+        out.push_str(&format!("{:<30}{}\n", o.target, line));
+    }
+    out
+}
+
+fn render_rollback_json(outcomes: &[RollbackOutcome]) -> String {
+    serde_json::to_string_pretty(outcomes).unwrap_or_else(|_| "[]".to_string())
+}
+
 /// True if the executor's session is root (uid 0) or has passwordless sudo.
 ///
 /// Fails closed: any error from `id -u` or `sudo -n true` is treated as
@@ -1117,6 +1177,76 @@ mod tests {
     use super::*;
     use hardener_common::types::{FindingCategory, Severity};
     use hardener_compliance::Scenario;
+
+    fn ro(status: RollbackStatus) -> RollbackOutcome {
+        RollbackOutcome {
+            name: "n".to_string(),
+            target: "t".to_string(),
+            status,
+        }
+    }
+
+    #[test]
+    fn rollback_exit_code_follows_precedence() {
+        assert_eq!(
+            rollback_exit_code(&[ro(RollbackStatus::Previewed { checkpoints: 3 })]),
+            0
+        );
+        assert_eq!(rollback_exit_code(&[ro(RollbackStatus::NothingToDo)]), 0);
+        assert_eq!(
+            rollback_exit_code(&[ro(RollbackStatus::RolledBack {
+                restored: 2,
+                failed: 0
+            })]),
+            0
+        );
+        assert_eq!(
+            rollback_exit_code(&[ro(RollbackStatus::RolledBack {
+                restored: 1,
+                failed: 1
+            })]),
+            1
+        );
+        assert_eq!(
+            rollback_exit_code(&[ro(RollbackStatus::Failed {
+                error: "x".to_string()
+            })]),
+            2
+        );
+        assert_eq!(
+            rollback_exit_code(&[
+                ro(RollbackStatus::RolledBack {
+                    restored: 0,
+                    failed: 1
+                }),
+                ro(RollbackStatus::Failed {
+                    error: "x".to_string()
+                }),
+            ]),
+            2
+        );
+    }
+
+    #[test]
+    fn render_rollback_text_lists_each_host() {
+        let text = render_rollback_text(&[
+            ro(RollbackStatus::Previewed { checkpoints: 2 }),
+            ro(RollbackStatus::Failed {
+                error: "down".to_string(),
+            }),
+        ]);
+        assert!(text.contains("would restore 2"), "preview line: {text}");
+        assert!(text.contains("ERROR: down"), "error line: {text}");
+    }
+
+    #[test]
+    fn render_rollback_json_tags_state() {
+        let json = render_rollback_json(&[ro(RollbackStatus::RolledBack {
+            restored: 2,
+            failed: 0,
+        })]);
+        assert!(json.contains("\"state\": \"rolledback\""), "json: {json}");
+    }
 
     fn posture(failing: usize) -> FrameworkPosture {
         FrameworkPosture {
