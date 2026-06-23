@@ -193,7 +193,7 @@ Tiered exit status identical to
 .B batch apply
 Apply hardening to multiple hosts concurrently.
 .B Dry-run by default
-— validates each host and reports what would change without making any
+\(em validates each host and reports what would change without making any
 modifications.
 Pass
 .B \-\-execute
@@ -440,7 +440,10 @@ Overrides system-wide settings for the current user.
 .TP
 .I ~/.config/linux-hardener/hosts.toml
 Host inventory for
-.BR "batch scan" .
+.BR "batch scan" ,
+.BR "batch report" ,
+and
+.BR "batch apply" .
 Shared with the desktop GUI's host list; may also be hand-edited.
 .TP
 .I /var/lib/linux-hardener/
