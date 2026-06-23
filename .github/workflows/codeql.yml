@@ -14,19 +14,33 @@ permissions:
 
 jobs:
   analyze:
-    name: Analyze (Rust)
+    name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Parity with the previous default setup. All build-mode none:
+        # Rust extraction is source-based; the rest are interpreted.
+        include:
+          - language: rust
+            build-mode: none
+          - language: javascript-typescript
+            build-mode: none
+          - language: python
+            build-mode: none
+          - language: actions
+            build-mode: none
     steps:
       - uses: actions/checkout@v4
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
-          languages: rust
-          build-mode: none
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
           config-file: ./.github/codeql/codeql-config.yml
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
         with:
-          category: "/language:rust"
+          category: "/language:${{ matrix.language }}"
