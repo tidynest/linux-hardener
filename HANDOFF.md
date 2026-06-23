@@ -21,8 +21,8 @@
   non-privileged host; auto host-keyed checkpoints per host; per-host best-effort
   audit; tiered exit (0/1/2). Built on a generalized engine (`run_on_all<T>`) and
   a shared `apply_host` extracted from single-host `apply::run`. 13 commits
-  `0fc9f16..1721760`, FF-merged to `main`, branch deleted. **`main` is 13 ahead
-  of `origin` — PUSH PENDING** (one `git push origin main` hits github + gitlab).
+  `0fc9f16..1721760`, FF-merged to `main`, branch deleted. **PUSHED 2026-06-23**
+  to both remotes (github + gitlab `tidynest`); `main` == `origin` == `00b60c2`.
 - **Start here next:** `hardener batch rollback` (fleet-wide) and/or the desktop
   multi-host view (largest GUI slice). Both warrant their own brainstorm (real
   blast radius / large surface). Emergency per-host rollback already works:
