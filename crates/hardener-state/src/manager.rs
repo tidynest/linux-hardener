@@ -591,6 +591,21 @@ impl CheckpointManager {
         Ok(checkpoints)
     }
 
+    /// Returns, for each requested checkpoint name, the newest checkpoint with
+    /// that name captured from `host_key`. Names without a checkpoint on that
+    /// host are omitted. Order of the result follows `names`.
+    ///
+    /// # Errors
+    /// Returns an error if the database query fails.
+    pub async fn latest_named_for_host(
+        &self,
+        host_key: &str,
+        names: &[String],
+    ) -> Result<Vec<Checkpoint>> {
+        let all = self.list_checkpoints().await?;
+        Ok(select_latest_named(&all, host_key, names))
+    }
+
     /// Deletes a checkpoint and all its associated file states.
     ///
     /// # Arguments
@@ -890,6 +905,26 @@ impl CheckpointManager {
     }
 }
 
+/// Selects, per requested name, the newest checkpoint matching that name on the
+/// given host. Pure and order-independent (picks the maximum timestamp), so it
+/// does not depend on the caller's sort order. Names with no match are omitted.
+fn select_latest_named(
+    checkpoints: &[Checkpoint],
+    host_key: &str,
+    names: &[String],
+) -> Vec<Checkpoint> {
+    names
+        .iter()
+        .filter_map(|name| {
+            checkpoints
+                .iter()
+                .filter(|c| c.host_key.as_str() == host_key && c.checkpoint_name == *name)
+                .max_by_key(|c| c.checkpoint_timestamp)
+                .cloned()
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1053,6 +1088,73 @@ mod tests {
         let list = manager.list_checkpoints().await.expect("list_checkpoints");
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].host_key, "ssh://root@target");
+    }
+
+    fn cp(id: &str, name: &str, ts: i64, host: &str) -> Checkpoint {
+        Checkpoint {
+            checkpoint_id: CheckpointId::new(id.to_string()),
+            checkpoint_name: name.to_string(),
+            checkpoint_timestamp: ts,
+            checkpoint_username: "u".to_string(),
+            checkpoint_signature: vec![],
+            host_key: host.to_string(),
+        }
+    }
+
+    #[test]
+    fn select_latest_named_picks_newest_per_name_for_host() {
+        let all = vec![
+            cp("a", "ssh-hardening-pre-apply", 100, "ssh://root@h"),
+            cp("b", "ssh-hardening-pre-apply", 200, "ssh://root@h"),
+            cp("c", "kernel-hardening-pre-apply", 150, "ssh://root@h"),
+            cp("d", "ssh-hardening-pre-apply", 999, "ssh://root@other"),
+        ];
+        let names = vec![
+            "ssh-hardening-pre-apply".to_string(),
+            "kernel-hardening-pre-apply".to_string(),
+        ];
+        let got = select_latest_named(&all, "ssh://root@h", &names);
+        assert_eq!(got.len(), 2, "one checkpoint per matched name");
+        assert_eq!(
+            got[0].checkpoint_id.as_str(),
+            "b",
+            "newest ssh checkpoint on this host"
+        );
+        assert_eq!(got[1].checkpoint_id.as_str(), "c");
+    }
+
+    #[test]
+    fn select_latest_named_omits_unmatched_names_and_other_hosts() {
+        let all = vec![cp("a", "ssh-hardening-pre-apply", 100, "ssh://root@h")];
+        let names = vec![
+            "audit-hardening-pre-apply".to_string(),
+            "ssh-hardening-pre-apply".to_string(),
+        ];
+        let got = select_latest_named(&all, "ssh://root@nope", &names);
+        assert!(got.is_empty(), "no checkpoints for that host");
+    }
+
+    #[tokio::test]
+    async fn latest_named_for_host_reads_db() {
+        let exec = MockExecutor::new()
+            .remote()
+            .with_description("ssh://root@h")
+            .with_file("/etc/ssh/sshd_config", "Port 22\n");
+        let manager = test_manager().await;
+        manager
+            .create_checkpoint(
+                &exec,
+                "ssh-hardening-pre-apply",
+                &[std::path::Path::new("/etc/ssh/sshd_config")],
+            )
+            .await
+            .expect("create");
+        let got = manager
+            .latest_named_for_host("ssh://root@h", &["ssh-hardening-pre-apply".to_string()])
+            .await
+            .expect("select");
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].checkpoint_name, "ssh-hardening-pre-apply");
     }
 
     /// Builds a CheckpointManager with a custom allowlist containing `/etc/x`.
