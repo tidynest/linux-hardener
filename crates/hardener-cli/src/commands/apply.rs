@@ -36,6 +36,8 @@ pub(crate) async fn apply_host(
     format: &OutputFormat,
     quiet: bool,
 ) -> ApplyHostResult {
+    // Built per call (not shared): deterministic + gives each concurrent batch-apply
+    // host its own registry, since plugin instances aren't shared across tasks.
     let registry = create_plugin_registry();
 
     let mut ctx = match (dry_run, checkpoint) {
@@ -77,7 +79,8 @@ pub(crate) async fn apply_host(
         let metadata = plugin.metadata();
 
         if !quiet {
-            output::status(format, &format!("Applying: {}", metadata.plugin_name));
+            let verb = if dry_run { "Validating" } else { "Applying" };
+            output::status(format, &format!("{verb}: {}", metadata.plugin_name));
         }
 
         if dry_run {
@@ -257,8 +260,8 @@ mod tests {
         // Some plugins may error against a bare MockExecutor (missing files/commands);
         // assert we got at least one validation report and zero apply results.
         assert!(
-            result.validation_reports.len() >= 1,
-            "dry-run should produce at least one validation report"
+            !result.validation_reports.is_empty(),
+            "dry-run should validate at least one plugin (some plugins error on a bare MockExecutor)"
         );
     }
 }
