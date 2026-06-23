@@ -180,9 +180,17 @@ host's checkpoint onto another. The executor abstraction (`SystemExecutor`,
 into `hardener-common` (re-exported from core for source compatibility);
 `SystemExecutor` gained `read_dir`, `FileMetadata` gained `uid`/`gid`.
 
-Remaining slices (still pending): `batch apply` subcommand (now **unblocked**
-— can build on host-keyed, executor-aware checkpoints), and a desktop
-multi-host view.
+Batch apply slice — **Done.** `hardener batch apply` applies hardening across
+many hosts concurrently. Dry-run by default; `--execute` performs real changes.
+A per-host privilege probe (uid 0 or passwordless `sudo`) gates `--execute` and
+isolates non-privileged hosts as failed without aborting the rest. Each host
+that executes receives an automatic host-keyed checkpoint and a best-effort
+audit-log entry. Tiered exit: 0 all clean / 1 apply or validation failure /
+2 connect, privilege or usage error. Flags mirror `batch scan`.
+
+Remaining slices (still pending): fleet-wide `batch rollback`, and the desktop
+multi-host view. Emergency per-host rollback is available today via
+`sudo hardener --ssh <host> rollback`.
 
 **Follow-up (from review):** `finding_to_scan_finding` (now in `report.rs`)
 serialises `severity`/`category` to the history db via `{:?}` (Debug), which

@@ -404,6 +404,33 @@ hardener --ssh root@server report --framework cis --report-format pdf
 
 See [docs/SSH_REMOTE_SCANNING.md](docs/SSH_REMOTE_SCANNING.md) for complete SSH documentation.
 
+### Multi-host / Fleet Commands
+
+Batch subcommands run against many hosts concurrently using the inventory
+(`~/.config/linux-hardener/hosts.toml`) or ad-hoc `--ssh` targets.
+
+```bash
+# Scan all inventory hosts and emit JSON for CI
+hardener --format json batch scan --all
+
+# Scan two named hosts with higher parallelism
+hardener batch scan --host web-01,db-02 --concurrency 16
+
+# Assess the entire fleet against CIS and print a posture table
+hardener batch report --all --framework cis
+
+# Preview hardening across the fleet (dry-run — no changes made)
+hardener batch apply --all
+
+# Apply to two hosts, four at a time
+sudo hardener batch apply --host web-01,web-02 --execute --concurrency 4
+```
+
+`batch apply` is **dry-run by default**: it validates each host and reports what
+would change without making any modifications. Pass `--execute` to perform real
+changes. Each host is privilege-probed before executing; a host without uid 0 or
+passwordless `sudo` is isolated as failed while the rest proceed unaffected.
+
 ### Desktop Application
 
 1. Launch the application

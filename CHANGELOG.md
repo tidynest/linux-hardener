@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`hardener batch apply`** — apply hardening across many hosts concurrently.
+  Dry-run by default (validates each host and reports what would change); pass
+  `--execute` to perform real changes. Before executing on a host the command
+  probes for privilege (uid 0 or passwordless `sudo`); a non-privileged host is
+  isolated as failed while the others proceed. On `--execute` each host gets an
+  automatic host-keyed checkpoint and a best-effort audit-log entry. Tiered exit
+  codes: 0 all clean, 1 any apply or validation failure, 2 any connect, privilege
+  or usage error. Flags mirror `batch scan`: `--all`, `--host`, `--ssh`,
+  `--plugin`, `--concurrency`, `--format`, `--output`, `--quiet`.
 - **`hardener batch report`** — assess multiple hosts against a compliance
   framework or scenario in one concurrent run, printing a fleet posture table
   (host × framework → score and pass/fail/manual/N-A control counts) with a

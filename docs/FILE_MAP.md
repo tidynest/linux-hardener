@@ -60,7 +60,7 @@ pub struct ComplianceSummary { summary_total_controls, summary_passing, summary_
 | `src/commands/daemon.rs` | Daemon management commands | `start()`, `run_once()`, `status()` |
 | `src/commands/systemd.rs` | Systemd unit file commands | `generate()`, `install()`, `uninstall()`, `status()` |
 | `src/commands/history.rs` | Scan history commands | `list()`, `show()`, `export()`, `trends()`, `regressions()` |
-| `src/commands/batch.rs` | Multi-host concurrent scan/report/apply commands | `run_scan()`, `run_report()`, `BatchScanOptions`, `BatchReportOptions`, `resolve_and_scan()` |
+| `src/commands/batch.rs` | Multi-host concurrent scan/report/apply commands | `run_scan()`, `run_report()`, `run_apply()`, `BatchScanOptions`, `BatchReportOptions`, `BatchApplyOptions`, `resolve_and_scan()` |
 | `src/ssh_config.rs` | SSH connection config helper | `SshConnectionConfig` |
 | `src/commands/state.rs` | Shared state initialisation (DB + signing key paths) | `get_checkpoint_manager()`, `get_audit_logger()`, `effective_user()` |
 
