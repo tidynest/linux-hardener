@@ -34,8 +34,8 @@
   (`services-hardening-pre-apply`), so rollback was a **silent no-op for services**
   (false success). Fixed by aligning to the universal `{plugin_id}-pre-apply`
   convention + a writer-contract doc + a registry-wide regression test. 5 commits
-  `23cb59a..113f13b`, FF-merged to `main`, branch deleted. **NOT pushed** (push
-  left to you — SSH passphrases); `main` is **6 ahead of `origin`**. Full
+  `23cb59a..113f13b`, FF-merged to `main`, branch deleted. **PUSHED 2026-06-24**
+  to both remotes (github + gitlab `tidynest`); `main` == `origin` == `f68f70f`. Full
   `cargo test --workspace` 637 passed pre-fix; plugins+cli re-green post-fix;
   clippy `-D warnings` + fmt clean.
 - **Start here next:** the desktop multi-host view (largest GUI slice) — warrants
