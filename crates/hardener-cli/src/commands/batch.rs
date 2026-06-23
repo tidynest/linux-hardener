@@ -1054,6 +1054,8 @@ pub async fn run_apply(opts: BatchApplyOptions) -> anyhow::Result<()> {
         for o in &outcomes {
             let result = match &o.status {
                 ApplyStatus::Applied { failed: 0, .. } => ActionResult::Success,
+                // Defensive: execute-path statuses are Applied/Failed; this guards
+                // against a dry-run status ever being mis-logged as a failure.
                 ApplyStatus::Validated { .. } => continue,
                 _ => ActionResult::Failure,
             };

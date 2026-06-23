@@ -77,7 +77,7 @@ hardener \- comprehensive Linux security automation tool with multi-distribution
 .IR NAMES ]
 .RB [ \-\-ssh
 .IR USER@HOST ]
-.RB [ \-p
+.RB [ \-\-plugin
 .IR PLUGIN ]
 .RB [ \-\-execute ]
 .RB [ \-\-concurrency
@@ -403,7 +403,7 @@ Accepts an optional port suffix
 .RI ( user@host:port ).
 May be given multiple times.
 .TP
-.BR \-p ", " \-\-plugin " " \fIPLUGIN\fR
+.BI \-\-plugin " PLUGIN"
 Apply only the specified plugin.
 May be given multiple times.
 Omit to apply all plugins.
@@ -418,7 +418,7 @@ Maximum number of hosts to process in parallel.
 Default:
 .BR 8 .
 .TP
-.BR \-o ", " \-\-output " " \fIFILE\fR
+.BI \-\-output " FILE"
 Write the result to the specified file path instead of stdout.
 .PP
 Output honours the global
@@ -600,7 +600,7 @@ Apply the SSH plugin to an ad-hoc host and emit JSON output:
 .PP
 .RS
 .nf
-sudo hardener \-\-format json batch apply \-\-ssh admin@db\-03 \-p ssh \-\-execute
+sudo hardener \-\-format json batch apply \-\-ssh admin@db\-03 \-\-plugin ssh \-\-execute
 .fi
 .RE
 .PP
