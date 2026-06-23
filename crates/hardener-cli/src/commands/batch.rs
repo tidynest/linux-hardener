@@ -793,6 +793,115 @@ async fn resolve_and_scan(
     scan_all(profiles, concurrency, global_timeout, history).await
 }
 
+/// One host's apply/validate outcome.
+#[derive(Clone, Debug, Serialize)]
+pub struct ApplyOutcome {
+    pub name: String,
+    pub target: String,
+    pub status: ApplyStatus,
+}
+
+/// Result of applying (or validating) one host.
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "state", rename_all = "lowercase")]
+#[allow(dead_code)] // variants fully used by run_apply (Task 6)
+pub enum ApplyStatus {
+    /// Dry-run: validated `plugins` plugins, `would_change` pending changes,
+    /// `failed` plugins whose validation errored.
+    Validated {
+        plugins: usize,
+        would_change: usize,
+        failed: usize,
+    },
+    /// Execute: `ok` plugins applied, `failed` did not.
+    Applied { ok: usize, failed: usize },
+    /// Host-level error (connect / not privileged / usage).
+    Failed { error: String },
+}
+
+/// 0 = all clean, 1 = an apply/validation failure, 2 = a host-level error.
+/// Precedence 2 > 1 > 0.
+// used by run_apply (Task 6)
+#[allow(dead_code)]
+pub fn apply_exit_code(outcomes: &[ApplyOutcome]) -> i32 {
+    let mut code = 0;
+    for o in outcomes {
+        let c = match &o.status {
+            ApplyStatus::Failed { .. } => 2,
+            ApplyStatus::Applied { failed, .. } if *failed > 0 => 1,
+            ApplyStatus::Validated { failed, .. } if *failed > 0 => 1,
+            _ => 0,
+        };
+        code = code.max(c);
+    }
+    code
+}
+
+/// Maps an `ApplyHostResult` to a host `ApplyStatus`. `execute` = true means the
+/// real apply path; false = dry-run (validation reports).
+// used by run_apply (Task 6)
+#[allow(dead_code)]
+fn status_from_result(execute: bool, result: &super::apply::ApplyHostResult) -> ApplyStatus {
+    if execute {
+        let ok = result
+            .results
+            .iter()
+            .filter(|(_, r)| r.apply_success)
+            .count();
+        ApplyStatus::Applied {
+            ok,
+            failed: result.results.len() - ok,
+        }
+    } else {
+        let plugins = result.validation_reports.len();
+        let would_change = result
+            .validation_reports
+            .iter()
+            .map(|r| r.validation_report_estimated_changes.len())
+            .sum();
+        let failed = result
+            .validation_reports
+            .iter()
+            .filter(|r| !r.validation_report_is_valid)
+            .count();
+        ApplyStatus::Validated {
+            plugins,
+            would_change,
+            failed,
+        }
+    }
+}
+
+// used by run_apply (Task 6)
+#[allow(dead_code)]
+fn render_apply_text(outcomes: &[ApplyOutcome]) -> String {
+    let mut out = String::from("Host                          Result\n");
+    out.push_str("------------------------------------------------\n");
+    for o in outcomes {
+        let line = match &o.status {
+            ApplyStatus::Validated {
+                plugins,
+                would_change,
+                failed,
+            } => {
+                format!(
+                    "validated {plugins} plugin(s), {would_change} change(s) pending, {failed} failed"
+                )
+            }
+            ApplyStatus::Applied { ok, failed } => format!("applied {ok} ok, {failed} failed"),
+            ApplyStatus::Failed { error } => format!("ERROR: {error}"),
+        };
+        out.push_str(&format!("{:<30}{}\n", o.target, line));
+    }
+    out
+}
+
+// used by run_apply (Task 6)
+#[allow(dead_code)]
+fn render_apply_json(outcomes: &[ApplyOutcome]) -> String {
+    serde_json::to_string_pretty(outcomes).unwrap_or_else(|_| "[]".to_string())
+}
+
 /// CLI entry point for `hardener batch scan`.
 pub async fn run(opts: BatchOptions) -> anyhow::Result<()> {
     let outcomes = resolve_and_scan(
@@ -1493,6 +1602,62 @@ mod tests {
             host_key_checking: false,
         };
         assert_eq!(host_key_of(&adhoc, "root@10.0.0.9:22"), "root@10.0.0.9:22");
+    }
+
+    #[test]
+    fn apply_exit_code_precedence() {
+        let mk = |status| ApplyOutcome {
+            name: "h".into(),
+            target: "h".into(),
+            status,
+        };
+        assert_eq!(
+            apply_exit_code(&[mk(ApplyStatus::Applied { ok: 3, failed: 0 })]),
+            0
+        );
+        assert_eq!(
+            apply_exit_code(&[mk(ApplyStatus::Validated {
+                plugins: 3,
+                would_change: 1,
+                failed: 0
+            })]),
+            0
+        );
+        assert_eq!(
+            apply_exit_code(&[mk(ApplyStatus::Applied { ok: 2, failed: 1 })]),
+            1
+        );
+        assert_eq!(
+            apply_exit_code(&[mk(ApplyStatus::Validated {
+                plugins: 2,
+                would_change: 0,
+                failed: 1
+            })]),
+            1
+        );
+        assert_eq!(
+            apply_exit_code(&[
+                mk(ApplyStatus::Applied { ok: 0, failed: 2 }),
+                mk(ApplyStatus::Failed {
+                    error: "connect".into()
+                }),
+            ]),
+            2
+        );
+    }
+
+    #[test]
+    fn render_apply_json_has_state_tags() {
+        let out = render_apply_json(&[ApplyOutcome {
+            name: "web".into(),
+            target: "root@web".into(),
+            status: ApplyStatus::Applied { ok: 5, failed: 0 },
+        }]);
+        assert!(
+            out.contains("\"state\": \"applied\""),
+            "json tags the status state: {out}"
+        );
+        assert!(out.contains("\"ok\": 5"));
     }
 
     #[tokio::test]
