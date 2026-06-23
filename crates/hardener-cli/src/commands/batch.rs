@@ -605,16 +605,7 @@ async fn scan_one(
     history: Option<Arc<ScanHistoryManager>>,
 ) -> HostOutcome {
     let target = display_target(&profile);
-    // host_key: inventory hosts have a friendly name; ad-hoc hosts (parse_inline)
-    // set name == hostname, so fall back to the user@host:port target for those.
-    // Limitation: an inventory host deliberately named after its own hostname
-    // (name == hostname, e.g. "10.0.0.1") is indistinguishable from an ad-hoc
-    // host and so is keyed by user@host:port rather than the bare name.
-    let host_key = if profile.name == profile.hostname {
-        target.clone()
-    } else {
-        profile.name.clone()
-    };
+    let host_key = host_key_of(&profile, &target);
     match SshExecutor::connect(host_ssh_config(&profile, timeout)).await {
         Ok(exec) => {
             scan_with_executor(profile.name, target, host_key, Arc::new(exec), history).await
@@ -629,20 +620,64 @@ async fn scan_one(
     }
 }
 
-/// Overlays completed `(index, outcome)` results onto the input-ordered pre-fill.
+/// Overlays completed `(index, T)` results onto the input-ordered pre-fill.
 /// Slots whose task never reported (panicked/dropped) keep their placeholder, so
 /// the result is always input-length and in input order regardless of completion
 /// order.
-fn assemble_ordered(
-    mut prefill: Vec<HostOutcome>,
-    completed: Vec<(usize, HostOutcome)>,
-) -> Vec<HostOutcome> {
+fn assemble_ordered<T>(mut prefill: Vec<T>, completed: Vec<(usize, T)>) -> Vec<T> {
     for (idx, outcome) in completed {
         if let Some(slot) = prefill.get_mut(idx) {
             *slot = outcome;
         }
     }
     prefill
+}
+
+/// Runs `op` on every profile with at most `concurrency` concurrent tasks,
+/// preserving input order in the returned vec. `prefill` produces the
+/// placeholder value for each profile (shown if the task panics or is dropped).
+async fn run_on_all<T, F, Fut>(
+    profiles: Vec<RemoteHostProfile>,
+    concurrency: usize,
+    prefill: impl Fn(&RemoteHostProfile) -> T,
+    op: F,
+) -> Vec<T>
+where
+    T: Send + 'static,
+    F: Fn(RemoteHostProfile) -> Fut + Send + Sync + 'static,
+    Fut: std::future::Future<Output = T> + Send,
+{
+    use tokio::sync::Semaphore;
+    let prefilled: Vec<T> = profiles.iter().map(&prefill).collect();
+    let permits = Arc::new(Semaphore::new(concurrency.max(1)));
+    let op = Arc::new(op);
+    let mut set = tokio::task::JoinSet::new();
+    for (idx, profile) in profiles.into_iter().enumerate() {
+        let permits = permits.clone();
+        let op = op.clone();
+        set.spawn(async move {
+            let _permit = permits.acquire_owned().await.expect("semaphore open");
+            (idx, op(profile).await)
+        });
+    }
+    let mut completed: Vec<(usize, T)> = Vec::new();
+    while let Some(res) = set.join_next().await {
+        if let Ok(pair) = res {
+            completed.push(pair);
+        }
+    }
+    assemble_ordered(prefilled, completed)
+}
+
+/// Returns the history key for a profile: inventory hosts use their friendly
+/// `name`; ad-hoc hosts (where `name == hostname`) use the `user@host:port`
+/// target string so the key is unambiguous across different SSH users/ports.
+fn host_key_of(profile: &RemoteHostProfile, target: &str) -> String {
+    if profile.name == profile.hostname {
+        target.to_string()
+    } else {
+        profile.name.clone()
+    }
 }
 
 /// Scans all profiles with at most `concurrency` running at once, preserving the
@@ -653,36 +688,22 @@ async fn scan_all(
     timeout: u64,
     history: Option<Arc<ScanHistoryManager>>,
 ) -> Vec<HostOutcome> {
-    use tokio::sync::Semaphore;
-    // Pre-fill every slot so a panicked task surfaces as a visible Failed host
-    // rather than silently vanishing (which would desync the rollup count).
-    let prefill: Vec<HostOutcome> = profiles
-        .iter()
-        .map(|p| HostOutcome {
+    run_on_all(
+        profiles,
+        concurrency,
+        |p| HostOutcome {
             name: p.name.clone(),
             target: display_target(p),
             status: HostStatus::Failed {
                 error: "scan task did not complete".to_string(),
             },
-        })
-        .collect();
-    let permits = Arc::new(Semaphore::new(concurrency.max(1)));
-    let mut set = tokio::task::JoinSet::new();
-    for (idx, profile) in profiles.into_iter().enumerate() {
-        let permits = permits.clone();
-        let history = history.clone();
-        set.spawn(async move {
-            let _permit = permits.acquire_owned().await.expect("semaphore open");
-            (idx, scan_one(profile, timeout, history).await)
-        });
-    }
-    let mut completed: Vec<(usize, HostOutcome)> = Vec::new();
-    while let Some(res) = set.join_next().await {
-        if let Ok(pair) = res {
-            completed.push(pair);
-        }
-    }
-    assemble_ordered(prefill, completed)
+        },
+        move |profile| {
+            let history = history.clone();
+            async move { scan_one(profile, timeout, history).await }
+        },
+    )
+    .await
 }
 
 /// Options for `hardener batch scan`.
@@ -699,23 +720,20 @@ pub struct BatchOptions {
     pub global_no_verify: bool,
 }
 
-/// Resolves the selected host profiles (inventory + inline `--ssh`), applies the
-/// global key fallback, then scans them all concurrently with best-effort history
-/// persistence. Shared by `batch scan` and `batch report` so the host-resolution
-/// path lives in one place. `verb` is the present participle shown in the
-/// progress line ("Scanning" / "Assessing").
+/// Resolves the selected host profiles from inventory + inline `--ssh` flags,
+/// applies the global key fallback, and prints the progress line. Shared by all
+/// batch subcommands so the host-resolution path lives in one place. `verb` is
+/// the present participle shown in the progress line ("Scanning" / "Assessing").
 #[allow(clippy::too_many_arguments)]
-async fn resolve_and_scan(
+fn resolve_profiles(
     all: bool,
     host: &[String],
     ssh: &[String],
-    concurrency: usize,
-    quiet: bool,
     global_key: Option<String>,
-    global_timeout: u64,
     global_no_verify: bool,
+    quiet: bool,
     verb: &str,
-) -> Vec<HostOutcome> {
+) -> Vec<RemoteHostProfile> {
     let inventory = match hardener_core::inventory::load() {
         Ok(inv) => inv,
         Err(e) => {
@@ -751,6 +769,24 @@ async fn resolve_and_scan(
         eprintln!("{verb} {} host(s)...", profiles.len());
     }
 
+    profiles
+}
+
+/// Resolves hosts, opens history, and scans them all concurrently. Shared entry
+/// point for `batch scan` and `batch report`.
+#[allow(clippy::too_many_arguments)]
+async fn resolve_and_scan(
+    all: bool,
+    host: &[String],
+    ssh: &[String],
+    concurrency: usize,
+    quiet: bool,
+    global_key: Option<String>,
+    global_timeout: u64,
+    global_no_verify: bool,
+    verb: &str,
+) -> Vec<HostOutcome> {
+    let profiles = resolve_profiles(all, host, ssh, global_key, global_no_verify, quiet, verb);
     let history = open_batch_history().await;
     scan_all(profiles, concurrency, global_timeout, history).await
 }
@@ -1407,6 +1443,28 @@ mod tests {
         assert_eq!(sessions.len(), 1, "one session persisted for the host");
         assert_eq!(sessions[0].host_identifier, "web-01");
         assert_eq!(sessions[0].status, "completed");
+    }
+
+    #[tokio::test]
+    async fn run_on_all_preserves_order_and_prefill() {
+        let profiles: Vec<RemoteHostProfile> = (0..3)
+            .map(|i| RemoteHostProfile {
+                name: format!("h{i}"),
+                hostname: format!("h{i}"),
+                user: None,
+                port: 22,
+                key_file: None,
+                host_key_checking: true,
+            })
+            .collect();
+        let out = run_on_all(
+            profiles,
+            2,
+            |p| format!("missing:{}", p.name),
+            |p| async move { p.name.clone() },
+        )
+        .await;
+        assert_eq!(out, vec!["h0", "h1", "h2"], "results stay in input order");
     }
 
     #[tokio::test]
