@@ -10,10 +10,13 @@ use hardener_common::types::{PluginId, Severity};
 use hardener_compliance::{ReportConfig, ReportGenerator};
 use hardener_core::plugin::Finding;
 use hardener_core::{ConfigLoader, HardenerConfig};
-use hardener_core::{PluginMetadata, SshExecutor, executor::SystemExecutor};
+use hardener_core::{
+    PluginMetadata, SshExecutor,
+    executor::{SystemExecutor, host_key_for},
+};
 use hardener_scheduler::ScanHistoryManager;
 use hardener_scheduler::db::ScanFinding;
-use hardener_state::{ActionResult, ActionType, CheckpointManager};
+use hardener_state::{ActionResult, ActionType, Checkpoint, CheckpointManager};
 use hardener_types::ComplianceReport;
 use hardener_types::remote::{HostsConfig, RemoteHostProfile};
 use serde::Serialize;
@@ -1035,6 +1038,75 @@ fn resolve_plugin_ids(filter: &[String]) -> Vec<PluginId> {
     super::apply::expand_plugin_ids(&all, filter)
 }
 
+/// Maps plugin ids to their apply-checkpoint names. Apply captures each plugin's
+/// pre-change state under `{plugin_id}-pre-apply` (e.g. "ssh-hardening-pre-apply"),
+/// so that is the name rollback selects per plugin.
+fn pre_apply_names(plugin_ids: &[PluginId]) -> Vec<String> {
+    plugin_ids
+        .iter()
+        .map(|id| format!("{}-pre-apply", id.as_str()))
+        .collect()
+}
+
+/// Connects to one host, probes privilege (execute path only), selects each
+/// plugin's latest pre-apply checkpoint, and restores them (or previews).
+async fn rollback_one(
+    profile: RemoteHostProfile,
+    timeout: u64,
+    execute: bool,
+    names: Arc<Vec<String>>,
+    mgr: CheckpointManager,
+) -> RollbackOutcome {
+    let name = profile.name.clone();
+    let target = display_target(&profile);
+    let fail_with = |error: String| RollbackOutcome {
+        name: name.clone(),
+        target: target.clone(),
+        status: RollbackStatus::Failed { error },
+    };
+
+    let exec: Arc<dyn SystemExecutor> =
+        match SshExecutor::connect(host_ssh_config(&profile, timeout)).await {
+            Ok(e) => Arc::new(e),
+            Err(e) => return fail_with(e.to_string()),
+        };
+    if execute && !is_privileged(exec.as_ref()).await {
+        return fail_with(format!(
+            "not privileged on {target} (need uid 0 or passwordless sudo)"
+        ));
+    }
+
+    let host_key = host_key_for(exec.as_ref());
+    let selected: Vec<Checkpoint> = match mgr.latest_named_for_host(&host_key, &names).await {
+        Ok(v) => v,
+        Err(e) => return fail_with(e.to_string()),
+    };
+
+    let status = if selected.is_empty() {
+        RollbackStatus::NothingToDo
+    } else if !execute {
+        RollbackStatus::Previewed {
+            checkpoints: selected.len(),
+        }
+    } else {
+        let mut restored = 0;
+        let mut failed = 0;
+        for cp in &selected {
+            match mgr.rollback(exec.as_ref(), &cp.checkpoint_id).await {
+                Ok(r) if r.rollback_success => restored += 1,
+                _ => failed += 1,
+            }
+        }
+        RollbackStatus::RolledBack { restored, failed }
+    };
+
+    RollbackOutcome {
+        name,
+        target,
+        status,
+    }
+}
+
 /// Options for `hardener batch apply`.
 pub struct BatchApplyOptions {
     pub all: bool,
@@ -1143,6 +1215,99 @@ pub async fn run_apply(opts: BatchApplyOptions) -> anyhow::Result<()> {
     std::process::exit(apply_exit_code(&outcomes));
 }
 
+/// Options for `hardener batch rollback`.
+pub struct BatchRollbackOptions {
+    pub all: bool,
+    pub host: Vec<String>,
+    pub ssh: Vec<String>,
+    pub plugin: Vec<String>,
+    pub execute: bool,
+    pub concurrency: usize,
+    pub format: CliOutputFormat,
+    pub output: Option<String>,
+    pub quiet: bool,
+    pub global_key: Option<String>,
+    pub global_timeout: u64,
+    pub global_no_verify: bool,
+}
+
+/// CLI entry point for `hardener batch rollback`. Dry-run unless `--execute`.
+pub async fn run_rollback(opts: BatchRollbackOptions) -> anyhow::Result<()> {
+    let verb = if opts.execute {
+        "Rolling back"
+    } else {
+        "Previewing rollback for"
+    };
+    let profiles = resolve_profiles(
+        opts.all,
+        &opts.host,
+        &opts.ssh,
+        opts.global_key,
+        opts.global_no_verify,
+        opts.quiet,
+        verb,
+    );
+    if opts.execute && !opts.quiet {
+        eprintln!("--execute: rolling back {} host(s)", profiles.len());
+    }
+
+    let names = Arc::new(pre_apply_names(&resolve_plugin_ids(&opts.plugin)));
+    let mgr = get_checkpoint_manager().await?;
+    let timeout = opts.global_timeout;
+    let execute = opts.execute;
+
+    let outcomes = run_on_all(
+        profiles,
+        opts.concurrency,
+        |p| RollbackOutcome {
+            name: p.name.clone(),
+            target: display_target(p),
+            status: RollbackStatus::Failed {
+                error: "rollback task did not complete".to_string(),
+            },
+        },
+        move |profile| {
+            let names = names.clone();
+            let mgr = mgr.clone();
+            async move { rollback_one(profile, timeout, execute, names, mgr).await }
+        },
+    )
+    .await;
+
+    // Best-effort per-host audit (execute path only), sequential on a shared logger.
+    if execute && let Some(logger) = get_audit_logger().await {
+        let user = effective_user();
+        for o in &outcomes {
+            let result = match &o.status {
+                RollbackStatus::RolledBack { failed: 0, .. } => ActionResult::Success,
+                // Nothing-to-do and dry-run previews are not failures and not logged.
+                RollbackStatus::NothingToDo | RollbackStatus::Previewed { .. } => continue,
+                _ => ActionResult::Failure,
+            };
+            let _ = logger
+                .log_action(
+                    ActionType::Rollback,
+                    user.clone(),
+                    format!("rollback @ {}", o.target),
+                    result,
+                )
+                .await;
+        }
+    }
+
+    let rendered = match opts.format {
+        CliOutputFormat::Json => render_rollback_json(&outcomes),
+        _ => render_rollback_text(&outcomes),
+    };
+    match opts.output {
+        Some(path) => {
+            std::fs::write(&path, &rendered).map_err(|e| anyhow!("failed to write {path}: {e}"))?
+        }
+        None => println!("{rendered}"),
+    }
+    std::process::exit(rollback_exit_code(&outcomes));
+}
+
 /// CLI entry point for `hardener batch scan`.
 pub async fn run(opts: BatchOptions) -> anyhow::Result<()> {
     let outcomes = resolve_and_scan(
@@ -1246,6 +1411,21 @@ mod tests {
             failed: 0,
         })]);
         assert!(json.contains("\"state\": \"rolledback\""), "json: {json}");
+    }
+
+    #[test]
+    fn pre_apply_names_maps_ids_to_checkpoint_names() {
+        let ids = vec![
+            PluginId::new("ssh-hardening"),
+            PluginId::new("kernel-hardening"),
+        ];
+        assert_eq!(
+            pre_apply_names(&ids),
+            vec![
+                "ssh-hardening-pre-apply".to_string(),
+                "kernel-hardening-pre-apply".to_string(),
+            ]
+        );
     }
 
     fn posture(failing: usize) -> FrameworkPosture {

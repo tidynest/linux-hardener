@@ -205,6 +205,34 @@ async fn main() -> Result<()> {
                 })
                 .await
             }
+            BatchAction::Rollback {
+                all,
+                host,
+                ssh,
+                plugin,
+                execute,
+                concurrency,
+                output,
+            } => {
+                commands::batch::run_rollback(commands::batch::BatchRollbackOptions {
+                    all,
+                    host,
+                    ssh,
+                    plugin,
+                    execute,
+                    concurrency,
+                    format: cli.format,
+                    output,
+                    quiet: cli.quiet,
+                    global_key: cli
+                        .ssh_key
+                        .as_ref()
+                        .map(|p| p.to_string_lossy().to_string()),
+                    global_timeout: cli.ssh_timeout,
+                    global_no_verify: cli.ssh_no_verify,
+                })
+                .await
+            }
         },
         Command::Daemon { action } => match action {
             DaemonAction::Start => commands::daemon::start(cli.format, cli.quiet).await,

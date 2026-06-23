@@ -237,6 +237,38 @@ pub enum BatchAction {
         #[arg(long)]
         output: Option<String>,
     },
+
+    /// Roll back selected hosts to their latest per-plugin checkpoint
+    /// concurrently. Dry-run (preview only) unless --execute is given.
+    Rollback {
+        /// Roll back every host in the inventory.
+        #[arg(long, conflicts_with = "host")]
+        all: bool,
+
+        /// Inventory host name to roll back (comma-separated or repeated).
+        #[arg(long, value_delimiter = ',')]
+        host: Vec<String>,
+
+        /// Ad-hoc host not in the inventory (user@host[:port], repeatable).
+        #[arg(long)]
+        ssh: Vec<String>,
+
+        /// Roll back only these plugins (comma-separated or repeated). Default: all.
+        #[arg(long, value_delimiter = ',')]
+        plugin: Vec<String>,
+
+        /// Actually restore. Without this flag, runs a dry-run preview.
+        #[arg(long)]
+        execute: bool,
+
+        /// Maximum hosts rolled back in parallel.
+        #[arg(long, default_value_t = 8)]
+        concurrency: usize,
+
+        /// Write the report to a file instead of stdout.
+        #[arg(long)]
+        output: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
