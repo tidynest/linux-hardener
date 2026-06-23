@@ -972,16 +972,7 @@ fn resolve_plugin_ids(filter: &[String]) -> Vec<PluginId> {
     if filter.is_empty() {
         return all.iter().map(|m| m.plugin_id.clone()).collect();
     }
-    filter
-        .iter()
-        .filter_map(|f| {
-            all.iter()
-                .find(|p| {
-                    p.plugin_id.as_str() == f || p.plugin_id.as_str().starts_with(&format!("{f}-"))
-                })
-                .map(|p| p.plugin_id.clone())
-        })
-        .collect()
+    super::apply::expand_plugin_ids(&all, filter)
 }
 
 /// Options for `hardener batch apply`.
@@ -1011,7 +1002,7 @@ pub async fn run_apply(opts: BatchApplyOptions) -> anyhow::Result<()> {
         opts.all,
         &opts.host,
         &opts.ssh,
-        opts.global_key.clone(),
+        opts.global_key,
         opts.global_no_verify,
         opts.quiet,
         verb,
@@ -1021,7 +1012,15 @@ pub async fn run_apply(opts: BatchApplyOptions) -> anyhow::Result<()> {
     }
 
     let plugin_ids = Arc::new(resolve_plugin_ids(&opts.plugin));
-    let config = Arc::new(ConfigLoader::new().load().unwrap_or_default());
+    let config = Arc::new(match ConfigLoader::new().load() {
+        Ok(c) => c,
+        Err(e) => {
+            if !opts.quiet {
+                eprintln!("config load failed, using defaults: {e}");
+            }
+            HardenerConfig::default()
+        }
+    });
     let checkpoint = if opts.execute {
         Some(get_checkpoint_manager().await?)
     } else {
