@@ -402,8 +402,10 @@ impl HardeningPlugin for ServicesHardeningPlugin {
             Path::new("/etc/systemd/system"),
             Path::new("/usr/lib/systemd/system"),
         ];
+        // Name follows the `{plugin_id}-pre-apply` convention so `hardener batch
+        // rollback` (which derives the name from the plugin id) can select it.
         let checkpoint_id =
-            crate::create_checkpoint_for_apply(ctx, "services-hardening-pre-apply", &service_paths)
+            crate::create_checkpoint_for_apply(ctx, "service-minimisation-pre-apply", &service_paths)
                 .await?;
 
         if checkpoint_id.is_some() {

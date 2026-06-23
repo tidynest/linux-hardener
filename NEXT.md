@@ -190,7 +190,7 @@ audit-log entry. Tiered exit: 0 all clean / 1 apply or validation failure /
 
 Batch rollback slice — **Done.** `hardener batch rollback` rolls back many hosts
 concurrently to their latest per-plugin checkpoint
-(`<plugin>-hardening-pre-apply`). Dry-run by default; `--execute` restores. Same
+(`<plugin-id>-pre-apply`). Dry-run by default; `--execute` restores. Same
 per-host privilege probe and isolation as `batch apply`; restores reuse the
 host-keyed checkpoints (a checkpoint is never restored onto a different host) and
 write a best-effort audit entry. Tiered exit: 0 all clean / 1 a checkpoint

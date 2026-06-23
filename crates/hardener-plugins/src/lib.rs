@@ -50,7 +50,9 @@ pub fn rollback_files_from_checkpoint(
 ///
 /// # Arguments
 /// * `ctx` - Execution context containing the checkpoint manager
-/// * `checkpoint_name` - Human-readable name for the checkpoint
+/// * `checkpoint_name` - Checkpoint name. MUST be `{plugin_id}-pre-apply` so
+///   `hardener batch rollback` (which derives this name from the plugin id) can
+///   select it; a mismatch makes rollback a silent no-op for that plugin.
 /// * `file_paths` - List of file paths to capture in the checkpoint
 pub async fn create_checkpoint_for_apply(
     ctx: &hardener_core::Context,

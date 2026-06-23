@@ -1428,6 +1428,33 @@ mod tests {
         );
     }
 
+    #[test]
+    fn pre_apply_names_covers_every_registered_plugin() {
+        // Guards the writer<->reader naming contract: rollback derives each
+        // plugin's checkpoint name as `{plugin_id}-pre-apply`, which every
+        // plugin's apply path must honour (see create_checkpoint_for_apply).
+        // Regression for the services plugin, whose id (`service-minimisation`)
+        // does not follow the `<x>-hardening` shape and once mismatched its
+        // checkpoint name (`services-hardening-pre-apply`), making rollback a
+        // silent no-op for it.
+        let registry = hardener_plugins::create_plugin_registry();
+        let ids: Vec<PluginId> = registry
+            .list()
+            .unwrap_or_default()
+            .iter()
+            .map(|m| m.plugin_id.clone())
+            .collect();
+        assert!(!ids.is_empty(), "registry should list plugins");
+        let names = pre_apply_names(&ids);
+        for (id, name) in ids.iter().zip(&names) {
+            assert_eq!(name, &format!("{}-pre-apply", id.as_str()));
+        }
+        assert!(
+            names.iter().any(|n| n == "service-minimisation-pre-apply"),
+            "services plugin must be covered by rollback selection: {names:?}"
+        );
+    }
+
     fn posture(failing: usize) -> FrameworkPosture {
         FrameworkPosture {
             framework: "CIS".into(),

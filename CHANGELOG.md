@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or usage error. Flags mirror `batch scan`: `--all`, `--host`, `--ssh`,
   `--plugin`, `--concurrency`, `--format`, `--output`, `--quiet`.
 - **`hardener batch rollback`** — roll back many hosts concurrently to their
-  latest per-plugin checkpoint (`<plugin>-hardening-pre-apply`). Dry-run by
+  latest per-plugin checkpoint (`<plugin-id>-pre-apply`). Dry-run by
   default (previews per host which checkpoint(s) would be restored); pass
   `--execute` to restore. Before executing on a host it probes for privilege
   (uid 0 or passwordless `sudo`) and isolates a non-privileged host as failed
