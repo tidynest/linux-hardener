@@ -83,9 +83,9 @@ ignore = [
     { id = "RUSTSEC-2024-0418", reason = "gtk3 binding unmaintained (EOL); transitive via wry->tauri" },
     { id = "RUSTSEC-2024-0419", reason = "gtk3 binding unmaintained (EOL); transitive via wry->tauri" },
     { id = "RUSTSEC-2024-0420", reason = "gtk3 binding unmaintained (EOL); transitive via wry->tauri" },
-    { id = "RUSTSEC-2024-0429", reason = "glib VariantStrIter unsoundness; transitive via gtk3 stack, no fix" },
     # Unmaintained transitive utility/macro crates — no first-party usage, no drop-in replacement.
     { id = "RUSTSEC-2024-0370", reason = "proc-macro-error unmaintained; transitive build/macro dep" },
+    { id = "RUSTSEC-2026-0173", reason = "proc-macro-error2 unmaintained (fork of 2024-0370, also EOL); no safe upgrade; transitive via leptos macro stack, no first-party usage" },
     { id = "RUSTSEC-2024-0436", reason = "paste unmaintained; transitive macro dep" },
     { id = "RUSTSEC-2025-0057", reason = "fxhash unmaintained; transitive, non-cryptographic hashing" },
     { id = "RUSTSEC-2025-0075", reason = "unic-char-range unmaintained; transitive via idna" },
@@ -93,8 +93,6 @@ ignore = [
     { id = "RUSTSEC-2025-0081", reason = "unic-char-property unmaintained; transitive via idna" },
     { id = "RUSTSEC-2025-0098", reason = "unic-ucd-version unmaintained; transitive via idna" },
     { id = "RUSTSEC-2025-0100", reason = "unic-ucd-ident unmaintained; transitive via idna" },
-    # rand rng() unsoundness (unsound class, not a vulnerability) — monitor for upstream fix.
-    { id = "RUSTSEC-2026-0097", reason = "rand rng() unsoundness with custom logger; awaiting upstream fix" },
 ]
 # If this is true, then cargo deny will use the git executable to fetch advisory database.
 # If this is false, then it uses a built-in git library.

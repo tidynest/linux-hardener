@@ -148,6 +148,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hipaa,gdpr}.rs`) and the `AUTOMATED_FRAMEWORKS` / `is_automated` API, replaced
   by coverage-derived catalogues and per-control coverage (see above).
 
+### Security
+- **RUSTSEC-2026-0185** — Updated `quinn-proto` 0.11.14 → 0.11.15 (remote memory
+  exhaustion, CVSS 7.5: unbounded out-of-order QUIC stream reassembly; pulled
+  transitively).
+- **RUSTSEC-2026-0173** — `proc-macro-error2` flagged unmaintained with no safe
+  upgrade; accepted in `deny.toml`. Compile-time-only proc-macro, transitive via
+  the Leptos macro stack (`leptos_macro`/`leptos_router`/`rstml`), no runtime
+  attack surface.
+- Pruned two stale `deny.toml` advisory ignores no longer present in the resolved
+  dependency graph: `RUSTSEC-2024-0429` (`glib`) and `RUSTSEC-2026-0097` (`rand`).
+
 ## [1.0.5] - 2026-05-24
 
 ### Security

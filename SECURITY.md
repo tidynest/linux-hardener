@@ -190,10 +190,16 @@ Dependabot/cargo-audit may report a vulnerability in the `rsa` crate (Marvin Att
 
 The advisory can be safely dismissed as it does not affect this project's security posture.
 
+### RUSTSEC-2026-0173 (proc-macro-error2) - Unmaintained, Accepted
+
+`proc-macro-error2` (a fork of the also-unmaintained `proc-macro-error`, RUSTSEC-2024-0370) is unmaintained upstream with **no safe upgrade available**. It is pulled in purely transitively through the Leptos macro stack (`leptos_macro` / `leptos_router` / `rstml`) used by `hardener-ui` — there is no first-party usage and no drop-in replacement short of removing Leptos. It is a compile-time proc-macro with no runtime attack surface. Accepted and ignored in `deny.toml`.
+
+The complete set of accepted advisories (unmaintained GTK3 and `idna` transitive crates, etc.) is enumerated with per-ID justifications in `deny.toml`, the authoritative source of truth for advisory policy.
+
 ## Contact
 
 For security concerns: **tidynest@proton.me**
 
 For general issues: [GitHub Issues](https://github.com/tidynest/linux-system-hardener/issues)
 
-**Last Updated**: 2026-02-28
+**Last Updated**: 2026-06-23
