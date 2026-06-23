@@ -1,4 +1,4 @@
-# Session Handoff — 2026-06-23 (batch apply shipped → batch rollback / desktop view next)
+# Session Handoff — 2026-06-24 (batch rollback shipped → desktop multi-host view next)
 
 > **Read this first.** Point-in-time handoff for the next development session and
 > assistant. Living task list is [NEXT.md](NEXT.md); roadmap is [ROADMAP.md](ROADMAP.md).
@@ -23,10 +23,25 @@
   a shared `apply_host` extracted from single-host `apply::run`. 13 commits
   `0fc9f16..1721760`, FF-merged to `main`, branch deleted. **PUSHED 2026-06-23**
   to both remotes (github + gitlab `tidynest`); `main` == `origin` == `00b60c2`.
-- **Start here next:** `hardener batch rollback` (fleet-wide) and/or the desktop
-  multi-host view (largest GUI slice). Both warrant their own brainstorm (real
-  blast radius / large surface). Emergency per-host rollback already works:
-  `sudo hardener --ssh <host> rollback`.
+- **Shipped this session (latest):** `hardener batch rollback` — roll back a fleet
+  concurrently to each host's latest per-plugin checkpoint. **Dry-run default;
+  `--execute` restores.** Same per-host privilege probe + isolation as `batch
+  apply`; restores reuse host-keyed checkpoints (cross-host restore refused);
+  best-effort per-host audit; tiered exit (0/1/2). Built brainstorm→spec→plan,
+  implemented directly from the plan's exact code, then gated behind an
+  **independent whole-feature review** which caught one CRITICAL: the services
+  plugin's id (`service-minimisation`) did not match its checkpoint name
+  (`services-hardening-pre-apply`), so rollback was a **silent no-op for services**
+  (false success). Fixed by aligning to the universal `{plugin_id}-pre-apply`
+  convention + a writer-contract doc + a registry-wide regression test. 5 commits
+  `23cb59a..113f13b`, FF-merged to `main`, branch deleted. **NOT pushed** (push
+  left to you — SSH passphrases); `main` is **6 ahead of `origin`**. Full
+  `cargo test --workspace` 637 passed pre-fix; plugins+cli re-green post-fix;
+  clippy `-D warnings` + fmt clean.
+- **Start here next:** the desktop multi-host view (largest GUI slice) — warrants
+  its own brainstorm (large GUI surface). Per-host rollback works
+  (`sudo hardener --ssh <host> rollback`); fleet rollback now also works
+  (`hardener batch rollback`).
 - **Why batch apply came after the checkpoint fix:** brainstorming `batch apply`
   surfaced the checkpoint bug. Per the user's "max safety" call, the foundation
   was fixed first so `batch apply` builds on correct, host-keyed rollback.
