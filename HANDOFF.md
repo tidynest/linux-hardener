@@ -223,9 +223,9 @@ All clean at handoff (the remote test is the one host-dependent step).
 
 1. **`batch apply`** — see the launchpad above. *Start here, brainstorm first.*
 2. Desktop multi-host view (largest GUI effort).
-3. **Trivial doc nit (background task flagged):** single-host `report --help`
-   `--framework` doc (`crates/hardener-cli/src/cli.rs` ~line 109) omits
-   `iso27001` (parses fine via the shared `parse_framework`; stale help string).
+3. ~~Trivial doc nit: `report --help` `--framework` omits `iso27001`.~~
+   **Resolved/verified 2026-06-24** — `cli.rs:109` already lists `iso27001`, and the
+   string matches `parse_framework` exactly. No change needed; close the background task.
 4. Debug-vs-Display history serialisation (`finding_to_scan_finding` writes
    severity/category via `{:?}`; pre-existing, cosmetic).
 5. RHEL 10 / per-version compliance profiles; cross-distro re-validation
