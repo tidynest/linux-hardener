@@ -14,7 +14,7 @@ use hardener_state::{
     ScanHistoryManager, ScanSession, ScanSessionId, ScanStatus, init_db,
 };
 use hardener_types::{
-    ConfigSummary,
+    ConfigSummary, FleetHostScan, FleetHostStatus, SeverityTallies,
     remote::{HostsConfig, RemoteConnectionInfo, RemoteConnectionStatus, RemoteHostProfile},
 };
 use serde::Serialize;
@@ -1191,6 +1191,68 @@ async fn scan_with_executor(
     Ok(results)
 }
 
+/// Number of hosts scanned concurrently in a fleet scan.
+#[allow(dead_code)]
+const FLEET_CONCURRENCY: usize = 8;
+
+/// Scans many hosts concurrently, isolating per-host failure and preserving
+/// input order. `scan_one` produces one host's scan results (or an error that
+/// becomes a `Failed` row). Generic over `scan_one` so the orchestration is
+/// unit-testable without real SSH.
+///
+/// ponytail: a spawned task that *panics* (rather than returning `Err`) keeps
+/// its pre-filled `Failed` slot, so the result always has exactly one row per
+/// input host in input order — never a silently dropped host.
+#[allow(dead_code)]
+async fn scan_fleet<F, Fut>(host_names: Vec<String>, scan_one: F) -> Vec<FleetHostScan>
+where
+    F: Fn(String) -> Fut,
+    Fut: std::future::Future<Output = Result<Vec<ScanResult>, String>> + Send + 'static,
+{
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(FLEET_CONCURRENCY));
+    let mut set = tokio::task::JoinSet::new();
+
+    // One placeholder row per host, overwritten as tasks complete. A panicked
+    // task leaves its placeholder, preserving the one-row-per-host contract.
+    let mut ordered: Vec<FleetHostScan> = host_names
+        .iter()
+        .map(|name| FleetHostScan {
+            host_name: name.clone(),
+            status: FleetHostStatus::Failed("scan task panicked".to_string()),
+            tallies: SeverityTallies::default(),
+            scan_results: Vec::new(),
+        })
+        .collect();
+
+    for (index, name) in host_names.into_iter().enumerate() {
+        let permits = semaphore.clone();
+        let task = scan_one(name.clone());
+        set.spawn(async move {
+            let _permit = permits.acquire_owned().await;
+            let (status, scan_results) = match task.await {
+                Ok(results) => (FleetHostStatus::Ok, results),
+                Err(e) => (FleetHostStatus::Failed(e), Vec::new()),
+            };
+            (
+                index,
+                FleetHostScan {
+                    host_name: name,
+                    tallies: SeverityTallies::from_results(&scan_results),
+                    status,
+                    scan_results,
+                },
+            )
+        });
+    }
+
+    while let Some(joined) = set.join_next().await {
+        if let Ok((index, scan)) = joined {
+            ordered[index] = scan;
+        }
+    }
+    ordered
+}
+
 /// Scans a remote host using the active SSH connection.
 ///
 /// Uses the `SshExecutor` from `RemoteState` instead of the local executor.
@@ -1500,4 +1562,31 @@ pub async fn pick_config_file(app: tauri::AppHandle) -> Result<Option<String>, S
         .blocking_pick_file();
 
     Ok(file_path.map(|p| p.to_string()))
+}
+
+#[cfg(test)]
+mod fleet_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn fleet_isolates_failures_and_preserves_order() {
+        let hosts = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+
+        let results = scan_fleet(hosts, |name| async move {
+            if name == "b" {
+                Err("connection refused".to_string())
+            } else {
+                Ok(Vec::new())
+            }
+        })
+        .await;
+
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0].host_name, "a");
+        assert_eq!(results[1].host_name, "b");
+        assert_eq!(results[2].host_name, "c");
+        assert!(matches!(results[0].status, FleetHostStatus::Ok));
+        assert!(matches!(results[1].status, FleetHostStatus::Failed(_)));
+        assert!(matches!(results[2].status, FleetHostStatus::Ok));
+    }
 }
