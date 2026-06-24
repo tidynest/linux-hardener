@@ -1192,7 +1192,6 @@ async fn scan_with_executor(
 }
 
 /// Number of hosts scanned concurrently in a fleet scan.
-#[allow(dead_code)]
 const FLEET_CONCURRENCY: usize = 8;
 
 /// Scans many hosts concurrently, isolating per-host failure and preserving
@@ -1203,7 +1202,6 @@ const FLEET_CONCURRENCY: usize = 8;
 /// ponytail: a spawned task that *panics* (rather than returning `Err`) keeps
 /// its pre-filled `Failed` slot, so the result always has exactly one row per
 /// input host in input order — never a silently dropped host.
-#[allow(dead_code)]
 async fn scan_fleet<F, Fut>(host_names: Vec<String>, scan_one: F) -> Vec<FleetHostScan>
 where
     F: Fn(String) -> Fut,
@@ -1276,6 +1274,56 @@ pub async fn run_remote_scan(
     };
 
     scan_with_executor(executor, plugin_ids.as_deref()).await
+}
+
+/// Scans several inventory hosts concurrently and returns each host's severity
+/// posture. Read-only: opens a short-lived SSH connection per host, scans, and
+/// drops it. Per-host failure is isolated — a failed host is a `Failed` row
+/// whilst the others still complete.
+#[tauri::command]
+pub async fn run_fleet_scan(
+    host_names: Vec<String>,
+    plugin_ids: Option<Vec<String>>,
+) -> Result<Vec<FleetHostScan>, String> {
+    if let Some(ref ids) = plugin_ids {
+        validate_plugin_ids(ids)?;
+    }
+    for name in &host_names {
+        validate_ipc_string(name, "host_name")?;
+    }
+
+    let config = load_hosts_config()?;
+    let plugin_ids = std::sync::Arc::new(plugin_ids);
+
+    let results = scan_fleet(host_names, move |name| {
+        let profile = config.hosts.iter().find(|h| h.name == name).cloned();
+        let plugin_ids = plugin_ids.clone();
+        async move {
+            let profile = profile.ok_or_else(|| format!("Host profile '{}' not found", name))?;
+
+            let ssh_config = hardener_core::SshConfig {
+                host: profile.hostname.clone(),
+                port: profile.port,
+                user: profile.user.clone(),
+                identity_file: profile.key_file.clone(),
+                known_hosts: if profile.host_key_checking {
+                    hardener_core::KnownHosts::Strict
+                } else {
+                    hardener_core::KnownHosts::Accept
+                },
+                connect_timeout: std::time::Duration::from_secs(30),
+            };
+
+            let executor = hardener_core::SshExecutor::connect(ssh_config)
+                .await
+                .map_err(safe_err)?;
+
+            scan_with_executor(std::sync::Arc::new(executor), plugin_ids.as_deref()).await
+        }
+    })
+    .await;
+
+    Ok(results)
 }
 
 // ---------------------------------------------------------------------------
