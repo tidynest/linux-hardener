@@ -1,6 +1,7 @@
 # Rust build artifacts
 /target
 **/*.rs.bk
+*.rlib
 
 # Editor swap files
 *.swp
