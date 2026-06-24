@@ -1156,6 +1156,41 @@ pub async fn disconnect_remote(state: tauri::State<'_, RemoteState>) -> Result<(
     Ok(())
 }
 
+/// Runs every (optionally filtered) plugin's scan over the given executor.
+///
+/// Shared by single-host `run_remote_scan` and the fleet scan. A per-plugin
+/// scan error is logged and skipped so one bad plugin never aborts the scan.
+async fn scan_with_executor(
+    executor: std::sync::Arc<dyn hardener_core::SystemExecutor>,
+    plugin_ids: Option<&[String]>,
+) -> Result<Vec<ScanResult>, String> {
+    let ctx = Context::with_executor(executor);
+    let registry = create_plugin_registry();
+    let mut results = Vec::new();
+    let plugin_list = registry.list().map_err(safe_err)?;
+
+    for metadata in plugin_list {
+        if let Some(ids) = plugin_ids
+            && !ids.is_empty()
+            && !ids.iter().any(|id| {
+                metadata.plugin_id == (*id).clone().into()
+                    || metadata.plugin_id.as_str().starts_with(&format!("{}-", id))
+            })
+        {
+            continue;
+        }
+
+        if let Ok(Some(plugin)) = registry.get(&metadata.plugin_id) {
+            match plugin.scan(&ctx).await {
+                Ok(result) => results.push(result),
+                Err(e) => error!("Scan failed for plugin {}: {}", metadata.plugin_id, e),
+            }
+        }
+    }
+
+    Ok(results)
+}
+
 /// Scans a remote host using the active SSH connection.
 ///
 /// Uses the `SshExecutor` from `RemoteState` instead of the local executor.
@@ -1169,7 +1204,7 @@ pub async fn run_remote_scan(
         validate_plugin_ids(ids)?;
     }
 
-    // Clone the Arc<SshExecutor> out of the mutex before any async work
+    // Clone the Arc<SshExecutor> out of the mutex before any async work.
     let executor = {
         let connection = state.active_connection.lock().await;
         match connection.as_ref() {
@@ -1178,37 +1213,7 @@ pub async fn run_remote_scan(
         }
     };
 
-    let ctx = Context::with_executor(executor);
-    let registry = create_plugin_registry();
-
-    let mut results = Vec::new();
-    let plugin_list = registry.list().map_err(safe_err)?;
-
-    for metadata in plugin_list {
-        if let Some(ref ids) = plugin_ids
-            && !ids.is_empty()
-            && !ids.iter().any(|id| {
-                metadata.plugin_id == (*id).clone().into()
-                    || metadata.plugin_id.as_str().starts_with(&format!("{}-", id))
-            })
-        {
-            continue;
-        }
-
-        if let Ok(Some(plugin)) = registry.get(&metadata.plugin_id) {
-            match plugin.scan(&ctx).await {
-                Ok(result) => results.push(result),
-                Err(e) => {
-                    error!(
-                        "Remote scan failed for plugin {}: {}",
-                        metadata.plugin_id, e
-                    );
-                }
-            }
-        }
-    }
-
-    Ok(results)
+    scan_with_executor(executor, plugin_ids.as_deref()).await
 }
 
 // ---------------------------------------------------------------------------
