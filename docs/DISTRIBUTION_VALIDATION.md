@@ -3,7 +3,7 @@
 This document tracks validation testing across supported Linux distributions.
 
 **Last full cross-distro validation:** hardener v0.3.3 (binary tested; see per-distro sections below)
-**Current codebase version:** 1.0.5 — not re-validated cross-distro since (P3 task in `NEXT.md`)
+**Current codebase version:** 1.1.0 — not re-validated cross-distro since (P3 task in `NEXT.md`)
 **Validation Started:** 2026-02-23
 **Validation Complete:** 2026-02-23
 
