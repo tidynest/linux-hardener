@@ -559,6 +559,16 @@ pub enum FleetHostStatus {
     Failed(String),
 }
 
+/// One framework's compliance posture for a fleet host — summary only (no
+/// per-control detail, which already travels in `FleetHostScan::scan_results`).
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct FleetFrameworkPosture {
+    /// The framework this posture is for.
+    pub framework: ComplianceFramework,
+    /// Pass/fail/manual/NA counts and the overall score.
+    pub summary: ComplianceSummary,
+}
+
 /// One host's result row in a fleet scan.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct FleetHostScan {
@@ -570,6 +580,9 @@ pub struct FleetHostScan {
     pub tallies: SeverityTallies,
     /// Per-plugin scan results (as `run_remote_scan` returns); empty when failed.
     pub scan_results: Vec<ScanResult>,
+    /// Per-framework compliance posture derived from `scan_results`; empty when
+    /// the host failed to scan.
+    pub compliance: Vec<FleetFrameworkPosture>,
 }
 
 #[cfg(test)]

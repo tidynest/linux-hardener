@@ -1219,6 +1219,7 @@ where
             status: FleetHostStatus::Failed("scan task panicked".to_string()),
             tallies: SeverityTallies::default(),
             scan_results: Vec::new(),
+            compliance: Vec::new(),
         })
         .collect();
 
@@ -1238,6 +1239,7 @@ where
                     tallies: SeverityTallies::from_results(&scan_results),
                     status,
                     scan_results,
+                    compliance: Vec::new(),
                 },
             )
         });
