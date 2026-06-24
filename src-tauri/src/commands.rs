@@ -14,7 +14,7 @@ use hardener_state::{
     ScanHistoryManager, ScanSession, ScanSessionId, ScanStatus, init_db,
 };
 use hardener_types::{
-    ConfigSummary, FleetHostScan, FleetHostStatus, SeverityTallies,
+    ConfigSummary, FleetFrameworkPosture, FleetHostScan, FleetHostStatus, SeverityTallies,
     remote::{HostsConfig, RemoteConnectionInfo, RemoteConnectionStatus, RemoteHostProfile},
 };
 use serde::Serialize;
@@ -1278,6 +1278,43 @@ pub async fn run_remote_scan(
     scan_with_executor(executor, plugin_ids.as_deref()).await
 }
 
+/// Frameworks the fleet view scores against — matches the analysis page's set.
+/// ISO 27001 is deliberately omitted for parity; add it here to include it.
+const FLEET_FRAMEWORKS: [ComplianceFramework; 6] = [
+    ComplianceFramework::CIS,
+    ComplianceFramework::STIG,
+    ComplianceFramework::NIST,
+    ComplianceFramework::PCIDSS,
+    ComplianceFramework::HIPAA,
+    ComplianceFramework::GDPR,
+];
+
+/// Builds the report generator used for fleet compliance scoring (all
+/// `FLEET_FRAMEWORKS` in one pass). Reused across hosts — `generate` takes `&self`.
+fn fleet_report_generator() -> ReportGenerator {
+    let config = ReportConfig {
+        scenario: Scenario::Custom(FLEET_FRAMEWORKS.to_vec()),
+        formats: vec![OutputFormat::Text],
+        output_dir: None,
+    };
+    ReportGenerator::new(config, hardener_plugins::compliance_coverage())
+}
+
+/// Derives slim per-framework posture for one host's findings. In-memory; no SSH.
+fn posture_for_findings(
+    generator: &ReportGenerator,
+    findings: &[Finding],
+) -> Vec<FleetFrameworkPosture> {
+    generator
+        .generate(findings)
+        .into_iter()
+        .map(|r| FleetFrameworkPosture {
+            framework: r.report_framework,
+            summary: r.report_summary,
+        })
+        .collect()
+}
+
 /// Scans several inventory hosts concurrently and returns each host's severity
 /// posture. Read-only: opens a short-lived SSH connection per host, scans, and
 /// drops it. Per-host failure is isolated — a failed host is a `Failed` row
@@ -1297,7 +1334,7 @@ pub async fn run_fleet_scan(
     let config = load_hosts_config()?;
     let plugin_ids = std::sync::Arc::new(plugin_ids);
 
-    let results = scan_fleet(host_names, move |name| {
+    let mut results = scan_fleet(host_names, move |name| {
         let profile = config.hosts.iter().find(|h| h.name == name).cloned();
         let plugin_ids = plugin_ids.clone();
         async move {
@@ -1324,6 +1361,20 @@ pub async fn run_fleet_scan(
         }
     })
     .await;
+
+    // Derive each host's compliance posture from the findings already scanned —
+    // in-memory, no extra SSH. Build the generator once and reuse it per host.
+    let generator = fleet_report_generator();
+    for host in &mut results {
+        if matches!(host.status, FleetHostStatus::Ok) {
+            let findings: Vec<Finding> = host
+                .scan_results
+                .iter()
+                .flat_map(|r| r.scan_findings.iter().cloned())
+                .collect();
+            host.compliance = posture_for_findings(&generator, &findings);
+        }
+    }
 
     Ok(results)
 }
@@ -1617,6 +1668,19 @@ pub async fn pick_config_file(app: tauri::AppHandle) -> Result<Option<String>, S
 #[cfg(test)]
 mod fleet_tests {
     use super::*;
+
+    #[test]
+    fn posture_for_findings_returns_one_per_framework() {
+        let generator = fleet_report_generator();
+        let scores = posture_for_findings(&generator, &[]);
+        assert_eq!(scores.len(), FLEET_FRAMEWORKS.len());
+        assert!(
+            scores
+                .iter()
+                .any(|s| s.framework == ComplianceFramework::CIS),
+            "fleet posture must include CIS"
+        );
+    }
 
     #[tokio::test]
     async fn fleet_isolates_failures_and_preserves_order() {
