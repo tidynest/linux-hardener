@@ -1,4 +1,4 @@
-# Session Handoff — 2026-06-24 (batch rollback shipped → desktop multi-host view next)
+# Session Handoff — 2026-06-24 (desktop fleet view shipped → remaining multi-host slices next)
 
 > **Read this first.** Point-in-time handoff for the next development session and
 > assistant. Living task list is [NEXT.md](NEXT.md); roadmap is [ROADMAP.md](ROADMAP.md).
@@ -42,10 +42,25 @@
   run but not a final `cargo fmt --all`, so CI's `fmt --check` caught it. Lesson:
   run `cargo fmt --all` + `cargo clippy --workspace` before the final push — the
   local pre-commit gate validates naming only, not fmt/clippy.
-- **Start here next:** the desktop multi-host view (largest GUI slice) — warrants
-  its own brainstorm (large GUI surface). Per-host rollback works
-  (`sudo hardener --ssh <host> rollback`); fleet rollback now also works
-  (`hardener batch rollback`).
+- **Shipped this session (latest):** *desktop fleet view* — a read-only **Fleet**
+  GUI page that scans several saved inventory hosts concurrently and shows each
+  host's severity posture (per-host crit/high/med/low/info tallies, expandable to
+  findings). Built in-process by reusing the single-host scan path
+  (`scan_with_executor` extracted from `run_remote_scan`; generic bounded-concurrent
+  `scan_fleet`; `run_fleet_scan` Tauri command). Read-only is **structural** (scan
+  takes `&Context`; the fleet context carries no checkpoint/audit). 8 commits
+  `ea0161c..e356bae`, FF-merged to `main`, branch deleted. Opus whole-feature review
+  = READY TO MERGE; full workspace test/clippy/fmt/build green. Fleet apply/rollback
+  + compliance-score columns deferred (CLI-only). Spec/plan (gitignored):
+  `docs/superpowers/specs/2026-06-24-desktop-fleet-view-design.md`,
+  `docs/superpowers/plans/2026-06-24-desktop-fleet-view.md`.
+- **Also shipped:** version cut **1.1.0** (`5ef150c`) — the `[Unreleased]` changelog
+  folded into `[1.1.0] - 2026-06-24`; workspace + tauri + doc version strings bumped,
+  lockfile synced. Tag + push left to you (release boundary).
+- **Start here next:** remaining multi-host slices — fleet **apply/rollback** in the
+  GUI (own brainstorm; mutation in a GUI is a different risk class), compliance-score
+  columns on the fleet view, ad-hoc `--ssh` hosts, live per-host progress, per-host
+  history persistence from the GUI. (The read-only fleet *scan* view is now DONE.)
 - **Why batch apply came after the checkpoint fix:** brainstorming `batch apply`
   surfaced the checkpoint bug. Per the user's "max safety" call, the foundation
   was fixed first so `batch apply` builds on correct, host-keyed rollback.
@@ -222,7 +237,11 @@ All clean at handoff (the remote test is the one host-dependent step).
 
 ## Git state at handoff
 
-- `main` == `origin/main` == `4d5c6e6` on **both** GitHub and GitLab (`tidynest`,
-  dual push URL — one `git push origin main` hits both). Pushed 2026-06-23.
-- Branch `feat/remote-correct-checkpoints` was FF-merged and deleted. Working
-  tree clean (`docs/superpowers/` + `.rust-sec-ci.toml` gitignored).
+- `main` == `e356bae`, **10 commits ahead of `origin/main` (`b5e59d6`)** — UNPUSHED.
+  Stack = handoff doc (`fd67ef6`) + version cut 1.1.0 (`5ef150c`) + 8 fleet-view
+  commits (`ea0161c..e356bae`). Push is yours (SSH passphrase): one
+  `git push origin main` hits both GitHub + GitLab (`tidynest`, dual push URL).
+- Branch `feat/desktop-fleet-view` was FF-merged and deleted. Working tree clean
+  except a stray untracked `librust_out.rlib` at repo root (pre-existing build
+  artifact — `rm` it or gitignore; unrelated to this work). `docs/superpowers/` +
+  `.rust-sec-ci.toml` remain gitignored.
