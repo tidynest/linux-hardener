@@ -1,6 +1,6 @@
 # Linux System Hardener - Architecture Documentation
 
-**Last Updated:** 2026-06-19
+**Last Updated:** 2026-06-24
 **Version:** 1.1.0
 
 ---
@@ -28,7 +28,8 @@ Linux System Hardener is a modular security hardening tool for Linux systems, pr
 │   └─ Rollback      │   └─ Analysis        │                     │
 │   └─ Checkpoint    │   └─ Hardening       │                     │
 │   └─ Report        │   └─ Remote          │                     │
-│                    │   └─ Scheduler       │                     │
+│   └─ Batch         │   └─ Scheduler       │                     │
+│                    │   └─ Fleet (v1.1.0)  │                     │
 └────────────────────┴──────────────────────┴─────────────────────┘
                               │
                               ▼
@@ -116,7 +117,7 @@ Linux System Hardener is a modular security hardening tool for Linux systems, pr
 
 | Crate | Purpose | Key Exports |
 |-------|---------|-------------|
-| `hardener-types` | WASM-compatible shared types (4 source files: `lib.rs`, `config_picker.rs`, `remote.rs`, `scheduler.rs`) | `PluginId`, `Severity`, `Finding`, `ScanResult`, `ApplyResult`, `ComplianceReport`, `RollbackResult`, `ValidationReport`, `ConfigSummary`, `RemoteHostProfile`, `RemoteConnectionStatus`, `RemoteConnectionInfo`, `HostsConfig`, `SchedulerUiConfig`, `NotificationUiConfig`, `TestNotificationResult` |
+| `hardener-types` | WASM-compatible shared types (4 source files: `lib.rs`, `config_picker.rs`, `remote.rs`, `scheduler.rs`) | `PluginId`, `Severity`, `Finding`, `ScanResult`, `ApplyResult`, `ComplianceReport`, `RollbackResult`, `ValidationReport`, `ConfigSummary`, `RemoteHostProfile`, `RemoteConnectionStatus`, `RemoteConnectionInfo`, `HostsConfig`, `SchedulerUiConfig`, `NotificationUiConfig`, `TestNotificationResult`, `FleetHostScan`, `FleetHostStatus`, `SeverityTallies` |
 | `hardener-core` | Plugin framework, execution context, config | `HardeningPlugin`, `Context`, `PluginManager`, `HardenerConfig`, `ConfigLoader`, `SystemExecutor`, `LocalExecutor`, `SshExecutor` |
 | `hardener-common` | Shared utilities and error types | `HardeningError`, file utilities (re-exports types from hardener-types) |
 | `hardener-plugins` | 8 security plugin implementations | All plugin structs |
@@ -125,7 +126,7 @@ Linux System Hardener is a modular security hardening tool for Linux systems, pr
 | `hardener-distro` | Distribution detection | `Distribution`, `DistroFamily`, `DistributionAdapter` |
 | `hardener-scheduler` | Scheduled scanning daemon | `SchedulerConfig`, `Daemon`, `ScanHistoryManager`, `JsonStore`, `NotificationDispatcher`, `ScanRunner`, `ScanSummary`, `TriggerType`, `SystemdGenerator`, `cron_to_calendar` |
 | `hardener-cli` | Command-line interface | Binary entry point |
-| `hardener-ui` | Leptos WASM frontend | 5-page architecture (Dashboard, Analysis, Hardening, Remote, Scheduler), dark terminal CSS theme (depends only on hardener-types) |
+| `hardener-ui` | Leptos WASM frontend | 6-page architecture (Dashboard, Analysis, Hardening, Remote, Scheduler, Fleet), dark terminal CSS theme (depends only on hardener-types) |
 | `src-tauri` | Desktop app backend | Tauri commands |
 
 ### Tauri 2.x Integration Notes

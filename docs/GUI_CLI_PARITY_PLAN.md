@@ -51,9 +51,12 @@ Features that can be deferred to later versions.
 | **Compliance mode toggle** | `scan --compliance` | P2 | Policy violation focus |
 | **Plugin listing** | `plugins` command | P2 | Know what's available |
 | **Checkpoint details** | `checkpoint show` | P2 | View checkpoint contents |
-| **Remote scanning** | `--ssh` flags | P3 | Complex SSH config UI |
-| **Scheduler UI** | `daemon` commands | P3 | Daemon management |
-| **Config file picker** | `--config FILE` | P3 | Power user feature |
+| **Remote scanning (single host)** | `--ssh` flags | P3 | Complex SSH config UI — ✅ COMPLETE (Remote page) |
+| **Fleet scanning (read-only)** | `batch scan` | P3 | Multi-host concurrent scan in GUI — ✅ COMPLETE (Fleet page) |
+| **Fleet apply / rollback** | `batch apply`, `batch rollback` | P3 | Write operations across fleet — CLI-only |
+| **Fleet compliance columns** | `batch report` | P3 | Per-host compliance score in GUI — CLI-only |
+| **Scheduler UI** | `daemon` commands | P3 | Daemon management — ✅ COMPLETE (Scheduler page) |
+| **Config file picker** | `--config FILE` | P3 | Power user feature — ✅ COMPLETE |
 
 ---
 
@@ -269,6 +272,8 @@ Phase 6 (Mode Toggles)            - PARTIALLY COMPLETE
 | Report export | Analysis | Compliance tab - format dropdown + export button |
 | Scan history | Analysis | New third tab (Findings \| Compliance \| History) |
 | Mode toggles | Analysis | Scan Options panel - toggle switches |
+| Single-host remote scan | Remote | Host list sidebar + scan button |
+| Fleet scan (read-only) | Fleet | Host multi-select + scan button; per-host tally rows, expandable findings |
 
 ---
 
@@ -325,6 +330,7 @@ This keeps you in control while learning the architecture.
 | `connect_remote(name, state)` | Connect to remote host via SSH | Returns connection status |
 | `disconnect_remote(state)` | Disconnect active SSH session | Clears connection state |
 | `run_remote_scan(plugin_ids, state)` | Scan remote host via SSH | Returns `Vec<ScanResult>` |
+| `run_fleet_scan(host_names, plugin_ids)` | Scan multiple inventory hosts concurrently | Returns `Vec<FleetHostScan>` |
 | `get_scheduler_config()` | Load scheduler configuration | Returns `SchedulerUiConfig` |
 | `save_scheduler_config(config)` | Save scheduler configuration | Writes to config.toml |
 | `test_notification()` | Send test notification | Returns `TestNotificationResult` |
@@ -335,4 +341,4 @@ All planned commands from the original plan have been implemented.
 
 ---
 
-**Last Updated**: 2026-02-27
+**Last Updated**: 2026-06-24

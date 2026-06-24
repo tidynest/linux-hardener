@@ -214,9 +214,53 @@ Exit Codes
 
 Planned Follow-ups
 
-The current release covers concurrent fleet scanning. Scan-history persistence,
-per-host trend tracking, regression alerts, and a desktop multi-host view are
-planned for future releases and are not part of this release.
+The current release covers concurrent fleet scanning with history persistence,
+per-host trend tracking, regression alerts, and a read-only desktop Fleet view.
+Fleet apply/rollback and per-host compliance-score columns in the GUI remain
+CLI-only at this time.
+
+Desktop Fleet View
+
+The desktop application includes a read-only **Fleet** page that lets you scan
+multiple saved inventory hosts from the GUI without using the CLI.
+
+### What it does
+
+- Select any number of saved inventory hosts from a multi-select list
+- Click **Scan Fleet** to scan them concurrently over SSH (bounded to 8 parallel
+  connections, matching `hardener batch scan --concurrency 8`)
+- Each host row shows a per-severity tally: critical / high / medium / low / info
+- Expand any row to see that host's individual findings via the same `FindingsGrid`
+  used on the single-host Remote page
+
+### How it relates to the Remote page and CLI
+
+| Surface | Scope | Mutates? | Ad-hoc `--ssh`? |
+|---------|-------|----------|-----------------|
+| Remote page (GUI) | One inventory host | No (scan only) | No |
+| Fleet page (GUI) | Many inventory hosts | No (scan only) | No |
+| `hardener batch scan` (CLI) | Inventory + ad-hoc `--ssh` | No | Yes |
+| `hardener batch apply` (CLI) | Inventory + ad-hoc `--ssh` | Yes (with `--execute`) | Yes |
+
+The Fleet page reuses the single-host `scan_with_executor` helper internally —
+the same plugin path that powers the Remote page and the CLI's `--ssh` scan.
+Read-only is structural: the fleet scan context carries no checkpoint manager or
+audit logger, so apply and rollback paths are unreachable from the Fleet page.
+
+Fleet scanning reads hosts from the shared inventory file:
+
+~/.config/linux-hardener/hosts.toml
+
+Hosts added via the Remote page's **Add Host** form appear in fleet selections
+immediately. Ad-hoc hosts (not in the inventory) must be added to the inventory
+first; use the Remote page or edit the TOML directly.
+
+### What remains CLI-only
+
+- Fleet apply / rollback (`hardener batch apply`, `hardener batch rollback`)
+- Compliance-score columns across hosts (use `hardener batch report`)
+- Ad-hoc `--ssh user@host` targets that are not in the inventory
+- Live per-host progress output (the GUI shows results when all hosts complete)
 
 Troubleshooting
 
@@ -325,21 +369,24 @@ Limitations
 
 Current limitations of SSH remote scanning:
 
-| Limitation           | Description                                    |
-|----------------------|------------------------------------------------|
-| No jump host support | Cannot use bastion/jump hosts (yet)            |
-| Local checkpoints    | Checkpoint data stored on local machine        |
-| No history/trends    | Batch scans are not yet persisted for trending |
+| Limitation                      | Description                                                  |
+|---------------------------------|--------------------------------------------------------------|
+| No jump host support            | Cannot use bastion/jump hosts (yet)                          |
+| Local checkpoints               | Checkpoint data stored on local machine                      |
+| Fleet: inventory hosts only     | GUI Fleet page does not accept ad-hoc `--ssh` targets        |
+| Fleet: no compliance columns    | Per-host compliance score not shown in GUI (use batch report) |
 
-Parallel multi-host scanning is available via `hardener batch scan` — see
-*Batch Scanning Multiple Hosts* above.
+Parallel multi-host scanning is available via `hardener batch scan` (CLI) and
+the desktop **Fleet** page — see *Batch Scanning Multiple Hosts* and
+*Desktop Fleet View* above.
 
 Future Enhancements
 
 Planned for future releases:
-- Scan-history persistence and per-host trend tracking for batch scans
-- Regression alerts and a desktop multi-host view
 - Jump host / bastion support
 - Remote checkpoint storage option
+- Fleet apply / rollback in the GUI
+- Compliance-score columns on the Fleet page
+- Live per-host progress feedback during fleet scans
 
-**Last Updated**: 2026-06-20
+**Last Updated**: 2026-06-24

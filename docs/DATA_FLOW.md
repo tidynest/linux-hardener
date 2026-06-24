@@ -1,6 +1,6 @@
 # Linux System Hardener - Data Flow Documentation
 
-**Last Updated:** 2026-06-19
+**Last Updated:** 2026-06-24
 **Version:** 1.1.0
 
 This document describes the data flow for all major operations in the system.
@@ -18,6 +18,7 @@ This document describes the data flow for all major operations in the system.
 7. [SSH Remote Scanning Flow](#7-ssh-remote-scanning-flow)
 8. [Scheduled Scanning Flow](#8-scheduled-scanning-flow)
 9. [Systemd Unit Generation Flow](#9-systemd-unit-generation-flow)
+10. [Desktop Fleet Scan Flow](#10-desktop-fleet-scan-flow)
 
 ---
 
@@ -577,6 +578,7 @@ struct Finding {
 | `connect_remote` | `name: String`, `state: State<RemoteState>` | `RemoteConnectionStatus` |
 | `disconnect_remote` | `state: State<RemoteState>` | `()` |
 | `run_remote_scan` | `plugin_ids: Option<Vec<String>>`, `state: State<RemoteState>` | `Vec<ScanResult>` |
+| `run_fleet_scan` | `host_names: Vec<String>`, `plugin_ids: Vec<String>` | `Vec<FleetHostScan>` |
 
 **Scheduler**
 
@@ -1074,4 +1076,136 @@ pub struct Daemon {
 | `linux-hardener.service` | Runs `hardener daemon run-once` (Type=oneshot) |
 | `linux-hardener.timer` | Triggers service on schedule |
 
-**Last Updated**: 2026-02-28
+## 10. Desktop Fleet Scan Flow
+
+**User Action:** Select hosts on the Fleet page and click "Scan Fleet"
+
+```
+┌──────────────────┐
+│   FleetPage      │
+│   (host select + │
+│    scan button)  │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────────┐
+│  hardener-ui/src/pages/fleet_page.rs                         │
+│  ├─ Leptos page-local state (no AppState fields)             │
+│  ├─ Multi-select list of inventory host names                │
+│  └─ On "Scan Fleet": calls invoke_fleet_scan(names, plugins) │
+└────────┬─────────────────────────────────────────────────────┘
+         │ IPC via Tauri (camelCase: hostNames, pluginIds)
+         ▼
+┌──────────────────────────────────────────────────────────────┐
+│  src-tauri/src/commands.rs::run_fleet_scan()                 │
+│  ├─ #[tauri::command] — registered in main.rs                │
+│  ├─ Validates plugin_ids via validate_plugin_ids()           │
+│  ├─ Validates each host_name via validate_ipc_string()       │
+│  └─ Calls scan_fleet(host_names, plugin_ids)                 │
+└────────┬─────────────────────────────────────────────────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────────┐
+│  scan_fleet() — generic bounded-concurrent orchestrator      │
+│  ├─ tokio::sync::Semaphore cap 8 (bounded parallelism)       │
+│  ├─ Per-host output slots pre-filled (panic-safe ordering)   │
+│  ├─ Input order preserved in result Vec                      │
+│  └─ Per-host failure isolated (one error ≠ abort all)        │
+└────────┬─────────────────────────────────────────────────────┘
+         │ For each host (concurrent, up to 8)
+         ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Inventory lookup                                            │
+│  ├─ load_hosts() reads ~/.config/linux-hardener/hosts.toml   │
+│  └─ SSH params (host, port, user, key) from stored profile   │
+│                                                              │
+│  SshExecutor::connect(ssh_config)                            │
+│  └─ Establishes SSH connection (same as Remote page / CLI)   │
+│                                                              │
+│  scan_with_executor(executor, plugin_ids)                    │
+│  ├─ Shared helper extracted from run_remote_scan             │
+│  ├─ Context::with_executor(Arc::new(ssh_executor))           │
+│  │   └─ No CheckpointManager, no AuditLogger in fleet ctx    │
+│  │      → apply/rollback paths structurally unreachable      │
+│  └─ Runs selected plugins via plugin.scan(&ctx)              │
+└────────┬─────────────────────────────────────────────────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────────┐
+│  FleetHostScan                                               │
+│  {                                                           │
+│    host_name: "web-01",                                      │
+│    status: FleetHostStatus::Ok,                              │
+│    tallies: SeverityTallies {                                │
+│      critical: 2, high: 5, medium: 3, low: 1, info: 0       │
+│    },                                                        │
+│    scan_results: Vec<ScanResult>  // full findings           │
+│  }                                                           │
+│                                                              │
+│  On connect/scan error:                                      │
+│    status: FleetHostStatus::Failed(sanitised_msg)            │
+│    tallies: all zeros                                        │
+│    scan_results: []                                          │
+└────────┬─────────────────────────────────────────────────────┘
+         │ JSON response (Vec<FleetHostScan>)
+         ▼
+┌──────────────────────────────────────────────────────────────┐
+│  hardener-ui/src/components/fleet_table.rs                   │
+│  ├─ One row per FleetHostScan                                │
+│  ├─ Severity tally badges (critical / high / medium /        │
+│  │   low / info) per host                                    │
+│  └─ Expand row → FindingsGrid (reused from Analysis page)    │
+└────────┬─────────────────────────────────────────────────────┘
+         │
+         ▼
+┌──────────────────┐
+│   UI displays    │
+│   fleet posture  │
+└──────────────────┘
+```
+
+### Key Types (hardener-types/src/lib.rs)
+
+```rust
+/// Status of a single host in a fleet scan.
+pub enum FleetHostStatus {
+    Ok,
+    Failed(String),  // sanitised connect/scan error message
+}
+
+/// Per-severity finding counts derived from a host's ScanResults.
+pub struct SeverityTallies {
+    pub critical: usize,
+    pub high: usize,
+    pub medium: usize,
+    pub low: usize,
+    pub info: usize,
+}
+
+impl SeverityTallies {
+    pub fn from_results(results: &[ScanResult]) -> Self;
+}
+
+/// Result for one host in a fleet scan.
+pub struct FleetHostScan {
+    pub host_name: String,
+    pub status: FleetHostStatus,
+    pub tallies: SeverityTallies,
+    pub scan_results: Vec<ScanResult>,
+}
+```
+
+### Key Differences from Single-Host Remote Scan
+
+| Aspect | Remote page (single host) | Fleet page (many hosts) |
+|--------|--------------------------|------------------------|
+| Connection | Persistent — connect once, scan, disconnect | Per-scan — connect, scan, drop |
+| Concurrency | Sequential (one host at a time) | Up to 8 hosts in parallel |
+| State | `AppState` remote signals | Page-local Leptos signals |
+| Checkpoint/Audit | N/A (scan only) | N/A (scan only, structurally) |
+| Ad-hoc hosts | Yes (any saved profile or `--ssh`) | Inventory hosts only |
+| History persistence | No | No (read-only posture view) |
+
+---
+
+**Last Updated**: 2026-06-24

@@ -74,6 +74,9 @@ The tool is designed for system administrators, DevOps engineers, and security p
 - **ARIA Accessibility**: WAI-ARIA tabs, skip link, `aria-selected`, `aria-live` regions, focus management
 - **Progressive Disclosure**: Simple overview with drill-down for details
 - **Real-time Feedback**: Live scan progress and results
+- **Multi-host Fleet View** (desktop): A read-only **Fleet** page scans several
+  saved inventory hosts concurrently and shows each host's severity posture —
+  per-host critical/high/medium/low/info tallies, expandable to that host's findings
 
 ---
 
@@ -463,6 +466,10 @@ host) and privilege-gated on `--execute`.
 | Arrow keys | Navigate tab bars and findings grid |
 | Enter/Space | Open finding detail |
 
+The desktop app has six pages; the sixth, **Fleet** (read-only multi-host
+scanning), is reached from the navigation bar. `Ctrl+1`–`5` cover the first five
+pages; Fleet has no dedicated shortcut yet.
+
 ---
 
 ## Configuration
@@ -632,7 +639,7 @@ See [ROADMAP.md](ROADMAP.md) for detailed implementation plans for upcoming feat
 - [x] Config file picker in desktop app
 - [x] UI polish pass (side-by-side layouts, card standardisation, responsive fixes)
 - [x] Severity filter in scan results
-- [ ] Multi-host management from single UI
+- [~] Multi-host management from single UI — read-only **Fleet** scan view shipped in v1.1.0; fleet apply/rollback remain CLI-only
 - [ ] Historical security trends
 - [ ] Test on GNOME, KDE, XFCE desktop environments (pkexec/polkit agents)
 
@@ -641,6 +648,15 @@ See [ROADMAP.md](ROADMAP.md) for detailed implementation plans for upcoming feat
 - [x] Package distribution (AUR)
 - [x] Comprehensive user documentation
 - [x] Performance optimisation
+
+### v1.1.0 - Multi-host & Compliance Depth (Current)
+- [x] Multi-host batch CLI: `batch scan` / `report` / `apply` / `rollback` (concurrent, per-host isolated, tiered exit codes)
+- [x] Per-host scan history, trends, and regression detection (`history trends/regressions --host`)
+- [x] Scheduler regression alerts (`notify_mode`: findings / regression / both)
+- [x] Remote-correct checkpoints (capture/restore through the executor; host-keyed; cross-host restore refused)
+- [x] ISO/IEC 27001:2022 framework + multi-framework finding mappings (STIG/NIST/PCI-DSS/HIPAA/GDPR)
+- [x] Desktop **Fleet** view — read-only multi-host scan posture
+- [ ] Fleet apply/rollback and compliance-score columns in the GUI
 
 ---
 
@@ -663,4 +679,4 @@ This project draws inspiration from established security tools including:
 **Contact**: tidynest@proton.me
 **Repository**: https://github.com/tidynest/linux-system-hardener
 
-**Last Updated**: 2026-02-28
+**Last Updated**: 2026-06-24
