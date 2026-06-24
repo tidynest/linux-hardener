@@ -9,8 +9,9 @@ pub use hardener_types::scheduler::{
 pub use hardener_types::{
     ApplyResult, Change, ChangeType, ComplianceFramework, ComplianceMapping, ComplianceReport,
     ComplianceSummary, ConfigSummary, ControlResult, ControlStatus, FileRestoreAction,
-    FileRestoreResult, Finding, FindingCategory, FindingPolicyException, PluginId, PluginMetadata,
-    RollbackResult, ScanResult, Severity, ValidationIssue, ValidationReport,
+    FileRestoreResult, Finding, FindingCategory, FindingPolicyException, FleetHostScan,
+    FleetHostStatus, PluginId, PluginMetadata, RollbackResult, ScanResult, Severity,
+    SeverityTallies, ValidationIssue, ValidationReport,
 };
 
 /// Checkpoint information for UI display.

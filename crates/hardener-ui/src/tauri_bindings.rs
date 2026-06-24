@@ -4,8 +4,8 @@
 //! In browser mode (without Tauri), all commands return errors gracefully.
 
 use crate::types::{
-    ApplyResult, CheckpointDetail, CheckpointInfo, ComplianceReport, ConfigSummary, RollbackResult,
-    ScanResult, ScanSessionInfo, SchedulerUiConfig, TestNotificationResult,
+    ApplyResult, CheckpointDetail, CheckpointInfo, ComplianceReport, ConfigSummary, FleetHostScan,
+    RollbackResult, ScanResult, ScanSessionInfo, SchedulerUiConfig, TestNotificationResult,
 };
 use hardener_types::ValidationReport;
 use hardener_types::remote::{RemoteConnectionStatus, RemoteHostProfile};
@@ -341,6 +341,24 @@ pub async fn invoke_remote_scan(
     let result = invoke_command("run_remote_scan", args).await?;
     serde_wasm_bindgen::from_value(result)
         .map_err(|e| format!("Failed to deserialise remote scan results: {}", e))
+}
+
+/// Invokes the run_fleet_scan Tauri command.
+///
+/// Scans the named inventory hosts concurrently and returns each host's
+/// severity posture. Pass plugin IDs to scan a subset, or None for all.
+pub async fn invoke_fleet_scan(
+    host_names: Vec<String>,
+    plugin_ids: Option<Vec<String>>,
+) -> Result<Vec<FleetHostScan>, String> {
+    let args = serde_wasm_bindgen::to_value(&serde_json::json!({
+        "hostNames": host_names,
+        "pluginIds": plugin_ids,
+    }))
+    .map_err(|e| format!("Failed to serialise fleet scan args: {}", e))?;
+    let result = invoke_command("run_fleet_scan", args).await?;
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to deserialise fleet scan results: {}", e))
 }
 
 // === Scheduler Configuration Bindings ===
