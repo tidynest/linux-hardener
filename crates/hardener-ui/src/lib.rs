@@ -14,7 +14,7 @@ mod types;
 mod utils;
 
 use components::ThemeToggle;
-use pages::{AnalysisPage, DashboardPage, HardeningPage, RemotePage, SchedulerPage};
+use pages::{AnalysisPage, DashboardPage, FleetPage, HardeningPage, RemotePage, SchedulerPage};
 use state::AppState;
 pub use types::*;
 
@@ -22,7 +22,7 @@ pub use types::*;
 ///
 /// This sets up:
 /// - Application state (AppState) available to all child components via context
-/// - Router with five routes: Dashboard, Analysis, Hardening, Remote, Scheduler
+/// - Router with six routes: Dashboard, Analysis, Hardening, Remote, Fleet, Scheduler
 /// - Navigation bar for moving between pages
 /// - Automatic loading of persisted scan results on mount
 #[component]
@@ -63,6 +63,7 @@ pub fn App() -> impl IntoView {
                         <li><A href="/analysis">"Analysis"</A></li>
                         <li><A href="/hardening">"Hardening"</A></li>
                         <li><A href="/remote">"Remote"</A></li>
+                        <li><A href="/fleet">"Fleet"</A></li>
                         <li><A href="/scheduler">"Scheduler"</A></li>
                     </ul>
                     <ThemeToggle/>
@@ -98,6 +99,7 @@ pub fn App() -> impl IntoView {
                     <Route path=StaticSegment("analysis") view=AnalysisPage/>
                     <Route path=StaticSegment("hardening") view=HardeningPage/>
                     <Route path=StaticSegment("remote") view=RemotePage/>
+                    <Route path=StaticSegment("fleet") view=FleetPage/>
                     <Route path=StaticSegment("scheduler") view=SchedulerPage/>
                 </Routes>
             </main>
