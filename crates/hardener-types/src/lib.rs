@@ -518,3 +518,106 @@ impl ComplianceSummary {
         }
     }
 }
+
+// ============================================================================
+// Fleet Scan Types
+// ============================================================================
+
+/// Per-severity finding counts for one host's scan.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
+pub struct SeverityTallies {
+    pub critical: u32,
+    pub high: u32,
+    pub medium: u32,
+    pub low: u32,
+    pub info: u32,
+}
+
+impl SeverityTallies {
+    /// Counts findings by severity across all of a host's scan results.
+    pub fn from_results(results: &[ScanResult]) -> Self {
+        let mut tallies = Self::default();
+        for finding in results.iter().flat_map(|r| &r.scan_findings) {
+            match finding.finding_severity {
+                Severity::Critical => tallies.critical += 1,
+                Severity::High => tallies.high += 1,
+                Severity::Medium => tallies.medium += 1,
+                Severity::Low => tallies.low += 1,
+                Severity::Info => tallies.info += 1,
+            }
+        }
+        tallies
+    }
+}
+
+/// Outcome of scanning one host in a fleet scan.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum FleetHostStatus {
+    /// Host scanned successfully.
+    Ok,
+    /// Host could not be reached or scanned; carries the error message.
+    Failed(String),
+}
+
+/// One host's result row in a fleet scan.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct FleetHostScan {
+    /// Inventory profile name of the host.
+    pub host_name: String,
+    /// Whether the host scanned or failed.
+    pub status: FleetHostStatus,
+    /// Per-severity counts (zero when the host failed).
+    pub tallies: SeverityTallies,
+    /// Per-plugin scan results (as `run_remote_scan` returns); empty when failed.
+    pub scan_results: Vec<ScanResult>,
+}
+
+#[cfg(test)]
+mod fleet_tests {
+    use super::*;
+
+    fn finding(severity: Severity) -> Finding {
+        Finding {
+            finding_category: FindingCategory::Kernel,
+            finding_current_value: String::new(),
+            finding_description: String::new(),
+            finding_explanation: String::new(),
+            finding_id: String::new(),
+            finding_impact: String::new(),
+            finding_recommended_value: String::new(),
+            finding_remediation_steps: Vec::new(),
+            finding_severity: severity,
+            finding_title: String::new(),
+            finding_compliance: Vec::new(),
+            finding_policy_exception: None,
+        }
+    }
+
+    fn result(findings: Vec<Finding>) -> ScanResult {
+        ScanResult {
+            scan_plugin_id: PluginId::new("test"),
+            scan_success: true,
+            scan_findings: findings,
+            scan_duration_us: 0,
+            scan_error: None,
+        }
+    }
+
+    #[test]
+    fn tallies_count_by_severity_across_results() {
+        let results = vec![
+            result(vec![finding(Severity::Critical), finding(Severity::High)]),
+            result(vec![
+                finding(Severity::High),
+                finding(Severity::Low),
+                finding(Severity::Info),
+            ]),
+        ];
+        let t = SeverityTallies::from_results(&results);
+        assert_eq!(t.critical, 1);
+        assert_eq!(t.high, 2);
+        assert_eq!(t.medium, 0);
+        assert_eq!(t.low, 1);
+        assert_eq!(t.info, 1);
+    }
+}
