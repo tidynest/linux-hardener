@@ -76,7 +76,9 @@ The tool is designed for system administrators, DevOps engineers, and security p
 - **Real-time Feedback**: Live scan progress and results
 - **Multi-host Fleet View** (desktop): A read-only **Fleet** page scans several
   saved inventory hosts concurrently and shows each host's severity posture —
-  per-host critical/high/medium/low/info tallies, expandable to that host's findings
+  per-host critical/high/medium/low/info tallies and a colour-coded CIS
+  compliance score — and expands to reveal that host's findings plus a
+  per-framework compliance breakdown (pass/fail/manual/NA counts).
 
 ---
 
@@ -655,8 +657,8 @@ See [ROADMAP.md](ROADMAP.md) for detailed implementation plans for upcoming feat
 - [x] Scheduler regression alerts (`notify_mode`: findings / regression / both)
 - [x] Remote-correct checkpoints (capture/restore through the executor; host-keyed; cross-host restore refused)
 - [x] ISO/IEC 27001:2022 framework + multi-framework finding mappings (STIG/NIST/PCI-DSS/HIPAA/GDPR)
-- [x] Desktop **Fleet** view — read-only multi-host scan posture
-- [ ] Fleet apply/rollback and compliance-score columns in the GUI
+- [x] Desktop **Fleet** view — read-only multi-host scan posture with CIS compliance scores and per-framework breakdown
+- [ ] Fleet apply/rollback in the GUI
 
 ---
 

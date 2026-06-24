@@ -421,7 +421,7 @@ pub struct ScanRunner {
 | `src/pages/hardening_page.rs` | Sectioned interface for configuration and history | `HardeningPage` |
 | `src/pages/remote_page.rs` | Remote SSH host management and scanning | `RemotePage` |
 | `src/pages/scheduler_page.rs` | Scheduler and notification configuration | `SchedulerPage` |
-| `src/pages/fleet_page.rs` | Read-only multi-host fleet scan (host multi-select, concurrent SSH scan, per-host tally rows) | `FleetPage` |
+| `src/pages/fleet_page.rs` | Read-only multi-host fleet scan (host multi-select, concurrent SSH scan, per-host tally rows, CIS score column, per-framework breakdown) | `FleetPage` |
 
 ### Components
 
@@ -451,7 +451,7 @@ pub struct ScanRunner {
 | `src/components/clipboard.rs` | Copy-to-clipboard button with async Clipboard API | `CopyButton` |
 | `src/components/confirm_delete.rs` | Inline delete confirmation component | `ConfirmDelete` |
 | `src/components/form_helpers.rs` | Shared JsCast event extraction helpers | `input_value()`, `checkbox_checked()`, `select_value()` |
-| `src/components/fleet_table.rs` | Fleet scan results table — per-host severity tally rows, expandable to FindingsGrid | `FleetTable` |
+| `src/components/fleet_table.rs` | Fleet scan results table — per-host severity tally rows, colour-coded CIS score column, per-framework breakdown in row expander, expandable to FindingsGrid | `FleetTable` |
 
 **Note**: This crate depends only on `hardener-types` for shared types to ensure WASM compatibility. External dependencies include Leptos (WASM framework), wasm-bindgen, and web-sys for browser APIs.
 

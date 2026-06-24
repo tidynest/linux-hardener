@@ -1154,6 +1154,9 @@ pub struct Daemon {
 │  ├─ One row per FleetHostScan                                │
 │  ├─ Severity tally badges (critical / high / medium /        │
 │  │   low / info) per host                                    │
+│  ├─ Colour-coded CIS compliance score column                 │
+│  ├─ Expand row → per-framework breakdown (score +            │
+│  │   pass / fail / manual / NA counts)                       │
 │  └─ Expand row → FindingsGrid (reused from Analysis page)    │
 └────────┬─────────────────────────────────────────────────────┘
          │
@@ -1186,12 +1189,22 @@ impl SeverityTallies {
     pub fn from_results(results: &[ScanResult]) -> Self;
 }
 
+/// Per-framework compliance posture for a fleet host (summary only — no
+/// per-control detail, which already travels in `FleetHostScan::scan_results`).
+pub struct FleetFrameworkPosture {
+    pub framework: ComplianceFramework,
+    /// Score percentage plus pass/fail/manual/NA control counts.
+    pub summary: ComplianceSummary,
+}
+
 /// Result for one host in a fleet scan.
 pub struct FleetHostScan {
     pub host_name: String,
     pub status: FleetHostStatus,
     pub tallies: SeverityTallies,
     pub scan_results: Vec<ScanResult>,
+    /// Per-framework compliance postures derived from `scan_results` in-process.
+    pub compliance: Vec<FleetFrameworkPosture>,
 }
 ```
 

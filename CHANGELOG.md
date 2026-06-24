@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (per-host critical/high/medium/low/info tallies, expandable to that host's
   findings). Reuses the single-host scan path in-process; per-host failure is
   isolated. Fleet apply/rollback and compliance scoring remain CLI-only.
+- **Desktop fleet view — compliance scores.** Each fleet host row now shows a
+  colour-coded CIS compliance score, and the row's expander lists every
+  framework's score with pass/fail/manual/NA counts. Derived in-process from the
+  findings already scanned (no extra SSH); the view remains read-only.
 
 ## [1.1.0] - 2026-06-24
 
