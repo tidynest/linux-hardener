@@ -2877,3 +2877,27 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
   color: var(--color-critical-bright);
   font-weight: 600;
 }
+
+/* CIS score cell — colour the percentage text directly. The shared .score-*
+   classes only colour a .score-value child (a bare table cell has none), so
+   the fleet table scopes its own colour like .fleet-ok above. */
+.fleet-table td.score-good {
+  color: var(--color-good-bright);
+  font-weight: 600;
+}
+
+.fleet-table td.score-warning {
+  color: var(--color-warning-bright);
+  font-weight: 600;
+}
+
+.fleet-table td.score-critical {
+  color: var(--color-critical-bright);
+  font-weight: 600;
+}
+
+/* Per-host framework breakdown inside the expander — separate it from the
+   findings grid rendered below. */
+.fleet-compliance-summary {
+  margin-bottom: var(--space-md);
+}

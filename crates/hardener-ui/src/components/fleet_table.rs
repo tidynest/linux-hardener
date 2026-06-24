@@ -1,7 +1,9 @@
 //! Fleet scan results table — one row per host, expandable to its findings.
 
 use crate::components::FindingsGrid;
-use crate::types::{Finding, FleetHostScan, FleetHostStatus};
+use crate::types::{
+    ComplianceFramework, Finding, FleetFrameworkPosture, FleetHostScan, FleetHostStatus,
+};
 use leptos::prelude::*;
 use std::sync::Arc;
 
@@ -14,6 +16,25 @@ fn toggle_expanded(expanded: RwSignal<Option<String>>, host: &str) {
             Some(host.to_string())
         };
     });
+}
+
+/// CIS score cell for a host row: `(formatted percent, colour class)`, or `None`
+/// to render an em dash when the host has no CIS posture (e.g. it failed).
+/// ponytail: thresholds mirror `mini_security_score` (71/41) on the same 0-100
+/// scale — kept inline for the one call site rather than shared.
+fn cis_cell(compliance: &[FleetFrameworkPosture]) -> Option<(String, &'static str)> {
+    let cis = compliance
+        .iter()
+        .find(|s| s.framework == ComplianceFramework::CIS)?;
+    let percentage = cis.summary.summary_score_percentage;
+    let class = if percentage >= 71.0 {
+        "score-good"
+    } else if percentage >= 41.0 {
+        "score-warning"
+    } else {
+        "score-critical"
+    };
+    Some((format!("{percentage:.0}%"), class))
 }
 
 /// Renders fleet scan results: a row per host with severity tallies, expandable
@@ -38,6 +59,7 @@ pub fn FleetTable(#[prop(into)] scans: Signal<Vec<FleetHostScan>>) -> impl IntoV
                             <tr role="row">
                                 <th role="columnheader">"Host"</th>
                                 <th role="columnheader">"Status"</th>
+                                <th role="columnheader">"CIS %"</th>
                                 <th role="columnheader">"Critical"</th>
                                 <th role="columnheader">"High"</th>
                                 <th role="columnheader">"Medium"</th>
@@ -56,6 +78,8 @@ pub fn FleetTable(#[prop(into)] scans: Signal<Vec<FleetHostScan>>) -> impl IntoV
                                             .flat_map(|r| r.scan_findings.iter().cloned())
                                             .collect(),
                                     );
+                                    let compliance = scan.compliance.clone();
+                                    let cis = cis_cell(&compliance);
                                     let (status_text, status_class, failed) = match &scan.status {
                                         FleetHostStatus::Ok => ("OK".to_string(), "fleet-ok", false),
                                         FleetHostStatus::Failed(e) => {
@@ -96,6 +120,12 @@ pub fn FleetTable(#[prop(into)] scans: Signal<Vec<FleetHostScan>>) -> impl IntoV
                                         >
                                             <td>{host.clone()}</td>
                                             <td class={status_class}>{status_text}</td>
+                                            {match cis {
+                                                Some((text, class)) => {
+                                                    view! { <td class={class}>{text}</td> }.into_any()
+                                                }
+                                                None => view! { <td>{"—"}</td> }.into_any(),
+                                            }}
                                             <td>{t.critical}</td>
                                             <td>{t.high}</td>
                                             <td>{t.medium}</td>
@@ -105,9 +135,45 @@ pub fn FleetTable(#[prop(into)] scans: Signal<Vec<FleetHostScan>>) -> impl IntoV
                                         <Show when=move || is_expanded() && !failed>
                                             {
                                                 let findings = Arc::clone(&findings);
+                                                let compliance = compliance.clone();
                                                 view! {
                                                     <tr class="fleet-detail-row">
-                                                        <td colspan="7">
+                                                        <td colspan="8">
+                                                            <table class="findings-table fleet-compliance-summary">
+                                                                <thead>
+                                                                    <tr>
+                                                                        <th>"Framework"</th>
+                                                                        <th>"Score"</th>
+                                                                        <th>"Pass"</th>
+                                                                        <th>"Fail"</th>
+                                                                        <th>"Manual"</th>
+                                                                        <th>"N/A"</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    {compliance
+                                                                        .iter()
+                                                                        .map(|s| {
+                                                                            let sm = &s.summary;
+                                                                            view! {
+                                                                                <tr>
+                                                                                    <td>{s.framework.to_string()}</td>
+                                                                                    <td>
+                                                                                        {format!(
+                                                                                            "{:.0}%",
+                                                                                            sm.summary_score_percentage,
+                                                                                        )}
+                                                                                    </td>
+                                                                                    <td>{sm.summary_passing}</td>
+                                                                                    <td>{sm.summary_failing}</td>
+                                                                                    <td>{sm.summary_manual_review}</td>
+                                                                                    <td>{sm.summary_not_applicable}</td>
+                                                                                </tr>
+                                                                            }
+                                                                        })
+                                                                        .collect::<Vec<_>>()}
+                                                                </tbody>
+                                                            </table>
                                                             <FindingsGrid findings=Signal::derive(move || {
                                                                 (*findings).clone()
                                                             }) />
@@ -125,5 +191,61 @@ pub fn FleetTable(#[prop(into)] scans: Signal<Vec<FleetHostScan>>) -> impl IntoV
                 .into_any()
             }}
         </section>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::ComplianceSummary;
+
+    fn posture(framework: ComplianceFramework, percentage: f64) -> FleetFrameworkPosture {
+        FleetFrameworkPosture {
+            framework,
+            summary: ComplianceSummary {
+                summary_total_controls: 0,
+                summary_passing: 0,
+                summary_failing: 0,
+                summary_manual_review: 0,
+                summary_not_applicable: 0,
+                summary_score_percentage: percentage,
+            },
+        }
+    }
+
+    #[test]
+    fn cis_cell_picks_cis_and_classes_by_threshold() {
+        assert_eq!(cis_cell(&[]), None);
+        assert_eq!(cis_cell(&[posture(ComplianceFramework::STIG, 90.0)]), None);
+        assert_eq!(
+            cis_cell(&[posture(ComplianceFramework::CIS, 80.0)]),
+            Some(("80%".to_string(), "score-good"))
+        );
+        assert_eq!(
+            cis_cell(&[posture(ComplianceFramework::CIS, 50.0)]),
+            Some(("50%".to_string(), "score-warning"))
+        );
+        assert_eq!(
+            cis_cell(&[posture(ComplianceFramework::CIS, 10.0)]),
+            Some(("10%".to_string(), "score-critical"))
+        );
+        // Exact threshold seams: the class uses the raw value, not the rounded
+        // display, so 70.9 stays warning even though it renders as "71%".
+        assert_eq!(
+            cis_cell(&[posture(ComplianceFramework::CIS, 71.0)]),
+            Some(("71%".to_string(), "score-good"))
+        );
+        assert_eq!(
+            cis_cell(&[posture(ComplianceFramework::CIS, 70.9)]),
+            Some(("71%".to_string(), "score-warning"))
+        );
+        assert_eq!(
+            cis_cell(&[posture(ComplianceFramework::CIS, 41.0)]),
+            Some(("41%".to_string(), "score-warning"))
+        );
+        assert_eq!(
+            cis_cell(&[posture(ComplianceFramework::CIS, 40.9)]),
+            Some(("41%".to_string(), "score-critical"))
+        );
     }
 }
