@@ -35,9 +35,13 @@
   (false success). Fixed by aligning to the universal `{plugin_id}-pre-apply`
   convention + a writer-contract doc + a registry-wide regression test. 5 commits
   `23cb59a..113f13b`, FF-merged to `main`, branch deleted. **PUSHED 2026-06-24**
-  to both remotes (github + gitlab `tidynest`); `main` == `origin` == `f68f70f`. Full
-  `cargo test --workspace` 637 passed pre-fix; plugins+cli re-green post-fix;
-  clippy `-D warnings` + fmt clean.
+  to both remotes (github + gitlab `tidynest`); tip is now `b5e59d6`, **CI green**.
+  Full `cargo test --workspace` 637 passed; clippy `-D warnings` + fmt clean.
+  **Post-merge fmt follow-up (`b5e59d6`):** the post-review services rename
+  (`service-minimisation-pre-apply`) crossed 100 cols; per-crate `cargo fmt` had
+  run but not a final `cargo fmt --all`, so CI's `fmt --check` caught it. Lesson:
+  run `cargo fmt --all` + `cargo clippy --workspace` before the final push — the
+  local pre-commit gate validates naming only, not fmt/clippy.
 - **Start here next:** the desktop multi-host view (largest GUI slice) — warrants
   its own brainstorm (large GUI surface). Per-host rollback works
   (`sudo hardener --ssh <host> rollback`); fleet rollback now also works
