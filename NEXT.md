@@ -196,8 +196,14 @@ host-keyed checkpoints (a checkpoint is never restored onto a different host) an
 write a best-effort audit entry. Tiered exit: 0 all clean / 1 a checkpoint
 restore failure / 2 connect, privilege or usage error.
 
-Remaining slices (still pending): the desktop multi-host view. Emergency
-per-host rollback also remains available via `sudo hardener --ssh <host> rollback`.
+Desktop fleet view (read-only) — **Done.** A new **Fleet** page in the desktop
+GUI scans several saved inventory hosts concurrently and shows each host's
+severity posture (per-host critical/high/medium/low/info tallies, expandable to
+that host's findings). Reuses the single-host scan path in-process; per-host
+failure is isolated. Deferred follow-ups: fleet apply/rollback in the GUI,
+compliance-score columns, ad-hoc `--ssh` hosts, live per-host progress,
+per-host history persistence from the GUI. Emergency per-host rollback remains
+available via `sudo hardener --ssh <host> rollback`.
 
 **Follow-up (from review):** `finding_to_scan_finding` (now in `report.rs`)
 serialises `severity`/`category` to the history db via `{:?}` (Debug), which
@@ -355,4 +361,4 @@ hardener-scheduler
 
 *This document is prepared for continuity between development sessions.*
 
-**Last Updated**: 2026-06-23
+**Last Updated**: 2026-06-24

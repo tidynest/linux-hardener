@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Desktop fleet view.** A new read-only **Fleet** page scans several saved
+  inventory hosts concurrently and shows each host's severity posture
+  (per-host critical/high/medium/low/info tallies, expandable to that host's
+  findings). Reuses the single-host scan path in-process; per-host failure is
+  isolated. Fleet apply/rollback and compliance scoring remain CLI-only.
+
 ## [1.1.0] - 2026-06-24
 
 ### Added
