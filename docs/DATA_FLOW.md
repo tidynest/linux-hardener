@@ -579,6 +579,10 @@ struct Finding {
 | `disconnect_remote` | `state: State<RemoteState>` | `()` |
 | `run_remote_scan` | `plugin_ids: Option<Vec<String>>`, `state: State<RemoteState>` | `Vec<ScanResult>` |
 | `run_fleet_scan` | `host_names: Vec<String>`, `plugin_ids: Vec<String>` | `Vec<FleetHostScan>` |
+| `run_fleet_apply` | `host_names: Vec<String>`, `plugin_ids: Vec<String>`, `dry_run: bool` | `Vec<ApplyOutcome>` |
+| `run_fleet_rollback` | `host_names: Vec<String>`, `plugin_ids: Vec<String>`, `dry_run: bool` | `Vec<RollbackOutcome>` |
+
+`run_fleet_apply` and `run_fleet_rollback` spawn `hardener batch apply`/`rollback --format json` as a subprocess (no pkexec; remote authentication uses each host's saved SSH profile). The child process output is parsed into `Vec<ApplyOutcome>` / `Vec<RollbackOutcome>` respectively. `dry_run: true` adds `--dry-run` (omits `--execute`), which is the default the Fleet Apply page enforces before showing the confirmation modal. `list_plugins` returns the available plugin metadata and is shared with the Fleet Apply page for its plugin multi-select.
 
 **Scheduler**
 
@@ -1208,6 +1212,41 @@ pub struct FleetHostScan {
 }
 ```
 
+### Fleet Mutation Types (hardener-types/src/lib.rs)
+
+```rust
+/// One host's outcome from a fleet apply (or dry-run validation).
+pub struct ApplyOutcome {
+    pub name: String,    // inventory host name
+    pub target: String,  // user@host:port
+    pub status: ApplyStatus,
+}
+
+/// Result of applying (or validating) one host.
+#[serde(tag = "state", rename_all = "lowercase")]
+pub enum ApplyStatus {
+    Validated { plugins: usize, would_change: usize, failed: usize },
+    Applied   { ok: usize, failed: usize },
+    Failed    { error: String },
+}
+
+/// One host's outcome from a fleet rollback (or dry-run preview).
+pub struct RollbackOutcome {
+    pub name: String,
+    pub target: String,
+    pub status: RollbackStatus,
+}
+
+/// Result of rolling back (or previewing) one host.
+#[serde(tag = "state", rename_all = "lowercase")]
+pub enum RollbackStatus {
+    Previewed   { checkpoints: usize },
+    RolledBack  { restored: usize, failed: usize },
+    NothingToDo,
+    Failed      { error: String },
+}
+```
+
 ### Key Differences from Single-Host Remote Scan
 
 | Aspect | Remote page (single host) | Fleet page (many hosts) |
@@ -1221,4 +1260,4 @@ pub struct FleetHostScan {
 
 ---
 
-**Last Updated**: 2026-06-24
+**Last Updated**: 2026-06-28

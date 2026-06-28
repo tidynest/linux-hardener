@@ -200,11 +200,12 @@ Desktop fleet view (read-only) — **Done.** A new **Fleet** page in the desktop
 GUI scans several saved inventory hosts concurrently and shows each host's
 severity posture (per-host critical/high/medium/low/info tallies, expandable to
 that host's findings). Reuses the single-host scan path in-process; per-host
-failure is isolated. Deferred follow-ups: fleet apply/rollback in the GUI,
-ad-hoc `--ssh` hosts, live per-host progress, per-host history persistence from
-the GUI. Emergency per-host rollback remains available via
-`sudo hardener --ssh <host> rollback`. Per-host CIS score columns plus a
-per-framework breakdown in the row expander shipped 2026-06-24.
+failure is isolated. Deferred follow-ups: ~~fleet apply/rollback in the GUI~~
+(shipped 2026-06-28 — see Fleet Apply page), ad-hoc `--ssh` hosts, live
+per-host progress, per-host history persistence from the GUI. Emergency
+per-host rollback remains available via `sudo hardener --ssh <host> rollback`.
+Per-host CIS score columns plus a per-framework breakdown in the row expander
+shipped 2026-06-24.
 
 **Follow-up (from review):** `finding_to_scan_finding` (now in `report.rs`)
 serialises `severity`/`category` to the history db via `{:?}` (Debug), which
@@ -362,4 +363,4 @@ hardener-scheduler
 
 *This document is prepared for continuity between development sessions.*
 
-**Last Updated**: 2026-06-24
+**Last Updated**: 2026-06-28

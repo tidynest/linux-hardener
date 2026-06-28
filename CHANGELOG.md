@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Desktop Fleet Apply page** — apply and roll back hardening across saved
+  hosts over SSH from the GUI, by shelling out to the audited `batch apply`/`rollback`
+  CLI. Mandatory dry-run preview + confirmation before any change; the page is
+  read-only until you confirm.
 - **Desktop fleet view.** A new read-only **Fleet** page scans several saved
   inventory hosts concurrently and shows each host's severity posture
   (per-host critical/high/medium/low/info tallies, expandable to that host's

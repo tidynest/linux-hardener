@@ -2901,3 +2901,41 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 .fleet-compliance-summary {
   margin-bottom: var(--space-md);
 }
+
+/* ============================================================
+   25. FLEET APPLY PAGE
+   ============================================================ */
+
+/* Inline label spacing for mode and plugin-select fieldsets. */
+.fleet-mode label,
+.fleet-plugin-select label { margin-right: var(--space-md); }
+
+/* Action row beneath the selection controls. */
+.fleet-actions { display: flex; gap: var(--space-sm); margin-top: var(--space-md); }
+
+/* Monospace output panels — dry-run preview and live results. */
+.fleet-preview,
+.fleet-results {
+  background: var(--bg-tertiary);
+  padding: var(--space-sm);
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+
+/* Confirmation modal overlay. */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.modal {
+  background: var(--bg-elevated);
+  padding: var(--space-lg);
+  border-radius: 8px;
+  max-width: 40rem;
+}
