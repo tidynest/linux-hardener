@@ -380,6 +380,18 @@ test_history_commands() {
         log_skip "history show (no session found)"
         log_skip "history export (no session found)"
     fi
+
+    # Per-host trend + regression queries. Local scans key history by hostname,
+    # so trends takes --host "$(hostname)"; regressions defaults to all hosts.
+    # Earlier scan sections have persisted history by now. The trends pattern
+    # also accepts the clean no-data line so a host-id edge case degrades to
+    # pass-not-crash rather than a false failure.
+    run_test_output "history trends (this host)" \
+        "\"$BINARY\" history trends --host \"\$(hostname)\"" \
+        "Security trend|No completed scans"
+    run_test_output "history regressions (all hosts)" \
+        "\"$BINARY\" history regressions" \
+        "[Rr]egression"
 }
 
 test_systemd_commands() {
