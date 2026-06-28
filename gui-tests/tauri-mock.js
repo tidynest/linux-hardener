@@ -406,6 +406,15 @@
   // ---- Command Handler ----
 
   async function handleInvoke(cmd, args) {
+    // serde_wasm_bindgen serialises `json!({...})` args as a JS Map, not a plain
+    // object (struct-derived args come through as objects). Normalise so the
+    // handlers below can read args.field uniformly regardless of binding style.
+    if (args instanceof Map) {
+      const obj = {};
+      args.forEach((v, k) => { obj[k] = v; });
+      args = obj;
+    }
+
     // Simulate network latency
     await new Promise((r) => setTimeout(r, 150 + Math.random() * 200));
 
@@ -566,6 +575,50 @@
 
       case 'test_notification':
         return { success: true, message: 'Test notification sent successfully' };
+
+      // ---- Fleet Commands ----
+      // Field names match the Rust types exactly: FleetHostStatus::Ok serialises
+      // as the string "Ok" and Failed(e) as {Failed: e}; ApplyStatus/RollbackStatus
+      // are internally tagged on "state" (rename_all = lowercase).
+
+      case 'run_fleet_scan': {
+        const names = (args && args.hostNames) || [];
+        const okTallies = { critical: 2, high: 3, medium: 2, low: 1, info: 0 };
+        const compliance = [
+          { framework: 'CIS', summary: { summary_total_controls: 40, summary_passing: 33, summary_failing: 5, summary_manual_review: 2, summary_not_applicable: 0, summary_score_percentage: 82.5 } },
+          { framework: 'STIG', summary: { summary_total_controls: 31, summary_passing: 22, summary_failing: 8, summary_manual_review: 1, summary_not_applicable: 0, summary_score_percentage: 71.0 } },
+        ];
+        // db-01 exercises the failed-row path; everything else is a healthy host.
+        return names.map((name) =>
+          name === 'db-01'
+            ? { host_name: name, status: { Failed: 'SSH connection refused on port 2222' }, tallies: { critical: 0, high: 0, medium: 0, low: 0, info: 0 }, scan_results: [], compliance: [] }
+            : { host_name: name, status: 'Ok', tallies: okTallies, scan_results: SCAN_RESULTS, compliance }
+        );
+      }
+
+      case 'run_fleet_apply': {
+        const hosts = (args && args.hosts) || [];
+        const execute = !!(args && args.execute);
+        return hosts.map((name) => ({
+          name,
+          target: name,
+          status: execute
+            ? { state: 'applied', ok: 2, failed: 0 }
+            : { state: 'validated', plugins: 2, would_change: 5, failed: 0 },
+        }));
+      }
+
+      case 'run_fleet_rollback': {
+        const hosts = (args && args.hosts) || [];
+        const execute = !!(args && args.execute);
+        return hosts.map((name) => ({
+          name,
+          target: name,
+          status: execute
+            ? { state: 'rolledback', restored: 2, failed: 0 }
+            : { state: 'previewed', checkpoints: 1 },
+        }));
+      }
 
       case 'validate_config':
         return {
