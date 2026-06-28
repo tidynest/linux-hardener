@@ -12,7 +12,7 @@ Commands for running unit tests, integration tests, container-based root tests, 
 cargo test --workspace
 ```
 
-Runs every test across all 11 crates. Currently 505+ tests.
+Runs every test across all 11 crates. Currently 648+ tests.
 
 ### CI subset (excludes GUI crates)
 
@@ -256,4 +256,4 @@ cargo build --release --target aarch64-unknown-linux-gnu -p hardener-cli
 
 Produces three release tarballs and creates a GitHub release.
 
-**Last Updated**: 2026-02-26
+**Last Updated**: 2026-06-28

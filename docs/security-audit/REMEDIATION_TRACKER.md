@@ -272,7 +272,7 @@ Each fix should be verified against these criteria before marking as complete:
 
 - [ ] Unit test added that exercises the fix
 - [ ] Attack scenario from the finding is no longer reproducible
-- [ ] No regression in existing test suite (428 tests)
+- [ ] No regression in existing test suite (648+ tests)
 - [ ] Clippy passes with `-D clippy::unwrap_used`
 - [ ] Both native and WASM builds compile cleanly
 - [ ] Cross-distro test suite passes (if applicable)

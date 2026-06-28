@@ -197,7 +197,7 @@ hardener report [FLAGS]
 | Flag | Description | Default |
 |------|-------------|---------|
 | `-s`, `--scenario <SCENARIO>` | Use case preset: `server`, `workstation`, `government`, `healthcare`, `financial`, `gdpr`, `all` | |
-| `--framework <FRAMEWORK>` | Specific framework: `cis`, `stig`, `nist`, `pcidss`, `hipaa`, `gdpr` | |
+| `--framework <FRAMEWORK>` | Specific framework: `cis`, `stig`, `nist`, `pcidss`, `hipaa`, `gdpr`, `iso27001` | |
 | `--report-format <FORMAT>` | Report format: `text`, `json` | `text` |
 | `-o`, `--output <FILE>` | Write to file instead of stdout | stdout |
 | `-i`, `--interactive` | Launch interactive wizard to pick scenario/framework | off |
@@ -211,6 +211,129 @@ hardener report --scenario server            # All frameworks relevant to server
 hardener report --framework cis              # CIS Benchmark report only
 hardener report --interactive                # Step-by-step wizard
 hardener report --scenario all --output report.json --report-format json
+```
+
+---
+
+## batch
+
+Scan, assess, apply, or roll back hardening across multiple hosts concurrently.
+All four subcommands share the same host-selection flags and accept the global
+`--format text|json` flag. `apply` and `rollback` are **dry-run by default**;
+pass `--execute` to mutate the remote hosts.
+
+Host selection (common to all four subcommands):
+
+| Flag | Description |
+|------|-------------|
+| `--all` | Target every host in the inventory (`~/.config/linux-hardener/hosts.toml`) |
+| `--host <NAMES>` | Comma-separated inventory host names (repeatable) |
+| `--ssh <user@host[:port]>` | Ad-hoc host not in the inventory (repeatable) |
+
+`--all` and `--host` are mutually exclusive.
+
+### batch scan
+
+Scan selected hosts concurrently and print an aggregate findings report.
+
+```
+hardener batch scan (--all | --host a,b | --ssh user@host) [FLAGS]
+```
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--concurrency <N>` | Maximum hosts scanned in parallel | `8` |
+| `--output <FILE>` | Write report to a file instead of stdout | stdout |
+
+Tiered exit codes: `0` — no findings; `1` — findings present; `2` — one or more host errors.
+
+**Examples:**
+
+```bash
+hardener batch scan --all                               # Scan every inventory host
+hardener batch scan --host web-01,db-02                # Scan two named hosts
+hardener batch scan --ssh ops@10.0.0.5 --ssh ops@10.0.0.6  # Ad-hoc hosts
+hardener --format json batch scan --all --output fleet.json
+```
+
+### batch report
+
+Assess selected hosts against a compliance framework and print a fleet posture
+table (one row per host/framework: score, pass/fail/manual/NA control counts).
+
+```
+hardener batch report (--all | --host a,b | --ssh user@host) [FLAGS]
+```
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--framework <FRAMEWORK>` | Single framework: `cis`, `stig`, `nist`, `pcidss`, `hipaa`, `gdpr`, `iso27001` | |
+| `--scenario <SCENARIO>` | Preset: `server`, `workstation`, `government`, `healthcare`, `financial`, `gdpr`, `all` | `server` |
+| `--concurrency <N>` | Maximum hosts assessed in parallel | `8` |
+| `--output <FILE>` | Write report to a file instead of stdout | stdout |
+
+`--framework` and `--scenario` are mutually exclusive.
+
+Tiered exit codes: `0` — all controls passing; `1` — any failing control; `2` — any host error.
+
+**Examples:**
+
+```bash
+hardener batch report --all --framework cis
+hardener batch report --host web-01,db-02 --scenario server
+hardener --format json batch report --all --output posture.json
+```
+
+### batch apply
+
+Apply hardening to selected hosts concurrently. **Dry-run unless `--execute` is given.**
+Each host undergoes a privilege probe (`root` or `sudo -n true`) before any writes;
+unprivileged hosts are isolated with a `Failed` result while the rest proceed.
+Host-keyed checkpoints are created automatically on execute.
+
+```
+hardener batch apply (--all | --host a,b | --ssh user@host) [FLAGS]
+```
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--plugin <NAMES>` | Comma-separated plugins to apply (repeatable) | all plugins |
+| `--execute` | Actually apply changes (without this, dry-run only) | dry-run |
+| `--concurrency <N>` | Maximum hosts applied in parallel | `8` |
+| `--output <FILE>` | Write report to a file instead of stdout | stdout |
+
+Tiered exit codes: `0` — clean; `1` — apply or validation failure; `2` — connect, privilege, or usage error.
+
+**Examples:**
+
+```bash
+hardener batch apply --all                              # Dry-run all hosts
+hardener batch apply --all --execute                   # Apply to all hosts
+hardener batch apply --host web-01 --plugin ssh --execute
+```
+
+### batch rollback
+
+Roll back selected hosts to their latest per-plugin checkpoint concurrently.
+**Dry-run preview unless `--execute` is given.**
+
+```
+hardener batch rollback (--all | --host a,b | --ssh user@host) [FLAGS]
+```
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--plugin <NAMES>` | Comma-separated plugins to roll back (repeatable) | all plugins |
+| `--execute` | Actually restore (without this, dry-run preview only) | dry-run |
+| `--concurrency <N>` | Maximum hosts rolled back in parallel | `8` |
+| `--output <FILE>` | Write report to a file instead of stdout | stdout |
+
+**Examples:**
+
+```bash
+hardener batch rollback --all                           # Preview rollback for all hosts
+hardener batch rollback --all --execute                # Restore all hosts
+hardener batch rollback --host db-02 --plugin kernel --execute
 ```
 
 ---
@@ -338,6 +461,49 @@ hardener history show <SESSION_ID>
 |----------|-------------|
 | `SESSION_ID` | UUID of the session (from `history list`) |
 
+### history trends
+
+Show a per-host security timeline (per-severity counts and direction), oldest
+scan first. Useful for spotting long-term improvement or drift.
+
+```
+hardener history trends --host <KEY> [FLAGS]
+```
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--host <KEY>` | Host identifier: inventory name or `user@host:port` for ad-hoc | (required) |
+| `-l`, `--limit <N>` | Maximum number of scans to include | `20` |
+
+**Example:**
+
+```bash
+hardener history trends --host web-01
+hardener history trends --host ops@10.0.0.5:22 --limit 10
+```
+
+### history regressions
+
+Compare each host's two newest completed scans. Reports any host whose latest
+scan is worse than the previous one. Exits `1` when any regression is found,
+`0` when all hosts are stable or improving — suitable as a CI gate.
+
+```
+hardener history regressions [FLAGS]
+```
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--host <KEY>` | Limit check to a single host (default: every host in history) | all hosts |
+
+**Examples:**
+
+```bash
+hardener history regressions                            # Check all hosts (CI gate)
+hardener history regressions --host web-01
+hardener --format json history regressions
+```
+
 ### history export
 
 Export a scan session to JSON.
@@ -351,4 +517,4 @@ hardener history export <SESSION_ID> [FLAGS]
 | `SESSION_ID` | UUID of the session to export | |
 | `-o`, `--output <FILE>` | Output file path | `session-<id>.json` |
 
-**Last Updated**: 2026-02-26
+**Last Updated**: 2026-06-28

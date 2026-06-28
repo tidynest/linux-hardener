@@ -170,7 +170,7 @@ If you want to contribute a new security plugin:
 2. Follow the `HardeningPlugin` trait interface
 3. Include comprehensive test coverage
 4. Document the security controls implemented
-5. Map to relevant compliance frameworks (CIS, STIG) where applicable
+5. Map to relevant compliance frameworks (CIS, STIG, NIST, PCI-DSS, HIPAA, GDPR, ISO 27001) where applicable
 
 ### Documentation
 
@@ -255,4 +255,4 @@ By contributing, you agree that your contributions will be licensed under the Ap
 
 Thank you for contributing to Linux System Hardener!
 
-**Last Updated**: 2026-02-27
+**Last Updated**: 2026-06-28

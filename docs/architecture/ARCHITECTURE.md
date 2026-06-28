@@ -1,6 +1,6 @@
 # Linux System Hardener - Architecture Documentation
 
-**Last Updated:** 2026-06-24
+**Last Updated:** 2026-06-28
 **Version:** 1.1.0
 
 ---
@@ -10,7 +10,7 @@
 Linux System Hardener is a modular security hardening tool for Linux systems, providing:
 - Plugin-based scanning and hardening across multiple security domains
 - Checkpoint/rollback functionality for safe changes
-- Compliance framework mapping (CIS, NIST, STIG, HIPAA, PCI-DSS, GDPR)
+- Compliance framework mapping (CIS, NIST, STIG, HIPAA, PCI-DSS, GDPR, ISO 27001:2022)
 - Multiple interfaces: CLI, GUI (Tauri/Leptos), and programmatic APIs
 - Cryptographically signed audit logs and tamper-proof state management
 
@@ -30,6 +30,7 @@ Linux System Hardener is a modular security hardening tool for Linux systems, pr
 │   └─ Report        │   └─ Remote          │                     │
 │   └─ Batch         │   └─ Scheduler       │                     │
 │                    │   └─ Fleet (v1.1.0)  │                     │
+│   └─ Fleet Apply     │                     │
 └────────────────────┴──────────────────────┴─────────────────────┘
                               │
                               ▼
@@ -41,7 +42,6 @@ Linux System Hardener is a modular security hardening tool for Linux systems, pr
 │  ├─ PluginRegistry (central plugin registry)                    │
 │  ├─ PluginManager (orchestration, dependency resolution)        │
 │  ├─ Context (execution context, system info, audit logging)     │
-│  ├─ SystemExecutor trait (local/remote abstraction)             │
 │  └─ Finding/ScanResult/ApplyResult types                        │
 └─────────────────────────────────────────────────────────────────┘
                               │
@@ -69,8 +69,10 @@ Linux System Hardener is a modular security hardening tool for Linux systems, pr
 │ ├─ Checkpoint system    │     │ ├─ Error types                  │
 │ ├─ CheckpointManager    │     │ ├─ Logging utilities            │
 │ ├─ Hash chain auditing  │     │ ├─ File utilities               │
-│ ├─ Ed25519 signing      │     │ └─ Severity/Category enums      │
-│ └─ SQLite database      │     │                                 │
+│ ├─ Ed25519 signing      │     │ ├─ Severity/Category enums      │
+│ └─ SQLite database      │     │ ├─ SystemExecutor trait         │
+│                         │     │ ├─ FileMetadata/CommandOutput   │
+│                         │     │ └─ MockExecutor (test seam)     │
 │                         │     │ hardener-distro                 │
 │                         │     │ ├─ Distribution detection       │
 │                         │     │ └─ Package managers             │
@@ -118,15 +120,15 @@ Linux System Hardener is a modular security hardening tool for Linux systems, pr
 | Crate | Purpose | Key Exports |
 |-------|---------|-------------|
 | `hardener-types` | WASM-compatible shared types (4 source files: `lib.rs`, `config_picker.rs`, `remote.rs`, `scheduler.rs`) | `PluginId`, `Severity`, `Finding`, `ScanResult`, `ApplyResult`, `ComplianceReport`, `RollbackResult`, `ValidationReport`, `ConfigSummary`, `RemoteHostProfile`, `RemoteConnectionStatus`, `RemoteConnectionInfo`, `HostsConfig`, `SchedulerUiConfig`, `NotificationUiConfig`, `TestNotificationResult`, `FleetHostScan`, `FleetHostStatus`, `SeverityTallies` |
-| `hardener-core` | Plugin framework, execution context, config | `HardeningPlugin`, `Context`, `PluginManager`, `HardenerConfig`, `ConfigLoader`, `SystemExecutor`, `LocalExecutor`, `SshExecutor` |
-| `hardener-common` | Shared utilities and error types | `HardeningError`, file utilities (re-exports types from hardener-types) |
+| `hardener-core` | Plugin framework, execution context, config | `HardeningPlugin`, `Context`, `PluginManager`, `HardenerConfig`, `ConfigLoader`, `LocalExecutor`, `SshExecutor` (re-exports `SystemExecutor` from hardener-common) |
+| `hardener-common` | Shared utilities, error types, executor abstraction | `HardeningError`, `SystemExecutor`, `FileMetadata`, `CommandOutput`, `MockExecutor`, file utilities (re-exports types from hardener-types) |
 | `hardener-plugins` | 8 security plugin implementations | All plugin structs |
 | `hardener-state` | Checkpoint and audit system | `CheckpointManager`, `AuditLogger` |
 | `hardener-compliance` | Compliance framework mapping | `ReportGenerator`, frameworks (PDF behind `pdf` feature) |
 | `hardener-distro` | Distribution detection | `Distribution`, `DistroFamily`, `DistributionAdapter` |
 | `hardener-scheduler` | Scheduled scanning daemon | `SchedulerConfig`, `Daemon`, `ScanHistoryManager`, `JsonStore`, `NotificationDispatcher`, `ScanRunner`, `ScanSummary`, `TriggerType`, `SystemdGenerator`, `cron_to_calendar` |
 | `hardener-cli` | Command-line interface | Binary entry point |
-| `hardener-ui` | Leptos WASM frontend | 6-page architecture (Dashboard, Analysis, Hardening, Remote, Scheduler, Fleet), dark terminal CSS theme (depends only on hardener-types) |
+| `hardener-ui` | Leptos WASM frontend | 7-page architecture (Dashboard, Analysis, Hardening, Remote, Scheduler, Fleet, Fleet Apply), dark terminal CSS theme (depends only on hardener-types) |
 | `src-tauri` | Desktop app backend | Tauri commands |
 
 ### Tauri 2.x Integration Notes
@@ -318,7 +320,7 @@ pub trait HardeningPlugin: Send + Sync {
 
 ### SystemExecutor
 
-Abstraction for local and remote system operations:
+Abstraction for local and remote system operations. The trait, `FileMetadata`, `CommandOutput`, and `MockExecutor` are defined in **`hardener-common`** and re-exported from `hardener-core` so existing `hardener_core::SystemExecutor` paths continue to compile:
 
 ```rust
 #[async_trait]
@@ -428,6 +430,7 @@ CREATE TABLE file_states (
 | PCI-DSS | 22 | Payment Card Industry standards |
 | HIPAA | 14 | Healthcare security requirements |
 | GDPR | 12 | EU data protection (Article 32) |
+| ISO 27001:2022 | 93 | ISO/IEC 27001:2022 Annex A controls (4 themes) |
 
 ---
 

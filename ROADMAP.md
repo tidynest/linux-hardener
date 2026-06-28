@@ -528,7 +528,7 @@ pass/fail.
 
 | Feature | Description | Priority | Status |
 |---------|-------------|----------|--------|
-| SSH crypto-algorithm hardening | Harden `KexAlgorithms`/`Ciphers`/`MACs`, incl. post-quantum kex (`mlkem768x25519-sha256`, default in OpenSSH 10). Must detect supported algorithms (`ssh -Q kex`) and run `sshd -t` before restart to avoid lockout | High | ⬜ Pending |
+| SSH crypto-algorithm hardening | Harden `KexAlgorithms`/`Ciphers`/`MACs`, incl. post-quantum kex (`mlkem768x25519-sha256`, default in OpenSSH 10). Must detect supported algorithms (`ssh -Q kex`) and run `sshd -t` before restart to avoid lockout | High | ✅ Done |
 | RHEL 10 compliance profiles | DISA RHEL 10 STIG V1R1 (2026-06) and CIS RHEL 10 v1.0.1 now exist | Medium | ⬜ Pending |
 | Multi-host SSH management | Manage/monitor multiple hosts from one UI: host profiles, parallel scanning, trend history, regression alerts | Medium | ✅ Largely done — CLI `batch scan/report/apply/rollback` + `history trends/regressions` + scheduler regression alerts; GUI Fleet scan/compliance/apply/rollback shipped (GUI polish remains) |
 | Security audit (external) | Third-party security review | Medium | ⬜ Pending |

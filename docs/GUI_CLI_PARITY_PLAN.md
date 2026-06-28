@@ -53,8 +53,8 @@ Features that can be deferred to later versions.
 | **Checkpoint details** | `checkpoint show` | P2 | View checkpoint contents |
 | **Remote scanning (single host)** | `--ssh` flags | P3 | Complex SSH config UI — ✅ COMPLETE (Remote page) |
 | **Fleet scanning (read-only)** | `batch scan` | P3 | Multi-host concurrent scan in GUI — ✅ COMPLETE (Fleet page) |
-| **Fleet apply / rollback** | `batch apply`, `batch rollback` | P3 | Write operations across fleet — CLI-only |
-| **Fleet compliance columns** | `batch report` | P3 | Per-host compliance score in GUI — CLI-only |
+| **Fleet apply / rollback** | `batch apply`, `batch rollback` | P3 | Write operations across fleet — ✅ COMPLETE (Fleet Apply page) |
+| **Fleet compliance columns** | `batch report` | P3 | Per-host compliance score in GUI — ✅ COMPLETE (Fleet page CIS columns) |
 | **Scheduler UI** | `daemon` commands | P3 | Daemon management — ✅ COMPLETE (Scheduler page) |
 | **Config file picker** | `--config FILE` | P3 | Power user feature — ✅ COMPLETE |
 
@@ -274,6 +274,7 @@ Phase 6 (Mode Toggles)            - PARTIALLY COMPLETE
 | Mode toggles | Analysis | Scan Options panel - toggle switches |
 | Single-host remote scan | Remote | Host list sidebar + scan button |
 | Fleet scan (read-only) | Fleet | Host multi-select + scan button; per-host tally rows, expandable findings |
+| Fleet apply / rollback | Fleet Apply | `run_fleet_apply` / `run_fleet_rollback` Tauri commands |
 
 ---
 
@@ -331,6 +332,8 @@ This keeps you in control while learning the architecture.
 | `disconnect_remote(state)` | Disconnect active SSH session | Clears connection state |
 | `run_remote_scan(plugin_ids, state)` | Scan remote host via SSH | Returns `Vec<ScanResult>` |
 | `run_fleet_scan(host_names, plugin_ids)` | Scan multiple inventory hosts concurrently | Returns `Vec<FleetHostScan>` |
+| `run_fleet_apply(host_names, plugin_ids, execute)` | Apply hardening across fleet (dry-run default) | Returns per-host apply results |
+| `run_fleet_rollback(host_names, checkpoint_ids)` | Roll back checkpoints across fleet | Returns per-host rollback results |
 | `get_scheduler_config()` | Load scheduler configuration | Returns `SchedulerUiConfig` |
 | `save_scheduler_config(config)` | Save scheduler configuration | Writes to config.toml |
 | `test_notification()` | Send test notification | Returns `TestNotificationResult` |
@@ -341,4 +344,4 @@ All planned commands from the original plan have been implemented.
 
 ---
 
-**Last Updated**: 2026-06-24
+**Last Updated**: 2026-06-28

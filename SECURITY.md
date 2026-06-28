@@ -4,7 +4,8 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.0.x   | :white_check_mark: |
+| 1.1.x   | :white_check_mark: |
+| 1.0.x   | :x:                |
 | 0.3.x   | :x:                |
 | 0.2.x   | :x:                |
 | 0.1.x   | :x:                |
@@ -87,9 +88,7 @@ This tool is designed to harden systems against common attack vectors, but is **
 
 4. **Distribution Detection**: Relies on `/etc/os-release` which could be spoofed on a compromised system.
 
-5. **SSH Cryptographic Algorithms**: The SSH plugin hardens authentication and protocol directives but does **not** yet enforce `KexAlgorithms`, `Ciphers` or `MACs`. It therefore does not mandate AEAD-only ciphers or post-quantum key exchange (`mlkem768x25519-sha256`, the OpenSSH 10+ default); hosts retain their OpenSSH defaults for these. Tracked as a P1 task in `NEXT.md`.
-
-6. **Compliance Coverage**: Only the CIS framework is automatically assessed; STIG, NIST, PCI-DSS, HIPAA and GDPR controls are reported as `ManualReview` until per-control mappings are added. Do not treat a `ManualReview` result as compliant.
+5. **Compliance Coverage**: All 7 frameworks (CIS, STIG, NIST 800-53, PCI-DSS, HIPAA, GDPR, ISO 27001:2022) emit real Pass/Fail results via plugin-declared per-control coverage. Controls not covered by any plugin are reported as `ManualReview`. Do not treat a `ManualReview` result as compliant.
 
 ### SSH Remote Scanning Security
 
@@ -176,6 +175,7 @@ This tool maps findings to:
 - PCI-DSS v4.0 requirements
 - HIPAA technical safeguards
 - GDPR Article 32 (security of processing)
+- ISO 27001:2022 Annex A controls
 
 ## Known Security Advisories
 
