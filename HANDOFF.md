@@ -81,10 +81,14 @@ quick edit:
    docs/audit/` (141 files). Its only still-live signal — 3 open deferred-cleanup
    flags — was salvaged into [NEXT.md](NEXT.md) (§"P3 — Deferred code cleanups");
    dangling refs in FILE_MAP/NEXT fixed.
-2. **`docs/DISTRIBUTION_VALIDATION.md`** — body still records "v0.3.3 binary".
-   Needs a real **v1.1.0 cross-distro re-validation**: arch, debian, fedora, rhel,
-   openSUSE **Leap 16** (15.x reached EOL April 2026). Human-run (nspawn containers
-   + root); the doc's own header already flags this.
+2. **`docs/DISTRIBUTION_VALIDATION.md`** — 🟡 **v1.1.0 binary re-validated
+   2026-06-28** (CLI suite, all 5 containers; doc updated with results + failure
+   analysis). The run surfaced 2 stale-test failures (the suite/README used the
+   pre-v1.1.0 `daemon status <count>` form; v1.1.0 renamed it to `--limit` — both
+   fixed) and 1 intermittent scan-JSON check (3/5 distros, open, tracked in NEXT).
+   **No product regressions.** Still pending: **distro-version refresh** (recreate
+   containers for Debian 13 / Fedora 44 / RHEL 10 / openSUSE Leap 16) and a GUI
+   re-run — both heavier (container rebuild).
 3. **`docs/security-audit/REMEDIATION_TRACKER.md`** — ✅ **Resolved 2026-06-28.**
    §4 "Defence in Depth" now carries a proper **Status** column (replaced the old
    "Priority" scheduling hints that left 19 resolved rows looking unaddressed).

@@ -350,7 +350,7 @@ test_checkpoint_operations() {
 test_daemon_commands() {
     log_header "10. DAEMON COMMANDS"
 
-    run_test_output "daemon status" "\"$BINARY\" daemon status 5" "Database:"
+    run_test_output "daemon status" "\"$BINARY\" daemon status --limit 5" "Database:"
     run_test "daemon run-once" "\"$BINARY\" daemon run-once"
     log_skip "daemon start (blocking command - not tested)"
 }
@@ -479,7 +479,7 @@ test_global_format_flag() {
 
     run_test "plugins --format json" "\"$BINARY\" --format json plugins"
     run_test "checkpoint list --format json" "\"$BINARY\" --format json checkpoint list"
-    run_test "daemon status --format json" "\"$BINARY\" --format json daemon status 5"
+    run_test "daemon status --format json" "\"$BINARY\" --format json daemon status --limit 5"
 }
 
 test_error_handling() {

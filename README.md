@@ -395,7 +395,7 @@ hardener daemon start
 hardener daemon run-once
 
 # Show scheduler status and scan history
-hardener daemon status 10
+hardener daemon status --limit 10
 
 # Generate systemd unit files (outputs to stdout)
 hardener systemd generate
