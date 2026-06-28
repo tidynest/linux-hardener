@@ -129,7 +129,7 @@ test-category tables + counts to match reality.
 ## Remaining work — full backlog (everything not worked this session)
 
 ### Doc / validation leftovers
-- **GUI cross-distro re-run** for v1.1.0 (`--gui`) — not re-run this session.
+- ✅ **GUI cross-distro re-run** — `--gui` suite green on all 5 distros (2026-06-29), now 113 tests incl. the new fleet/remote/scheduler specs.
 - **AUR / package version bump** — package specs (PKGBUILD/RPM/DEB) are still at **1.0.3** while the project is **1.1.0**. The README's AUR badge live-fetches and will show 1.0.3 until bumped. Bump pkgver → `makepkg --printsrcinfo > .SRCINFO` → push AUR (`ssh://aur@aur.archlinux.org/linux-system-hardener.git`, `id_ed25519`).
 
 ### Feature backlog (from ROADMAP / NEXT)

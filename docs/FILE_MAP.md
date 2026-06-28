@@ -563,6 +563,10 @@ pub async fn run_apply(plugin_ids: Vec<String>,
     config_path: Option<String>,) -> Result<Vec<ApplyResult>, String>
 pub async fn run_apply_dry_run(plugin_ids: Vec<String>,
     config_path: Option<String>,) -> Result<Vec<ValidationReport>, String>
+pub async fn run_fleet_apply(hosts: Vec<String>, plugins: Vec<String>,
+    execute: bool,) -> Result<Vec<ApplyOutcome>, String>
+pub async fn run_fleet_rollback(hosts: Vec<String>, plugins: Vec<String>,
+    execute: bool,) -> Result<Vec<RollbackOutcome>, String>
 pub async fn run_fleet_scan(host_names: Vec<String>,
     plugin_ids: Option<Vec<String>>,) -> Result<Vec<FleetHostScan>, String>
 pub async fn run_remote_scan(plugin_ids: Option<Vec<String>>,
@@ -741,7 +745,7 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 
 ## GUI Tests (Playwright + Desktop)
 
-84 Playwright tests validate the Web UI across 5 distributions. 95 desktop tests validate the Tauri app via Hyprland keyboard/screenshot automation. 21 Node.js tests validate desktop UX features via Playwright.
+113 Playwright tests validate the Web UI across 5 distributions. 95 desktop tests validate the Tauri app via Hyprland keyboard/screenshot automation. 21 Node.js tests validate desktop UX features via Playwright.
 
 ### Test Files
 

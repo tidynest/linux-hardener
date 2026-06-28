@@ -1457,7 +1457,7 @@ Four scripts orchestrate Playwright-based GUI testing of the Web UI inside nspaw
 
 **Script**: `run-gui-tests.sh`
 
-**Purpose**: Host orchestrator that runs 84 Playwright Web UI tests across all 5 distributions. For each distro, copies the WASM build and test files into the container, then delegates to `gui-test-inner.sh` via `systemd-nspawn --pipe`.
+**Purpose**: Host orchestrator that runs 113 Playwright Web UI tests across all 5 distributions. For each distro, copies the WASM build and test files into the container, then delegates to `gui-test-inner.sh` via `systemd-nspawn --pipe`.
 
 **Usage**:
 ```bash

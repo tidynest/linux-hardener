@@ -237,7 +237,7 @@ still-live signal):
 
 | Item | Detail | Status |
 |------|--------|--------|
-| Distro validation refresh | v1.1.0 binary **re-validated** on the existing containers 2026-06-28 (CLI suite; analysis in `docs/DISTRIBUTION_VALIDATION.md` §v1.1.0 Re-validation). **Version refresh still pending**: recreate containers for Debian 13, Fedora 44, RHEL 10, openSUSE Leap 16 (Leap 15.6 EOL April 2026). GUI suite not re-run. | 🟡 Partial |
+| Distro validation refresh | v1.1.0 binary **re-validated** on the existing containers 2026-06-28 (CLI suite; analysis in `docs/DISTRIBUTION_VALIDATION.md` §v1.1.0 Re-validation). **Version refresh still pending**: recreate containers for Debian 13, Fedora 44, RHEL 10, openSUSE Leap 16 (Leap 15.6 EOL April 2026). GUI suite re-run green on all 5 distros (2026-06-29, 113 tests). | 🟡 Partial |
 | Cross-distro JSON-grep flake | **Root cause: the `sed` ANSI-strip in `run_test_output`** (NOT stderr-fold/capture — those fixes did not help). It piped captured output through `sed 's/ANSI//g'` before `grep`; under openSUSE's minimal-container locale that `sed` intermittently emitted nothing, masking fields that were present (proven: direct `grep -ac` matched 8/240/3 while `sed \| grep` missed). Dropped the pointless pre-strip (ANSI never splits matched tokens); now `grep -aqE`s the captured file directly, with a `diag:` line on the fail path. Suite green 125/125 × 5. | ✅ Done (837963b) |
 | `tauri` 2.11.2 → 2.11.3 | Latest patch (2026-06-17); no CVE, routine bump | ✅ Done (lockfile, 2026-06-20) |
 | Desktop crate compile fix | Tauri compliance commands ported to the phase-3 `ReportGenerator::new(config, coverage)` signature; `cargo check -p linux-hardener-desktop` clean | ✅ Done (2026-06-20) |

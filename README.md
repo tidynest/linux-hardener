@@ -125,7 +125,7 @@ The tool is designed for system administrators, DevOps engineers, and security p
 
 ```
 Rust workspace:  648 passed · 0 failed · 38 ignored   (>90% coverage)
-GUI / desktop:   84 Playwright (Web UI, 5 distros) · 95 desktop (UX + functional) · 21 Node.js
+GUI / desktop:   113 Playwright (Web UI, 5 distros) · 95 desktop (UX + functional) · 21 Node.js
 ```
 
 ### Build Status
@@ -288,7 +288,7 @@ The `--apply` flag explicitly enables destructive tests. Without it, only read-o
 **GUI tests** can be run separately or alongside CLI tests:
 
 ```bash
-# Run 84 Playwright Web UI tests across all 5 distros
+# Run 113 Playwright Web UI tests across all 5 distros
 sudo ./scripts/run-gui-tests.sh
 
 # Or combine with CLI tests using the --gui flag
