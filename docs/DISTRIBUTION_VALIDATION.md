@@ -22,20 +22,18 @@ This document tracks validation testing across supported Linux distributions.
 
 | Distribution | Family | Version | Test Date | Tests | Pass | Fail | Skip | Pass Rate | Status |
 |--------------|--------|---------|-----------|-------|------|------|------|-----------|--------|
-| Arch Linux | Arch | Rolling | 2026-06-28 | 123 | 122 | 1 | 6 | 99.2% | VALIDATED¹ |
-| Debian | Debian | 12 (Bookworm) | 2026-06-28 | 123 | 123 | 0 | 6 | 100% | VALIDATED |
-| Fedora | Red Hat | 41 | 2026-06-28 | 123 | 122 | 1 | 6 | 99.2% | VALIDATED¹ |
-| Rocky Linux | Red Hat | 9 | 2026-06-28 | 123 | 123 | 0 | 6 | 100% | VALIDATED |
-| openSUSE | SUSE | Leap 15.6 | 2026-06-28 | 123 | 122 | 1 | 6 | 99.2% | VALIDATED¹ |
+| Arch Linux | Arch | Rolling | 2026-06-28 | 125 | 125 | 0 | 6 | 100% | VALIDATED |
+| Debian | Debian | 12 (Bookworm) | 2026-06-28 | 125 | 125 | 0 | 6 | 100% | VALIDATED |
+| Fedora | Red Hat | 41 | 2026-06-28 | 125 | 125 | 0 | 6 | 100% | VALIDATED |
+| Rocky Linux | Red Hat | 9 | 2026-06-28 | 125 | 125 | 0 | 6 | 100% | VALIDATED |
+| openSUSE | SUSE | Leap 15.6 | 2026-06-28 | 125 | 125 | 0 | 6 | 100% | VALIDATED |
 
-> ¹ **v1.1.0 (2026-06-28), post-fix run.** The single remaining failure on
-> Arch/Fedora/openSUSE is **not a product regression** — it is an intermittent
-> JSON-output *capture* flake in the test harness (`run_test_output` folds stderr
-> via `2>&1` under `nspawn --pipe`); the failing test and distro **vary run-to-run**,
-> and every field is emitted correctly when the v1.1.0 binary is run directly.
-> Debian and Rocky are clean (123/123). The initial run also surfaced stale `daemon
-> status` test/doc invocations, since fixed. Full breakdown:
-> [v1.1.0 Re-validation](#v110-re-validation-2026-06-28).
+> **v1.1.0 (2026-06-28), clean run — 125/125 on all five.** The suite grew from
+> 123 to 125 tests with the addition of ISO/IEC 27001:2022 to the per-framework
+> report coverage (now 7 frameworks). Two harness issues found and fixed during
+> re-validation — stale `daemon status` invocations and an intermittent JSON-grep
+> flake — are written up under [v1.1.0 Re-validation](#v110-re-validation-2026-06-28).
+> No product regressions. The musl static binary works across all glibc versions.
 
 > **Note on family coverage:** Each validated distribution covers its entire family:
 > - **Arch** covers Manjaro, EndeavourOS, Garuda
@@ -54,15 +52,15 @@ The v1.1.0 musl static binary (`hardener 1.1.0`, ~13.6 MB, `static-pie`) was run
 through the full CLI suite (`sudo ./scripts/run-cross-distro-tests.sh --apply`)
 across all five containers. GUI/Playwright tests were **not** re-run in this pass.
 
-### Result (post-fix run)
+### Result (final, all harness fixes applied)
 
 | Distro | Total | Pass | Fail | Skip | Exit |
 |--------|-------|------|------|------|------|
-| arch | 123 | 122 | 1 | 6 | 1 |
-| debian | 123 | 123 | 0 | 6 | 0 |
-| fedora | 123 | 122 | 1 | 6 | 1 |
-| rhel (Rocky 9) | 123 | 123 | 0 | 6 | 0 |
-| opensuse | 123 | 122 | 1 | 6 | 1 |
+| arch | 125 | 125 | 0 | 6 | 0 |
+| debian | 125 | 125 | 0 | 6 | 0 |
+| fedora | 125 | 125 | 0 | 6 | 0 |
+| rhel (Rocky 9) | 125 | 125 | 0 | 6 | 0 |
+| opensuse | 125 | 125 | 0 | 6 | 0 |
 
 ### Failure analysis — no product regressions
 
@@ -73,24 +71,29 @@ v1.1.0 binary, which emits all expected output correctly.
 because the suite (and the README) used the pre-v1.1.0 positional form
 `daemon status 5`; v1.1.0 renamed it to `-l, --limit <N>`, so the old form errors
 (`unexpected argument '5'`, exit 2). Fixed both suite invocations to `--limit 5`
-and corrected the README. **Confirmed in pass 2:** Debian and Rocky are now
-123/123 and every `daemon status` test passes on all 5 distros.
+and corrected the README. **Confirmed:** every `daemon status` test passes on all
+5 distros.
 
-**Pass 2 — intermittent JSON-capture flake (open).** After the daemon fix, the only
-remaining failures are JSON-*structure* checks that intermittently fail to find an
-expected field — `"plugin_id"` (`--format json scan`) or `report_framework`
-(`report --report-format json`). These are **not product bugs**:
+**Pass 2 — intermittent JSON-grep flake (resolved).** After the daemon fix, some
+structure checks intermittently failed to find a field that was demonstrably present
+— `"plugin_id"` (`--format json scan`), `report_framework` (`report --report-format
+json`), `Checkpoints`/`cp_` (`checkpoint list`). Triage steps, each ruling out a
+hypothesis:
 
-- The fields are always present when the binary is run directly (verified locally:
-  `plugin_id` ×8, `report_framework` ×3).
-- The failing **test and distro change every run** (pass 1: scan-json on
-  arch/rhel/opensuse; pass 2: scan-json on arch/opensuse, report-json on fedora).
-  Debian and Rocky were clean in pass 2.
-- Root cause is in the harness, not the product: `run_test_output` captures with
-  `output=$(eval "$cmd" 2>&1)`, folding stderr into stdout; under `nspawn --pipe`,
-  transient stderr noise or pipe buffering occasionally perturbs the captured JSON
-  so the `grep` misses the field. (The persisted `summary.txt` and the live stdout
-  even disagreed on one distro's count in pass 2 — further evidence of non-determinism.)
+- **Not the binary.** Run directly it emits every field every time (`plugin_id` ×8,
+  `report_framework` ×3; 0/40 empty over a tight host loop).
+- **Not stderr-fold, not capture truncation.** Switching `run_test_output` from a
+  `$(eval … 2>&1)` capture to writing stdout to a temp file did not fix it. A
+  failure-path probe then proved the field *was* in the captured file: a direct
+  `grep -ac` counted 8 / 240 / 3 matches while the test's own check missed.
+- **Root cause: the `sed` ANSI-strip pre-filter.** The check piped the file through
+  `sed 's/ANSI//g'` before `grep`. Under openSUSE's minimal-container locale that
+  `sed` intermittently emitted nothing (the differ between the passing `grep -ac`
+  probe and the failing `sed | grep`); it was not reproducible on a host with full
+  locales, even forcing `LC_ALL=C sed`.
+- **Fix: delete the pre-strip.** ANSI colour codes wrap whole styled segments and
+  never split the matched tokens, so the strip was unnecessary. `run_test_output`
+  now runs `grep -aqE "$pattern" "$file"` directly on the captured file.
 
 Product correctness, verified against the v1.1.0 binary directly:
 
@@ -101,15 +104,16 @@ hardener daemon status --limit 5                       | grep -c 'Database:'    
 hardener --format json daemon status --limit 5                                         -> exit 0, valid JSON
 ```
 
-**Net:** the v1.1.0 CLI is confirmed functional on all five distributions. The open
-item is a test-harness flake — fix by separating stdout/stderr capture (or adding a
-retry) in `run_test_output` — tracked in `NEXT.md`, not a release blocker.
+**Net:** both harness issues are fixed; the full suite is repeatably **125/125 on all
+five distributions** (confirmed by a clean back-to-back single-distro and full run).
+A self-diagnosing `diag:` line (exit/bytes/head) remains in `run_test_output`'s
+failure path so any future capture anomaly is debuggable from the host log in one run.
 
 ---
 
 ## Automated Cross-Distro Testing
 
-All validation results in this document are produced by a fully automated test runner. A single command executes 123 tests across all 5 distributions in sequence, collecting pass/fail/skip results and producing a summary table.
+All validation results in this document are produced by a fully automated test runner. A single command executes 125 tests across all 5 distributions in sequence, collecting pass/fail/skip results and producing a summary table.
 
 ### Running the Tests
 

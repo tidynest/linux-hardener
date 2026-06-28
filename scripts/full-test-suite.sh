@@ -36,7 +36,7 @@ PLUGINS=(
 )
 
 # All 6 compliance frameworks
-FRAMEWORKS=("cis" "stig" "nist" "pcidss" "hipaa" "gdpr")
+FRAMEWORKS=("cis" "stig" "nist" "pcidss" "hipaa" "gdpr" "iso27001")
 
 # All 7 scenarios
 SCENARIOS=("server" "workstation" "government" "healthcare" "financial" "gdpr" "all")
@@ -130,20 +130,29 @@ run_test_output() {
 
     log_test "$name"
 
-    local output
-    local exit_code=0
-    output=$(eval "$cmd" 2>&1) || exit_code=$?
+    # Write stdout to a file rather than a $(...) capture: streaming large JSON
+    # back through `nspawn --pipe` into a command substitution intermittently
+    # races to an empty/truncated read (the documented flake). The command still
+    # runs exactly once; stderr is logged, not folded into the matched stream.
+    local out_tmp exit_code=0
+    out_tmp=$(mktemp)
+    eval "$cmd" >"$out_tmp" 2>>"$LOG_FILE" || exit_code=$?
 
-    # Strip ANSI escape codes before pattern matching
-    local clean_output
-    clean_output=$(echo "$output" | sed 's/\x1b\[[0-9;]*m//g')
-
-    if echo "$clean_output" | grep -qE "$grep_pattern"; then
+    # Match with grep -a (text mode) directly on the file -- no sed pre-strip.
+    # ANSI colour codes wrap whole styled segments and never split the matched
+    # tokens, so stripping them is unnecessary. An in-container sed pre-strip WAS
+    # the flake: under opensuse's minimal locale it intermittently emitted nothing
+    # while grep -a on the same file matched fine (proven, raw counts 8/240/3).
+    if grep -aqE "$grep_pattern" "$out_tmp"; then
         log_pass "$name"
+        rm -f "$out_tmp"
         return 0
     else
         log_fail "$name (pattern not found: $grep_pattern)"
-        echo "$output" >> "$LOG_FILE"
+        # Surface to the host-visible console log (LOG_FILE is container-local).
+        log_info "diag: exit=$exit_code bytes=$(wc -c <"$out_tmp") head=[$(head -c 160 "$out_tmp" | tr '\n' ' ')]"
+        cat "$out_tmp" >> "$LOG_FILE"
+        rm -f "$out_tmp"
         return 1
     fi
 }
