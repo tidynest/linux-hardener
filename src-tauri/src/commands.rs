@@ -15,7 +15,7 @@ use hardener_state::{
 };
 use hardener_types::{
     ApplyOutcome, ConfigSummary, FleetFrameworkPosture, FleetHostScan, FleetHostStatus,
-    SeverityTallies,
+    RollbackOutcome, SeverityTallies,
     remote::{HostsConfig, RemoteConnectionInfo, RemoteConnectionStatus, RemoteHostProfile},
 };
 use serde::Serialize;
@@ -1664,6 +1664,65 @@ pub async fn pick_config_file(app: tauri::AppHandle) -> Result<Option<String>, S
         .blocking_pick_file();
 
     Ok(file_path.map(|p| p.to_string()))
+}
+
+// ---------------------------------------------------------------------------
+// Fleet apply / rollback
+// ---------------------------------------------------------------------------
+
+/// Runs a fleet apply via the audited CLI. `execute = false` is a dry-run
+/// (preview); `true` mutates. JSON is read regardless of exit code — tiered
+/// exit codes carry per-host results.
+#[tauri::command]
+pub async fn run_fleet_apply(
+    hosts: Vec<String>,
+    plugins: Vec<String>,
+    execute: bool,
+) -> Result<Vec<ApplyOutcome>, String> {
+    run_fleet_mutation("apply", hosts, plugins, execute).await
+}
+
+/// Runs a fleet rollback via the audited CLI. `execute = false` previews.
+#[tauri::command]
+pub async fn run_fleet_rollback(
+    hosts: Vec<String>,
+    plugins: Vec<String>,
+    execute: bool,
+) -> Result<Vec<RollbackOutcome>, String> {
+    run_fleet_mutation("rollback", hosts, plugins, execute).await
+}
+
+/// Spawns `hardener batch <verb>` and parses its outcome JSON. Shared by apply
+/// and rollback. No pkexec — remote hosts authenticate over SSH via the saved
+/// inventory profiles the CLI reads, so the local `PrivilegedOpGuard` (which
+/// serialises local pkexec mutations) deliberately does not apply here.
+async fn run_fleet_mutation<T: serde::de::DeserializeOwned>(
+    verb: &str,
+    hosts: Vec<String>,
+    plugins: Vec<String>,
+    execute: bool,
+) -> Result<Vec<T>, String> {
+    if hosts.is_empty() {
+        return Err("No hosts selected".to_string());
+    }
+    for h in &hosts {
+        validate_ipc_string(h, "host_name")?;
+    }
+    validate_plugin_ids(&plugins)?;
+    let binary = get_hardener_binary_path()?;
+    let args = build_batch_args(verb, &hosts, &plugins, execute);
+    let output = Command::new(&binary)
+        .args(&args)
+        .output()
+        .await
+        .map_err(|e| safe_err(format!("Failed to run fleet {verb}: {e}")))?;
+    let stdout = String::from_utf8(output.stdout)
+        .map_err(|e| safe_err(format!("Invalid UTF-8 in CLI output: {e}")))?;
+    // Exit code is intentionally NOT checked: tiered codes accompany valid JSON.
+    parse_outcomes(&stdout).map_err(|e| {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        sanitise_error(&format!("{e}; stderr: {stderr}"))
+    })
 }
 
 /// Builds the `hardener batch <verb> …` argument vector. `verb` is "apply" or
