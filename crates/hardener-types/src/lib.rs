@@ -585,6 +585,92 @@ pub struct FleetHostScan {
     pub compliance: Vec<FleetFrameworkPosture>,
 }
 
+// ============================================================================
+// Fleet Mutation Types
+// ============================================================================
+
+/// One host's outcome from a fleet apply (or dry-run validation).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ApplyOutcome {
+    pub name: String,
+    pub target: String,
+    pub status: ApplyStatus,
+}
+
+/// Result of applying (or validating) one host.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "lowercase")]
+pub enum ApplyStatus {
+    /// Dry-run: `plugins` validated, `would_change` pending changes, `failed` validation errors.
+    Validated {
+        plugins: usize,
+        would_change: usize,
+        failed: usize,
+    },
+    /// Execute: `ok` plugins applied, `failed` did not.
+    Applied { ok: usize, failed: usize },
+    /// Host-level error (connect / not privileged / usage).
+    Failed { error: String },
+}
+
+/// One host's outcome from a fleet rollback (or dry-run preview).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RollbackOutcome {
+    pub name: String,
+    pub target: String,
+    pub status: RollbackStatus,
+}
+
+/// Result of rolling back (or previewing) one host.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "lowercase")]
+pub enum RollbackStatus {
+    /// Dry-run: `checkpoints` checkpoints would be restored.
+    Previewed { checkpoints: usize },
+    /// Execute: `restored` fully restored, `failed` had a restore error.
+    RolledBack { restored: usize, failed: usize },
+    /// No matching checkpoint for the selected plugins on this host.
+    NothingToDo,
+    /// Host-level error (connect / not privileged / selection query / usage).
+    Failed { error: String },
+}
+
+#[cfg(test)]
+mod fleet_mutation_tests {
+    use super::*;
+
+    #[test]
+    fn apply_status_deserialises_by_state_tag() {
+        let validated: ApplyStatus = serde_json::from_str(
+            r#"{"state":"validated","plugins":3,"would_change":5,"failed":0}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            validated,
+            ApplyStatus::Validated {
+                plugins: 3,
+                would_change: 5,
+                failed: 0
+            }
+        ));
+        let applied: ApplyStatus =
+            serde_json::from_str(r#"{"state":"applied","ok":2,"failed":1}"#).unwrap();
+        assert!(matches!(applied, ApplyStatus::Applied { ok: 2, failed: 1 }));
+    }
+
+    #[test]
+    fn rollback_status_deserialises_by_state_tag() {
+        let previewed: RollbackStatus =
+            serde_json::from_str(r#"{"state":"previewed","checkpoints":4}"#).unwrap();
+        assert!(matches!(
+            previewed,
+            RollbackStatus::Previewed { checkpoints: 4 }
+        ));
+        let nothing: RollbackStatus = serde_json::from_str(r#"{"state":"nothingtodo"}"#).unwrap();
+        assert!(matches!(nothing, RollbackStatus::NothingToDo));
+    }
+}
+
 #[cfg(test)]
 mod fleet_tests {
     use super::*;

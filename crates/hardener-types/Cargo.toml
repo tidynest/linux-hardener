@@ -9,3 +9,6 @@ version.workspace = true
 [dependencies]
 serde = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
+
+[dev-dependencies]
+serde_json = { workspace = true }

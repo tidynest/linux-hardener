@@ -19,6 +19,7 @@ use hardener_scheduler::db::ScanFinding;
 use hardener_state::{ActionResult, ActionType, Checkpoint, CheckpointManager};
 use hardener_types::ComplianceReport;
 use hardener_types::remote::{HostsConfig, RemoteHostProfile};
+use hardener_types::{ApplyOutcome, ApplyStatus, RollbackOutcome, RollbackStatus};
 use serde::Serialize;
 use std::sync::Arc;
 use std::time::Duration;
@@ -799,31 +800,6 @@ async fn resolve_and_scan(
     scan_all(profiles, concurrency, global_timeout, history).await
 }
 
-/// One host's apply/validate outcome.
-#[derive(Clone, Debug, Serialize)]
-pub struct ApplyOutcome {
-    pub name: String,
-    pub target: String,
-    pub status: ApplyStatus,
-}
-
-/// Result of applying (or validating) one host.
-#[derive(Clone, Debug, Serialize)]
-#[serde(tag = "state", rename_all = "lowercase")]
-pub enum ApplyStatus {
-    /// Dry-run: validated `plugins` plugins, `would_change` pending changes,
-    /// `failed` plugins whose validation errored.
-    Validated {
-        plugins: usize,
-        would_change: usize,
-        failed: usize,
-    },
-    /// Execute: `ok` plugins applied, `failed` did not.
-    Applied { ok: usize, failed: usize },
-    /// Host-level error (connect / not privileged / usage).
-    Failed { error: String },
-}
-
 /// 0 = all clean, 1 = an apply/validation failure, 2 = a host-level error.
 /// Precedence 2 > 1 > 0.
 pub fn apply_exit_code(outcomes: &[ApplyOutcome]) -> i32 {
@@ -897,28 +873,6 @@ fn render_apply_text(outcomes: &[ApplyOutcome]) -> String {
 
 fn render_apply_json(outcomes: &[ApplyOutcome]) -> String {
     serde_json::to_string_pretty(outcomes).unwrap_or_else(|_| "[]".to_string())
-}
-
-/// One host's rollback outcome.
-#[derive(Clone, Debug, Serialize)]
-pub struct RollbackOutcome {
-    pub name: String,
-    pub target: String,
-    pub status: RollbackStatus,
-}
-
-/// Result of rolling back (or previewing) one host.
-#[derive(Clone, Debug, Serialize)]
-#[serde(tag = "state", rename_all = "lowercase")]
-pub enum RollbackStatus {
-    /// Dry-run: `checkpoints` checkpoints would be restored.
-    Previewed { checkpoints: usize },
-    /// Execute: `restored` checkpoints fully restored, `failed` had a restore error.
-    RolledBack { restored: usize, failed: usize },
-    /// No matching checkpoint for the selected plugins on this host.
-    NothingToDo,
-    /// Host-level error (connect / not privileged / selection query / usage).
-    Failed { error: String },
 }
 
 /// 0 = all clean, 1 = a checkpoint restore failed, 2 = a host-level error.
