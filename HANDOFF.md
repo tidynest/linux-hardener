@@ -101,12 +101,13 @@ feature set, then fill the gaps with high-quality tests. Nothing half-measured.
 - ❌ **Compliance Option-B semantics** — assert that an *unassessed* control reports `ManualReview` (never a false `Pass`), and that an assessed control reports `Pass`/`Fail` for every framework.
 - ✅ **JSON-grep flake fixed.** Root cause was NOT stderr-fold/capture (those fixes didn't help) — the `sed 's/ANSI//g'` pre-filter intermittently emitted nothing under openSUSE's minimal locale (proven: direct `grep -ac` on the captured file matched 8/240/3 while `sed | grep` missed). Dropped the pointless pre-strip (ANSI never splits matched tokens); `run_test_output` now `grep -aqE`s the file directly. A `diag:` line (exit/bytes/head) stays in the fail path. Clean **125/125 × 5**.
 
-**GUI Playwright (`gui-tests/tests/`) — only 5 specs exist** (`dashboard`, `analysis`, `hardening`, `themes`, `errors`):
-- ❌ **No `fleet.spec.js`** (read-only multi-host scan, compliance-score columns, row expander).
-- ❌ **No `fleet-apply.spec.js`** (mode toggle, host+plugin select, **mandatory dry-run gate**, confirm modal, results).
-- ❌ **No `remote.spec.js`** (host inventory CRUD, connect/disconnect).
-- ❌ **No `scheduler.spec.js`** (schedule + notification config, test-notification).
-- ❌ **No dedicated `compliance` / `history` specs** — yet `DISTRIBUTION_VALIDATION.md`'s GUI section *claims* 7 categories incl. Compliance + History. **Reconcile doc vs reality** (the `tauri-mock.js` already mocks the 28 IPC commands incl. fleet/remote/scheduler — extend it for the fleet-apply commands).
+**GUI Playwright (`gui-tests/tests/`) — now 9 specs** (added fleet, fleet-apply, remote, scheduler; **113/113 on all 5 distros**):
+- ✅ **`fleet.spec.js`** — read-only multi-host scan, CIS% column, row expander, failed-host row (7 tests).
+- ✅ **`fleet-apply.spec.js`** — mode toggle, host+plugin select, **mandatory dry-run gate** incl. re-arm on selection change, confirm modal, results (9 tests).
+- ✅ **`remote.spec.js`** — host list, connect/scan/disconnect, add-host form, two-step delete (7 tests).
+- ✅ **`scheduler.spec.js`** — enable toggle, schedule select, save, email/webhook subsections, test-notification (6 tests).
+- ✅ Extended `tauri-mock.js` with the 3 fleet IPC commands (`run_fleet_scan`/`apply`/`rollback`) **and a Map→object arg normaliser**: bindings that build args with `serde_json::json!{}` serialise them as a JS **Map**, so the mock's `args.field` was always undefined — this had silently broken the never-tested remote/scheduler mocks too. (The old note that the mock "already mocks fleet" was wrong; fleet was added this pass.)
+- ⚠️ Still no dedicated `compliance`/`history` GUI specs — those flows live inside `analysis.spec.js` (compliance tab) and `hardening.spec.js` (history tab).
 
 **Desktop functional (`scripts/tauri-functional-test.sh`):** **zero** `fleet` / `fleet-apply` coverage. Add page-load + IPC-path tests for both new pages.
 

@@ -50,7 +50,9 @@ This document tracks validation testing across supported Linux distributions.
 
 The v1.1.0 musl static binary (`hardener 1.1.0`, ~13.6 MB, `static-pie`) was run
 through the full CLI suite (`sudo ./scripts/run-cross-distro-tests.sh --apply`)
-across all five containers. GUI/Playwright tests were **not** re-run in this pass.
+across all five containers. The GUI/Playwright suite was **subsequently re-run and
+is green on all five distros** (113 tests across 9 specs, 2026-06-29 — adds fleet,
+fleet-apply, remote, and scheduler coverage).
 
 ### Result (final, all harness fixes applied)
 
