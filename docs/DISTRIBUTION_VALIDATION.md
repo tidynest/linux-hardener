@@ -167,7 +167,7 @@ All containers have: root/test, testuser/test (with passwordless sudo), and fire
 
 ---
 
-## Test Categories (26 Sections, 123 Tests)
+## Test Categories (26 Sections, 125 Tests)
 
 | Section | Name | Tests | Description |
 |---------|------|-------|-------------|
@@ -175,7 +175,7 @@ All containers have: root/test, testuser/test (with passwordless sudo), and fire
 | 2 | Scan All Plugins | 8 | Individual scan for all 8 plugins |
 | 3 | Scan Filters | varies | All 5 severity levels, --audit, --compliance, --exit-code |
 | 4 | Scan Output Formats | 4 | text, json, csv, html |
-| 5 | Reports All Frameworks | 6 | cis, stig, nist, pcidss, hipaa, gdpr |
+| 5 | Reports All Frameworks | 7 | cis, stig, nist, pcidss, hipaa, gdpr, iso27001 |
 | 6 | Reports All Scenarios | 7 | server, workstation, government, healthcare, financial, gdpr, all |
 | 7 | Report Output Formats | varies | text, json, csv, html, pdf (all frameworks) |
 | 8 | Dry-Run All Plugins | 8 | --dry-run for all 8 plugins |

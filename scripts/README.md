@@ -1002,7 +1002,7 @@ sudo ./scripts/root-test-suite.sh --apply
 | Environment | 4 | Container detection, binary exists |
 | Basic commands | 2 | Version, help, plugins |
 | Scan (root) | 9 | All 8 plugins with root access |
-| Reports | 8 | All 6 frameworks + JSON + PDF |
+| Reports | 8 | All 7 frameworks + JSON + PDF |
 | Dry-run | 5 | All plugins show estimated changes |
 | Daemon/History | 2 | Database path, scan history |
 | Systemd | 2 | Generate, status commands |
@@ -1054,7 +1054,7 @@ Binary: /project/target/release/hardener v0.3.3
 
 **Script**: `full-test-suite.sh`
 
-**Purpose**: Comprehensive non-interactive test that exercises **every single capability** of the hardener in one automated run. Tests all commands, all 8 plugins, all 6 frameworks, all output formats, and all apply/rollback operations.
+**Purpose**: Comprehensive non-interactive test that exercises **every single capability** of the hardener in one automated run. Tests all commands, all 8 plugins, all 7 frameworks, all output formats, and all apply/rollback operations.
 
 **Usage**:
 ```bash
@@ -1065,7 +1065,7 @@ sudo ./scripts/full-test-suite.sh
 sudo ./scripts/full-test-suite.sh --apply
 ```
 
-**What It Tests** (26 test sections, 123 individual tests):
+**What It Tests** (26 test sections, 125 individual tests):
 
 | Section | Tests |
 |---------|-------|
@@ -1073,7 +1073,7 @@ sudo ./scripts/full-test-suite.sh --apply
 | 2. Scan All Plugins | Individual scan for all 8 plugins |
 | 3. Scan Filters | All 5 severity levels, --audit, --compliance, --exit-code |
 | 4. Scan Output Formats | text, json, csv, html |
-| 5. Reports All Frameworks | cis, stig, nist, pcidss, hipaa, gdpr |
+| 5. Reports All Frameworks | cis, stig, nist, pcidss, hipaa, gdpr, iso27001 |
 | 6. Reports All Scenarios | server, workstation, government, healthcare, financial, gdpr, all |
 | 7. Report Output Formats | text, json, csv, html, pdf (generates PDFs for all frameworks) |
 | 8. Dry-Run All Plugins | --dry-run for all 8 plugins |
@@ -1099,7 +1099,7 @@ sudo ./scripts/full-test-suite.sh --apply
 **Output**:
 - Detailed test log: `/tmp/hardener-full-test-TIMESTAMP.log`
 - Generated reports: `/tmp/hardener-test-reports/`
-- PDF reports for all 6 compliance frameworks
+- PDF reports for all 7 compliance frameworks
 
 **Test Modes**:
 
@@ -1128,8 +1128,8 @@ The `--apply` flag gates destructive tests (sections 13-16, 19, 23). Without it,
 ║ TEST SUMMARY                                                       ║
 ╚════════════════════════════════════════════════════════════════════╝
 
-  Total Tests:  123
-  Passed:       123
+  Total Tests:  125
+  Passed:       125
   Failed:       0
   Skipped:      6
   Pass Rate:    100%
@@ -1241,11 +1241,11 @@ CROSS-DISTRO SUMMARY
 
 Distro        Total   Pass   Fail    Skip   Status
 --------      -----   ----   ----    ----   ------
-arch            123    123      0       6     PASS
-debian          123    123      0       6     PASS
-fedora          123    123      0       6     PASS
-rhel            123    123      0       6     PASS
-opensuse        123    123      0       6     PASS
+arch            125    125      0       6     PASS
+debian          125    125      0       6     PASS
+fedora          125    125      0       6     PASS
+rhel            125    125      0       6     PASS
+opensuse        125    125      0       6     PASS
 
 All distros passed.
 ```

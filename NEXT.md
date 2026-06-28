@@ -20,7 +20,7 @@ multi-framework mappings) is the top open task below.
 - **All 13 audit bugs fixed** (BUG-01 through BUG-13)
 - **All 7 infrastructure issues resolved** (INFRA-01 through INFRA-07)
 - **Trait refactor complete** — `Config` unit struct deleted, `HardeningPlugin` trait now accepts `&PluginConfig`
-- **Cross-distro validation** — 123-test suite passes on Arch, Debian, Fedora, Rocky Linux 9, openSUSE
+- **Cross-distro validation** — 125-test suite passes on Arch, Debian, Fedora, Rocky Linux 9, openSUSE
 - **Live testing fixes** (2026-02-23) — checkpoint directory permissions, vfat detection, scan history, auditd reload
 - **PluginConfig wiring complete** (2026-02-23) — all 8 plugins consume directives/exceptions
 - **GUI/CLI feature parity complete** (2026-02-24) — scan filtering, checkpoint CRUD, report export, scan history, audit/compliance modes
@@ -238,7 +238,7 @@ still-live signal):
 | Item | Detail | Status |
 |------|--------|--------|
 | Distro validation refresh | v1.1.0 binary **re-validated** on the existing containers 2026-06-28 (CLI suite; analysis in `docs/DISTRIBUTION_VALIDATION.md` §v1.1.0 Re-validation). **Version refresh still pending**: recreate containers for Debian 13, Fedora 44, RHEL 10, openSUSE Leap 16 (Leap 15.6 EOL April 2026). GUI suite not re-run. | 🟡 Partial |
-| Cross-distro JSON-capture flake | `run_test_output` (`full-test-suite.sh`) captures via `$(eval "$cmd" 2>&1)`, folding stderr into stdout; under `nspawn --pipe` the JSON-structure checks (`scan` → `"plugin_id"`, `report --report-format json` → `report_framework`) intermittently miss the field. Failing test/distro **varies run-to-run**; product emits the fields correctly (verified locally). Fix: separate stdout/stderr capture or add a retry in `run_test_output`. | ⬜ Open |
+| Cross-distro JSON-grep flake | **Root cause: the `sed` ANSI-strip in `run_test_output`** (NOT stderr-fold/capture — those fixes did not help). It piped captured output through `sed 's/ANSI//g'` before `grep`; under openSUSE's minimal-container locale that `sed` intermittently emitted nothing, masking fields that were present (proven: direct `grep -ac` matched 8/240/3 while `sed \| grep` missed). Dropped the pointless pre-strip (ANSI never splits matched tokens); now `grep -aqE`s the captured file directly, with a `diag:` line on the fail path. Suite green 125/125 × 5. | ✅ Done (837963b) |
 | `tauri` 2.11.2 → 2.11.3 | Latest patch (2026-06-17); no CVE, routine bump | ✅ Done (lockfile, 2026-06-20) |
 | Desktop crate compile fix | Tauri compliance commands ported to the phase-3 `ReportGenerator::new(config, coverage)` signature; `cargo check -p linux-hardener-desktop` clean | ✅ Done (2026-06-20) |
 | External security audit | Third-party review | ⬜ Pending |

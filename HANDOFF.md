@@ -1,164 +1,190 @@
-# Session Handoff — 2026-06-28 (Fleet Apply GUI shipped + full doc-currency sweep → next: doc debt + GUI polish)
+# Session Handoff — 2026-06-28 (v1.1.0 cross-distro re-validated → next: container rebuilds + a meticulous test-coverage sweep)
 
 > **Read this first.** Point-in-time handoff for the next development session.
 > Living task list is [NEXT.md](NEXT.md); roadmap is [ROADMAP.md](ROADMAP.md);
 > data-flow source of truth is [docs/DATA_FLOW.md](docs/DATA_FLOW.md).
-> Project is **v1.1.0**. `main` is fully pushed.
+> Project is **v1.1.0**. `main` is **5 commits ahead of the remotes — unpushed.**
 
 ---
 
 ## TL;DR
 
-- **Shipped this session (two things):**
-  1. **Desktop Fleet Apply page** — first remote *mutation* in the GUI: apply and
-     roll back hardening across saved hosts over SSH. It **shells out** to the
-     audited `hardener batch apply`/`rollback --format json` (no pkexec — remote
-     uses SSH creds), parses the per-host `ApplyOutcome`/`RollbackOutcome` JSON
-     **exit-code-agnostically**, and gates Execute behind a **mandatory dry-run +
-     confirm modal**.
-  2. **Full living-doc currency sweep** — audited every living doc; corrected 13
-     for stale feature-status (see "What shipped" below). The point-in-time
-     snapshot docs were deliberately left and are itemised under **Remaining work
-     A** so the next session can finish them.
-- **Git state:** `main` == `origin` (GitHub) == GitLab == **`9613a52`** — fully
-  pushed to both remotes (`tidynest`, dual push URL → one `git push origin main`
-  hits both). Working tree clean.
-- **Verification:** `cargo fmt --check` + `clippy --workspace --all-targets
-  -D warnings` + `build --workspace` + `test --workspace` **648 passed / 0 failed
-  / 38 ignored** — all clean (at the Fleet Apply merge; doc commits since are
-  text-only).
-- **Start here next:** pick from **Remaining work** below. Two buckets — (A)
-  documentation debt deferred from the sweep, (B) the feature backlog. Both are
-  independent; A's items are mostly deliberate/human-run passes, B's are
-  brainstorm→spec→plan feature slices.
+- **Shipped this session (5 commits, `ec135ae` → `a7b62bb`, all on `main`, NOT pushed):**
+  1. **Retired `docs/audit/**`** — 141 stale Feb per-file mirror docs (no generator,
+     superseded by source + `cargo doc`); salvaged 3 live deferred flags into NEXT.
+  2. **Reconciled the security tracker** — `REMEDIATION_TRACKER.md` §4 now has a real
+     **Status** column (20 Fixed, 1 Deferred); code-verified **SAM-039** is genuinely
+     undone (per-command Tauri capability ACLs) and marked Deferred, not Fixed.
+  3. **README overhaul** — desktop **screenshots** (Dashboard/Analysis/Hardening,
+     captured from a freshly-built v1.1.0 app), flat-square **badges**, collapsible
+     **TOC**, **roadmap fold**, and currency fixes (648 tests, 7 frameworks, 7 pages).
+  4. **Cross-distro v1.1.0 re-validation** — ran the full CLI suite under
+     `nspawn --pipe` across all 5 containers; **found + fixed** stale `daemon status`
+     test/doc drift (CLI renamed positional count → `--limit`); **confirmed** by a
+     second run (Debian + Rocky 123/123, all daemon tests green). Updated
+     `DISTRIBUTION_VALIDATION.md` honestly (no fabricated 123/123).
+  5. **Diagnosed the residual flake** — intermittent JSON-grep failure in
+     `run_test_output`; product verified correct. **Since root-caused + fixed**
+     (uncommitted) → the `sed` ANSI-strip aborted under openSUSE's minimal locale;
+     dropped it, `grep -a` on the file. Suite now **125/125 × 5**. See P2 below.
+- **The next session has two TOP priorities** (below): **(1) container rebuilds**
+  for the distro-version refresh, and **(2) a meticulous, first-class test-coverage
+  sweep** — the scripts predate compliance frameworks, batch CLI, fleet pages, SSH
+  crypto, and remote checkpoints, and have large, confirmed gaps.
+- **Push is the user's** (SSH passphrase; dual push URL → GitHub + GitLab).
 
 ---
 
-## What shipped this session
+## TOP PRIORITY 1 — Container rebuilds (distro-version refresh)
 
-**1. Fleet Apply page** (architecture — Approach B, "the GUI never reimplements
-mutation"):
-- **Tauri commands** (`src-tauri/src/commands.rs`): `run_fleet_apply` /
-  `run_fleet_rollback` (thin wrappers over a private generic `run_fleet_mutation<T>`)
-  + `list_plugins`. `run_fleet_mutation` validates inputs (`validate_ipc_string`
-  per host, `validate_plugin_ids` allowlist per plugin, empty-hosts guard), builds
-  args via `build_batch_args`, spawns via `tokio::process::Command` (no pkexec),
-  parses via `parse_outcomes` **without checking the exit code**.
-- **Shared types** moved to `hardener-types` (+`Deserialize`): `ApplyOutcome` /
-  `ApplyStatus` / `RollbackOutcome` / `RollbackStatus`; CLI re-exports them.
-- **Page** `crates/hardener-ui/src/pages/fleet_apply_page.rs` (route `/fleet-apply`):
-  mode toggle, host + plugin multiselect (empty = all), mandatory-dry-run gate
-  (`selection_key`/`previewed_key`/`can_execute`/`invalidate`, reset after execute),
-  confirm modal, results.
-- Spec/plan (gitignored): `docs/superpowers/specs/2026-06-28-fleet-apply-rollback-gui-design.md`,
-  `docs/superpowers/plans/2026-06-28-fleet-apply-rollback-gui.md`. Built
-  brainstorm→spec→plan→subagent-driven (6 tasks, 2-stage review each + opus final).
-  7 feature commits `e8aec2b..9a5e1bf` FF-merged, branch deleted.
+The 2026-06-28 re-validation ran on the **February container set** (Arch rolling,
+Debian 12, Fedora 41, Rocky 9, openSUSE **Leap 15.6**). The v1.1.0 *binary* is
+validated, but the **distro versions are stale** — and openSUSE Leap 15.x reached
+**EOL April 2026**. Recreate the containers on current releases, then re-run.
 
-**2. Doc-currency sweep** — corrected (all pushed): SECURITY.md (removed two FALSE
-"Known Limitations" — SSH crypto + multi-framework compliance are both done),
-GUI_CLI_PARITY_PLAN + SSH_REMOTE_SCANNING (dropped "fleet apply/compliance columns
-are CLI-only" claims), ARCHITECTURE (6→7 pages, +ISO 27001, executor now in
-`hardener-common`), cli.md (added the whole `batch` section + `history
-trends`/`regressions` + `iso27001`), CONTRIBUTING/testing.md/REMEDIATION_TRACKER
-(framework list, test counts 505/428→648), README/FILE_MAP/ROADMAP/HANDOFF.
-Audited-current (no change): CONFIG_DESIGN, THEME_DESIGN_GUIDE, INSTALL,
-building/releasing/documentation.md, scripts/README, NAMING_CONVENTIONS.
+**Targets:** Debian **13 "Trixie"**, Fedora **44**, RHEL family via Rocky/Alma **10**
+(or keep Rocky 9 + add 10), openSUSE **Leap 16**, Arch (rolling — recreate to refresh).
+Ubuntu 26.04 is covered by the Debian family but consider an explicit container.
 
----
+**How:** the creation scripts already exist — `scripts/create-{debian,fedora,rhel,opensuse}-container.sh`
+and `scripts/create-test-container.sh` (Arch). They need their pinned release/repo
+URLs bumped to the targets above (e.g. openSUSE 15.6 → 16; Debian bookworm → trixie;
+Fedora 41 → 44; Rocky 9 → 10). This is **root + network + bootstrap heavy** (pacstrap
+/ debootstrap / dnf / zypper / podman export) — schedule it deliberately, watch CPU/heat.
 
-## Remaining work — A. Documentation debt (deferred from the sweep)
+**Then re-validate (the binary build is fast; containers are the slow part):**
+```bash
+cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli
+sudo ./scripts/run-cross-distro-tests.sh --apply          # CLI suite
+sudo ./scripts/run-cross-distro-tests.sh --gui            # GUI/Playwright (separate, heavier)
+```
+Update the **container set / version columns** in `docs/DISTRIBUTION_VALIDATION.md`
+(Summary, Container Setup table, per-distro sections, GUI summary) to the new releases.
 
-These were deliberately left; each needs a deliberate or human-run pass, not a
-quick edit:
-
-1. **`docs/audit/**`** — ✅ **Resolved 2026-06-28: retired.** Decision was
-   regenerate-vs-retire; regenerate proved a phantom option (no generator ever
-   existed — the auto-update tooling only fixes dates/FILE_MAP/version/compliance
-   counts, it never produced this corpus). It was a stale per-file *mirror* of
-   source (purpose/submodules/public-interface tables), superseded by the code
-   itself + `cargo doc`, and already missing all post-Feb work. `git rm -r
-   docs/audit/` (141 files). Its only still-live signal — 3 open deferred-cleanup
-   flags — was salvaged into [NEXT.md](NEXT.md) (§"P3 — Deferred code cleanups");
-   dangling refs in FILE_MAP/NEXT fixed.
-2. **`docs/DISTRIBUTION_VALIDATION.md`** — 🟡 **v1.1.0 binary re-validated
-   2026-06-28** (CLI suite, all 5 containers; doc updated with two-pass results +
-   failure analysis). Pass 1 surfaced stale `daemon status <count>` test/doc
-   invocations (v1.1.0 renamed it to `--limit`) — fixed in the suite + README and
-   **confirmed by pass 2** (Debian + Rocky now 123/123, all daemon tests pass).
-   Remaining: an intermittent JSON-*capture* flake in `run_test_output`
-   (`2>&1` + `nspawn --pipe`); failing test/distro varies run-to-run, product
-   verified correct — open, tracked in NEXT. **No product regressions.** Still
-   pending: **distro-version refresh** (recreate containers for Debian 13 /
-   Fedora 44 / RHEL 10 / openSUSE Leap 16) and a GUI re-run — both heavier.
-3. **`docs/security-audit/REMEDIATION_TRACKER.md`** — ✅ **Resolved 2026-06-28.**
-   §4 "Defence in Depth" now carries a proper **Status** column (replaced the old
-   "Priority" scheduling hints that left 19 resolved rows looking unaddressed).
-   Reconciled against the §1 Remediation Table + `remaining-work.md` §2 and
-   **spot-verified in code** (not guessed): 20 Fixed, 1 Deferred. The verification
-   caught that **SAM-039** (per-command Tauri capability ACLs) is genuinely *not*
-   done — `default.json` grants only `core:default`+`dialog:default` — so it is
-   marked **Deferred (post-v1.0)**, not Fixed. (Test-count `428→648` already fixed.)
+> ⚠️ **sudo gotcha:** the assistant cannot elevate (no tty + Arch's tty-scoped sudo).
+> The privileged commands above must be **run by the user**; the assistant prepares,
+> parses `test-results/summary.txt` + logs, and updates the docs.
 
 ---
 
-## Remaining work — B. Feature backlog (from NEXT.md / ROADMAP)
+## TOP PRIORITY 2 — Meticulous test-coverage sweep (make every suite first-class)
 
-1. **Multi-host GUI polish** (each its own small brainstorm): ad-hoc
-   `--ssh user@host` hosts in the Fleet / Fleet-Apply pages (today both only use
-   saved inventory hosts); **live per-host progress** (today results appear
-   batch-after-all — would need Tauri events/streaming, the deferred Approach-C
-   path noted in the Fleet Apply spec); **per-host history surfaced in the GUI**
-   (the CLI persists it; the desktop doesn't show it yet).
-2. **New frameworks:** SOC 2 / FedRAMP / NIST 800-171 (additive — follows the
-   existing plugin-declared-coverage pattern).
-3. **RHEL 10 / per-version compliance profiles** (DISA RHEL 10 STIG V1R1, CIS
-   RHEL 10 v1.0.1 exist). Likely overlaps the generic frameworks + family detection.
-4. **Debug-vs-Display history serialisation** (`finding_to_scan_finding` writes
-   severity/category via `{:?}`) — pre-existing, cosmetic; needs a one-time
-   decision on existing rows.
-5. **External security audit**; version cut for the accumulated `[Unreleased]`
-   changelog.
+The test scripts were written **before** much of today's feature surface existed.
+A coverage audit this session found **large, confirmed gaps**. Treat this as a
+first-class engineering pass: audit **every** suite/script against the **current**
+feature set, then fill the gaps with high-quality tests. Nothing half-measured.
+
+### Confirmed gaps (starting points — not exhaustive; audit for more)
+
+**`scripts/full-test-suite.sh` (the 125-test CLI suite, per container):**
+- ✅ **ISO/IEC 27001:2022** — added `iso27001` to `FRAMEWORKS` (now 7); passes on all 5 distros. (`validate_compliance_docs.py` counts frameworks dynamically — no hardcoded total to update.) Suite grew 123 → 125.
+- ❌ **Multi-host batch CLI** — `batch scan` / `batch report` / `batch apply` / `batch rollback` have **zero** coverage. (Needs a localhost/loopback or multi-container fixture.)
+- ❌ **History trends / regressions** — `history trends --host` and `history regressions` are **untested**.
+- ❌ **SSH crypto hardening** — the new `KexAlgorithms`/`Ciphers`/`MACs` (incl. PQ) apply path has **no explicit assertion** (algorithm intersection, `sshd -t` pre-write validation). Also write the deferred **`#[ignore]` root integration test for the full SSH apply path** (flock-bound — see NEXT P1 / git history); it was flagged "not lost" and is still unwritten.
+- ❌ **Remote-correct checkpoints** — capture/restore *through the executor*, host-keyed, cross-host refusal: not exercised.
+- ❌ **Compliance Option-B semantics** — assert that an *unassessed* control reports `ManualReview` (never a false `Pass`), and that an assessed control reports `Pass`/`Fail` for every framework.
+- ✅ **JSON-grep flake fixed.** Root cause was NOT stderr-fold/capture (those fixes didn't help) — the `sed 's/ANSI//g'` pre-filter intermittently emitted nothing under openSUSE's minimal locale (proven: direct `grep -ac` on the captured file matched 8/240/3 while `sed | grep` missed). Dropped the pointless pre-strip (ANSI never splits matched tokens); `run_test_output` now `grep -aqE`s the file directly. A `diag:` line (exit/bytes/head) stays in the fail path. Clean **125/125 × 5**.
+
+**GUI Playwright (`gui-tests/tests/`) — only 5 specs exist** (`dashboard`, `analysis`, `hardening`, `themes`, `errors`):
+- ❌ **No `fleet.spec.js`** (read-only multi-host scan, compliance-score columns, row expander).
+- ❌ **No `fleet-apply.spec.js`** (mode toggle, host+plugin select, **mandatory dry-run gate**, confirm modal, results).
+- ❌ **No `remote.spec.js`** (host inventory CRUD, connect/disconnect).
+- ❌ **No `scheduler.spec.js`** (schedule + notification config, test-notification).
+- ❌ **No dedicated `compliance` / `history` specs** — yet `DISTRIBUTION_VALIDATION.md`'s GUI section *claims* 7 categories incl. Compliance + History. **Reconcile doc vs reality** (the `tauri-mock.js` already mocks the 28 IPC commands incl. fleet/remote/scheduler — extend it for the fleet-apply commands).
+
+**Desktop functional (`scripts/tauri-functional-test.sh`):** **zero** `fleet` / `fleet-apply` coverage. Add page-load + IPC-path tests for both new pages.
+
+**Tauri command layer (`src-tauri/src/commands.rs`) — no tests directory exists.**
+- `run_fleet_apply` / `run_fleet_rollback` / `run_fleet_mutation<T>` / `list_plugins`: unit-test `validate_ipc_string`, `validate_plugin_ids` (allowlist + empty-hosts guard), `build_batch_args`, and **`parse_outcomes` exit-code-agnostic parsing** (batch exits non-zero on per-host fail yet emits valid JSON — this invariant MUST have a test).
+
+**Rust workspace (`cargo test --workspace`, 648 passing):** audit per-crate that **every feature added since the last test pass has unit/integration coverage** — SSH crypto helpers (`select_algorithms`), per-host history/trends/regression cores (`find_regressions`), compliance coverage aggregation (`compliance_coverage()`), ISO 27001 control catalogue, the executor relocation to `hardener-common`. Add what's missing.
+
+**Validators (`scripts/validate_*.py`):** confirm `validate_compliance_docs.py` counts ISO 27001; `validate_tauri_docs.py` covers the new fleet commands; `validate_cli_docs.py` covers `batch` + `history trends/regressions`.
+
+### Definition of done for this sweep
+Every framework, every CLI subcommand, every GUI page, and every Tauri command has
+a test that fails if it breaks. Cross-distro suite green (125, after the container rebuilds bump it again) on the
+**rebuilt** containers. No silently-skipped feature. Update `DISTRIBUTION_VALIDATION.md`
+test-category tables + counts to match reality.
+
+---
+
+## Remaining work — full backlog (everything not worked this session)
+
+### Doc / validation leftovers
+- **GUI cross-distro re-run** for v1.1.0 (`--gui`) — not re-run this session.
+- **AUR / package version bump** — package specs (PKGBUILD/RPM/DEB) are still at **1.0.3** while the project is **1.1.0**. The README's AUR badge live-fetches and will show 1.0.3 until bumped. Bump pkgver → `makepkg --printsrcinfo > .SRCINFO` → push AUR (`ssh://aur@aur.archlinux.org/linux-system-hardener.git`, `id_ed25519`).
+
+### Feature backlog (from ROADMAP / NEXT)
+- **Multi-host GUI polish** (each its own small brainstorm):
+  - ad-hoc `--ssh user@host` hosts in the **Fleet** and **Fleet Apply** pages (today both only use saved inventory hosts).
+  - **live per-host progress** (today results appear batch-after-all → needs Tauri events/streaming, the deferred "Approach-C" in the Fleet Apply spec).
+  - **per-host history surfaced in the GUI** (the CLI persists it; the desktop doesn't show it yet).
+- **New compliance frameworks:** SOC 2 / FedRAMP / NIST 800-171 (additive — follow the plugin-declared-coverage pattern).
+- **RHEL 10 / per-version compliance profiles** (DISA RHEL 10 STIG V1R1, CIS RHEL 10 v1.0.1 exist) — overlaps the generic frameworks + family detection; pairs naturally with the RHEL-10 container rebuild above.
+- **Debug-vs-Display history serialisation** — `finding_to_scan_finding` (in `report.rs`) writes `severity`/`category` via `{:?}` (Debug → `"Critical"`/`"FileSystem"`) not `Display` (`"CRITICAL"`/`"File System"`). Pre-existing, cosmetic; needs a one-time decision on existing persisted rows. Trends are unaffected (numeric counts).
+- **Real desktop-environment testing** — GNOME / KDE / XFCE **pkexec/polkit-agent** behaviour (open `[ ]` in README's v0.4.0 roadmap). Cannot run in nspawn; needs actual DE sessions. Human-run QA.
+- **External security audit** (third-party).
+- **Performance optimisation** (scan speed).
+- **Version cut** for the accumulated `[Unreleased]` changelog once the above land.
+
+### README polish + visual leftovers (deferred from this session's audit)
+Readability:
+- Fold the ~95-line **CLI usage** block into per-verb `<details>` sections (scan / report / apply / checkpoint / history / daemon / systemd).
+
+Visual (the "other visual things to improve" the user asked for, not yet surfaced/applied):
+- Swap the plain `Complete` / `Supported` **status cells** (Features + Multi-Distribution tables) for ✓ glyphs or small shields for scannability.
+- A **logo / wordmark** — there's none; the header is text + badges only. A small SVG mark (in keeping with the dark/teal "Midnight Teal" app aesthetic, *less GitHub-like, more personal* per the user's standing preference) would lift first impression.
+- The **Architecture** section is an **ASCII tree** — consider a real rendered diagram (the crate dependency graph especially) as an image.
+- Add a live **CI/build badge** once GitHub Actions visibility is confirmed (deliberately skipped this session to avoid a `build: unknown` badge if the workflow path/visibility differs).
+
+All cosmetic; the user deprioritised the first two earlier, but everything here remains un-done.
+
+### Deferred code cleanups (salvaged from the retired Feb audit — see NEXT P3)
+- `crates/hardener-core/src/context.rs:29` — `#[allow(dead_code)] shared_data` field on `PluginContext` is never read; drop it (and the `allow`) or wire it up.
+- `crates/hardener-core/src/registry.rs` — repeated identical `RwLock` read-error handling; extract a helper.
+- `crates/hardener-state/src/scan_manager.rs:355` — `unwrap_or_default()` silently swallows corrupted-JSON deserialisation; log/surface instead.
+
+### Deferred security item (from the §4 reconciliation)
+- **SAM-039** — explicit per-command **Tauri capability ACLs**. Still deferred post-v1.0 (requires refactoring all commands into a dedicated Tauri plugin); `default.json` grants only `core:default` + `dialog:default`. Existing `PrivilegedOpGuard` + pkexec + IPC validation deemed sufficient for v1.x. Revisit when doing the GUI work above.
 
 ---
 
 ## Invariants & gotchas (do not break)
 
-- **Mutation only ever happens inside the audited CLI.** The GUI builds args +
-  parses JSON; it never reimplements apply/rollback/checkpoint logic.
-- **Exit-code-agnostic parse** — `run_fleet_mutation` must NOT gate on
-  `output.status.success()` (`batch apply/rollback` exit non-zero on per-host
-  failures yet emit valid JSON).
-- **No pkexec for remote** — remote privilege is the SSH user's; pkexec stays for
-  local-host mutation only. Saved-profile auth (`~/.config/linux-hardener/hosts.toml`).
+- **sudo cannot be driven by the assistant** (no tty + tty-scoped sudo on Arch) — the user runs privileged container/test commands; the assistant preps + parses + updates docs.
+- **Cross-distro needs the musl static binary** — a glibc binary built on Arch fails on older-glibc distros. Build `--target x86_64-unknown-linux-musl` first; `full-test-suite.sh` runs the *static binary*, no per-distro recompile.
+- **`daemon status` uses `--limit <N>`** now (not a positional count) — don't reintroduce the old form in tests/docs.
+- **`run_fleet_mutation` must stay exit-code-agnostic** — `batch apply/rollback` exit non-zero on per-host failure yet emit valid JSON; never gate on `output.status.success()`.
+- **Mutation only ever happens inside the audited CLI** — the GUI builds args + parses JSON; it never reimplements apply/rollback/checkpoint logic. **No pkexec for remote** (SSH user's privilege); pkexec is local-host only.
 - **`hardener-cli` is a BIN** → `cargo test -p hardener-cli` (NOT `--lib`).
-- **`#[cfg(test)] mod` must be the LAST item in a file** — a test module before
-  other items trips clippy `items_after_test_module` under the `-D warnings` gate.
-- **`docs/superpowers/` + `.rust-sec-ci.toml` are GITIGNORED.**
-- Pre-commit gate = naming validation (0 errors; ~98 pre-existing warnings fine).
-  Pre-push gate `rust-sec-ci` = clippy `-D warnings` + fmt + audit. Run
-  `cargo clippy --workspace --all-targets -- -D warnings` + `cargo build --workspace`
-  (catches the desktop bin) before claiming done.
-- **CSS/markup only ships after `trunk build`** — `cargo build` uses the committed
-  `crates/hardener-ui/dist`.
-- **Push is the user's** (SSH passphrases; assistant cannot). Dual push URL.
-- Conventions: no AI attribution; `cargo fmt` before commits; Rust let-chains never
-  nested `if`; British spelling in prose.
+- **`#[cfg(test)] mod` must be the LAST item in a file** (clippy `items_after_test_module` under `-D warnings`).
+- **`docs/superpowers/` + `.rust-sec-ci.toml` are GITIGNORED**; **`test-results/` is gitignored** (root-owned run artifacts — never commit).
+- **CSS/markup only ships after `trunk build`** — `cargo build` embeds the committed `crates/hardener-ui/dist`. (Today's screenshots used a fresh `trunk build` + `cargo build -p linux-hardener-desktop`.)
+- Pre-commit gate = naming validation (0 errors; ~98 prod + ~51 test pre-existing warnings are fine). Pre-push gate `rust-sec-ci` = clippy `-D warnings` + fmt + audit. Before claiming done: `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo build --workspace`.
+- Conventions: **no AI attribution** (commits/code/comments); `cargo fmt` before commits; Rust **let-chains, never nested `if`**; **British spelling** in prose.
 
 ---
 
 ## How to verify
 
 ```bash
-cargo test --workspace                       # 648 passed, 0 failed, 38 ignored
+cargo test --workspace                       # 648 passed, 0 failed, 38 ignored (will grow with the sweep)
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --check
 cargo build --workspace                      # incl. the desktop bin
+
+# Cross-distro (user-run, root) — after container rebuilds:
+cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli
+sudo ./scripts/run-cross-distro-tests.sh --apply
+sudo ./scripts/run-cross-distro-tests.sh --gui
 ```
 
 ---
 
 ## Git state at handoff
 
-- `main` == `origin/main` == GitLab == **`9613a52`** — fully pushed, nothing
-  outstanding. Working tree clean. No open feature branches from this work.
+- `main` == **`a7b62bb`**, **5 commits ahead** of `origin` (GitHub) and GitLab — **unpushed**
+  (`ec135ae`, `bee3a2a`, `ea1a0c4`, `8b1fb2d`, `a7b62bb`). Working tree clean.
+- Push is the **user's** step (SSH passphrase; dual push URL → one `git push origin main`
+  hits GitHub + GitLab). No open feature branches from this work.
