@@ -76,6 +76,22 @@ feature set, then fill the gaps with high-quality tests. Nothing half-measured.
 
 ### Confirmed gaps (starting points — not exhaustive; audit for more)
 
+> **AUDIT (2026-06-28): most unit-test "gaps" below are ALREADY COVERED — this
+> list was written pessimistically.** Verified present, do NOT re-write:
+> `select_algorithms` (2 tests, `ssh_mock_tests.rs`), `find_regressions`
+> (`history.rs`), `compliance_coverage` (`lib.rs`),
+> `validate_ipc_string`/`validate_plugin_ids` (~40 tests, `validation.rs`),
+> `build_batch_args` + `parse_outcomes` (`commands.rs` test mod), ISO 27001
+> (`compliance/tests/framework_tests.rs`), **Compliance Option-B honesty**
+> (`compliance/tests/assessment_honesty.rs` — unassessed→ManualReview, assessed→
+> Pass/Fail). The Tauri-layer *"no tests dir exists"* claim is **false**.
+> **Genuinely absent + assistant-relevant:** the bash suite has **no `batch`
+> nor `history trends`/`regressions`** cases, and the 4 fleet/remote/scheduler
+> **GUI specs** are unwritten. Both need multi-host fixtures, container runs, or
+> design decisions — not autonomously verifiable on this host (suite needs root;
+> GUI needs nspawn). Remote-checkpoint + `#[ignore]` root-SSH integration tests
+> not re-audited this pass.
+
 **`scripts/full-test-suite.sh` (the 125-test CLI suite, per container):**
 - ✅ **ISO/IEC 27001:2022** — added `iso27001` to `FRAMEWORKS` (now 7); passes on all 5 distros. (`validate_compliance_docs.py` counts frameworks dynamically — no hardcoded total to update.) Suite grew 123 → 125.
 - ❌ **Multi-host batch CLI** — `batch scan` / `batch report` / `batch apply` / `batch rollback` have **zero** coverage. (Needs a localhost/loopback or multi-container fixture.)
