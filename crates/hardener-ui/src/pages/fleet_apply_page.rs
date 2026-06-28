@@ -98,6 +98,7 @@ pub fn FleetApplyPage() -> impl IntoView {
                     Ok(out) => {
                         if execute {
                             results.set(render_apply(&out));
+                            previewed_key.set(None);
                         } else {
                             preview_apply.set(out);
                             previewed_key.set(Some(key));
@@ -111,6 +112,7 @@ pub fn FleetApplyPage() -> impl IntoView {
                     Ok(out) => {
                         if execute {
                             results.set(render_rollback(&out));
+                            previewed_key.set(None);
                         } else {
                             preview_rollback.set(out);
                             previewed_key.set(Some(key));
