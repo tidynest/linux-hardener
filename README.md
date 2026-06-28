@@ -641,7 +641,7 @@ See [ROADMAP.md](ROADMAP.md) for detailed implementation plans for upcoming feat
 - [x] Config file picker in desktop app
 - [x] UI polish pass (side-by-side layouts, card standardisation, responsive fixes)
 - [x] Severity filter in scan results
-- [~] Multi-host management from single UI — read-only **Fleet** scan view shipped in v1.1.0; fleet apply/rollback remain CLI-only
+- [~] Multi-host management from single UI — **Fleet** scan view, compliance scores, and **Fleet Apply** (apply/rollback) shipped; ad-hoc SSH / live progress / GUI history remain
 - [ ] Historical security trends
 - [ ] Test on GNOME, KDE, XFCE desktop environments (pkexec/polkit agents)
 
@@ -658,7 +658,7 @@ See [ROADMAP.md](ROADMAP.md) for detailed implementation plans for upcoming feat
 - [x] Remote-correct checkpoints (capture/restore through the executor; host-keyed; cross-host restore refused)
 - [x] ISO/IEC 27001:2022 framework + multi-framework finding mappings (STIG/NIST/PCI-DSS/HIPAA/GDPR)
 - [x] Desktop **Fleet** view — read-only multi-host scan posture with CIS compliance scores and per-framework breakdown
-- [ ] Fleet apply/rollback in the GUI
+- [x] Fleet apply/rollback in the GUI — shells out to the audited `batch apply/rollback`; mandatory dry-run + confirm modal before any change
 
 ---
 

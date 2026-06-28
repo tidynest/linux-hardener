@@ -449,7 +449,7 @@ User clicks "Apply"
 
 | Feature | Description | Priority | Status |
 |---------|-------------|----------|--------|
-| Multi-host management | Manage multiple systems from one UI | Medium | ⬜ Pending |
+| Multi-host management | Manage multiple systems from one UI | Medium | 🔄 In progress (Fleet scan + compliance scores + apply/rollback GUI shipped; ad-hoc SSH / live progress / GUI history remain) |
 | Historical trends | Track security posture over time | Low | ⬜ Pending |
 | Alert notifications | Email/webhook on security regressions | Low | ⬜ Pending |
 | DE testing | Test pkexec/polkit on GNOME, KDE, XFCE | Low | ⬜ Pending |
@@ -530,7 +530,7 @@ pass/fail.
 |---------|-------------|----------|--------|
 | SSH crypto-algorithm hardening | Harden `KexAlgorithms`/`Ciphers`/`MACs`, incl. post-quantum kex (`mlkem768x25519-sha256`, default in OpenSSH 10). Must detect supported algorithms (`ssh -Q kex`) and run `sshd -t` before restart to avoid lockout | High | ⬜ Pending |
 | RHEL 10 compliance profiles | DISA RHEL 10 STIG V1R1 (2026-06) and CIS RHEL 10 v1.0.1 now exist | Medium | ⬜ Pending |
-| Multi-host SSH management | Manage/monitor multiple hosts from one UI: host profiles, parallel scanning, trend history, regression alerts | Medium | ⬜ Pending |
+| Multi-host SSH management | Manage/monitor multiple hosts from one UI: host profiles, parallel scanning, trend history, regression alerts | Medium | ✅ Largely done — CLI `batch scan/report/apply/rollback` + `history trends/regressions` + scheduler regression alerts; GUI Fleet scan/compliance/apply/rollback shipped (GUI polish remains) |
 | Security audit (external) | Third-party security review | Medium | ⬜ Pending |
 | Performance optimisation | Scan speed improvements | Medium | ⬜ Pending |
 | Internationalisation | Multi-language support | Low | ⬜ Pending |
