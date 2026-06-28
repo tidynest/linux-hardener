@@ -80,7 +80,7 @@ def main():
     if not quick_mode:
         validators.extend([
             ("CLI Documentation", "validate_cli_docs.py", []),
-            ("Compliance Framework Counts", "validate_compliance_docs.py", []),
+            ("Compliance Framework List", "validate_compliance_docs.py", []),
         ])
 
     results = {}

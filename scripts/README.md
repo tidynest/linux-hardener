@@ -1,6 +1,6 @@
 # Project Scripts
 
-**Last Updated**: 2026-02-28
+**Last Updated**: 2026-06-29
 
 This directory contains utility scripts for the Linux Hardening Tool project.
 
@@ -126,7 +126,7 @@ WEBKIT_DISABLE_COMPOSITING_MODE=1 cargo tauri dev
 | Tauri Commands | `validate_tauri_docs.py` | Tauri commands documented |
 | Last Updated Dates | `validate_last_updated.py` | Dates current with git |
 | CLI Documentation | `validate_cli_docs.py` | CLI commands documented |
-| Compliance Counts | `validate_compliance_docs.py` | Framework counts accurate |
+| Compliance Frameworks | `validate_compliance_docs.py` | Framework list matches enum |
 
 **Modes**:
 - Default: Runs all 7 validators
@@ -158,7 +158,7 @@ Running: Version Synchronisation
   ✓ Tauri Command Documentation: passed
   ✓ Last Updated Dates: passed
   ✓ CLI Documentation: passed
-  ✓ Compliance Framework Counts: passed
+  ✓ Compliance Framework List: passed
 
 All 7 validations passed!
 ```
@@ -548,7 +548,7 @@ CLI documentation validation failed
 
 **Script**: `validate_compliance_docs.py`
 
-**Purpose**: Validates that compliance framework control counts in documentation match actual implementations.
+**Purpose**: Validates that every framework in the `ComplianceFramework` enum (the source of truth) is listed in the documentation framework tables.
 
 **Usage**:
 ```bash
@@ -557,45 +557,31 @@ CLI documentation validation failed
 ```
 
 **What It Checks**:
-- Control counts in docs/ARCHITECTURE.md framework table
-- Control counts in ROADMAP.md framework table
-- All frameworks in source are documented
+- Every `ComplianceFramework` enum variant appears in the ARCHITECTURE.md framework table
+- The same for the ROADMAP.md framework table
+- Per-control *counts* are no longer statically validated — post-rework the control catalogues are split between curated files (`cis.rs`, `iso27001.rs`) and plugin-declared coverage aggregated at runtime, so a static count is not meaningful here
 
 **Exit Codes**:
-- `0`: All compliance framework counts are accurate
-- `1`: Discrepancies found
+- `0`: every enum framework is documented in each table
+- `1`: drift between the enum and the docs
 
 **Example Output**:
 ```
 Validating compliance framework documentation...
 
-Found 6 frameworks in source code:
-  - CIS: 38 controls
-  - GDPR: 12 controls
-  - HIPAA: 14 controls
-  ...
+Found 7 frameworks in ComplianceFramework enum: CIS, HIPAA, ISO27001, NIST, PCIDSS, STIG, GDPR
 
-Checking ARCHITECTURE.md...
-  Count mismatches:
-    - HIPAA: documented 15+, actual 14
+Checking docs/architecture/ARCHITECTURE.md...
+  ✓ All 7 frameworks documented
 
-Compliance documentation validation failed
+Checking ROADMAP.md...
+  ✓ All 7 frameworks documented
 
-Suggested updates based on actual counts:
-| Framework | Controls | Description |
-|-----------|----------|-------------|
-| CIS | 38 | Center for Internet Security Benchmarks |
-...
+All compliance documentation is accurate
 ```
 
-**Approximate Counts**:
-- Documentation can use "35+" to indicate "at least 35"
-- Script validates actual count is >= documented minimum
-- Exact counts (without "+") must match exactly
-
 **Source of Truth**:
-- Control counts from `crates/hardener-compliance/src/frameworks/*.rs`
-- Each `ComplianceMapping` struct represents one control
+- The `ComplianceFramework` enum in `crates/hardener-types/src/lib.rs`
 
 **Dependencies**:
 - Python 3.9+
@@ -761,7 +747,7 @@ Summary: 3 pending updates, 1 manual fix needed
 
 **Supported Date Formats**:
 ```markdown
-**Last Updated**: 2025-12-06
+**Last Updated**: 2026-06-29
 *Last Updated*: 2025-12-06
 Last Updated: 2025-12-06
 ```

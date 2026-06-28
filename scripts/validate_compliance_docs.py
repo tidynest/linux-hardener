@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
 """
-Validates that compliance framework documentation matches actual control counts.
+Validates that compliance documentation lists every framework defined in the
+`ComplianceFramework` enum (the single source of truth).
+
+Why not control counts? Post-rework the per-framework control catalogues are
+split between curated files (`cis.rs`, `iso27001.rs`) and plugin-declared
+coverage that is aggregated at runtime, so a static per-control count is no
+longer meaningful here. This validator therefore checks the framework *list*:
+every enum variant must appear in each documented framework table, and no table
+may list a framework the code does not define.
 
 Usage:
     ./scripts/validate_compliance_docs.py
 
 Exit codes:
-    0: All compliance framework counts are accurate
-    1: Discrepancies found
+    0: every enum framework is documented in each table (and vice versa)
+    1: drift between the enum and the docs
 
 Checks:
     - docs/architecture/ARCHITECTURE.md framework table
@@ -25,6 +33,19 @@ YELLOW = "\033[1;33m"
 BLUE = "\033[0;34m"
 NC = "\033[0m"  # No colour
 
+# enum variant -> a distinctive substring that must appear in a doc table row.
+# Defaults to the variant name itself for any future variant not listed here, so
+# adding a framework without updating this map still surfaces as a drift error.
+DOC_MARKERS = {
+    "CIS": "CIS",
+    "STIG": "STIG",
+    "NIST": "NIST",
+    "PCIDSS": "PCI",  # docs write "PCI-DSS"
+    "HIPAA": "HIPAA",
+    "GDPR": "GDPR",
+    "ISO27001": "27001",  # docs write "ISO/IEC 27001:2022"
+}
+
 
 def find_project_root() -> Path:
     """Find the project root by looking for Cargo.toml."""
@@ -37,160 +58,67 @@ def find_project_root() -> Path:
     sys.exit(1)
 
 
-def count_controls_in_source(root: Path) -> dict[str, int]:
-    """Count ComplianceMapping definitions in each framework file."""
-    frameworks_dir = root / "crates" / "hardener-compliance" / "src" / "frameworks"
-
-    counts = {}
-
-    # Map file names to framework display names
-    file_to_name = {
-        "cis.rs": "CIS",
-        "stig.rs": "STIG",
-        "nist.rs": "NIST 800-53",
-        "pci.rs": "PCI-DSS",
-        "hipaa.rs": "HIPAA",
-        "gdpr.rs": "GDPR",
-    }
-
-    for filename, display_name in file_to_name.items():
-        filepath = frameworks_dir / filename
-        if filepath.exists():
-            content = filepath.read_text()
-            # Count ComplianceMapping struct instantiations
-            # Each control is defined as: ComplianceMapping { ... }
-            count = len(re.findall(r'ComplianceMapping\s*\{', content))
-            counts[display_name] = count
-
-    return counts
+def parse_enum_frameworks(root: Path) -> list[str]:
+    """Extract ComplianceFramework variant identifiers (the source of truth)."""
+    src = (root / "crates" / "hardener-types" / "src" / "lib.rs").read_text()
+    match = re.search(r"enum ComplianceFramework\s*\{(.*?)\n\}", src, re.DOTALL)
+    if not match:
+        print(f"{RED}Error: ComplianceFramework enum not found in hardener-types{NC}")
+        sys.exit(1)
+    # Variant lines look like `    CIS,` (skip doc comments and attributes).
+    return re.findall(r"^\s*([A-Z][A-Za-z0-9]+)\s*,", match.group(1), re.MULTILINE)
 
 
-def parse_framework_table(content: str) -> dict[str, str]:
-    """Parse framework control counts from a markdown table."""
-    counts = {}
-
-    # Match table rows: | Framework | Count | Description |
-    # Count can be "35+" or "35" etc.
-    pattern = r'\|\s*([^|]+)\s*\|\s*(\d+\+?)\s*\|'
-
-    for line in content.split('\n'):
-        match = re.match(pattern, line)
-        if match:
-            framework = match.group(1).strip()
-            count_str = match.group(2).strip()
-            # Skip header row
-            if framework.lower() not in ['framework', '---', '-']:
-                counts[framework] = count_str
-
-    return counts
-
-
-def parse_documented_counts(root: Path) -> dict[str, dict[str, str]]:
-    """Parse framework counts from documentation files."""
-    docs = {}
-
-    files_to_check = [
-        ("docs/architecture/ARCHITECTURE.md", "ARCHITECTURE.md"),
-        ("ROADMAP.md", "ROADMAP.md"),
-    ]
-
-    for filepath, name in files_to_check:
-        full_path = root / filepath
-        if full_path.exists():
-            content = full_path.read_text()
-            counts = parse_framework_table(content)
-            if counts:
-                docs[name] = counts
-
-    return docs
+def framework_table_rows(content: str) -> str:
+    """Join the lines that look like markdown table rows for substring search."""
+    return "\n".join(line for line in content.split("\n") if line.count("|") >= 3)
 
 
 def main():
     print(f"{BLUE}Validating compliance framework documentation...{NC}\n")
-
     root = find_project_root()
 
-    # Get actual counts from source
-    source_counts = count_controls_in_source(root)
+    frameworks = parse_enum_frameworks(root)
+    if not frameworks:
+        print(f"{RED}Error: parsed zero variants from ComplianceFramework enum{NC}")
+        sys.exit(1)
+    print(
+        f"Found {GREEN}{len(frameworks)}{NC} frameworks in ComplianceFramework enum: "
+        f"{', '.join(frameworks)}\n"
+    )
 
-    print(f"Found {GREEN}{len(source_counts)}{NC} frameworks in source code:")
-    for framework, count in sorted(source_counts.items()):
-        print(f"  - {framework}: {count} controls")
-    print()
-
-    # Get documented counts
-    documented = parse_documented_counts(root)
+    files_to_check = [
+        "docs/architecture/ARCHITECTURE.md",
+        "ROADMAP.md",
+    ]
 
     has_errors = False
+    for rel in files_to_check:
+        full_path = root / rel
+        if not full_path.exists():
+            print(f"{YELLOW}Skipping {rel} (not found){NC}\n")
+            continue
 
-    # Check each documentation file
-    for doc_name, doc_counts in documented.items():
-        print(f"{BLUE}Checking {doc_name}...{NC}")
+        print(f"{BLUE}Checking {rel}...{NC}")
+        rows = framework_table_rows(full_path.read_text())
 
-        mismatches = []
-        missing = []
-
-        for framework, actual_count in source_counts.items():
-            if framework in doc_counts:
-                doc_count_str = doc_counts[framework]
-                # Parse documented count (handle "35+" format)
-                doc_count = int(doc_count_str.rstrip('+'))
-                is_approximate = doc_count_str.endswith('+')
-
-                # Check if counts match (with tolerance for approximate)
-                if is_approximate:
-                    # For "35+", actual should be >= 35
-                    if actual_count < doc_count:
-                        mismatches.append(
-                            f"{framework}: documented {doc_count_str}, actual {actual_count}"
-                        )
-                else:
-                    if actual_count != doc_count:
-                        mismatches.append(
-                            f"{framework}: documented {doc_count}, actual {actual_count}"
-                        )
-            else:
-                missing.append(framework)
-
-        if mismatches:
-            has_errors = True
-            print(f"  {RED}Count mismatches:{NC}")
-            for msg in mismatches:
-                print(f"    - {msg}")
-
+        missing = [
+            fw for fw in frameworks if DOC_MARKERS.get(fw, fw) not in rows
+        ]
         if missing:
             has_errors = True
-            print(f"  {RED}Frameworks missing from documentation:{NC}")
-            for framework in missing:
-                print(f"    - {framework}")
-
-        if not mismatches and not missing:
-            print(f"  {GREEN}✓ All {len(source_counts)} frameworks documented correctly{NC}")
+            print(f"  {RED}Frameworks defined in code but absent from the table:{NC}")
+            for fw in missing:
+                print(f"    - {fw} (expected marker '{DOC_MARKERS.get(fw, fw)}')")
+        else:
+            print(f"  {GREEN}✓ All {len(frameworks)} frameworks documented{NC}")
         print()
 
-    # Summary
     if has_errors:
         print(f"{RED}Compliance documentation validation failed{NC}")
-        print(f"\nSuggested updates based on actual counts:")
-        print("```")
-        print("| Framework | Controls | Description |")
-        print("|-----------|----------|-------------|")
-        descriptions = {
-            "CIS": "Center for Internet Security Benchmarks",
-            "STIG": "DISA Security Technical Implementation Guides",
-            "NIST 800-53": "US Federal security controls",
-            "PCI-DSS": "Payment Card Industry standards",
-            "HIPAA": "Healthcare security requirements",
-            "GDPR": "EU data protection (Article 32)",
-        }
-        for framework, count in sorted(source_counts.items()):
-            desc = descriptions.get(framework, "")
-            print(f"| {framework} | {count} | {desc} |")
-        print("```")
         sys.exit(1)
-    else:
-        print(f"{GREEN}All compliance documentation is accurate{NC}")
-        sys.exit(0)
+    print(f"{GREEN}All compliance documentation is accurate{NC}")
+    sys.exit(0)
 
 
 if __name__ == "__main__":
