@@ -657,7 +657,7 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 | `scripts/update_all_docs.py` | Batch documentation updater |
 | `scripts/release.sh` | Automated version bumping and release |
 | `scripts/tauri-dev.sh` | Tauri development launcher |
-| `scripts/full-test-suite.sh` | Complete 125-test validation suite (26 sections) |
+| `scripts/full-test-suite.sh` | Complete 127-test validation suite (26 sections) |
 | `scripts/run-cross-distro-tests.sh` | Non-interactive cross-distro test orchestrator |
 | `scripts/root-test-suite.sh` | 36 root-level privilege tests |
 | `scripts/manual-verification-test.sh` | Interactive verification tests |

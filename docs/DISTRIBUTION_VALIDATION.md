@@ -22,15 +22,15 @@ This document tracks validation testing across supported Linux distributions.
 
 | Distribution | Family | Version | Test Date | Tests | Pass | Fail | Skip | Pass Rate | Status |
 |--------------|--------|---------|-----------|-------|------|------|------|-----------|--------|
-| Arch Linux | Arch | Rolling | 2026-06-28 | 125 | 125 | 0 | 6 | 100% | VALIDATED |
-| Debian | Debian | 12 (Bookworm) | 2026-06-28 | 125 | 125 | 0 | 6 | 100% | VALIDATED |
-| Fedora | Red Hat | 41 | 2026-06-28 | 125 | 125 | 0 | 6 | 100% | VALIDATED |
-| Rocky Linux | Red Hat | 9 | 2026-06-28 | 125 | 125 | 0 | 6 | 100% | VALIDATED |
-| openSUSE | SUSE | Leap 15.6 | 2026-06-28 | 125 | 125 | 0 | 6 | 100% | VALIDATED |
+| Arch Linux | Arch | Rolling | 2026-06-28 | 127 | 127 | 0 | 6 | 100% | VALIDATED |
+| Debian | Debian | 12 (Bookworm) | 2026-06-28 | 127 | 127 | 0 | 6 | 100% | VALIDATED |
+| Fedora | Red Hat | 41 | 2026-06-28 | 127 | 127 | 0 | 6 | 100% | VALIDATED |
+| Rocky Linux | Red Hat | 9 | 2026-06-28 | 127 | 127 | 0 | 6 | 100% | VALIDATED |
+| openSUSE | SUSE | Leap 15.6 | 2026-06-28 | 127 | 127 | 0 | 6 | 100% | VALIDATED |
 
-> **v1.1.0 (2026-06-28), clean run — 125/125 on all five.** The suite grew from
-> 123 to 125 tests with the addition of ISO/IEC 27001:2022 to the per-framework
-> report coverage (now 7 frameworks). Two harness issues found and fixed during
+> **v1.1.0 (2026-06-28), clean run — 127/127 on all five.** The suite grew from
+> 123 to 127 tests: ISO/IEC 27001:2022 added as the 7th report framework, plus
+> `history trends`/`history regressions` cases. Two harness issues found and fixed during
 > re-validation — stale `daemon status` invocations and an intermittent JSON-grep
 > flake — are written up under [v1.1.0 Re-validation](#v110-re-validation-2026-06-28).
 > No product regressions. The musl static binary works across all glibc versions.
@@ -56,11 +56,11 @@ across all five containers. GUI/Playwright tests were **not** re-run in this pas
 
 | Distro | Total | Pass | Fail | Skip | Exit |
 |--------|-------|------|------|------|------|
-| arch | 125 | 125 | 0 | 6 | 0 |
-| debian | 125 | 125 | 0 | 6 | 0 |
-| fedora | 125 | 125 | 0 | 6 | 0 |
-| rhel (Rocky 9) | 125 | 125 | 0 | 6 | 0 |
-| opensuse | 125 | 125 | 0 | 6 | 0 |
+| arch | 127 | 127 | 0 | 6 | 0 |
+| debian | 127 | 127 | 0 | 6 | 0 |
+| fedora | 127 | 127 | 0 | 6 | 0 |
+| rhel (Rocky 9) | 127 | 127 | 0 | 6 | 0 |
+| opensuse | 127 | 127 | 0 | 6 | 0 |
 
 ### Failure analysis — no product regressions
 
@@ -113,7 +113,7 @@ failure path so any future capture anomaly is debuggable from the host log in on
 
 ## Automated Cross-Distro Testing
 
-All validation results in this document are produced by a fully automated test runner. A single command executes 125 tests across all 5 distributions in sequence, collecting pass/fail/skip results and producing a summary table.
+All validation results in this document are produced by a fully automated test runner. A single command executes 127 tests across all 5 distributions in sequence, collecting pass/fail/skip results and producing a summary table.
 
 ### Running the Tests
 
@@ -167,7 +167,7 @@ All containers have: root/test, testuser/test (with passwordless sudo), and fire
 
 ---
 
-## Test Categories (26 Sections, 125 Tests)
+## Test Categories (26 Sections, 127 Tests)
 
 | Section | Name | Tests | Description |
 |---------|------|-------|-------------|

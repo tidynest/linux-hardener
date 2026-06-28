@@ -1065,7 +1065,7 @@ sudo ./scripts/full-test-suite.sh
 sudo ./scripts/full-test-suite.sh --apply
 ```
 
-**What It Tests** (26 test sections, 125 individual tests):
+**What It Tests** (26 test sections, 127 individual tests):
 
 | Section | Tests |
 |---------|-------|
@@ -1128,8 +1128,8 @@ The `--apply` flag gates destructive tests (sections 13-16, 19, 23). Without it,
 ║ TEST SUMMARY                                                       ║
 ╚════════════════════════════════════════════════════════════════════╝
 
-  Total Tests:  125
-  Passed:       125
+  Total Tests:  127
+  Passed:       127
   Failed:       0
   Skipped:      6
   Pass Rate:    100%
@@ -1241,11 +1241,11 @@ CROSS-DISTRO SUMMARY
 
 Distro        Total   Pass   Fail    Skip   Status
 --------      -----   ----   ----    ----   ------
-arch            125    125      0       6     PASS
-debian          125    125      0       6     PASS
-fedora          125    125      0       6     PASS
-rhel            125    125      0       6     PASS
-opensuse        125    125      0       6     PASS
+arch            127    127      0       6     PASS
+debian          127    127      0       6     PASS
+fedora          127    127      0       6     PASS
+rhel            127    127      0       6     PASS
+opensuse        127    127      0       6     PASS
 
 All distros passed.
 ```

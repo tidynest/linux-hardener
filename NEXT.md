@@ -20,7 +20,7 @@ multi-framework mappings) is the top open task below.
 - **All 13 audit bugs fixed** (BUG-01 through BUG-13)
 - **All 7 infrastructure issues resolved** (INFRA-01 through INFRA-07)
 - **Trait refactor complete** — `Config` unit struct deleted, `HardeningPlugin` trait now accepts `&PluginConfig`
-- **Cross-distro validation** — 125-test suite passes on Arch, Debian, Fedora, Rocky Linux 9, openSUSE
+- **Cross-distro validation** — 127-test suite passes on Arch, Debian, Fedora, Rocky Linux 9, openSUSE
 - **Live testing fixes** (2026-02-23) — checkpoint directory permissions, vfat detection, scan history, auditd reload
 - **PluginConfig wiring complete** (2026-02-23) — all 8 plugins consume directives/exceptions
 - **GUI/CLI feature parity complete** (2026-02-24) — scan filtering, checkpoint CRUD, report export, scan history, audit/compliance modes

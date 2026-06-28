@@ -92,10 +92,10 @@ feature set, then fill the gaps with high-quality tests. Nothing half-measured.
 > GUI needs nspawn). Remote-checkpoint + `#[ignore]` root-SSH integration tests
 > not re-audited this pass.
 
-**`scripts/full-test-suite.sh` (the 125-test CLI suite, per container):**
-- ✅ **ISO/IEC 27001:2022** — added `iso27001` to `FRAMEWORKS` (now 7); passes on all 5 distros. (`validate_compliance_docs.py` counts frameworks dynamically — no hardcoded total to update.) Suite grew 123 → 125.
+**`scripts/full-test-suite.sh` (the 127-test CLI suite, per container):**
+- ✅ **ISO/IEC 27001:2022** — added `iso27001` to `FRAMEWORKS` (now 7); passes on all 5 distros. (`validate_compliance_docs.py` counts frameworks dynamically — no hardcoded total to update.) Suite grew 123 → 125 (→ 127 with the history cases below).
 - ❌ **Multi-host batch CLI** — `batch scan` / `batch report` / `batch apply` / `batch rollback` have **zero** coverage. (Needs a localhost/loopback or multi-container fixture.)
-- ❌ **History trends / regressions** — `history trends --host` and `history regressions` are **untested**.
+- ✅ **History trends / regressions** — added `history trends --host "$(hostname)"` + `history regressions` cases to section 11. Patterns accept the clean no-data line, so they pass regardless of whether a fresh container has persisted history yet. Verified 127/127 × 5.
 - ❌ **SSH crypto hardening** — the new `KexAlgorithms`/`Ciphers`/`MACs` (incl. PQ) apply path has **no explicit assertion** (algorithm intersection, `sshd -t` pre-write validation). Also write the deferred **`#[ignore]` root integration test for the full SSH apply path** (flock-bound — see NEXT P1 / git history); it was flagged "not lost" and is still unwritten.
 - ❌ **Remote-correct checkpoints** — capture/restore *through the executor*, host-keyed, cross-host refusal: not exercised.
 - ❌ **Compliance Option-B semantics** — assert that an *unassessed* control reports `ManualReview` (never a false `Pass`), and that an assessed control reports `Pass`/`Fail` for every framework.
@@ -119,7 +119,7 @@ feature set, then fill the gaps with high-quality tests. Nothing half-measured.
 
 ### Definition of done for this sweep
 Every framework, every CLI subcommand, every GUI page, and every Tauri command has
-a test that fails if it breaks. Cross-distro suite green (125, after the container rebuilds bump it again) on the
+a test that fails if it breaks. Cross-distro suite green (127, after the container rebuilds bump it again) on the
 **rebuilt** containers. No silently-skipped feature. Update `DISTRIBUTION_VALIDATION.md`
 test-category tables + counts to match reality.
 
