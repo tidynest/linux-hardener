@@ -682,7 +682,6 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 | `SECURITY.md` | Security policy |
 | `LICENSE` | Apache-2.0 licence |
 | `docs/ARCHITECTURE.md` | Architecture overview |
-| `docs/COMPREHENSIVE_AUDIT_REPORT.md` | Full project audit: 13 bugs found and fixed |
 | `docs/CONFIG_DESIGN.md` | Config system security design |
 | `docs/DATA_FLOW.md` | Data flow diagrams |
 | `docs/DISTRIBUTION_VALIDATION.md` | Multi-distro validation results |

@@ -72,14 +72,15 @@ building/releasing/documentation.md, scripts/README, NAMING_CONVENTIONS.
 These were deliberately left; each needs a deliberate or human-run pass, not a
 quick edit:
 
-1. **`docs/audit/**` (~150 per-file docs)** — a point-in-time snapshot from ~Feb
-   2026. Missing ALL post-Feb work: the fleet pages (`fleet_page.md`,
-   `fleet_apply_page.md` don't exist), the batch commands, new shared types
-   (`FleetFrameworkPosture`, `ApplyOutcome`/`RollbackOutcome`), remote-correct
-   checkpoints (executor relocated to `hardener-common`), compliance Option-B, etc.
-   **Decide: regenerate via the auto-update tooling** (see
-   `docs/commands/documentation.md` for the validator/auto-update scripts) **or
-   retire the snapshot.** This is a tooling job, not 150 manual edits.
+1. **`docs/audit/**`** — ✅ **Resolved 2026-06-28: retired.** Decision was
+   regenerate-vs-retire; regenerate proved a phantom option (no generator ever
+   existed — the auto-update tooling only fixes dates/FILE_MAP/version/compliance
+   counts, it never produced this corpus). It was a stale per-file *mirror* of
+   source (purpose/submodules/public-interface tables), superseded by the code
+   itself + `cargo doc`, and already missing all post-Feb work. `git rm -r
+   docs/audit/` (141 files). Its only still-live signal — 3 open deferred-cleanup
+   flags — was salvaged into [NEXT.md](NEXT.md) (§"P3 — Deferred code cleanups");
+   dangling refs in FILE_MAP/NEXT fixed.
 2. **`docs/DISTRIBUTION_VALIDATION.md`** — body still records "v0.3.3 binary".
    Needs a real **v1.1.0 cross-distro re-validation**: arch, debian, fedora, rhel,
    openSUSE **Leap 16** (15.x reached EOL April 2026). Human-run (nspawn containers

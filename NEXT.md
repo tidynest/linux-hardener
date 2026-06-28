@@ -17,7 +17,7 @@ multi-framework mappings) is the top open task below.
 
 ### Completed milestones:
 
-- **All 13 audit bugs fixed** (BUG-01 through BUG-13) — see `docs/COMPREHENSIVE_AUDIT_REPORT.md`
+- **All 13 audit bugs fixed** (BUG-01 through BUG-13)
 - **All 7 infrastructure issues resolved** (INFRA-01 through INFRA-07)
 - **Trait refactor complete** — `Config` unit struct deleted, `HardeningPlugin` trait now accepts `&PluginConfig`
 - **Cross-distro validation** — 123-test suite passes on Arch, Debian, Fedora, Rocky Linux 9, openSUSE
@@ -216,6 +216,22 @@ affected — they read the numeric `*_count` columns, which `complete_session`
 derives case-insensitively, not the per-finding severity string. Switching to
 `Display` still needs a one-time decision about existing persisted rows; defer to
 a dedicated change.
+
+### P3 — Deferred code cleanups
+
+Minor, pre-existing; salvaged from the Feb crate audit before its snapshot was
+retired (`docs/audit/**` removed 2026-06-28 — a stale per-file mirror of source,
+superseded by the code itself + `cargo doc`; these three flags were its only
+still-live signal):
+
+- [`hardener-core/src/context.rs`](crates/hardener-core/src/context.rs) — the
+  `#[allow(dead_code)] shared_data` field on `PluginContext` is never read; drop
+  the field and the `allow`, or wire it up.
+- [`hardener-core/src/registry.rs`](crates/hardener-core/src/registry.rs) —
+  repeated identical `RwLock` read-error handling; extract a helper.
+- [`hardener-state/src/scan_manager.rs`](crates/hardener-state/src/scan_manager.rs)
+  — a `unwrap_or_default()` silently swallows corrupted-JSON deserialisation; log
+  or surface the error instead.
 
 ### P3 — Maintenance / currency
 
