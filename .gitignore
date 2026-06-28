@@ -89,3 +89,6 @@ packaging/*.pkg.tar*
 packaging/*.tar.gz
 packaging/*.tar.zst
 
+
+# Brainstorming visual-companion scratch
+.superpowers/
