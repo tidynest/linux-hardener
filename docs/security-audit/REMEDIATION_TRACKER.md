@@ -193,31 +193,43 @@ These findings require design-level changes that touch multiple components or al
 
 ## 4. Defence in Depth
 
-These are lower-priority findings that improve overall security posture without addressing immediate vulnerabilities. They should be addressed after all Critical and High findings are resolved.
+These are lower-priority findings that improve overall security posture without
+addressing immediate vulnerabilities. All are now resolved except one explicitly
+deferred item (SAM-039). The **Status** column replaces the original scheduling
+hints, reconciled against the §1 Remediation Table (items also tracked there) and
+[remaining-work.md](../plans/remaining-work.md) §2 for the six items unique to this
+section (SAM-061/062/063/070/074/076), then spot-verified in code.
 
-| SAM-ID | Category | Description | Priority |
-|--------|----------|-------------|----------|
-| SAM-030 | Key Management | Encrypt private key at rest with passphrase-derived key | After SAM-011 |
-| SAM-054 | Key Management | Implement key versioning and rotation | After SAM-014 |
-| SAM-060 | Environment | Use absolute paths for all system commands | After Critical/High |
-| SAM-061 | Environment | Use passwd lookup instead of HOME env var | After Critical/High |
-| SAM-053 | Config Trust | Ignore user config when running as root via pkexec | After SAM-016 |
-| SAM-039 | Capability | Define explicit Tauri capability ACLs for custom commands | After SAM-038 |
-| SAM-044 | Rate Limiting | Add minimum interval between privileged operations | After SAM-042 |
-| SAM-035 | Email | Sanitise hostname in email subject | After SAM-010 |
-| SAM-020 | File Safety | Use O_CREAT O_EXCL for backup file creation | **Fixed** (randomised suffix + no-dereference) |
-| SAM-022 | TOCTOU | Open file once for both metadata and content in capture | After SAM-019 |
-| SAM-023 | TOCTOU | Add flock() for config read-modify-write cycles | Opportunistic |
-| SAM-045 | TOCTOU | Use fchmod() with O_NOFOLLOW for permissions changes | Opportunistic |
-| SAM-018 | Rollback | Implement two-phase rollback with pre-validation | After SAM-001+SAM-002 |
-| SAM-032 | GUI | Show signature verification status in checkpoint list | After SAM-001 |
-| SAM-069 | Error Handling | Map internal errors to user-friendly messages | **Fixed** |
-| SAM-052 | Data Integrity | Return errors for corrupted JSON instead of empty defaults | Opportunistic |
-| SAM-062 | DoS | Bound directive/exception map sizes after parsing | After SAM-037 |
-| SAM-063 | Config | Validate env var override plugin IDs against registry | Opportunistic |
-| SAM-070 | CSP | Remove unsafe-inline from style-src if possible | After SAM-038 |
-| SAM-074 | Frontend | Validate theme from localStorage against allowlist | Opportunistic |
-| SAM-076 | Code Quality | Standardise IPC parameter key casing | Opportunistic |
+| SAM-ID | Category | Description | Status |
+|--------|----------|-------------|--------|
+| SAM-030 | Key Management | Encrypt private key at rest with passphrase-derived key | Fixed |
+| SAM-054 | Key Management | Implement key versioning and rotation | Fixed |
+| SAM-060 | Environment | Use absolute paths for all system commands | Fixed |
+| SAM-061 | Environment | Use passwd lookup instead of HOME env var | Fixed |
+| SAM-053 | Config Trust | Ignore user config when running as root via pkexec | Fixed |
+| SAM-039 | Capability | Define explicit Tauri capability ACLs for custom commands | **Deferred** (post-v1.0) |
+| SAM-044 | Rate Limiting | Add minimum interval between privileged operations | Fixed |
+| SAM-035 | Email | Sanitise hostname in email subject | Fixed |
+| SAM-020 | File Safety | Use O_CREAT O_EXCL for backup file creation | Fixed (randomised suffix, no-dereference) |
+| SAM-022 | TOCTOU | Open file once for both metadata and content in capture | Fixed |
+| SAM-023 | TOCTOU | Add flock() for config read-modify-write cycles | Fixed |
+| SAM-045 | TOCTOU | Use fchmod() with O_NOFOLLOW for permissions changes | Fixed |
+| SAM-018 | Rollback | Implement two-phase rollback with pre-validation | Fixed |
+| SAM-032 | GUI | Show signature verification status in checkpoint list | Fixed |
+| SAM-069 | Error Handling | Map internal errors to user-friendly messages | Fixed |
+| SAM-052 | Data Integrity | Return errors for corrupted JSON instead of empty defaults | Fixed |
+| SAM-062 | DoS | Bound directive/exception map sizes after parsing | Fixed |
+| SAM-063 | Config | Validate env var override plugin IDs against registry | Fixed |
+| SAM-070 | CSP | Remove unsafe-inline from style-src if possible | Fixed |
+| SAM-074 | Frontend | Validate theme from localStorage against allowlist | Fixed |
+| SAM-076 | Code Quality | Standardise IPC parameter key casing | Fixed |
+
+> **SAM-039 (deferred):** explicit per-command Tauri capability ACLs require
+> refactoring all custom commands into a dedicated Tauri plugin. The current
+> `default.json` capability grants only `core:default` + `dialog:default`; the
+> existing `PrivilegedOpGuard` + pkexec + IPC input validation is sufficient for
+> the v1.x threat model. Revisit post-v1.0 — see
+> [remaining-work.md](../plans/remaining-work.md) §2.
 
 ---
 

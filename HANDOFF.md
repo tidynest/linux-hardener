@@ -85,11 +85,14 @@ quick edit:
    Needs a real **v1.1.0 cross-distro re-validation**: arch, debian, fedora, rhel,
    openSUSE **Leap 16** (15.x reached EOL April 2026). Human-run (nspawn containers
    + root); the doc's own header already flags this.
-3. **`docs/security-audit/REMEDIATION_TRACKER.md`** — Section 4 (defence-in-depth)
-   SAM table lacks per-SAM "Fixed" status. The resolved SAMs are enumerated in
-   `docs/plans/remaining-work.md` §2 (SAM-020 / 061 / 062 / 063 / 069 / 070 / 074 /
-   076). Needs a deliberate security reconciliation pass — don't guess statuses.
-   (Test-count `428→648` already fixed.)
+3. **`docs/security-audit/REMEDIATION_TRACKER.md`** — ✅ **Resolved 2026-06-28.**
+   §4 "Defence in Depth" now carries a proper **Status** column (replaced the old
+   "Priority" scheduling hints that left 19 resolved rows looking unaddressed).
+   Reconciled against the §1 Remediation Table + `remaining-work.md` §2 and
+   **spot-verified in code** (not guessed): 20 Fixed, 1 Deferred. The verification
+   caught that **SAM-039** (per-command Tauri capability ACLs) is genuinely *not*
+   done — `default.json` grants only `core:default`+`dialog:default` — so it is
+   marked **Deferred (post-v1.0)**, not Fixed. (Test-count `428→648` already fixed.)
 
 ---
 
