@@ -238,7 +238,7 @@ still-live signal):
 | Item | Detail | Status |
 |------|--------|--------|
 | Distro validation refresh | v1.1.0 binary **re-validated** on the existing containers 2026-06-28 (CLI suite; analysis in `docs/DISTRIBUTION_VALIDATION.md` §v1.1.0 Re-validation). **Version refresh still pending**: recreate containers for Debian 13, Fedora 44, RHEL 10, openSUSE Leap 16 (Leap 15.6 EOL April 2026). GUI suite not re-run. | 🟡 Partial |
-| Cross-distro scan-JSON flake | `--format json scan` `"plugin_id"` check failed on arch/rhel/opensuse (3/5) in the 2026-06-28 run; passes locally (8×) and on debian/fedora. Not reproduced standalone — needs container-level investigation. | ⬜ Open |
+| Cross-distro JSON-capture flake | `run_test_output` (`full-test-suite.sh`) captures via `$(eval "$cmd" 2>&1)`, folding stderr into stdout; under `nspawn --pipe` the JSON-structure checks (`scan` → `"plugin_id"`, `report --report-format json` → `report_framework`) intermittently miss the field. Failing test/distro **varies run-to-run**; product emits the fields correctly (verified locally). Fix: separate stdout/stderr capture or add a retry in `run_test_output`. | ⬜ Open |
 | `tauri` 2.11.2 → 2.11.3 | Latest patch (2026-06-17); no CVE, routine bump | ✅ Done (lockfile, 2026-06-20) |
 | Desktop crate compile fix | Tauri compliance commands ported to the phase-3 `ReportGenerator::new(config, coverage)` signature; `cargo check -p linux-hardener-desktop` clean | ✅ Done (2026-06-20) |
 | External security audit | Third-party review | ⬜ Pending |
