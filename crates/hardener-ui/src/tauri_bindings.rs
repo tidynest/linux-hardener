@@ -4,8 +4,9 @@
 //! In browser mode (without Tauri), all commands return errors gracefully.
 
 use crate::types::{
-    ApplyResult, CheckpointDetail, CheckpointInfo, ComplianceReport, ConfigSummary, FleetHostScan,
-    RollbackResult, ScanResult, ScanSessionInfo, SchedulerUiConfig, TestNotificationResult,
+    ApplyOutcome, ApplyResult, CheckpointDetail, CheckpointInfo, ComplianceReport, ConfigSummary,
+    FleetHostScan, PluginMetadata, RollbackOutcome, RollbackResult, ScanResult, ScanSessionInfo,
+    SchedulerUiConfig, TestNotificationResult,
 };
 use hardener_types::ValidationReport;
 use hardener_types::remote::{RemoteConnectionStatus, RemoteHostProfile};
@@ -359,6 +360,45 @@ pub async fn invoke_fleet_scan(
     let result = invoke_command("run_fleet_scan", args).await?;
     serde_wasm_bindgen::from_value(result)
         .map_err(|e| format!("Failed to deserialise fleet scan results: {}", e))
+}
+
+/// Invokes run_fleet_apply. `execute = false` is a dry-run preview; an empty
+/// `plugins` vector applies all plugins.
+pub async fn invoke_fleet_apply(
+    hosts: Vec<String>,
+    plugins: Vec<String>,
+    execute: bool,
+) -> Result<Vec<ApplyOutcome>, String> {
+    let args = serde_wasm_bindgen::to_value(&serde_json::json!({
+        "hosts": hosts, "plugins": plugins, "execute": execute,
+    }))
+    .map_err(|e| format!("Failed to serialise fleet apply args: {}", e))?;
+    let result = invoke_command("run_fleet_apply", args).await?;
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to deserialise fleet apply results: {}", e))
+}
+
+/// Invokes run_fleet_rollback. `execute = false` previews; an empty `plugins`
+/// vector rolls back all plugins.
+pub async fn invoke_fleet_rollback(
+    hosts: Vec<String>,
+    plugins: Vec<String>,
+    execute: bool,
+) -> Result<Vec<RollbackOutcome>, String> {
+    let args = serde_wasm_bindgen::to_value(&serde_json::json!({
+        "hosts": hosts, "plugins": plugins, "execute": execute,
+    }))
+    .map_err(|e| format!("Failed to serialise fleet rollback args: {}", e))?;
+    let result = invoke_command("run_fleet_rollback", args).await?;
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to deserialise fleet rollback results: {}", e))
+}
+
+/// Invokes list_plugins for the plugin selector.
+pub async fn invoke_list_plugins() -> Result<Vec<PluginMetadata>, String> {
+    let result = invoke_command("list_plugins", JsValue::NULL).await?;
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to deserialise plugin list: {}", e))
 }
 
 // === Scheduler Configuration Bindings ===

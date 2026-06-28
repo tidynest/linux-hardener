@@ -7,11 +7,12 @@ pub use hardener_types::scheduler::{
     EmailUiConfig, NotificationUiConfig, SchedulerUiConfig, TestNotificationResult, WebhookUiConfig,
 };
 pub use hardener_types::{
-    ApplyResult, Change, ChangeType, ComplianceFramework, ComplianceMapping, ComplianceReport,
-    ComplianceSummary, ConfigSummary, ControlResult, ControlStatus, FileRestoreAction,
-    FileRestoreResult, Finding, FindingCategory, FindingPolicyException, FleetFrameworkPosture,
-    FleetHostScan, FleetHostStatus, PluginId, PluginMetadata, RollbackResult, ScanResult, Severity,
-    SeverityTallies, ValidationIssue, ValidationReport,
+    ApplyOutcome, ApplyResult, Change, ChangeType, ComplianceFramework, ComplianceMapping,
+    ComplianceReport, ComplianceSummary, ConfigSummary, ControlResult, ControlStatus,
+    FileRestoreAction, FileRestoreResult, Finding, FindingCategory, FindingPolicyException,
+    FleetFrameworkPosture, FleetHostScan, FleetHostStatus, PluginId, PluginMetadata,
+    RollbackOutcome, RollbackResult, ScanResult, Severity, SeverityTallies, ValidationIssue,
+    ValidationReport,
 };
 
 /// Checkpoint information for UI display.
