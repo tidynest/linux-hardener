@@ -97,6 +97,12 @@ pub fn authorize_user() -> Result<()> { }
 pub struct ColorScheme { }
 ```
 
+**Exception — verbatim external wording.** Text quoted directly from an external
+source keeps that source's spelling, even when American. This covers official
+compliance control titles (e.g. NIST SP 800-53 AC-6(1) *"Authorize Access to
+Security Functions"*) and external crate APIs (`printpdf`, `Color::`). These are
+proper nouns, not our own prose, so `scripts/validate_naming.py` allowlists them.
+
 ---
 
 ## File and Directory Names

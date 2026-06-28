@@ -101,6 +101,13 @@ class NamingValidator:
             r'Color::',     # External colour types
         ]
 
+        # Official control titles from US standards (NIST/CIS/STIG) keep their
+        # canonical American spelling -- they are proper nouns quoted verbatim
+        # from the published catalogue, not our own prose.
+        self.standards_american_patterns = [
+            r'Authorize Access to Security Functions',  # NIST SP 800-53 AC-6(1)
+        ]
+
         # Required prefixes for struct fields
         self.field_prefixes = {
             'Distribution': 'distro_',
@@ -336,6 +343,9 @@ class NamingValidator:
         """Check for American English spellings"""
         # Skip lines that are clearly from external crates
         if any(re.search(p, line) for p in self.external_crate_patterns):
+            return
+        # Skip official US-standard control titles (proper nouns, American spelling)
+        if any(re.search(p, line) for p in self.standards_american_patterns):
             return
 
         american_to_british = {
