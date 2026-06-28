@@ -14,7 +14,8 @@ use hardener_state::{
     ScanHistoryManager, ScanSession, ScanSessionId, ScanStatus, init_db,
 };
 use hardener_types::{
-    ConfigSummary, FleetFrameworkPosture, FleetHostScan, FleetHostStatus, SeverityTallies,
+    ApplyOutcome, ConfigSummary, FleetFrameworkPosture, FleetHostScan, FleetHostStatus,
+    SeverityTallies,
     remote::{HostsConfig, RemoteConnectionInfo, RemoteConnectionStatus, RemoteHostProfile},
 };
 use serde::Serialize;
@@ -1665,6 +1666,42 @@ pub async fn pick_config_file(app: tauri::AppHandle) -> Result<Option<String>, S
     Ok(file_path.map(|p| p.to_string()))
 }
 
+/// Builds the `hardener batch <verb> …` argument vector. `verb` is "apply" or
+/// "rollback". Hosts and plugins are passed as repeated flags (robust to commas
+/// in names). Empty `plugins` ⇒ no `--plugin` (CLI default = all). `--format json`
+/// is always set; `--execute` only when `execute`.
+fn build_batch_args(
+    verb: &str,
+    hosts: &[String],
+    plugins: &[String],
+    execute: bool,
+) -> Vec<String> {
+    let mut args = vec!["batch".to_string(), verb.to_string()];
+    for h in hosts {
+        args.push("--host".to_string());
+        args.push(h.clone());
+    }
+    for p in plugins {
+        args.push("--plugin".to_string());
+        args.push(p.clone());
+    }
+    if execute {
+        args.push("--execute".to_string());
+    }
+    args.push("--format".to_string());
+    args.push("json".to_string());
+    args
+}
+
+/// Parses the JSON outcome array from CLI stdout, skipping any leading info
+/// lines. Exit-code agnostic by design: `batch apply/rollback` exit non-zero on
+/// per-host failures yet still print the array, so the array is the source of
+/// truth. Returns `Err` only when no array is present.
+fn parse_outcomes<T: serde::de::DeserializeOwned>(stdout: &str) -> Result<Vec<T>, String> {
+    let start = stdout.find('[').ok_or("No JSON array in CLI output")?;
+    serde_json::from_str(&stdout[start..]).map_err(|e| format!("Failed to parse CLI output: {e}"))
+}
+
 #[cfg(test)]
 mod fleet_tests {
     use super::*;
@@ -1702,5 +1739,49 @@ mod fleet_tests {
         assert!(matches!(results[0].status, FleetHostStatus::Ok));
         assert!(matches!(results[1].status, FleetHostStatus::Failed(_)));
         assert!(matches!(results[2].status, FleetHostStatus::Ok));
+    }
+
+    #[test]
+    fn build_batch_args_apply_dry_run_and_execute() {
+        let dry = build_batch_args(
+            "apply",
+            &["web-1".into(), "web-2".into()],
+            &["ssh".into()],
+            false,
+        );
+        assert_eq!(
+            dry,
+            vec![
+                "batch", "apply", "--host", "web-1", "--host", "web-2", "--plugin", "ssh",
+                "--format", "json"
+            ]
+        );
+        let exec = build_batch_args("apply", &["web-1".into()], &[], true);
+        assert_eq!(
+            exec,
+            vec![
+                "batch",
+                "apply",
+                "--host",
+                "web-1",
+                "--execute",
+                "--format",
+                "json"
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_outcomes_reads_array_after_info_line() {
+        let stdout = "info: assessing 1 host\n[{\"name\":\"web-1\",\"target\":\"u@web-1\",\"status\":{\"state\":\"applied\",\"ok\":2,\"failed\":0}}]";
+        let parsed: Vec<ApplyOutcome> = parse_outcomes(stdout).unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].name, "web-1");
+    }
+
+    #[test]
+    fn parse_outcomes_errors_without_array() {
+        let parsed: Result<Vec<ApplyOutcome>, String> = parse_outcomes("usage error: no hosts");
+        assert!(parsed.is_err());
     }
 }
