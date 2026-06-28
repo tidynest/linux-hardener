@@ -14,7 +14,10 @@ mod types;
 mod utils;
 
 use components::ThemeToggle;
-use pages::{AnalysisPage, DashboardPage, FleetPage, HardeningPage, RemotePage, SchedulerPage};
+use pages::{
+    AnalysisPage, DashboardPage, FleetApplyPage, FleetPage, HardeningPage, RemotePage,
+    SchedulerPage,
+};
 use state::AppState;
 pub use types::*;
 
@@ -64,6 +67,7 @@ pub fn App() -> impl IntoView {
                         <li><A href="/hardening">"Hardening"</A></li>
                         <li><A href="/remote">"Remote"</A></li>
                         <li><A href="/fleet">"Fleet"</A></li>
+                        <li><A href="/fleet-apply">"Fleet Apply"</A></li>
                         <li><A href="/scheduler">"Scheduler"</A></li>
                     </ul>
                     <ThemeToggle/>
@@ -100,6 +104,7 @@ pub fn App() -> impl IntoView {
                     <Route path=StaticSegment("hardening") view=HardeningPage/>
                     <Route path=StaticSegment("remote") view=RemotePage/>
                     <Route path=StaticSegment("fleet") view=FleetPage/>
+                    <Route path=StaticSegment("fleet-apply") view=FleetApplyPage/>
                     <Route path=StaticSegment("scheduler") view=SchedulerPage/>
                 </Routes>
             </main>
