@@ -1,10 +1,45 @@
 # Linux System Hardener
 
-**Author**: Eric Jingryd
-**Version**: 1.1.0
-**License**: Apache-2.0
+<p>
+  <img src="https://img.shields.io/badge/version-1.1.0-2563eb?style=flat-square" alt="Version 1.1.0">
+  <img src="https://img.shields.io/badge/license-Apache--2.0-475569?style=flat-square" alt="License Apache-2.0">
+  <img src="https://img.shields.io/badge/rust-1.85%2B-b45309?style=flat-square&logo=rust&logoColor=white" alt="Rust 1.85+">
+  <img src="https://img.shields.io/aur/version/linux-system-hardener?style=flat-square&logo=archlinux&logoColor=white&label=AUR" alt="AUR package">
+  <img src="https://img.shields.io/badge/platform-Linux-1e293b?style=flat-square&logo=linux&logoColor=white" alt="Platform Linux">
+  <img src="https://img.shields.io/badge/tests-648%20passing-16a34a?style=flat-square" alt="648 tests passing">
+</p>
 
 A comprehensive Linux security automation tool with multi-distribution support, built in Rust. Provides automated security scanning, hardening, and compliance reporting with full rollback capabilities.
+
+---
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/assets/screenshots/dashboard.png" alt="System Security Dashboard — security score and quick actions" width="820">
+</p>
+<p align="center">
+  <img src="docs/assets/screenshots/analysis-findings.png" alt="Security Analysis — findings colour-coded by severity" width="49%">
+  <img src="docs/assets/screenshots/hardening.png" alt="System Hardening — security profiles and per-plugin control" width="49%">
+</p>
+
+<p align="center"><sub>Desktop app (Tauri + Leptos) on the Midnight Teal theme — Dashboard, Security Analysis, and System Hardening from a live host scan.</sub></p>
+
+---
+
+## Contents
+
+- [Overview](#overview)
+- [Features](#features)
+- [Project Status](#project-status)
+- [Architecture](#architecture)
+- [Getting Started](#getting-started)
+- [Usage](#usage)
+- [Configuration](#configuration)
+- [Security Considerations](#security-considerations)
+- [Contributing](#contributing)
+- [Roadmap](#roadmap)
+- [License](#license)
 
 ---
 
@@ -89,20 +124,8 @@ The tool is designed for system administrators, DevOps engineers, and security p
 ### Test Coverage
 
 ```
-Total Tests: 514+ passing (Rust) + 84 Playwright + 95 Desktop + 21 Node.js
-├── Plugin Tests: 48 + 80 mock tests
-├── Core Tests: 59 + 14 mock executor tests
-├── Compliance Tests: 55
-├── State Tests: 29
-├── Scheduler Tests: 57 (daemon, runner, notifications, systemd)
-├── CLI Tests: 31
-├── Distro Tests: 13
-├── SSH Integration Tests: 24
-├── GUI Tests: 84 Playwright (Web UI, 7 categories, 5 distros)
-├── Desktop UX Tests: 49 (tauri-ux-test.sh — keyboard nav, themes, ARIA, focus)
-├── Desktop Functional Tests: 46 (tauri-functional-test.sh — all pages and IPC)
-├── Node.js GUI Tests: 21 (run-tests.mjs — keyboard, clipboard, TabBar)
-└── Coverage: >90%
+Rust workspace:  648 passed · 0 failed · 38 ignored   (>90% coverage)
+GUI / desktop:   84 Playwright (Web UI, 5 distros) · 95 desktop (UX + functional) · 21 Node.js
 ```
 
 ### Build Status
@@ -124,7 +147,7 @@ linux-system-hardener/
 │   ├── hardener-distro/      # Distribution detection and adaptation
 │   ├── hardener-plugins/     # Security plugin implementations (8 plugins)
 │   ├── hardener-state/       # Checkpoint manager, audit logging
-│   ├── hardener-compliance/  # Compliance framework mapping (6 frameworks)
+│   ├── hardener-compliance/  # Compliance framework mapping (7 frameworks)
 │   ├── hardener-scheduler/   # Scheduled scanning daemon
 │   ├── hardener-cli/         # Command-line interface binary
 │   └── hardener-ui/          # Leptos WASM frontend components
@@ -468,9 +491,10 @@ host) and privilege-gated on `--execute`.
 | Arrow keys | Navigate tab bars and findings grid |
 | Enter/Space | Open finding detail |
 
-The desktop app has six pages; the sixth, **Fleet** (read-only multi-host
-scanning), is reached from the navigation bar. `Ctrl+1`–`5` cover the first five
-pages; Fleet has no dedicated shortcut yet.
+The desktop app has seven pages. `Ctrl+1`–`5` cover the first five (Dashboard,
+Analysis, Hardening, Remote, Scheduler); the two multi-host pages — **Fleet**
+(read-only fleet scan) and **Fleet Apply** (apply/roll back across hosts) — are
+reached from the navigation bar and have no dedicated shortcut yet.
 
 ---
 
@@ -509,11 +533,11 @@ Document deviations from secure baseline with audit metadata:
 [ssh.exceptions.PasswordAuthentication]
 value = "yes"
 allowed = true
-reason = "Legacy LDAP integration until Q2 2025 migration"
+reason = "Legacy LDAP integration until Q2 2027 migration"
 approved_by = "security-team@company.com"
-approved_date = "2024-11-01"
+approved_date = "2026-11-01"
 ticket = "SEC-1234"
-expires = "2025-06-30"
+expires = "2027-06-30"
 ```
 
 ### Scan Modes
@@ -573,6 +597,9 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for detailed implementation plans for upcoming features.
+
+<details>
+<summary><b>Release history — v0.2.0 → v1.0.0</b> (click to expand)</summary>
 
 ### v0.2.0 (Complete)
 - [x] Config file support (`~/.config/linux-hardener/`)
@@ -642,14 +669,16 @@ See [ROADMAP.md](ROADMAP.md) for detailed implementation plans for upcoming feat
 - [x] UI polish pass (side-by-side layouts, card standardisation, responsive fixes)
 - [x] Severity filter in scan results
 - [~] Multi-host management from single UI — **Fleet** scan view, compliance scores, and **Fleet Apply** (apply/rollback) shipped; ad-hoc SSH / live progress / GUI history remain
-- [ ] Historical security trends
-- [ ] Test on GNOME, KDE, XFCE desktop environments (pkexec/polkit agents)
+- [~] Historical security trends — CLI `history trends` shipped (per-host; see v1.1.0); desktop trends visualisation deferred
+- [ ] Test on GNOME, KDE, XFCE desktop environments (pkexec/polkit agents) — deferred (human-run; CI validates headless nspawn containers only)
 
 ### v1.0.0 - Production Release (Complete)
 - [x] Security audit completed
 - [x] Package distribution (AUR)
 - [x] Comprehensive user documentation
 - [x] Performance optimisation
+
+</details>
 
 ### v1.1.0 - Multi-host & Compliance Depth (Current)
 - [x] Multi-host batch CLI: `batch scan` / `report` / `apply` / `rollback` (concurrent, per-host isolated, tiered exit codes)
@@ -681,4 +710,4 @@ This project draws inspiration from established security tools including:
 **Contact**: tidynest@proton.me
 **Repository**: https://github.com/tidynest/linux-system-hardener
 
-**Last Updated**: 2026-06-24
+**Last Updated**: 2026-06-28
