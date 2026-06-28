@@ -217,6 +217,17 @@ derives case-insensitively, not the per-finding severity string. Switching to
 `Display` still needs a one-time decision about existing persisted rows; defer to
 a dedicated change.
 
+### P3 — Docker container image
+
+Ship a `Dockerfile`/image so the hardener runs in containers / CI without a full
+distro install (user request, 2026-06-29). Reuse the existing
+`x86_64-unknown-linux-musl` static binary → a tiny distroless/Alpine image, no
+glibc. Decide on pickup: **scan/report read-only is the safe default**; *apply*
+would need `--privileged` + host namespaces (`--pid=host`, host `/etc`, `/sys`)
+to mutate the real host, which undercuts container isolation — likely document
+as discouraged/unsupported. Add a `docker` row to `DISTRIBUTION_VALIDATION.md`
+once it exists.
+
 ### P3 — Deferred code cleanups
 
 Minor, pre-existing; salvaged from the Feb crate audit before its snapshot was
