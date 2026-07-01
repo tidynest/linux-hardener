@@ -2,20 +2,22 @@
 
 ---
 
-## Current State (as of 2026-06-19)
+## Current State (as of 2026-07-01)
 
-**v1.0.5 released.** All major features complete. Since v1.0.3: edition 2024
-(v1.0.4) and a security dependency pass (v1.0.5 — `tauri` 2.11.2, `lettre`
-0.11.22, `rustls-webpki` 0.103.13; cargo-deny gate added).
+**v1.1.0 in-tree** (not yet released externally — latest GitHub release and AUR
+package remain at 1.0.5; the next version cut will be 1.2.0).
 
-**Open audit finding (2026-06-19):** compliance reporting initially *automatically
-assesses* CIS only — every plugin tagged findings with CIS control IDs, so for
-STIG, NIST, PCI-DSS, HIPAA and GDPR the unmapped controls defaulted to `Pass`,
-reporting coverage the engine had not yet evaluated. Phase-1 fix landed
-(unassessed controls now report `ManualReview`, not `Pass`); phase-2 (real
-multi-framework mappings) is the top open task below.
+v1.1.0 introduced: multi-host batch CLI (`batch scan/report/apply/rollback`),
+per-host history/trends/regression detection, scheduler regression alerts,
+ISO/IEC 27001:2022 compliance framework, multi-framework mappings across all 8
+plugins, CIS coverage completion (11 controls now Pass/Fail; `report --framework
+cis` shows 6 `ManualReview`, down from 17), PAM/permissions assessment
+improvements (faillock/pwhistory threshold comparison; shadow/gshadow
+allowed-bits mask), SSH crypto hardening (KexAlgorithms/Ciphers/MACs incl. PQ),
+remote-correct checkpoints, Fleet GUI (scan posture + apply/rollback), and polkit
+DE test tooling. `cargo test --workspace` = **660 passed / 0 failed / 38 ignored**.
 
-### Completed milestones:
+### Key completed milestones (cumulative through v1.1.0):
 
 - **All 13 audit bugs fixed** (BUG-01 through BUG-13)
 - **All 7 infrastructure issues resolved** (INFRA-01 through INFRA-07)
@@ -36,7 +38,7 @@ multi-framework mappings) is the top open task below.
 - **v1.0.3 parallel test runners** (2026-02-28) — `run-gui-tests-parallel.sh`, `run-cross-distro-tests-parallel.sh`, `run-desktop-tests.sh`, `run-all-tests-parallel.sh`
 - **v1.0.2 merged branches** (2026-02-28) — `cli-ux-perfection` (CLI crash fixes, stderr routing, idempotent dirs, user-mode systemd) + `feature/desktop-testing-ux` (keyboard nav, ARIA, clipboard, TabBar migration, 95 desktop tests)
 - **Desktop tests**: 49 UX tests + 46 functional tests + 21 Node.js tests all passing
-- **514+ unit tests pass**, clippy clean, native + WASM builds clean
+- **660 unit/integration tests pass**, clippy clean, native + WASM builds clean
 
 ### Trait refactor summary (commits `81c13ad`, `d029629`, `b87fb1c`):
 
@@ -71,8 +73,7 @@ multi-framework mappings) is the top open task below.
 
 ## What's next (priority order)
 
-> Refreshed 2026-06-19 from a full state + online-currency audit. Items are open
-> unless marked Done.
+> Refreshed 2026-07-01. Items are open unless marked Done.
 
 ### P0 — Compliance assessment coverage (phase 2)
 
@@ -317,9 +318,9 @@ See `docs/GUI_CLI_PARITY_PLAN.md` — all 6 phases complete.
 
 - **11 Crates** (10 core + 1 Tauri app)
 - **8 Security Plugins**: Kernel, SSH, Firewall, PAM, Services, Audit, Permissions, MAC
-- **514+ Passing Tests**
+- **660 Passing Tests**
 - **Multi-Distribution Support**: Debian, Red Hat, Arch, SUSE families
-- **Current Version**: 1.0.5 (Production Release)
+- **Current Version**: 1.1.0 (in-tree; latest published release = 1.0.5)
 - **WASM Support**: GUI frontend compiles to `wasm32-unknown-unknown`
 
 For version history and detailed feature tracking, see [ROADMAP.md](ROADMAP.md).
@@ -391,4 +392,4 @@ hardener-scheduler
 
 *This document is prepared for continuity between development sessions.*
 
-**Last Updated**: 2026-06-28
+**Last Updated**: 2026-07-01

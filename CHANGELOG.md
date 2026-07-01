@@ -7,58 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- **CIS compliance coverage completion.** Eleven curated CIS controls are now
-  genuinely assessed instead of `ManualReview`: file permissions on
-  `/etc/{passwd,group,shadow,gshadow}` (6.1.2–6.1.5), ICMP redirect and
-  martian-packet sysctls (3.2.2–3.2.4), `xinetd` removal (2.1.1), firewall
-  installed (3.4.1.1), and faillock/pwhistory (5.3.2/5.3.3). `report --framework
-  cis` now reports 6 `ManualReview` (down from 17) — the remainder are honestly
-  out of scope (cron.allow, sshd_config perms, SSH Protocol 2, SELinux
-  bootloader/policy, X11). Each newly-checked item also gains a
-  checkpoint-protected apply action.
-- **Polkit desktop-environment test tooling.** New `scripts/detect-polkit-agent.sh`
-  diagnostic plus a `test-polkit-matrix.sh` harness and GNOME/KDE/XFCE/no-agent
-  wrappers that validate `pkexec` privilege escalation across desktops, and a
-  `docs/de-compatibility.md` matrix documenting the polkit agent each DE needs.
-
-- **Desktop Fleet Apply page** — apply and roll back hardening across saved
-  hosts over SSH from the GUI, by shelling out to the audited `batch apply`/`rollback`
-  CLI. Mandatory dry-run preview + confirmation before any change; the page is
-  read-only until you confirm.
-- **Desktop fleet view.** A new read-only **Fleet** page scans several saved
-  inventory hosts concurrently and shows each host's severity posture
-  (per-host critical/high/medium/low/info tallies, expandable to that host's
-  findings). Reuses the single-host scan path in-process; per-host failure is
-  isolated. Fleet apply/rollback and compliance scoring remain CLI-only.
-- **Desktop fleet view — compliance scores.** Each fleet host row now shows a
-  colour-coded CIS compliance score, and the row's expander lists every
-  framework's score with pass/fail/manual/NA counts. Derived in-process from the
-  findings already scanned (no extra SSH); the view remains read-only.
-
-### Fixed
-- **`polkit` was missing from the Arch package's `depends`.** Installing the AUR
-  package could leave a system without polkit, so `pkexec` privilege escalation
-  (apply / rollback) would fail. `polkit` is now a hard dependency, with
-  `optdepends` recommending an agent per desktop; RPM gains `Recommends`/`Supplements`
-  and Debian a `Suggests` for the same.
-
-### Security
-- **Permission checks never loosen `/etc/shadow`/`/etc/gshadow`.** These files
-  are distro-variant (`0000` on RHEL, `0640` on Debian); the check now uses an
-  allowed-bits mask so a stricter mode is compliant and apply only ever strips
-  disallowed bits, never adding them.
-- **faillock/pwhistory apply never loosens a stricter setting.** `deny`/`remember`
-  use a threshold comparison (`deny ≤ 5`, `remember ≥ 5`); a stricter existing
-  value is compliant and apply writes the CIS boundary only when the current
-  value actually violates it. The effective value is read from either
-  `/etc/security/{faillock,pwhistory}.conf` **or** an inline `pam_faillock.so`/
-  `pam_pwhistory.so` argument in the PAM stack (which overrides the `.conf`), so
-  a host configured inline is no longer misreported. A stricter per-host override
-  is honoured (clamped so it can never loosen below the CIS baseline); when a
-  non-compliant value is set inline in the PAM stack, apply refuses to auto-edit
-  the auth stack and reports the manual action instead.
-
 ## [1.1.0] - 2026-06-24
 
 ### Added
@@ -143,8 +91,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`ssh -Q …`) and only ever writes the intersection with a strong allow-list, so
   it cannot set an unknown algorithm (no lockout) or a weak one (no downgrade),
   and validates the candidate config with `sshd -t` before restarting.
+- **CIS compliance coverage completion.** Eleven curated CIS controls are now
+  genuinely assessed instead of `ManualReview`: file permissions on
+  `/etc/{passwd,group,shadow,gshadow}` (6.1.2–6.1.5), ICMP redirect and
+  martian-packet sysctls (3.2.2–3.2.4), `xinetd` removal (2.1.1), firewall
+  installed (3.4.1.1), and faillock/pwhistory (5.3.2/5.3.3). `report --framework
+  cis` now reports 6 `ManualReview` (down from 17) — the remainder are honestly
+  out of scope (cron.allow, sshd_config perms, SSH Protocol 2, SELinux
+  bootloader/policy, X11). Each newly-checked item also gains a
+  checkpoint-protected apply action.
+- **Polkit desktop-environment test tooling.** New `scripts/detect-polkit-agent.sh`
+  diagnostic plus a `test-polkit-matrix.sh` harness and GNOME/KDE/XFCE/no-agent
+  wrappers that validate `pkexec` privilege escalation across desktops, and a
+  `docs/de-compatibility.md` matrix documenting the polkit agent each DE needs.
+  (Actual multi-DE test runs still require real DE sessions — tooling exists, real
+  GNOME/KDE/XFCE runs are pending.)
+- **Desktop Fleet Apply page** — apply and roll back hardening across saved
+  hosts over SSH from the GUI, by shelling out to the audited `batch apply`/`rollback`
+  CLI. Mandatory dry-run preview + confirmation before any change; the page is
+  read-only until the dry-run is previewed and confirmed.
+- **Desktop fleet view.** A new read-only **Fleet** page scans several saved
+  inventory hosts concurrently and shows each host's severity posture
+  (per-host critical/high/medium/low/info tallies, expandable to that host's
+  findings). Reuses the single-host scan path in-process; per-host failure is
+  isolated.
+- **Desktop fleet view — compliance scores.** Each fleet host row now shows a
+  colour-coded CIS compliance score, and the row's expander lists every
+  framework's score with pass/fail/manual/NA counts. Derived in-process from the
+  findings already scanned (no extra SSH); the view remains read-only.
 
 ### Fixed
+- **`polkit` was missing from the Arch package's `depends`.** Installing the AUR
+  package could leave a system without polkit, so `pkexec` privilege escalation
+  (apply / rollback) would fail. `polkit` is now a hard dependency, with
+  `optdepends` recommending an agent per desktop; RPM gains `Recommends`/`Supplements`
+  and Debian a `Suggests` for the same.
 - **Corrected HIPAA citations on kernel hardening controls.** The kernel plugin
   cited HIPAA `164.312(c)(1)` (Integrity) on six exploit-mitigation sysctls,
   which guard against memory disclosure rather than ePHI alteration. Cross-checked
@@ -223,6 +204,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by coverage-derived catalogues and per-control coverage (see above).
 
 ### Security
+- **Permission checks never loosen `/etc/shadow`/`/etc/gshadow`.** These files
+  are distro-variant (`0000` on RHEL, `0640` on Debian); the check now uses an
+  allowed-bits mask so a stricter mode is compliant and apply only ever strips
+  disallowed bits, never adding them.
+- **faillock/pwhistory apply never loosens a stricter setting.** `deny`/`remember`
+  use a threshold comparison (`deny ≤ 5`, `remember ≥ 5`); a stricter existing
+  value is compliant and apply writes the CIS boundary only when the current
+  value actually violates it. The effective value is read from either
+  `/etc/security/{faillock,pwhistory}.conf` **or** an inline `pam_faillock.so`/
+  `pam_pwhistory.so` argument in the PAM stack (which overrides the `.conf`), so
+  a host configured inline is no longer misreported. A stricter per-host override
+  is honoured (clamped so it can never loosen below the CIS baseline); when a
+  non-compliant value is set inline in the PAM stack, apply refuses to auto-edit
+  the auth stack and reports the manual action instead.
 - **RUSTSEC-2026-0185** — Updated `quinn-proto` 0.11.14 → 0.11.15 (remote memory
   exhaustion, CVSS 7.5: unbounded out-of-order QUIC stream reassembly; pulled
   transitively).
@@ -782,6 +777,9 @@ Configuration file support with layered loading, compliance framework reporting 
 
 ## Version History
 
+- **1.1.0** (2026-06-24): Multi-host batch CLI, per-host history/trends/regression, ISO 27001:2022, multi-framework compliance mappings, CIS coverage completion, Fleet GUI (scan + apply/rollback), polkit DE test tooling, SSH crypto hardening
+- **1.0.5** (2026-05-24): Security dependency pass (tauri 2.11.2, lettre, rustls-webpki CVE fixes)
+- **1.0.4** (2026-04-15): Rust edition 2024, dependency updates
 - **1.0.3** (2026-02-28): Parallel test runners, GUI test selector fixes for TabBar component
 - **1.0.2** (2026-02-28): CLI crash fixes, desktop UX enhancements (keyboard nav, ARIA, clipboard, 95 tests)
 - **1.0.1** (2026-02-27): AUR source checksum fix
@@ -793,7 +791,8 @@ Configuration file support with layered loading, compliance framework reporting 
 - **0.2.0** (2025-11-28): Compliance frameworks, PDF reports, configuration system
 - **0.1.0** (2025-11-25): Initial development release
 
-[Unreleased]: https://github.com/tidynest/linux-system-hardener/compare/v1.0.5...HEAD
+[Unreleased]: https://github.com/tidynest/linux-system-hardener/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/tidynest/linux-system-hardener/compare/v1.0.5...v1.1.0
 [1.0.5]: https://github.com/tidynest/linux-system-hardener/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/tidynest/linux-system-hardener/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/tidynest/linux-system-hardener/compare/v1.0.2...v1.0.3
@@ -807,4 +806,4 @@ Configuration file support with layered loading, compliance framework reporting 
 [0.2.0]: https://github.com/tidynest/linux-system-hardener/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tidynest/linux-system-hardener/releases/tag/v0.1.0
 
-**Last Updated**: 2026-06-23
+**Last Updated**: 2026-07-01

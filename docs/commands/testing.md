@@ -12,7 +12,7 @@ Commands for running unit tests, integration tests, container-based root tests, 
 cargo test --workspace
 ```
 
-Runs every test across all 11 crates. Currently 648+ tests.
+Runs every test across all 11 crates. Currently 660+ tests.
 
 ### CI subset (excludes GUI crates)
 

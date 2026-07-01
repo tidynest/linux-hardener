@@ -450,9 +450,9 @@ User clicks "Apply"
 | Feature | Description | Priority | Status |
 |---------|-------------|----------|--------|
 | Multi-host management | Manage multiple systems from one UI | Medium | 🔄 In progress (Fleet scan + compliance scores + apply/rollback GUI shipped; ad-hoc SSH / live progress / GUI history remain) |
-| Historical trends | Track security posture over time | Low | ⬜ Pending |
-| Alert notifications | Email/webhook on security regressions | Low | ⬜ Pending |
-| DE testing | Test pkexec/polkit on GNOME, KDE, XFCE | Low | ⬜ Pending |
+| Historical trends | Track security posture over time | Low | ⬜ Pending (CLI `history trends` done; desktop visualisation deferred) |
+| Alert notifications | Email/webhook on security regressions | Low | ✅ Complete (scheduler `notify_mode` regression alerts) |
+| DE testing | Test pkexec/polkit on GNOME, KDE, XFCE | Low | 🔄 Tooling shipped (`detect-polkit-agent.sh`, `test-polkit-matrix.sh`, DE wrappers, `docs/de-compatibility.md`); real GNOME/KDE/XFCE runs pending (require DE sessions) |
 
 ---
 
@@ -501,12 +501,13 @@ Features planned for post-v1.0.0 releases.
 
 ### Compliance Assessment Coverage
 
-Today only CIS is **automatically assessed** — every plugin tags its findings
-with CIS control IDs. Other frameworks ship a control catalogue but no finding
-maps to them, so their controls report `ManualReview` (see
-`frameworks::AUTOMATED_FRAMEWORKS`). The phase-2 work is to give findings real
-multi-framework mappings so STIG/NIST/PCI-DSS/HIPAA/GDPR controls genuinely
-pass/fail.
+All 7 frameworks now emit genuine Pass/Fail results via plugin-declared per-control
+coverage (`coverage()` per plugin, aggregated by `hardener_plugins::compliance_coverage()`
+and injected into `ReportGenerator`). CIS and ISO 27001:2022 keep curated catalogues
+(full standard; unassessed controls → `ManualReview`). Non-CIS catalogues are derived
+from coverage so each report uses a single id scheme with no placeholder noise.
+`report --framework cis` shows 6 `ManualReview` (down from 17); all other frameworks
+report zero `ManualReview` for covered controls.
 
 | Task | Description | Priority | Status |
 |------|-------------|----------|--------|
@@ -514,7 +515,7 @@ pass/fail.
 | Per-control multi-framework mappings | Plugins emit STIG/NIST/PCI-DSS/HIPAA/GDPR/ISO 27001 control IDs alongside CIS | High | ✅ Complete |
 | Catalogue id reconciliation | Unify catalogue vs SSG-scheme ids for clean reports | Low | ⬜ Pending |
 | Option B — `Pass` for checked-passing controls | Per-control coverage set; every non-CIS framework reports zero `ManualReview` | Low | ✅ Complete |
-| CIS curated-catalogue coverage | Wire mechanically-checkable CIS controls off `ManualReview`; `report --framework cis` now shows 6 `ManualReview` (from 17), the remainder genuinely out of scope | Medium | ✅ Complete |
+| CIS curated-catalogue coverage | 11 CIS controls now genuinely assessed; `report --framework cis` shows 6 `ManualReview` (from 17), the remainder genuinely out of scope | Medium | ✅ Complete |
 
 ### Additional Compliance Frameworks
 
@@ -545,7 +546,7 @@ pass/fail.
 
 | Item | Description | Priority | Status |
 |------|-------------|----------|--------|
-| Increase test coverage | Target 90%+ coverage | Low | ✅ Complete (505+ tests) |
+| Increase test coverage | Target 90%+ coverage | Low | ✅ Complete (660+ tests) |
 | Consolidate `create_plugin_registry()` | Duplicated in CLI, report, Tauri | Low | ✅ Complete |
 | Consolidate test mock plugins | Duplicated in registry.rs and plugin_manager_tests.rs | Low | ✅ Complete |
 | Config file utilities | Duplicated parsing/backup in SSH and PAM plugins | Low | ✅ Complete |
@@ -657,10 +658,9 @@ The compliance module (`hardener-compliance`) is designed for reuse:
 
 The "Controls" column is the size of each framework's control **catalogue**.
 "Assessed" indicates whether plugin findings are mapped to the framework so
-controls genuinely pass/fail. All frameworks are now finding-mapped; on a
-hardened system non-CIS controls show `ManualReview` rather than `Pass` until
-the optional per-control coverage upgrade lands (see Compliance Assessment
-Coverage above).
+controls genuinely pass/fail. All 7 frameworks are finding-mapped and use
+plugin-declared per-control coverage (Option B): an assessed control reports
+`Pass` or `Fail`; an unassessed one reports `ManualReview`.
 
 | Framework | Controls | Assessed | Description |
 |-----------|----------|----------|-------------|
@@ -686,4 +686,4 @@ When working on new features:
 
 ---
 
-**Last Updated**: 2026-06-28
+**Last Updated**: 2026-07-01

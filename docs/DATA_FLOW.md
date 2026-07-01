@@ -736,7 +736,12 @@ If any entry is modified, the hash chain breaks and tampering is detected.
 
 ### Key Differences from Local Execution
 
-1. **Checkpoints**: Stored locally on the machine running hardener, not on remote
+1. **Checkpoints**: Capture and restore run through the `SshExecutor`, so
+   snapshots and file restores target the **remote** host. Checkpoints are keyed
+   by host; rollback refuses to restore one host's checkpoint onto another.
+   Note: remote chmod/chown/rm run without sudo, so a non-root remote restore
+   degrades to content-only for privileged paths; binary files are not
+   checkpointed remotely.
 2. **SystemInfo**: Detected from remote host via SSH commands
 3. **Privileged operations**: May require sudo on remote (user configures)
 4. **Network latency**: Each operation involves SSH round-trip
@@ -1260,4 +1265,4 @@ pub enum RollbackStatus {
 
 ---
 
-**Last Updated**: 2026-06-28
+**Last Updated**: 2026-07-01

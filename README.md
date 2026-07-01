@@ -6,7 +6,7 @@
   <img src="https://img.shields.io/badge/rust-1.85%2B-b45309?style=flat-square&logo=rust&logoColor=white" alt="Rust 1.85+">
   <img src="https://img.shields.io/aur/version/linux-system-hardener?style=flat-square&logo=archlinux&logoColor=white&label=AUR" alt="AUR package">
   <img src="https://img.shields.io/badge/platform-Linux-1e293b?style=flat-square&logo=linux&logoColor=white" alt="Platform Linux">
-  <img src="https://img.shields.io/badge/tests-648%20passing-16a34a?style=flat-square" alt="648 tests passing">
+  <img src="https://img.shields.io/badge/tests-660%20passing-16a34a?style=flat-square" alt="660 tests passing">
 </p>
 
 A comprehensive Linux security automation tool with multi-distribution support, built in Rust. Provides automated security scanning, hardening, and compliance reporting with full rollback capabilities.
@@ -124,7 +124,7 @@ The tool is designed for system administrators, DevOps engineers, and security p
 ### Test Coverage
 
 ```
-Rust workspace:  648 passed · 0 failed · 38 ignored   (>90% coverage)
+Rust workspace:  660 passed · 0 failed · 38 ignored   (>90% coverage)
 GUI / desktop:   113 Playwright (Web UI, 5 distros) · 95 desktop (UX + functional) · 21 Node.js
 ```
 
@@ -680,14 +680,17 @@ See [ROADMAP.md](ROADMAP.md) for detailed implementation plans for upcoming feat
 
 </details>
 
-### v1.1.0 - Multi-host & Compliance Depth (Current)
+### v1.1.0 - Multi-host & Compliance Depth (Current in-tree; not yet published to AUR)
 - [x] Multi-host batch CLI: `batch scan` / `report` / `apply` / `rollback` (concurrent, per-host isolated, tiered exit codes)
 - [x] Per-host scan history, trends, and regression detection (`history trends/regressions --host`)
 - [x] Scheduler regression alerts (`notify_mode`: findings / regression / both)
 - [x] Remote-correct checkpoints (capture/restore through the executor; host-keyed; cross-host restore refused)
 - [x] ISO/IEC 27001:2022 framework + multi-framework finding mappings (STIG/NIST/PCI-DSS/HIPAA/GDPR)
+- [x] CIS coverage completion — 11 CIS controls now genuinely assessed (Pass/Fail); `report --framework cis` shows 6 ManualReview, down from 17
+- [x] PAM/permissions assessment improvements — faillock/pwhistory use threshold comparison; shadow/gshadow use allowed-bits mask (never loosens stricter settings)
 - [x] Desktop **Fleet** view — read-only multi-host scan posture with CIS compliance scores and per-framework breakdown
 - [x] Fleet apply/rollback in the GUI — shells out to the audited `batch apply/rollback`; mandatory dry-run + confirm modal before any change
+- [x] Polkit desktop-environment test tooling (`scripts/detect-polkit-agent.sh`, `test-polkit-matrix.sh`, DE-specific wrappers, `docs/de-compatibility.md`)
 
 ---
 
@@ -710,4 +713,4 @@ This project draws inspiration from established security tools including:
 **Contact**: tidynest@proton.me
 **Repository**: https://github.com/tidynest/linux-system-hardener
 
-**Last Updated**: 2026-06-28
+**Last Updated**: 2026-07-01

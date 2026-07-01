@@ -130,7 +130,7 @@ test-category tables + counts to match reality.
 
 ### Doc / validation leftovers
 - ✅ **GUI cross-distro re-run** — `--gui` suite green on all 5 distros (2026-06-29), now 113 tests incl. the new fleet/remote/scheduler specs.
-- **AUR / package version bump** — package specs (PKGBUILD/RPM/DEB) are still at **1.0.3** while the project is **1.1.0**. The README's AUR badge live-fetches and will show 1.0.3 until bumped. Bump pkgver → `makepkg --printsrcinfo > .SRCINFO` → push AUR (`ssh://aur@aur.archlinux.org/linux-system-hardener.git`, `id_ed25519`).
+- **AUR / package version bump** — packaging specs (PKGBUILD/RPM/DEB) have been aligned to **1.1.0** in-tree. The AUR badge live-fetches the published AUR version, which is still **1.0.5** until the tag is cut and pushed to `ssh://aur@aur.archlinux.org/linux-system-hardener.git`. Push step: bump pkgver → `makepkg --printsrcinfo > .SRCINFO` → push AUR (uses `id_ed25519`).
 
 ### Feature backlog (from ROADMAP / NEXT)
 - **Multi-host GUI polish** (each its own small brainstorm):
@@ -186,7 +186,7 @@ All cosmetic; the user deprioritised the first two earlier, but everything here 
 ## How to verify
 
 ```bash
-cargo test --workspace                       # 648 passed, 0 failed, 38 ignored (will grow with the sweep)
+cargo test --workspace                       # 660 passed, 0 failed, 38 ignored (will grow with the sweep)
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --check
 cargo build --workspace                      # incl. the desktop bin
