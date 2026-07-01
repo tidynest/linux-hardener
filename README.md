@@ -1,7 +1,7 @@
 # Linux System Hardener
 
 <p>
-  <img src="https://img.shields.io/badge/version-1.1.0-2563eb?style=flat-square" alt="Version 1.1.0">
+  <img src="https://img.shields.io/badge/version-1.2.0-2563eb?style=flat-square" alt="Version 1.2.0">
   <img src="https://img.shields.io/badge/license-Apache--2.0-475569?style=flat-square" alt="License Apache-2.0">
   <img src="https://img.shields.io/badge/rust-1.85%2B-b45309?style=flat-square&logo=rust&logoColor=white" alt="Rust 1.85+">
   <img src="https://img.shields.io/aur/version/linux-system-hardener?style=flat-square&logo=archlinux&logoColor=white&label=AUR" alt="AUR package">
@@ -119,7 +119,7 @@ The tool is designed for system administrators, DevOps engineers, and security p
 
 ## Project Status
 
-**Current Phase**: Production Release (v1.1.0)
+**Current Phase**: Production Release (v1.2.0)
 
 ### Test Coverage
 
@@ -669,7 +669,7 @@ See [ROADMAP.md](ROADMAP.md) for detailed implementation plans for upcoming feat
 - [x] UI polish pass (side-by-side layouts, card standardisation, responsive fixes)
 - [x] Severity filter in scan results
 - [~] Multi-host management from single UI — **Fleet** scan view, compliance scores, and **Fleet Apply** (apply/rollback) shipped; ad-hoc SSH / live progress / GUI history remain
-- [~] Historical security trends — CLI `history trends` shipped (per-host; see v1.1.0); desktop trends visualisation deferred
+- [~] Historical security trends — CLI `history trends` shipped (per-host; see v1.2.0); desktop trends visualisation deferred
 - [ ] Test on GNOME, KDE, XFCE desktop environments (pkexec/polkit agents) — deferred (human-run; CI validates headless nspawn containers only)
 
 ### v1.0.0 - Production Release (Complete)
@@ -680,7 +680,7 @@ See [ROADMAP.md](ROADMAP.md) for detailed implementation plans for upcoming feat
 
 </details>
 
-### v1.1.0 - Multi-host & Compliance Depth (Current in-tree; not yet published to AUR)
+### v1.2.0 - Multi-host & Compliance Depth (Released)
 - [x] Multi-host batch CLI: `batch scan` / `report` / `apply` / `rollback` (concurrent, per-host isolated, tiered exit codes)
 - [x] Per-host scan history, trends, and regression detection (`history trends/regressions --host`)
 - [x] Scheduler regression alerts (`notify_mode`: findings / regression / both)

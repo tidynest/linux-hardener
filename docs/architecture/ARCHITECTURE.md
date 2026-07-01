@@ -29,7 +29,7 @@ Linux System Hardener is a modular security hardening tool for Linux systems, pr
 │   └─ Checkpoint    │   └─ Hardening       │                     │
 │   └─ Report        │   └─ Remote          │                     │
 │   └─ Batch         │   └─ Scheduler       │                     │
-│                    │   └─ Fleet (v1.1.0)  │                     │
+│                    │   └─ Fleet (v1.2.0)  │                     │
 │   └─ Fleet Apply     │                     │
 └────────────────────┴──────────────────────┴─────────────────────┘
                               │

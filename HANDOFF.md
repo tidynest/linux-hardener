@@ -3,7 +3,7 @@
 > **Read this first.** Point-in-time handoff for the next development session.
 > Living task list is [NEXT.md](NEXT.md); roadmap is [ROADMAP.md](ROADMAP.md);
 > data-flow source of truth is [docs/DATA_FLOW.md](docs/DATA_FLOW.md).
-> Project is **v1.1.0**. `main` is **5 commits ahead of the remotes — unpushed.**
+> Project is **v1.2.0** (released to GitHub, GitLab, and AUR on 2026-07-01). `main` is pushed and in sync with both remotes.
 
 ---
 
@@ -130,7 +130,7 @@ test-category tables + counts to match reality.
 
 ### Doc / validation leftovers
 - ✅ **GUI cross-distro re-run** — `--gui` suite green on all 5 distros (2026-06-29), now 113 tests incl. the new fleet/remote/scheduler specs.
-- **AUR / package version bump** — packaging specs (PKGBUILD/RPM/DEB) have been aligned to **1.1.0** in-tree. The AUR badge live-fetches the published AUR version, which is still **1.0.5** until the tag is cut and pushed to `ssh://aur@aur.archlinux.org/linux-system-hardener.git`. Push step: bump pkgver → `makepkg --printsrcinfo > .SRCINFO` → push AUR (uses `id_ed25519`).
+- ✅ **AUR / package version bump** — done. Repo packaging (PKGBUILD/RPM/DEB/.SRCINFO) and the AUR clone (`~/RustroverProjects/aur-linux-system-hardener`) are at **1.2.0**; the `v1.2.0` tag is pushed and the AUR package published. The AUR badge live-fetches the published version and now shows 1.2.0.
 
 ### Feature backlog (from ROADMAP / NEXT)
 - **Multi-host GUI polish** (each its own small brainstorm):
