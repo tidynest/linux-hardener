@@ -230,6 +230,11 @@ const UNNECESSARY_SERVICES: &[ServiceDirective] = &[
         service_name: "ModemManager",
         service_severity: Severity::Low,
     },
+    ServiceDirective {
+        service_description: "Legacy inetd super-server - obsolete, expands attack surface",
+        service_name: "xinetd",
+        service_severity: Severity::Medium,
+    },
 ];
 
 /// Checks if a systemd service unit exists on the system.
@@ -671,6 +676,17 @@ mod tests {
     /// plus the 8.19/8.9 minimisation pair, under "Technological") and GDPR
     /// "TM-SH". HIPAA is intentionally absent — no service maps cleanly to a
     /// HIPAA Security Rule specification.
+    #[test]
+    fn xinetd_is_in_the_coverage_set() {
+        assert!(
+            coverage()
+                .iter()
+                .any(|m| m.compliance_framework == ComplianceFramework::CIS
+                    && m.compliance_control_id == "2.1.1"),
+            "xinetd (CIS 2.1.1) must be in the assessed coverage set"
+        );
+    }
+
     #[test]
     fn service_bluetooth_maps_iso_and_gdpr() {
         let mappings = get_service_compliance_mappings("bluetooth");
