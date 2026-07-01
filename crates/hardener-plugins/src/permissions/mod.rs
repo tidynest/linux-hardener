@@ -731,12 +731,18 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
                 continue;
             }
 
-            // Determine target mode: directive override or baseline
-            let target_mode = config
+            // Build an effective directive: apply any per-path override to
+            // `permission_mode` while preserving `permission_max_mask`, so the
+            // dry-run's compliance test matches scan/apply exactly (a stricter
+            // mode is compliant for mask directives — no spurious pending change).
+            let mut effective = directive.clone();
+            if let Some(mode) = config
                 .directives
                 .get(directive.permission_path)
                 .and_then(|s| u32::from_str_radix(s, 8).ok())
-                .unwrap_or(directive.permission_mode);
+            {
+                effective.permission_mode = mode;
+            }
 
             let path = Path::new(directive.permission_path);
 
@@ -751,11 +757,13 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
                 Ok(metadata) => {
                     let current_mode = metadata.mode & 0o777;
 
-                    // Check if permissions need changing
-                    if current_mode != target_mode {
+                    // Check if permissions need changing (honours max-mask)
+                    if violates(&effective, current_mode) {
                         estimated_changes.push(format!(
                             "{}: {:04o} → {:04o}",
-                            directive.permission_path, current_mode, target_mode
+                            directive.permission_path,
+                            current_mode,
+                            target_mode(&effective, current_mode)
                         ));
                     }
                 }
@@ -847,6 +855,35 @@ mod tests {
         assert!(!violates(&passwd, 0o644));
         assert!(violates(&passwd, 0o646));
         assert_eq!(target_mode(&passwd, 0o646), 0o644);
+    }
+
+    /// The `validate` dry-run builds an effective directive (override applied to
+    /// `permission_mode`, `permission_max_mask` preserved) and routes it through
+    /// the same `violates`/`target_mode` helpers as scan/apply. This mirrors that
+    /// path: a mask directive must report NO pending change at a stricter mode
+    /// (0000 on RHEL) yet flag a looser one (0644).
+    #[test]
+    fn validate_effective_directive_honours_max_mask() {
+        let shadow = PermissionDirective {
+            permission_description: "t",
+            permission_path: "/etc/shadow",
+            permission_mode: 0o640,
+            _permission_owner: "root",
+            _permission_group: "root",
+            permission_severity: Severity::Critical,
+            permission_max_mask: true,
+        };
+
+        // Effective directive with a config override to 0o600 keeps mask semantics.
+        let mut effective = shadow.clone();
+        effective.permission_mode = 0o600;
+        assert!(!violates(&effective, 0o000), "stricter mode is compliant");
+        assert!(violates(&effective, 0o640), "0640 exceeds the 0600 mask");
+        assert_eq!(target_mode(&effective, 0o640), 0o600);
+
+        // No override: baseline 0640 mask — 0000 compliant, 0644 flagged.
+        assert!(!violates(&shadow, 0o000));
+        assert!(violates(&shadow, 0o644));
     }
 
     /// Sensitive-file permission checks must also carry HIPAA, GDPR and
