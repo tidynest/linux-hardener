@@ -449,13 +449,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                     continue;
                 }
                 PamConfigFile::SecurityConf(path) => {
-                    let content = read_security_conf(ctx, path).await;
-                    parse_config_value(
-                        &content,
-                        directive.pam_directive_name,
-                        ConfigFormat::KeyValue,
-                        true,
-                    )
+                    read_effective_threshold(ctx, directive.pam_directive_name, path).await
                 }
             };
 
@@ -673,18 +667,31 @@ impl HardeningPlugin for PamHardeningPlugin {
                     continue;
                 }
                 PamConfigFile::SecurityConf(path) => {
+                    let secure: i64 = directive
+                        .pam_secure_value
+                        .parse()
+                        .expect("pam_secure_value must be a valid integer");
+                    let over = config
+                        .directives
+                        .get(directive.pam_directive_name)
+                        .and_then(|s| s.parse::<i64>().ok());
+                    // Clamp so a per-host override can tighten but never loosen.
+                    let target = clamp_target(directive.pam_compare, secure, over);
+
+                    let inline = read_pamd_inline(ctx, directive.pam_directive_name).await;
                     let content = read_security_conf(ctx, path).await;
-                    let current = parse_config_value(
+                    let conf_val = parse_config_value(
                         &content,
                         directive.pam_directive_name,
                         ConfigFormat::KeyValue,
                         true,
                     );
+                    let effective = inline.clone().or(conf_val);
 
-                    // No-loosen contract: only write when the current value
-                    // actually violates the threshold. A stricter existing value
-                    // is already compliant, so touching it could only loosen it.
-                    if !pam_violates(directive, current.as_deref()) {
+                    // No-loosen contract: only act when the effective value
+                    // breaches the (clamped) target. A stricter value is already
+                    // compliant, so touching it could only loosen it.
+                    if !breaches_threshold(directive.pam_compare, target, effective.as_deref()) {
                         changes.push(Change {
                             change_type: ChangeType::ConfigFile,
                             change_description: format!(
@@ -693,6 +700,29 @@ impl HardeningPlugin for PamHardeningPlugin {
                             ),
                             change_success: true,
                             change_error: None,
+                        });
+                        continue;
+                    }
+
+                    // An inline pam.d arg overrides the .conf, so writing the
+                    // .conf would be a silent no-op. Never auto-edit the auth
+                    // stack (a malformed edit can lock users out) — report the
+                    // manual action and mark the run unsuccessful.
+                    if let Some(value) = inline {
+                        warn!(
+                            "{} is set inline ({}={}) in the PAM stack; refusing to auto-edit it",
+                            directive.pam_directive_name, directive.pam_directive_name, value,
+                        );
+                        all_success = false;
+                        changes.push(Change {
+                            change_type: ChangeType::ConfigFile,
+                            change_description: format!(
+                                "{name}={value} is set inline in the PAM stack and overrides {path}; \
+                                 edit the PAM stack manually to set {name} to {target}",
+                                name = directive.pam_directive_name,
+                            ),
+                            change_success: false,
+                            change_error: Some("inline pam.d override present".to_string()),
                         });
                         continue;
                     }
@@ -716,26 +746,18 @@ impl HardeningPlugin for PamHardeningPlugin {
                         }
                     }
 
-                    // ponytail: for threshold directives the per-host config
-                    // override is intentionally ignored — we only reach here on a
-                    // genuine violation (too loose or unset), so writing the
-                    // compliant boundary `pam_secure_value` always tightens and
-                    // can never loosen. A looser override must never be written; a
-                    // stricter one is already compliant and never flagged by scan.
-                    // Upgrade path: clamp min/max(override, secure) if per-host
-                    // override of these thresholds is ever needed.
-                    let boundary = directive.pam_secure_value;
+                    let target_str = target.to_string();
                     let updated = apply_directive_to_content(
                         &content,
                         directive.pam_directive_name,
-                        boundary,
+                        &target_str,
                     );
                     match ctx.executor().write_file(Path::new(path), &updated).await {
                         Ok(_) => changes.push(Change {
                             change_type: ChangeType::ConfigFile,
                             change_description: format!(
                                 "Set {} = {} in {}",
-                                directive.pam_directive_name, boundary, path,
+                                directive.pam_directive_name, target_str, path,
                             ),
                             change_success: true,
                             change_error: None,
@@ -1078,30 +1100,106 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
 ];
 
 /// True when `current` fails the directive's comparison. Unset/unparseable
-/// integers fail. `ponytail:` only /etc/security/*.conf is parsed — inline
-/// pam.d module args are not (add a pam.d parser if a target distro needs it).
+/// integers fail. Effective value (inline pam.d args or /etc/security/*.conf)
+/// is resolved by callers via `read_effective_threshold` before this check.
 fn pam_violates(directive: &PamDirective, current: Option<&str>) -> bool {
-    // Hardcoded-const invariant: a threshold directive's secure value must be a
-    // valid integer. A malformed const is a programming error, so fail fast
-    // rather than silently defaulting to 0 (which would mis-judge every host).
-    let secure = || -> i64 {
-        directive
-            .pam_secure_value
-            .parse()
-            .expect("pam_secure_value must be a valid integer")
-    };
     match directive.pam_compare {
         PamCompare::Exact => current != Some(directive.pam_secure_value),
-        PamCompare::AtMost => current
-            .and_then(|v| v.parse::<i64>().ok())
-            .is_none_or(|n| n > secure()),
-        PamCompare::AtLeast => current
-            .and_then(|v| v.parse::<i64>().ok())
-            .is_none_or(|n| n < secure()),
+        compare => breaches_threshold(
+            compare,
+            directive
+                .pam_secure_value
+                .parse()
+                .expect("pam_secure_value must be a valid integer"),
+            current,
+        ),
     }
 }
 
-/// Reads a `key = value` config file, empty string if unreadable.
+/// True when integer `current` fails threshold `bound` under `compare`.
+/// Unset/unparseable counts as a breach. (Only meaningful for AtMost/AtLeast.)
+fn breaches_threshold(compare: PamCompare, bound: i64, current: Option<&str>) -> bool {
+    let n = current.and_then(|v| v.parse::<i64>().ok());
+    match compare {
+        PamCompare::AtMost => n.is_none_or(|n| n > bound),
+        PamCompare::AtLeast => n.is_none_or(|n| n < bound),
+        PamCompare::Exact => true,
+    }
+}
+
+/// A per-host override clamped so it can never be looser than the CIS baseline:
+/// AtMost keeps the smaller (stricter) of override/secure, AtLeast the larger.
+fn clamp_target(compare: PamCompare, secure: i64, over: Option<i64>) -> i64 {
+    match (compare, over) {
+        (PamCompare::AtMost, Some(o)) => o.min(secure),
+        (PamCompare::AtLeast, Some(o)) => o.max(secure),
+        _ => secure,
+    }
+}
+
+/// PAM-stack files that may carry an inline override for a threshold directive's
+/// module, plus the module those args attach to. Distro-variant, so a small
+/// candidate set is searched and the first match wins.
+fn pamd_module_for(arg: &str) -> Option<(&'static str, &'static [&'static str])> {
+    match arg {
+        "deny" => Some((
+            "pam_faillock.so",
+            &[
+                "/etc/pam.d/system-auth",
+                "/etc/pam.d/password-auth",
+                "/etc/pam.d/common-auth",
+            ],
+        )),
+        "remember" => Some((
+            "pam_pwhistory.so",
+            &[
+                "/etc/pam.d/system-auth",
+                "/etc/pam.d/password-auth",
+                "/etc/pam.d/common-password",
+            ],
+        )),
+        _ => None,
+    }
+}
+
+/// An inline `arg=value` set on the directive's PAM module in the auth stack.
+/// Inline args override `/etc/security/*.conf` when present; `None` if not set
+/// inline. Only whole-token `arg=` matches (so `even_deny_root` never matches
+/// `deny`).
+async fn read_pamd_inline(ctx: &Context, arg: &str) -> Option<String> {
+    let (module, files) = pamd_module_for(arg)?;
+    for file in files {
+        for line in read_security_conf(ctx, file).await.lines() {
+            let line = line.trim();
+            if line.starts_with('#') || !line.contains(module) {
+                continue;
+            }
+            if let Some(value) = line
+                .split_whitespace()
+                .find_map(|tok| tok.strip_prefix(arg).and_then(|r| r.strip_prefix('=')))
+            {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Effective value of a threshold directive: an inline PAM-stack override wins
+/// over the `/etc/security/*.conf` value.
+async fn read_effective_threshold(ctx: &Context, arg: &str, conf: &str) -> Option<String> {
+    if let Some(inline) = read_pamd_inline(ctx, arg).await {
+        return Some(inline);
+    }
+    parse_config_value(
+        &read_security_conf(ctx, conf).await,
+        arg,
+        ConfigFormat::KeyValue,
+        true,
+    )
+}
+
+/// Reads a config file's contents, empty string if unreadable.
 async fn read_security_conf(ctx: &Context, path: &str) -> String {
     ctx.executor()
         .read_file(Path::new(path))

@@ -694,3 +694,220 @@ async fn test_pam_validate_skips_exceptions() {
         "non-excepted directives should still appear"
     );
 }
+
+/// Scan reads the effective faillock/pwhistory value from inline pam.d args
+/// when the /etc/security/*.conf file is empty or absent, because inline args
+/// override the .conf at runtime.
+#[tokio::test]
+async fn pam_scan_reads_inline_pamd_override() {
+    // Case A: faillock.conf absent, inline deny=3 in system-auth → compliant (3 ≤ 5).
+    let executor_compliant = Arc::new(
+        MockExecutor::new()
+            .with_file(
+                "/etc/security/pwquality.conf",
+                "minlen 14\ndcredit -1\nucredit -1\nlcredit -1\nocredit -1\nmaxrepeat 3\n",
+            )
+            .with_file(
+                "/etc/login.defs",
+                "PASS_MAX_DAYS 90\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n",
+            )
+            .with_file("/etc/security/pwhistory.conf", "remember = 10\n")
+            // faillock.conf is intentionally absent; deny configured inline below
+            .with_file(
+                "/etc/pam.d/system-auth",
+                "auth required pam_faillock.so preauth silent deny=3\n",
+            ),
+    );
+    let ctx = Context::with_executor(executor_compliant);
+    let plugin = PamHardeningPlugin::new();
+    let result = plugin.scan(&ctx).await.unwrap();
+
+    assert!(
+        !result
+            .scan_findings
+            .iter()
+            .any(|f| f.finding_id == "pam-deny"),
+        "inline deny=3 (≤5) should not produce a deny finding, got: {:?}",
+        result
+            .scan_findings
+            .iter()
+            .map(|f| &f.finding_id)
+            .collect::<Vec<_>>()
+    );
+
+    // Case B: inline deny=10 (> 5) → non-compliant, finding expected.
+    let executor_non_compliant = Arc::new(
+        MockExecutor::new()
+            .with_file(
+                "/etc/security/pwquality.conf",
+                "minlen 14\ndcredit -1\nucredit -1\nlcredit -1\nocredit -1\nmaxrepeat 3\n",
+            )
+            .with_file(
+                "/etc/login.defs",
+                "PASS_MAX_DAYS 90\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n",
+            )
+            .with_file("/etc/security/pwhistory.conf", "remember = 10\n")
+            .with_file(
+                "/etc/pam.d/system-auth",
+                "auth required pam_faillock.so preauth silent deny=10\n",
+            ),
+    );
+    let ctx2 = Context::with_executor(executor_non_compliant);
+    let result2 = plugin.scan(&ctx2).await.unwrap();
+
+    assert!(
+        result2
+            .scan_findings
+            .iter()
+            .any(|f| f.finding_id == "pam-deny"),
+        "inline deny=10 (>5) should produce a deny finding"
+    );
+}
+
+/// When a non-compliant value is set inline in the PAM stack, apply must NOT
+/// write to the .conf (a silent no-op) and must report the manual action.
+#[tokio::test]
+async fn pam_apply_refuses_inline_pamd_override() {
+    let executor = Arc::new(
+        MockExecutor::new()
+            .with_file(
+                "/etc/security/pwquality.conf",
+                "minlen 14\ndcredit -1\nucredit -1\nlcredit -1\nocredit -1\nmaxrepeat 3\n",
+            )
+            .with_file(
+                "/etc/login.defs",
+                "PASS_MAX_DAYS 90\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n",
+            )
+            // faillock.conf empty — the inline arg is what counts
+            .with_file("/etc/security/faillock.conf", "")
+            .with_file("/etc/security/pwhistory.conf", "remember = 10\n")
+            // Non-compliant inline: deny=10 overrides the .conf at runtime
+            .with_file(
+                "/etc/pam.d/system-auth",
+                "auth required pam_faillock.so preauth silent deny=10\n",
+            ),
+    );
+    let mut ctx = Context::with_executor(executor.clone());
+    let plugin = PamHardeningPlugin::new();
+
+    let result = plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    // (a) faillock.conf must NOT have been written with a new deny value.
+    assert!(
+        !result
+            .apply_changes
+            .iter()
+            .any(|c| { c.change_description.contains("Set deny") && c.change_success }),
+        "apply must not emit a successful 'Set deny' change when deny is inline"
+    );
+
+    // (b) There must be a failed change whose description mentions the PAM stack
+    //     and a manual edit.
+    let inline_change = result
+        .apply_changes
+        .iter()
+        .find(|c| !c.change_success && c.change_description.contains("deny"));
+    assert!(
+        inline_change.is_some(),
+        "apply must emit a failed change for inline deny, got: {:?}",
+        result.apply_changes
+    );
+    let inline_change = inline_change.unwrap();
+    assert!(
+        inline_change.change_description.contains("PAM stack")
+            || inline_change.change_description.contains("pam.d")
+            || inline_change.change_description.contains("manually"),
+        "failed change should mention the PAM stack or manual edit, got: {}",
+        inline_change.change_description
+    );
+    assert!(
+        !result.apply_success,
+        "apply_success must be false when an inline override blocks auto-remediation"
+    );
+}
+
+/// Apply honours a stricter per-host override (clamped so it never loosens).
+#[tokio::test]
+async fn pam_apply_honours_stricter_override() {
+    // Case A: config override deny→"3", conf has deny=5 → apply should write deny=3.
+    let executor_tighten = Arc::new(
+        MockExecutor::new()
+            .with_file(
+                "/etc/security/pwquality.conf",
+                "minlen 14\ndcredit -1\nucredit -1\nlcredit -1\nocredit -1\nmaxrepeat 3\n",
+            )
+            .with_file(
+                "/etc/login.defs",
+                "PASS_MAX_DAYS 90\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n",
+            )
+            .with_file("/etc/security/faillock.conf", "deny = 5\n")
+            .with_file("/etc/security/pwhistory.conf", "remember = 10\n"),
+    );
+    let mut ctx_tighten = Context::with_executor(executor_tighten.clone());
+    let plugin = PamHardeningPlugin::new();
+
+    let mut config_tighten = PluginConfig::default();
+    config_tighten
+        .directives
+        .insert("deny".to_string(), "3".to_string());
+
+    plugin
+        .apply(&mut ctx_tighten, &config_tighten)
+        .await
+        .unwrap();
+
+    let files = executor_tighten.files();
+    let faillock = files
+        .get(std::path::Path::new("/etc/security/faillock.conf"))
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        faillock.contains("deny = 3"),
+        "stricter override (deny→3) should be written, got: {faillock}"
+    );
+
+    // Case B: config override deny→"10" (looser than 5), conf has deny=5 (compliant) →
+    //         apply must NOT write (override clamped to 5, already compliant).
+    let executor_clamp = Arc::new(
+        MockExecutor::new()
+            .with_file(
+                "/etc/security/pwquality.conf",
+                "minlen 14\ndcredit -1\nucredit -1\nlcredit -1\nocredit -1\nmaxrepeat 3\n",
+            )
+            .with_file(
+                "/etc/login.defs",
+                "PASS_MAX_DAYS 90\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n",
+            )
+            .with_file("/etc/security/faillock.conf", "deny = 5\n")
+            .with_file("/etc/security/pwhistory.conf", "remember = 10\n"),
+    );
+    let mut ctx_clamp = Context::with_executor(executor_clamp.clone());
+
+    let mut config_clamp = PluginConfig::default();
+    config_clamp
+        .directives
+        .insert("deny".to_string(), "10".to_string());
+
+    let result_clamp = plugin.apply(&mut ctx_clamp, &config_clamp).await.unwrap();
+
+    let files_clamp = executor_clamp.files();
+    let faillock_clamp = files_clamp
+        .get(std::path::Path::new("/etc/security/faillock.conf"))
+        .cloned()
+        .unwrap_or_default();
+    assert_eq!(
+        faillock_clamp, "deny = 5\n",
+        "looser override (deny→10) must be clamped; conf with deny=5 (already compliant) must not be rewritten"
+    );
+    assert!(
+        result_clamp.apply_changes.iter().any(|c| {
+            c.change_success
+                && c.change_description
+                    .contains("deny already meets threshold")
+        }),
+        "clamped looser override should produce an 'already meets threshold' change"
+    );
+}
