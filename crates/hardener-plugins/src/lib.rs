@@ -252,7 +252,7 @@ mod tests {
         use hardener_common::types::ComplianceFramework;
         let required = [
             "6.1.2", "6.1.3", "6.1.4", "6.1.5", // permissions
-            "3.2.2", "3.2.3", "3.2.4", // kernel
+            "3.2.2", "3.2.3", "3.2.4",   // kernel
             "2.1.1",   // services (xinetd)
             "3.4.1.1", // firewall
             "5.3.2", "5.3.3", // pam

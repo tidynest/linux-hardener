@@ -919,7 +919,20 @@ impl HardeningPlugin for PamHardeningPlugin {
                     .get(d.pam_directive_name)
                     .map(|s| s.as_str())
                     .unwrap_or(d.pam_secure_value);
-                format!("Set {} = {}", d.pam_directive_name, target_value)
+                // Threshold directives apply only when the current value is
+                // looser than the boundary; a stricter value is left untouched,
+                // so the exact-set wording would be misleading here.
+                match d.pam_compare {
+                    PamCompare::Exact => format!("Set {} = {}", d.pam_directive_name, target_value),
+                    PamCompare::AtMost => format!(
+                        "{} ≤ {} (applied only if currently looser)",
+                        d.pam_directive_name, d.pam_secure_value,
+                    ),
+                    PamCompare::AtLeast => format!(
+                        "{} ≥ {} (applied only if currently looser)",
+                        d.pam_directive_name, d.pam_secure_value,
+                    ),
+                }
             })
             .collect();
 
