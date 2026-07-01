@@ -44,6 +44,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and Debian a `Suggests` for the same.
 
 ### Security
+- **RUSTSEC-2026-0190** — Updated `anyhow` 1.0.100 → 1.0.103, fixing an
+  unsoundness (undefined behaviour) in `Error::downcast_mut()` after
+  `Error::context()`.
+- **RUSTSEC-2026-0192** — `ttf-parser` flagged unmaintained with no safe upgrade;
+  accepted in `deny.toml`. Transitive via `krilla`→`rustybuzz` for PDF
+  compliance-report export; no first-party usage, no runtime attack surface.
 - **Permission checks never loosen `/etc/shadow`/`/etc/gshadow`.** These files
   are distro-variant (`0000` on RHEL, `0640` on Debian); the check now uses an
   allowed-bits mask so a stricter mode is compliant and apply only ever strips
