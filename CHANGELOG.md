@@ -17,6 +17,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   out of scope (cron.allow, sshd_config perms, SSH Protocol 2, SELinux
   bootloader/policy, X11). Each newly-checked item also gains a
   checkpoint-protected apply action.
+- **Polkit desktop-environment test tooling.** New `scripts/detect-polkit-agent.sh`
+  diagnostic plus a `test-polkit-matrix.sh` harness and GNOME/KDE/XFCE/no-agent
+  wrappers that validate `pkexec` privilege escalation across desktops, and a
+  `docs/de-compatibility.md` matrix documenting the polkit agent each DE needs.
+
+- **Desktop Fleet Apply page** — apply and roll back hardening across saved
+  hosts over SSH from the GUI, by shelling out to the audited `batch apply`/`rollback`
+  CLI. Mandatory dry-run preview + confirmation before any change; the page is
+  read-only until you confirm.
+- **Desktop fleet view.** A new read-only **Fleet** page scans several saved
+  inventory hosts concurrently and shows each host's severity posture
+  (per-host critical/high/medium/low/info tallies, expandable to that host's
+  findings). Reuses the single-host scan path in-process; per-host failure is
+  isolated. Fleet apply/rollback and compliance scoring remain CLI-only.
+- **Desktop fleet view — compliance scores.** Each fleet host row now shows a
+  colour-coded CIS compliance score, and the row's expander lists every
+  framework's score with pass/fail/manual/NA counts. Derived in-process from the
+  findings already scanned (no extra SSH); the view remains read-only.
+
+### Fixed
+- **`polkit` was missing from the Arch package's `depends`.** Installing the AUR
+  package could leave a system without polkit, so `pkexec` privilege escalation
+  (apply / rollback) would fail. `polkit` is now a hard dependency, with
+  `optdepends` recommending an agent per desktop; RPM gains `Recommends`/`Supplements`
+  and Debian a `Suggests` for the same.
 
 ### Security
 - **Permission checks never loosen `/etc/shadow`/`/etc/gshadow`.** These files
@@ -33,20 +58,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is honoured (clamped so it can never loosen below the CIS baseline); when a
   non-compliant value is set inline in the PAM stack, apply refuses to auto-edit
   the auth stack and reports the manual action instead.
-
-- **Desktop Fleet Apply page** — apply and roll back hardening across saved
-  hosts over SSH from the GUI, by shelling out to the audited `batch apply`/`rollback`
-  CLI. Mandatory dry-run preview + confirmation before any change; the page is
-  read-only until you confirm.
-- **Desktop fleet view.** A new read-only **Fleet** page scans several saved
-  inventory hosts concurrently and shows each host's severity posture
-  (per-host critical/high/medium/low/info tallies, expandable to that host's
-  findings). Reuses the single-host scan path in-process; per-host failure is
-  isolated. Fleet apply/rollback and compliance scoring remain CLI-only.
-- **Desktop fleet view — compliance scores.** Each fleet host row now shows a
-  colour-coded CIS compliance score, and the row's expander lists every
-  framework's score with pass/fail/manual/NA counts. Derived in-process from the
-  findings already scanned (no extra SSH); the view remains read-only.
 
 ## [1.1.0] - 2026-06-24
 
