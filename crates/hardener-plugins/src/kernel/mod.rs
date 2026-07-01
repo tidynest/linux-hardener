@@ -132,6 +132,42 @@ const KERNEL_PARAMS: &[(&str, &str, &str, Severity)] = &[
         "Disables source routing for new interfaces",
         Severity::Medium,
     ),
+    (
+        "net.ipv4.conf.all.accept_redirects",
+        "0",
+        "Disables acceptance of ICMP redirects (prevents route table poisoning)",
+        Severity::Medium,
+    ),
+    (
+        "net.ipv4.conf.default.accept_redirects",
+        "0",
+        "Disables ICMP redirect acceptance for new interfaces",
+        Severity::Medium,
+    ),
+    (
+        "net.ipv4.conf.all.secure_redirects",
+        "0",
+        "Disables acceptance of secure ICMP redirects",
+        Severity::Medium,
+    ),
+    (
+        "net.ipv4.conf.default.secure_redirects",
+        "0",
+        "Disables secure ICMP redirect acceptance for new interfaces",
+        Severity::Medium,
+    ),
+    (
+        "net.ipv4.conf.all.log_martians",
+        "1",
+        "Logs packets with impossible (martian) source addresses",
+        Severity::Low,
+    ),
+    (
+        "net.ipv4.conf.default.log_martians",
+        "1",
+        "Logs martian packets for new interfaces",
+        Severity::Low,
+    ),
 ];
 
 /// Builds a NIST 800-53 Rev 5 mapping. Title/section follow the project's
@@ -430,6 +466,51 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 iso("8.20", "Networks security", "Technological"),
             ]
         }
+        // CIS 3.2.2/3.2.3/3.2.4 — one arm per control covers both the `.all`
+        // and `.default` sysctls. SSG: sysctl_net_ipv4_conf_{all,default}_*
+        n if n.contains("accept_redirects") => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "3.2.2".to_string(),
+                compliance_control_title: "Ensure ICMP redirects are not accepted".to_string(),
+                compliance_section: Some("Network Configuration".to_string()),
+            },
+            nist(
+                "SI-4",
+                "System Monitoring",
+                "System and Information Integrity",
+            ),
+            iso("8.20", "Networks security", "Technological"),
+        ],
+        n if n.contains("secure_redirects") => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "3.2.3".to_string(),
+                compliance_control_title: "Ensure secure ICMP redirects are not accepted"
+                    .to_string(),
+                compliance_section: Some("Network Configuration".to_string()),
+            },
+            nist(
+                "SI-4",
+                "System Monitoring",
+                "System and Information Integrity",
+            ),
+            iso("8.20", "Networks security", "Technological"),
+        ],
+        n if n.contains("log_martians") => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::CIS,
+                compliance_control_id: "3.2.4".to_string(),
+                compliance_control_title: "Ensure suspicious packets are logged".to_string(),
+                compliance_section: Some("Network Configuration".to_string()),
+            },
+            nist(
+                "SI-4",
+                "System Monitoring",
+                "System and Information Integrity",
+            ),
+            iso("8.15", "Logging", "Technological"),
+        ],
         _ => vec![],
     }
 }
@@ -829,5 +910,23 @@ mod tests {
             .find(|m| m.compliance_framework == ComplianceFramework::HIPAA)
             .expect("HIPAA mapping present");
         assert_eq!(hipaa.compliance_control_id, "164.312(a)(1)");
+    }
+
+    #[test]
+    fn redirect_and_martian_params_map_cis() {
+        for (param, id) in [
+            ("net.ipv4.conf.all.accept_redirects", "3.2.2"),
+            ("net.ipv4.conf.default.accept_redirects", "3.2.2"),
+            ("net.ipv4.conf.all.secure_redirects", "3.2.3"),
+            ("net.ipv4.conf.default.secure_redirects", "3.2.3"),
+            ("net.ipv4.conf.all.log_martians", "3.2.4"),
+            ("net.ipv4.conf.default.log_martians", "3.2.4"),
+        ] {
+            let cis = get_compliance_mappings(param)
+                .into_iter()
+                .find(|m| m.compliance_framework == ComplianceFramework::CIS)
+                .unwrap_or_else(|| panic!("{param} must map a CIS control"));
+            assert_eq!(cis.compliance_control_id, id, "{param}");
+        }
     }
 }
