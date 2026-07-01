@@ -33,6 +33,10 @@ PASS_MIN_DAYS 1
 PASS_WARN_AGE 7
 "#,
         )
+        // faillock.conf: deny=3 is stricter than the threshold of 5 — compliant
+        .with_file("/etc/security/faillock.conf", "deny = 3\n")
+        // pwhistory.conf: remember=10 exceeds the minimum of 5 — compliant
+        .with_file("/etc/security/pwhistory.conf", "remember = 10\n")
 }
 
 /// Creates a mock executor with insecure PAM configuration.
@@ -440,7 +444,9 @@ maxrepeat 3
 PASS_MIN_DAYS 1
 PASS_WARN_AGE 7
 "#,
-        );
+        )
+        .with_file("/etc/security/faillock.conf", "deny = 3\n")
+        .with_file("/etc/security/pwhistory.conf", "remember = 10\n");
 
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PamHardeningPlugin::new();

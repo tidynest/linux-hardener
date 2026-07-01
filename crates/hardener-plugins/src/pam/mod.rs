@@ -442,17 +442,25 @@ impl HardeningPlugin for PamHardeningPlugin {
                     true,
                 ),
                 PamConfigFile::PamAuth => {
-                    // PAM module configuration - skip for now, implement during phase 2.
                     debug!(
                         "Skipping PAM module directive: {}",
                         directive.pam_directive_name
                     );
                     continue;
                 }
+                PamConfigFile::SecurityConf(path) => {
+                    let content = read_security_conf(ctx, path).await;
+                    parse_config_value(
+                        &content,
+                        directive.pam_directive_name,
+                        ConfigFormat::KeyValue,
+                        true,
+                    )
+                }
             };
 
-            // Check if current value matches secure value.
-            let is_secure = current_value.as_deref() == Some(directive.pam_secure_value);
+            // Check if current value satisfies the directive's comparison.
+            let is_secure = !pam_violates(directive, current_value.as_deref());
 
             if !is_secure {
                 let current_display = current_value.unwrap_or_else(|| "not set".to_string());
@@ -520,6 +528,8 @@ impl HardeningPlugin for PamHardeningPlugin {
             Path::new("/etc/security/pwquality.conf"),
             Path::new("/etc/login.defs"),
             Path::new("/etc/pam.d"),
+            Path::new("/etc/security/faillock.conf"),
+            Path::new("/etc/security/pwhistory.conf"),
         ];
         let checkpoint_id =
             crate::create_checkpoint_for_apply(ctx, "pam-hardening-pre-apply", &pam_paths).await?;
@@ -661,6 +671,43 @@ impl HardeningPlugin for PamHardeningPlugin {
                         directive.pam_directive_name
                     );
                     continue;
+                }
+                PamConfigFile::SecurityConf(path) => {
+                    match create_config_backup(ctx, path).await {
+                        Ok(backup) => changes.push(Change {
+                            change_type: ChangeType::ConfigFile,
+                            change_description: format!("Created backup: {}", backup),
+                            change_success: true,
+                            change_error: None,
+                        }),
+                        Err(e) => warn!("Failed to backup {}: {}", path, e),
+                    }
+                    let updated = apply_directive_to_content(
+                        &read_security_conf(ctx, path).await,
+                        directive.pam_directive_name,
+                        target_value,
+                    );
+                    match ctx.executor().write_file(Path::new(path), &updated).await {
+                        Ok(_) => changes.push(Change {
+                            change_type: ChangeType::ConfigFile,
+                            change_description: format!(
+                                "Set {} = {} in {}",
+                                directive.pam_directive_name, target_value, path,
+                            ),
+                            change_success: true,
+                            change_error: None,
+                        }),
+                        Err(e) => {
+                            warn!("Failed to write {}: {}", path, e);
+                            all_success = false;
+                            changes.push(Change {
+                                change_type: ChangeType::ConfigFile,
+                                change_description: format!("Failed to write {}", path),
+                                change_success: false,
+                                change_error: Some(e.to_string()),
+                            });
+                        }
+                    }
                 }
             }
         }
@@ -852,6 +899,7 @@ struct PamDirective {
     pam_description: &'static str,
     pam_severity: Severity,
     pam_config_file: PamConfigFile,
+    pam_compare: PamCompare,
 }
 
 /// Represents which PAM configuration file contains the directive.
@@ -863,6 +911,19 @@ enum PamConfigFile {
     LoginDefs,
     /// PAM module configuration (distribution-specific).
     PamAuth,
+    /// A `key = value` file under /etc/security (path carried inline).
+    SecurityConf(&'static str),
+}
+
+/// How a directive's current value is judged against its secure value.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PamCompare {
+    /// Current must equal the secure value.
+    Exact,
+    /// Current must be ≤ the secure value (e.g. faillock `deny` — lock no later).
+    AtMost,
+    /// Current must be ≥ the secure value (e.g. pwhistory `remember`).
+    AtLeast,
 }
 
 /// Secure PAM configuration directives.
@@ -874,6 +935,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Minimum password length of 14 characters",
         pam_severity: Severity::High,
         pam_config_file: PamConfigFile::PwQuality,
+        pam_compare: PamCompare::Exact,
     },
     PamDirective {
         pam_directive_name: "dcredit",
@@ -881,6 +943,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Require at least one digit in password",
         pam_severity: Severity::Medium,
         pam_config_file: PamConfigFile::PwQuality,
+        pam_compare: PamCompare::Exact,
     },
     PamDirective {
         pam_directive_name: "ucredit",
@@ -888,6 +951,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Require at least one uppercase character in password",
         pam_severity: Severity::Medium,
         pam_config_file: PamConfigFile::PwQuality,
+        pam_compare: PamCompare::Exact,
     },
     PamDirective {
         pam_directive_name: "lcredit",
@@ -895,6 +959,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Require at least one lowercase character in password",
         pam_severity: Severity::Medium,
         pam_config_file: PamConfigFile::PwQuality,
+        pam_compare: PamCompare::Exact,
     },
     PamDirective {
         pam_directive_name: "ocredit",
@@ -902,6 +967,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Require at least one special character in password",
         pam_severity: Severity::Medium,
         pam_config_file: PamConfigFile::PwQuality,
+        pam_compare: PamCompare::Exact,
     },
     PamDirective {
         pam_directive_name: "maxrepeat",
@@ -909,6 +975,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Maximum consecutive identical characters in password",
         pam_severity: Severity::Low,
         pam_config_file: PamConfigFile::PwQuality,
+        pam_compare: PamCompare::Exact,
     },
     PamDirective {
         pam_directive_name: "PASS_MAX_DAYS",
@@ -916,6 +983,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Maximum password age of 90 days",
         pam_severity: Severity::Medium,
         pam_config_file: PamConfigFile::LoginDefs,
+        pam_compare: PamCompare::Exact,
     },
     PamDirective {
         pam_directive_name: "PASS_MIN_DAYS",
@@ -923,6 +991,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Minimum password age of 1 day (prevents rapid changes)",
         pam_severity: Severity::Low,
         pam_config_file: PamConfigFile::LoginDefs,
+        pam_compare: PamCompare::Exact,
     },
     PamDirective {
         pam_directive_name: "PASS_WARN_AGE",
@@ -930,8 +999,51 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Warn users 7 days before password expiry",
         pam_severity: Severity::Low,
         pam_config_file: PamConfigFile::LoginDefs,
+        pam_compare: PamCompare::Exact,
+    },
+    // Account lockout (faillock) and password-reuse (pwhistory). Threshold
+    // comparisons: a stricter setting is compliant and apply never loosens it.
+    PamDirective {
+        pam_directive_name: "deny",
+        pam_secure_value: "5",
+        pam_description: "Lock the account after at most 5 failed attempts",
+        pam_severity: Severity::High,
+        pam_config_file: PamConfigFile::SecurityConf("/etc/security/faillock.conf"),
+        pam_compare: PamCompare::AtMost,
+    },
+    PamDirective {
+        pam_directive_name: "remember",
+        pam_secure_value: "5",
+        pam_description: "Remember at least the last 5 passwords to prevent reuse",
+        pam_severity: Severity::Medium,
+        pam_config_file: PamConfigFile::SecurityConf("/etc/security/pwhistory.conf"),
+        pam_compare: PamCompare::AtLeast,
     },
 ];
+
+/// True when `current` fails the directive's comparison. Unset/unparseable
+/// integers fail. `ponytail:` only /etc/security/*.conf is parsed — inline
+/// pam.d module args are not (add a pam.d parser if a target distro needs it).
+fn pam_violates(directive: &PamDirective, current: Option<&str>) -> bool {
+    let secure: i64 = directive.pam_secure_value.parse().unwrap_or_default();
+    match directive.pam_compare {
+        PamCompare::Exact => current != Some(directive.pam_secure_value),
+        PamCompare::AtMost => current
+            .and_then(|v| v.parse::<i64>().ok())
+            .is_none_or(|n| n > secure),
+        PamCompare::AtLeast => current
+            .and_then(|v| v.parse::<i64>().ok())
+            .is_none_or(|n| n < secure),
+    }
+}
+
+/// Reads a `key = value` config file, empty string if unreadable.
+async fn read_security_conf(ctx: &Context, path: &str) -> String {
+    ctx.executor()
+        .read_file(Path::new(path))
+        .await
+        .unwrap_or_default()
+}
 
 /// Reads the pwquality configuration file.
 async fn read_pwquality_config(ctx: &Context) -> Result<String> {
@@ -1070,5 +1182,40 @@ mod tests {
             .expect("minlen must carry an ISO 27001 mapping");
         assert_eq!(iso.compliance_control_id, "8.5");
         assert_eq!(iso.compliance_section.as_deref(), Some("Technological"));
+    }
+
+    #[test]
+    fn threshold_directives_accept_stricter_and_flag_looser() {
+        let deny = PamDirective {
+            pam_directive_name: "deny",
+            pam_secure_value: "5",
+            pam_description: "t",
+            pam_severity: Severity::High,
+            pam_config_file: PamConfigFile::SecurityConf("/etc/security/faillock.conf"),
+            pam_compare: PamCompare::AtMost,
+        };
+        assert!(pam_violates(&deny, Some("10"))); // too loose
+        assert!(!pam_violates(&deny, Some("3"))); // stricter — compliant
+        assert!(!pam_violates(&deny, Some("5")));
+        assert!(pam_violates(&deny, None)); // not configured
+
+        let remember = PamDirective {
+            pam_directive_name: "remember",
+            pam_config_file: PamConfigFile::SecurityConf("/etc/security/pwhistory.conf"),
+            pam_compare: PamCompare::AtLeast,
+            ..deny
+        };
+        assert!(pam_violates(&remember, Some("2"))); // too few
+        assert!(!pam_violates(&remember, Some("10"))); // stricter — compliant
+        assert!(!pam_violates(&remember, Some("5")));
+
+        // Spread from `remember` (not `deny`, already moved above) — PamDirective isn't Copy.
+        let exact = PamDirective {
+            pam_compare: PamCompare::Exact,
+            pam_secure_value: "14",
+            ..remember
+        };
+        assert!(!pam_violates(&exact, Some("14")));
+        assert!(pam_violates(&exact, Some("8")));
     }
 }
