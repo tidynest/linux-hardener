@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **CIS compliance coverage completion.** Eleven curated CIS controls are now
+  genuinely assessed instead of `ManualReview`: file permissions on
+  `/etc/{passwd,group,shadow,gshadow}` (6.1.2–6.1.5), ICMP redirect and
+  martian-packet sysctls (3.2.2–3.2.4), `xinetd` removal (2.1.1), firewall
+  installed (3.4.1.1), and faillock/pwhistory (5.3.2/5.3.3). `report --framework
+  cis` now reports 6 `ManualReview` (down from 17) — the remainder are honestly
+  out of scope (cron.allow, sshd_config perms, SSH Protocol 2, SELinux
+  bootloader/policy, X11). Each newly-checked item also gains a
+  checkpoint-protected apply action.
+
+### Security
+- **Permission checks never loosen `/etc/shadow`/`/etc/gshadow`.** These files
+  are distro-variant (`0000` on RHEL, `0640` on Debian); the check now uses an
+  allowed-bits mask so a stricter mode is compliant and apply only ever strips
+  disallowed bits, never adding them.
+- **faillock/pwhistory apply never loosens a stricter setting.** `deny`/`remember`
+  use a threshold comparison (`deny ≤ 5`, `remember ≥ 5`); a stricter existing
+  value is compliant and apply writes the CIS boundary only when the current
+  value actually violates it.
+
 - **Desktop Fleet Apply page** — apply and roll back hardening across saved
   hosts over SSH from the GUI, by shelling out to the audited `batch apply`/`rollback`
   CLI. Mandatory dry-run preview + confirmation before any change; the page is

@@ -513,7 +513,8 @@ pass/fail.
 | Honest manual-review status | Stop reporting unassessed controls as `Pass` | High | ✅ Complete |
 | Per-control multi-framework mappings | Plugins emit STIG/NIST/PCI-DSS/HIPAA/GDPR/ISO 27001 control IDs alongside CIS | High | ✅ Complete |
 | Catalogue id reconciliation | Unify catalogue vs SSG-scheme ids for clean reports | Low | ⬜ Pending |
-| Option B — `Pass` for checked-passing controls | Per-control coverage set (currently non-CIS show `ManualReview`) | Low | ⬜ Pending |
+| Option B — `Pass` for checked-passing controls | Per-control coverage set; every non-CIS framework reports zero `ManualReview` | Low | ✅ Complete |
+| CIS curated-catalogue coverage | Wire mechanically-checkable CIS controls off `ManualReview`; `report --framework cis` now shows 6 `ManualReview` (from 17), the remainder genuinely out of scope | Medium | ✅ Complete |
 
 ### Additional Compliance Frameworks
 
