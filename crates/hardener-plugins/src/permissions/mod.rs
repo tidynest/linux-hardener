@@ -54,6 +54,10 @@ struct PermissionDirective {
     _permission_owner: &'static str,
     _permission_group: &'static str,
     permission_severity: Severity,
+    /// When true, `permission_mode` is an *allowed-bits mask*: the path is
+    /// compliant if it sets no bit outside the mask (so a stricter mode passes),
+    /// and apply only ever strips disallowed bits. When false, exact-match.
+    permission_max_mask: bool,
 }
 
 /// Critical system paths with their required permissions.
@@ -73,6 +77,7 @@ const CRITICAL_PERMISSIONS: &[PermissionDirective] = &[
         _permission_owner: "root",
         _permission_group: "root",
         permission_severity: Severity::High,
+        permission_max_mask: false,
     },
     PermissionDirective {
         permission_description: "Boot directory must be protected from unauthorised modification",
@@ -81,6 +86,7 @@ const CRITICAL_PERMISSIONS: &[PermissionDirective] = &[
         _permission_owner: "root",
         _permission_group: "root",
         permission_severity: Severity::High,
+        permission_max_mask: false,
     },
     PermissionDirective {
         permission_description: "SSH configuration directory must be restricted",
@@ -89,6 +95,7 @@ const CRITICAL_PERMISSIONS: &[PermissionDirective] = &[
         _permission_owner: "root",
         _permission_group: "root",
         permission_severity: Severity::High,
+        permission_max_mask: false,
     },
     PermissionDirective {
         permission_description: "Sudoers file must be read-only for root group",
@@ -97,6 +104,7 @@ const CRITICAL_PERMISSIONS: &[PermissionDirective] = &[
         _permission_owner: "root",
         _permission_group: "root",
         permission_severity: Severity::Critical,
+        permission_max_mask: false,
     },
     PermissionDirective {
         permission_description: "Sudoers directory must be restricted",
@@ -105,8 +113,66 @@ const CRITICAL_PERMISSIONS: &[PermissionDirective] = &[
         _permission_owner: "root",
         _permission_group: "root",
         permission_severity: Severity::Critical,
+        permission_max_mask: false,
+    },
+    PermissionDirective {
+        permission_description: "World-readable account file must not be writable by others",
+        permission_path: "/etc/passwd",
+        permission_mode: 0o644,
+        _permission_owner: "root",
+        _permission_group: "root",
+        permission_severity: Severity::High,
+        permission_max_mask: false,
+    },
+    PermissionDirective {
+        permission_description: "Group file must not be writable by others",
+        permission_path: "/etc/group",
+        permission_mode: 0o644,
+        _permission_owner: "root",
+        _permission_group: "root",
+        permission_severity: Severity::High,
+        permission_max_mask: false,
+    },
+    PermissionDirective {
+        permission_description: "Shadow file must not be readable/writable by group or others",
+        permission_path: "/etc/shadow",
+        permission_mode: 0o640, // allowed-bits mask (0000 and 0640 both compliant)
+        _permission_owner: "root",
+        _permission_group: "root",
+        permission_severity: Severity::Critical,
+        permission_max_mask: true,
+    },
+    PermissionDirective {
+        permission_description: "Group shadow file must not be readable/writable by group or others",
+        permission_path: "/etc/gshadow",
+        permission_mode: 0o640, // allowed-bits mask
+        _permission_owner: "root",
+        _permission_group: "root",
+        permission_severity: Severity::Critical,
+        permission_max_mask: true,
     },
 ];
+
+/// True when `current_mode` violates the directive. Exact directives require an
+/// exact match; max-mask directives flag only when a bit outside the allowed
+/// mask (`permission_mode`) is set — so a stricter mode is compliant.
+fn violates(directive: &PermissionDirective, current_mode: u32) -> bool {
+    if directive.permission_max_mask {
+        current_mode & !directive.permission_mode != 0
+    } else {
+        current_mode != directive.permission_mode
+    }
+}
+
+/// The concrete mode apply should set. Exact directives target `permission_mode`;
+/// max-mask directives strip disallowed bits (`current & mask`), never adding any.
+fn target_mode(directive: &PermissionDirective, current_mode: u32) -> u32 {
+    if directive.permission_max_mask {
+        current_mode & directive.permission_mode
+    } else {
+        directive.permission_mode
+    }
+}
 
 /// Checks if a path has the correct permissions, owner, and group.
 ///
@@ -129,21 +195,22 @@ async fn check_path_permissions(ctx: &Context, directive: &PermissionDirective) 
     let current_mode = metadata.mode & 0o777;
 
     // Check if permissions are incorrect
-    if current_mode != directive.permission_mode {
+    if violates(directive, current_mode) {
+        let target = target_mode(directive, current_mode);
         return Some(Finding {
             finding_category: FindingCategory::FileSystem,
             finding_current_value: format!("{:04o}", current_mode),
             finding_description: directive.permission_description.to_string(),
             finding_explanation: format!(
                 "The path {} has permissions {:04o} but should have {:04o} to prevent unauthorised access",
-                directive.permission_path, current_mode, directive.permission_mode,
+                directive.permission_path, current_mode, target,
             ),
             finding_id: format!("perm-{}", directive.permission_path.replace('/', "-")),
             finding_impact: "Low - only affects security posture, no functional impact".to_string(),
-            finding_recommended_value: format!("{:04o}", directive.permission_mode),
+            finding_recommended_value: format!("{:04o}", target),
             finding_remediation_steps: vec![format!(
                 "chmod {:04o} {}",
-                directive.permission_mode, directive.permission_path,
+                target, directive.permission_path,
             )],
             finding_severity: directive.permission_severity,
             finding_title: format!("Insecure permissions on {}", directive.permission_path),
@@ -390,7 +457,7 @@ async fn apply_path_permissions(ctx: &Context, directive: &PermissionDirective) 
     let metadata = ctx.executor().file_metadata(path).await.ok()?;
     let current_mode = metadata.mode & 0o777;
 
-    if current_mode == directive.permission_mode {
+    if !violates(directive, current_mode) {
         return None;
     }
 
@@ -432,12 +499,13 @@ fn apply_local_fchmod(directive: &PermissionDirective, current_mode: u32) -> Opt
         }
     };
 
-    let target_mode = Mode::from_bits_truncate(directive.permission_mode);
-    match fchmod(&file, target_mode) {
+    let target = target_mode(directive, current_mode);
+    let target_bits = Mode::from_bits_truncate(target);
+    match fchmod(&file, target_bits) {
         Ok(()) => Some(Change {
             change_description: format!(
                 "Changed permissions on {} from {:04o} to {:04o}",
-                directive.permission_path, current_mode, directive.permission_mode
+                directive.permission_path, current_mode, target
             ),
             change_type: ChangeType::Permissions,
             change_success: true,
@@ -461,7 +529,7 @@ async fn apply_remote_chmod(
     directive: &PermissionDirective,
     current_mode: u32,
 ) -> Option<Change> {
-    let mode_str = format!("{:04o}", directive.permission_mode);
+    let mode_str = format!("{:04o}", target_mode(directive, current_mode));
     let result = ctx
         .executor()
         .execute_command("chmod", &[&mode_str, directive.permission_path])
@@ -469,20 +537,22 @@ async fn apply_remote_chmod(
 
     match result {
         Ok(output) if output.success() => {
-            // Verify the change took effect
+            // Verify the change took effect — for max-mask directives, verify
+            // no disallowed bits remain; for exact directives, verify equality.
+            let target = target_mode(directive, current_mode);
             let path = Path::new(directive.permission_path);
             let verified = ctx
                 .executor()
                 .file_metadata(path)
                 .await
-                .map(|m| m.mode & 0o777 == directive.permission_mode)
+                .map(|m| !violates(directive, m.mode & 0o777))
                 .unwrap_or(false);
 
             if verified {
                 Some(Change {
                     change_description: format!(
                         "Changed permissions on {} from {:04o} to {:04o}",
-                        directive.permission_path, current_mode, directive.permission_mode
+                        directive.permission_path, current_mode, target
                     ),
                     change_type: ChangeType::Permissions,
                     change_success: true,
@@ -746,6 +816,37 @@ mod tests {
             .find(|m| m.compliance_framework == ComplianceFramework::NIST)
             .unwrap();
         assert_eq!(nist.compliance_control_id, "AC-6(1)");
+    }
+
+    #[test]
+    fn max_mask_treats_stricter_as_compliant_and_never_loosens() {
+        let shadow = PermissionDirective {
+            permission_description: "t",
+            permission_path: "/etc/shadow",
+            permission_mode: 0o640, // used as the allowed mask
+            _permission_owner: "root",
+            _permission_group: "root",
+            permission_severity: Severity::Critical,
+            permission_max_mask: true,
+        };
+        // 0000 (RHEL) and 0640 (Debian) both compliant; 0644 (o-r) and 0660 (g-w) violate.
+        assert!(!violates(&shadow, 0o000));
+        assert!(!violates(&shadow, 0o640));
+        assert!(!violates(&shadow, 0o600));
+        assert!(violates(&shadow, 0o644));
+        assert!(violates(&shadow, 0o660));
+        // Apply strips disallowed bits only — never adds any.
+        assert_eq!(target_mode(&shadow, 0o644), 0o640);
+        assert_eq!(target_mode(&shadow, 0o600), 0o600);
+
+        let passwd = PermissionDirective {
+            permission_max_mask: false,
+            permission_mode: 0o644,
+            ..shadow
+        };
+        assert!(!violates(&passwd, 0o644));
+        assert!(violates(&passwd, 0o646));
+        assert_eq!(target_mode(&passwd, 0o646), 0o644);
     }
 
     /// Sensitive-file permission checks must also carry HIPAA, GDPR and
