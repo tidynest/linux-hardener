@@ -512,6 +512,101 @@ async fn test_pam_apply_respects_directives() {
     );
 }
 
+/// No-loosen contract for threshold directives (CIS 5.3.2/5.3.3): when
+/// faillock/pwhistory already hold a STRICTER value than the compliant boundary,
+/// apply must leave them untouched — never rewrite `deny = 3` up to `deny = 5`.
+#[tokio::test]
+async fn test_pam_apply_never_loosens_stricter_thresholds() {
+    // deny = 3 is stricter than the boundary of 5; remember = 10 exceeds the
+    // minimum of 5. Both are already compliant and must not be rewritten.
+    let executor = Arc::new(
+        secure_pam_executor()
+            .with_file("/etc/security/faillock.conf", "deny = 3\n")
+            .with_file("/etc/security/pwhistory.conf", "remember = 10\n"),
+    );
+    let mut ctx = Context::with_executor(executor.clone());
+    let plugin = PamHardeningPlugin::new();
+
+    let result = plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    // The virtual filesystem must still hold the stricter values verbatim.
+    let files = executor.files();
+    assert_eq!(
+        files
+            .get(std::path::Path::new("/etc/security/faillock.conf"))
+            .map(String::as_str),
+        Some("deny = 3\n"),
+        "apply must not loosen a stricter faillock deny"
+    );
+    assert_eq!(
+        files
+            .get(std::path::Path::new("/etc/security/pwhistory.conf"))
+            .map(String::as_str),
+        Some("remember = 10\n"),
+        "apply must not loosen a stricter pwhistory remember"
+    );
+
+    // There must be no "Set deny"/"Set remember" write, and the skip should be
+    // recorded as an "already meets threshold" success change.
+    assert!(
+        !result
+            .apply_changes
+            .iter()
+            .any(|c| c.change_description.starts_with("Set deny")
+                || c.change_description.starts_with("Set remember")),
+        "apply must not emit a write change for already-compliant thresholds"
+    );
+    for name in ["deny", "remember"] {
+        assert!(
+            result.apply_changes.iter().any(|c| {
+                c.change_success
+                    && c.change_description
+                        .contains(&format!("{} already meets threshold", name))
+            }),
+            "expected an 'already meets threshold' change for {name}"
+        );
+    }
+}
+
+/// Complementary to the no-loosen test: a LOOSER (or unset) threshold must be
+/// tightened to the compliant boundary on apply.
+#[tokio::test]
+async fn test_pam_apply_tightens_looser_thresholds() {
+    let executor = Arc::new(
+        secure_pam_executor()
+            .with_file("/etc/security/faillock.conf", "deny = 10\n")
+            .with_file("/etc/security/pwhistory.conf", "remember = 2\n"),
+    );
+    let mut ctx = Context::with_executor(executor.clone());
+    let plugin = PamHardeningPlugin::new();
+
+    plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    let files = executor.files();
+    let faillock = files
+        .get(std::path::Path::new("/etc/security/faillock.conf"))
+        .cloned()
+        .unwrap_or_default();
+    let pwhistory = files
+        .get(std::path::Path::new("/etc/security/pwhistory.conf"))
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        faillock.contains("deny = 5"),
+        "looser deny should be tightened to the boundary 5, got: {faillock}"
+    );
+    assert!(
+        pwhistory.contains("remember = 5"),
+        "too-small remember should be raised to the boundary 5, got: {pwhistory}"
+    );
+}
+
 #[tokio::test]
 async fn test_pam_apply_skips_exceptions() {
     let executor = insecure_pam_executor();

@@ -673,6 +673,30 @@ impl HardeningPlugin for PamHardeningPlugin {
                     continue;
                 }
                 PamConfigFile::SecurityConf(path) => {
+                    let content = read_security_conf(ctx, path).await;
+                    let current = parse_config_value(
+                        &content,
+                        directive.pam_directive_name,
+                        ConfigFormat::KeyValue,
+                        true,
+                    );
+
+                    // No-loosen contract: only write when the current value
+                    // actually violates the threshold. A stricter existing value
+                    // is already compliant, so touching it could only loosen it.
+                    if !pam_violates(directive, current.as_deref()) {
+                        changes.push(Change {
+                            change_type: ChangeType::ConfigFile,
+                            change_description: format!(
+                                "{} already meets threshold in {}",
+                                directive.pam_directive_name, path,
+                            ),
+                            change_success: true,
+                            change_error: None,
+                        });
+                        continue;
+                    }
+
                     match create_config_backup(ctx, path).await {
                         Ok(backup) => changes.push(Change {
                             change_type: ChangeType::ConfigFile,
@@ -680,19 +704,38 @@ impl HardeningPlugin for PamHardeningPlugin {
                             change_success: true,
                             change_error: None,
                         }),
-                        Err(e) => warn!("Failed to backup {}: {}", path, e),
+                        Err(e) => {
+                            warn!("Failed to backup {}: {}", path, e);
+                            all_success = false;
+                            changes.push(Change {
+                                change_type: ChangeType::ConfigFile,
+                                change_description: format!("Failed to backup {}", path),
+                                change_success: false,
+                                change_error: Some(e.to_string()),
+                            });
+                        }
                     }
+
+                    // ponytail: for threshold directives the per-host config
+                    // override is intentionally ignored — we only reach here on a
+                    // genuine violation (too loose or unset), so writing the
+                    // compliant boundary `pam_secure_value` always tightens and
+                    // can never loosen. A looser override must never be written; a
+                    // stricter one is already compliant and never flagged by scan.
+                    // Upgrade path: clamp min/max(override, secure) if per-host
+                    // override of these thresholds is ever needed.
+                    let boundary = directive.pam_secure_value;
                     let updated = apply_directive_to_content(
-                        &read_security_conf(ctx, path).await,
+                        &content,
                         directive.pam_directive_name,
-                        target_value,
+                        boundary,
                     );
                     match ctx.executor().write_file(Path::new(path), &updated).await {
                         Ok(_) => changes.push(Change {
                             change_type: ChangeType::ConfigFile,
                             change_description: format!(
                                 "Set {} = {} in {}",
-                                directive.pam_directive_name, target_value, path,
+                                directive.pam_directive_name, boundary, path,
                             ),
                             change_success: true,
                             change_error: None,
@@ -1025,15 +1068,23 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
 /// integers fail. `ponytail:` only /etc/security/*.conf is parsed — inline
 /// pam.d module args are not (add a pam.d parser if a target distro needs it).
 fn pam_violates(directive: &PamDirective, current: Option<&str>) -> bool {
-    let secure: i64 = directive.pam_secure_value.parse().unwrap_or_default();
+    // Hardcoded-const invariant: a threshold directive's secure value must be a
+    // valid integer. A malformed const is a programming error, so fail fast
+    // rather than silently defaulting to 0 (which would mis-judge every host).
+    let secure = || -> i64 {
+        directive
+            .pam_secure_value
+            .parse()
+            .expect("pam_secure_value must be a valid integer")
+    };
     match directive.pam_compare {
         PamCompare::Exact => current != Some(directive.pam_secure_value),
         PamCompare::AtMost => current
             .and_then(|v| v.parse::<i64>().ok())
-            .is_none_or(|n| n > secure),
+            .is_none_or(|n| n > secure()),
         PamCompare::AtLeast => current
             .and_then(|v| v.parse::<i64>().ok())
-            .is_none_or(|n| n < secure),
+            .is_none_or(|n| n < secure()),
     }
 }
 
