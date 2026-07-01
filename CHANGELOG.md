@@ -26,7 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **faillock/pwhistory apply never loosens a stricter setting.** `deny`/`remember`
   use a threshold comparison (`deny ≤ 5`, `remember ≥ 5`); a stricter existing
   value is compliant and apply writes the CIS boundary only when the current
-  value actually violates it.
+  value actually violates it. The effective value is read from either
+  `/etc/security/{faillock,pwhistory}.conf` **or** an inline `pam_faillock.so`/
+  `pam_pwhistory.so` argument in the PAM stack (which overrides the `.conf`), so
+  a host configured inline is no longer misreported. A stricter per-host override
+  is honoured (clamped so it can never loosen below the CIS baseline); when a
+  non-compliant value is set inline in the PAM stack, apply refuses to auto-edit
+  the auth stack and reports the manual action instead.
 
 - **Desktop Fleet Apply page** — apply and roll back hardening across saved
   hosts over SSH from the GUI, by shelling out to the audited `batch apply`/`rollback`
