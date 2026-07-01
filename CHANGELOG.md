@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-01
+
 ### Added
 - **CIS compliance coverage completion.** Eleven curated CIS controls are now
   genuinely assessed instead of `ManualReview`: file permissions on
@@ -788,6 +790,7 @@ Configuration file support with layered loading, compliance framework reporting 
 
 ## Version History
 
+- **1.2.0** (2026-07-01): CIS compliance coverage completion, PAM/permissions no-loosen hardening, polkit DE test tooling, security dependency fixes
 - **1.0.5** (2026-05-24): Security dependency pass (tauri 2.11.2, lettre 0.11.22, rustls-webpki 0.103.13), cargo-deny gate
 - **1.0.4** (2026-04-15): Rust edition 2024 migration
 - **1.0.3** (2026-02-28): Parallel test runners, GUI test selector fixes for TabBar component
@@ -801,7 +804,8 @@ Configuration file support with layered loading, compliance framework reporting 
 - **0.2.0** (2025-11-28): Compliance frameworks, PDF reports, configuration system
 - **0.1.0** (2025-11-25): Initial development release
 
-[Unreleased]: https://github.com/tidynest/linux-system-hardener/compare/v1.0.5...HEAD
+[Unreleased]: https://github.com/tidynest/linux-system-hardener/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/tidynest/linux-system-hardener/compare/v1.0.5...v1.2.0
 [1.0.5]: https://github.com/tidynest/linux-system-hardener/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/tidynest/linux-system-hardener/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/tidynest/linux-system-hardener/compare/v1.0.2...v1.0.3

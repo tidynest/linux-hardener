@@ -1,3 +1,11 @@
+linux-system-hardener (1.2.0-1) unstable; urgency=medium
+
+  * CIS compliance coverage completion; PAM/permissions no-loosen hardening.
+  * Polkit desktop-environment test tooling; polkit runtime dependency.
+  * Security: fix RUSTSEC-2026-0190 (anyhow), accept RUSTSEC-2026-0192 (ttf-parser).
+
+ -- Eric Jingryd <tidynest@proton.me>  Tue, 01 Jul 2026 12:00:00 +0000
+
 linux-system-hardener (1.1.0-1) unstable; urgency=medium
 
   * Version alignment to 1.1.0.

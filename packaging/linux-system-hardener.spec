@@ -1,5 +1,5 @@
 Name:           linux-system-hardener
-Version:        1.1.0
+Version:        1.2.0
 Release:        1%{?dist}
 Summary:        Linux security automation: scanning, hardening, and rollback
 License:        Apache-2.0
@@ -103,6 +103,12 @@ systemctl daemon-reload || true
 %dir %{_libdir}/linux-hardener
 
 %changelog
+* Tue Jul 01 2026 Eric Jingryd <tidynest@proton.me> - 1.2.0-1
+- CIS compliance coverage completion (11 controls moved off ManualReview)
+- PAM faillock/pwhistory and shadow/gshadow no-loosen hardening
+- Polkit desktop-environment test tooling; polkit runtime dependency
+- Security: fix RUSTSEC-2026-0190 (anyhow), accept RUSTSEC-2026-0192 (ttf-parser)
+
 * Tue Jul 01 2026 Eric Jingryd <tidynest@proton.me> - 1.1.0-1
 - Version alignment to 1.1.0
 
