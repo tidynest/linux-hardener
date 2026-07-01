@@ -4,8 +4,9 @@
 
 ## Current State (as of 2026-07-01)
 
-**v1.2.0 released** (2026-07-01) to GitHub, GitLab, and AUR. The public version
-jumped 1.0.5 → 1.2.0 (1.1.0 was cut in-tree but never published).
+**v1.2.1 released** (2026-07-01) to GitHub, GitLab, and AUR — a docs/badge patch
+on top of v1.2.0. The public version jumped 1.0.5 → 1.2.0 → 1.2.1 (1.1.0 was cut
+in-tree but never published).
 
 v1.2.0 shipped: multi-host batch CLI (`batch scan/report/apply/rollback`),
 per-host history/trends/regression detection, scheduler regression alerts,
@@ -320,7 +321,7 @@ See `docs/GUI_CLI_PARITY_PLAN.md` — all 6 phases complete.
 - **8 Security Plugins**: Kernel, SSH, Firewall, PAM, Services, Audit, Permissions, MAC
 - **660 Passing Tests**
 - **Multi-Distribution Support**: Debian, Red Hat, Arch, SUSE families
-- **Current Version**: 1.2.0 (released to GitHub, GitLab, and AUR)
+- **Current Version**: 1.2.1 (released to GitHub, GitLab, and AUR)
 - **WASM Support**: GUI frontend compiles to `wasm32-unknown-unknown`
 
 For version history and detailed feature tracking, see [ROADMAP.md](ROADMAP.md).

@@ -1,7 +1,7 @@
 # Linux System Hardener
 
 <p>
-  <img src="https://img.shields.io/badge/version-1.2.0-2563eb?style=flat-square" alt="Version 1.2.0">
+  <img src="https://img.shields.io/badge/version-1.2.1-2563eb?style=flat-square" alt="Version 1.2.1">
   <img src="https://img.shields.io/badge/license-Apache--2.0-475569?style=flat-square" alt="License Apache-2.0">
   <img src="https://img.shields.io/badge/rust-1.85%2B-b45309?style=flat-square&logo=rust&logoColor=white" alt="Rust 1.85+">
   <img src="https://img.shields.io/aur/version/linux-system-hardener?style=flat-square&logo=archlinux&logoColor=white&label=AUR" alt="AUR package">
@@ -119,7 +119,7 @@ The tool is designed for system administrators, DevOps engineers, and security p
 
 ## Project Status
 
-**Current Phase**: Production Release (v1.2.0)
+**Current Phase**: Production Release (v1.2.1)
 
 ### Test Coverage
 

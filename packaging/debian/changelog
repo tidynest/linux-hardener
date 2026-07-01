@@ -1,3 +1,9 @@
+linux-system-hardener (1.2.1-1) unstable; urgency=low
+
+  * Documentation and README version-badge consistency (patch on 1.2.0).
+
+ -- Eric Jingryd <tidynest@proton.me>  Tue, 01 Jul 2026 18:00:00 +0000
+
 linux-system-hardener (1.2.0-1) unstable; urgency=medium
 
   * CIS compliance coverage completion; PAM/permissions no-loosen hardening.
