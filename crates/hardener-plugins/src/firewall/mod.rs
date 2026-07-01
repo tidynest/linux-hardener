@@ -132,6 +132,14 @@ pub fn coverage() -> Vec<ComplianceMapping> {
 
 fn get_firewall_compliance_mappings() -> Vec<ComplianceMapping> {
     vec![
+        // The firewall plugin detects ufw/nftables/firewalld; a detected backend
+        // satisfies "a firewall is installed".
+        ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "3.4.1.1".to_string(),
+            compliance_control_title: "Ensure firewall is installed".to_string(),
+            compliance_section: Some("Network Configuration".to_string()),
+        },
         ComplianceMapping {
             compliance_framework: ComplianceFramework::CIS,
             compliance_control_id: "3.4.1.2".to_string(),
@@ -568,6 +576,20 @@ impl HardeningPlugin for FirewallHardeningPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn coverage_includes_firewall_installed_control() {
+        let ids: Vec<String> = coverage()
+            .into_iter()
+            .filter(|m| m.compliance_framework == ComplianceFramework::CIS)
+            .map(|m| m.compliance_control_id)
+            .collect();
+        assert!(ids.contains(&"3.4.1.1".to_string()), "must map CIS 3.4.1.1");
+        assert!(
+            ids.contains(&"3.4.1.2".to_string()),
+            "must retain CIS 3.4.1.2"
+        );
+    }
 
     /// Confirms the firewall finding now carries multi-framework mappings:
     /// CIS (existing) plus STIG and NIST sourced from SSG.
