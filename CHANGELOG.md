@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Checkpoint rollback could delete files with `0000` permissions.** The
+  executor captured a file's mode with the type bits masked off, so a regular
+  file whose permissions are `0000` (as `/etc/shadow` and `/etc/gshadow` ship on
+  Arch Linux) was recorded as mode `0` — indistinguishable from "did not exist
+  at checkpoint time" — and rollback removed it instead of restoring its
+  permissions. The local and SSH (`--ssh`) executors now preserve the file-type
+  bit, so an existing file is never mistaken for an absent one.
+- **The permissions plugin's apply → rollback cycle aborted with a
+  path-not-allowed error.** The account-database files newly checkpointed for
+  CIS 6.1.2–6.1.5 (`/etc/passwd`, `/etc/group`, `/etc/shadow`, `/etc/gshadow`)
+  were absent from the rollback allowlist, so rolling back a permissions
+  checkpoint failed outright (the cross-distro suite's per-plugin lifecycle
+  exited 1 on every distribution). They are now allow-listed. Regression tests
+  cover both issues at the unit, executor, and end-to-end rollback levels.
+
 ## [1.2.1] - 2026-07-01
 
 ### Fixed

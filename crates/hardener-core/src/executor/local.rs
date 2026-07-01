@@ -57,7 +57,11 @@ impl SystemExecutor for LocalExecutor {
                 exists: true,
                 is_file: meta.is_file(),
                 is_dir: meta.is_dir(),
-                mode: meta.permissions().mode() & 0o777,
+                // Full st_mode (type + setuid/setgid/sticky + perms). Scan callers
+                // mask with `& 0o777` themselves; checkpoint capture needs the type
+                // bit so an existing 0000-perm file is not read as "did not exist"
+                // (which would make rollback delete it).
+                mode: meta.permissions().mode(),
                 size: meta.len(),
                 uid: meta.uid(),
                 gid: meta.gid(),
@@ -143,6 +147,32 @@ mod tests {
         assert!(
             got.is_empty(),
             "missing directory must yield an empty vec, not an error"
+        );
+    }
+
+    #[tokio::test]
+    async fn metadata_of_zero_perm_file_is_not_confused_with_missing() {
+        // Checkpoint rollback treats a stored `mode` of 0 as the sentinel for
+        // "path did not exist at capture" (→ the path is removed on restore). An
+        // existing file with permissions 0000 (e.g. Arch's /etc/shadow) must
+        // therefore never report mode 0, or a rollback would delete it.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("zero.conf");
+        std::fs::write(&path, "x").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        let meta = LocalExecutor::new().file_metadata(&path).await.unwrap();
+
+        assert!(meta.exists);
+        assert_ne!(
+            meta.mode, 0,
+            "existing 0000-perm file must not report mode 0 (collides with the \
+             'did not exist' sentinel checkpoint rollback relies on)"
+        );
+        assert_eq!(
+            meta.mode & 0o777,
+            0,
+            "permission bits must still read as 0000"
         );
     }
 }

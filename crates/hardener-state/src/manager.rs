@@ -27,6 +27,12 @@ const DEFAULT_ROLLBACK_PREFIXES: &[&str] = &[
     "/etc/firewalld",
     "/etc/ufw",
     "/etc/sudoers",
+    // Account databases (CIS 6.1.2–6.1.5) — checkpointed by the permissions
+    // plugin; `starts_with` also covers their `-` backup twins (e.g. /etc/passwd-).
+    "/etc/passwd",
+    "/etc/group",
+    "/etc/shadow",
+    "/etc/gshadow",
     "/root",
     "/boot",
 ];
@@ -720,12 +726,11 @@ impl CheckpointManager {
             }
         }
 
-        // Determine the required action. `file_permissions` holds only the mode
-        // bits (`file_metadata` masks the S_IFDIR type bit off), so an existing
-        // metadata-only entry — a directory, or a file that was unreadable at
-        // capture — is "no content with non-zero permissions" and gets its
-        // permissions/owner re-applied. "No content with zero permissions" means
-        // the path did not exist at checkpoint time and must be removed.
+        // Determine the required action. `file_permissions` holds the full
+        // st_mode (type bit included), so any path that existed at capture — a
+        // directory, or a file that was unreadable, even one with 0000 perms —
+        // has a non-zero mode and gets its permissions/owner re-applied. Only a
+        // path absent at checkpoint time is stored as 0, meaning "remove on restore".
         let action = match &file_state.file_content {
             Some(_) => FileRestoreAction::Restored,
             None if file_state.file_permissions != 0 => FileRestoreAction::PermissionsRestored,
@@ -929,6 +934,88 @@ fn select_latest_named(
 mod tests {
     use super::*;
     use hardener_common::executor::MockExecutor;
+
+    #[test]
+    fn default_prefixes_cover_account_database_paths() {
+        // The permissions plugin checkpoints these (CIS 6.1.2–6.1.5). Rollback's
+        // Phase-1 allowlist matches via `starts_with`, so each must be covered or
+        // the entire rollback aborts (regression: exit 1 on apply→rollback).
+        for path in ["/etc/passwd", "/etc/group", "/etc/shadow", "/etc/gshadow"] {
+            assert!(
+                DEFAULT_ROLLBACK_PREFIXES
+                    .iter()
+                    .any(|p| path.starts_with(p)),
+                "{path} not covered by DEFAULT_ROLLBACK_PREFIXES — rollback would abort"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn rollback_restores_zero_perm_account_file_instead_of_removing_it() {
+        use hardener_common::executor::{CommandOutput, FileMetadata};
+
+        // End-to-end guard for the cross-distro regression (permissions
+        // apply→rollback exit 1 + silent /etc/shadow deletion on Arch). Drives the
+        // public rollback() API and proves BOTH halves of the fix together:
+        //   1. /etc/shadow is in the production allowlist → Phase-1 does not abort.
+        //   2. A file that existed at capture with perms 0000 is stored with a
+        //      non-zero mode (S_IFREG type bit, as the fixed LocalExecutor now
+        //      reports it), so restore re-applies permissions rather than reading
+        //      mode 0 as "did not exist" and deleting the path.
+        let manager = test_manager().await; // production DEFAULT_ROLLBACK_PREFIXES
+        let shadow = "/etc/shadow";
+        let ok = || CommandOutput {
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: 0,
+        };
+        let executor = MockExecutor::new()
+            .with_file_metadata(
+                shadow,
+                "",
+                FileMetadata {
+                    exists: true,
+                    is_file: true,
+                    is_dir: false,
+                    mode: 0o100000, // S_IFREG | 0000 perms — what the fixed local executor reports
+                    size: 0,
+                    uid: 0,
+                    gid: 0,
+                },
+            )
+            .with_command("chmod", &["0", shadow], ok())
+            .with_command("chown", &["0:0", shadow], ok());
+
+        let cp_id = manager
+            .create_checkpoint_metadata_only(&executor, "perm-test", &[Path::new(shadow)])
+            .await
+            .expect("checkpoint");
+
+        // Returning Ok (not Err) proves the allowlist accepts /etc/shadow.
+        let result = manager
+            .rollback(&executor, &cp_id)
+            .await
+            .expect("rollback must not abort on an allow-listed path");
+
+        assert!(
+            result.rollback_success,
+            "rollback should succeed: {result:?}"
+        );
+        assert_eq!(result.rollback_files.len(), 1);
+        assert_eq!(
+            result.rollback_files[0].restore_action,
+            FileRestoreAction::PermissionsRestored,
+            "an existing 0000-perm file must be permission-restored, never Removed"
+        );
+        assert!(
+            !executor
+                .log()
+                .commands_executed
+                .iter()
+                .any(|(program, _)| program == "rm"),
+            "rollback must never issue `rm` for a file that existed at capture"
+        );
+    }
 
     /// Builds a CheckpointManager over a temporary in-memory SQLite database
     /// with a freshly generated signing key — no filesystem privileges needed.

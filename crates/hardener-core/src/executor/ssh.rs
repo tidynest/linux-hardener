@@ -171,41 +171,8 @@ impl SystemExecutor for SshExecutor {
         let cmd = format!("stat -c '%F %a %s %u %g' {escaped} 2>/dev/null || echo 'NOTFOUND'");
         let output = self.run_command(&cmd).await?;
 
-        let stdout = output.stdout.trim();
-        if stdout == "NOTFOUND" || stdout.is_empty() {
-            return Ok(FileMetadata {
-                exists: false,
-                is_file: false,
-                is_dir: false,
-                mode: 0,
-                size: 0,
-                uid: 0,
-                gid: 0,
-            });
-        }
-
-        // Parse stat output: "%F %a %s %u %g" — file type may contain spaces so split from right.
-        // rsplitn(5, ' ') yields [gid, uid, size, mode, file_type] (reversed order).
-        let parts: Vec<&str> = stdout.rsplitn(5, ' ').collect();
-        if parts.len() >= 5 {
-            let gid_str = parts[0];
-            let uid_str = parts[1];
-            let size_str = parts[2];
-            let mode_str = parts[3];
-            let file_type = parts[4];
-
-            Ok(FileMetadata {
-                exists: true,
-                is_file: file_type.contains("regular") || file_type.contains("file"),
-                is_dir: file_type.contains("directory"),
-                mode: u32::from_str_radix(mode_str, 8).unwrap_or(0),
-                size: size_str.parse().unwrap_or(0),
-                uid: uid_str.parse().unwrap_or(0),
-                gid: gid_str.parse().unwrap_or(0),
-            })
-        } else {
-            anyhow::bail!("Failed to parse stat output: {}", stdout)
-        }
+        parse_stat_metadata(&output.stdout)
+            .ok_or_else(|| anyhow::anyhow!("Failed to parse stat output: {}", output.stdout.trim()))
     }
 
     async fn read_dir(&self, path: &Path) -> Result<Vec<PathBuf>> {
@@ -241,5 +208,103 @@ impl SystemExecutor for SshExecutor {
     async fn command_exists(&self, program: &str) -> Result<bool> {
         let output = self.execute_command("which", &[program]).await?;
         Ok(output.success())
+    }
+}
+
+/// Parses `stat -c '%F %a %s %u %g'` output (or the `NOTFOUND` sentinel) into
+/// `FileMetadata`. Pure — no I/O — so the parse is unit-testable off a real host.
+///
+/// The file-type bit from `%F` is OR-ed into `mode`, so any existing path has a
+/// non-zero mode. Checkpoint rollback reads `mode == 0` as "did not exist at
+/// capture" and removes the path; without the type bit a legitimate 0000-perm
+/// file (e.g. Arch's `/etc/shadow`) would be deleted on a remote rollback. This
+/// mirrors the local executor, which returns the full `st_mode`. Returns `None`
+/// when the line has too few fields to parse.
+fn parse_stat_metadata(stdout: &str) -> Option<FileMetadata> {
+    let stdout = stdout.trim();
+    if stdout == "NOTFOUND" || stdout.is_empty() {
+        return Some(FileMetadata {
+            exists: false,
+            is_file: false,
+            is_dir: false,
+            mode: 0,
+            size: 0,
+            uid: 0,
+            gid: 0,
+        });
+    }
+
+    // "%F %a %s %u %g" — %F (file type) may contain spaces, so split from the
+    // right: rsplitn(5, ' ') yields [gid, uid, size, mode, file_type].
+    let parts: Vec<&str> = stdout.rsplitn(5, ' ').collect();
+    if parts.len() < 5 {
+        return None;
+    }
+    let file_type = parts[4];
+    let is_dir = file_type.contains("directory");
+    let permission_bits = u32::from_str_radix(parts[3], 8).unwrap_or(0);
+    // S_IFDIR for directories, S_IFREG otherwise — covers every path the
+    // checkpoint layer captures (special files are never checkpointed).
+    let type_bit = if is_dir { 0o040000 } else { 0o100000 };
+
+    Some(FileMetadata {
+        exists: true,
+        is_file: file_type.contains("regular") || file_type.contains("file"),
+        is_dir,
+        mode: type_bit | permission_bits,
+        size: parts[2].parse().unwrap_or(0),
+        uid: parts[1].parse().unwrap_or(0),
+        gid: parts[0].parse().unwrap_or(0),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_stat_zero_perm_file_is_not_confused_with_missing() {
+        // A remote 0000-perm regular file (e.g. Arch's /etc/shadow): rollback reads
+        // mode 0 as "did not exist" and deletes it, so an existing file must never
+        // parse to mode 0. Parity with local.rs::metadata_of_zero_perm_file_*.
+        let meta = parse_stat_metadata("regular empty file 0 0 0 0").expect("parse");
+        assert!(meta.exists && meta.is_file);
+        assert_ne!(
+            meta.mode, 0,
+            "existing 0000-perm remote file must not report mode 0"
+        );
+        assert_eq!(
+            meta.mode & 0o777,
+            0,
+            "permission bits must still read as 0000"
+        );
+    }
+
+    #[test]
+    fn parse_stat_notfound_keeps_zero_mode_sentinel() {
+        let meta = parse_stat_metadata("NOTFOUND").expect("parse");
+        assert!(!meta.exists);
+        assert_eq!(
+            meta.mode, 0,
+            "absent path keeps the mode-0 'did not exist' sentinel"
+        );
+    }
+
+    #[test]
+    fn parse_stat_directory_preserves_perms_and_type() {
+        let meta = parse_stat_metadata("directory 755 4096 0 0").expect("parse");
+        assert!(meta.is_dir);
+        assert_eq!(meta.mode & 0o777, 0o755);
+        assert_ne!(meta.mode & 0o170000, 0, "type bit present for existing dir");
+    }
+
+    #[test]
+    fn parse_stat_regular_file_parses_all_fields() {
+        // rsplitn from the right: gid=42, uid=0, size=1234, mode=640, type="regular file".
+        let meta = parse_stat_metadata("regular file 640 1234 0 42").expect("parse");
+        assert_eq!(meta.mode & 0o777, 0o640);
+        assert_eq!(meta.size, 1234);
+        assert_eq!(meta.uid, 0);
+        assert_eq!(meta.gid, 42);
     }
 }
