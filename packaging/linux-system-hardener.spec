@@ -12,6 +12,8 @@ BuildRequires:  desktop-file-utils trunk
 
 Requires:       glibc openssl-libs gtk3 libxcb libxkbcommon systemd
 Requires:       polkit
+Recommends:     polkit-gnome
+Supplements:    (polkit-kde-agent and plasma-workspace)
 
 %description
 Linux System Hardener automates security through scanning, hardening, and

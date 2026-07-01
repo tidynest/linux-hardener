@@ -12,6 +12,7 @@ Package: linux-system-hardener
 Architecture: amd64
 Depends: ${misc:Depends}, ${shlibs:Depends}, libgtk-3-0t64,
  libwebkit2gtk-4.1-0, libxcb1, libxkbcommon0, systemd, polkitd
+Suggests: policykit-1-gnome, polkit-kde-agent-1
 Description: Linux security automation: scanning, hardening, and rollback
  Linux System Hardener automates security through comprehensive scanning,
  automated hardening, and safe rollback across 8 security domains (kernel,

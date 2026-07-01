@@ -18,6 +18,7 @@ depends=(
     'libsoup3'
     'openssl'
     'pango'
+    'polkit'
     'webkit2gtk-4.1'
     'libxcb'
     'libxkbcommon'
@@ -32,6 +33,11 @@ makedepends=(
     'cargo'
     'trunk'
     'pkg-config'
+)
+optdepends=(
+    'polkit-gnome: polkit agent for GNOME, XFCE, Hyprland, Sway, i3'
+    'polkit-kde-agent: polkit agent for KDE Plasma'
+    'xfce-polkit: native polkit agent for XFCE'
 )
 source=("$pkgname-$pkgver.tar.gz::https://github.com/tidynest/$pkgname/archive/refs/tags/v$pkgver.tar.gz")
 # sha256 of the v1.0.5 source tarball — regenerate once the tag is pushed:
