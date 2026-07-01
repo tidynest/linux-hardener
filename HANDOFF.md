@@ -17,7 +17,7 @@
      undone (per-command Tauri capability ACLs) and marked Deferred, not Fixed.
   3. **README overhaul** — desktop **screenshots** (Dashboard/Analysis/Hardening,
      captured from a freshly-built v1.1.0 app), flat-square **badges**, collapsible
-     **TOC**, **roadmap fold**, and currency fixes (648 tests, 7 frameworks, 7 pages).
+     **TOC**, **roadmap fold**, and currency fixes (660 tests, 7 frameworks, 7 pages).
   4. **Cross-distro v1.1.0 re-validation** — ran the full CLI suite under
      `nspawn --pipe` across all 5 containers; **found + fixed** stale `daemon status`
      test/doc drift (CLI renamed positional count → `--limit`); **confirmed** by a
@@ -114,7 +114,7 @@ feature set, then fill the gaps with high-quality tests. Nothing half-measured.
 **Tauri command layer (`src-tauri/src/commands.rs`) — no tests directory exists.**
 - `run_fleet_apply` / `run_fleet_rollback` / `run_fleet_mutation<T>` / `list_plugins`: unit-test `validate_ipc_string`, `validate_plugin_ids` (allowlist + empty-hosts guard), `build_batch_args`, and **`parse_outcomes` exit-code-agnostic parsing** (batch exits non-zero on per-host fail yet emits valid JSON — this invariant MUST have a test).
 
-**Rust workspace (`cargo test --workspace`, 648 passing):** audit per-crate that **every feature added since the last test pass has unit/integration coverage** — SSH crypto helpers (`select_algorithms`), per-host history/trends/regression cores (`find_regressions`), compliance coverage aggregation (`compliance_coverage()`), ISO 27001 control catalogue, the executor relocation to `hardener-common`. Add what's missing.
+**Rust workspace (`cargo test --workspace`, 660 passing):** audit per-crate that **every feature added since the last test pass has unit/integration coverage** — SSH crypto helpers (`select_algorithms`), per-host history/trends/regression cores (`find_regressions`), compliance coverage aggregation (`compliance_coverage()`), ISO 27001 control catalogue, the executor relocation to `hardener-common`. Add what's missing.
 
 **Validators (`scripts/validate_*.py`):** confirm `validate_compliance_docs.py` counts ISO 27001; `validate_tauri_docs.py` covers the new fleet commands; `validate_cli_docs.py` covers `batch` + `history trends/regressions`.
 
