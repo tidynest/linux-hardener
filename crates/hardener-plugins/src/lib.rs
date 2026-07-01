@@ -243,4 +243,30 @@ mod tests {
             "coverage must span multiple frameworks"
         );
     }
+
+    /// The 11 curated CIS controls wired off ManualReview in the
+    /// 2026-06-29 CIS-coverage work must all reach `compliance_coverage()`.
+    /// Each is a catalogued control, so its presence here flips it to Pass/Fail.
+    #[test]
+    fn newly_wired_cis_controls_are_all_covered() {
+        use hardener_common::types::ComplianceFramework;
+        let required = [
+            "6.1.2", "6.1.3", "6.1.4", "6.1.5", // permissions
+            "3.2.2", "3.2.3", "3.2.4", // kernel
+            "2.1.1",   // services (xinetd)
+            "3.4.1.1", // firewall
+            "5.3.2", "5.3.3", // pam
+        ];
+        let covered: Vec<String> = crate::compliance_coverage()
+            .into_iter()
+            .filter(|m| m.compliance_framework == ComplianceFramework::CIS)
+            .map(|m| m.compliance_control_id)
+            .collect();
+        for id in required {
+            assert!(
+                covered.contains(&id.to_string()),
+                "CIS {id} missing from coverage"
+            );
+        }
+    }
 }
