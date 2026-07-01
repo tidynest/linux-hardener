@@ -1,6 +1,6 @@
 # Project Scripts
 
-**Last Updated**: 2026-06-29
+**Last Updated**: 2026-07-01
 
 This directory contains utility scripts for the Linux Hardening Tool project.
 
@@ -857,10 +857,10 @@ In addition to the Arch Linux container, there are distribution-specific contain
 | Script | Distribution | Package Manager |
 |--------|--------------|-----------------|
 | `create-test-container.sh` | Arch Linux | pacman |
-| `create-debian-container.sh` | Debian 12 (Bookworm) | apt/debootstrap |
-| `create-fedora-container.sh` | Fedora 41 | dnf |
-| `create-rhel-container.sh` | Rocky Linux 9 | podman export |
-| `create-opensuse-container.sh` | openSUSE Leap 15.6 | zypper |
+| `create-debian-container.sh` | Debian 13 (Trixie) | apt/debootstrap |
+| `create-fedora-container.sh` | Fedora 44 | podman export |
+| `create-rhel-container.sh` | Rocky Linux 10 | podman export |
+| `create-opensuse-container.sh` | openSUSE Leap 16.0 | podman export |
 
 **Usage** (same pattern for all):
 ```bash
@@ -890,7 +890,7 @@ sudo ./scripts/create-<distro>-container.sh clean
 |---------|------|--------|---------|------|
 | Firewall | ufw | ufw | firewalld | firewalld |
 | MAC | AppArmor (optional) | AppArmor | SELinux | AppArmor |
-| Bootstrap tool | pacstrap | debootstrap | dnf | zypper |
+| Bootstrap tool | pacstrap | debootstrap | podman export | podman export |
 | Covers | Manjaro, EndeavourOS | Ubuntu, Mint, Pop!_OS | RHEL, CentOS, Rocky | SLES |
 
 All containers:
@@ -905,7 +905,7 @@ All containers:
 
 **Script**: `create-rhel-container.sh`
 
-**Purpose**: Creates a Rocky Linux 9 container for cross-distro testing. Uses `podman export` from the official `rockylinux:9` image to produce a rootfs at `/var/lib/machines/hardener-test-rhel`.
+**Purpose**: Creates a Rocky Linux 10 container for cross-distro testing. Uses `podman export` from the official `rockylinux/rockylinux:10` image to produce a rootfs at `/var/lib/machines/hardener-test-rhel`.
 
 **Usage**:
 ```bash
@@ -920,8 +920,8 @@ sudo ./scripts/create-rhel-container.sh clean
 ```
 
 **How It Works**:
-1. Pulls the official `rockylinux:9` container image via `podman`
-2. Runs the image and installs required packages (`openssh-server`, `audit`, `firewalld`, `nftables`)
+1. Pulls the official `rockylinux/rockylinux:10` container image via `podman`
+2. Exports the image root filesystem, then installs test packages (`openssh-server`, `audit`, `firewalld`, `nftables`) inside via `systemd-nspawn`
 3. Configures test users (`root:test`, `testuser:test` with passwordless sudo)
 4. Exports the container filesystem via `podman export`
 5. Extracts it to `/var/lib/machines/hardener-test-rhel` for use with `systemd-nspawn`
@@ -1189,9 +1189,9 @@ sudo ./scripts/run-cross-distro-tests.sh
 |--------|---------------|----------------|
 | arch | `/var/lib/machines/hardener-test` | pacstrap |
 | debian | `/var/lib/machines/hardener-test-debian` | debootstrap |
-| fedora | `/var/lib/machines/hardener-test-fedora` | dnf bootstrap |
-| rhel | `/var/lib/machines/hardener-test-rhel` | podman export (Rocky 9) |
-| opensuse | `/var/lib/machines/hardener-test-opensuse` | zypper bootstrap |
+| fedora | `/var/lib/machines/hardener-test-fedora` | podman export |
+| rhel | `/var/lib/machines/hardener-test-rhel` | podman export (Rocky 10) |
+| opensuse | `/var/lib/machines/hardener-test-opensuse` | podman export (Leap 16.0 image) |
 
 **Output Files**:
 ```

@@ -2,6 +2,11 @@
 # Create an isolated Fedora container for safe root testing
 # Uses systemd-nspawn for full systemd support
 #
+# Bootstraps by pulling the official Fedora container image with podman and
+# exporting its root filesystem. Arch's rpm enforces %_pkgverify_level=all,
+# which `dnf --nogpgcheck` cannot override, so a host-dnf bootstrap of a keyless
+# installroot always fails GPG. The image runs its own scriptlets/keys natively.
+#
 # Usage:
 #   ./scripts/create-fedora-container.sh        # Create container
 #   ./scripts/create-fedora-container.sh enter  # Enter existing container
@@ -12,7 +17,10 @@ set -euo pipefail
 CONTAINER_NAME="hardener-test-fedora"
 CONTAINER_PATH="/var/lib/machines/${CONTAINER_NAME}"
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-FEDORA_VERSION="41"
+FEDORA_VERSION="44"
+
+# Official Fedora container image, pulled and exported via podman.
+FEDORA_IMAGE="docker.io/library/fedora:${FEDORA_VERSION}"
 
 # Colours for output
 RED='\033[0;31m'
@@ -35,12 +43,16 @@ check_root() {
 check_dependencies() {
     local missing=()
 
-    if ! command -v dnf &>/dev/null; then
-        missing+=("dnf")
+    if ! command -v podman &>/dev/null; then
+        missing+=("podman")
     fi
 
     if ! command -v systemd-nspawn &>/dev/null; then
         missing+=("systemd-container")
+    fi
+
+    if ! command -v tar &>/dev/null; then
+        missing+=("tar")
     fi
 
     if [[ ${#missing[@]} -gt 0 ]]; then
@@ -68,43 +80,43 @@ create_container() {
     fi
 
     log_info "Creating Fedora ${FEDORA_VERSION} container at $CONTAINER_PATH..."
-    log_info "This may take a few minutes..."
+    log_info "Pulling official Fedora image via podman..."
 
-    # Bootstrap Fedora system using dnf
+    # Pull + export the official image. Nothing rpm-related runs on the host, so
+    # the Arch %_pkgverify_level=all policy never applies.
+    local tmp_container="hardener-fedora-export-$$"
+
+    if ! podman pull "$FEDORA_IMAGE"; then
+        log_error "Failed to pull $FEDORA_IMAGE"
+        exit 1
+    fi
+
     mkdir -p "$CONTAINER_PATH"
+    log_info "Exporting image root filesystem to $CONTAINER_PATH..."
+    podman create --name "$tmp_container" "$FEDORA_IMAGE" >/dev/null
+    if ! podman export "$tmp_container" | tar -x -C "$CONTAINER_PATH"; then
+        podman rm -f "$tmp_container" >/dev/null 2>&1 || true
+        rm -rf "$CONTAINER_PATH"
+        log_error "Failed to export image filesystem"
+        exit 1
+    fi
+    podman rm -f "$tmp_container" >/dev/null 2>&1 || true
 
-    # Create temporary repo config for bootstrapping (needed on non-Fedora hosts)
-    TEMP_REPO=$(mktemp)
-    cat > "$TEMP_REPO" << 'REPOEOF'
-[fedora]
-name=Fedora $releasever - $basearch
-metalink=https://mirrors.fedoraproject.org/metalink?repo=fedora-$releasever&arch=$basearch
-enabled=1
-gpgcheck=0
+    if [[ ! -x "$CONTAINER_PATH/usr/bin/bash" ]]; then
+        log_error "Image export incomplete — /usr/bin/bash missing"
+        rm -rf "$CONTAINER_PATH"
+        exit 1
+    fi
+    log_info "Base system extracted from official image"
 
-[fedora-updates]
-name=Fedora $releasever - $basearch - Updates
-metalink=https://mirrors.fedoraproject.org/metalink?repo=updates-released-f$releasever&arch=$basearch
-enabled=1
-gpgcheck=0
-REPOEOF
-
-    # Install minimal Fedora system
-    dnf --releasever="$FEDORA_VERSION" \
-        --installroot="$CONTAINER_PATH" \
-        --setopt=install_weak_deps=False \
-        --setopt=keepcache=False \
-        --setopt=reposdir= \
-        --config="$TEMP_REPO" \
-        -y install \
-        basesystem \
-        systemd \
-        dnf \
-        passwd \
-        sudo \
-        util-linux
-
-    rm -f "$TEMP_REPO"
+    # The image ships minimal; install systemd and base tooling so it can boot
+    # and so the config steps below (useradd/chpasswd) have their binaries.
+    # Native dnf, native keys — GPG verification works.
+    cp /etc/resolv.conf "$CONTAINER_PATH/etc/resolv.conf" 2>/dev/null || true
+    log_info "Installing systemd and base tooling..."
+    systemd-nspawn --quiet --directory="$CONTAINER_PATH" \
+        dnf -y install systemd sudo passwd shadow-utils util-linux \
+        || log_warn "base package install returned non-zero"
 
     # Set up container
     log_info "Configuring container..."
@@ -121,10 +133,10 @@ REPOEOF
     chroot "$CONTAINER_PATH" /usr/sbin/usermod -aG wheel testuser 2>/dev/null || true
 
     # Install required packages for hardener testing
-    # Use systemd-nspawn for proper /proc /sys mounts that dnf5 requires
+    # Use systemd-nspawn for proper /proc /sys mounts that dnf requires
     log_info "Installing test dependencies..."
     systemd-nspawn --quiet --directory="$CONTAINER_PATH" \
-        dnf5 -y install \
+        dnf -y install \
         openssh-server \
         audit \
         firewalld \
@@ -135,6 +147,7 @@ REPOEOF
         iproute
 
     # Allow sudo without password for testuser (wheel group)
+    mkdir -p "$CONTAINER_PATH/etc/sudoers.d"
     echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > "$CONTAINER_PATH/etc/sudoers.d/wheel-nopasswd"
     chmod 440 "$CONTAINER_PATH/etc/sudoers.d/wheel-nopasswd"
 
@@ -145,7 +158,7 @@ REPOEOF
     mkdir -p "$CONTAINER_PATH/project"
 
     # Clean up dnf cache to save space
-    systemd-nspawn --quiet --directory="$CONTAINER_PATH" dnf5 clean all
+    systemd-nspawn --quiet --directory="$CONTAINER_PATH" dnf clean all 2>/dev/null || true
 
     log_info "Container created successfully!"
     echo ""
@@ -250,6 +263,7 @@ Example workflow:
      sudo ./scripts/create-fedora-container.sh clean
 
 Note: Use the musl static binary for cross-distribution compatibility.
+      Bootstrap pulls ${FEDORA_IMAGE} via podman (needs podman on the host).
 EOF
 }
 

@@ -2,8 +2,10 @@
 # Create an isolated openSUSE container for safe root testing
 # Uses systemd-nspawn for full systemd support
 #
-# This script downloads a pre-built openSUSE image from the official registry
-# which is more reliable than cross-distribution bootstrapping with zypper.
+# Bootstraps by pulling the official openSUSE Leap container image with podman
+# and exporting its root filesystem. Leap 16 dropped the OBS lxc rootfs tarball,
+# and cross-host `zypper --root` bootstrap fails on the filesystem package's
+# usrmerge scriptlet — the prebuilt image runs its scriptlets natively instead.
 #
 # Usage:
 #   ./scripts/create-opensuse-container.sh        # Create container
@@ -15,12 +17,10 @@ set -euo pipefail
 CONTAINER_NAME="hardener-test-opensuse"
 CONTAINER_PATH="/var/lib/machines/${CONTAINER_NAME}"
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-OPENSUSE_VERSION="15.6"
+OPENSUSE_VERSION="16.0"
 
-# Official openSUSE Leap rootfs tarball
-ROOTFS_URL="https://download.opensuse.org/distribution/leap/${OPENSUSE_VERSION}/appliances/openSUSE-Leap-${OPENSUSE_VERSION}-Minimal-VM.x86_64-Cloud.qcow2"
-# Alternative: use the JeOS (Just enough OS) image which is smaller
-JEOS_URL="https://download.opensuse.org/distribution/leap/${OPENSUSE_VERSION}/appliances/"
+# Official openSUSE Leap container image, pulled and exported via podman.
+OPENSUSE_IMAGE="docker.io/opensuse/leap:${OPENSUSE_VERSION}"
 
 # Colours for output
 RED='\033[0;31m'
@@ -47,8 +47,8 @@ check_dependencies() {
         missing+=("systemd-container")
     fi
 
-    if ! command -v curl &>/dev/null; then
-        missing+=("curl")
+    if ! command -v podman &>/dev/null; then
+        missing+=("podman")
     fi
 
     if ! command -v tar &>/dev/null; then
@@ -80,104 +80,47 @@ create_container() {
     fi
 
     log_info "Creating openSUSE Leap ${OPENSUSE_VERSION} container at $CONTAINER_PATH..."
-    log_info "Using machinectl pull-tar for official openSUSE image..."
+    log_info "Pulling official openSUSE Leap image via podman..."
 
-    # Method 1: Try machinectl pull-tar (cleanest approach)
-    # openSUSE provides container images at registry.opensuse.org
-    if machinectl pull-tar --verify=no \
-        "https://download.opensuse.org/repositories/Virtualization:/containers:/images/openSUSE_Leap_${OPENSUSE_VERSION}/opensuse-leap-image.x86_64-lxc.tar.xz" \
-        "$CONTAINER_NAME" 2>/dev/null; then
-        log_info "Downloaded official openSUSE container image"
-    else
-        # Method 2: Manual bootstrap with proper SSL handling
-        log_warn "machinectl pull failed, trying manual bootstrap..."
+    # Pull the official image and export its root filesystem. Scriptlets run
+    # inside the native image at build time, so nothing executes on the host —
+    # this is what makes it work where `zypper --root` from Arch does not.
+    local tmp_container="hardener-opensuse-export-$$"
 
-        mkdir -p "$CONTAINER_PATH"
-
-        # Download and extract the openSUSE-Toolbox image (minimal container-ready image)
-        TOOLBOX_URL="https://registry.opensuse.org/v2/opensuse/leap/blobs/sha256:latest"
-
-        # Alternative: Use debootstrap-like approach with zypper from within a working container
-        # For now, create minimal structure and use zypper with SSL workaround
-
-        log_info "Creating minimal openSUSE structure..."
-
-        # Create basic directory structure
-        mkdir -p "$CONTAINER_PATH"/{bin,boot,dev,etc,home,lib,lib64,mnt,opt,proc,root,run,sbin,srv,sys,tmp,usr,var}
-        mkdir -p "$CONTAINER_PATH"/usr/{bin,lib,lib64,sbin,share}
-        mkdir -p "$CONTAINER_PATH"/var/{cache,lib,log,tmp}
-        mkdir -p "$CONTAINER_PATH"/etc/{zypp,sysconfig}
-
-        # Copy SSL certificates from host (fixes curl error 60)
-        if [[ -d /etc/ssl/certs ]]; then
-            mkdir -p "$CONTAINER_PATH/etc/ssl"
-            cp -a /etc/ssl/certs "$CONTAINER_PATH/etc/ssl/"
-        fi
-        if [[ -f /etc/ssl/cert.pem ]]; then
-            cp /etc/ssl/cert.pem "$CONTAINER_PATH/etc/ssl/"
-        fi
-        if [[ -d /etc/pki ]]; then
-            cp -a /etc/pki "$CONTAINER_PATH/etc/"
-        fi
-        if [[ -d /etc/ca-certificates ]]; then
-            cp -a /etc/ca-certificates "$CONTAINER_PATH/etc/"
-        fi
-
-        # Copy DNS configuration
-        cp /etc/resolv.conf "$CONTAINER_PATH/etc/resolv.conf"
-
-        # Use zypper from host to bootstrap (with SSL certs now available)
-        if command -v zypper &>/dev/null; then
-            log_info "Bootstrapping with zypper..."
-
-            REPO_BASE="https://download.opensuse.org/distribution/leap/${OPENSUSE_VERSION}/repo/oss"
-            REPO_UPDATE="https://download.opensuse.org/update/leap/${OPENSUSE_VERSION}/oss"
-
-            zypper --root "$CONTAINER_PATH" \
-                --gpg-auto-import-keys \
-                --non-interactive \
-                addrepo --refresh "$REPO_BASE" "repo-oss" || true
-
-            zypper --root "$CONTAINER_PATH" \
-                --gpg-auto-import-keys \
-                --non-interactive \
-                addrepo --refresh "$REPO_UPDATE" "repo-update" || true
-
-            zypper --root "$CONTAINER_PATH" \
-                --gpg-auto-import-keys \
-                --non-interactive \
-                refresh || log_warn "Repository refresh had issues, continuing..."
-
-            # Install base packages - zypper may return non-zero due to posttrans warnings
-            # which are harmless, so we check for key files afterward instead
-            zypper --root "$CONTAINER_PATH" \
-                --gpg-auto-import-keys \
-                --non-interactive \
-                install --no-recommends \
-                patterns-base-minimal_base \
-                systemd \
-                zypper \
-                shadow \
-                sudo \
-                util-linux \
-                ca-certificates \
-                ca-certificates-mozilla || log_warn "zypper returned non-zero (may be harmless posttrans warnings)"
-
-            # Verify essential files exist
-            if [[ ! -x "$CONTAINER_PATH/usr/bin/bash" ]] || [[ ! -x "$CONTAINER_PATH/usr/lib/systemd/systemd" ]]; then
-                log_error "zypper bootstrap failed - essential files missing"
-                log_error "Consider using a Fedora or Debian container instead for testing"
-                rm -rf "$CONTAINER_PATH"
-                exit 1
-            fi
-            log_info "Base system installed successfully"
-        else
-            log_error "zypper not available and image download failed"
-            log_error "Install zypper: sudo pacman -S zypper"
-            rm -rf "$CONTAINER_PATH"
-            exit 1
-        fi
+    if ! podman pull "$OPENSUSE_IMAGE"; then
+        log_error "Failed to pull $OPENSUSE_IMAGE"
+        exit 1
     fi
+
+    mkdir -p "$CONTAINER_PATH"
+    log_info "Exporting image root filesystem to $CONTAINER_PATH..."
+    podman create --name "$tmp_container" "$OPENSUSE_IMAGE" >/dev/null
+    if ! podman export "$tmp_container" | tar -x -C "$CONTAINER_PATH"; then
+        podman rm -f "$tmp_container" >/dev/null 2>&1 || true
+        rm -rf "$CONTAINER_PATH"
+        log_error "Failed to export image filesystem"
+        exit 1
+    fi
+    podman rm -f "$tmp_container" >/dev/null 2>&1 || true
+
+    # Sanity: the export must contain a usable base system.
+    if [[ ! -x "$CONTAINER_PATH/usr/bin/bash" ]]; then
+        log_error "Image export incomplete — /usr/bin/bash missing"
+        rm -rf "$CONTAINER_PATH"
+        exit 1
+    fi
+    log_info "Base system extracted from official image"
+
+    # The minimal image ships without systemd; install it plus base tooling so
+    # the container can boot and manage services. Native zypper, native repos.
+    cp /etc/resolv.conf "$CONTAINER_PATH/etc/resolv.conf" 2>/dev/null || true
+    log_info "Installing systemd and base tooling..."
+    systemd-nspawn --quiet --directory="$CONTAINER_PATH" \
+        zypper --gpg-auto-import-keys --non-interactive install --no-recommends \
+        systemd \
+        sudo \
+        shadow \
+        util-linux || log_warn "base package install returned non-zero"
 
     # Set up container
     log_info "Configuring container..."
@@ -348,6 +291,7 @@ Example workflow:
 
 Note: Use the musl static binary for cross-distribution compatibility.
       openSUSE uses firewalld by default, similar to Fedora/RHEL.
+      Bootstrap pulls ${OPENSUSE_IMAGE} via podman (needs podman on the host).
 EOF
 }
 

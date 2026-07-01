@@ -12,7 +12,7 @@ set -euo pipefail
 CONTAINER_NAME="hardener-test-debian"
 CONTAINER_PATH="/var/lib/machines/${CONTAINER_NAME}"
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-DEBIAN_RELEASE="bookworm"  # Debian 12
+DEBIAN_RELEASE="trixie"  # Debian 13
 
 # Colours for output
 RED='\033[0;31m'
@@ -197,7 +197,7 @@ Commands:
   help      Show this help
 
 The container provides:
-  - Debian ${DEBIAN_RELEASE} (Debian 12)
+  - Debian ${DEBIAN_RELEASE} (Debian 13)
   - Full systemd support (for service testing)
   - Pre-installed: openssh-server, auditd, ufw, nftables
   - Project mounted at /project

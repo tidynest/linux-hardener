@@ -1,7 +1,12 @@
 #!/bin/bash
-# Create an isolated Rocky Linux 9 container for safe root testing
+# Create an isolated Rocky Linux 10 container for safe root testing
 # Rocky Linux is a 1:1 binary-compatible RHEL rebuild
 # Uses systemd-nspawn for full systemd support
+#
+# Bootstraps by pulling the official Rocky Linux container image with podman and
+# exporting its root filesystem. Arch's rpm enforces %_pkgverify_level=all,
+# which `dnf --nogpgcheck` cannot override, so a host-dnf bootstrap of a keyless
+# installroot always fails GPG. The image runs its own scriptlets/keys natively.
 #
 # Usage:
 #   ./scripts/create-rhel-container.sh        # Create container
@@ -13,7 +18,10 @@ set -euo pipefail
 CONTAINER_NAME="hardener-test-rhel"
 CONTAINER_PATH="/var/lib/machines/${CONTAINER_NAME}"
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-ROCKY_VERSION="9"
+ROCKY_VERSION="10"
+
+# Official Rocky Linux container image, pulled and exported via podman.
+ROCKY_IMAGE="docker.io/rockylinux/rockylinux:${ROCKY_VERSION}"
 
 # Colours for output
 RED='\033[0;31m'
@@ -36,12 +44,16 @@ check_root() {
 check_dependencies() {
     local missing=()
 
-    if ! command -v dnf &>/dev/null; then
-        missing+=("dnf")
+    if ! command -v podman &>/dev/null; then
+        missing+=("podman")
     fi
 
     if ! command -v systemd-nspawn &>/dev/null; then
         missing+=("systemd-container")
+    fi
+
+    if ! command -v tar &>/dev/null; then
+        missing+=("tar")
     fi
 
     if [[ ${#missing[@]} -gt 0 ]]; then
@@ -69,45 +81,43 @@ create_container() {
     fi
 
     log_info "Creating Rocky Linux ${ROCKY_VERSION} (RHEL-equivalent) container at $CONTAINER_PATH..."
-    log_info "This may take a few minutes..."
+    log_info "Pulling official Rocky Linux image via podman..."
 
-    # Bootstrap Rocky Linux system using dnf
+    # Pull + export the official image. Nothing rpm-related runs on the host, so
+    # the Arch %_pkgverify_level=all policy never applies.
+    local tmp_container="hardener-rhel-export-$$"
+
+    if ! podman pull "$ROCKY_IMAGE"; then
+        log_error "Failed to pull $ROCKY_IMAGE"
+        exit 1
+    fi
+
     mkdir -p "$CONTAINER_PATH"
+    log_info "Exporting image root filesystem to $CONTAINER_PATH..."
+    podman create --name "$tmp_container" "$ROCKY_IMAGE" >/dev/null
+    if ! podman export "$tmp_container" | tar -x -C "$CONTAINER_PATH"; then
+        podman rm -f "$tmp_container" >/dev/null 2>&1 || true
+        rm -rf "$CONTAINER_PATH"
+        log_error "Failed to export image filesystem"
+        exit 1
+    fi
+    podman rm -f "$tmp_container" >/dev/null 2>&1 || true
 
-    # Create temporary repo config for bootstrapping (needed on non-RHEL hosts)
-    TEMP_REPO=$(mktemp)
-    cat > "$TEMP_REPO" << 'REPOEOF'
-[baseos]
-name=Rocky Linux $releasever - BaseOS
-mirrorlist=https://mirrors.rockylinux.org/mirrorlist?arch=$basearch&repo=BaseOS-$releasever
-enabled=1
-gpgcheck=0
+    if [[ ! -x "$CONTAINER_PATH/usr/bin/bash" ]]; then
+        log_error "Image export incomplete — /usr/bin/bash missing"
+        rm -rf "$CONTAINER_PATH"
+        exit 1
+    fi
+    log_info "Base system extracted from official image"
 
-[appstream]
-name=Rocky Linux $releasever - AppStream
-mirrorlist=https://mirrors.rockylinux.org/mirrorlist?arch=$basearch&repo=AppStream-$releasever
-enabled=1
-gpgcheck=0
-REPOEOF
-
-    # Install minimal Rocky Linux system
-    # Note: Rocky 9 uses dnf (not dnf5)
-    dnf --releasever="$ROCKY_VERSION" \
-        --installroot="$CONTAINER_PATH" \
-        --setopt=install_weak_deps=False \
-        --setopt=keepcache=False \
-        --setopt=reposdir= \
-        --config="$TEMP_REPO" \
-        -y install \
-        basesystem \
-        rocky-release \
-        systemd \
-        dnf \
-        passwd \
-        sudo \
-        util-linux
-
-    rm -f "$TEMP_REPO"
+    # The image ships minimal; install systemd and base tooling so it can boot
+    # and so the config steps below (useradd/chpasswd) have their binaries.
+    # Native dnf, native keys — GPG verification works.
+    cp /etc/resolv.conf "$CONTAINER_PATH/etc/resolv.conf" 2>/dev/null || true
+    log_info "Installing systemd and base tooling..."
+    systemd-nspawn --quiet --directory="$CONTAINER_PATH" \
+        dnf -y install systemd sudo passwd shadow-utils util-linux \
+        || log_warn "base package install returned non-zero"
 
     # Set up container
     log_info "Configuring container..."
@@ -138,6 +148,7 @@ REPOEOF
         iproute
 
     # Allow sudo without password for testuser (wheel group)
+    mkdir -p "$CONTAINER_PATH/etc/sudoers.d"
     echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > "$CONTAINER_PATH/etc/sudoers.d/wheel-nopasswd"
     chmod 440 "$CONTAINER_PATH/etc/sudoers.d/wheel-nopasswd"
 
@@ -148,7 +159,7 @@ REPOEOF
     mkdir -p "$CONTAINER_PATH/project"
 
     # Clean up dnf cache to save space
-    systemd-nspawn --quiet --directory="$CONTAINER_PATH" dnf clean all
+    systemd-nspawn --quiet --directory="$CONTAINER_PATH" dnf clean all 2>/dev/null || true
 
     log_info "Container created successfully!"
     echo ""
@@ -169,7 +180,7 @@ enter_container() {
         exit 1
     fi
 
-    log_info "Entering Rocky Linux 9 (RHEL) container (project mounted at /project)..."
+    log_info "Entering Rocky Linux ${ROCKY_VERSION} (RHEL) container (project mounted at /project)..."
     log_info "Exit with 'poweroff' or Ctrl+]]]"
     echo ""
 
@@ -192,7 +203,7 @@ enter_container_shell() {
         exit 1
     fi
 
-    log_info "Opening shell in Rocky Linux 9 (RHEL) container..."
+    log_info "Opening shell in Rocky Linux ${ROCKY_VERSION} (RHEL) container..."
     systemd-nspawn \
         --machine="$CONTAINER_NAME" \
         --directory="$CONTAINER_PATH" \
@@ -224,7 +235,7 @@ clean_container() {
 
 show_help() {
     cat << EOF
-Create an isolated Rocky Linux 9 (RHEL-equivalent) container for safe hardener testing.
+Create an isolated Rocky Linux ${ROCKY_VERSION} (RHEL-equivalent) container for safe hardener testing.
 
 Usage: sudo $0 [command]
 
@@ -254,7 +265,7 @@ Example workflow:
      sudo ./scripts/create-rhel-container.sh clean
 
 Note: Use the musl static binary for cross-distribution compatibility.
-      Build with: cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli
+      Bootstrap pulls ${ROCKY_IMAGE} via podman (needs podman on the host).
 EOF
 }
 
