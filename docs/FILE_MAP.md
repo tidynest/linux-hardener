@@ -563,9 +563,11 @@ pub async fn run_apply(plugin_ids: Vec<String>,
     config_path: Option<String>,) -> Result<Vec<ApplyResult>, String>
 pub async fn run_apply_dry_run(plugin_ids: Vec<String>,
     config_path: Option<String>,) -> Result<Vec<ValidationReport>, String>
-pub async fn run_fleet_apply(hosts: Vec<String>, plugins: Vec<String>,
+pub async fn run_fleet_apply(hosts: Vec<String>,
+    plugins: Vec<String>,
     execute: bool,) -> Result<Vec<ApplyOutcome>, String>
-pub async fn run_fleet_rollback(hosts: Vec<String>, plugins: Vec<String>,
+pub async fn run_fleet_rollback(hosts: Vec<String>,
+    plugins: Vec<String>,
     execute: bool,) -> Result<Vec<RollbackOutcome>, String>
 pub async fn run_fleet_scan(host_names: Vec<String>,
     plugin_ids: Option<Vec<String>>,) -> Result<Vec<FleetHostScan>, String>
@@ -786,4 +788,4 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | `hardener-common/src/types.rs` | Added `FindingPolicyException` struct |
 | `hardener-cli/src/cli.rs` | Added `--config`, `--audit`, `--compliance`, `--exit-code` flags, `ScanMode` enum |
 
-**Last Updated**: 2026-06-24
+**Last Updated**: 2026-06-29

@@ -1,6 +1,6 @@
 # Project Scripts
 
-**Last Updated**: 2026-07-01
+**Last Updated**: 2026-07-02
 
 This directory contains utility scripts for the Linux Hardening Tool project.
 
@@ -747,7 +747,7 @@ Summary: 3 pending updates, 1 manual fix needed
 
 **Supported Date Formats**:
 ```markdown
-**Last Updated**: 2026-06-29
+**Last Updated**: 2026-07-02
 *Last Updated*: 2025-12-06
 Last Updated: 2025-12-06
 ```

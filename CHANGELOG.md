@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-07-02
+
 ### Fixed
 - **Checkpoint rollback could delete files with `0000` permissions.** The
   executor captured a file's mode with the type bits masked off, so a regular
@@ -845,4 +847,4 @@ Configuration file support with layered loading, compliance framework reporting 
 [0.2.0]: https://github.com/tidynest/linux-system-hardener/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tidynest/linux-system-hardener/releases/tag/v0.1.0
 
-**Last Updated**: 2026-07-01
+**Last Updated**: 2026-07-02
