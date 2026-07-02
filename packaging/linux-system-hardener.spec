@@ -1,5 +1,5 @@
 Name:           linux-system-hardener
-Version:        1.2.1
+Version:        1.2.2
 Release:        1%{?dist}
 Summary:        Linux security automation: scanning, hardening, and rollback
 License:        Apache-2.0
@@ -103,6 +103,11 @@ systemctl daemon-reload || true
 %dir %{_libdir}/linux-hardener
 
 %changelog
+* Thu Jul 02 2026 Eric Jingryd <tidynest@proton.me> - 1.2.2-1
+- Fix: checkpoint rollback could delete 0000-permission files (e.g. /etc/shadow, /etc/gshadow)
+- Fix: permissions apply/rollback aborted when account-database paths were not allow-listed
+- Security: accept RUSTSEC-2026-0097 (rand unsound; build-time transitive, first-party key-gen on rand 0.9)
+
 * Tue Jul 01 2026 Eric Jingryd <tidynest@proton.me> - 1.2.1-1
 - Documentation and README version-badge consistency (patch on 1.2.0)
 

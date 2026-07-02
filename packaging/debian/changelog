@@ -1,3 +1,11 @@
+linux-system-hardener (1.2.2-1) unstable; urgency=medium
+
+  * Fix: checkpoint rollback could delete 0000-permission files (e.g. /etc/shadow).
+  * Fix: permissions apply/rollback aborted when account-database paths were not allow-listed.
+  * Security: accept RUSTSEC-2026-0097 (rand unsound; build-time transitive).
+
+ -- Eric Jingryd <tidynest@proton.me>  Thu, 02 Jul 2026 06:30:00 +0000
+
 linux-system-hardener (1.2.1-1) unstable; urgency=low
 
   * Documentation and README version-badge consistency (patch on 1.2.0).
