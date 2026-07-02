@@ -2,11 +2,14 @@
 
 ---
 
-## Current State (as of 2026-07-01)
+## Current State (as of 2026-07-02)
 
-**v1.2.1 released** (2026-07-01) to GitHub, GitLab, and AUR — a docs/badge patch
-on top of v1.2.0. The public version jumped 1.0.5 → 1.2.0 → 1.2.1 (1.1.0 was cut
-in-tree but never published).
+**v1.2.2 released** (2026-07-02) to GitHub + GitLab — a rollback data-loss fix
+(0000-perm files like `/etc/shadow` could be deleted on rollback; account-database
+paths were missing from the rollback allowlist) plus a cross-distro container
+refresh (Debian 13 / Fedora 44 / Rocky 10 / openSUSE Leap 16.0 via podman-export,
+validated 5/5 × 127). Repo packaging + AUR bump to 1.2.2 still pending. Public
+line: 1.0.5 → 1.2.0 → 1.2.1 → 1.2.2 (1.1.0 was cut in-tree but never published).
 
 v1.2.0 shipped: multi-host batch CLI (`batch scan/report/apply/rollback`),
 per-host history/trends/regression detection, scheduler regression alerts,
@@ -319,9 +322,9 @@ See `docs/GUI_CLI_PARITY_PLAN.md` — all 6 phases complete.
 
 - **11 Crates** (10 core + 1 Tauri app)
 - **8 Security Plugins**: Kernel, SSH, Firewall, PAM, Services, Audit, Permissions, MAC
-- **660 Passing Tests**
+- **667 Passing Tests**
 - **Multi-Distribution Support**: Debian, Red Hat, Arch, SUSE families
-- **Current Version**: 1.2.1 (released to GitHub, GitLab, and AUR)
+- **Current Version**: 1.2.2 (code + tag on GitHub, GitLab; packaging/AUR bump pending)
 - **WASM Support**: GUI frontend compiles to `wasm32-unknown-unknown`
 
 For version history and detailed feature tracking, see [ROADMAP.md](ROADMAP.md).
