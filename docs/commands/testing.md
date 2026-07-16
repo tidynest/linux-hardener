@@ -98,6 +98,26 @@ sudo ./scripts/create-opensuse-container.sh
 
 Container name: `hardener-test-opensuse`
 
+### SSH integration fixture (booted container)
+
+The suites above run containers via `nspawn --pipe` (no network, no sshd). The
+`#[ignore]` SSH integration tests need a *booted* container with networking and
+an authorised key instead — the SSH executor is key/agent-auth only, so the
+containers' root password is not usable:
+
+```bash
+sudo ./scripts/boot-ssh-test-container.sh            # boot hardener-test with --network-veth, inject test key
+# then, using the env exports the script prints:
+export SSH_TEST_HOST=<addr> SSH_TEST_USER=root SSH_TEST_PORT=22 SSH_TEST_KEY=~/.ssh/hardener_test_ed25519
+ssh-add "$SSH_TEST_KEY"
+cargo test -p hardener-core --test ssh_executor_tests -- --ignored      # executor primitives
+cargo test -p hardener-cli --test batch_ssh_integration -- --ignored    # batch scan/report/apply/rollback end-to-end
+sudo machinectl stop hardener-test                   # tear down
+```
+
+The batch tests are read-only against the fixture (scan/report scan; apply and
+rollback run as dry-runs). Without `SSH_TEST_HOST` they skip.
+
 ---
 
 ## Root Test Suites (Inside Containers)

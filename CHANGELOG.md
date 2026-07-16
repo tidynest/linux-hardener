@@ -7,7 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- End-to-end integration tests for `batch scan/report/apply/rollback` against
+  a live sshd (`#[ignore]`, `SSH_TEST_HOST` convention), closing the gap where
+  a *successful* SSH connection was never exercised by the suite, plus a
+  `boot-ssh-test-container.sh` fixture that boots a test container with
+  networking and an authorised test key.
+
 ### Fixed
+- The SSH executor's remote `write_file` no longer appends a spurious
+  trailing newline to newline-terminated content, so files written over
+  `--ssh` (apply, checkpoint restore) round-trip byte-exact instead of
+  growing by one newline per write. Caught by the new live-sshd
+  integration tests.
 - Scan-history findings are now persisted with the official display strings
   for severity and category (`CRITICAL`, `File System`) instead of Rust
   variant names (`Critical`, `FileSystem`). Existing rows are unaffected:
