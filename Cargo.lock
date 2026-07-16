@@ -2148,6 +2148,7 @@ dependencies = [
  "clap",
  "hardener-common",
  "hardener-core",
+ "hardener-plugins",
  "hardener-types",
  "krilla",
  "serde",

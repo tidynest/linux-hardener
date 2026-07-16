@@ -16,6 +16,11 @@ serde_json = { workspace = true }
 # PDF generation is native-only (not WASM compatible)
 krilla = { version = "0.5.0", optional = true }
 
+[dev-dependencies]
+# Test-only, no cycle: hardener-plugins depends on common/core alone, never on
+# this crate. Lets the profile tables be pinned against the live coverage set.
+hardener-plugins = { workspace = true }
+
 [features]
 default = ["pdf"]
 pdf = ["krilla"]
