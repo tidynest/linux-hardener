@@ -186,12 +186,12 @@ pub(crate) fn finding_to_scan_finding(meta: &PluginMetadata, finding: &Finding) 
     ScanFinding {
         plugin_id: meta.plugin_id.to_string(),
         finding_id: finding.finding_id.clone(),
-        severity: format!("{:?}", finding.finding_severity),
+        severity: finding.finding_severity.to_string(),
         title: finding.finding_title.clone(),
         description: Some(finding.finding_description.clone()),
         current_value: Some(finding.finding_current_value.clone()),
         recommended_value: Some(finding.finding_recommended_value.clone()),
-        category: Some(format!("{:?}", finding.finding_category)),
+        category: Some(finding.finding_category.to_string()),
         compliance_mappings: if finding.finding_compliance.is_empty() {
             None
         } else {
@@ -265,8 +265,46 @@ fn parse_framework(s: &str) -> Result<ComplianceFramework> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hardener_common::types::{FindingCategory, PluginId, Severity};
     use hardener_core::MockExecutor;
     use std::sync::Arc;
+
+    #[test]
+    fn finding_to_scan_finding_uses_display_strings() {
+        let meta = PluginMetadata {
+            plugin_category: FindingCategory::FileSystem,
+            plugin_description: "test".to_string(),
+            plugin_id: PluginId::new("test-plugin"),
+            plugin_name: "Test".to_string(),
+            plugin_version: "0.0.0".to_string(),
+        };
+        let finding = Finding {
+            finding_id: "TEST-001".to_string(),
+            finding_category: FindingCategory::FileSystem,
+            finding_severity: Severity::Critical,
+            finding_title: "title".to_string(),
+            finding_description: "description".to_string(),
+            finding_explanation: "explanation".to_string(),
+            finding_impact: "impact".to_string(),
+            finding_current_value: "current".to_string(),
+            finding_recommended_value: "recommended".to_string(),
+            finding_remediation_steps: vec![],
+            finding_compliance: vec![],
+            finding_policy_exception: None,
+        };
+
+        let row = finding_to_scan_finding(&meta, &finding);
+
+        assert_eq!(
+            row.severity, "CRITICAL",
+            "severity must persist via Display, not Debug"
+        );
+        assert_eq!(
+            row.category.as_deref(),
+            Some("File System"),
+            "category must persist via Display, not Debug"
+        );
+    }
 
     #[tokio::test]
     async fn scan_grouped_keeps_plugin_grouping_and_run_scan_flattens() {
