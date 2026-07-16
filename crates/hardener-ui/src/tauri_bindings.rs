@@ -10,12 +10,61 @@ use crate::types::{
 };
 use hardener_types::ValidationReport;
 use hardener_types::remote::{RemoteConnectionStatus, RemoteHostProfile};
+use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"], js_name = invoke, catch)]
     async fn tauri_invoke(cmd: &str, args: JsValue) -> Result<JsValue, JsValue>;
+
+    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "event"], js_name = listen, catch)]
+    async fn tauri_event_listen(
+        event: &str,
+        handler: &js_sys::Function,
+    ) -> Result<JsValue, JsValue>;
+}
+
+/// Active Tauri event subscription. Dropping it unsubscribes and releases the
+/// handler closure — hold it for as long as events should be received.
+pub struct EventSubscription {
+    unlisten: js_sys::Function,
+    _handler: Closure<dyn FnMut(JsValue)>,
+}
+
+impl Drop for EventSubscription {
+    fn drop(&mut self) {
+        let _ = self.unlisten.call0(&JsValue::NULL);
+    }
+}
+
+/// Subscribes to a Tauri event, deserialising each event's `payload` into `T`
+/// and passing it to `on_event`. Errors in browser mode (no Tauri runtime) —
+/// callers treat live updates as best-effort and fall back gracefully.
+pub async fn listen_event<T, F>(event: &str, mut on_event: F) -> Result<EventSubscription, String>
+where
+    T: serde::de::DeserializeOwned,
+    F: FnMut(T) + 'static,
+{
+    if !tauri_available() {
+        return Err("Tauri not available (running in browser mode)".to_string());
+    }
+    let handler = Closure::wrap(Box::new(move |raw: JsValue| {
+        let payload = js_sys::Reflect::get(&raw, &JsValue::from_str("payload")).unwrap_or(raw);
+        if let Ok(value) = serde_wasm_bindgen::from_value::<T>(payload) {
+            on_event(value);
+        }
+    }) as Box<dyn FnMut(JsValue)>);
+    let unlisten = tauri_event_listen(event, handler.as_ref().unchecked_ref())
+        .await
+        .map_err(|e| format!("Failed to listen for {event}: {e:?}"))?;
+    let unlisten: js_sys::Function = unlisten
+        .dyn_into()
+        .map_err(|_| format!("listen({event}) did not return an unlisten function"))?;
+    Ok(EventSubscription {
+        unlisten,
+        _handler: handler,
+    })
 }
 
 /// Check if Tauri runtime is available (running in desktop app vs browser).
