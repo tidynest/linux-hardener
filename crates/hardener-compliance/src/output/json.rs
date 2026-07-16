@@ -91,12 +91,13 @@ mod tests {
     use super::*;
     use crate::report::{ComplianceReport, ComplianceSummary, ControlResult};
     use chrono::Utc;
-    use hardener_common::types::{ComplianceFramework, ControlStatus};
+    use hardener_common::types::{ComplianceFramework, ComplianceProfile, ControlStatus};
 
     #[test]
     fn test_json_formatter_basic() {
         let report = ComplianceReport {
             report_framework: ComplianceFramework::CIS,
+            report_profile: ComplianceProfile::default(),
             report_generated_at: Utc::now(),
             report_controls: vec![ControlResult {
                 control_id: "1.5.1".to_string(),
@@ -131,6 +132,7 @@ mod tests {
     fn test_json_formatter_pretty() {
         let report = ComplianceReport {
             report_framework: ComplianceFramework::CIS,
+            report_profile: ComplianceProfile::default(),
             report_generated_at: Utc::now(),
             report_controls: vec![],
             report_summary: ComplianceSummary {

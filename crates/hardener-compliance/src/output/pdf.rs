@@ -625,12 +625,13 @@ mod tests {
     use super::*;
     use crate::report::{ComplianceReport, ComplianceSummary, ControlResult};
     use chrono::Utc;
-    use hardener_common::types::ComplianceFramework;
+    use hardener_common::types::{ComplianceFramework, ComplianceProfile};
 
     #[test]
     fn test_pdf_formatter_creates_output() {
         let report = ComplianceReport {
             report_framework: ComplianceFramework::CIS,
+            report_profile: ComplianceProfile::default(),
             report_generated_at: Utc::now(),
             report_controls: vec![
                 ControlResult {

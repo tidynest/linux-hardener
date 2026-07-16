@@ -1,6 +1,6 @@
 use chrono::Utc;
 use hardener_compliance::{ComplianceReport, ComplianceSummary, ControlResult};
-use hardener_types::{ComplianceFramework, ControlStatus};
+use hardener_types::{ComplianceFramework, ComplianceProfile, ControlStatus};
 
 fn make_control(id: &str, status: ControlStatus) -> ControlResult {
     ControlResult {
@@ -122,6 +122,7 @@ fn test_summary_from_controls_all_na() {
 fn test_compliance_report_serialization() {
     let report = ComplianceReport {
         report_framework: ComplianceFramework::CIS,
+        report_profile: ComplianceProfile::default(),
         report_generated_at: Utc::now(),
         report_controls: vec![make_control("1.1", ControlStatus::Pass)],
         report_summary: ComplianceSummary {

@@ -7,7 +7,9 @@ use crate::config::ReportConfig;
 use crate::frameworks;
 use crate::report::{ComplianceReport, ComplianceSummary, ControlResult};
 use chrono::Utc;
-use hardener_common::types::{ComplianceFramework, ComplianceMapping, ControlStatus};
+use hardener_common::types::{
+    ComplianceFramework, ComplianceMapping, ComplianceProfile, ControlStatus,
+};
 use hardener_core::plugin::Finding;
 use std::collections::HashSet;
 
@@ -132,6 +134,7 @@ impl ReportGenerator {
 
         ComplianceReport {
             report_framework: *framework,
+            report_profile: ComplianceProfile::default(),
             report_generated_at: Utc::now(),
             report_controls: controls,
             report_summary: summary,

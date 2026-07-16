@@ -6,6 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::str::FromStr;
 
 // Re-export chrono types used in reports
 pub use chrono::{DateTime, Utc};
@@ -178,6 +179,40 @@ impl ComplianceFramework {
                 "Defense Information Systems Agency Security Technical Implementation Guides"
             }
             ComplianceFramework::GDPR => "European Union General Data Protection Regulation",
+        }
+    }
+}
+
+/// OS-specific compliance profile selecting which control identifiers a report renders.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ComplianceProfile {
+    /// Canonical plugin identifiers (RHEL 8 baseline for STIG).
+    #[default]
+    Generic,
+    /// DISA RHEL 10 STIG V1R1 / CIS RHEL 10 identifiers.
+    Rhel10,
+}
+
+impl fmt::Display for ComplianceProfile {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ComplianceProfile::Generic => write!(f, "generic"),
+            ComplianceProfile::Rhel10 => write!(f, "rhel10"),
+        }
+    }
+}
+
+impl FromStr for ComplianceProfile {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "generic" => Ok(ComplianceProfile::Generic),
+            "rhel10" | "rhel-10" => Ok(ComplianceProfile::Rhel10),
+            _ => Err(format!(
+                "Unknown profile '{s}'. Valid options: generic, rhel10"
+            )),
         }
     }
 }
@@ -440,6 +475,9 @@ pub struct ValidationIssue {
 pub struct ComplianceReport {
     /// The compliance framework this report covers.
     pub report_framework: ComplianceFramework,
+    /// The profile whose control identifiers this report renders.
+    #[serde(default)]
+    pub report_profile: ComplianceProfile,
     /// When this report was generated.
     pub report_generated_at: DateTime<Utc>,
     /// Individual control check results.
@@ -718,5 +756,57 @@ mod fleet_tests {
         assert_eq!(t.medium, 0);
         assert_eq!(t.low, 1);
         assert_eq!(t.info, 1);
+    }
+}
+
+#[cfg(test)]
+mod compliance_profile_tests {
+    use super::*;
+
+    #[test]
+    fn profile_serde_round_trips_both_variants() {
+        for (profile, json) in [
+            (ComplianceProfile::Generic, "\"generic\""),
+            (ComplianceProfile::Rhel10, "\"rhel10\""),
+        ] {
+            assert_eq!(serde_json::to_string(&profile).unwrap(), json);
+            let back: ComplianceProfile = serde_json::from_str(json).unwrap();
+            assert_eq!(back, profile);
+        }
+    }
+
+    #[test]
+    fn profile_defaults_to_generic() {
+        assert_eq!(ComplianceProfile::default(), ComplianceProfile::Generic);
+    }
+
+    #[test]
+    fn profile_displays_as_lowercase() {
+        assert_eq!(ComplianceProfile::Generic.to_string(), "generic");
+        assert_eq!(ComplianceProfile::Rhel10.to_string(), "rhel10");
+    }
+
+    #[test]
+    fn profile_parses_case_insensitively_with_alias() {
+        assert_eq!(
+            "Generic".parse::<ComplianceProfile>().unwrap(),
+            ComplianceProfile::Generic
+        );
+        assert_eq!(
+            "rhel10".parse::<ComplianceProfile>().unwrap(),
+            ComplianceProfile::Rhel10
+        );
+        assert_eq!(
+            "RHEL-10".parse::<ComplianceProfile>().unwrap(),
+            ComplianceProfile::Rhel10
+        );
+    }
+
+    #[test]
+    fn profile_parse_error_lists_valid_values() {
+        let err = "centos".parse::<ComplianceProfile>().unwrap_err();
+        assert!(err.contains("centos"));
+        assert!(err.contains("generic"));
+        assert!(err.contains("rhel10"));
     }
 }
