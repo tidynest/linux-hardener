@@ -2,7 +2,10 @@
 //!
 //! Provides centralised registration and retrieval of security hardening plugins.
 
-use hardener_common::{error::Result, types::PluginId};
+use hardener_common::{
+    error::{HardeningError, Result},
+    types::PluginId,
+};
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
@@ -12,6 +15,11 @@ use crate::plugin::{HardeningPlugin, PluginMetadata};
 
 /// Type alias for a thread-safe collection of registered plugins.
 type PluginMap = Arc<RwLock<HashMap<PluginId, Arc<dyn HardeningPlugin>>>>;
+
+/// Builds the error reported when a registry lock is poisoned.
+fn lock_error(kind: &str, e: impl std::fmt::Display) -> HardeningError {
+    HardeningError::Plugin(format!("Failed to acquire {kind} lock: {e}"))
+}
 
 /// Registry for managing hardening plugins.
 ///
@@ -33,11 +41,7 @@ impl PluginRegistry {
     fn read_plugins(
         &self,
     ) -> Result<std::sync::RwLockReadGuard<'_, HashMap<PluginId, Arc<dyn HardeningPlugin>>>> {
-        self.plugins.read().map_err(|e| {
-            hardener_common::error::HardeningError::Plugin(format!(
-                "Failed to acquire read lock: {e}"
-            ))
-        })
+        self.plugins.read().map_err(|e| lock_error("read", e))
     }
 
     /// Registers a new plugin in the registry.
@@ -48,16 +52,10 @@ impl PluginRegistry {
     pub fn register(&self, plugin: Box<dyn HardeningPlugin>) -> Result<()> {
         let plugin_id = plugin.metadata().plugin_id;
 
-        let mut plugins = self.plugins.write().map_err(|e| {
-            hardener_common::error::HardeningError::Plugin(format!(
-                "Failed to acquire write lock: {}",
-                e
-            ))
-        })?;
+        let mut plugins = self.plugins.write().map_err(|e| lock_error("write", e))?;
         if plugins.contains_key(&plugin_id) {
-            return Err(hardener_common::error::HardeningError::Plugin(format!(
-                "Plugin '{}' is already registered",
-                plugin_id
+            return Err(HardeningError::Plugin(format!(
+                "Plugin '{plugin_id}' is already registered"
             )));
         }
 
