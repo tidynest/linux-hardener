@@ -17,7 +17,7 @@ use std::{
 /// Execution context provided to plugins.
 ///
 /// Contains system information, state management for rollback,
-/// audit logging, and shared data between plugins.
+/// and audit logging.
 pub struct Context {
     /// Audit log for tracking all operations.
     audit_log: Arc<RwLock<Vec<PluginAuditEntry>>>,
@@ -25,9 +25,6 @@ pub struct Context {
     audit_logger: Option<Arc<AuditLogger>>,
     /// Checkpoint manager for creating and restoring system state snapshots.
     checkpoint_manager: Option<Arc<CheckpointManager>>,
-    /// Shared data that plugins can use to communicate
-    #[allow(dead_code)]
-    shared_data: Arc<RwLock<HashMap<String, String>>>,
     /// Information about the current system.
     system_info: SystemInfo,
     /// System executor for file and command operations.
@@ -232,7 +229,6 @@ impl Context {
             audit_log: Arc::new(RwLock::new(Vec::new())),
             audit_logger: None,
             checkpoint_manager: None,
-            shared_data: Arc::new(RwLock::new(HashMap::new())),
             system_info: SystemInfo::detect().unwrap_or_else(|_| SystemInfo {
                 system_architecture: "Unknown".to_string(),
                 system_distribution: "Unknown".to_string(),
