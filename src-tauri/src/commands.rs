@@ -17,7 +17,7 @@ use hardener_types::{
     ApplyOutcome, ConfigSummary, FleetFrameworkPosture, FleetHostScan, FleetHostStatus,
     RollbackOutcome, SeverityTallies,
     remote::{
-        FLEET_PROGRESS_EVENT, FleetProgress, HostsConfig, RemoteConnectionInfo,
+        FLEET_PROGRESS_EVENT, FleetProgress, HostSessionInfo, HostsConfig, RemoteConnectionInfo,
         RemoteConnectionStatus, RemoteHostProfile,
     },
 };
@@ -1728,6 +1728,101 @@ pub async fn pick_config_file(app: tauri::AppHandle) -> Result<Option<String>, S
 }
 
 // ---------------------------------------------------------------------------
+// Per-host history (scheduler database)
+// ---------------------------------------------------------------------------
+
+/// Resolves the scheduler history database path: the `[scheduler]` section of
+/// the hardener config when present, else the scheduler default. Matches the
+/// CLI's resolution so the GUI reads the history `batch scan` writes.
+fn scheduler_db_path() -> Result<std::path::PathBuf, String> {
+    #[derive(serde::Deserialize)]
+    struct ConfigFile {
+        #[serde(default)]
+        scheduler: hardener_scheduler::SchedulerConfig,
+    }
+
+    let path = hardener_config_path()?;
+    if path.exists()
+        && let Ok(content) = std::fs::read_to_string(&path)
+        && let Ok(config) = toml::from_str::<ConfigFile>(&content)
+    {
+        return Ok(config.scheduler.storage.database_path);
+    }
+    Ok(hardener_scheduler::SchedulerConfig::default()
+        .storage
+        .database_path)
+}
+
+/// Maps newest-first completed sessions to display rows, each carrying a
+/// severity-priority direction against the next-older scan. `take` bounds the
+/// rows returned; the slice may hold one extra session so the oldest shown row
+/// still gets a direction.
+fn sessions_to_info(
+    sessions: &[hardener_scheduler::db::ScanSession],
+    take: usize,
+) -> Vec<HostSessionInfo> {
+    use hardener_scheduler::db::is_worse;
+
+    sessions
+        .iter()
+        .take(take)
+        .enumerate()
+        .map(|(i, s)| {
+            let direction = sessions.get(i + 1).map(|prev| {
+                if is_worse(prev.severity_tuple(), s.severity_tuple()) {
+                    "worse"
+                } else if is_worse(s.severity_tuple(), prev.severity_tuple()) {
+                    "better"
+                } else {
+                    "same"
+                }
+                .to_string()
+            });
+            HostSessionInfo {
+                started: s
+                    .started_at_utc()
+                    .with_timezone(&chrono::Local)
+                    .format("%Y-%m-%d %H:%M")
+                    .to_string(),
+                status: s.status.clone(),
+                total_findings: s.total_findings,
+                critical: s.critical_count,
+                high: s.high_count,
+                medium: s.medium_count,
+                low: s.low_count,
+                info: s.info_count,
+                direction,
+            }
+        })
+        .collect()
+}
+
+/// Per-host scan history from the scheduler database. Written by `batch scan`
+/// and scheduled scans — GUI fleet scans are in-memory and do not persist
+/// here. `host` is the inventory name or the canonical ad-hoc target.
+#[tauri::command]
+pub async fn get_host_history(
+    host: String,
+    limit: Option<u32>,
+) -> Result<Vec<HostSessionInfo>, String> {
+    validate_ipc_string(&host, "host")?;
+    let take = limit.unwrap_or(10).min(100);
+
+    let db = hardener_scheduler::ScanHistoryManager::new(&scheduler_db_path()?)
+        .await
+        .map_err(safe_err)?;
+    let filter = hardener_scheduler::db::SessionFilter {
+        host: Some(host),
+        status: Some("completed".to_string()),
+        // One extra row so the oldest displayed scan still gets a direction.
+        limit: Some(take + 1),
+        ..Default::default()
+    };
+    let sessions = db.list_sessions(&filter).await.map_err(safe_err)?;
+    Ok(sessions_to_info(&sessions, take as usize))
+}
+
+// ---------------------------------------------------------------------------
 // Fleet apply / rollback
 // ---------------------------------------------------------------------------
 
@@ -1949,6 +2044,58 @@ mod fleet_tests {
                 "json"
             ]
         );
+    }
+
+    // The scheduler's session row — distinct from hardener_state::ScanSession.
+    fn session(
+        started_at: i64,
+        counts: (i32, i32, i32, i32, i32),
+    ) -> hardener_scheduler::db::ScanSession {
+        hardener_scheduler::db::ScanSession {
+            id: format!("s{started_at}"),
+            started_at,
+            completed_at: Some(started_at + 60),
+            status: "completed".to_string(),
+            trigger_type: "batch".to_string(),
+            host_identifier: "web-1".to_string(),
+            plugins_scanned: "[]".to_string(),
+            total_findings: counts.0 + counts.1 + counts.2 + counts.3 + counts.4,
+            critical_count: counts.0,
+            high_count: counts.1,
+            medium_count: counts.2,
+            low_count: counts.3,
+            info_count: counts.4,
+            error_message: None,
+            json_file_path: None,
+            hash: None,
+        }
+    }
+
+    #[test]
+    fn sessions_to_info_directions_follow_severity_priority() {
+        // Newest-first: latest gained a critical (worse), the middle improved
+        // on the oldest (better), the oldest has no comparator.
+        let sessions = vec![
+            session(300, (1, 0, 0, 0, 0)),
+            session(200, (0, 1, 0, 0, 0)),
+            session(100, (0, 2, 0, 0, 0)),
+        ];
+        let rows = sessions_to_info(&sessions, 3);
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].direction.as_deref(), Some("worse"));
+        assert_eq!(rows[1].direction.as_deref(), Some("better"));
+        assert_eq!(rows[2].direction, None, "oldest scan has no comparator");
+        assert_eq!(rows[0].critical, 1);
+    }
+
+    #[test]
+    fn sessions_to_info_take_bounds_rows_but_keeps_last_direction() {
+        // The +1 over-fetch: two sessions, take 1 — the single shown row still
+        // gets its direction from the older, hidden session.
+        let sessions = vec![session(200, (0, 0, 1, 0, 0)), session(100, (0, 0, 1, 0, 0))];
+        let rows = sessions_to_info(&sessions, 1);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].direction.as_deref(), Some("same"));
     }
 
     #[test]
