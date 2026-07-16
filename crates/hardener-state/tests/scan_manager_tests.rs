@@ -9,23 +9,9 @@ async fn create_test_manager() -> (ScanHistoryManager, tempfile::TempDir) {
     (ScanHistoryManager::new(pool), dir)
 }
 
-#[tokio::test]
-async fn test_start_session() {
-    let (manager, _dir) = create_test_manager().await;
-
-    let session_id = manager.start_session().await.unwrap();
-    assert!(session_id.as_str().starts_with("scan_"));
-}
-
-#[tokio::test]
-async fn test_store_and_retrieve_results() {
-    let (manager, _dir) = create_test_manager().await;
-
-    // Start a session
-    let session_id = manager.start_session().await.unwrap();
-
-    // Create test results
-    let results = vec![ScanResult {
+/// One successful plugin result holding a single finding.
+fn sample_results() -> Vec<ScanResult> {
+    vec![ScanResult {
         scan_plugin_id: PluginId::new("test_plugin"),
         scan_success: true,
         scan_findings: vec![Finding {
@@ -44,7 +30,26 @@ async fn test_store_and_retrieve_results() {
         }],
         scan_duration_us: 1000,
         scan_error: None,
-    }];
+    }]
+}
+
+#[tokio::test]
+async fn test_start_session() {
+    let (manager, _dir) = create_test_manager().await;
+
+    let session_id = manager.start_session().await.unwrap();
+    assert!(session_id.as_str().starts_with("scan_"));
+}
+
+#[tokio::test]
+async fn test_store_and_retrieve_results() {
+    let (manager, _dir) = create_test_manager().await;
+
+    // Start a session
+    let session_id = manager.start_session().await.unwrap();
+
+    // Create test results
+    let results = sample_results();
 
     // Store results
     manager.store_results(&session_id, &results).await.unwrap();
@@ -101,4 +106,36 @@ async fn test_cleanup_old_sessions() {
 
     let remaining = manager.list_sessions(10).await.unwrap();
     assert_eq!(remaining.len(), 2);
+}
+
+#[tokio::test]
+async fn test_corrupted_policy_exception_json_surfaces_error() {
+    let dir = tempdir().unwrap();
+    let db_path = dir.path().join("test.db");
+    let pool = init_db(Some(&db_path)).await.unwrap();
+    let manager = ScanHistoryManager::new(pool.clone());
+
+    let session_id = manager.start_session().await.unwrap();
+    manager
+        .store_results(&session_id, &sample_results())
+        .await
+        .unwrap();
+    manager
+        .complete_session(&session_id, ScanStatus::Completed, 1, 1)
+        .await
+        .unwrap();
+
+    // Corrupt the stored row behind the manager's back.
+    sqlx::query("UPDATE scan_findings SET policy_exception = 'not json'")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let Err(err) = manager.get_latest_scan().await else {
+        panic!("corrupted policy_exception JSON must surface an error");
+    };
+    assert!(
+        err.to_string().contains("Corrupted policy_exception"),
+        "error names the corrupted column: {err}"
+    );
 }

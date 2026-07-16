@@ -256,7 +256,14 @@ impl ScanHistoryManager {
 
             let policy_exception: Option<FindingPolicyException> = row
                 .get::<Option<String>, _>("policy_exception")
-                .and_then(|s| serde_json::from_str(&s).ok());
+                .map(|s| {
+                    serde_json::from_str(&s).map_err(|e| {
+                        HardeningError::Database(format!(
+                            "Corrupted policy_exception JSON for result {result_id}: {e}"
+                        ))
+                    })
+                })
+                .transpose()?;
 
             findings.push(Finding {
                 finding_id: row.get("finding_id"),
