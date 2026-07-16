@@ -211,7 +211,10 @@ failure is isolated. Deferred follow-ups: ~~fleet apply/rollback in the GUI~~
 both fleet pages, dry-run gate keys on the ad-hoc set), ~~live per-host
 progress~~ (shipped 2026-07-16 — `fleet-progress` Tauri event per completed
 host, `listen_event` binding + pending/finished/failed list on the Fleet page),
-per-host history persistence from the GUI. Emergency
+~~per-host history in the GUI~~ (shipped 2026-07-16 — `get_host_history` over
+the scheduler db, history table + trend arrows in the fleet row expander; GUI
+fleet scans remain in-memory, CLI batch/scheduled scans populate the history).
+All Fleet follow-ups are now shipped. Emergency
 per-host rollback remains available via `sudo hardener --ssh <host> rollback`.
 Per-host CIS score columns plus a per-framework breakdown in the row expander
 shipped 2026-06-24.

@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Per-host scan history in the desktop fleet view: expanding a host row now
+  shows its persisted sessions (from the scheduler database that `batch scan`
+  and scheduled scans write) with severity counts and a better/worse/same
+  trend per scan. Ad-hoc targets are stored in their canonical
+  `user@host:port` form so the GUI's display names match the CLI's history
+  keys.
 - Live per-host progress during desktop fleet scans: the Fleet page now
   shows each host as pending/finished/failed with an n-of-total counter
   while the scan runs, driven by a `fleet-progress` Tauri event emitted as
