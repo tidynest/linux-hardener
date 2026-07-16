@@ -62,6 +62,15 @@ impl RemoteHostProfile {
             host_key_checking,
         }
     }
+
+    /// Canonical `user@host:port` (or `host:port`) target string. This is the
+    /// batch history key for ad-hoc hosts, so the GUI and CLI agree on it.
+    pub fn target(&self) -> String {
+        match &self.user {
+            Some(user) => format!("{}@{}:{}", user, self.hostname, self.port),
+            None => format!("{}:{}", self.hostname, self.port),
+        }
+    }
 }
 
 /// TOML file structure for saved host profiles.
@@ -86,6 +95,23 @@ pub struct RemoteConnectionInfo {
     pub profile_name: String,
     pub host: String,
     pub user: String,
+}
+
+/// One persisted scan session for a host's history expander. `started` is a
+/// display-ready local datetime; `direction` compares against the next-older
+/// scan by severity priority (`"better"` / `"worse"` / `"same"`), absent for
+/// the oldest known scan.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct HostSessionInfo {
+    pub started: String,
+    pub status: String,
+    pub total_findings: i32,
+    pub critical: i32,
+    pub high: i32,
+    pub medium: i32,
+    pub low: i32,
+    pub info: i32,
+    pub direction: Option<String>,
 }
 
 /// Tauri event name carrying [`FleetProgress`] payloads during a fleet scan.
@@ -126,6 +152,14 @@ mod tests {
         assert_eq!(p.port, 2200, "caller default port applies without :suffix");
         assert_eq!(p.key_file.as_deref(), Some("/k"));
         assert!(!p.host_key_checking);
+    }
+
+    #[test]
+    fn target_formats_with_and_without_user() {
+        let with_user = RemoteHostProfile::from_target("admin@web-01:2222", 22, None, true);
+        assert_eq!(with_user.target(), "admin@web-01:2222");
+        let bare = RemoteHostProfile::from_target("web-01", 22, None, true);
+        assert_eq!(bare.target(), "web-01:22", "defaults are made explicit");
     }
 
     #[test]

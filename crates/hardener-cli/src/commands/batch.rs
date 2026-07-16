@@ -495,12 +495,10 @@ fn host_ssh_config(p: &RemoteHostProfile, timeout: u64) -> hardener_core::SshCon
     .to_core_config()
 }
 
-/// Builds the `user@host:port` display string for a profile.
+/// Builds the `user@host:port` display string for a profile. Delegates to the
+/// shared canonical form so the GUI's history keys match the CLI's.
 fn display_target(p: &RemoteHostProfile) -> String {
-    match &p.user {
-        Some(user) => format!("{}@{}:{}", user, p.hostname, p.port),
-        None => format!("{}:{}", p.hostname, p.port),
-    }
+    p.target()
 }
 
 /// Opens the shared history database for batch persistence. Best-effort: on any
