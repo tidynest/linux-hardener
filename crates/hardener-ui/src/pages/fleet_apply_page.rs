@@ -2,22 +2,26 @@
 
 use std::collections::HashSet;
 
-/// Deterministic key for a (mode, hosts, plugins) selection. Sorting makes the
-/// key insertion-order independent, so the Execute gate compares like with like:
-/// Execute is allowed only when the current selection key equals the previewed one.
+/// Deterministic key for a (mode, hosts, ad-hoc targets, plugins) selection.
+/// Sorting makes the key insertion-order independent, so the Execute gate
+/// compares like with like: Execute is allowed only when the current selection
+/// key equals the previewed one.
 fn selection_key(
     mode: &str,
     hosts: &HashSet<String>,
+    adhoc: &[String],
     plugins: &HashSet<String>,
-) -> (String, Vec<String>, Vec<String>) {
+) -> SelKey {
     let mut h: Vec<String> = hosts.iter().cloned().collect();
+    let mut a: Vec<String> = adhoc.to_vec();
     let mut p: Vec<String> = plugins.iter().cloned().collect();
     h.sort();
+    a.sort();
     p.sort();
-    (mode.to_string(), h, p)
+    (mode.to_string(), h, a, p)
 }
 
-use crate::components::Card;
+use crate::components::{AdhocHostInput, Card};
 use crate::tauri_bindings::{
     invoke_fleet_apply, invoke_fleet_rollback, invoke_list_plugins, invoke_list_remote_hosts,
 };
@@ -26,7 +30,7 @@ use hardener_types::remote::RemoteHostProfile;
 use hardener_types::{ApplyStatus, RollbackStatus};
 use leptos::prelude::*;
 
-type SelKey = (String, Vec<String>, Vec<String>);
+type SelKey = (String, Vec<String>, Vec<String>, Vec<String>);
 
 /// Mutating fleet page: apply or roll back across saved hosts. Execute is gated
 /// behind a mandatory dry-run for the exact current selection + a confirm modal.
@@ -36,6 +40,7 @@ pub fn FleetApplyPage() -> impl IntoView {
     let hosts = RwSignal::new(Vec::<RemoteHostProfile>::new());
     let plugins = RwSignal::new(Vec::<PluginMetadata>::new());
     let sel_hosts = RwSignal::new(HashSet::<String>::new());
+    let adhoc = RwSignal::new(Vec::<String>::new());
     let sel_plugins = RwSignal::new(HashSet::<String>::new()); // empty = all
     let preview_apply = RwSignal::new(Vec::<ApplyOutcome>::new());
     let preview_rollback = RwSignal::new(Vec::<RollbackOutcome>::new());
@@ -56,7 +61,14 @@ pub fn FleetApplyPage() -> impl IntoView {
         }
     });
 
-    let current_key = move || selection_key(&mode.get(), &sel_hosts.get(), &sel_plugins.get());
+    let current_key = move || {
+        selection_key(
+            &mode.get(),
+            &sel_hosts.get(),
+            &adhoc.get(),
+            &sel_plugins.get(),
+        )
+    };
     let can_execute = move || previewed_key.get().as_ref() == Some(&current_key()) && !busy.get();
     let invalidate = move || previewed_key.set(None);
 
@@ -83,7 +95,8 @@ pub fn FleetApplyPage() -> impl IntoView {
 
     let run = move |execute: bool| {
         let names: Vec<String> = sel_hosts.get().into_iter().collect();
-        if names.is_empty() {
+        let targets = adhoc.get();
+        if names.is_empty() && targets.is_empty() {
             return;
         }
         let plugin_ids: Vec<String> = sel_plugins.get().into_iter().collect();
@@ -94,7 +107,7 @@ pub fn FleetApplyPage() -> impl IntoView {
         confirm_open.set(false);
         leptos::task::spawn_local(async move {
             if is_apply {
-                match invoke_fleet_apply(names, plugin_ids, execute).await {
+                match invoke_fleet_apply(names, targets, plugin_ids, execute).await {
                     Ok(out) => {
                         if execute {
                             results.set(render_apply(&out));
@@ -108,7 +121,7 @@ pub fn FleetApplyPage() -> impl IntoView {
                     Err(e) => error.set(Some(e)),
                 }
             } else {
-                match invoke_fleet_rollback(names, plugin_ids, execute).await {
+                match invoke_fleet_rollback(names, targets, plugin_ids, execute).await {
                     Ok(out) => {
                         if execute {
                             results.set(render_rollback(&out));
@@ -194,6 +207,8 @@ pub fn FleetApplyPage() -> impl IntoView {
                     }}
                 </fieldset>
 
+                <AdhocHostInput adhoc=adhoc on_change=Callback::new(move |_| invalidate()) />
+
                 <fieldset class="fleet-plugin-select">
                     <legend>"Plugins (none selected = all)"</legend>
                     {move || {
@@ -223,7 +238,9 @@ pub fn FleetApplyPage() -> impl IntoView {
                     <button
                         class="btn-secondary"
                         on:click=move |_| run(false)
-                        disabled=move || busy.get() || sel_hosts.get().is_empty()
+                        disabled=move || {
+                            busy.get() || (sel_hosts.get().is_empty() && adhoc.get().is_empty())
+                        }
                     >
                         {move || if busy.get() { "Working\u{2026}" } else { "Dry-run" }}
                     </button>
@@ -265,7 +282,7 @@ pub fn FleetApplyPage() -> impl IntoView {
                                     format!(
                                         "Execute {} on {} host(s)?",
                                         mode.get(),
-                                        sel_hosts.get().len(),
+                                        sel_hosts.get().len() + adhoc.get().len(),
                                     )
                                 }}
                             </h3>
@@ -290,7 +307,10 @@ pub fn FleetApplyPage() -> impl IntoView {
                                 </button>
                                 <button class="btn-danger" on:click=move |_| run(true)>
                                     {move || {
-                                        format!("Yes, execute on {} host(s)", sel_hosts.get().len())
+                                        format!(
+                                            "Yes, execute on {} host(s)",
+                                            sel_hosts.get().len() + adhoc.get().len(),
+                                        )
                                     }}
                                 </button>
                             </div>
@@ -349,12 +369,28 @@ mod tests {
         let h2: HashSet<String> = ["b".into(), "a".into()].into_iter().collect();
         let p: HashSet<String> = ["ssh".into()].into_iter().collect();
         assert_eq!(
-            selection_key("apply", &h1, &p),
-            selection_key("apply", &h2, &p)
+            selection_key("apply", &h1, &[], &p),
+            selection_key("apply", &h2, &[], &p)
         );
         assert_ne!(
-            selection_key("apply", &h1, &p),
-            selection_key("rollback", &h1, &p)
+            selection_key("apply", &h1, &[], &p),
+            selection_key("rollback", &h1, &[], &p)
+        );
+    }
+
+    #[test]
+    fn selection_key_includes_adhoc_targets() {
+        let h: HashSet<String> = ["a".into()].into_iter().collect();
+        let p = HashSet::new();
+        assert_ne!(
+            selection_key("apply", &h, &[], &p),
+            selection_key("apply", &h, &["root@10.0.0.5".into()], &p),
+            "adding an ad-hoc target must invalidate a previous dry-run"
+        );
+        assert_eq!(
+            selection_key("apply", &h, &["x@1".into(), "y@2".into()], &p),
+            selection_key("apply", &h, &["y@2".into(), "x@1".into()], &p),
+            "ad-hoc order must not matter"
         );
     }
 }

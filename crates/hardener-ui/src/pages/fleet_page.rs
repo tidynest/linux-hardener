@@ -1,6 +1,6 @@
 //! Fleet page — scan several inventory hosts at once (read-only posture).
 
-use crate::components::{Card, FleetTable};
+use crate::components::{AdhocHostInput, Card, FleetTable};
 use crate::tauri_bindings::{invoke_fleet_scan, invoke_list_remote_hosts};
 use crate::types::FleetHostScan;
 use hardener_types::remote::RemoteHostProfile;
@@ -13,6 +13,7 @@ use std::collections::HashSet;
 pub fn FleetPage() -> impl IntoView {
     let hosts = RwSignal::new(Vec::<RemoteHostProfile>::new());
     let selected = RwSignal::new(HashSet::<String>::new());
+    let adhoc = RwSignal::new(Vec::<String>::new());
     let results = RwSignal::new(Vec::<FleetHostScan>::new());
     let scanning = RwSignal::new(false);
     let error = RwSignal::new(None::<String>);
@@ -35,13 +36,14 @@ pub fn FleetPage() -> impl IntoView {
 
     let scan = move |_| {
         let names: Vec<String> = selected.get().into_iter().collect();
-        if names.is_empty() {
+        let targets = adhoc.get();
+        if names.is_empty() && targets.is_empty() {
             return;
         }
         scanning.set(true);
         error.set(None);
         leptos::task::spawn_local(async move {
-            match invoke_fleet_scan(names, None).await {
+            match invoke_fleet_scan(names, targets, None).await {
                 Ok(r) => results.set(r),
                 Err(e) => error.set(Some(e)),
             }
@@ -96,10 +98,13 @@ pub fn FleetPage() -> impl IntoView {
                             .into_any()
                     }}
                 </fieldset>
+                <AdhocHostInput adhoc=adhoc />
                 <button
                     class="btn-primary"
                     on:click=scan
-                    disabled=move || scanning.get() || selected.get().is_empty()
+                    disabled=move || {
+                        scanning.get() || (selected.get().is_empty() && adhoc.get().is_empty())
+                    }
                 >
                     {move || if scanning.get() { "Scanning\u{2026}" } else { "Scan selected" }}
                 </button>

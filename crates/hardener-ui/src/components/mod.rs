@@ -1,3 +1,4 @@
+mod adhoc_host_input;
 mod card;
 mod clipboard;
 mod compliance_tab;
@@ -24,6 +25,7 @@ mod severity_badge;
 mod tabs;
 mod theme_toggle;
 
+pub use adhoc_host_input::AdhocHostInput;
 #[allow(unused_imports)]
 pub use card::CardVariant;
 pub use card::{Card, HeadingLevel};

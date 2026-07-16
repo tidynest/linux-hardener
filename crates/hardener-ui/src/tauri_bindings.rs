@@ -346,14 +346,17 @@ pub async fn invoke_remote_scan(
 
 /// Invokes the run_fleet_scan Tauri command.
 ///
-/// Scans the named inventory hosts concurrently and returns each host's
-/// severity posture. Pass plugin IDs to scan a subset, or None for all.
+/// Scans the named inventory hosts plus ad-hoc `user@host[:port]` targets
+/// concurrently and returns each host's severity posture. Pass plugin IDs to
+/// scan a subset, or None for all.
 pub async fn invoke_fleet_scan(
     host_names: Vec<String>,
+    adhoc: Vec<String>,
     plugin_ids: Option<Vec<String>>,
 ) -> Result<Vec<FleetHostScan>, String> {
     let args = serde_wasm_bindgen::to_value(&serde_json::json!({
         "hostNames": host_names,
+        "adhoc": adhoc,
         "pluginIds": plugin_ids,
     }))
     .map_err(|e| format!("Failed to serialise fleet scan args: {}", e))?;
@@ -366,11 +369,12 @@ pub async fn invoke_fleet_scan(
 /// `plugins` vector applies all plugins.
 pub async fn invoke_fleet_apply(
     hosts: Vec<String>,
+    adhoc: Vec<String>,
     plugins: Vec<String>,
     execute: bool,
 ) -> Result<Vec<ApplyOutcome>, String> {
     let args = serde_wasm_bindgen::to_value(&serde_json::json!({
-        "hosts": hosts, "plugins": plugins, "execute": execute,
+        "hosts": hosts, "adhoc": adhoc, "plugins": plugins, "execute": execute,
     }))
     .map_err(|e| format!("Failed to serialise fleet apply args: {}", e))?;
     let result = invoke_command("run_fleet_apply", args).await?;
@@ -382,11 +386,12 @@ pub async fn invoke_fleet_apply(
 /// vector rolls back all plugins.
 pub async fn invoke_fleet_rollback(
     hosts: Vec<String>,
+    adhoc: Vec<String>,
     plugins: Vec<String>,
     execute: bool,
 ) -> Result<Vec<RollbackOutcome>, String> {
     let args = serde_wasm_bindgen::to_value(&serde_json::json!({
-        "hosts": hosts, "plugins": plugins, "execute": execute,
+        "hosts": hosts, "adhoc": adhoc, "plugins": plugins, "execute": execute,
     }))
     .map_err(|e| format!("Failed to serialise fleet rollback args: {}", e))?;
     let result = invoke_command("run_fleet_rollback", args).await?;
