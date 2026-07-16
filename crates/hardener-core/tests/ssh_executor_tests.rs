@@ -139,16 +139,17 @@ async fn test_ssh_executor_read_file() {
         .await
         .expect("Failed to connect");
 
-    // /etc/hostname should exist on any Linux system
-    let content = executor.read_file(Path::new("/etc/hostname")).await;
+    // /etc/os-release exists on every systemd distribution; /etc/hostname is
+    // optional (minimal Arch containers ship without one).
+    let content = executor.read_file(Path::new("/etc/os-release")).await;
     assert!(
         content.is_ok(),
-        "Should read /etc/hostname: {:?}",
+        "Should read /etc/os-release: {:?}",
         content.err()
     );
     assert!(
         !content.unwrap().is_empty(),
-        "/etc/hostname content should not be empty"
+        "/etc/os-release content should not be empty"
     );
 }
 
@@ -177,9 +178,9 @@ async fn test_ssh_executor_read_file_optional() {
         .await
         .expect("Failed to connect");
 
-    // Existing file
+    // Existing file (os-release: present on every systemd distribution)
     let result = executor
-        .read_file_optional(Path::new("/etc/hostname"))
+        .read_file_optional(Path::new("/etc/os-release"))
         .await;
     assert!(
         result.is_ok(),
