@@ -3,7 +3,7 @@
 use crate::cli::OutputFormat as CliOutputFormat;
 use anyhow::{Result, anyhow};
 use chrono::Local;
-use hardener_common::types::ComplianceFramework;
+use hardener_common::types::{ComplianceFramework, ComplianceProfile};
 use hardener_compliance::{
     JsonFormatter, OutputFormat, ReportConfig, ReportFormatter, ReportGenerator, Scenario,
     TextFormatter,
@@ -45,6 +45,7 @@ pub async fn run(
         scenario,
         formats: vec![output_format],
         output_dir: None,
+        profile: ComplianceProfile::default(),
     };
 
     if !quiet {

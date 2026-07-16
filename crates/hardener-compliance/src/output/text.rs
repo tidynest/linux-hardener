@@ -2,7 +2,7 @@
 //!
 //! Produces human-readable compliance reports for terminal output.
 
-use crate::output::ReportFormatter;
+use crate::output::{ReportFormatter, report_title};
 use crate::report::ComplianceReport;
 use hardener_common::types::ControlStatus;
 
@@ -27,10 +27,8 @@ impl ReportFormatter for TextFormatter {
         let mut output = String::new();
 
         // Header
-        output.push_str(&format!(
-            "{} Compliance Report\n",
-            report.report_framework.full_name()
-        ));
+        output.push_str(&report_title(report));
+        output.push('\n');
         output.push_str(report.report_framework.description());
         output.push('\n');
         output.push_str(&"=".repeat(60));
@@ -168,5 +166,28 @@ mod tests {
         assert!(output.contains("[PASS]"));
         assert!(output.contains("[FAIL]"));
         assert!(output.contains("Score:          50.0%"));
+    }
+
+    /// An empty STIG report under the given profile.
+    fn stig_report(profile: ComplianceProfile) -> ComplianceReport {
+        ComplianceReport {
+            report_framework: ComplianceFramework::STIG,
+            report_profile: profile,
+            report_generated_at: Utc::now(),
+            report_controls: vec![],
+            report_summary: ComplianceSummary::from_controls(&[]),
+        }
+    }
+
+    #[test]
+    fn test_text_formatter_profile_label_in_heading() {
+        let formatter = TextFormatter::new();
+
+        let rhel10 = formatter.format(&stig_report(ComplianceProfile::Rhel10));
+        assert!(rhel10.contains("DISA STIG Compliance Report (DISA RHEL 10 STIG V1R1)"));
+
+        // Generic STIG names its baseline honestly instead of implying universality.
+        let generic = formatter.format(&stig_report(ComplianceProfile::Generic));
+        assert!(generic.contains("DISA STIG Compliance Report (RHEL 8 baseline IDs)"));
     }
 }

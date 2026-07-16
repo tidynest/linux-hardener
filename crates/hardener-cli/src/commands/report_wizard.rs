@@ -8,7 +8,7 @@ use anyhow::{Result, anyhow};
 use chrono::Local;
 use colored::Colorize;
 use dialoguer::{Confirm, MultiSelect, Select, theme::ColorfulTheme};
-use hardener_common::types::ComplianceFramework;
+use hardener_common::types::{ComplianceFramework, ComplianceProfile};
 use hardener_compliance::{
     JsonFormatter, OutputFormat, ReportConfig, ReportFormatter, ReportGenerator, Scenario,
     TextFormatter,
@@ -163,6 +163,7 @@ pub async fn run(quiet: bool) -> Result<()> {
         scenario,
         formats: state.output_formats.clone(),
         output_dir: None,
+        profile: ComplianceProfile::default(),
     };
 
     let generator = ReportGenerator::new(config, hardener_plugins::compliance_coverage());

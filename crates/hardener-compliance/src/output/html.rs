@@ -2,7 +2,7 @@
 //!
 //! Produces styled HTML compliance reports for web viewing and sharing.
 
-use crate::output::ReportFormatter;
+use crate::output::{ReportFormatter, report_title};
 use crate::report::ComplianceReport;
 use hardener_common::types::ControlStatus;
 
@@ -31,8 +31,8 @@ impl ReportFormatter for HtmlFormatter {
 
         // Report Title
         html.push_str(&format!(
-            "<h1>{} Compliance Report</h1>\n",
-            html_escape(report.report_framework.full_name())
+            "<h1>{}</h1>\n",
+            html_escape(&report_title(report))
         ));
         html.push_str(&format!(
             "<p class=\"subtitle\">{}</p>\n",

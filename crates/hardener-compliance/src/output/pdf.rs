@@ -2,7 +2,7 @@
 //!
 //! Produces PDF compliance reports using the krilla library.
 
-use super::group_controls_by_section;
+use super::{group_controls_by_section, report_title};
 use crate::output::ReportFormatter;
 use crate::report::ComplianceReport;
 use hardener_common::types::ControlStatus;
@@ -166,7 +166,7 @@ fn generate_pdf(report: &ComplianceReport) -> Vec<u8> {
         rule: FillRule::default(),
     }));
 
-    let title = format!("{} Compliance Report", report.report_framework.full_name());
+    let title = report_title(report);
     surface.draw_text(
         Point::from_xy(MARGIN_LEFT, y.y() + TITLE_SIZE),
         font_bold.clone(),

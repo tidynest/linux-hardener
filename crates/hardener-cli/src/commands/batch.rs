@@ -6,7 +6,7 @@ use crate::commands::daemon::load_scheduler_config;
 use crate::commands::report::{finding_to_scan_finding, scan_grouped};
 use crate::ssh_config::SshConnectionConfig;
 use anyhow::{Result, anyhow, bail};
-use hardener_common::types::{PluginId, Severity};
+use hardener_common::types::{ComplianceProfile, PluginId, Severity};
 use hardener_compliance::{ReportConfig, ReportGenerator};
 use hardener_core::plugin::Finding;
 use hardener_core::{ConfigLoader, HardenerConfig};
@@ -459,6 +459,7 @@ pub async fn run_report(opts: BatchReportOptions) -> anyhow::Result<()> {
             scenario,
             formats: vec![],
             output_dir: None,
+            profile: ComplianceProfile::default(),
         },
         hardener_plugins::compliance_coverage(),
     );
@@ -1421,6 +1422,7 @@ mod tests {
             scenario: Scenario::Server,
             formats: vec![],
             output_dir: None,
+            profile: ComplianceProfile::default(),
         }
     }
 

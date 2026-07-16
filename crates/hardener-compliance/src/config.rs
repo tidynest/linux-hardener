@@ -3,7 +3,7 @@
 //! Defines scenarios, output formats, and report configuration.
 
 use clap::ValueEnum;
-use hardener_common::types::ComplianceFramework;
+use hardener_common::types::{ComplianceFramework, ComplianceProfile};
 use std::path::PathBuf;
 
 /// Pre-defined compliance scenarios for common use cases.
@@ -101,6 +101,8 @@ pub struct ReportConfig {
     pub formats: Vec<OutputFormat>,
     /// Optional output directory for saving reports.
     pub output_dir: Option<PathBuf>,
+    /// OS-specific profile selecting which control identifiers reports render.
+    pub profile: ComplianceProfile,
 }
 
 impl Default for ReportConfig {
@@ -109,6 +111,7 @@ impl Default for ReportConfig {
             scenario: Scenario::Server,
             formats: vec![OutputFormat::Text],
             output_dir: None,
+            profile: ComplianceProfile::default(),
         }
     }
 }

@@ -1,4 +1,4 @@
-use hardener_common::types::ComplianceFramework;
+use hardener_common::types::{ComplianceFramework, ComplianceProfile};
 use hardener_compliance::{
     ComplianceReport, OutputFormat, ReportConfig, ReportGenerator, Scenario,
     output::{
@@ -831,6 +831,7 @@ pub async fn generate_compliance_report(
         scenario: Scenario::Custom(parsed_frameworks),
         formats: vec![OutputFormat::Text],
         output_dir: None,
+        profile: ComplianceProfile::default(),
     };
 
     let generator = ReportGenerator::new(config, hardener_plugins::compliance_coverage());
@@ -863,6 +864,7 @@ pub async fn export_compliance_report(
         scenario: Scenario::Custom(parsed_frameworks),
         formats: vec![output_format],
         output_dir: None,
+        profile: ComplianceProfile::default(),
     };
 
     let generator = ReportGenerator::new(config, hardener_plugins::compliance_coverage());
@@ -1311,6 +1313,7 @@ fn fleet_report_generator() -> ReportGenerator {
         scenario: Scenario::Custom(FLEET_FRAMEWORKS.to_vec()),
         formats: vec![OutputFormat::Text],
         output_dir: None,
+        profile: ComplianceProfile::default(),
     };
     ReportGenerator::new(config, hardener_plugins::compliance_coverage())
 }

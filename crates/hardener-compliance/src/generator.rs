@@ -5,11 +5,10 @@
 
 use crate::config::ReportConfig;
 use crate::frameworks;
+use crate::profiles;
 use crate::report::{ComplianceReport, ComplianceSummary, ControlResult};
 use chrono::Utc;
-use hardener_common::types::{
-    ComplianceFramework, ComplianceMapping, ComplianceProfile, ControlStatus,
-};
+use hardener_common::types::{ComplianceFramework, ComplianceMapping, ControlStatus};
 use hardener_core::plugin::Finding;
 use std::collections::HashSet;
 
@@ -37,44 +36,61 @@ impl ReportGenerator {
     ///
     /// Returns one report per framework.
     pub fn generate(&self, findings: &[Finding]) -> Vec<ComplianceReport> {
+        // Rewrite every mapping list once for the active profile so findings,
+        // coverage, and catalogue all match on one identifier scheme. These
+        // are report-internal copies — the caller's findings stay canonical.
+        let profile = self.config.profile;
+        let findings: Vec<Finding> = findings
+            .iter()
+            .map(|finding| Finding {
+                finding_compliance: profiles::translate_all(profile, &finding.finding_compliance),
+                ..finding.clone()
+            })
+            .collect();
+        let coverage = profiles::translate_all(profile, &self.coverage);
+
         self.config
             .scenario
             .frameworks()
             .iter()
-            .map(|framework| self.generate_for_framework(framework, findings))
+            .map(|framework| self.generate_for_framework(framework, &findings, &coverage))
             .collect()
     }
 
-    /// Generates a compliance report for a single framework.
+    /// Generates a compliance report for a single framework from
+    /// profile-translated findings and coverage.
     fn generate_for_framework(
         &self,
         framework: &ComplianceFramework,
         findings: &[Finding],
+        coverage: &[ComplianceMapping],
     ) -> ComplianceReport {
         // Controls the engine assesses for this framework, from plugin coverage.
-        let assessed: HashSet<&str> = self
-            .coverage
+        let assessed: HashSet<&str> = coverage
             .iter()
             .filter(|m| m.compliance_framework == *framework)
             .map(|m| m.compliance_control_id.as_str())
             .collect();
 
         // Build the control catalogue: the curated standard (CIS / ISO 27001),
-        // if any, merged with the derived coverage set and deduplicated by id.
-        // For frameworks without a curated catalogue the result *is* the coverage
-        // set, so every listed control is assessed and reports `Pass`/`Fail`.
-        let mut catalogue = frameworks::curated_controls(framework).unwrap_or_default();
-        let mut catalogue_ids: HashSet<String> = catalogue
-            .iter()
-            .map(|c| c.compliance_control_id.clone())
-            .collect();
-        for mapping in self
-            .coverage
-            .iter()
-            .filter(|m| m.compliance_framework == *framework)
+        // if any — itself profile-translated — merged with the derived coverage
+        // set and deduplicated by id. For frameworks without a curated catalogue
+        // the result *is* the coverage set, so every listed control is assessed
+        // and reports `Pass`/`Fail`.
+        let curated = frameworks::curated_controls(framework).unwrap_or_default();
+        let mut catalogue: Vec<ComplianceMapping> = Vec::new();
+        let mut catalogue_ids: HashSet<String> = HashSet::new();
+        for mapping in profiles::translate_all(self.config.profile, &curated)
+            .into_iter()
+            .chain(
+                coverage
+                    .iter()
+                    .filter(|m| m.compliance_framework == *framework)
+                    .cloned(),
+            )
         {
             if catalogue_ids.insert(mapping.compliance_control_id.clone()) {
-                catalogue.push(mapping.clone());
+                catalogue.push(mapping);
             }
         }
 
@@ -134,7 +150,7 @@ impl ReportGenerator {
 
         ComplianceReport {
             report_framework: *framework,
-            report_profile: ComplianceProfile::default(),
+            report_profile: self.config.profile,
             report_generated_at: Utc::now(),
             report_controls: controls,
             report_summary: summary,
@@ -163,7 +179,7 @@ fn related_findings(
 mod tests {
     use super::*;
     use crate::config::{OutputFormat, Scenario};
-    use hardener_common::types::{FindingCategory, Severity};
+    use hardener_common::types::{ComplianceProfile, FindingCategory, Severity};
 
     /// A finding carrying a single CIS mapping for the given control id.
     fn cis_finding(control_id: &str) -> Finding {
@@ -183,6 +199,13 @@ mod tests {
         }
     }
 
+    /// A finding carrying a single STIG mapping for the given control id.
+    fn stig_finding(control_id: &str) -> Finding {
+        let mut finding = cis_finding(control_id);
+        finding.finding_compliance = vec![mapping(ComplianceFramework::STIG, control_id)];
+        finding
+    }
+
     fn mapping(framework: ComplianceFramework, id: &str) -> ComplianceMapping {
         ComplianceMapping {
             compliance_framework: framework,
@@ -193,10 +216,18 @@ mod tests {
     }
 
     fn config_for(framework: ComplianceFramework) -> ReportConfig {
+        config_with_profile(framework, ComplianceProfile::Generic)
+    }
+
+    fn config_with_profile(
+        framework: ComplianceFramework,
+        profile: ComplianceProfile,
+    ) -> ReportConfig {
         ReportConfig {
             scenario: Scenario::Custom(vec![framework]),
             formats: vec![OutputFormat::Text],
             output_dir: None,
+            profile,
         }
     }
 
@@ -252,6 +283,116 @@ mod tests {
         assert_eq!(report.report_summary.summary_total_controls, 1);
         assert_eq!(report.report_summary.summary_passing, 1);
         assert_eq!(report.report_summary.summary_manual_review, 0);
+    }
+
+    #[test]
+    fn rhel10_finding_reports_translated_stig_id() {
+        // A canonical RHEL-08 finding renders under its sourced RHEL-10 id, and
+        // the embedded finding copy carries the translated mapping list.
+        let coverage = vec![mapping(ComplianceFramework::STIG, "RHEL-08-010430")];
+        let generator = ReportGenerator::new(
+            config_with_profile(ComplianceFramework::STIG, ComplianceProfile::Rhel10),
+            coverage,
+        );
+        let report = generator
+            .generate(&[stig_finding("RHEL-08-010430")])
+            .pop()
+            .unwrap();
+
+        assert!(
+            report
+                .report_controls
+                .iter()
+                .all(|c| c.control_id != "RHEL-08-010430")
+        );
+        let result = report
+            .report_controls
+            .iter()
+            .find(|c| c.control_id == "RHEL-10-701130")
+            .expect("translated control present");
+        assert_eq!(result.control_status, ControlStatus::Fail);
+        let embedded = &result.control_findings[0].finding_compliance;
+        assert!(
+            embedded
+                .iter()
+                .any(|m| m.compliance_control_id == "RHEL-10-701130")
+        );
+        assert!(
+            embedded
+                .iter()
+                .all(|m| m.compliance_control_id != "RHEL-08-010430")
+        );
+        assert_eq!(report.report_profile, ComplianceProfile::Rhel10);
+    }
+
+    #[test]
+    fn rhel10_clean_coverage_passes_translated_id() {
+        // Pass path: a covered control with no finding passes under its
+        // translated id, and the canonical id is nowhere in the report.
+        let coverage = vec![mapping(ComplianceFramework::STIG, "RHEL-08-010430")];
+        let generator = ReportGenerator::new(
+            config_with_profile(ComplianceFramework::STIG, ComplianceProfile::Rhel10),
+            coverage,
+        );
+        let report = generator.generate(&[]).pop().unwrap();
+
+        assert_eq!(report.report_summary.summary_total_controls, 1);
+        let result = report
+            .report_controls
+            .iter()
+            .find(|c| c.control_id == "RHEL-10-701130")
+            .expect("translated control present");
+        assert_eq!(result.control_status, ControlStatus::Pass);
+    }
+
+    #[test]
+    fn rhel10_drops_unsourced_stig_id_without_tripping_safe_net() {
+        // An id V1R1 does not source vanishes from the profiled report: it
+        // buckets under no control and must not surface via the safe-failure
+        // net as a Fail row wearing a generic id.
+        let coverage = vec![mapping(ComplianceFramework::STIG, "RHEL-08-010430")];
+        let generator = ReportGenerator::new(
+            config_with_profile(ComplianceFramework::STIG, ComplianceProfile::Rhel10),
+            coverage,
+        );
+        let report = generator
+            .generate(&[stig_finding("RHEL-08-999999")])
+            .pop()
+            .unwrap();
+
+        assert!(
+            report
+                .report_controls
+                .iter()
+                .all(|c| !c.control_id.contains("999999"))
+        );
+        assert_eq!(report.report_summary.summary_failing, 0);
+    }
+
+    #[test]
+    fn generic_profile_reports_canonical_ids_unchanged() {
+        // The same inputs under Generic keep today's ids and titles exactly:
+        // the covered control fails on its finding and the unknown id still
+        // surfaces through the safe-failure net.
+        let coverage = vec![mapping(ComplianceFramework::STIG, "RHEL-08-010430")];
+        let generator = ReportGenerator::new(config_for(ComplianceFramework::STIG), coverage);
+        let mut finding = stig_finding("RHEL-08-010430");
+        finding
+            .finding_compliance
+            .push(mapping(ComplianceFramework::STIG, "RHEL-08-999999"));
+        let report = generator.generate(&[finding]).pop().unwrap();
+
+        let ids: Vec<&str> = report
+            .report_controls
+            .iter()
+            .map(|c| c.control_id.as_str())
+            .collect();
+        assert_eq!(ids, vec!["RHEL-08-010430", "RHEL-08-999999"]);
+        assert!(report.report_controls.iter().all(|c| {
+            c.control_status == ControlStatus::Fail
+                && c.control_title == format!("Control {}", c.control_id)
+        }));
+        assert_eq!(report.report_profile, ComplianceProfile::Generic);
     }
 
     #[test]

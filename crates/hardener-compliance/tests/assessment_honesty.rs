@@ -14,7 +14,8 @@
 //! compliance crate stays independent of the plugins crate.
 
 use hardener_common::types::{
-    ComplianceFramework, ComplianceMapping, ControlStatus, FindingCategory, Severity,
+    ComplianceFramework, ComplianceMapping, ComplianceProfile, ControlStatus, FindingCategory,
+    Severity,
 };
 use hardener_compliance::config::OutputFormat;
 use hardener_compliance::{ComplianceReport, ReportConfig, ReportGenerator, Scenario};
@@ -61,6 +62,7 @@ fn report_for(
             scenario: Scenario::Custom(vec![framework]),
             formats: vec![OutputFormat::Text],
             output_dir: None,
+            profile: ComplianceProfile::default(),
         },
         coverage,
     )

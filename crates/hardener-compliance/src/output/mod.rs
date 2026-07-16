@@ -39,6 +39,16 @@ pub trait ReportFormatter {
     }
 }
 
+/// Report heading: the framework's full name plus the active profile's
+/// identifier-scheme label, e.g. "DISA STIG Compliance Report (DISA RHEL 10 STIG V1R1)".
+pub(crate) fn report_title(report: &ComplianceReport) -> String {
+    let base = format!("{} Compliance Report", report.report_framework.full_name());
+    match crate::profiles::profile_label(report.report_profile, report.report_framework) {
+        Some(label) => format!("{base} ({label})"),
+        None => base,
+    }
+}
+
 /// Compares dotted control IDs numerically (e.g. "1.5.2" < "1.10.1").
 pub(crate) fn compare_control_ids(id_a: &str, id_b: &str) -> std::cmp::Ordering {
     let parts_a: Vec<u32> = id_a.split('.').filter_map(|s| s.parse().ok()).collect();
