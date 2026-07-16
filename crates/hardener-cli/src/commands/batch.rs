@@ -93,35 +93,16 @@ pub fn exit_code(outcomes: &[HostOutcome]) -> i32 {
     code
 }
 
-/// Parses an ad-hoc `--ssh user@host[:port]` target into a profile. A `:port`
-/// suffix overrides `port` (the caller's default); the key comes from the global
-/// SSH flags. ponytail: unbracketed IPv6 keeps its default port (no unambiguous
-/// `host:port` form); pass bracketed `[addr]` support only if a user needs it.
+/// Parses an ad-hoc `--ssh user@host[:port]` target into a profile. The key
+/// comes from the global SSH flags. Thin delegate: the parser itself lives in
+/// `hardener-types` so the desktop's ad-hoc fleet hosts share it.
 pub fn parse_inline(
     target: &str,
     port: u16,
     key_file: Option<String>,
     verify: bool,
 ) -> RemoteHostProfile {
-    let (user, rest) = match target.split_once('@') {
-        Some((u, h)) => (Some(u.to_string()), h),
-        None => (None, target),
-    };
-    let (hostname, port) = match rest.rsplit_once(':') {
-        Some((host, p)) if !host.contains(':') => match p.parse::<u16>() {
-            Ok(parsed) => (host.to_string(), parsed),
-            Err(_) => (rest.to_string(), port),
-        },
-        _ => (rest.to_string(), port),
-    };
-    RemoteHostProfile {
-        name: hostname.clone(),
-        hostname,
-        user,
-        port,
-        key_file,
-        host_key_checking: verify,
-    }
+    RemoteHostProfile::from_target(target, port, key_file, verify)
 }
 
 /// Resolves the host set to scan from inventory selection plus inline hosts.
