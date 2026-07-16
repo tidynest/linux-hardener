@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Ad-hoc SSH targets in the desktop fleet pages: both **Fleet** (scan) and
+  **Fleet Apply** (apply/rollback) now accept `user@host[:port]` targets that
+  are not saved in the inventory, matching the CLI's `--ssh` flag. The
+  target parser is shared between CLI and GUI (one definition in
+  `hardener-types`), and the Fleet Apply dry-run gate treats a changed
+  ad-hoc set as a new selection.
 - End-to-end integration tests for `batch scan/report/apply/rollback` against
   a live sshd (`#[ignore]`, `SSH_TEST_HOST` convention), closing the gap where
   a *successful* SSH connection was never exercised by the suite, plus a

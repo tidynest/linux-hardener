@@ -668,7 +668,7 @@ See [ROADMAP.md](ROADMAP.md) for detailed implementation plans for upcoming feat
 - [x] Config file picker in desktop app
 - [x] UI polish pass (side-by-side layouts, card standardisation, responsive fixes)
 - [x] Severity filter in scan results
-- [~] Multi-host management from single UI — **Fleet** scan view, compliance scores, and **Fleet Apply** (apply/rollback) shipped; ad-hoc SSH / live progress / GUI history remain
+- [~] Multi-host management from single UI — **Fleet** scan view, compliance scores, **Fleet Apply** (apply/rollback), and ad-hoc SSH targets shipped; live progress / GUI history remain
 - [~] Historical security trends — CLI `history trends` shipped (per-host; see v1.2.0); desktop trends visualisation deferred
 - [ ] Test on GNOME, KDE, XFCE desktop environments (pkexec/polkit agents) — deferred (human-run; CI validates headless nspawn containers only)
 
