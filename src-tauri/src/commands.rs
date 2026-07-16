@@ -1316,13 +1316,26 @@ fn posture_for_findings(
         .collect()
 }
 
-/// Scans several inventory hosts concurrently and returns each host's severity
-/// posture. Read-only: opens a short-lived SSH connection per host, scans, and
-/// drops it. Per-host failure is isolated — a failed host is a `Failed` row
-/// whilst the others still complete.
+/// Parses and validates one ad-hoc `user@host[:port]` target. Rejects an empty
+/// hostname and a leading `-` (which ssh would otherwise read as an option).
+fn adhoc_profile(target: &str) -> Result<RemoteHostProfile, String> {
+    validate_ipc_string(target, "adhoc_target")?;
+    let profile = RemoteHostProfile::from_target(target.trim(), 22, None, true);
+    if profile.hostname.is_empty() || profile.hostname.starts_with('-') {
+        return Err(format!("Invalid ad-hoc target '{target}'"));
+    }
+    Ok(profile)
+}
+
+/// Scans several hosts concurrently and returns each host's severity posture:
+/// saved inventory hosts by name plus ad-hoc `user@host[:port]` targets.
+/// Read-only: opens a short-lived SSH connection per host, scans, and drops it.
+/// Per-host failure is isolated — a failed host is a `Failed` row whilst the
+/// others still complete.
 #[tauri::command]
 pub async fn run_fleet_scan(
     host_names: Vec<String>,
+    adhoc: Option<Vec<String>>,
     plugin_ids: Option<Vec<String>>,
 ) -> Result<Vec<FleetHostScan>, String> {
     if let Some(ref ids) = plugin_ids {
@@ -1331,12 +1344,26 @@ pub async fn run_fleet_scan(
     for name in &host_names {
         validate_ipc_string(name, "host_name")?;
     }
+    let adhoc = adhoc.unwrap_or_default();
+    let mut adhoc_profiles = std::collections::HashMap::new();
+    for target in &adhoc {
+        adhoc_profiles.insert(target.clone(), adhoc_profile(target)?);
+    }
 
     let config = load_hosts_config()?;
     let plugin_ids = std::sync::Arc::new(plugin_ids);
+    let adhoc_profiles = std::sync::Arc::new(adhoc_profiles);
 
-    let mut results = scan_fleet(host_names, move |name| {
-        let profile = config.hosts.iter().find(|h| h.name == name).cloned();
+    // Ad-hoc rows keep the full target string as their display name.
+    let all_names: Vec<String> = host_names.into_iter().chain(adhoc).collect();
+
+    let mut results = scan_fleet(all_names, move |name| {
+        let profile = config
+            .hosts
+            .iter()
+            .find(|h| h.name == name)
+            .or_else(|| adhoc_profiles.get(&name))
+            .cloned();
         let plugin_ids = plugin_ids.clone();
         async move {
             let profile = profile.ok_or_else(|| format!("Host profile '{}' not found", name))?;
@@ -1676,41 +1703,55 @@ pub async fn pick_config_file(app: tauri::AppHandle) -> Result<Option<String>, S
 #[tauri::command]
 pub async fn run_fleet_apply(
     hosts: Vec<String>,
+    adhoc: Option<Vec<String>>,
     plugins: Vec<String>,
     execute: bool,
 ) -> Result<Vec<ApplyOutcome>, String> {
-    run_fleet_mutation("apply", hosts, plugins, execute).await
+    run_fleet_mutation("apply", hosts, adhoc.unwrap_or_default(), plugins, execute).await
 }
 
 /// Runs a fleet rollback via the audited CLI. `execute = false` previews.
 #[tauri::command]
 pub async fn run_fleet_rollback(
     hosts: Vec<String>,
+    adhoc: Option<Vec<String>>,
     plugins: Vec<String>,
     execute: bool,
 ) -> Result<Vec<RollbackOutcome>, String> {
-    run_fleet_mutation("rollback", hosts, plugins, execute).await
+    run_fleet_mutation(
+        "rollback",
+        hosts,
+        adhoc.unwrap_or_default(),
+        plugins,
+        execute,
+    )
+    .await
 }
 
 /// Spawns `hardener batch <verb>` and parses its outcome JSON. Shared by apply
 /// and rollback. No pkexec — remote hosts authenticate over SSH via the saved
-/// inventory profiles the CLI reads, so the local `PrivilegedOpGuard` (which
-/// serialises local pkexec mutations) deliberately does not apply here.
+/// inventory profiles (or the ad-hoc targets) the CLI reads, so the local
+/// `PrivilegedOpGuard` (which serialises local pkexec mutations) deliberately
+/// does not apply here.
 async fn run_fleet_mutation<T: serde::de::DeserializeOwned>(
     verb: &str,
     hosts: Vec<String>,
+    adhoc: Vec<String>,
     plugins: Vec<String>,
     execute: bool,
 ) -> Result<Vec<T>, String> {
-    if hosts.is_empty() {
+    if hosts.is_empty() && adhoc.is_empty() {
         return Err("No hosts selected".to_string());
     }
     for h in &hosts {
         validate_ipc_string(h, "host_name")?;
     }
+    for t in &adhoc {
+        adhoc_profile(t)?;
+    }
     validate_plugin_ids(&plugins)?;
     let binary = get_hardener_binary_path()?;
-    let args = build_batch_args(verb, &hosts, &plugins, execute);
+    let args = build_batch_args(verb, &hosts, &adhoc, &plugins, execute);
     let output = Command::new(&binary)
         .args(&args)
         .output()
@@ -1726,12 +1767,14 @@ async fn run_fleet_mutation<T: serde::de::DeserializeOwned>(
 }
 
 /// Builds the `hardener batch <verb> …` argument vector. `verb` is "apply" or
-/// "rollback". Hosts and plugins are passed as repeated flags (robust to commas
-/// in names). Empty `plugins` ⇒ no `--plugin` (CLI default = all). `--format json`
-/// is always set; `--execute` only when `execute`.
+/// "rollback". Inventory hosts route to `--host`, ad-hoc targets to `--ssh`;
+/// all are repeated flags (robust to commas in names). Empty `plugins` ⇒ no
+/// `--plugin` (CLI default = all). `--format json` is always set; `--execute`
+/// only when `execute`.
 fn build_batch_args(
     verb: &str,
     hosts: &[String],
+    adhoc: &[String],
     plugins: &[String],
     execute: bool,
 ) -> Vec<String> {
@@ -1739,6 +1782,10 @@ fn build_batch_args(
     for h in hosts {
         args.push("--host".to_string());
         args.push(h.clone());
+    }
+    for t in adhoc {
+        args.push("--ssh".to_string());
+        args.push(t.clone());
     }
     for p in plugins {
         args.push("--plugin".to_string());
@@ -1805,6 +1852,7 @@ mod fleet_tests {
         let dry = build_batch_args(
             "apply",
             &["web-1".into(), "web-2".into()],
+            &[],
             &["ssh".into()],
             false,
         );
@@ -1815,7 +1863,7 @@ mod fleet_tests {
                 "--format", "json"
             ]
         );
-        let exec = build_batch_args("apply", &["web-1".into()], &[], true);
+        let exec = build_batch_args("apply", &["web-1".into()], &[], &[], true);
         assert_eq!(
             exec,
             vec![
@@ -1827,6 +1875,46 @@ mod fleet_tests {
                 "--format",
                 "json"
             ]
+        );
+    }
+
+    #[test]
+    fn build_batch_args_routes_adhoc_targets_to_ssh_flag() {
+        let args = build_batch_args(
+            "rollback",
+            &["web-1".into()],
+            &["root@10.0.0.5:2222".into()],
+            &[],
+            false,
+        );
+        assert_eq!(
+            args,
+            vec![
+                "batch",
+                "rollback",
+                "--host",
+                "web-1",
+                "--ssh",
+                "root@10.0.0.5:2222",
+                "--format",
+                "json"
+            ]
+        );
+    }
+
+    #[test]
+    fn adhoc_profile_parses_and_guards() {
+        let p = adhoc_profile("admin@web-01:2222").unwrap();
+        assert_eq!(p.hostname, "web-01");
+        assert_eq!(p.port, 2222);
+        assert!(
+            adhoc_profile("-oProxyCommand=x").is_err(),
+            "a leading dash must be rejected — ssh would read it as an option"
+        );
+        assert!(adhoc_profile("").is_err(), "empty target rejected");
+        assert!(
+            adhoc_profile("admin@").is_err(),
+            "empty hostname after user split rejected"
         );
     }
 
