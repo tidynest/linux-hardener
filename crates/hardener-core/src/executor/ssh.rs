@@ -50,6 +50,22 @@ fn unique_delimiter(content: &str) -> String {
     delim
 }
 
+/// Builds the remote heredoc write command. The separator newline before the
+/// delimiter is only inserted when the content does not already end with one,
+/// so newline-terminated content round-trips byte-exact (matching
+/// `LocalExecutor`). Content without a final newline still gains one — a
+/// heredoc body is always newline-terminated.
+fn tee_command(path: &Path, content: &str) -> String {
+    let escaped = shell_escape(&path.display().to_string());
+    let delim = unique_delimiter(content);
+    let sep = if content.is_empty() || content.ends_with('\n') {
+        ""
+    } else {
+        "\n"
+    };
+    format!("sudo tee {escaped} > /dev/null << '{delim}'\n{content}{sep}{delim}")
+}
+
 /// SSH-based system executor for remote hosts.
 pub struct SshExecutor {
     session: Session,
@@ -146,10 +162,7 @@ impl SystemExecutor for SshExecutor {
     }
 
     async fn write_file(&self, path: &Path, content: &str) -> Result<()> {
-        let escaped = shell_escape(&path.display().to_string());
-        let delim = unique_delimiter(content);
-        let cmd = format!("sudo tee {escaped} > /dev/null << '{delim}'\n{content}\n{delim}");
-        let output = self.run_command(&cmd).await?;
+        let output = self.run_command(&tee_command(path, content)).await?;
 
         if output.success() {
             Ok(())
@@ -261,6 +274,40 @@ fn parse_stat_metadata(stdout: &str) -> Option<FileMetadata> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tee_command_round_trips_newline_terminated_content() {
+        // A remote apply→rollback cycle must not grow files: content that
+        // already ends in a newline gets no separator before the delimiter.
+        let content = "Hello!\n";
+        let delim = unique_delimiter(content);
+        let cmd = tee_command(Path::new("/tmp/t"), content);
+        assert!(
+            cmd.ends_with(&format!("<< '{delim}'\n{content}{delim}")),
+            "newline-terminated content must not be doubled: {cmd}"
+        );
+    }
+
+    #[test]
+    fn tee_command_terminates_bare_content_with_single_newline() {
+        let content = "Hello!";
+        let delim = unique_delimiter(content);
+        let cmd = tee_command(Path::new("/tmp/t"), content);
+        assert!(
+            cmd.ends_with(&format!("<< '{delim}'\n{content}\n{delim}")),
+            "bare content gains exactly one heredoc newline: {cmd}"
+        );
+    }
+
+    #[test]
+    fn tee_command_writes_empty_content_as_empty_body() {
+        let delim = unique_delimiter("");
+        let cmd = tee_command(Path::new("/tmp/t"), "");
+        assert!(
+            cmd.ends_with(&format!("<< '{delim}'\n{delim}")),
+            "empty content must produce an empty heredoc body: {cmd}"
+        );
+    }
 
     #[test]
     fn parse_stat_zero_perm_file_is_not_confused_with_missing() {
