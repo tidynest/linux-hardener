@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Scan-history findings are now persisted with the official display strings
+  for severity and category (`CRITICAL`, `File System`) instead of Rust
+  variant names (`Critical`, `FileSystem`). Existing rows are unaffected:
+  severity counting is case-insensitive and the stored category string is
+  never parsed back.
+- A corrupted policy-exception entry in the desktop scan-history database now
+  surfaces as a database error instead of being silently read back as "no
+  exception". A stored exception suppresses findings, so an unreadable one
+  must not vanish quietly.
+
 ## [1.2.2] - 2026-07-02
 
 ### Fixed

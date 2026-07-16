@@ -212,15 +212,13 @@ per-host rollback remains available via `sudo hardener --ssh <host> rollback`.
 Per-host CIS score columns plus a per-framework breakdown in the row expander
 shipped 2026-06-24.
 
-**Follow-up (from review):** `finding_to_scan_finding` (now in `report.rs`)
-serialises `severity`/`category` to the history db via `{:?}` (Debug), which
-yields variant identifiers (`"Critical"`, `"FileSystem"`) rather than the official
-`Display` strings (`"CRITICAL"`, `"File System"`) and would shift if a variant is
-renamed. Pre-existing (single-host `scan` writes the same). Trends are **not**
-affected — they read the numeric `*_count` columns, which `complete_session`
-derives case-insensitively, not the per-finding severity string. Switching to
-`Display` still needs a one-time decision about existing persisted rows; defer to
-a dedicated change.
+**Follow-up (from review) — Done (2026-07-16, issue #17, `c86c116`):**
+`finding_to_scan_finding` now persists `severity`/`category` via `Display`
+(`"CRITICAL"`, `"File System"`) instead of Debug variant names. Decision on
+existing rows: no migration — the only parser of the stored severity string
+(`SeverityCounts::from_findings`) is case-insensitive and the category string
+is never parsed back, so old Debug-cased rows remain readable; the difference
+is cosmetic in `history show` for pre-fix sessions.
 
 ### P3 — Docker container image
 
@@ -233,21 +231,14 @@ to mutate the real host, which undercuts container isolation — likely document
 as discouraged/unsupported. Add a `docker` row to `DISTRIBUTION_VALIDATION.md`
 once it exists.
 
-### P3 — Deferred code cleanups
+### P3 — Deferred code cleanups — Done (2026-07-16)
 
-Minor, pre-existing; salvaged from the Feb crate audit before its snapshot was
-retired (`docs/audit/**` removed 2026-06-28 — a stale per-file mirror of source,
-superseded by the code itself + `cargo doc`; these three flags were its only
-still-live signal):
-
-- [`hardener-core/src/context.rs`](crates/hardener-core/src/context.rs) — the
-  `#[allow(dead_code)] shared_data` field on `PluginContext` is never read; drop
-  the field and the `allow`, or wire it up.
-- [`hardener-core/src/registry.rs`](crates/hardener-core/src/registry.rs) —
-  repeated identical `RwLock` read-error handling; extract a helper.
-- [`hardener-state/src/scan_manager.rs`](crates/hardener-state/src/scan_manager.rs)
-  — a `unwrap_or_default()` silently swallows corrupted-JSON deserialisation; log
-  or surface the error instead.
+All three flags resolved (issue #21): the dead `shared_data` field on
+`Context` is removed (`330cb5b`), the registry's read/write lock-poison
+handling shares one `lock_error` helper (`17181d5`), and a corrupted
+`policy_exception` JSON column now surfaces `HardeningError::Database`
+instead of being silently read as "no exception" (`33a87f6`, regression
+test proven red→green).
 
 ### P3 — Maintenance / currency
 
