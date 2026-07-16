@@ -1,11 +1,23 @@
 //! Fleet scan results table — one row per host, expandable to its findings.
 
 use crate::components::FindingsGrid;
+use crate::tauri_bindings::invoke_get_host_history;
 use crate::types::{
     ComplianceFramework, Finding, FleetFrameworkPosture, FleetHostScan, FleetHostStatus,
 };
+use hardener_types::remote::HostSessionInfo;
 use leptos::prelude::*;
 use std::sync::Arc;
+
+/// Trend glyph + class for a session's direction against the next-older scan.
+fn direction_cell(direction: Option<&str>) -> (&'static str, &'static str) {
+    match direction {
+        Some("worse") => ("\u{2191} worse", "fleet-trend-worse"),
+        Some("better") => ("\u{2193} better", "fleet-trend-better"),
+        Some("same") => ("= same", "fleet-trend-same"),
+        _ => ("\u{2014}", "fleet-trend-none"),
+    }
+}
 
 /// Toggles which host row is expanded (accordion: one open at a time).
 fn toggle_expanded(expanded: RwSignal<Option<String>>, host: &str) {
@@ -42,6 +54,29 @@ fn cis_cell(compliance: &[FleetFrameworkPosture]) -> Option<(String, &'static st
 #[component]
 pub fn FleetTable(#[prop(into)] scans: Signal<Vec<FleetHostScan>>) -> impl IntoView {
     let expanded = RwSignal::new(None::<String>);
+    // Persisted history for the currently expanded host (accordion = at most
+    // one). Loaded lazily on expansion; None = still loading or nothing open.
+    let history = RwSignal::new(None::<Vec<HostSessionInfo>>);
+    let history_for = RwSignal::new(None::<String>);
+
+    Effect::new(move |_| {
+        let Some(host) = expanded.get() else {
+            return;
+        };
+        if history_for.get_untracked().as_deref() == Some(host.as_str()) {
+            return;
+        }
+        history.set(None);
+        history_for.set(Some(host.clone()));
+        leptos::task::spawn_local(async move {
+            // Best-effort: browser mode / a missing scheduler db shows the
+            // empty-state copy rather than an error.
+            let rows = invoke_get_host_history(host, Some(10))
+                .await
+                .unwrap_or_default();
+            history.set(Some(rows));
+        });
+    });
 
     view! {
         <section class="fleet-table">
@@ -174,6 +209,66 @@ pub fn FleetTable(#[prop(into)] scans: Signal<Vec<FleetHostScan>>) -> impl IntoV
                                                                         .collect::<Vec<_>>()}
                                                                 </tbody>
                                                             </table>
+                                                            <h4 class="fleet-history-heading">
+                                                                "Scan history"
+                                                            </h4>
+                                                            {move || match history.get() {
+                                                                None => {
+                                                                    view! {
+                                                                        <p class="empty-state">"Loading history\u{2026}"</p>
+                                                                    }
+                                                                        .into_any()
+                                                                }
+                                                                Some(rows) if rows.is_empty() => {
+                                                                    view! {
+                                                                        <p class="empty-state">
+                                                                            "No persisted history for this host — CLI batch and scheduled scans populate it."
+                                                                        </p>
+                                                                    }
+                                                                        .into_any()
+                                                                }
+                                                                Some(rows) => {
+                                                                    view! {
+                                                                        <table class="findings-table fleet-history">
+                                                                            <thead>
+                                                                                <tr>
+                                                                                    <th>"When"</th>
+                                                                                    <th>"Total"</th>
+                                                                                    <th>"Critical"</th>
+                                                                                    <th>"High"</th>
+                                                                                    <th>"Medium"</th>
+                                                                                    <th>"Low"</th>
+                                                                                    <th>"Info"</th>
+                                                                                    <th>"Trend"</th>
+                                                                                </tr>
+                                                                            </thead>
+                                                                            <tbody>
+                                                                                {rows
+                                                                                    .iter()
+                                                                                    .map(|r| {
+                                                                                        let (trend, class) = direction_cell(
+                                                                                            r.direction.as_deref(),
+                                                                                        );
+                                                                                        view! {
+                                                                                            <tr>
+                                                                                                <td>{r.started.clone()}</td>
+                                                                                                <td>{r.total_findings}</td>
+                                                                                                <td>{r.critical}</td>
+                                                                                                <td>{r.high}</td>
+                                                                                                <td>{r.medium}</td>
+                                                                                                <td>{r.low}</td>
+                                                                                                <td>{r.info}</td>
+                                                                                                <td class={class}>{trend}</td>
+                                                                                            </tr>
+                                                                                        }
+                                                                                    })
+                                                                                    .collect::<Vec<_>>()}
+                                                                            </tbody>
+                                                                        </table>
+                                                                    }
+                                                                        .into_any()
+                                                                }
+                                                            }}
                                                             <FindingsGrid findings=Signal::derive(move || {
                                                                 (*findings).clone()
                                                             }) />
@@ -211,6 +306,20 @@ mod tests {
                 summary_score_percentage: percentage,
             },
         }
+    }
+
+    #[test]
+    fn direction_cell_maps_trend_glyphs_and_classes() {
+        assert_eq!(
+            direction_cell(Some("worse")),
+            ("\u{2191} worse", "fleet-trend-worse")
+        );
+        assert_eq!(
+            direction_cell(Some("better")),
+            ("\u{2193} better", "fleet-trend-better")
+        );
+        assert_eq!(direction_cell(Some("same")), ("= same", "fleet-trend-same"));
+        assert_eq!(direction_cell(None), ("\u{2014}", "fleet-trend-none"));
     }
 
     #[test]

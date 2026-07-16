@@ -9,7 +9,7 @@ use crate::types::{
     SchedulerUiConfig, TestNotificationResult,
 };
 use hardener_types::ValidationReport;
-use hardener_types::remote::{RemoteConnectionStatus, RemoteHostProfile};
+use hardener_types::remote::{HostSessionInfo, RemoteConnectionStatus, RemoteHostProfile};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 
@@ -446,6 +446,21 @@ pub async fn invoke_fleet_rollback(
     let result = invoke_command("run_fleet_rollback", args).await?;
     serde_wasm_bindgen::from_value(result)
         .map_err(|e| format!("Failed to deserialise fleet rollback results: {}", e))
+}
+
+/// Invokes get_host_history: persisted per-host scan sessions from the
+/// scheduler database (written by CLI batch/scheduled scans), newest first.
+pub async fn invoke_get_host_history(
+    host: String,
+    limit: Option<u32>,
+) -> Result<Vec<HostSessionInfo>, String> {
+    let args = serde_wasm_bindgen::to_value(&serde_json::json!({
+        "host": host, "limit": limit,
+    }))
+    .map_err(|e| format!("Failed to serialise host history args: {}", e))?;
+    let result = invoke_command("get_host_history", args).await?;
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to deserialise host history: {}", e))
 }
 
 /// Invokes list_plugins for the plugin selector.

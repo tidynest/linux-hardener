@@ -39,11 +39,18 @@ pub fn AdhocHostInput(
     };
 
     let add = move || {
-        let target = draft.get().trim().to_string();
-        match target_error(&target, &adhoc.get()) {
+        let raw = draft.get().trim().to_string();
+        match target_error(&raw, &adhoc.get()) {
             Some(e) => input_error.set(Some(e)),
             None => {
-                adhoc.update(|v| v.push(target));
+                // Store the canonical user@host:port form: it is the batch
+                // history key, so display name and persisted key agree.
+                let canonical = RemoteHostProfile::from_target(&raw, 22, None, true).target();
+                if adhoc.with(|v| v.contains(&canonical)) {
+                    input_error.set(Some(format!("'{canonical}' already added")));
+                    return;
+                }
+                adhoc.update(|v| v.push(canonical));
                 draft.set(String::new());
                 input_error.set(None);
                 notify();
