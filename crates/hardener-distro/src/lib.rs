@@ -47,7 +47,25 @@ impl Distribution {
     /// # Errors
     /// Returns an error if the distribution cannot be detected.
     pub fn detect() -> hardener_common::error::Result<Self> {
-        let os_release_data = Self::read_os_release()?;
+        let content = std::fs::read_to_string("/etc/os-release")
+            .map_err(hardener_common::error::HardeningError::System)?;
+
+        Self::from_os_release(&content)
+    }
+
+    /// Parses distribution information from `os-release` formatted content.
+    ///
+    /// # Errors
+    /// Returns an error if required fields are missing or the distribution is unsupported.
+    pub fn from_os_release(content: &str) -> hardener_common::error::Result<Self> {
+        let mut os_release_data = std::collections::HashMap::new();
+        for line in content.lines() {
+            if let Some((key, value)) = line.split_once("=") {
+                // Remove quotes from value
+                let clean_value = value.trim_matches('"');
+                os_release_data.insert(key.to_string(), clean_value.to_string());
+            }
+        }
 
         let distro_name = Self::extract_field(&os_release_data, "ID")?;
         let distro_version = Self::extract_field(&os_release_data, "VERSION_ID")
@@ -63,24 +81,13 @@ impl Distribution {
         })
     }
 
-    /// Reads and parses the `/etc/os-release` file.
-    fn read_os_release() -> hardener_common::error::Result<std::collections::HashMap<String, String>>
-    {
-        use std::fs;
-
-        let content = fs::read_to_string("/etc/os-release")
-            .map_err(hardener_common::error::HardeningError::System)?;
-
-        let mut map = std::collections::HashMap::new();
-        for line in content.lines() {
-            if let Some((key, value)) = line.split_once("=") {
-                // Remove quotes from value
-                let clean_value = value.trim_matches('"');
-                map.insert(key.to_string(), clean_value.to_string());
-            }
-        }
-
-        Ok(map)
+    /// Leading integer of `distro_version` before any `.` (e.g. "10.0" → 10).
+    ///
+    /// Returns `None` for non-numeric versions such as "rolling".
+    pub fn version_major(&self) -> Option<u32> {
+        let version = self.distro_version.as_str();
+        let major = version.split_once('.').map_or(version, |(major, _)| major);
+        major.parse().ok()
     }
 
     /// Extracts a field from the os-release data.
@@ -169,5 +176,44 @@ mod tests {
 
         // Unknown should error
         assert!(Distribution::map_to_family("unknown").is_err());
+    }
+
+    #[test]
+    fn test_version_major() {
+        let distro = |version: &str| Distribution {
+            distro_family: DistroFamily::RedHat,
+            distro_name: "rhel".to_string(),
+            distro_version: version.to_string(),
+            distro_codename: None,
+        };
+
+        assert_eq!(distro("10").version_major(), Some(10));
+        assert_eq!(distro("10.0").version_major(), Some(10));
+        assert_eq!(distro("22.04").version_major(), Some(22));
+        assert_eq!(distro("rolling").version_major(), None);
+        assert_eq!(distro("").version_major(), None);
+    }
+
+    #[test]
+    fn test_from_os_release_rocky_10() {
+        let content = r#"NAME="Rocky Linux"
+VERSION="10.0 (Red Quartz)"
+ID="rocky"
+ID_LIKE="rhel centos fedora"
+VERSION_ID="10.0"
+PLATFORM_ID="platform:el10"
+PRETTY_NAME="Rocky Linux 10.0 (Red Quartz)"
+CPE_NAME="cpe:/o:rocky:rocky:10::baseos"
+"#;
+
+        let distro = Distribution::from_os_release(content).unwrap();
+        assert_eq!(distro.distro_family, DistroFamily::RedHat);
+        assert_eq!(distro.distro_name, "rocky");
+        assert_eq!(distro.distro_version, "10.0");
+    }
+
+    #[test]
+    fn test_from_os_release_garbage() {
+        assert!(Distribution::from_os_release("not an os-release file").is_err());
     }
 }
