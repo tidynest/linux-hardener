@@ -88,6 +88,24 @@ pub struct RemoteConnectionInfo {
     pub user: String,
 }
 
+/// Tauri event name carrying [`FleetProgress`] payloads during a fleet scan.
+/// One definition for backend emit and frontend listen.
+pub const FLEET_PROGRESS_EVENT: &str = "fleet-progress";
+
+/// One host finished during a fleet scan. `done`/`total` count completed
+/// hosts so far, in completion (not input) order.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FleetProgress {
+    /// Display name of the finished host (inventory name or ad-hoc target).
+    pub host: String,
+    /// Hosts completed so far, including this one.
+    pub done: usize,
+    /// Total hosts in this scan.
+    pub total: usize,
+    /// Whether this host ended in a failed status.
+    pub failed: bool,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -108,6 +126,20 @@ mod tests {
         assert_eq!(p.port, 2200, "caller default port applies without :suffix");
         assert_eq!(p.key_file.as_deref(), Some("/k"));
         assert!(!p.host_key_checking);
+    }
+
+    #[test]
+    fn fleet_progress_round_trips_json() {
+        let p = FleetProgress {
+            host: "root@10.0.0.5:22".to_string(),
+            done: 2,
+            total: 5,
+            failed: true,
+        };
+        let back: FleetProgress =
+            serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
+        assert_eq!(back.host, p.host);
+        assert_eq!((back.done, back.total, back.failed), (2, 5, true));
     }
 
     #[test]
