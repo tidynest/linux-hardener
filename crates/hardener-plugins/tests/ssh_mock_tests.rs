@@ -558,3 +558,65 @@ async fn test_validate_sshd_config_err_when_sshd_t_fails() {
         "error should describe the rejection, got: {err}"
     );
 }
+
+/// Pins the ssh plugin's STIG rows to the real RHEL 8 V2R7 benchmark: the
+/// V-230290/291/292 ids shipped previously name unrelated rules (known-hosts
+/// auth, Kerberos auth, separate /var). The corrected pairing is DISA's own —
+/// RHEL-08-010290 = MACs and RHEL-08-010291 = Ciphers, reversed versus
+/// intuition — and the Kex check carries no STIG mapping at all: the RHEL 8
+/// KexAlgorithms rule (RHEL-08-040342 / V-255924) was removed in V2R6 and the
+/// RHEL 10 STIG never had one.
+#[test]
+fn ssh_stig_crypto_ids_match_the_rhel8_v2r7_benchmark() {
+    let coverage = hardener_plugins::ssh::coverage();
+    let stig: Vec<_> = coverage
+        .iter()
+        .filter(|m| m.compliance_framework == ComplianceFramework::STIG)
+        .collect();
+
+    let ciphers = stig
+        .iter()
+        .find(|m| m.compliance_control_id == "RHEL-08-010291")
+        .expect("Ciphers must map to RHEL-08-010291 (V-230252)");
+    assert!(
+        ciphers
+            .compliance_control_title
+            .contains("DOD-approved encryption ciphers"),
+        "Ciphers row must carry the V2R7 rule title, got: {}",
+        ciphers.compliance_control_title
+    );
+
+    let macs = stig
+        .iter()
+        .find(|m| m.compliance_control_id == "RHEL-08-010290")
+        .expect("MACs must map to RHEL-08-010290 (V-230251)");
+    assert!(
+        macs.compliance_control_title
+            .contains("Message Authentication Codes (MACs)"),
+        "MACs row must carry the V2R7 rule title, got: {}",
+        macs.compliance_control_title
+    );
+
+    // Exactly the two crypto rules — the Kex STIG mapping is gone, and no
+    // mislabelled V-23029x id survives anywhere in the plugin's coverage.
+    assert_eq!(
+        stig.len(),
+        2,
+        "ssh coverage must carry exactly the Ciphers and MACs STIG rows"
+    );
+    assert!(
+        coverage
+            .iter()
+            .all(|m| !m.compliance_control_id.starts_with("V-2302")),
+        "no mislabelled V-23029x id may survive"
+    );
+
+    // The Kex check keeps its other framework mappings (CIS 5.2.14).
+    assert!(
+        coverage
+            .iter()
+            .any(|m| m.compliance_framework == ComplianceFramework::CIS
+                && m.compliance_control_id == "5.2.14"),
+        "Kex must keep its CIS mapping"
+    );
+}

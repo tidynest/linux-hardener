@@ -566,13 +566,12 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
                     .to_string(),
                 compliance_section: Some("Cryptography".to_string()),
             },
-            ComplianceMapping {
-                compliance_framework: ComplianceFramework::STIG,
-                compliance_control_id: "V-230290".to_string(),
-                compliance_control_title:
-                    "SSH daemon must be configured to use FIPS-approved key exchange".to_string(),
-                compliance_section: Some("Cryptography".to_string()),
-            },
+            // No STIG mapping: the RHEL 8 STIG's sshd KexAlgorithms rule
+            // (RHEL-08-040342 / V-255924) was removed in V2R6 and V2R7 contains
+            // none; the RHEL 10 STIG has none either. Source: DISA RHEL 8 STIG
+            // V2R7 XCCDF (dl.dod.cyber.mil U_RHEL_8_V2R7_STIG.zip). The mapping
+            // formerly here cited "V-230290", which in the real benchmark names
+            // an unrelated rule (RHEL-08-010520, known-hosts authentication).
             ComplianceMapping {
                 compliance_framework: ComplianceFramework::NIST,
                 compliance_control_id: "SC-13".to_string(),
@@ -619,11 +618,16 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "Ensure only strong Ciphers are used".to_string(),
                 compliance_section: Some("Cryptography".to_string()),
             },
+            // DISA RHEL 8 STIG V2R7 XCCDF (dl.dod.cyber.mil U_RHEL_8_V2R7_STIG.zip):
+            // the sshd Ciphers rule is RHEL-08-010291 / V-230252 (CAT I). The id
+            // formerly here, "V-230291", names an unrelated rule in the real
+            // benchmark (RHEL-08-010521, Kerberos authentication).
             ComplianceMapping {
                 compliance_framework: ComplianceFramework::STIG,
-                compliance_control_id: "V-230291".to_string(),
+                compliance_control_id: "RHEL-08-010291".to_string(),
                 compliance_control_title:
-                    "SSH daemon must be configured to use FIPS-approved ciphers".to_string(),
+                    "The RHEL 8 SSH server must be configured to use only DOD-approved encryption ciphers employing FIPS 140-3-validated cryptographic hash algorithms to protect the confidentiality of SSH server connections."
+                        .to_string(),
                 compliance_section: Some("Cryptography".to_string()),
             },
             ComplianceMapping {
@@ -672,11 +676,18 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "Ensure only strong MAC algorithms are used".to_string(),
                 compliance_section: Some("Cryptography".to_string()),
             },
+            // DISA RHEL 8 STIG V2R7 XCCDF (dl.dod.cyber.mil U_RHEL_8_V2R7_STIG.zip):
+            // the sshd MACs rule is RHEL-08-010290 / V-230251 (CAT I). The
+            // 010290 = MACs / 010291 = Ciphers pairing is DISA's own numbering —
+            // reversed versus intuition, deliberately left as published. The id
+            // formerly here, "V-230292", names an unrelated rule in the real
+            // benchmark (RHEL-08-010540, separate /var file system, CAT III).
             ComplianceMapping {
                 compliance_framework: ComplianceFramework::STIG,
-                compliance_control_id: "V-230292".to_string(),
-                compliance_control_title: "SSH daemon must be configured to use FIPS-approved MACs"
-                    .to_string(),
+                compliance_control_id: "RHEL-08-010290".to_string(),
+                compliance_control_title:
+                    "The RHEL 8 SSH server must be configured to use only Message Authentication Codes (MACs) employing FIPS 140-3-validated cryptographic hash algorithms to protect the confidentiality of SSH server connections."
+                        .to_string(),
                 compliance_section: Some("Cryptography".to_string()),
             },
             ComplianceMapping {
