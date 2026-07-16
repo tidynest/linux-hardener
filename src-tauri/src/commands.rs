@@ -16,7 +16,10 @@ use hardener_state::{
 use hardener_types::{
     ApplyOutcome, ConfigSummary, FleetFrameworkPosture, FleetHostScan, FleetHostStatus,
     RollbackOutcome, SeverityTallies,
-    remote::{HostsConfig, RemoteConnectionInfo, RemoteConnectionStatus, RemoteHostProfile},
+    remote::{
+        FLEET_PROGRESS_EVENT, FleetProgress, HostsConfig, RemoteConnectionInfo,
+        RemoteConnectionStatus, RemoteHostProfile,
+    },
 };
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -1197,17 +1200,25 @@ const FLEET_CONCURRENCY: usize = 8;
 
 /// Scans many hosts concurrently, isolating per-host failure and preserving
 /// input order. `scan_one` produces one host's scan results (or an error that
-/// becomes a `Failed` row). Generic over `scan_one` so the orchestration is
-/// unit-testable without real SSH.
+/// becomes a `Failed` row). `on_progress` fires once per completed host, in
+/// completion order, with (host row, completed count, total) — the UI's live
+/// progress hook. Generic so the orchestration is unit-testable without real
+/// SSH or a Tauri app handle.
 ///
 /// ponytail: a spawned task that *panics* (rather than returning `Err`) keeps
 /// its pre-filled `Failed` slot, so the result always has exactly one row per
-/// input host in input order — never a silently dropped host.
-async fn scan_fleet<F, Fut>(host_names: Vec<String>, scan_one: F) -> Vec<FleetHostScan>
+/// input host in input order — never a silently dropped host (panicked tasks
+/// emit no progress event; the scan still ends because the invoke resolves).
+async fn scan_fleet<F, Fut>(
+    host_names: Vec<String>,
+    scan_one: F,
+    mut on_progress: impl FnMut(&FleetHostScan, usize, usize),
+) -> Vec<FleetHostScan>
 where
     F: Fn(String) -> Fut,
     Fut: std::future::Future<Output = Result<Vec<ScanResult>, String>> + Send + 'static,
 {
+    let total = host_names.len();
     let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(FLEET_CONCURRENCY));
     let mut set = tokio::task::JoinSet::new();
 
@@ -1246,8 +1257,11 @@ where
         });
     }
 
+    let mut completed = 0;
     while let Some(joined) = set.join_next().await {
         if let Ok((index, scan)) = joined {
+            completed += 1;
+            on_progress(&scan, completed, total);
             ordered[index] = scan;
         }
     }
@@ -1337,6 +1351,7 @@ pub async fn run_fleet_scan(
     host_names: Vec<String>,
     adhoc: Option<Vec<String>>,
     plugin_ids: Option<Vec<String>>,
+    app: tauri::AppHandle,
 ) -> Result<Vec<FleetHostScan>, String> {
     if let Some(ref ids) = plugin_ids {
         validate_plugin_ids(ids)?;
@@ -1357,37 +1372,56 @@ pub async fn run_fleet_scan(
     // Ad-hoc rows keep the full target string as their display name.
     let all_names: Vec<String> = host_names.into_iter().chain(adhoc).collect();
 
-    let mut results = scan_fleet(all_names, move |name| {
-        let profile = config
-            .hosts
-            .iter()
-            .find(|h| h.name == name)
-            .or_else(|| adhoc_profiles.get(&name))
-            .cloned();
-        let plugin_ids = plugin_ids.clone();
-        async move {
-            let profile = profile.ok_or_else(|| format!("Host profile '{}' not found", name))?;
+    // Best-effort live progress: a dead listener must never fail the scan.
+    let on_progress = move |scan: &FleetHostScan, done: usize, total: usize| {
+        use tauri::Emitter;
+        let _ = app.emit(
+            FLEET_PROGRESS_EVENT,
+            FleetProgress {
+                host: scan.host_name.clone(),
+                done,
+                total,
+                failed: matches!(scan.status, FleetHostStatus::Failed(_)),
+            },
+        );
+    };
 
-            let ssh_config = hardener_core::SshConfig {
-                host: profile.hostname.clone(),
-                port: profile.port,
-                user: profile.user.clone(),
-                identity_file: profile.key_file.clone(),
-                known_hosts: if profile.host_key_checking {
-                    hardener_core::KnownHosts::Strict
-                } else {
-                    hardener_core::KnownHosts::Accept
-                },
-                connect_timeout: std::time::Duration::from_secs(30),
-            };
+    let mut results = scan_fleet(
+        all_names,
+        move |name| {
+            let profile = config
+                .hosts
+                .iter()
+                .find(|h| h.name == name)
+                .or_else(|| adhoc_profiles.get(&name))
+                .cloned();
+            let plugin_ids = plugin_ids.clone();
+            async move {
+                let profile =
+                    profile.ok_or_else(|| format!("Host profile '{}' not found", name))?;
 
-            let executor = hardener_core::SshExecutor::connect(ssh_config)
-                .await
-                .map_err(safe_err)?;
+                let ssh_config = hardener_core::SshConfig {
+                    host: profile.hostname.clone(),
+                    port: profile.port,
+                    user: profile.user.clone(),
+                    identity_file: profile.key_file.clone(),
+                    known_hosts: if profile.host_key_checking {
+                        hardener_core::KnownHosts::Strict
+                    } else {
+                        hardener_core::KnownHosts::Accept
+                    },
+                    connect_timeout: std::time::Duration::from_secs(30),
+                };
 
-            scan_with_executor(std::sync::Arc::new(executor), plugin_ids.as_deref()).await
-        }
-    })
+                let executor = hardener_core::SshExecutor::connect(ssh_config)
+                    .await
+                    .map_err(safe_err)?;
+
+                scan_with_executor(std::sync::Arc::new(executor), plugin_ids.as_deref()).await
+            }
+        },
+        on_progress,
+    )
     .await;
 
     // Derive each host's compliance posture from the findings already scanned —
@@ -1829,13 +1863,17 @@ mod fleet_tests {
     async fn fleet_isolates_failures_and_preserves_order() {
         let hosts = vec!["a".to_string(), "b".to_string(), "c".to_string()];
 
-        let results = scan_fleet(hosts, |name| async move {
-            if name == "b" {
-                Err("connection refused".to_string())
-            } else {
-                Ok(Vec::new())
-            }
-        })
+        let results = scan_fleet(
+            hosts,
+            |name| async move {
+                if name == "b" {
+                    Err("connection refused".to_string())
+                } else {
+                    Ok(Vec::new())
+                }
+            },
+            |_, _, _| {},
+        )
         .await;
 
         assert_eq!(results.len(), 3);
@@ -1845,6 +1883,41 @@ mod fleet_tests {
         assert!(matches!(results[0].status, FleetHostStatus::Ok));
         assert!(matches!(results[1].status, FleetHostStatus::Failed(_)));
         assert!(matches!(results[2].status, FleetHostStatus::Ok));
+    }
+
+    #[tokio::test]
+    async fn fleet_progress_fires_once_per_host_with_monotonic_count() {
+        let hosts = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let mut events: Vec<(String, usize, usize, bool)> = Vec::new();
+
+        scan_fleet(
+            hosts,
+            |name| async move {
+                if name == "b" {
+                    Err("connection refused".to_string())
+                } else {
+                    Ok(Vec::new())
+                }
+            },
+            |scan, done, total| {
+                events.push((
+                    scan.host_name.clone(),
+                    done,
+                    total,
+                    matches!(scan.status, FleetHostStatus::Failed(_)),
+                ));
+            },
+        )
+        .await;
+
+        assert_eq!(events.len(), 3, "one event per host");
+        assert!(events.iter().all(|(_, _, total, _)| *total == 3));
+        let counts: Vec<usize> = events.iter().map(|(_, done, _, _)| *done).collect();
+        assert_eq!(counts, vec![1, 2, 3], "done count is monotonic");
+        let failed: Vec<&(String, usize, usize, bool)> =
+            events.iter().filter(|(_, _, _, f)| *f).collect();
+        assert_eq!(failed.len(), 1, "exactly one failed host");
+        assert_eq!(failed[0].0, "b", "the failed event names the failed host");
     }
 
     #[test]
