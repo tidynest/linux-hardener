@@ -208,8 +208,10 @@ that host's findings). Reuses the single-host scan path in-process; per-host
 failure is isolated. Deferred follow-ups: ~~fleet apply/rollback in the GUI~~
 (shipped 2026-06-28 — see Fleet Apply page), ~~ad-hoc `--ssh` hosts~~ (shipped
 2026-07-16 — shared `RemoteHostProfile::from_target` parser, ad-hoc input on
-both fleet pages, dry-run gate keys on the ad-hoc set), live
-per-host progress, per-host history persistence from the GUI. Emergency
+both fleet pages, dry-run gate keys on the ad-hoc set), ~~live per-host
+progress~~ (shipped 2026-07-16 — `fleet-progress` Tauri event per completed
+host, `listen_event` binding + pending/finished/failed list on the Fleet page),
+per-host history persistence from the GUI. Emergency
 per-host rollback remains available via `sudo hardener --ssh <host> rollback`.
 Per-host CIS score columns plus a per-framework breakdown in the row expander
 shipped 2026-06-24.

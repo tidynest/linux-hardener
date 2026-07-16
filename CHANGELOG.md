@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Live per-host progress during desktop fleet scans: the Fleet page now
+  shows each host as pending/finished/failed with an n-of-total counter
+  while the scan runs, driven by a `fleet-progress` Tauri event emitted as
+  each host completes. Progress is best-effort and purely cosmetic — the
+  scan's outcome remains the awaited command result.
 - Ad-hoc SSH targets in the desktop fleet pages: both **Fleet** (scan) and
   **Fleet Apply** (apply/rollback) now accept `user@host[:port]` targets that
   are not saved in the inventory, matching the CLI's `--ssh` flag. The
