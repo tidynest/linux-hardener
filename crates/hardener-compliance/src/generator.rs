@@ -304,6 +304,24 @@ mod tests {
     }
 
     #[test]
+    fn nist_800_171_clean_coverage_renders_pass_controls() {
+        // 800-171 has no curated catalogue: the derived catalogue IS the
+        // coverage set, so on a clean system every covered requirement
+        // reports Pass and nothing needs manual review.
+        let coverage = vec![
+            mapping(ComplianceFramework::NIST800171, "3.4.2"),
+            mapping(ComplianceFramework::NIST800171, "3.13.1"),
+        ];
+        let generator = ReportGenerator::new(config_for(ComplianceFramework::NIST800171), coverage);
+        let report = generator.generate(&[]).pop().unwrap();
+
+        assert_eq!(report.report_framework, ComplianceFramework::NIST800171);
+        assert_eq!(report.report_summary.summary_total_controls, 2);
+        assert_eq!(report.report_summary.summary_passing, 2);
+        assert_eq!(report.report_summary.summary_manual_review, 0);
+    }
+
+    #[test]
     fn rhel10_finding_reports_translated_stig_id() {
         // A canonical RHEL-08 finding renders under its sourced RHEL-10 id, and
         // the embedded finding copy carries the translated mapping list.

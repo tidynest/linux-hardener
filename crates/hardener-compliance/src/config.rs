@@ -13,7 +13,7 @@ pub enum Scenario {
     Server,
     /// Desktop/laptop security (CIS Workstation).
     Workstation,
-    /// Government compliance (STIG, NIST 800-53).
+    /// Government compliance (STIG, NIST 800-53, NIST SP 800-171).
     Government,
     /// Healthcare systems (HIPAA, NIST).
     Healthcare,
@@ -33,7 +33,11 @@ impl Scenario {
         match self {
             Scenario::Server => vec![ComplianceFramework::CIS, ComplianceFramework::STIG],
             Scenario::Workstation => vec![ComplianceFramework::CIS],
-            Scenario::Government => vec![ComplianceFramework::STIG, ComplianceFramework::NIST],
+            Scenario::Government => vec![
+                ComplianceFramework::STIG,
+                ComplianceFramework::NIST,
+                ComplianceFramework::NIST800171,
+            ],
             Scenario::Healthcare => vec![ComplianceFramework::HIPAA, ComplianceFramework::NIST],
             Scenario::Financial => vec![ComplianceFramework::PCIDSS, ComplianceFramework::CIS],
             Scenario::Gdpr => vec![ComplianceFramework::GDPR],
@@ -45,6 +49,7 @@ impl Scenario {
                 ComplianceFramework::HIPAA,
                 ComplianceFramework::GDPR,
                 ComplianceFramework::SOC2,
+                ComplianceFramework::NIST800171,
             ],
             Scenario::Custom(frameworks) => frameworks.clone(),
         }

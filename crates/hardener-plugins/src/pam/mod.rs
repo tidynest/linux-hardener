@@ -115,6 +115,33 @@ fn pam_soc2_logical_access() -> ComplianceMapping {
     )
 }
 
+/// NIST SP 800-171 Revision 3 mapping for PAM password-quality and ageing checks.
+///
+/// Requirement 3.5.7 (Password Management) is sourced from 800-53 IA-5(1) in
+/// the r3 source-control table — the control the password arms here already
+/// cite as IA-5(1)(a)/(d). Family: Identification and Authentication.
+fn pam_nist171_password_mgmt() -> ComplianceMapping {
+    pam_mapping_in(
+        ComplianceFramework::NIST800171,
+        "3.5.7",
+        "Password Management",
+        "Identification and Authentication",
+    )
+}
+
+/// NIST SP 800-171 Revision 3 mapping for the PAM faillock lockout check.
+///
+/// Requirement 3.1.8 (Unsuccessful Logon Attempts) is sourced from 800-53
+/// AC-7 in the r3 source-control table; its official family matches the
+/// shared "Access Control" section.
+fn pam_nist171_unsuccessful_logons() -> ComplianceMapping {
+    pam_mapping(
+        ComplianceFramework::NIST800171,
+        "3.1.8",
+        "Unsuccessful Logon Attempts",
+    )
+}
+
 /// Returns compliance mappings for PAM findings.
 ///
 /// Multi-framework control IDs are sourced from the ComplianceAsCode/SSG rule
@@ -128,6 +155,9 @@ fn pam_soc2_logical_access() -> ComplianceMapping {
 /// authentication: HIPAA §164.308(a)(5)(ii)(D) (Password Management), GDPR
 /// "TM-AUTH" (Article 32 technical measure), ISO 27001 Annex A 8.5 (Secure
 /// authentication, "Technological" theme), and SOC 2 CC6.1 (logical access).
+/// NIST SP 800-171 is attached only where an arm carries an 800-53 source
+/// control (IA-5(1) → 3.5.7, AC-7 → 3.1.8); arms with no 800-53 reference
+/// honestly carry no 800-171 mapping.
 /// Every compliance mapping this plugin can emit, across all PAM/login.defs
 /// directives it assesses. Aggregated into the engine's coverage set.
 pub fn coverage() -> Vec<ComplianceMapping> {
@@ -156,6 +186,8 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
                 "IA-5(1)(a)",
                 "Authenticator Management | Password-Based Authentication",
             ),
+            // 800-171r3 3.5.7 ← 800-53 IA-5(1) (SP 800-171r3 source-control table).
+            pam_nist171_password_mgmt(),
             pam_mapping(
                 ComplianceFramework::PCIDSS,
                 "8.2.3",
@@ -183,6 +215,8 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
                 "IA-5(1)(a)",
                 "Authenticator Management | Password-Based Authentication",
             ),
+            // 800-171r3 3.5.7 ← 800-53 IA-5(1) (SP 800-171r3 source-control table).
+            pam_nist171_password_mgmt(),
             pam_mapping(
                 ComplianceFramework::PCIDSS,
                 "8.2.3",
@@ -210,6 +244,8 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
                 "IA-5(1)(a)",
                 "Authenticator Management | Password-Based Authentication",
             ),
+            // 800-171r3 3.5.7 ← 800-53 IA-5(1) (SP 800-171r3 source-control table).
+            pam_nist171_password_mgmt(),
             pam_mapping(
                 ComplianceFramework::PCIDSS,
                 "8.2.3",
@@ -237,6 +273,8 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
                 "IA-5(1)(a)",
                 "Authenticator Management | Password-Based Authentication",
             ),
+            // 800-171r3 3.5.7 ← 800-53 IA-5(1) (SP 800-171r3 source-control table).
+            pam_nist171_password_mgmt(),
             pam_mapping(
                 ComplianceFramework::PCIDSS,
                 "8.2.3",
@@ -264,6 +302,8 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
                 "IA-5(1)(a)",
                 "Authenticator Management | Password-Based Authentication",
             ),
+            // 800-171r3 3.5.7 ← 800-53 IA-5(1) (SP 800-171r3 source-control table).
+            pam_nist171_password_mgmt(),
             pam_hipaa_password_mgmt(),
             pam_gdpr_auth(),
             pam_iso_secure_auth(),
@@ -286,6 +326,8 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
                 "IA-5(1)(a)",
                 "Authenticator Management | Password-Based Authentication",
             ),
+            // 800-171r3 3.5.7 ← 800-53 IA-5(1) (SP 800-171r3 source-control table).
+            pam_nist171_password_mgmt(),
             pam_hipaa_password_mgmt(),
             pam_gdpr_auth(),
             pam_iso_secure_auth(),
@@ -308,6 +350,8 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
                 "AC-7(a)",
                 "Unsuccessful Logon Attempts",
             ),
+            // 800-171r3 3.1.8 ← 800-53 AC-7 (SP 800-171r3 source-control table).
+            pam_nist171_unsuccessful_logons(),
             pam_mapping(
                 ComplianceFramework::PCIDSS,
                 "8.1.6",
@@ -348,6 +392,8 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
                 "IA-5(1)(d)",
                 "Authenticator Management | Password-Based Authentication",
             ),
+            // 800-171r3 3.5.7 ← 800-53 IA-5(1) (SP 800-171r3 source-control table).
+            pam_nist171_password_mgmt(),
             pam_mapping(
                 ComplianceFramework::PCIDSS,
                 "8.2.4",
@@ -375,6 +421,8 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
                 "IA-5(1)(d)",
                 "Authenticator Management | Password-Based Authentication",
             ),
+            // 800-171r3 3.5.7 ← 800-53 IA-5(1) (SP 800-171r3 source-control table).
+            pam_nist171_password_mgmt(),
             pam_hipaa_password_mgmt(),
             pam_gdpr_auth(),
             pam_iso_secure_auth(),
@@ -393,6 +441,8 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
                 "IA-5(1)(d)",
                 "Authenticator Management | Password-Based Authentication",
             ),
+            // 800-171r3 3.5.7 ← 800-53 IA-5(1) (SP 800-171r3 source-control table).
+            pam_nist171_password_mgmt(),
             pam_mapping(
                 ComplianceFramework::PCIDSS,
                 "8.2.4",
@@ -1384,6 +1434,38 @@ mod tests {
         assert_eq!(
             soc2.compliance_section.as_deref(),
             Some("Logical and Physical Access Controls")
+        );
+    }
+
+    /// Confirms the 800-171r3 crosswalk: password-quality checks translate
+    /// IA-5(1) to 3.5.7, the faillock check translates AC-7 to 3.1.8, and the
+    /// pwhistory check — whose SSG rule carries no 800-53 reference — honestly
+    /// carries no 800-171 mapping.
+    #[test]
+    fn pam_checks_map_nist_800_171_requirements() {
+        let nist171_for = |check: &str| {
+            get_pam_compliance_mappings(check)
+                .into_iter()
+                .find(|m| m.compliance_framework == ComplianceFramework::NIST800171)
+        };
+
+        let minlen = nist171_for("minlen").expect("minlen must carry an 800-171 mapping");
+        assert_eq!(minlen.compliance_control_id, "3.5.7");
+        assert_eq!(
+            minlen.compliance_section.as_deref(),
+            Some("Identification and Authentication")
+        );
+
+        let lockout = nist171_for("lockout").expect("lockout must carry an 800-171 mapping");
+        assert_eq!(lockout.compliance_control_id, "3.1.8");
+        assert_eq!(
+            lockout.compliance_section.as_deref(),
+            Some("Access Control")
+        );
+
+        assert!(
+            nist171_for("remember").is_none(),
+            "pwhistory has no 800-53 source control and must not claim 800-171"
         );
     }
 

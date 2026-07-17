@@ -28,7 +28,7 @@ pub enum Severity { Info, Low, Medium, High, Critical }
 pub enum FindingCategory { Audit, Authentication, Cryptography, FileSystem, Kernel, MandatoryAccessControl, Network, Services }
 
 // Compliance frameworks
-pub enum ComplianceFramework { CIS, HIPAA, ISO27001, NIST, PCIDSS, STIG, GDPR, SOC2 }
+pub enum ComplianceFramework { CIS, HIPAA, ISO27001, NIST, PCIDSS, STIG, GDPR, SOC2, NIST800171 }
 
 // Scan/Apply results
 pub struct ScanResult { scan_plugin_id, scan_success, scan_findings, scan_duration_us, scan_error }

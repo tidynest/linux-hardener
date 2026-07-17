@@ -24,7 +24,8 @@ fn test_scenario_government_frameworks() {
     let frameworks = scenario.frameworks();
     assert!(frameworks.contains(&ComplianceFramework::STIG));
     assert!(frameworks.contains(&ComplianceFramework::NIST));
-    assert_eq!(frameworks.len(), 2);
+    assert!(frameworks.contains(&ComplianceFramework::NIST800171));
+    assert_eq!(frameworks.len(), 3);
 }
 
 #[test]
@@ -57,7 +58,7 @@ fn test_scenario_gdpr_frameworks() {
 fn test_scenario_all_frameworks() {
     let scenario = Scenario::All;
     let frameworks = scenario.frameworks();
-    assert_eq!(frameworks.len(), 7);
+    assert_eq!(frameworks.len(), 8);
     assert!(frameworks.contains(&ComplianceFramework::CIS));
     assert!(frameworks.contains(&ComplianceFramework::STIG));
     assert!(frameworks.contains(&ComplianceFramework::NIST));
@@ -65,6 +66,7 @@ fn test_scenario_all_frameworks() {
     assert!(frameworks.contains(&ComplianceFramework::HIPAA));
     assert!(frameworks.contains(&ComplianceFramework::GDPR));
     assert!(frameworks.contains(&ComplianceFramework::SOC2));
+    assert!(frameworks.contains(&ComplianceFramework::NIST800171));
 }
 
 #[test]

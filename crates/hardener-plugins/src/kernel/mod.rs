@@ -254,6 +254,26 @@ fn soc2(id: &str, title: &str) -> ComplianceMapping {
     }
 }
 
+/// Builds a NIST SP 800-171 Revision 3 mapping. `id` is the requirement
+/// number (e.g. `3.4.2`); `title` the published requirement name. The section
+/// is the requirement's official family, derived from the id's family number.
+/// Every id is translated from this plugin's 800-53 entries via the r3
+/// source-control table — never invented.
+fn nist171(id: &str, title: &str) -> ComplianceMapping {
+    let family = match id.split('.').nth(1) {
+        Some("1") => "Access Control",
+        Some("4") => "Configuration Management",
+        Some("13") => "System and Communications Protection",
+        _ => "System and Information Integrity",
+    };
+    ComplianceMapping {
+        compliance_framework: ComplianceFramework::NIST800171,
+        compliance_control_id: id.to_string(),
+        compliance_control_title: title.to_string(),
+        compliance_section: Some(family.to_string()),
+    }
+}
+
 /// Returns compliance mappings for a given kernel parameter.
 ///
 /// CIS entries are the project's existing benchmark mappings. STIG/NIST/PCI-DSS
@@ -310,6 +330,10 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 "CC6.8",
                 "Prevent or detect the introduction of unauthorized or malicious software",
             ),
+            // 800-171r3 3.4.2 ← 800-53 CM-6 (SP 800-171r3 source-control table).
+            // SI-16 carries no 800-171 requirement (tailored out as NCO), so
+            // only the configuration-settings intent translates.
+            nist171("3.4.2", "Configuration Settings"),
         ],
         "kernel.kptr_restrict" => vec![
             ComplianceMapping {
@@ -333,6 +357,8 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 "CC6.1",
                 "Logical access security software, infrastructure, and architectures",
             ),
+            // 800-171r3 3.4.2 ← 800-53 CM-6 (SP 800-171r3 source-control table).
+            nist171("3.4.2", "Configuration Settings"),
         ],
         "kernel.dmesg_restrict" => vec![
             ComplianceMapping {
@@ -388,6 +414,8 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 "CC6.1",
                 "Logical access security software, infrastructure, and architectures",
             ),
+            // 800-171r3 3.13.1 ← 800-53 SC-7 (SP 800-171r3 source-control table).
+            nist171("3.13.1", "Boundary Protection"),
         ],
         "fs.suid_dumpable" => vec![
             ComplianceMapping {
@@ -430,6 +458,10 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 "CC6.1",
                 "Logical access security software, infrastructure, and architectures",
             ),
+            // 800-171r3 3.4.2 ← 800-53 CM-6; 3.1.5 ← AC-6 (SP 800-171r3
+            // source-control table).
+            nist171("3.4.2", "Configuration Settings"),
+            nist171("3.1.5", "Least Privilege"),
         ],
         "net.ipv4.conf.all.rp_filter" | "net.ipv4.conf.default.rp_filter" => vec![
             ComplianceMapping {
@@ -467,6 +499,10 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 "CC6.6",
                 "Protect against threats from sources outside system boundaries",
             ),
+            // 800-171r3 3.4.6 ← 800-53 CM-7; 3.13.1 ← SC-7 (SP 800-171r3
+            // source-control table).
+            nist171("3.4.6", "Least Functionality"),
+            nist171("3.13.1", "Boundary Protection"),
         ],
         "net.ipv4.tcp_syncookies" => vec![
             ComplianceMapping {
@@ -497,6 +533,7 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 "CC6.6",
                 "Protect against threats from sources outside system boundaries",
             ),
+            // No 800-171 mapping: SC-5 is tailored out of SP 800-171r3 (NCO).
         ],
         "net.ipv4.conf.all.accept_source_route" | "net.ipv4.conf.default.accept_source_route" => {
             vec![
@@ -526,6 +563,10 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                     "CC6.6",
                     "Protect against threats from sources outside system boundaries",
                 ),
+                // 800-171r3 3.4.6 ← 800-53 CM-7; 3.13.1 ← SC-7 (SP 800-171r3
+                // source-control table).
+                nist171("3.4.6", "Least Functionality"),
+                nist171("3.13.1", "Boundary Protection"),
             ]
         }
         // CIS 3.2.2/3.2.3/3.2.4 — one arm per control covers both the `.all`
@@ -548,6 +589,8 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 "CC6.6",
                 "Protect against threats from sources outside system boundaries",
             ),
+            // 800-171r3 3.14.6 ← 800-53 SI-4 (SP 800-171r3 source-control table).
+            nist171("3.14.6", "System Monitoring"),
         ],
         n if n.contains("secure_redirects") => vec![
             ComplianceMapping {
@@ -568,6 +611,8 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 "CC6.6",
                 "Protect against threats from sources outside system boundaries",
             ),
+            // 800-171r3 3.14.6 ← 800-53 SI-4 (SP 800-171r3 source-control table).
+            nist171("3.14.6", "System Monitoring"),
         ],
         n if n.contains("log_martians") => vec![
             ComplianceMapping {
@@ -587,6 +632,8 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 "CC7.2",
                 "Monitor system components for anomalies indicative of malicious acts or errors",
             ),
+            // 800-171r3 3.14.6 ← 800-53 SI-4 (SP 800-171r3 source-control table).
+            nist171("3.14.6", "System Monitoring"),
         ],
         _ => vec![],
     }
@@ -1017,6 +1064,52 @@ mod tests {
             martians.compliance_section.as_deref(),
             Some("System Operations")
         );
+    }
+
+    /// Confirms the 800-171r3 crosswalk: every requirement id is translated
+    /// from the parameter's existing 800-53 entries via the r3 source-control
+    /// table, and parameters whose only 800-53 controls are tailored out of
+    /// 800-171 (SC-5, SI-11) honestly carry no mapping.
+    #[test]
+    fn kernel_params_map_nist_800_171_requirements() {
+        let ids_for = |param: &str| -> Vec<String> {
+            get_compliance_mappings(param)
+                .into_iter()
+                .filter(|m| m.compliance_framework == ComplianceFramework::NIST800171)
+                .map(|m| m.compliance_control_id)
+                .collect()
+        };
+
+        // CM-6 → 3.4.2; SI-16 is tailored out, so ASLR translates nothing else.
+        assert_eq!(ids_for("kernel.randomize_va_space"), vec!["3.4.2"]);
+        // CM-7 → 3.4.6 and SC-7 → 3.13.1.
+        assert_eq!(
+            ids_for("net.ipv4.conf.all.rp_filter"),
+            vec!["3.4.6", "3.13.1"]
+        );
+
+        // SI-4 → 3.14.6, filed under its official family name.
+        let monitoring = get_compliance_mappings("net.ipv4.conf.all.log_martians")
+            .into_iter()
+            .find(|m| m.compliance_framework == ComplianceFramework::NIST800171)
+            .expect("log_martians must carry an 800-171 mapping");
+        assert_eq!(monitoring.compliance_control_id, "3.14.6");
+        assert_eq!(
+            monitoring.compliance_section.as_deref(),
+            Some("System and Information Integrity")
+        );
+
+        // SC-5 and SI-11 are tailored out of 800-171r3 (NCO): honest absence.
+        for param in [
+            "net.ipv4.tcp_syncookies",
+            "kernel.dmesg_restrict",
+            "fs.suid_dumpable",
+        ] {
+            assert!(
+                ids_for(param).is_empty(),
+                "{param} must not over-claim 800-171"
+            );
+        }
     }
 
     #[test]

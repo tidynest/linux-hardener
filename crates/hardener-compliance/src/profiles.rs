@@ -716,6 +716,16 @@ mod tests {
     }
 
     #[test]
+    fn nist_800_171_is_profile_invariant_under_rhel10() {
+        // 800-171 requirements are OS-independent: no profile may rewrite them.
+        let nist171 = mapping(ComplianceFramework::NIST800171, "3.4.2");
+        assert_eq!(
+            translate(ComplianceProfile::Rhel10, &nist171),
+            vec![nist171.clone()]
+        );
+    }
+
+    #[test]
     fn unsourced_stig_id_drops_under_rhel10() {
         let unknown = mapping(ComplianceFramework::STIG, "RHEL-08-999999");
         assert!(translate(ComplianceProfile::Rhel10, &unknown).is_empty());

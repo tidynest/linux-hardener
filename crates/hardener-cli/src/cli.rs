@@ -106,7 +106,7 @@ pub enum Command {
         #[arg(short, long)]
         scenario: Option<String>,
 
-        /// Specific framework to report on (cis, stig, nist, pcidss, hipaa, gdpr, iso27001, soc2).
+        /// Specific framework to report on (cis, stig, nist, pcidss, hipaa, gdpr, iso27001, soc2, 800-171).
         #[arg(long, conflicts_with = "scenario")]
         framework: Option<String>,
 
@@ -193,7 +193,7 @@ pub enum BatchAction {
         #[arg(long)]
         ssh: Vec<String>,
 
-        /// Single framework: cis, stig, nist, pcidss, hipaa, gdpr, iso27001, soc2.
+        /// Single framework: cis, stig, nist, pcidss, hipaa, gdpr, iso27001, soc2, 800-171.
         #[arg(long, conflicts_with = "scenario")]
         framework: Option<String>,
 

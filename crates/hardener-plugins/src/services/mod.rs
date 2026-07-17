@@ -129,6 +129,33 @@ fn service_soc2_unauthorised_software() -> ComplianceMapping {
     )
 }
 
+/// NIST SP 800-171 Revision 3 mapping for service-minimisation controls.
+///
+/// Requirement 3.4.6 (Least Functionality) is sourced from 800-53 CM-7 in the
+/// r3 source-control table — the control every mapped daemon already cites.
+/// Family: Configuration Management.
+fn service_nist171_least_functionality() -> ComplianceMapping {
+    service_mapping_in(
+        ComplianceFramework::NIST800171,
+        "3.4.6",
+        "Least Functionality",
+        "Configuration Management",
+    )
+}
+
+/// NIST SP 800-171 Revision 3 mapping for the Bluetooth daemon check.
+///
+/// Requirement 3.1.16 (Wireless Access) is sourced from 800-53 AC-18 in the
+/// r3 source-control table. Family: Access Control.
+fn service_nist171_wireless_access() -> ComplianceMapping {
+    service_mapping_in(
+        ComplianceFramework::NIST800171,
+        "3.1.16",
+        "Wireless Access",
+        "Access Control",
+    )
+}
+
 /// Returns compliance mappings for service findings.
 ///
 /// Multi-framework control IDs are sourced from the ComplianceAsCode/SSG rule
@@ -144,6 +171,8 @@ fn service_soc2_unauthorised_software() -> ComplianceMapping {
 /// Network-exposed daemons (Bluetooth, Avahi/mDNS) additionally map ISO 8.20
 /// (Networks security). SOC 2 CC6.8 applies to every mapped daemon (the
 /// unauthorised-software criterion mirrors the same minimisation intent).
+/// NIST SP 800-171 3.4.6 likewise applies to every mapped daemon (sourced
+/// from CM-7), with 3.1.16 added for Bluetooth (sourced from AC-18).
 /// HIPAA is omitted — none of these daemons map cleanly to a Security Rule
 /// specification.
 /// Every compliance mapping this plugin can emit, across all services it
@@ -165,6 +194,8 @@ fn get_service_compliance_mappings(service_name: &str) -> Vec<ComplianceMapping>
                 "Ensure xinetd is not installed",
             ),
             service_mapping(ComplianceFramework::NIST, "CM-7", "Least Functionality"),
+            // 800-171r3 3.4.6 ← 800-53 CM-7 (SP 800-171r3 source-control table).
+            service_nist171_least_functionality(),
             service_gdpr_hardening(),
             service_soc2_unauthorised_software(),
         ]
@@ -180,6 +211,8 @@ fn get_service_compliance_mappings(service_name: &str) -> Vec<ComplianceMapping>
                 "Ensure Avahi Server is not installed",
             ),
             service_mapping(ComplianceFramework::NIST, "CM-7", "Least Functionality"),
+            // 800-171r3 3.4.6 ← 800-53 CM-7 (SP 800-171r3 source-control table).
+            service_nist171_least_functionality(),
             service_gdpr_hardening(),
             service_iso_networks(),
             service_soc2_unauthorised_software(),
@@ -195,6 +228,8 @@ fn get_service_compliance_mappings(service_name: &str) -> Vec<ComplianceMapping>
                 "Ensure CUPS is not installed",
             ),
             service_mapping(ComplianceFramework::NIST, "CM-7", "Least Functionality"),
+            // 800-171r3 3.4.6 ← 800-53 CM-7 (SP 800-171r3 source-control table).
+            service_nist171_least_functionality(),
             service_gdpr_hardening(),
             service_soc2_unauthorised_software(),
         ]
@@ -206,7 +241,11 @@ fn get_service_compliance_mappings(service_name: &str) -> Vec<ComplianceMapping>
         // security) applies in addition to minimisation.
         "bluetooth" => [
             service_mapping(ComplianceFramework::NIST, "AC-18", "Wireless Access"),
+            // 800-171r3 3.1.16 ← 800-53 AC-18 (SP 800-171r3 source-control table).
+            service_nist171_wireless_access(),
             service_mapping(ComplianceFramework::NIST, "CM-7", "Least Functionality"),
+            // 800-171r3 3.4.6 ← 800-53 CM-7 (SP 800-171r3 source-control table).
+            service_nist171_least_functionality(),
             service_gdpr_hardening(),
             service_iso_networks(),
             service_soc2_unauthorised_software(),
@@ -752,6 +791,28 @@ mod tests {
             assert_eq!(
                 soc2.compliance_section.as_deref(),
                 Some("Logical and Physical Access Controls")
+            );
+        }
+    }
+
+    /// Confirms the 800-171r3 crosswalk: every mapped daemon translates CM-7
+    /// to 3.4.6, and Bluetooth additionally translates AC-18 to 3.1.16.
+    #[test]
+    fn services_map_nist_800_171_requirements() {
+        for service in ["xinetd", "avahi-daemon", "cups", "bluetooth"] {
+            let ids: Vec<_> = get_service_compliance_mappings(service)
+                .into_iter()
+                .filter(|m| m.compliance_framework == ComplianceFramework::NIST800171)
+                .map(|m| m.compliance_control_id)
+                .collect();
+            assert!(
+                ids.contains(&"3.4.6".to_string()),
+                "{service} must carry 800-171 3.4.6"
+            );
+            assert_eq!(
+                ids.contains(&"3.1.16".to_string()),
+                service == "bluetooth",
+                "only bluetooth carries the wireless-access requirement"
             );
         }
     }

@@ -426,6 +426,20 @@ fn soc2(id: &str, title: &str) -> ComplianceMapping {
     }
 }
 
+/// Builds a NIST SP 800-171 Revision 3 mapping. `id` is the requirement
+/// number (e.g. `3.3.1`); `title` the published requirement name; the
+/// section is the requirement's official family. Every id is translated from
+/// this plugin's 800-53 entries via the r3 source-control table — never
+/// invented.
+fn nist171(id: &str, title: &str) -> ComplianceMapping {
+    ComplianceMapping {
+        compliance_framework: ComplianceFramework::NIST800171,
+        compliance_control_id: id.to_string(),
+        compliance_control_title: title.to_string(),
+        compliance_section: Some("Audit and Accountability".to_string()),
+    }
+}
+
 fn get_audit_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
     match finding_type {
         // SSG: package_audit_installed
@@ -486,6 +500,8 @@ fn get_audit_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
                 "CC7.2",
                 "Monitor system components for anomalies indicative of malicious acts or errors",
             ),
+            // 800-171r3 3.3.1 ← 800-53 AU-2 (SP 800-171r3 source-control table).
+            nist171("3.3.1", "Event Logging"),
         ],
         // SSG: service_auditd_enabled
         // (nist: AU-3,AU-12(c),...; pcidss: Req-10.1; stigid@ol8: OL08-00-030181)
@@ -547,6 +563,8 @@ fn get_audit_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
                 "CC7.2",
                 "Monitor system components for anomalies indicative of malicious acts or errors",
             ),
+            // 800-171r3 3.3.3 ← 800-53 AU-12 (SP 800-171r3 source-control table).
+            nist171("3.3.3", "Audit Record Generation"),
         ],
         // SSG: audit_rules_* family (e.g. audit_rules_usergroup_modification_*,
         // audit_rules_dac_modification_*, audit_rules_file_deletion_events_*).
@@ -615,6 +633,8 @@ fn get_audit_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
                 "CC7.2",
                 "Monitor system components for anomalies indicative of malicious acts or errors",
             ),
+            // 800-171r3 3.3.3 ← 800-53 AU-12 (SP 800-171r3 source-control table).
+            nist171("3.3.3", "Audit Record Generation"),
         ],
         _ => vec![],
     }
@@ -1162,5 +1182,27 @@ mod tests {
             .collect();
         assert!(rule_ids.contains(&"CC7.1".to_string()));
         assert!(rule_ids.contains(&"CC7.2".to_string()));
+    }
+
+    /// Confirms the 800-171r3 crosswalk: AU-2 → 3.3.1 for the install check
+    /// and AU-12 → 3.3.3 for the service and rules checks, filed under the
+    /// official Audit and Accountability family.
+    #[test]
+    fn audit_findings_map_nist_800_171_requirements() {
+        for (finding_type, id) in [
+            ("not_installed", "3.3.1"),
+            ("not_running", "3.3.3"),
+            ("rules", "3.3.3"),
+        ] {
+            let mapping = get_audit_compliance_mappings(finding_type)
+                .into_iter()
+                .find(|m| m.compliance_framework == ComplianceFramework::NIST800171)
+                .unwrap_or_else(|| panic!("{finding_type} must carry an 800-171 mapping"));
+            assert_eq!(mapping.compliance_control_id, id, "{finding_type}");
+            assert_eq!(
+                mapping.compliance_section.as_deref(),
+                Some("Audit and Accountability")
+            );
+        }
     }
 }

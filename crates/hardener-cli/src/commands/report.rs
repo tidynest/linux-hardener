@@ -270,8 +270,9 @@ fn parse_framework(s: &str) -> Result<ComplianceFramework> {
         "gdpr" => Ok(ComplianceFramework::GDPR),
         "iso27001" | "iso" => Ok(ComplianceFramework::ISO27001),
         "soc2" | "soc-2" => Ok(ComplianceFramework::SOC2),
+        "800-171" | "nist800171" | "nist-800-171" => Ok(ComplianceFramework::NIST800171),
         _ => Err(anyhow!(
-            "Unknown framework '{}'. Valid options: cis, stig, nist, pcidss, hipaa, gdpr, iso27001, soc2",
+            "Unknown framework '{}'. Valid options: cis, stig, nist, pcidss, hipaa, gdpr, iso27001, soc2, 800-171",
             s
         )),
     }

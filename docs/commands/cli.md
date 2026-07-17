@@ -198,7 +198,7 @@ hardener report [FLAGS]
 | Flag | Description | Default |
 |------|-------------|---------|
 | `-s`, `--scenario <SCENARIO>` | Use case preset: `server`, `workstation`, `government`, `healthcare`, `financial`, `gdpr`, `all` | |
-| `--framework <FRAMEWORK>` | Specific framework: `cis`, `stig`, `nist`, `pcidss`, `hipaa`, `gdpr`, `iso27001`, `soc2` | |
+| `--framework <FRAMEWORK>` | Specific framework: `cis`, `stig`, `nist`, `pcidss`, `hipaa`, `gdpr`, `iso27001`, `soc2`, `800-171` | |
 | `--profile <PROFILE>` | Compliance ID profile: `generic`, `rhel10` | auto-detect |
 | `--report-format <FORMAT>` | Report format: `text`, `json` | `text` |
 | `-o`, `--output <FILE>` | Write to file instead of stdout | stdout |
@@ -279,7 +279,7 @@ hardener batch report (--all | --host a,b | --ssh user@host) [FLAGS]
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--framework <FRAMEWORK>` | Single framework: `cis`, `stig`, `nist`, `pcidss`, `hipaa`, `gdpr`, `iso27001`, `soc2` | |
+| `--framework <FRAMEWORK>` | Single framework: `cis`, `stig`, `nist`, `pcidss`, `hipaa`, `gdpr`, `iso27001`, `soc2`, `800-171` | |
 | `--scenario <SCENARIO>` | Preset: `server`, `workstation`, `government`, `healthcare`, `financial`, `gdpr`, `all` | `server` |
 | `--profile <PROFILE>` | Compliance ID profile: `generic`, `rhel10` | per-host auto-detect |
 | `--concurrency <N>` | Maximum hosts assessed in parallel | `8` |

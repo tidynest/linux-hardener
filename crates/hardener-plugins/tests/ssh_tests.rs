@@ -142,3 +142,27 @@ fn ssh_coverage_maps_soc2_access_and_boundary_criteria() {
         );
     }
 }
+
+/// Confirms the SSH coverage set carries the 800-171r3 crypto requirements
+/// translated from its existing 800-53 entries: SC-13 → 3.13.11 and
+/// SC-8 → 3.13.8, filed under their official family.
+#[test]
+fn ssh_coverage_maps_nist_800_171_crypto_requirements() {
+    use hardener_common::types::ComplianceFramework;
+
+    let nist171: Vec<_> = hardener_plugins::ssh::coverage()
+        .into_iter()
+        .filter(|m| m.compliance_framework == ComplianceFramework::NIST800171)
+        .collect();
+
+    for id in ["3.13.11", "3.13.8"] {
+        let mapping = nist171
+            .iter()
+            .find(|m| m.compliance_control_id == id)
+            .unwrap_or_else(|| panic!("SSH coverage must include 800-171 {id}"));
+        assert_eq!(
+            mapping.compliance_section.as_deref(),
+            Some("System and Communications Protection")
+        );
+    }
+}

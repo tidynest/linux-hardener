@@ -71,6 +71,11 @@ const FRAMEWORKS: &[FrameworkInfo] = &[
         name: "SOC 2",
         description: "AICPA Trust Services Criteria",
     },
+    FrameworkInfo {
+        framework: ComplianceFramework::NIST800171,
+        name: "NIST 800-171",
+        description: "Protection of Controlled Unclassified Information",
+    },
 ];
 
 /// Scenario metadata for display.
@@ -94,7 +99,7 @@ const SCENARIOS: &[ScenarioInfo] = &[
     ScenarioInfo {
         name: "Government",
         description: "Government compliance",
-        frameworks: "STIG, NIST 800-53",
+        frameworks: "STIG, NIST 800-53, NIST 800-171",
     },
     ScenarioInfo {
         name: "Healthcare",
@@ -571,6 +576,7 @@ fn framework_icon(framework: &ComplianceFramework) -> &'static str {
         ComplianceFramework::GDPR => "🇪🇺",
         ComplianceFramework::ISO27001 => "🌐",
         ComplianceFramework::SOC2 => "🔏",
+        ComplianceFramework::NIST800171 => "🗂️",
     }
 }
 

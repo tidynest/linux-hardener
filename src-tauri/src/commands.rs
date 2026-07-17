@@ -784,6 +784,7 @@ fn parse_frameworks(frameworks: &[String]) -> Vec<ComplianceFramework> {
             "GDPR" => Some(ComplianceFramework::GDPR),
             "ISO27001" | "ISO-27001" => Some(ComplianceFramework::ISO27001),
             "SOC2" | "SOC-2" => Some(ComplianceFramework::SOC2),
+            "800-171" | "NIST800171" | "NIST-800-171" => Some(ComplianceFramework::NIST800171),
             _ => None,
         })
         .collect()
@@ -1340,7 +1341,7 @@ pub async fn run_remote_scan(
 
 /// Frameworks the fleet view scores against.
 /// ISO 27001 is deliberately omitted; add it here to include it.
-const FLEET_FRAMEWORKS: [ComplianceFramework; 7] = [
+const FLEET_FRAMEWORKS: [ComplianceFramework; 8] = [
     ComplianceFramework::CIS,
     ComplianceFramework::STIG,
     ComplianceFramework::NIST,
@@ -1348,6 +1349,7 @@ const FLEET_FRAMEWORKS: [ComplianceFramework; 7] = [
     ComplianceFramework::HIPAA,
     ComplianceFramework::GDPR,
     ComplianceFramework::SOC2,
+    ComplianceFramework::NIST800171,
 ];
 
 /// Builds the report generator used for fleet compliance scoring (all

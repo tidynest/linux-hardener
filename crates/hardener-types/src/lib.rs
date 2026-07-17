@@ -137,6 +137,8 @@ pub enum ComplianceFramework {
     GDPR,
     /// AICPA SOC 2 Trust Services Criteria.
     SOC2,
+    /// NIST SP 800-171 protection of Controlled Unclassified Information.
+    NIST800171,
 }
 
 impl fmt::Display for ComplianceFramework {
@@ -150,6 +152,7 @@ impl fmt::Display for ComplianceFramework {
             ComplianceFramework::STIG => write!(f, "STIG"),
             ComplianceFramework::GDPR => write!(f, "GDPR"),
             ComplianceFramework::SOC2 => write!(f, "SOC 2"),
+            ComplianceFramework::NIST800171 => write!(f, "NIST 800-171"),
         }
     }
 }
@@ -166,6 +169,7 @@ impl ComplianceFramework {
             ComplianceFramework::STIG => "DISA STIG",
             ComplianceFramework::GDPR => "GDPR Article 32",
             ComplianceFramework::SOC2 => "SOC 2 Trust Services Criteria",
+            ComplianceFramework::NIST800171 => "NIST SP 800-171",
         }
     }
 
@@ -185,6 +189,9 @@ impl ComplianceFramework {
             ComplianceFramework::GDPR => "European Union General Data Protection Regulation",
             ComplianceFramework::SOC2 => {
                 "AICPA Trust Services Criteria (2017, with 2022 points of focus)"
+            }
+            ComplianceFramework::NIST800171 => {
+                "NIST SP 800-171 Revision 3 protection of Controlled Unclassified Information"
             }
         }
     }

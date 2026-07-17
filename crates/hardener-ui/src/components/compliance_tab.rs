@@ -22,6 +22,7 @@ pub fn ComplianceTab() -> impl IntoView {
         ("gdpr", "GDPR"),
         ("iso27001", "ISO 27001"),
         ("soc2", "SOC 2"),
+        ("800-171", "NIST 800-171"),
     ];
 
     // Track selected frameworks

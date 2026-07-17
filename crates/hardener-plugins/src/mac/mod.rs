@@ -234,6 +234,20 @@ fn soc2(id: &str, title: &str) -> ComplianceMapping {
     }
 }
 
+/// Builds a NIST SP 800-171 Revision 3 mapping. `id` is the requirement
+/// number (e.g. `3.1.2`); `title` the published requirement name; the
+/// section is the requirement's official family. Every id is translated from
+/// this plugin's 800-53 entries via the r3 source-control table — never
+/// invented.
+fn nist171(id: &str, title: &str) -> ComplianceMapping {
+    ComplianceMapping {
+        compliance_framework: ComplianceFramework::NIST800171,
+        compliance_control_id: id.to_string(),
+        compliance_control_title: title.to_string(),
+        compliance_section: Some("Access Control".to_string()),
+    }
+}
+
 fn get_mac_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
     match finding_type {
         // SSG: package_apparmor_installed / package_selinux (CIS only); MAC absence
@@ -287,6 +301,8 @@ fn get_mac_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
                 "CC6.8",
                 "Prevent or detect the introduction of unauthorized or malicious software",
             ),
+            // 800-171r3 3.1.2 ← 800-53 AC-3 (SP 800-171r3 source-control table).
+            nist171("3.1.2", "Access Enforcement"),
         ],
         // SSG: selinux_state (nist: AC-3,AC-3(3)(a),AU-9,SC-7(21); stigid@ol8: OL08-00-010170)
         "selinux-not-enforcing" => vec![
@@ -345,6 +361,8 @@ fn get_mac_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
                 "CC6.8",
                 "Prevent or detect the introduction of unauthorized or malicious software",
             ),
+            // 800-171r3 3.1.2 ← 800-53 AC-3 (SP 800-171r3 source-control table).
+            nist171("3.1.2", "Access Enforcement"),
         ],
         // SSG: all_apparmor_profiles_enforced (CIS only). NIST AC-3 access
         // enforcement applies — this is the AppArmor expression of the same
@@ -399,6 +417,8 @@ fn get_mac_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
                 "CC6.8",
                 "Prevent or detect the introduction of unauthorized or malicious software",
             ),
+            // 800-171r3 3.1.2 ← 800-53 AC-3 (SP 800-171r3 source-control table).
+            nist171("3.1.2", "Access Enforcement"),
         ],
         _ => vec![],
     }
@@ -862,6 +882,23 @@ mod tests {
             assert_eq!(
                 soc2.compliance_section.as_deref(),
                 Some("Logical and Physical Access Controls")
+            );
+        }
+    }
+
+    /// Confirms the 800-171r3 crosswalk: every MAC finding translates its
+    /// AC-3 entry to requirement 3.1.2 under the Access Control family.
+    #[test]
+    fn mac_findings_map_nist_800_171_access_enforcement() {
+        for finding_type in MAC_FINDING_TYPES {
+            let mapping = get_mac_compliance_mappings(finding_type)
+                .into_iter()
+                .find(|m| m.compliance_framework == ComplianceFramework::NIST800171)
+                .unwrap_or_else(|| panic!("{finding_type} must carry an 800-171 mapping"));
+            assert_eq!(mapping.compliance_control_id, "3.1.2");
+            assert_eq!(
+                mapping.compliance_section.as_deref(),
+                Some("Access Control")
             );
         }
     }

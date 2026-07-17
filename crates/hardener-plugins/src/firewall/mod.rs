@@ -133,6 +133,25 @@ fn soc2(id: &str, title: &str) -> ComplianceMapping {
     }
 }
 
+/// Builds a NIST SP 800-171 Revision 3 mapping. `id` is the requirement
+/// number (e.g. `3.13.1`); `title` the published requirement name; the
+/// section is the requirement's official family. Every id is translated from
+/// this plugin's 800-53 entries via the r3 source-control table — never
+/// invented.
+fn nist171(id: &str, title: &str) -> ComplianceMapping {
+    let family = if id.starts_with("3.13.") {
+        "System and Communications Protection"
+    } else {
+        "Configuration Management"
+    };
+    ComplianceMapping {
+        compliance_framework: ComplianceFramework::NIST800171,
+        compliance_control_id: id.to_string(),
+        compliance_control_title: title.to_string(),
+        compliance_section: Some(family.to_string()),
+    }
+}
+
 /// Returns compliance mappings for firewall findings.
 ///
 /// CIS is the project's existing benchmark mapping. STIG/NIST/PCI-DSS entries
@@ -205,6 +224,10 @@ fn get_firewall_compliance_mappings() -> Vec<ComplianceMapping> {
             "CC6.6",
             "Protect against threats from sources outside system boundaries",
         ),
+        // 800-171r3 3.13.1 ← 800-53 SC-7; 3.4.6 ← CM-7 (SP 800-171r3
+        // source-control table).
+        nist171("3.13.1", "Boundary Protection"),
+        nist171("3.4.6", "Least Functionality"),
     ]
 }
 
@@ -688,5 +711,25 @@ mod tests {
             soc2.compliance_section.as_deref(),
             Some("Logical and Physical Access Controls")
         );
+    }
+
+    /// Confirms the 800-171r3 crosswalk for the host firewall: SC-7 → 3.13.1
+    /// and CM-7 → 3.4.6, each filed under its official family.
+    #[test]
+    fn firewall_maps_nist_800_171_requirements() {
+        let mappings: Vec<_> = get_firewall_compliance_mappings()
+            .into_iter()
+            .filter(|m| m.compliance_framework == ComplianceFramework::NIST800171)
+            .map(|m| (m.compliance_control_id, m.compliance_section))
+            .collect();
+        for (id, family) in [
+            ("3.13.1", "System and Communications Protection"),
+            ("3.4.6", "Configuration Management"),
+        ] {
+            assert!(
+                mappings.contains(&(id.to_string(), Some(family.to_string()))),
+                "firewall must carry 800-171 {id} under {family}"
+            );
+        }
     }
 }

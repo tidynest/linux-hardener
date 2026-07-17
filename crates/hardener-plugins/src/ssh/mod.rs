@@ -358,6 +358,20 @@ fn soc2(id: &str, title: &str) -> ComplianceMapping {
     }
 }
 
+/// Builds a NIST SP 800-171 Revision 3 mapping. `id` is the requirement
+/// number (e.g. `3.13.11`); `title` the published requirement name; the
+/// section is the requirement's official family. Every id is translated from
+/// this plugin's 800-53 entries via the r3 source-control table — never
+/// invented.
+fn nist171(id: &str, title: &str) -> ComplianceMapping {
+    ComplianceMapping {
+        compliance_framework: ComplianceFramework::NIST800171,
+        compliance_control_id: id.to_string(),
+        compliance_control_title: title.to_string(),
+        compliance_section: Some("System and Communications Protection".to_string()),
+    }
+}
+
 /// Returns compliance mappings for a given SSH directive.
 /// Every compliance mapping this plugin can emit, across all SSH config and
 /// crypto directives it assesses. Aggregated into the engine's coverage set.
@@ -662,6 +676,8 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
                 "CC6.6",
                 "Protect against threats from sources outside system boundaries",
             ),
+            // 800-171r3 3.13.11 ← 800-53 SC-13 (SP 800-171r3 source-control table).
+            nist171("3.13.11", "Cryptographic Protection"),
         ],
         "Ciphers" => vec![
             ComplianceMapping {
@@ -725,6 +741,8 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
                 "CC6.6",
                 "Protect against threats from sources outside system boundaries",
             ),
+            // 800-171r3 3.13.8 ← 800-53 SC-8 (SP 800-171r3 source-control table).
+            nist171("3.13.8", "Transmission and Storage Confidentiality"),
         ],
         "MACs" => vec![
             ComplianceMapping {
@@ -790,6 +808,8 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
                 "CC6.6",
                 "Protect against threats from sources outside system boundaries",
             ),
+            // 800-171r3 3.13.8 ← 800-53 SC-8 (SP 800-171r3 source-control table).
+            nist171("3.13.8", "Transmission and Storage Confidentiality"),
         ],
         _ => vec![],
     }

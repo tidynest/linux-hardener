@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- NIST SP 800-171 compliance framework: `report --framework 800-171` (CLI and
+  desktop, including the fleet posture set, `--scenario all` and
+  `--scenario government`) assesses against SP 800-171 Revision 3 (May 2024),
+  the protection standard for Controlled Unclassified Information in
+  nonfederal systems. Every requirement id is crosswalked from the plugins'
+  existing 800-53 control entries via the official r3 source-control table —
+  14 distinct requirements across six families (access control, audit,
+  configuration management, identification & authentication, communications
+  protection, system integrity). Controls that 800-171r3 tailors out as not
+  CUI-related (SC-5, SI-11, SI-16) map nothing: the report never over-claims.
+  Like SOC 2, the catalogue is derived from live plugin coverage, so every
+  reported requirement is genuinely assessed.
 - SOC 2 compliance framework: `report --framework soc2` (CLI and desktop,
   including the fleet posture set and `--scenario all`) assesses against the
   AICPA 2017 Trust Services Criteria (with the 2022 points of focus). All

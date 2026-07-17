@@ -10,7 +10,7 @@
 Linux System Hardener is a modular security hardening tool for Linux systems, providing:
 - Plugin-based scanning and hardening across multiple security domains
 - Checkpoint/rollback functionality for safe changes
-- Compliance framework mapping (CIS, NIST, STIG, HIPAA, PCI-DSS, GDPR, ISO 27001:2022, SOC 2)
+- Compliance framework mapping (CIS, NIST, STIG, HIPAA, PCI-DSS, GDPR, ISO 27001:2022, SOC 2, NIST SP 800-171)
 - Multiple interfaces: CLI, GUI (Tauri/Leptos), and programmatic APIs
 - Cryptographically signed audit logs and tamper-proof state management
 
@@ -432,6 +432,7 @@ CREATE TABLE file_states (
 | GDPR | 12 | EU data protection (Article 32) |
 | ISO 27001:2022 | 93 | ISO/IEC 27001:2022 Annex A controls (4 themes) |
 | SOC 2 | 5 | AICPA Trust Services Criteria (2017, CC-series; coverage-derived) |
+| NIST SP 800-171 | 14 | Revision 3 CUI requirements, crosswalked from the plugins' 800-53 controls (coverage-derived) |
 
 ### Compliance profiles (report-time ID translation)
 

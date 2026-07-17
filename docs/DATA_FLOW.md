@@ -420,8 +420,8 @@ struct Finding {
 │  │   RHEL 10 STIG V1R1 / CIS v1.0.1 ids; unsourced ids drop  │
 │  ├─ Build control catalogue:                                 │
 │  │   • CIS / ISO 27001: curated catalogue (full standard)    │
-│  │   • STIG/NIST/PCI/HIPAA/GDPR/SOC2: derived from coverage  │
-│  │     (single id scheme, only assessed controls)            │
+│  │   • STIG/NIST/PCI/HIPAA/GDPR/SOC2/800-171: derived from   │
+│  │     coverage (single id scheme, only assessed controls)   │
 │  └─ For each control:                                        │
 │      ├─ Find related findings via ComplianceMapping          │
 │      │   (finding.finding_compliance contains mappings)      │

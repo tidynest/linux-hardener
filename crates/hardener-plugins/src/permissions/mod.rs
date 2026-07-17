@@ -257,6 +257,20 @@ fn soc2(id: &str, title: &str) -> ComplianceMapping {
     }
 }
 
+/// Builds a NIST SP 800-171 Revision 3 mapping. `id` is the requirement
+/// number (e.g. `3.1.5`); `title` the published requirement name; the
+/// section is the requirement's official family. Every id is translated from
+/// this plugin's 800-53 entries via the r3 source-control table — never
+/// invented.
+fn nist171(id: &str, title: &str) -> ComplianceMapping {
+    ComplianceMapping {
+        compliance_framework: ComplianceFramework::NIST800171,
+        compliance_control_id: id.to_string(),
+        compliance_control_title: title.to_string(),
+        compliance_section: Some("Access Control".to_string()),
+    }
+}
+
 fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
     match path {
         // SSG: file_permissions_etc_passwd (nist: AC-6(1),CM-6(a); pcidss: Req-8.7.c)
@@ -305,6 +319,8 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
                 "CC6.1",
                 "Logical access security software, infrastructure, and architectures",
             ),
+            // 800-171r3 3.1.5 ← 800-53 AC-6(1) (SP 800-171r3 source-control table).
+            nist171("3.1.5", "Least Privilege"),
         ],
         // SSG: file_permissions_etc_shadow (nist: AC-6(1),CM-6(a); pcidss: Req-8.7.c)
         "/etc/shadow" => vec![
@@ -352,6 +368,8 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
                 "CC6.1",
                 "Logical access security software, infrastructure, and architectures",
             ),
+            // 800-171r3 3.1.5 ← 800-53 AC-6(1) (SP 800-171r3 source-control table).
+            nist171("3.1.5", "Least Privilege"),
         ],
         // SSG: file_permissions_etc_group (nist: AC-6(1),CM-6(a); pcidss: Req-8.7.c)
         "/etc/group" => vec![
@@ -399,6 +417,8 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
                 "CC6.1",
                 "Logical access security software, infrastructure, and architectures",
             ),
+            // 800-171r3 3.1.5 ← 800-53 AC-6(1) (SP 800-171r3 source-control table).
+            nist171("3.1.5", "Least Privilege"),
         ],
         // SSG: file_permissions_etc_gshadow (nist: AC-6(1),CM-6(a); no pcidss declared)
         "/etc/gshadow" => vec![
@@ -439,6 +459,8 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
                 "CC6.1",
                 "Logical access security software, infrastructure, and architectures",
             ),
+            // 800-171r3 3.1.5 ← 800-53 AC-6(1) (SP 800-171r3 source-control table).
+            nist171("3.1.5", "Least Privilege"),
         ],
         // SSG: directory_permissions_sshd_config_d (nist: AC-17(a),AC-6(1),CM-6(a);
         // no stigid/pcidss declared). This is a live-scanned path; the prior
@@ -475,6 +497,8 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
                 "CC6.1",
                 "Logical access security software, infrastructure, and architectures",
             ),
+            // 800-171r3 3.1.12 ← 800-53 AC-17 (SP 800-171r3 source-control table).
+            nist171("3.1.12", "Remote Access"),
         ],
         _ => vec![],
     }
@@ -988,5 +1012,31 @@ mod tests {
                 Some("Logical and Physical Access Controls")
             );
         }
+    }
+
+    /// Confirms the 800-171r3 crosswalk: the account files translate AC-6(1)
+    /// to 3.1.5 and the sshd config directory translates AC-17 to 3.1.12,
+    /// both under the Access Control family.
+    #[test]
+    fn critical_paths_map_nist_800_171_requirements() {
+        let nist171_for = |path: &str| {
+            get_permissions_compliance_mappings(path)
+                .into_iter()
+                .find(|m| m.compliance_framework == ComplianceFramework::NIST800171)
+                .unwrap_or_else(|| panic!("{path} must carry an 800-171 mapping"))
+        };
+
+        for path in ["/etc/passwd", "/etc/shadow", "/etc/group", "/etc/gshadow"] {
+            let mapping = nist171_for(path);
+            assert_eq!(mapping.compliance_control_id, "3.1.5", "{path}");
+            assert_eq!(
+                mapping.compliance_section.as_deref(),
+                Some("Access Control")
+            );
+        }
+
+        let sshd = nist171_for("/etc/ssh");
+        assert_eq!(sshd.compliance_control_id, "3.1.12");
+        assert_eq!(sshd.compliance_section.as_deref(), Some("Access Control"));
     }
 }
