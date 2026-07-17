@@ -1,13 +1,15 @@
-use hardener_common::types::{ComplianceFramework, ComplianceProfile};
+use hardener_common::types::{ComplianceFramework, ComplianceMapping, ComplianceProfile};
 use hardener_compliance::{
     ComplianceReport, OutputFormat, ReportConfig, ReportGenerator, Scenario,
     output::{
         CsvFormatter, HtmlFormatter, JsonFormatter, PdfFormatter, ReportFormatter, TextFormatter,
     },
+    resolve_profile,
 };
 use hardener_core::{
     ApplyResult, ConfigLoader, Context, Finding, PluginMetadata, ScanResult, ValidationReport,
 };
+use hardener_distro::Distribution;
 use hardener_plugins::create_plugin_registry;
 use hardener_state::{
     Checkpoint, CheckpointId, CheckpointManager, CheckpointSigner, FileState, RollbackResult,
@@ -817,6 +819,16 @@ async fn collect_findings() -> Result<Vec<Finding>, String> {
     Ok(findings)
 }
 
+/// Resolves the compliance profile of the machine this desktop runs on —
+/// the local report commands always assess the local system. Detection
+/// failure falls back to `Generic`, never an error.
+fn local_profile() -> ComplianceProfile {
+    Distribution::detect()
+        .ok()
+        .map(|distro| resolve_profile(&distro))
+        .unwrap_or_default()
+}
+
 /// Generates compliance reports for the specified frameworks.
 ///
 /// Takes a list of framework names and returns compliance reports.
@@ -831,7 +843,7 @@ pub async fn generate_compliance_report(
         scenario: Scenario::Custom(parsed_frameworks),
         formats: vec![OutputFormat::Text],
         output_dir: None,
-        profile: ComplianceProfile::default(),
+        profile: local_profile(),
     };
 
     let generator = ReportGenerator::new(config, hardener_plugins::compliance_coverage());
@@ -864,7 +876,7 @@ pub async fn export_compliance_report(
         scenario: Scenario::Custom(parsed_frameworks),
         formats: vec![output_format],
         output_dir: None,
-        profile: ComplianceProfile::default(),
+        profile: local_profile(),
     };
 
     let generator = ReportGenerator::new(config, hardener_plugins::compliance_coverage());
@@ -1197,15 +1209,32 @@ async fn scan_with_executor(
     Ok(results)
 }
 
+/// Best-effort per-host profile resolution: reads `/etc/os-release` through
+/// the host's own executor and resolves it. Any failure — unreadable file,
+/// unparseable content — falls back to `Generic` and never fails the scan.
+async fn detect_host_profile(executor: &dyn hardener_core::SystemExecutor) -> ComplianceProfile {
+    if let Ok(content) = executor
+        .read_file(std::path::Path::new("/etc/os-release"))
+        .await
+        && let Ok(distro) = Distribution::from_os_release(&content)
+    {
+        resolve_profile(&distro)
+    } else {
+        ComplianceProfile::Generic
+    }
+}
+
 /// Number of hosts scanned concurrently in a fleet scan.
 const FLEET_CONCURRENCY: usize = 8;
 
 /// Scans many hosts concurrently, isolating per-host failure and preserving
-/// input order. `scan_one` produces one host's scan results (or an error that
-/// becomes a `Failed` row). `on_progress` fires once per completed host, in
-/// completion order, with (host row, completed count, total) — the UI's live
-/// progress hook. Generic so the orchestration is unit-testable without real
-/// SSH or a Tauri app handle.
+/// input order. `scan_one` produces one host's resolved compliance profile and
+/// scan results (or an error that becomes a `Failed` row). Each returned row
+/// pairs the host's profile with its scan — the profile drives posture scoring
+/// and is `Generic` for failed hosts. `on_progress` fires once per completed
+/// host, in completion order, with (host row, completed count, total) — the
+/// UI's live progress hook. Generic so the orchestration is unit-testable
+/// without real SSH or a Tauri app handle.
 ///
 /// ponytail: a spawned task that *panics* (rather than returning `Err`) keeps
 /// its pre-filled `Failed` slot, so the result always has exactly one row per
@@ -1215,10 +1244,12 @@ async fn scan_fleet<F, Fut>(
     host_names: Vec<String>,
     scan_one: F,
     mut on_progress: impl FnMut(&FleetHostScan, usize, usize),
-) -> Vec<FleetHostScan>
+) -> Vec<(ComplianceProfile, FleetHostScan)>
 where
     F: Fn(String) -> Fut,
-    Fut: std::future::Future<Output = Result<Vec<ScanResult>, String>> + Send + 'static,
+    Fut: std::future::Future<Output = Result<(ComplianceProfile, Vec<ScanResult>), String>>
+        + Send
+        + 'static,
 {
     let total = host_names.len();
     let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(FLEET_CONCURRENCY));
@@ -1226,14 +1257,19 @@ where
 
     // One placeholder row per host, overwritten as tasks complete. A panicked
     // task leaves its placeholder, preserving the one-row-per-host contract.
-    let mut ordered: Vec<FleetHostScan> = host_names
+    let mut ordered: Vec<(ComplianceProfile, FleetHostScan)> = host_names
         .iter()
-        .map(|name| FleetHostScan {
-            host_name: name.clone(),
-            status: FleetHostStatus::Failed("scan task panicked".to_string()),
-            tallies: SeverityTallies::default(),
-            scan_results: Vec::new(),
-            compliance: Vec::new(),
+        .map(|name| {
+            (
+                ComplianceProfile::Generic,
+                FleetHostScan {
+                    host_name: name.clone(),
+                    status: FleetHostStatus::Failed("scan task panicked".to_string()),
+                    tallies: SeverityTallies::default(),
+                    scan_results: Vec::new(),
+                    compliance: Vec::new(),
+                },
+            )
         })
         .collect();
 
@@ -1242,12 +1278,17 @@ where
         let task = scan_one(name.clone());
         set.spawn(async move {
             let _permit = permits.acquire_owned().await;
-            let (status, scan_results) = match task.await {
-                Ok(results) => (FleetHostStatus::Ok, results),
-                Err(e) => (FleetHostStatus::Failed(e), Vec::new()),
+            let (profile, status, scan_results) = match task.await {
+                Ok((profile, results)) => (profile, FleetHostStatus::Ok, results),
+                Err(e) => (
+                    ComplianceProfile::Generic,
+                    FleetHostStatus::Failed(e),
+                    Vec::new(),
+                ),
             };
             (
                 index,
+                profile,
                 FleetHostScan {
                     host_name: name,
                     tallies: SeverityTallies::from_results(&scan_results),
@@ -1261,10 +1302,10 @@ where
 
     let mut completed = 0;
     while let Some(joined) = set.join_next().await {
-        if let Ok((index, scan)) = joined {
+        if let Ok((index, profile, scan)) = joined {
             completed += 1;
             on_progress(&scan, completed, total);
-            ordered[index] = scan;
+            ordered[index] = (profile, scan);
         }
     }
     ordered
@@ -1307,15 +1348,20 @@ const FLEET_FRAMEWORKS: [ComplianceFramework; 6] = [
 ];
 
 /// Builds the report generator used for fleet compliance scoring (all
-/// `FLEET_FRAMEWORKS` in one pass). Reused across hosts — `generate` takes `&self`.
-fn fleet_report_generator() -> ReportGenerator {
+/// `FLEET_FRAMEWORKS` in one pass) under one host's resolved profile.
+/// Built per host — profiles differ across a mixed fleet, so callers fetch
+/// coverage once and clone it per host (cheap at fleet scale).
+fn fleet_report_generator(
+    profile: ComplianceProfile,
+    coverage: Vec<ComplianceMapping>,
+) -> ReportGenerator {
     let config = ReportConfig {
         scenario: Scenario::Custom(FLEET_FRAMEWORKS.to_vec()),
         formats: vec![OutputFormat::Text],
         output_dir: None,
-        profile: ComplianceProfile::default(),
+        profile,
     };
-    ReportGenerator::new(config, hardener_plugins::compliance_coverage())
+    ReportGenerator::new(config, coverage)
 }
 
 /// Derives slim per-framework posture for one host's findings. In-memory; no SSH.
@@ -1416,11 +1462,16 @@ pub async fn run_fleet_scan(
                     connect_timeout: std::time::Duration::from_secs(30),
                 };
 
-                let executor = hardener_core::SshExecutor::connect(ssh_config)
-                    .await
-                    .map_err(safe_err)?;
+                let executor = std::sync::Arc::new(
+                    hardener_core::SshExecutor::connect(ssh_config)
+                        .await
+                        .map_err(safe_err)?,
+                );
 
-                scan_with_executor(std::sync::Arc::new(executor), plugin_ids.as_deref()).await
+                let results = scan_with_executor(executor.clone(), plugin_ids.as_deref()).await?;
+                // The connection is still open — resolve the host's own
+                // compliance profile from its /etc/os-release while it is.
+                Ok((detect_host_profile(executor.as_ref()).await, results))
             }
         },
         on_progress,
@@ -1428,20 +1479,22 @@ pub async fn run_fleet_scan(
     .await;
 
     // Derive each host's compliance posture from the findings already scanned —
-    // in-memory, no extra SSH. Build the generator once and reuse it per host.
-    let generator = fleet_report_generator();
-    for host in &mut results {
+    // in-memory, no extra SSH. Each host gets a generator carrying its own
+    // resolved profile; the coverage set is fetched once and cloned per host.
+    let coverage = hardener_plugins::compliance_coverage();
+    for (profile, host) in &mut results {
         if matches!(host.status, FleetHostStatus::Ok) {
             let findings: Vec<Finding> = host
                 .scan_results
                 .iter()
                 .flat_map(|r| r.scan_findings.iter().cloned())
                 .collect();
+            let generator = fleet_report_generator(*profile, coverage.clone());
             host.compliance = posture_for_findings(&generator, &findings);
         }
     }
 
-    Ok(results)
+    Ok(results.into_iter().map(|(_, host)| host).collect())
 }
 
 // ---------------------------------------------------------------------------
@@ -1946,7 +1999,10 @@ mod fleet_tests {
 
     #[test]
     fn posture_for_findings_returns_one_per_framework() {
-        let generator = fleet_report_generator();
+        let generator = fleet_report_generator(
+            ComplianceProfile::Generic,
+            hardener_plugins::compliance_coverage(),
+        );
         let scores = posture_for_findings(&generator, &[]);
         assert_eq!(scores.len(), FLEET_FRAMEWORKS.len());
         assert!(
@@ -1954,6 +2010,21 @@ mod fleet_tests {
                 .iter()
                 .any(|s| s.framework == ComplianceFramework::CIS),
             "fleet posture must include CIS"
+        );
+    }
+
+    #[tokio::test]
+    async fn detect_host_profile_resolves_rocky_10_and_defaults_generic() {
+        use hardener_core::MockExecutor;
+        let rocky = MockExecutor::new().with_file(
+            "/etc/os-release",
+            "NAME=\"Rocky Linux\"\nID=\"rocky\"\nVERSION_ID=\"10.0\"\n",
+        );
+        assert_eq!(detect_host_profile(&rocky).await, ComplianceProfile::Rhel10);
+        assert_eq!(
+            detect_host_profile(&MockExecutor::new()).await,
+            ComplianceProfile::Generic,
+            "no os-release on the host resolves to Generic, never an error"
         );
     }
 
@@ -1967,7 +2038,7 @@ mod fleet_tests {
                 if name == "b" {
                     Err("connection refused".to_string())
                 } else {
-                    Ok(Vec::new())
+                    Ok((ComplianceProfile::Generic, Vec::new()))
                 }
             },
             |_, _, _| {},
@@ -1975,12 +2046,39 @@ mod fleet_tests {
         .await;
 
         assert_eq!(results.len(), 3);
-        assert_eq!(results[0].host_name, "a");
-        assert_eq!(results[1].host_name, "b");
-        assert_eq!(results[2].host_name, "c");
-        assert!(matches!(results[0].status, FleetHostStatus::Ok));
-        assert!(matches!(results[1].status, FleetHostStatus::Failed(_)));
-        assert!(matches!(results[2].status, FleetHostStatus::Ok));
+        assert_eq!(results[0].1.host_name, "a");
+        assert_eq!(results[1].1.host_name, "b");
+        assert_eq!(results[2].1.host_name, "c");
+        assert!(matches!(results[0].1.status, FleetHostStatus::Ok));
+        assert!(matches!(results[1].1.status, FleetHostStatus::Failed(_)));
+        assert!(matches!(results[2].1.status, FleetHostStatus::Ok));
+    }
+
+    #[tokio::test]
+    async fn fleet_carries_per_host_profile_and_failed_hosts_stay_generic() {
+        let results = scan_fleet(
+            vec!["rocky10".to_string(), "down".to_string()],
+            |name| async move {
+                if name == "down" {
+                    Err("connection refused".to_string())
+                } else {
+                    Ok((ComplianceProfile::Rhel10, Vec::new()))
+                }
+            },
+            |_, _, _| {},
+        )
+        .await;
+
+        assert_eq!(
+            results[0].0,
+            ComplianceProfile::Rhel10,
+            "a scanned host's resolved profile rides alongside its row"
+        );
+        assert_eq!(
+            results[1].0,
+            ComplianceProfile::Generic,
+            "a failed host scores under Generic"
+        );
     }
 
     #[tokio::test]
@@ -1994,7 +2092,7 @@ mod fleet_tests {
                 if name == "b" {
                     Err("connection refused".to_string())
                 } else {
-                    Ok(Vec::new())
+                    Ok((ComplianceProfile::Generic, Vec::new()))
                 }
             },
             |scan, done, total| {

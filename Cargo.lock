@@ -3206,6 +3206,7 @@ dependencies = [
  "hardener-common",
  "hardener-compliance",
  "hardener-core",
+ "hardener-distro",
  "hardener-plugins",
  "hardener-scheduler",
  "hardener-state",

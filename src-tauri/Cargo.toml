@@ -15,6 +15,7 @@ hardener-core = { path = "../crates/hardener-core" }
 hardener-plugins = { path = "../crates/hardener-plugins" }
 hardener-state = { path = "../crates/hardener-state" }
 hardener-compliance = { path = "../crates/hardener-compliance" }
+hardener-distro = { workspace = true }
 hardener-scheduler = { workspace = true }
 hardener-types = { workspace = true }
 serde = { workspace = true }
