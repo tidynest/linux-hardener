@@ -61,7 +61,8 @@ This document describes the data flow for all major operations in the system.
 │  └─ Filter plugins by --plugin arg                           │
 └────────┬─────────────────────────────────────────────────────┘
          │
-         ▼ For each selected plugin
+         ▼ All selected plugins, concurrently (join_all;
+           results rendered in plugin order, not completion order)
 ┌──────────────────────────────────────────────────────────────┐
 │  Plugin.scan(&ctx)                                           │
 │  ├─ Read system state (READ-ONLY)                            │
@@ -69,7 +70,8 @@ This document describes the data flow for all major operations in the system.
 │  │   • Kernel: /proc/sys/*                                   │
 │  │   • Firewall: firewall-cmd/nft/ufw status                 │
 │  │   • PAM: /etc/pam.d/*, /etc/security/*                    │
-│  │   • Services: systemctl list-unit-files                   │
+│  │   • Services: two batched systemctl listings              │
+│  │     (list-unit-files + list-units, pattern-filtered)      │
 │  │   • Permissions: stat on critical paths                   │
 │  │   • Audit: /etc/audit/rules.d/*                           │
 │  │   • MAC: getenforce/aa-status                             │
@@ -100,7 +102,8 @@ This document describes the data flow for all major operations in the system.
 ┌──────────────────────────────────────────────────────────────┐
 │  Format Output                                               │
 │  ├─ --format text: Human-readable table                      │
-│  └─ --format json: JSON array of findings                    │
+│  ├─ --format json: JSON array of findings                    │
+│  └─ --timings: per-plugin timing table on stderr             │
 └────────┬─────────────────────────────────────────────────────┘
          │
          ▼
@@ -794,7 +797,8 @@ If any entry is modified, the hash chain breaks and tampering is detected.
 ┌──────────────────────────────────────────────────────────────┐
 │  PluginManager::execute_scan(ctx)                            │
 │  ├─ Resolve dependencies (topological sort)                  │
-│  ├─ Execute each plugin's scan() method                      │
+│  ├─ Execute each plugin's scan() sequentially, in            │
+│  │   dependency order (unlike the concurrent CLI paths)      │
 │  └─ Collect Vec<ScanResult>                                  │
 └────────┬─────────────────────────────────────────────────────┘
          │

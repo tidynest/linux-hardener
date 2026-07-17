@@ -23,6 +23,7 @@ pub struct ScanOptions<'a> {
     pub audit: bool,
     pub compliance: bool,
     pub exit_code: bool,
+    pub timings: bool,
     pub executor: Arc<dyn SystemExecutor>,
 }
 
@@ -45,46 +46,68 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
     validate_plugin_filter(opts.plugin_filter, &plugins)?;
     let min_severity = severity_filter_to_severity(&opts.severity_filter);
 
-    let mut all_results = Vec::new();
+    // Resolve the selected plugin handles up front (registry hands out Arcs).
+    let selected: Vec<_> = plugins
+        .iter()
+        .filter(|metadata| {
+            opts.plugin_filter.is_empty()
+                || opts
+                    .plugin_filter
+                    .iter()
+                    .any(|p| is_valid_plugin_name(p, &[metadata.plugin_id.as_str()]))
+        })
+        .filter_map(|metadata| {
+            registry
+                .get(&metadata.plugin_id)
+                .ok()
+                .flatten()
+                .map(|plugin| (metadata.clone(), plugin))
+        })
+        .collect();
 
-    for metadata in &plugins {
-        // Skip if plugin filter is set and this plugin isn't in it
-        if !opts.plugin_filter.is_empty()
-            && !opts
-                .plugin_filter
-                .iter()
-                .any(|p| is_valid_plugin_name(p, &[metadata.plugin_id.as_str()]))
-        {
-            continue;
-        }
-
-        if !opts.quiet {
+    if !opts.quiet {
+        for (metadata, _) in &selected {
             output::status(&opts.format, &format!("Scanning: {}", metadata.plugin_name));
         }
+    }
 
-        if let Ok(Some(plugin)) = registry.get(&metadata.plugin_id) {
-            match plugin.scan(&ctx).await {
-                Ok(results) => {
-                    // Filter findings by severity
-                    let filtered_findings: Vec<_> = results
-                        .scan_findings
-                        .iter()
-                        .filter(|f| f.finding_severity >= min_severity)
-                        .cloned()
-                        .collect();
-                    all_results.push((metadata.clone(), filtered_findings));
-                }
-                Err(e) => {
-                    output::error(
-                        &opts.format,
-                        &format!("Failed to scan {}: {e}", metadata.plugin_name),
-                    );
-                }
+    // Plugins are independent, so scan them concurrently. join_all yields
+    // results in input order, which keeps the rendered output deterministic.
+    let wall = std::time::Instant::now();
+    let scans =
+        futures::future::join_all(selected.iter().map(|(_, plugin)| plugin.scan(&ctx))).await;
+    let wall_elapsed = wall.elapsed();
+
+    let mut all_results = Vec::new();
+    let mut plugin_timings = Vec::new();
+
+    for ((metadata, _), scan) in selected.iter().zip(scans) {
+        match scan {
+            Ok(results) => {
+                plugin_timings.push((metadata.plugin_name.clone(), results.scan_duration_us));
+                // Filter findings by severity
+                let filtered_findings: Vec<_> = results
+                    .scan_findings
+                    .iter()
+                    .filter(|f| f.finding_severity >= min_severity)
+                    .cloned()
+                    .collect();
+                all_results.push((metadata.clone(), filtered_findings));
+            }
+            Err(e) => {
+                output::error(
+                    &opts.format,
+                    &format!("Failed to scan {}: {e}", metadata.plugin_name),
+                );
             }
         }
     }
 
     output::scan_results(&opts.format, &all_results, mode);
+
+    if opts.timings {
+        output::scan_timings(&plugin_timings, wall_elapsed);
+    }
 
     // Persist scan session to history database
     persist_scan_session(&all_results).await;

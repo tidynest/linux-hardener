@@ -62,8 +62,10 @@ hardener scan [FLAGS]
 | `--compliance` | Only show findings that violate policy (no informational) | off |
 | `--exit-code` | Exit with code 1 if any findings exist (for CI/CD pipelines) | off |
 | `-s`, `--severity <LEVEL>` | Minimum severity to report: `info`, `low`, `medium`, `high`, `critical` | `info` |
+| `--timings` | Print a per-plugin timing table (slowest first) after the scan | off |
 
-`--audit` and `--compliance` are mutually exclusive.
+`--audit` and `--compliance` are mutually exclusive. Plugins scan concurrently;
+`--timings` writes to stderr, so `--format json` stdout stays machine-parseable.
 
 **Examples:**
 
@@ -73,6 +75,7 @@ hardener scan --plugin kernel --plugin ssh   # Scan only kernel and SSH
 hardener scan --severity high                # Only show high and critical findings
 hardener scan --audit                        # Ignore config, pure security check
 hardener scan --exit-code                    # Return 1 if findings exist (CI use)
+hardener scan --timings                      # Show where scan time is spent
 hardener --format json scan                  # JSON output for automation
 hardener --ssh user@server scan              # Scan a remote host via SSH
 ```

@@ -68,6 +68,10 @@ pub enum Command {
         /// Minimum severity to report.
         #[arg(short, long, default_value = "info")]
         severity: SeverityFilter,
+
+        /// Print a per-plugin timing table after the scan.
+        #[arg(long)]
+        timings: bool,
     },
 
     /// Apply hardening recommendations.

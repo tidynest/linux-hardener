@@ -16,6 +16,7 @@ nix = { workspace = true, optional = true }
 openssh = { workspace = true, optional = true }
 petgraph = { workspace = true, optional = true }
 serde = { workspace = true }
+tokio = { workspace = true, features = ["process"] }
 tracing = { workspace = true }
 chrono = { workspace = true }
 dirs = { workspace = true }

@@ -54,6 +54,7 @@ async fn main() -> Result<()> {
             audit,
             compliance,
             exit_code,
+            timings,
         } => {
             commands::scan::run(ScanOptions {
                 plugin_filter: &plugin,
@@ -64,6 +65,7 @@ async fn main() -> Result<()> {
                 audit,
                 compliance,
                 exit_code,
+                timings,
                 executor: executor.clone(),
             })
             .await

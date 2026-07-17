@@ -6,8 +6,8 @@ use async_trait::async_trait;
 use std::{
     os::unix::fs::{MetadataExt, PermissionsExt},
     path::{Path, PathBuf},
-    process::Command,
 };
+use tokio::process::Command;
 
 /// Local system executor that operates on the current machine.
 #[derive(Clone, Debug, Default)]
@@ -99,9 +99,12 @@ impl SystemExecutor for LocalExecutor {
 
     async fn execute_command(&self, program: &str, args: &[&str]) -> Result<CommandOutput> {
         let resolved = hardener_common::binary_utils::resolve_binary(program);
+        // tokio's process spawn keeps this future non-blocking, so plugins
+        // scanned concurrently genuinely overlap their command waits.
         let output = Command::new(&resolved)
             .args(args)
             .output()
+            .await
             .with_context(|| format!("Failed to execute command {}", resolved))?;
 
         Ok(CommandOutput {

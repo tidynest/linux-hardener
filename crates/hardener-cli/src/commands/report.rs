@@ -152,26 +152,40 @@ pub async fn scan_grouped(
     let ctx = Context::with_executor(executor);
 
     let plugins = registry.list()?;
-    let mut grouped = Vec::new();
     let show_progress = !quiet && *cli_format == CliOutputFormat::Text;
 
-    for metadata in &plugins {
-        if show_progress {
-            eprint!("  Scanning {}... ", metadata.plugin_name);
-        }
-        if let Ok(Some(plugin)) = registry.get(&metadata.plugin_id) {
-            match plugin.scan(&ctx).await {
-                Ok(result) => {
-                    let count = result.scan_findings.len();
-                    grouped.push((metadata.clone(), result.scan_findings));
-                    if show_progress {
-                        eprintln!("{} finding(s)", count);
-                    }
+    let handles: Vec<_> = plugins
+        .iter()
+        .filter_map(|metadata| {
+            registry
+                .get(&metadata.plugin_id)
+                .ok()
+                .flatten()
+                .map(|plugin| (metadata.clone(), plugin))
+        })
+        .collect();
+
+    // Plugins are independent — scan them concurrently. join_all yields
+    // results in input order, so groups stay in registry (plugin-id) order.
+    let scans =
+        futures::future::join_all(handles.iter().map(|(_, plugin)| plugin.scan(&ctx))).await;
+
+    let mut grouped = Vec::new();
+    for ((metadata, _), scan) in handles.iter().zip(scans) {
+        match scan {
+            Ok(result) => {
+                if show_progress {
+                    eprintln!(
+                        "  Scanned {}: {} finding(s)",
+                        metadata.plugin_name,
+                        result.scan_findings.len()
+                    );
                 }
-                Err(e) => {
-                    if show_progress {
-                        eprintln!("error: {}", e);
-                    }
+                grouped.push((metadata.clone(), result.scan_findings));
+            }
+            Err(e) => {
+                if show_progress {
+                    eprintln!("  Scanned {}: error: {}", metadata.plugin_name, e);
                 }
             }
         }

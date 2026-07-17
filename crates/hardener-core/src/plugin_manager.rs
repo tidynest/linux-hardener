@@ -190,6 +190,9 @@ impl PluginManager {
     pub async fn execute_scan(&self, ctx: &Context) -> Result<Vec<ScanResult>> {
         info!("Starting scan execution");
 
+        // Deliberately sequential: this path honours the dependency graph's
+        // execution order and only the scheduler daemon uses it. The CLI scan
+        // and report paths run plugins concurrently instead.
         let execution_order = self.execution_order()?;
         let mut all_scan_results = Vec::new();
 

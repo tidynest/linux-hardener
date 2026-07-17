@@ -109,6 +109,36 @@ pub fn scan_results(
     }
 }
 
+/// Prints a per-plugin timing table, sorted slowest first.
+///
+/// Written to stderr so `--format json` stdout stays machine-parseable.
+/// Plugins run concurrently, so the summed plugin time exceeds wall clock.
+pub fn scan_timings(timings: &[(String, u64)], wall: std::time::Duration) {
+    let mut rows: Vec<_> = timings.to_vec();
+    rows.sort_by_key(|(_, us)| std::cmp::Reverse(*us));
+
+    let width = rows
+        .iter()
+        .map(|(name, _)| name.len())
+        .chain([19])
+        .max()
+        .unwrap_or(19);
+    let ms = |us: f64| format!("{:>10.1} ms", us / 1000.0);
+
+    eprintln!("\n{}", "═══ Plugin Timings ═══".bold());
+    for (name, us) in &rows {
+        eprintln!("{name:<width$} {}", ms(*us as f64));
+    }
+    let total: u64 = rows.iter().map(|(_, us)| us).sum();
+    eprintln!("{}", "─".repeat(width + 14).dimmed());
+    eprintln!("{:<width$} {}", "Total (plugin time)", ms(total as f64));
+    eprintln!(
+        "{:<width$} {}",
+        "Wall clock",
+        ms(wall.as_secs_f64() * 1_000_000.0)
+    );
+}
+
 pub fn apply_results(format: &OutputFormat, results: &[(PluginMetadata, ApplyResult)]) {
     match format {
         OutputFormat::Json => match serde_json::to_string_pretty(&results) {

@@ -84,7 +84,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in-container. Usage and the capability boundary are documented in
   `packaging/docker/README.md`.
 
+- `hardener scan --timings`: per-plugin timing table (slowest first, from each
+  plugin's self-reported `scan_duration_us`) plus summed plugin time and wall
+  clock, written to stderr so JSON stdout stays machine-parseable.
+
+### Changed
+- Scan performance: the `scan` and `report`/`batch` scan paths now run all
+  plugins concurrently (`futures::future::join_all`; output order is
+  preserved by rendering in plugin order), `LocalExecutor` spawns commands
+  through `tokio::process` so concurrent scans genuinely overlap, and the
+  services plugin batches its systemctl probing — two pattern-filtered
+  listings (`list-unit-files`/`list-units`) for the whole scan instead of up
+  to three spawns per service. Measured locally (debug build, 8 plugins):
+  wall clock ~25 ms → ~10 ms per scan; the services plugin ~13 ms → ~8 ms and
+  15 spawns → 2. Remote scans gain more: each spawn saved is an SSH
+  round-trip. The scheduler's `PluginManager::execute_scan` stays
+  deliberately sequential — it honours the dependency graph and only the
+  daemon uses it. Criterion benches remain deliberately out of scope; the
+  `--timings` flag plus these recorded numbers are the measurement story.
+
 ### Fixed
+- The services plugin's existence probe called
+  `systemctl list-unit-files <name>` without the `.service` suffix, which
+  `list-unit-files` does not mangle the way `is-enabled`/`is-active` do — the
+  pattern matched nothing, so every service looked absent and the plugin
+  scanned, validated and applied as a silent no-op. The batched scan listings
+  and the suffixed per-service probe now detect enabled services again
+  (enabled Avahi/CUPS correctly fail CIS 2.2.3/2.2.4 instead of
+  false-passing).
 - The ssh plugin's three STIG crypto mappings carried V-IDs that name
   unrelated rules in the real RHEL 8 STIG (V-230290/1/2 are known-hosts
   authentication, Kerberos and separate-/var). Ciphers and MACs now carry
