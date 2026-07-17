@@ -22,7 +22,38 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 RESULTS_DIR="$PROJECT_DIR/test-results"
-MUSL_BINARY="$PROJECT_DIR/target/x86_64-unknown-linux-musl/release/hardener"
+
+# Cargo may redirect build output away from ./target (CARGO_TARGET_DIR or a
+# [build] target-dir in ~/.cargo/config.toml); probe candidates for "$@".
+resolve_target_dir() {
+    local dir probe home
+    if [[ -n "${CARGO_TARGET_DIR:-}" ]]; then
+        echo "$CARGO_TARGET_DIR"
+        return
+    fi
+    dir=""
+    if command -v cargo &>/dev/null; then
+        dir=$(cargo metadata --format-version 1 --no-deps \
+            --manifest-path "$PROJECT_DIR/Cargo.toml" 2>/dev/null |
+            sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')
+    fi
+    [[ -n "$dir" ]] || dir="$PROJECT_DIR/target"
+    for probe in "$@"; do
+        [[ -e "$dir/$probe" ]] && { echo "$dir"; return; }
+    done
+    for home in "${SUDO_USER:+$(getent passwd "$SUDO_USER" | cut -d: -f6)}" "$HOME"; do
+        for probe in "$@"; do
+            if [[ -n "$home" && -e "$home/.cache/cargo-target/$probe" ]]; then
+                echo "$home/.cache/cargo-target"
+                return
+            fi
+        done
+    done
+    echo "$dir"
+}
+
+TARGET_DIR="$(resolve_target_dir "x86_64-unknown-linux-musl/release/hardener" "release/hardener")"
+MUSL_BINARY="$TARGET_DIR/x86_64-unknown-linux-musl/release/hardener"
 
 # Distro name -> container name mapping (same as run-cross-distro-tests.sh)
 declare -A CONTAINERS=(
@@ -116,13 +147,20 @@ if [[ "$DO_REBUILD" == "true" ]]; then
         echo -e "${RED}Build failed${NC}"
         exit 1
     }
+    TARGET_DIR="$(resolve_target_dir "x86_64-unknown-linux-musl/release/hardener" "release/hardener")"
+    MUSL_BINARY="$TARGET_DIR/x86_64-unknown-linux-musl/release/hardener"
     echo -e "${GREEN}Build complete: $MUSL_BINARY${NC}"
 fi
 
-if [[ ! -x "$MUSL_BINARY" ]] && [[ ! -x "$PROJECT_DIR/target/release/hardener" ]]; then
+if [[ ! -x "$MUSL_BINARY" ]] && [[ ! -x "$TARGET_DIR/release/hardener" ]]; then
     echo -e "${RED}ERROR: No binary found. Build first or use --rebuild${NC}"
     exit 1
 fi
+
+# A redirected target dir sits outside the /project bind; mount it where the
+# in-container scripts expect ./target.
+TARGET_BIND=()
+[[ "$TARGET_DIR" != "$PROJECT_DIR/target" ]] && TARGET_BIND=("--bind-ro=$TARGET_DIR:/project/target")
 
 mkdir -p "$RESULTS_DIR"
 
@@ -183,6 +221,7 @@ for distro in "${DISTROS[@]}"; do
 
     systemd-nspawn -D "$container_path" \
         --bind="$PROJECT_DIR:/project" \
+        "${TARGET_BIND[@]}" \
         --pipe \
         /bin/bash /project/scripts/test-package-install.sh $APPLY_FLAG \
         > "$logfile" 2>&1

@@ -28,6 +28,38 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 source "$SCRIPT_DIR/detect-polkit-agent.sh"
 
+# Cargo may redirect build output away from ./target (CARGO_TARGET_DIR or a
+# [build] target-dir in ~/.cargo/config.toml); probe candidates for "$@".
+resolve_target_dir() {
+    local dir probe home
+    if [[ -n "${CARGO_TARGET_DIR:-}" ]]; then
+        echo "$CARGO_TARGET_DIR"
+        return
+    fi
+    dir=""
+    if command -v cargo &>/dev/null; then
+        dir=$(cargo metadata --format-version 1 --no-deps \
+            --manifest-path "$PROJECT_DIR/Cargo.toml" 2>/dev/null |
+            sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')
+    fi
+    [[ -n "$dir" ]] || dir="$PROJECT_DIR/target"
+    for probe in "$@"; do
+        [[ -e "$dir/$probe" ]] && { echo "$dir"; return; }
+    done
+    for home in "${SUDO_USER:+$(getent passwd "$SUDO_USER" | cut -d: -f6)}" "$HOME"; do
+        for probe in "$@"; do
+            if [[ -n "$home" && -e "$home/.cache/cargo-target/$probe" ]]; then
+                echo "$home/.cache/cargo-target"
+                return
+            fi
+        done
+    done
+    echo "$dir"
+}
+
+TARGET_DIR="$(resolve_target_dir \
+    "x86_64-unknown-linux-musl/release/hardener" "release/hardener" "debug/hardener")"
+
 INTERACTIVE=false
 [[ "${1:-}" == "--interactive" ]] && INTERACTIVE=true
 
@@ -156,9 +188,9 @@ section "Binary Resolution"
 HARDENER_BIN=""
 for candidate in \
     /usr/bin/hardener \
-    "$PROJECT_DIR/target/x86_64-unknown-linux-musl/release/hardener" \
-    "$PROJECT_DIR/target/release/hardener" \
-    "$PROJECT_DIR/target/debug/hardener"; do
+    "$TARGET_DIR/x86_64-unknown-linux-musl/release/hardener" \
+    "$TARGET_DIR/release/hardener" \
+    "$TARGET_DIR/debug/hardener"; do
     if [[ -x "$candidate" ]]; then
         HARDENER_BIN="$candidate"
         break

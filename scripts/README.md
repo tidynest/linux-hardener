@@ -1,6 +1,6 @@
 # Project Scripts
 
-**Last Updated**: 2026-07-02
+**Last Updated**: 2026-07-17
 
 This directory contains utility scripts for the Linux Hardening Tool project.
 
@@ -40,6 +40,31 @@ This directory contains utility scripts for the Linux Hardening Tool project.
 | **PARALLEL: GUI only** | `sudo ./scripts/run-gui-tests-parallel.sh` |
 | **Package install tests** | `sudo ./scripts/run-package-tests.sh` |
 | **Single distro pkg test** | `sudo ./scripts/run-package-tests.sh --distro arch` |
+
+---
+
+## Cargo Target Directory Resolution
+
+The host-side runners (`run-cross-distro-tests*.sh`, `run-package-tests.sh`,
+`run-tauri-gui-tests.sh`, `run-desktop-tests.sh`, `test-polkit-matrix.sh`,
+`test-polkit-no-agent.sh`) do not assume binaries live under `./target`. Each
+carries an identical self-contained `resolve_target_dir` function (no sourced
+helper — several scripts travel into containers where a host include would not
+exist) that resolves, in order:
+
+1. `$CARGO_TARGET_DIR`, if set.
+2. `cargo metadata` → `target_directory` (honours `[build] target-dir` in
+   `~/.cargo/config.toml`), when cargo is on `PATH`.
+3. `./target`; if the wanted binary is absent there but present under the
+   invoking user's `~/.cache/cargo-target` (via `$SUDO_USER` under sudo), the
+   cache directory is used.
+
+Musl artefacts (`x86_64-unknown-linux-musl/release/...`) resolve from the same
+root. When the resolved directory is not `./target`, the container runners
+bind-mount it read-only at `/project/target`, so in-container scripts
+(`full-test-suite.sh`, `test-package-install.sh`, `tauri-gui-test-inner.sh`,
+`verify-rollback.sh`, `root-test-suite.sh`, `manual-verification-test.sh`) keep
+their documented `/project/target/...` paths unchanged.
 
 ---
 

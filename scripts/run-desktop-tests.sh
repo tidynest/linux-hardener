@@ -17,7 +17,7 @@
 # Requirements:
 #   - Hyprland (or hyprctl-compatible compositor)
 #   - wtype, grim, python3
-#   - Tauri binary built: target/debug/linux-hardener-desktop
+#   - Tauri binary built: debug/linux-hardener-desktop under the cargo target dir
 # =============================================================================
 
 set -uo pipefail
@@ -26,6 +26,37 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 RESULTS_DIR="$PROJECT_DIR/test-results/desktop"
 OUTDIR="/tmp/test-grouped"
+
+# Cargo may redirect build output away from ./target (CARGO_TARGET_DIR or a
+# [build] target-dir in ~/.cargo/config.toml); probe candidates for "$@".
+resolve_target_dir() {
+    local dir probe home
+    if [[ -n "${CARGO_TARGET_DIR:-}" ]]; then
+        echo "$CARGO_TARGET_DIR"
+        return
+    fi
+    dir=""
+    if command -v cargo &>/dev/null; then
+        dir=$(cargo metadata --format-version 1 --no-deps \
+            --manifest-path "$PROJECT_DIR/Cargo.toml" 2>/dev/null |
+            sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')
+    fi
+    [[ -n "$dir" ]] || dir="$PROJECT_DIR/target"
+    for probe in "$@"; do
+        [[ -e "$dir/$probe" ]] && { echo "$dir"; return; }
+    done
+    for home in "${SUDO_USER:+$(getent passwd "$SUDO_USER" | cut -d: -f6)}" "$HOME"; do
+        for probe in "$@"; do
+            if [[ -n "$home" && -e "$home/.cache/cargo-target/$probe" ]]; then
+                echo "$home/.cache/cargo-target"
+                return
+            fi
+        done
+    done
+    echo "$dir"
+}
+
+TARGET_DIR="$(resolve_target_dir "debug/linux-hardener-desktop")"
 
 USE_KITTY=false
 UX_ONLY=false
@@ -103,7 +134,7 @@ check_dependencies() {
 }
 
 check_binary() {
-    if [[ ! -x "$PROJECT_DIR/target/debug/linux-hardener-desktop" ]]; then
+    if [[ ! -x "$TARGET_DIR/debug/linux-hardener-desktop" ]]; then
         echo -e "${RED}ERROR: Tauri binary not found${NC}"
         echo "Build with: cargo build -p linux-hardener-desktop"
         exit 1
@@ -125,7 +156,7 @@ start_tauri() {
     cd "$PROJECT_DIR"
     WEBKIT_DISABLE_COMPOSITING_MODE=1 \
     RUST_LOG=info \
-    "$PROJECT_DIR/target/debug/linux-hardener-desktop" &
+    "$TARGET_DIR/debug/linux-hardener-desktop" &
     TAURI_PID=$!
     cd - > /dev/null
     

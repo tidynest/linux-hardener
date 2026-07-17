@@ -120,13 +120,16 @@ cd linux-system-hardener
 # CLI only (static musl binary)
 cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli
 
-# Desktop GUI
-cd src-tauri && cargo build --release && cd ..
+# Desktop GUI (workspace member — builds into the workspace target directory)
+cargo build --release -p linux-hardener-desktop
 
 # Install
 sudo install -Dm755 target/x86_64-unknown-linux-musl/release/hardener /usr/bin/hardener
-sudo install -Dm755 src-tauri/target/release/linux-hardener-desktop /usr/bin/linux-hardener-desktop
+sudo install -Dm755 target/release/linux-hardener-desktop /usr/bin/linux-hardener-desktop
 ```
+
+If `CARGO_TARGET_DIR` or a `[build] target-dir` in `~/.cargo/config.toml` is
+configured, substitute that directory for `target/` in the install paths above.
 
 ---
 

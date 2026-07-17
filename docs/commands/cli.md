@@ -2,9 +2,10 @@
 
 Command reference for the `hardener` binary (`crates/hardener-cli/`).
 
-**Binary locations:**
-- Debug: `target/debug/hardener`
-- Release: `target/release/hardener`
+**Binary locations** (relative to the cargo target directory — `./target` by
+default, or wherever `CARGO_TARGET_DIR`/`[build] target-dir` points):
+- Debug: `debug/hardener`
+- Release: `release/hardener`
 
 ---
 
@@ -517,4 +518,4 @@ hardener history export <SESSION_ID> [FLAGS]
 | `SESSION_ID` | UUID of the session to export | |
 | `-o`, `--output <FILE>` | Output file path | `session-<id>.json` |
 
-**Last Updated**: 2026-06-28
+**Last Updated**: 2026-07-17

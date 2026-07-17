@@ -18,6 +18,37 @@ RESULTS_DIR="$PROJECT_DIR/test-results/gui"
 CONTAINER="hardener-test"
 CONTAINER_PATH="/var/lib/machines/$CONTAINER"
 
+# Cargo may redirect build output away from ./target (CARGO_TARGET_DIR or a
+# [build] target-dir in ~/.cargo/config.toml); probe candidates for "$@".
+resolve_target_dir() {
+    local dir probe home
+    if [[ -n "${CARGO_TARGET_DIR:-}" ]]; then
+        echo "$CARGO_TARGET_DIR"
+        return
+    fi
+    dir=""
+    if command -v cargo &>/dev/null; then
+        dir=$(cargo metadata --format-version 1 --no-deps \
+            --manifest-path "$PROJECT_DIR/Cargo.toml" 2>/dev/null |
+            sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')
+    fi
+    [[ -n "$dir" ]] || dir="$PROJECT_DIR/target"
+    for probe in "$@"; do
+        [[ -e "$dir/$probe" ]] && { echo "$dir"; return; }
+    done
+    for home in "${SUDO_USER:+$(getent passwd "$SUDO_USER" | cut -d: -f6)}" "$HOME"; do
+        for probe in "$@"; do
+            if [[ -n "$home" && -e "$home/.cache/cargo-target/$probe" ]]; then
+                echo "$home/.cache/cargo-target"
+                return
+            fi
+        done
+    done
+    echo "$dir"
+}
+
+TARGET_DIR="$(resolve_target_dir "debug/linux-hardener-desktop")"
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -75,10 +106,15 @@ if [[ ! -d "$CONTAINER_PATH" ]]; then
     exit 1
 fi
 
-if [[ ! -x "$PROJECT_DIR/target/debug/linux-hardener-desktop" ]]; then
+if [[ ! -x "$TARGET_DIR/debug/linux-hardener-desktop" ]]; then
     echo -e "${RED}ERROR: Tauri binary not found. Build with: cargo build -p linux-hardener-desktop${NC}"
     exit 1
 fi
+
+# A redirected target dir sits outside the /project bind; mount it where the
+# in-container script expects ./target.
+TARGET_BIND=()
+[[ "$TARGET_DIR" != "$PROJECT_DIR/target" ]] && TARGET_BIND=("--bind-ro=$TARGET_DIR:/project/target")
 
 mkdir -p "$RESULTS_DIR/screenshots/tauri"
 
@@ -112,6 +148,7 @@ echo -e "  ${CYAN}[RUN]${NC}  systemd-nspawn --pipe -> tauri-gui-test-inner.sh"
 
 systemd-nspawn -D "$CONTAINER_PATH" \
     --bind="$PROJECT_DIR:/project" \
+    "${TARGET_BIND[@]}" \
     --pipe \
     /bin/bash /project/scripts/tauri-gui-test-inner.sh \
     > "$LOGFILE" 2>&1

@@ -170,6 +170,23 @@ Interactive step-by-step test with pauses between operations. Designed for manua
 
 Runs the full test suite across multiple distribution containers from the host.
 
+### Cargo target directory resolution
+
+The host-side test runners no longer assume binaries live under `./target`. Each
+resolves the real cargo target directory in this order:
+
+1. `$CARGO_TARGET_DIR`, if set.
+2. `cargo metadata --format-version 1 --no-deps` → `target_directory` (honours a
+   `[build] target-dir` in `~/.cargo/config.toml`), when cargo is on `PATH`.
+3. `./target` (the default for a fresh clone); if the wanted binary is absent
+   there but present under the invoking user's `~/.cache/cargo-target` (checked
+   via `$SUDO_USER` when running under sudo), that directory is used instead.
+
+When the resolved directory is not `./target`, the container runners additionally
+bind-mount it read-only at `/project/target`, so the in-container scripts
+(`full-test-suite.sh`, `test-package-install.sh`, `tauri-gui-test-inner.sh`,
+`verify-rollback.sh`) keep finding binaries at their documented paths unchanged.
+
 ### All distributions
 
 ```bash
@@ -203,7 +220,7 @@ Runs CLI tests plus Playwright GUI tests inside each container.
 sudo ./scripts/run-cross-distro-tests.sh --rebuild
 ```
 
-Recompiles the musl binary (`target/x86_64-unknown-linux-musl/release/hardener`) before copying it into containers. Use this after code changes.
+Recompiles the musl binary (`x86_64-unknown-linux-musl/release/hardener` under the resolved cargo target directory) before copying it into containers. Use this after code changes.
 
 Test results are written to `test-results/<distro>.log`.
 
@@ -276,4 +293,4 @@ cargo build --release --target aarch64-unknown-linux-gnu -p hardener-cli
 
 Produces three release tarballs and creates a GitHub release.
 
-**Last Updated**: 2026-06-28
+**Last Updated**: 2026-07-17

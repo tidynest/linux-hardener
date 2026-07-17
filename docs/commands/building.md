@@ -2,6 +2,11 @@
 
 Commands for compiling the CLI, desktop GUI, and WASM frontend.
 
+Binary paths below assume the default cargo target directory (`./target`). With
+`CARGO_TARGET_DIR` or a `[build] target-dir` in `~/.cargo/config.toml`, output
+lands under the configured directory instead — the repository's test scripts
+resolve this automatically (see `docs/commands/testing.md`).
+
 ---
 
 ## CLI Binary
@@ -202,4 +207,4 @@ rustup target list --installed               # List currently installed targets
 cargo update --workspace                     # Update all dependencies in Cargo.lock
 ```
 
-**Last Updated**: 2026-02-26
+**Last Updated**: 2026-07-17
