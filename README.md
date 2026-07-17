@@ -183,6 +183,28 @@ makepkg -si
 
 This installs both the `hardener` CLI and the `linux-hardener-desktop` GUI application.
 
+### Run with Docker (scan and report only)
+
+A minimal `FROM scratch` image carrying only the static `hardener` binary can
+audit the host read-only:
+
+```bash
+# Build from the repository root
+docker build -f packaging/docker/Dockerfile -t linux-system-hardener .
+
+# Read-only scan of the host's config surface
+docker run --rm --pid=host \
+  -v /etc:/etc:ro -v /var/log:/var/log:ro -v /usr/lib:/usr/lib:ro \
+  linux-system-hardener scan --format json
+```
+
+Scan and report run read-only against the mounted host state.
+`systemctl`/D-Bus-dependent checks (services, parts of audit/MAC/firewall)
+degrade to tool-unavailable findings rather than lying, and `apply` is
+unsupported in a container by design — it would need `--privileged` plus host
+namespaces, defeating the isolation. Details in
+[`packaging/docker/README.md`](packaging/docker/README.md).
+
 ### Prerequisites (Building from Source)
 
 - Rust 1.85+ (with `wasm32-unknown-unknown` and `x86_64-unknown-linux-musl` targets)

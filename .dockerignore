@@ -1,0 +1,6 @@
+target/
+.git
+.worktrees/
+.claude/
+docs/assets/screenshots/
+crates/hardener-ui/dist/

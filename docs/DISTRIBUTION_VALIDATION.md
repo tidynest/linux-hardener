@@ -46,6 +46,42 @@ This document tracks validation testing across supported Linux distributions.
 
 ---
 
+## Docker Image Validation (2026-07-17)
+
+The container image (`packaging/docker/Dockerfile` — `rust:1.97-alpine` build
+stage, `FROM scratch` runtime carrying only the static musl binary) was built
+from a clean tree and validated on the Arch host (Docker 29.6.1). The image
+supports **scan and report only**; `apply` is unsupported in-container by
+design and was deliberately not validated. Usage and the capability boundary:
+`packaging/docker/README.md`.
+
+| Item | Result |
+|------|--------|
+| `docker build -f packaging/docker/Dockerfile .` (repo root context) | OK — 5 m 40 s cold build, image 13.6 MB |
+| Binary in image | `hardener 1.2.2`, static-pie, stripped |
+| Documented scan (`--pid=host`, `/etc` `/var/log` `/usr/lib` read-only, `scan --format json`) | Exit 0, valid JSON, 19 findings |
+| Same scan as `--user 1000:1000` | Identical to the root-in-container run (19 findings, same IDs) |
+| Native run of the identical binary (extracted from image, non-root host user) | 20 findings |
+| Scan with additional `-v /boot:/boot:ro -v /root:/root:ro` | 21 findings (= native 20 + audit degradation below) |
+| `report --framework cis` in-container | Exit 0 — 44 controls: 26 pass, 12 fail, 6 manual review |
+
+**Finding-ID delta, container vs native (same binary, so the delta isolates
+the container environment — exactly 3 IDs differ):**
+
+- `permissions-hardening`: `perm--root` (0750) and `perm--boot` (0755) are
+  absent in-container because `/root` and `/boot` sit outside the documented
+  mounts; mounting them read-only restores both findings.
+- `audit-hardening`: the container adds `audit_not_installed` because it
+  cannot see the host's service manager (auditd is running on the host) — the
+  documented tool-unavailable degradation, to be read as *unverifiable
+  in-container*, not as host truth.
+- Every other finding ID is identical (kernel 4, mac 1, pam 10, ssh 3,
+  firewall 0, services 0).
+
+Remote `--ssh` operations are unavailable in the image (no ssh client binary).
+
+---
+
 ## v1.1.0 Re-validation (2026-06-28)
 
 The v1.1.0 musl static binary (`hardener 1.1.0`, ~13.6 MB, `static-pie`) was run
@@ -730,4 +766,4 @@ test-results/gui/
 
 ---
 
-**Last Updated:** 2026-06-28
+**Last Updated:** 2026-07-17

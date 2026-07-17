@@ -41,6 +41,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a *successful* SSH connection was never exercised by the suite, plus a
   `boot-ssh-test-container.sh` fixture that boots a test container with
   networking and an authorised test key.
+- Docker image for containerised read-only auditing
+  (`packaging/docker/Dockerfile`, built from the repository root): a
+  `FROM scratch` image carrying only the static musl `hardener` binary. `scan`
+  and `report` run read-only against mounted host state (`--pid=host`,
+  `-v /etc:/etc:ro` and friends); `systemctl`/D-Bus-dependent checks degrade
+  to tool-unavailable findings, and `apply` is deliberately unsupported
+  in-container. Usage and the capability boundary are documented in
+  `packaging/docker/README.md`.
 
 ### Fixed
 - The ssh plugin's three STIG crypto mappings carried V-IDs that name
@@ -905,4 +913,4 @@ Configuration file support with layered loading, compliance framework reporting 
 [0.2.0]: https://github.com/tidynest/linux-system-hardener/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tidynest/linux-system-hardener/releases/tag/v0.1.0
 
-**Last Updated**: 2026-07-02
+**Last Updated**: 2026-07-17

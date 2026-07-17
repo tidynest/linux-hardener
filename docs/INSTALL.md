@@ -87,6 +87,31 @@ sudo install -Dm644 data/config.toml.example /etc/linux-hardener/config.toml
 
 ---
 
+## Run with Docker (Scan and Report Only)
+
+A minimal image (`FROM scratch`, single static musl binary) supports read-only
+auditing of the host:
+
+```bash
+# Build from the repository root
+docker build -f packaging/docker/Dockerfile -t linux-system-hardener .
+
+# Read-only scan of the host's config surface
+docker run --rm --pid=host \
+  -v /etc:/etc:ro -v /var/log:/var/log:ro -v /usr/lib:/usr/lib:ro \
+  linux-system-hardener scan --format json
+```
+
+Scan and report run read-only against the mounted host state.
+`systemctl`/D-Bus-dependent checks (services, parts of audit/MAC/firewall)
+degrade to tool-unavailable findings rather than lying. `apply` is unsupported
+in a container by design — it would require `--privileged` plus host
+namespaces, defeating the isolation — so install natively to apply hardening.
+Full usage and the capability boundary:
+[`packaging/docker/README.md`](../packaging/docker/README.md).
+
+---
+
 ## Install from Source
 
 ### Build Dependencies
