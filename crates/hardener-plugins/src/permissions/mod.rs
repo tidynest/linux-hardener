@@ -240,6 +240,23 @@ pub fn coverage() -> Vec<ComplianceMapping> {
         .collect()
 }
 
+/// Builds a SOC 2 mapping. `id` is a 2017 Trust Services Criteria common
+/// criterion (e.g. `CC6.1`); `title` tracks the published criterion text. The
+/// section is the criterion's TSC series, derived from the id prefix.
+fn soc2(id: &str, title: &str) -> ComplianceMapping {
+    let series = if id.starts_with("CC7") {
+        "System Operations"
+    } else {
+        "Logical and Physical Access Controls"
+    };
+    ComplianceMapping {
+        compliance_framework: ComplianceFramework::SOC2,
+        compliance_control_id: id.to_string(),
+        compliance_control_title: title.to_string(),
+        compliance_section: Some(series.to_string()),
+    }
+}
+
 fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
     match path {
         // SSG: file_permissions_etc_passwd (nist: AC-6(1),CM-6(a); pcidss: Req-8.7.c)
@@ -283,6 +300,11 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "Information access restriction".to_string(),
                 compliance_section: Some("Technological".to_string()),
             },
+            // SOC 2: CC6.1 mirrors the AC-6(1) least-privilege file-access intent.
+            soc2(
+                "CC6.1",
+                "Logical access security software, infrastructure, and architectures",
+            ),
         ],
         // SSG: file_permissions_etc_shadow (nist: AC-6(1),CM-6(a); pcidss: Req-8.7.c)
         "/etc/shadow" => vec![
@@ -325,6 +347,11 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "Information access restriction".to_string(),
                 compliance_section: Some("Technological".to_string()),
             },
+            // SOC 2: CC6.1 mirrors the AC-6(1) least-privilege file-access intent.
+            soc2(
+                "CC6.1",
+                "Logical access security software, infrastructure, and architectures",
+            ),
         ],
         // SSG: file_permissions_etc_group (nist: AC-6(1),CM-6(a); pcidss: Req-8.7.c)
         "/etc/group" => vec![
@@ -367,6 +394,11 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "Information access restriction".to_string(),
                 compliance_section: Some("Technological".to_string()),
             },
+            // SOC 2: CC6.1 mirrors the AC-6(1) least-privilege file-access intent.
+            soc2(
+                "CC6.1",
+                "Logical access security software, infrastructure, and architectures",
+            ),
         ],
         // SSG: file_permissions_etc_gshadow (nist: AC-6(1),CM-6(a); no pcidss declared)
         "/etc/gshadow" => vec![
@@ -402,6 +434,11 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "Information access restriction".to_string(),
                 compliance_section: Some("Technological".to_string()),
             },
+            // SOC 2: CC6.1 mirrors the AC-6(1) least-privilege file-access intent.
+            soc2(
+                "CC6.1",
+                "Logical access security software, infrastructure, and architectures",
+            ),
         ],
         // SSG: directory_permissions_sshd_config_d (nist: AC-17(a),AC-6(1),CM-6(a);
         // no stigid/pcidss declared). This is a live-scanned path; the prior
@@ -433,6 +470,11 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "Privileged access rights".to_string(),
                 compliance_section: Some("Technological".to_string()),
             },
+            // SOC 2: CC6.1 mirrors the AC-17(a) remote-access config-protection intent.
+            soc2(
+                "CC6.1",
+                "Logical access security software, infrastructure, and architectures",
+            ),
         ],
         _ => vec![],
     }
@@ -923,5 +965,28 @@ mod tests {
                 .any(|m| m.compliance_framework == ComplianceFramework::HIPAA
                     && m.compliance_control_id == "164.312(c)(1)")
         );
+    }
+
+    /// Confirms every assessed critical path carries the SOC 2 logical-access
+    /// criterion CC6.1, filed under its Trust Services Criteria series.
+    #[test]
+    fn critical_paths_map_soc2_logical_access() {
+        for path in [
+            "/etc/passwd",
+            "/etc/shadow",
+            "/etc/group",
+            "/etc/gshadow",
+            "/etc/ssh",
+        ] {
+            let soc2 = get_permissions_compliance_mappings(path)
+                .into_iter()
+                .find(|m| m.compliance_framework == ComplianceFramework::SOC2)
+                .unwrap_or_else(|| panic!("{path} must carry a SOC 2 mapping"));
+            assert_eq!(soc2.compliance_control_id, "CC6.1");
+            assert_eq!(
+                soc2.compliance_section.as_deref(),
+                Some("Logical and Physical Access Controls")
+            );
+        }
     }
 }

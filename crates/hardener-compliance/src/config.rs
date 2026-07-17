@@ -44,6 +44,7 @@ impl Scenario {
                 ComplianceFramework::PCIDSS,
                 ComplianceFramework::HIPAA,
                 ComplianceFramework::GDPR,
+                ComplianceFramework::SOC2,
             ],
             Scenario::Custom(frameworks) => frameworks.clone(),
         }

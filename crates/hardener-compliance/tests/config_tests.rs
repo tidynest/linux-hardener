@@ -57,13 +57,14 @@ fn test_scenario_gdpr_frameworks() {
 fn test_scenario_all_frameworks() {
     let scenario = Scenario::All;
     let frameworks = scenario.frameworks();
-    assert_eq!(frameworks.len(), 6);
+    assert_eq!(frameworks.len(), 7);
     assert!(frameworks.contains(&ComplianceFramework::CIS));
     assert!(frameworks.contains(&ComplianceFramework::STIG));
     assert!(frameworks.contains(&ComplianceFramework::NIST));
     assert!(frameworks.contains(&ComplianceFramework::PCIDSS));
     assert!(frameworks.contains(&ComplianceFramework::HIPAA));
     assert!(frameworks.contains(&ComplianceFramework::GDPR));
+    assert!(frameworks.contains(&ComplianceFramework::SOC2));
 }
 
 #[test]

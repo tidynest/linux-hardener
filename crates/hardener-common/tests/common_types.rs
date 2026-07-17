@@ -105,6 +105,7 @@ fn test_compliance_framework_display() {
     assert_eq!(format!("{}", ComplianceFramework::NIST), "NIST");
     assert_eq!(format!("{}", ComplianceFramework::STIG), "STIG");
     assert_eq!(format!("{}", ComplianceFramework::PCIDSS), "PCIDSS");
+    assert_eq!(format!("{}", ComplianceFramework::SOC2), "SOC 2");
 }
 
 #[test]
@@ -119,6 +120,10 @@ fn test_compliance_framework_full_name() {
     assert_eq!(ComplianceFramework::PCIDSS.full_name(), "PCI-DSS v4.0");
     assert_eq!(ComplianceFramework::STIG.full_name(), "DISA STIG");
     assert_eq!(ComplianceFramework::GDPR.full_name(), "GDPR Article 32");
+    assert_eq!(
+        ComplianceFramework::SOC2.full_name(),
+        "SOC 2 Trust Services Criteria"
+    );
 }
 
 #[test]
@@ -171,6 +176,13 @@ fn test_compliance_framework_description() {
             .contains("General Data Protection"),
         "GDPR description should mention General Data Protection, got: {}",
         ComplianceFramework::GDPR.description()
+    );
+    assert!(
+        ComplianceFramework::SOC2
+            .description()
+            .contains("Trust Services Criteria"),
+        "SOC2 description should mention Trust Services Criteria, got: {}",
+        ComplianceFramework::SOC2.description()
     );
 }
 

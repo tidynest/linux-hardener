@@ -112,6 +112,7 @@ fn test_only_cis_and_iso_are_curated() {
         ComplianceFramework::PCIDSS,
         ComplianceFramework::HIPAA,
         ComplianceFramework::GDPR,
+        ComplianceFramework::SOC2,
     ] {
         assert!(
             frameworks::curated_controls(&framework).is_none(),

@@ -409,6 +409,23 @@ pub fn coverage() -> Vec<ComplianceMapping> {
         .collect()
 }
 
+/// Builds a SOC 2 mapping. `id` is a 2017 Trust Services Criteria common
+/// criterion (e.g. `CC7.2`); `title` tracks the published criterion text. The
+/// section is the criterion's TSC series, derived from the id prefix.
+fn soc2(id: &str, title: &str) -> ComplianceMapping {
+    let series = if id.starts_with("CC7") {
+        "System Operations"
+    } else {
+        "Logical and Physical Access Controls"
+    };
+    ComplianceMapping {
+        compliance_framework: ComplianceFramework::SOC2,
+        compliance_control_id: id.to_string(),
+        compliance_control_title: title.to_string(),
+        compliance_section: Some(series.to_string()),
+    }
+}
+
 fn get_audit_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
     match finding_type {
         // SSG: package_audit_installed
@@ -464,6 +481,11 @@ fn get_audit_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "Logging".to_string(),
                 compliance_section: Some("Technological".to_string()),
             },
+            // SOC 2: CC7.2 mirrors the AU-2 event-logging intent (monitoring capability).
+            soc2(
+                "CC7.2",
+                "Monitor system components for anomalies indicative of malicious acts or errors",
+            ),
         ],
         // SSG: service_auditd_enabled
         // (nist: AU-3,AU-12(c),...; pcidss: Req-10.1; stigid@ol8: OL08-00-030181)
@@ -520,6 +542,11 @@ fn get_audit_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "Logging".to_string(),
                 compliance_section: Some("Technological".to_string()),
             },
+            // SOC 2: CC7.2 mirrors the AU-12 record-generation intent (monitoring runs).
+            soc2(
+                "CC7.2",
+                "Monitor system components for anomalies indicative of malicious acts or errors",
+            ),
         ],
         // SSG: audit_rules_* family (e.g. audit_rules_usergroup_modification_*,
         // audit_rules_dac_modification_*, audit_rules_file_deletion_events_*).
@@ -577,6 +604,17 @@ fn get_audit_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "Monitoring activities".to_string(),
                 compliance_section: Some("Technological".to_string()),
             },
+            // SOC 2: CC7.1 mirrors the change-detection intent — the rules watch
+            // identity files, DAC changes and deletions for configuration change.
+            soc2(
+                "CC7.1",
+                "Detection and monitoring of configuration changes and new vulnerabilities",
+            ),
+            // SOC 2: CC7.2 mirrors the AU-12 record-generation intent (anomaly analysis).
+            soc2(
+                "CC7.2",
+                "Monitor system components for anomalies indicative of malicious acts or errors",
+            ),
         ],
         _ => vec![],
     }
@@ -1097,5 +1135,32 @@ mod tests {
                     && m.compliance_control_id == "8.16"),
             "audit rules must map to ISO 8.16 monitoring activities"
         );
+    }
+
+    /// Confirms the SOC 2 mappings: every auditd service-state finding carries
+    /// the anomaly-monitoring criterion CC7.2, and the rules bucket adds the
+    /// configuration-change detection criterion CC7.1 — both filed under the
+    /// "System Operations" TSC series.
+    #[test]
+    fn audit_findings_map_soc2_monitoring_criteria() {
+        for finding_type in ["not_installed", "not_running"] {
+            let soc2 = get_audit_compliance_mappings(finding_type)
+                .into_iter()
+                .find(|m| m.compliance_framework == ComplianceFramework::SOC2)
+                .unwrap_or_else(|| panic!("{finding_type} must carry a SOC 2 mapping"));
+            assert_eq!(soc2.compliance_control_id, "CC7.2");
+            assert_eq!(
+                soc2.compliance_section.as_deref(),
+                Some("System Operations")
+            );
+        }
+
+        let rule_ids: Vec<String> = get_audit_compliance_mappings("rules")
+            .into_iter()
+            .filter(|m| m.compliance_framework == ComplianceFramework::SOC2)
+            .map(|m| m.compliance_control_id)
+            .collect();
+        assert!(rule_ids.contains(&"CC7.1".to_string()));
+        assert!(rule_ids.contains(&"CC7.2".to_string()));
     }
 }

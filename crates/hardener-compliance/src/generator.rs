@@ -286,6 +286,24 @@ mod tests {
     }
 
     #[test]
+    fn soc2_clean_coverage_renders_pass_controls() {
+        // SOC 2 has no curated catalogue: the derived catalogue IS the coverage
+        // set, so on a clean system every covered criterion reports Pass and
+        // nothing needs manual review.
+        let coverage = vec![
+            mapping(ComplianceFramework::SOC2, "CC6.1"),
+            mapping(ComplianceFramework::SOC2, "CC7.2"),
+        ];
+        let generator = ReportGenerator::new(config_for(ComplianceFramework::SOC2), coverage);
+        let report = generator.generate(&[]).pop().unwrap();
+
+        assert_eq!(report.report_framework, ComplianceFramework::SOC2);
+        assert_eq!(report.report_summary.summary_total_controls, 2);
+        assert_eq!(report.report_summary.summary_passing, 2);
+        assert_eq!(report.report_summary.summary_manual_review, 0);
+    }
+
+    #[test]
     fn rhel10_finding_reports_translated_stig_id() {
         // A canonical RHEL-08 finding renders under its sourced RHEL-10 id, and
         // the embedded finding copy carries the translated mapping list.

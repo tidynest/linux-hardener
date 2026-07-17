@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- SOC 2 compliance framework: `report --framework soc2` (CLI and desktop,
+  including the fleet posture set and `--scenario all`) assesses against the
+  AICPA 2017 Trust Services Criteria (with the 2022 points of focus). All
+  eight plugins map their checks onto five common criteria — CC6.1 (logical
+  access), CC6.6 (boundary protection), CC6.8 (unauthorised software), CC7.1
+  (configuration-change detection) and CC7.2 (anomaly monitoring) — each
+  mapping mirroring the check's existing sourced NIST/CIS intent. SOC 2 has no
+  curated catalogue: its control list is derived from live plugin coverage, so
+  every reported criterion is genuinely assessed (Pass/Fail, never a false
+  pass). The desktop compliance tab also gains the previously missing
+  ISO 27001 checkbox.
 - RHEL 10 compliance profiles: `report` and `batch report` render DISA RHEL 10
   STIG V1R1 and CIS RHEL 10 Benchmark v1.0.1 control identifiers on
   RHEL-10-family hosts (RHEL/Rocky/Alma 10). Profiles resolve automatically

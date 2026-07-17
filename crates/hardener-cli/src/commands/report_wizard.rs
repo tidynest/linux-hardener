@@ -66,6 +66,11 @@ const FRAMEWORKS: &[FrameworkInfo] = &[
         name: "GDPR",
         description: "EU General Data Protection Regulation (Article 32)",
     },
+    FrameworkInfo {
+        framework: ComplianceFramework::SOC2,
+        name: "SOC 2",
+        description: "AICPA Trust Services Criteria",
+    },
 ];
 
 /// Scenario metadata for display.
@@ -565,6 +570,7 @@ fn framework_icon(framework: &ComplianceFramework) -> &'static str {
         ComplianceFramework::HIPAA => "🏥",
         ComplianceFramework::GDPR => "🇪🇺",
         ComplianceFramework::ISO27001 => "🌐",
+        ComplianceFramework::SOC2 => "🔏",
     }
 }
 

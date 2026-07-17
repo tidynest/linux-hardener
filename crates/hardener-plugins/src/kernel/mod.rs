@@ -237,6 +237,23 @@ fn iso(id: &str, title: &str, theme: &str) -> ComplianceMapping {
     }
 }
 
+/// Builds a SOC 2 mapping. `id` is a 2017 Trust Services Criteria common
+/// criterion (e.g. `CC6.1`); `title` tracks the published criterion text. The
+/// section is the criterion's TSC series, derived from the id prefix.
+fn soc2(id: &str, title: &str) -> ComplianceMapping {
+    let series = if id.starts_with("CC7") {
+        "System Operations"
+    } else {
+        "Logical and Physical Access Controls"
+    };
+    ComplianceMapping {
+        compliance_framework: ComplianceFramework::SOC2,
+        compliance_control_id: id.to_string(),
+        compliance_control_title: title.to_string(),
+        compliance_section: Some(series.to_string()),
+    }
+}
+
 /// Returns compliance mappings for a given kernel parameter.
 ///
 /// CIS entries are the project's existing benchmark mappings. STIG/NIST/PCI-DSS
@@ -288,6 +305,11 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
             hipaa("164.312(a)(1)", "Access control"),
             gdpr("TM-SH", "System hardening of processing systems"),
             iso("8.9", "Configuration management", "Technological"),
+            // SOC 2: CC6.8 mirrors the SI-16 memory-protection (exploit mitigation) intent.
+            soc2(
+                "CC6.8",
+                "Prevent or detect the introduction of unauthorized or malicious software",
+            ),
         ],
         "kernel.kptr_restrict" => vec![
             ComplianceMapping {
@@ -306,6 +328,11 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
             nist("CM-6", "Configuration Settings", "Configuration Management"),
             gdpr("TM-SH", "System hardening of processing systems"),
             iso("8.9", "Configuration management", "Technological"),
+            // SOC 2: CC6.1 mirrors the kernel-address access-restriction intent (SC-30/CM-6).
+            soc2(
+                "CC6.1",
+                "Logical access security software, infrastructure, and architectures",
+            ),
         ],
         "kernel.dmesg_restrict" => vec![
             ComplianceMapping {
@@ -329,6 +356,11 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
             hipaa("164.312(a)(1)", "Access control"),
             gdpr("TM-SH", "System hardening of processing systems"),
             iso("8.9", "Configuration management", "Technological"),
+            // SOC 2: CC6.1 mirrors the access-control intent (SSG hipaa 164.312(a)).
+            soc2(
+                "CC6.1",
+                "Logical access security software, infrastructure, and architectures",
+            ),
         ],
         "kernel.yama.ptrace_scope" => vec![
             ComplianceMapping {
@@ -351,6 +383,11 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
             ),
             gdpr("TM-SH", "System hardening of processing systems"),
             iso("8.9", "Configuration management", "Technological"),
+            // SOC 2: CC6.1 mirrors the process-access restriction intent (SC-7(10)).
+            soc2(
+                "CC6.1",
+                "Logical access security software, infrastructure, and architectures",
+            ),
         ],
         "fs.suid_dumpable" => vec![
             ComplianceMapping {
@@ -370,6 +407,11 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
             hipaa("164.312(a)(1)", "Access control"),
             gdpr("TM-SH", "System hardening of processing systems"),
             iso("8.9", "Configuration management", "Technological"),
+            // SOC 2: CC6.1 mirrors the access-control intent (SSG hipaa 164.312(a)).
+            soc2(
+                "CC6.1",
+                "Logical access security software, infrastructure, and architectures",
+            ),
         ],
         "fs.protected_hardlinks" | "fs.protected_symlinks" => vec![
             // SSG: sysctl_fs_protected_hardlinks / sysctl_fs_protected_symlinks
@@ -383,6 +425,11 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
             // SSG carries no hipaa ref for these sysctls, so none is emitted.
             gdpr("TM-SH", "System hardening of processing systems"),
             iso("8.9", "Configuration management", "Technological"),
+            // SOC 2: CC6.1 mirrors the AC-6 least-privilege / DAC-enforcement intent.
+            soc2(
+                "CC6.1",
+                "Logical access security software, infrastructure, and architectures",
+            ),
         ],
         "net.ipv4.conf.all.rp_filter" | "net.ipv4.conf.default.rp_filter" => vec![
             ComplianceMapping {
@@ -415,6 +462,11 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
             gdpr("TM-SH", "System hardening of processing systems"),
             gdpr("TM-NW", "Network-level protection of processing systems"),
             iso("8.20", "Networks security", "Technological"),
+            // SOC 2: CC6.6 mirrors the SC-7 network-boundary (anti-spoofing) intent.
+            soc2(
+                "CC6.6",
+                "Protect against threats from sources outside system boundaries",
+            ),
         ],
         "net.ipv4.tcp_syncookies" => vec![
             ComplianceMapping {
@@ -440,6 +492,11 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
             gdpr("TM-SH", "System hardening of processing systems"),
             gdpr("TM-NW", "Network-level protection of processing systems"),
             iso("8.20", "Networks security", "Technological"),
+            // SOC 2: CC6.6 mirrors the SC-5 boundary DoS-protection intent.
+            soc2(
+                "CC6.6",
+                "Protect against threats from sources outside system boundaries",
+            ),
         ],
         "net.ipv4.conf.all.accept_source_route" | "net.ipv4.conf.default.accept_source_route" => {
             vec![
@@ -464,6 +521,11 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 gdpr("TM-SH", "System hardening of processing systems"),
                 gdpr("TM-NW", "Network-level protection of processing systems"),
                 iso("8.20", "Networks security", "Technological"),
+                // SOC 2: CC6.6 mirrors the SC-7 network-boundary intent.
+                soc2(
+                    "CC6.6",
+                    "Protect against threats from sources outside system boundaries",
+                ),
             ]
         }
         // CIS 3.2.2/3.2.3/3.2.4 — one arm per control covers both the `.all`
@@ -481,6 +543,11 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 "System and Information Integrity",
             ),
             iso("8.20", "Networks security", "Technological"),
+            // SOC 2: CC6.6 mirrors the network-boundary hardening intent (CIS 3.2.2).
+            soc2(
+                "CC6.6",
+                "Protect against threats from sources outside system boundaries",
+            ),
         ],
         n if n.contains("secure_redirects") => vec![
             ComplianceMapping {
@@ -496,6 +563,11 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 "System and Information Integrity",
             ),
             iso("8.20", "Networks security", "Technological"),
+            // SOC 2: CC6.6 mirrors the network-boundary hardening intent (CIS 3.2.3).
+            soc2(
+                "CC6.6",
+                "Protect against threats from sources outside system boundaries",
+            ),
         ],
         n if n.contains("log_martians") => vec![
             ComplianceMapping {
@@ -510,6 +582,11 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 "System and Information Integrity",
             ),
             iso("8.15", "Logging", "Technological"),
+            // SOC 2: CC7.2 mirrors the SI-4 anomaly-logging intent (suspicious packets).
+            soc2(
+                "CC7.2",
+                "Monitor system components for anomalies indicative of malicious acts or errors",
+            ),
         ],
         _ => vec![],
     }
@@ -910,6 +987,36 @@ mod tests {
             .find(|m| m.compliance_framework == ComplianceFramework::HIPAA)
             .expect("HIPAA mapping present");
         assert_eq!(hipaa.compliance_control_id, "164.312(a)(1)");
+    }
+
+    /// Confirms the SOC 2 mappings across the three intents the kernel plugin
+    /// mirrors: exploit mitigation (CC6.8), network boundary (CC6.6) and
+    /// anomaly logging (CC7.2), each filed under its TSC series.
+    #[test]
+    fn kernel_params_map_soc2_criteria() {
+        let soc2_for = |param: &str| {
+            get_compliance_mappings(param)
+                .into_iter()
+                .find(|m| m.compliance_framework == ComplianceFramework::SOC2)
+                .unwrap_or_else(|| panic!("{param} must carry a SOC 2 mapping"))
+        };
+
+        let aslr = soc2_for("kernel.randomize_va_space");
+        assert_eq!(aslr.compliance_control_id, "CC6.8");
+        assert_eq!(
+            aslr.compliance_section.as_deref(),
+            Some("Logical and Physical Access Controls")
+        );
+
+        let rp_filter = soc2_for("net.ipv4.conf.all.rp_filter");
+        assert_eq!(rp_filter.compliance_control_id, "CC6.6");
+
+        let martians = soc2_for("net.ipv4.conf.all.log_martians");
+        assert_eq!(martians.compliance_control_id, "CC7.2");
+        assert_eq!(
+            martians.compliance_section.as_deref(),
+            Some("System Operations")
+        );
     }
 
     #[test]

@@ -51,7 +51,8 @@ Linux System Hardener automates the process of securing Linux servers and workst
 - **Applying** hardening recommendations automatically
 - **Rolling back** changes safely using checkpoint snapshots
 - **Reporting** compliance status against CIS, STIG, NIST 800-53, PCI-DSS,
-  HIPAA, GDPR and ISO/IEC 27001:2022 — findings are mapped to each framework's
+  HIPAA, GDPR, ISO/IEC 27001:2022 and SOC 2 (Trust Services Criteria) —
+  findings are mapped to each framework's
   controls (controls the engine cannot automatically assess are flagged for
   manual review rather than assumed compliant). RHEL-10-family hosts are
   assessed against DISA RHEL 10 STIG V1R1 and CIS RHEL 10 Benchmark v1.0.1

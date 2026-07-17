@@ -341,6 +341,23 @@ impl SshHardeningPlugin {
     }
 }
 
+/// Builds a SOC 2 mapping. `id` is a 2017 Trust Services Criteria common
+/// criterion (e.g. `CC6.1`); `title` tracks the published criterion text. The
+/// section is the criterion's TSC series, derived from the id prefix.
+fn soc2(id: &str, title: &str) -> ComplianceMapping {
+    let series = if id.starts_with("CC7") {
+        "System Operations"
+    } else {
+        "Logical and Physical Access Controls"
+    };
+    ComplianceMapping {
+        compliance_framework: ComplianceFramework::SOC2,
+        compliance_control_id: id.to_string(),
+        compliance_control_title: title.to_string(),
+        compliance_section: Some(series.to_string()),
+    }
+}
+
 /// Returns compliance mappings for a given SSH directive.
 /// Every compliance mapping this plugin can emit, across all SSH config and
 /// crypto directives it assesses. Aggregated into the engine's coverage set.
@@ -398,6 +415,11 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "Secure authentication".to_string(),
                 compliance_section: Some("Technological".to_string()),
             },
+            // SOC 2: CC6.1 mirrors the privileged-access restriction intent (CIS 5.2.10).
+            soc2(
+                "CC6.1",
+                "Logical access security software, infrastructure, and architectures",
+            ),
         ],
         "PasswordAuthentication" => vec![
             ComplianceMapping {
@@ -438,6 +460,11 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "Secure authentication".to_string(),
                 compliance_section: Some("Technological".to_string()),
             },
+            // SOC 2: CC6.1 mirrors the authentication-strength intent (key-based access).
+            soc2(
+                "CC6.1",
+                "Logical access security software, infrastructure, and architectures",
+            ),
         ],
         "PermitEmptyPasswords" => vec![
             ComplianceMapping {
@@ -477,6 +504,11 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "Secure authentication".to_string(),
                 compliance_section: Some("Technological".to_string()),
             },
+            // SOC 2: CC6.1 mirrors the authentication-verification intent (HIPAA 164.312(d)).
+            soc2(
+                "CC6.1",
+                "Logical access security software, infrastructure, and architectures",
+            ),
         ],
         "MaxAuthTries" => vec![
             ComplianceMapping {
@@ -510,6 +542,11 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "Secure authentication".to_string(),
                 compliance_section: Some("Technological".to_string()),
             },
+            // SOC 2: CC6.1 mirrors the brute-force limiting intent (CIS 5.2.7).
+            soc2(
+                "CC6.1",
+                "Logical access security software, infrastructure, and architectures",
+            ),
         ],
         "X11Forwarding" => vec![
             ComplianceMapping {
@@ -530,6 +567,11 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "Networks security".to_string(),
                 compliance_section: Some("Technological".to_string()),
             },
+            // SOC 2: CC6.6 mirrors the tunnelled-exposure reduction intent (ISO 8.20).
+            soc2(
+                "CC6.6",
+                "Protect against threats from sources outside system boundaries",
+            ),
         ],
         "ClientAliveInterval" | "ClientAliveCountMax" => vec![
             ComplianceMapping {
@@ -557,6 +599,11 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "Networks security".to_string(),
                 compliance_section: Some("Technological".to_string()),
             },
+            // SOC 2: CC6.1 mirrors the idle-session termination intent (HIPAA automatic logoff).
+            soc2(
+                "CC6.1",
+                "Logical access security software, infrastructure, and architectures",
+            ),
         ],
         "KexAlgorithms" => vec![
             ComplianceMapping {
@@ -610,6 +657,11 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "Use of cryptography".to_string(),
                 compliance_section: Some("Technological".to_string()),
             },
+            // SOC 2: CC6.6 mirrors the SC-13 transmission-protection intent (strong Kex).
+            soc2(
+                "CC6.6",
+                "Protect against threats from sources outside system boundaries",
+            ),
         ],
         "Ciphers" => vec![
             ComplianceMapping {
@@ -668,6 +720,11 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "Use of cryptography".to_string(),
                 compliance_section: Some("Technological".to_string()),
             },
+            // SOC 2: CC6.6 mirrors the SC-8 transmission-protection intent (strong ciphers).
+            soc2(
+                "CC6.6",
+                "Protect against threats from sources outside system boundaries",
+            ),
         ],
         "MACs" => vec![
             ComplianceMapping {
@@ -728,6 +785,11 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "Use of cryptography".to_string(),
                 compliance_section: Some("Technological".to_string()),
             },
+            // SOC 2: CC6.6 mirrors the SC-8 transmission-protection intent (strong MACs).
+            soc2(
+                "CC6.6",
+                "Protect against threats from sources outside system boundaries",
+            ),
         ],
         _ => vec![],
     }

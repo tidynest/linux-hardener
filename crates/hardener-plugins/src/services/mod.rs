@@ -115,6 +115,20 @@ fn service_iso_networks() -> ComplianceMapping {
     )
 }
 
+/// SOC 2 mapping for service-minimisation controls.
+///
+/// CC6.8 mirrors the CM-7 least-functionality intent every disabled daemon
+/// serves — unneeded software is kept off the system; the section is the
+/// criterion's 2017 Trust Services Criteria series.
+fn service_soc2_unauthorised_software() -> ComplianceMapping {
+    service_mapping_in(
+        ComplianceFramework::SOC2,
+        "CC6.8",
+        "Prevent or detect the introduction of unauthorized or malicious software",
+        "Logical and Physical Access Controls",
+    )
+}
+
 /// Returns compliance mappings for service findings.
 ///
 /// Multi-framework control IDs are sourced from the ComplianceAsCode/SSG rule
@@ -128,8 +142,10 @@ fn service_iso_networks() -> ComplianceMapping {
 /// and ISO 27001 Annex A 8.19 (Installation of software on operational systems)
 /// plus 8.9 (Configuration management), both under the "Technological" theme.
 /// Network-exposed daemons (Bluetooth, Avahi/mDNS) additionally map ISO 8.20
-/// (Networks security). HIPAA is omitted — none of these daemons map cleanly to
-/// a Security Rule specification.
+/// (Networks security). SOC 2 CC6.8 applies to every mapped daemon (the
+/// unauthorised-software criterion mirrors the same minimisation intent).
+/// HIPAA is omitted — none of these daemons map cleanly to a Security Rule
+/// specification.
 /// Every compliance mapping this plugin can emit, across all services it
 /// assesses. Aggregated into the engine's automated-coverage set.
 pub fn coverage() -> Vec<ComplianceMapping> {
@@ -150,6 +166,7 @@ fn get_service_compliance_mappings(service_name: &str) -> Vec<ComplianceMapping>
             ),
             service_mapping(ComplianceFramework::NIST, "CM-7", "Least Functionality"),
             service_gdpr_hardening(),
+            service_soc2_unauthorised_software(),
         ]
         .into_iter()
         .chain(service_iso_minimisation())
@@ -165,6 +182,7 @@ fn get_service_compliance_mappings(service_name: &str) -> Vec<ComplianceMapping>
             service_mapping(ComplianceFramework::NIST, "CM-7", "Least Functionality"),
             service_gdpr_hardening(),
             service_iso_networks(),
+            service_soc2_unauthorised_software(),
         ]
         .into_iter()
         .chain(service_iso_minimisation())
@@ -178,6 +196,7 @@ fn get_service_compliance_mappings(service_name: &str) -> Vec<ComplianceMapping>
             ),
             service_mapping(ComplianceFramework::NIST, "CM-7", "Least Functionality"),
             service_gdpr_hardening(),
+            service_soc2_unauthorised_software(),
         ]
         .into_iter()
         .chain(service_iso_minimisation())
@@ -190,6 +209,7 @@ fn get_service_compliance_mappings(service_name: &str) -> Vec<ComplianceMapping>
             service_mapping(ComplianceFramework::NIST, "CM-7", "Least Functionality"),
             service_gdpr_hardening(),
             service_iso_networks(),
+            service_soc2_unauthorised_software(),
         ]
         .into_iter()
         .chain(service_iso_minimisation())
@@ -717,5 +737,22 @@ mod tests {
             iso_networks.compliance_section.as_deref(),
             Some("Technological")
         );
+    }
+
+    /// Confirms every mapped daemon carries the SOC 2 unauthorised-software
+    /// criterion CC6.8, filed under its Trust Services Criteria series.
+    #[test]
+    fn services_map_soc2_unauthorised_software() {
+        for service in ["xinetd", "avahi-daemon", "cups", "bluetooth"] {
+            let soc2 = get_service_compliance_mappings(service)
+                .into_iter()
+                .find(|m| m.compliance_framework == ComplianceFramework::SOC2)
+                .unwrap_or_else(|| panic!("{service} must carry a SOC 2 mapping"));
+            assert_eq!(soc2.compliance_control_id, "CC6.8");
+            assert_eq!(
+                soc2.compliance_section.as_deref(),
+                Some("Logical and Physical Access Controls")
+            );
+        }
     }
 }

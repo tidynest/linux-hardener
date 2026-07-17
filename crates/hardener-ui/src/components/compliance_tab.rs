@@ -20,6 +20,8 @@ pub fn ComplianceTab() -> impl IntoView {
         ("pci", "PCI-DSS"),
         ("hipaa", "HIPAA"),
         ("gdpr", "GDPR"),
+        ("iso27001", "ISO 27001"),
+        ("soc2", "SOC 2"),
     ];
 
     // Track selected frameworks

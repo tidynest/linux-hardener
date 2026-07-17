@@ -135,6 +135,8 @@ pub enum ComplianceFramework {
     STIG,
     /// General Data Protection Regulation (EU).
     GDPR,
+    /// AICPA SOC 2 Trust Services Criteria.
+    SOC2,
 }
 
 impl fmt::Display for ComplianceFramework {
@@ -147,6 +149,7 @@ impl fmt::Display for ComplianceFramework {
             ComplianceFramework::PCIDSS => write!(f, "PCIDSS"),
             ComplianceFramework::STIG => write!(f, "STIG"),
             ComplianceFramework::GDPR => write!(f, "GDPR"),
+            ComplianceFramework::SOC2 => write!(f, "SOC 2"),
         }
     }
 }
@@ -162,6 +165,7 @@ impl ComplianceFramework {
             ComplianceFramework::PCIDSS => "PCI-DSS v4.0",
             ComplianceFramework::STIG => "DISA STIG",
             ComplianceFramework::GDPR => "GDPR Article 32",
+            ComplianceFramework::SOC2 => "SOC 2 Trust Services Criteria",
         }
     }
 
@@ -179,6 +183,9 @@ impl ComplianceFramework {
                 "Defense Information Systems Agency Security Technical Implementation Guides"
             }
             ComplianceFramework::GDPR => "European Union General Data Protection Regulation",
+            ComplianceFramework::SOC2 => {
+                "AICPA Trust Services Criteria (2017, with 2022 points of focus)"
+            }
         }
     }
 }

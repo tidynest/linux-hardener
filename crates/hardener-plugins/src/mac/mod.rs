@@ -217,6 +217,23 @@ pub fn coverage() -> Vec<ComplianceMapping> {
         .collect()
 }
 
+/// Builds a SOC 2 mapping. `id` is a 2017 Trust Services Criteria common
+/// criterion (e.g. `CC6.8`); `title` tracks the published criterion text. The
+/// section is the criterion's TSC series, derived from the id prefix.
+fn soc2(id: &str, title: &str) -> ComplianceMapping {
+    let series = if id.starts_with("CC7") {
+        "System Operations"
+    } else {
+        "Logical and Physical Access Controls"
+    };
+    ComplianceMapping {
+        compliance_framework: ComplianceFramework::SOC2,
+        compliance_control_id: id.to_string(),
+        compliance_control_title: title.to_string(),
+        compliance_section: Some(series.to_string()),
+    }
+}
+
 fn get_mac_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
     match finding_type {
         // SSG: package_apparmor_installed / package_selinux (CIS only); MAC absence
@@ -264,6 +281,12 @@ fn get_mac_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "Access control".to_string(),
                 compliance_section: Some("Organizational".to_string()),
             },
+            // SOC 2: CC6.8 mirrors the AC-3 enforcement intent expressed as MAC
+            // confinement — enforced policy contains unauthorised software activity.
+            soc2(
+                "CC6.8",
+                "Prevent or detect the introduction of unauthorized or malicious software",
+            ),
         ],
         // SSG: selinux_state (nist: AC-3,AC-3(3)(a),AU-9,SC-7(21); stigid@ol8: OL08-00-010170)
         "selinux-not-enforcing" => vec![
@@ -316,6 +339,12 @@ fn get_mac_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "Access control".to_string(),
                 compliance_section: Some("Organizational".to_string()),
             },
+            // SOC 2: CC6.8 mirrors the AC-3 enforcement intent expressed as MAC
+            // confinement — enforced policy contains unauthorised software activity.
+            soc2(
+                "CC6.8",
+                "Prevent or detect the introduction of unauthorized or malicious software",
+            ),
         ],
         // SSG: all_apparmor_profiles_enforced (CIS only). NIST AC-3 access
         // enforcement applies — this is the AppArmor expression of the same
@@ -364,6 +393,12 @@ fn get_mac_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "Access control".to_string(),
                 compliance_section: Some("Organizational".to_string()),
             },
+            // SOC 2: CC6.8 mirrors the AC-3 enforcement intent expressed as MAC
+            // confinement — enforced policy contains unauthorised software activity.
+            soc2(
+                "CC6.8",
+                "Prevent or detect the introduction of unauthorized or malicious software",
+            ),
         ],
         _ => vec![],
     }
@@ -812,5 +847,22 @@ mod tests {
                 .any(|m| m.compliance_framework == ComplianceFramework::HIPAA
                     && m.compliance_control_id == "164.312(c)(1)")
         );
+    }
+
+    /// Confirms every MAC finding type carries the SOC 2 unauthorised-software
+    /// criterion CC6.8, filed under its Trust Services Criteria series.
+    #[test]
+    fn mac_findings_map_soc2_unauthorised_software() {
+        for finding_type in MAC_FINDING_TYPES {
+            let soc2 = get_mac_compliance_mappings(finding_type)
+                .into_iter()
+                .find(|m| m.compliance_framework == ComplianceFramework::SOC2)
+                .unwrap_or_else(|| panic!("{finding_type} must carry a SOC 2 mapping"));
+            assert_eq!(soc2.compliance_control_id, "CC6.8");
+            assert_eq!(
+                soc2.compliance_section.as_deref(),
+                Some("Logical and Physical Access Controls")
+            );
+        }
     }
 }

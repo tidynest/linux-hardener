@@ -101,6 +101,20 @@ fn pam_iso_secure_auth() -> ComplianceMapping {
     )
 }
 
+/// SOC 2 mapping for PAM authentication controls.
+///
+/// CC6.1 mirrors the authenticator-management / lockout intent (IA-5(1),
+/// AC-7) every PAM check strengthens; the section is the criterion's 2017
+/// Trust Services Criteria series.
+fn pam_soc2_logical_access() -> ComplianceMapping {
+    pam_mapping_in(
+        ComplianceFramework::SOC2,
+        "CC6.1",
+        "Logical access security software, infrastructure, and architectures",
+        "Logical and Physical Access Controls",
+    )
+}
+
 /// Returns compliance mappings for PAM findings.
 ///
 /// Multi-framework control IDs are sourced from the ComplianceAsCode/SSG rule
@@ -109,11 +123,11 @@ fn pam_iso_secure_auth() -> ComplianceMapping {
 /// PCI-DSS uses v4.0 requirement numbers. A framework is omitted where the SSG
 /// rule carries no authoritative mapping for it.
 ///
-/// HIPAA, GDPR and ISO/IEC 27001:2022 apply uniformly to every PAM
+/// HIPAA, GDPR, ISO/IEC 27001:2022 and SOC 2 apply uniformly to every PAM
 /// authentication check, since each one strengthens password management /
 /// authentication: HIPAA §164.308(a)(5)(ii)(D) (Password Management), GDPR
-/// "TM-AUTH" (Article 32 technical measure), and ISO 27001 Annex A 8.5 (Secure
-/// authentication, "Technological" theme).
+/// "TM-AUTH" (Article 32 technical measure), ISO 27001 Annex A 8.5 (Secure
+/// authentication, "Technological" theme), and SOC 2 CC6.1 (logical access).
 /// Every compliance mapping this plugin can emit, across all PAM/login.defs
 /// directives it assesses. Aggregated into the engine's coverage set.
 pub fn coverage() -> Vec<ComplianceMapping> {
@@ -150,6 +164,7 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
             pam_hipaa_password_mgmt(),
             pam_gdpr_auth(),
             pam_iso_secure_auth(),
+            pam_soc2_logical_access(),
         ],
         // SSG: accounts_password_pam_dcredit (stigid RHEL-08-020130)
         name if name.contains("dcredit") => vec![
@@ -176,6 +191,7 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
             pam_hipaa_password_mgmt(),
             pam_gdpr_auth(),
             pam_iso_secure_auth(),
+            pam_soc2_logical_access(),
         ],
         // SSG: accounts_password_pam_ucredit (stigid RHEL-08-020110)
         name if name.contains("ucredit") => vec![
@@ -202,6 +218,7 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
             pam_hipaa_password_mgmt(),
             pam_gdpr_auth(),
             pam_iso_secure_auth(),
+            pam_soc2_logical_access(),
         ],
         // SSG: accounts_password_pam_lcredit (stigid RHEL-08-020120)
         name if name.contains("lcredit") => vec![
@@ -228,6 +245,7 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
             pam_hipaa_password_mgmt(),
             pam_gdpr_auth(),
             pam_iso_secure_auth(),
+            pam_soc2_logical_access(),
         ],
         // SSG: accounts_password_pam_ocredit (stigid RHEL-08-020280). No PCI-DSS in SSG.
         name if name.contains("ocredit") => vec![
@@ -249,6 +267,7 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
             pam_hipaa_password_mgmt(),
             pam_gdpr_auth(),
             pam_iso_secure_auth(),
+            pam_soc2_logical_access(),
         ],
         // SSG: accounts_password_pam_maxrepeat (stigid RHEL-08-020150). No PCI-DSS in SSG.
         name if name.contains("maxrepeat") => vec![
@@ -270,6 +289,7 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
             pam_hipaa_password_mgmt(),
             pam_gdpr_auth(),
             pam_iso_secure_auth(),
+            pam_soc2_logical_access(),
         ],
         // SSG: accounts_passwords_pam_faillock_deny (stigid RHEL-08-020011)
         name if name.contains("lockout") || name.contains("deny") => vec![
@@ -296,6 +316,7 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
             pam_hipaa_password_mgmt(),
             pam_gdpr_auth(),
             pam_iso_secure_auth(),
+            pam_soc2_logical_access(),
         ],
         // SSG: accounts_password_pam_pwhistory_remember. SSG rule carries no
         // NIST/STIG/PCI-DSS reference, so only CIS is mapped (no guessing).
@@ -308,6 +329,7 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
             pam_hipaa_password_mgmt(),
             pam_gdpr_auth(),
             pam_iso_secure_auth(),
+            pam_soc2_logical_access(),
         ],
         // SSG: accounts_maximum_age_login_defs (stigid RHEL-08-020200)
         name if name.contains("PASS_MAX_DAYS") => vec![
@@ -334,6 +356,7 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
             pam_hipaa_password_mgmt(),
             pam_gdpr_auth(),
             pam_iso_secure_auth(),
+            pam_soc2_logical_access(),
         ],
         // SSG: accounts_minimum_age_login_defs (stigid RHEL-08-020190). No PCI-DSS in SSG.
         name if name.contains("PASS_MIN_DAYS") => vec![
@@ -355,6 +378,7 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
             pam_hipaa_password_mgmt(),
             pam_gdpr_auth(),
             pam_iso_secure_auth(),
+            pam_soc2_logical_access(),
         ],
         // SSG: accounts_password_warn_age_login_defs. SSG rule carries no STIG, so
         // STIG is omitted; NIST and PCI-DSS are mapped from its references block.
@@ -377,6 +401,7 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
             pam_hipaa_password_mgmt(),
             pam_gdpr_auth(),
             pam_iso_secure_auth(),
+            pam_soc2_logical_access(),
         ],
         _ => vec![
             pam_mapping(
@@ -387,6 +412,7 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
             pam_hipaa_password_mgmt(),
             pam_gdpr_auth(),
             pam_iso_secure_auth(),
+            pam_soc2_logical_access(),
         ],
     }
 }
@@ -1344,6 +1370,21 @@ mod tests {
             .expect("minlen must carry an ISO 27001 mapping");
         assert_eq!(iso.compliance_control_id, "8.5");
         assert_eq!(iso.compliance_section.as_deref(), Some("Technological"));
+    }
+
+    /// Confirms every PAM authentication check carries the SOC 2 logical-access
+    /// criterion CC6.1, filed under its Trust Services Criteria series.
+    #[test]
+    fn pam_minlen_maps_soc2_logical_access() {
+        let soc2 = get_pam_compliance_mappings("minlen")
+            .into_iter()
+            .find(|m| m.compliance_framework == ComplianceFramework::SOC2)
+            .expect("minlen must carry a SOC 2 mapping");
+        assert_eq!(soc2.compliance_control_id, "CC6.1");
+        assert_eq!(
+            soc2.compliance_section.as_deref(),
+            Some("Logical and Physical Access Controls")
+        );
     }
 
     #[test]

@@ -118,3 +118,27 @@ async fn test_ssh_apply_requires_root() {
         }
     }
 }
+
+/// Confirms the SSH coverage set carries both SOC 2 criteria the plugin
+/// mirrors: CC6.1 for the authentication/access directives and CC6.6 for the
+/// crypto and forwarding directives, filed under their TSC series.
+#[test]
+fn ssh_coverage_maps_soc2_access_and_boundary_criteria() {
+    use hardener_common::types::ComplianceFramework;
+
+    let soc2: Vec<_> = hardener_plugins::ssh::coverage()
+        .into_iter()
+        .filter(|m| m.compliance_framework == ComplianceFramework::SOC2)
+        .collect();
+
+    for id in ["CC6.1", "CC6.6"] {
+        let mapping = soc2
+            .iter()
+            .find(|m| m.compliance_control_id == id)
+            .unwrap_or_else(|| panic!("SSH coverage must include SOC 2 {id}"));
+        assert_eq!(
+            mapping.compliance_section.as_deref(),
+            Some("Logical and Physical Access Controls")
+        );
+    }
+}

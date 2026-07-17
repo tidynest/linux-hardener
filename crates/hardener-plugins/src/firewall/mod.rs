@@ -116,6 +116,23 @@ fn iso(id: &str, title: &str, theme: &str) -> ComplianceMapping {
     }
 }
 
+/// Builds a SOC 2 mapping. `id` is a 2017 Trust Services Criteria common
+/// criterion (e.g. `CC6.6`); `title` tracks the published criterion text. The
+/// section is the criterion's TSC series, derived from the id prefix.
+fn soc2(id: &str, title: &str) -> ComplianceMapping {
+    let series = if id.starts_with("CC7") {
+        "System Operations"
+    } else {
+        "Logical and Physical Access Controls"
+    };
+    ComplianceMapping {
+        compliance_framework: ComplianceFramework::SOC2,
+        compliance_control_id: id.to_string(),
+        compliance_control_title: title.to_string(),
+        compliance_section: Some(series.to_string()),
+    }
+}
+
 /// Returns compliance mappings for firewall findings.
 ///
 /// CIS is the project's existing benchmark mapping. STIG/NIST/PCI-DSS entries
@@ -183,6 +200,11 @@ fn get_firewall_compliance_mappings() -> Vec<ComplianceMapping> {
         gdpr("TM-NW", "Network-level protection of processing systems"),
         iso("8.20", "Networks security", "Technological"),
         iso("8.21", "Security of network services", "Technological"),
+        // SOC 2: CC6.6 mirrors the SC-7 boundary-protection intent of the host firewall.
+        soc2(
+            "CC6.6",
+            "Protect against threats from sources outside system boundaries",
+        ),
     ]
 }
 
@@ -651,5 +673,20 @@ mod tests {
             .find(|m| m.compliance_framework == ComplianceFramework::HIPAA)
             .expect("HIPAA mapping present");
         assert_eq!(hipaa.compliance_control_id, "164.312(e)(1)");
+    }
+
+    /// Confirms the host firewall carries the SOC 2 boundary-protection
+    /// criterion CC6.6, filed under its Trust Services Criteria series.
+    #[test]
+    fn firewall_maps_soc2_boundary_criterion() {
+        let soc2 = get_firewall_compliance_mappings()
+            .into_iter()
+            .find(|m| m.compliance_framework == ComplianceFramework::SOC2)
+            .expect("firewall must carry a SOC 2 mapping");
+        assert_eq!(soc2.compliance_control_id, "CC6.6");
+        assert_eq!(
+            soc2.compliance_section.as_deref(),
+            Some("Logical and Physical Access Controls")
+        );
     }
 }

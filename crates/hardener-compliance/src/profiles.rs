@@ -706,6 +706,16 @@ mod tests {
     }
 
     #[test]
+    fn soc2_is_profile_invariant_under_rhel10() {
+        // SOC 2 criteria are OS-independent: no profile may ever rewrite them.
+        let soc2 = mapping(ComplianceFramework::SOC2, "CC6.1");
+        assert_eq!(
+            translate(ComplianceProfile::Rhel10, &soc2),
+            vec![soc2.clone()]
+        );
+    }
+
+    #[test]
     fn unsourced_stig_id_drops_under_rhel10() {
         let unknown = mapping(ComplianceFramework::STIG, "RHEL-08-999999");
         assert!(translate(ComplianceProfile::Rhel10, &unknown).is_empty());
