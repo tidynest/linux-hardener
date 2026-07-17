@@ -199,17 +199,28 @@ hardener report [FLAGS]
 |------|-------------|---------|
 | `-s`, `--scenario <SCENARIO>` | Use case preset: `server`, `workstation`, `government`, `healthcare`, `financial`, `gdpr`, `all` | |
 | `--framework <FRAMEWORK>` | Specific framework: `cis`, `stig`, `nist`, `pcidss`, `hipaa`, `gdpr`, `iso27001` | |
+| `--profile <PROFILE>` | Compliance ID profile: `generic`, `rhel10` | auto-detect |
 | `--report-format <FORMAT>` | Report format: `text`, `json` | `text` |
 | `-o`, `--output <FILE>` | Write to file instead of stdout | stdout |
 | `-i`, `--interactive` | Launch interactive wizard to pick scenario/framework | off |
 
 `--scenario` and `--framework` are mutually exclusive. Use `--scenario` for a preset that selects relevant frameworks for your environment, or `--framework` to target a single standard.
 
+`--profile` selects which benchmark's control identifiers the report renders.
+It auto-detects from the scanned system's `/etc/os-release` (read through the
+scan executor, so a `--ssh` target resolves from its own os-release):
+RHEL-family major 10 (RHEL/Rocky/Alma 10) selects `rhel10` — DISA RHEL 10
+STIG V1R1 and CIS RHEL 10 Benchmark v1.0.1 identifiers; everything else uses
+the `generic` baseline (RHEL 8 STIG identifiers, distribution-independent CIS
+numbering). Canonical controls without a sourced counterpart in the selected
+benchmark are omitted from the profiled report rather than guessed.
+
 **Examples:**
 
 ```bash
 hardener report --scenario server            # All frameworks relevant to servers
 hardener report --framework cis              # CIS Benchmark report only
+hardener report --framework stig --profile rhel10   # Force RHEL 10 STIG V1R1 IDs
 hardener report --interactive                # Step-by-step wizard
 hardener report --scenario all --output report.json --report-format json
 ```
@@ -270,10 +281,17 @@ hardener batch report (--all | --host a,b | --ssh user@host) [FLAGS]
 |------|-------------|---------|
 | `--framework <FRAMEWORK>` | Single framework: `cis`, `stig`, `nist`, `pcidss`, `hipaa`, `gdpr`, `iso27001` | |
 | `--scenario <SCENARIO>` | Preset: `server`, `workstation`, `government`, `healthcare`, `financial`, `gdpr`, `all` | `server` |
+| `--profile <PROFILE>` | Compliance ID profile: `generic`, `rhel10` | per-host auto-detect |
 | `--concurrency <N>` | Maximum hosts assessed in parallel | `8` |
 | `--output <FILE>` | Write report to a file instead of stdout | stdout |
 
 `--framework` and `--scenario` are mutually exclusive.
+
+Profiles resolve **per host** from each host's `/etc/os-release` (read over the
+existing SSH session): a RHEL-10-family host is assessed against DISA RHEL 10
+STIG V1R1 / CIS RHEL 10 v1.0.1 identifiers while the rest of the fleet keeps
+the generic baseline, in the same run. JSON rows carry each host's resolved
+`profile`. An explicit `--profile` forces one profile fleet-wide.
 
 Tiered exit codes: `0` — all controls passing; `1` — any failing control; `2` — any host error.
 

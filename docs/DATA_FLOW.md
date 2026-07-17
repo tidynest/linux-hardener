@@ -1,6 +1,6 @@
 # Linux System Hardener - Data Flow Documentation
 
-**Last Updated:** 2026-07-02
+**Last Updated:** 2026-07-17
 **Version:** 1.2.2
 
 This document describes the data flow for all major operations in the system.
@@ -414,6 +414,10 @@ struct Finding {
 │  ReportGenerator::new(config, coverage).generate(findings)   │
 │  coverage = hardener_plugins::compliance_coverage()          │
 │   (union of every plugin's coverage() — the assessed set)    │
+│  ├─ Profile translation (config.profile, default generic):   │
+│  │   findings' mappings, coverage, and curated catalogue all │
+│  │   pass through profiles::translate — rhel10 renders DISA  │
+│  │   RHEL 10 STIG V1R1 / CIS v1.0.1 ids; unsourced ids drop  │
 │  ├─ Build control catalogue:                                 │
 │  │   • CIS / ISO 27001: curated catalogue (full standard)    │
 │  │   • STIG/NIST/PCI/HIPAA/GDPR: derived from coverage       │
@@ -1265,4 +1269,4 @@ pub enum RollbackStatus {
 
 ---
 
-**Last Updated**: 2026-07-01
+**Last Updated**: 2026-07-17

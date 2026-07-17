@@ -53,7 +53,9 @@ Linux System Hardener automates the process of securing Linux servers and workst
 - **Reporting** compliance status against CIS, STIG, NIST 800-53, PCI-DSS,
   HIPAA, GDPR and ISO/IEC 27001:2022 — findings are mapped to each framework's
   controls (controls the engine cannot automatically assess are flagged for
-  manual review rather than assumed compliant)
+  manual review rather than assumed compliant). RHEL-10-family hosts are
+  assessed against DISA RHEL 10 STIG V1R1 and CIS RHEL 10 Benchmark v1.0.1
+  identifiers automatically (`--profile` overrides)
 
 The tool is designed for system administrators, DevOps engineers, and security professionals who need to maintain secure Linux infrastructure at scale.
 
@@ -352,6 +354,9 @@ hardener report --interactive
 # Generate report in different formats
 hardener report --framework cis --report-format html --output report.html
 hardener report --framework cis --report-format csv --output report.csv
+
+# Force a compliance ID profile (auto-detected from the scanned system otherwise)
+hardener report --framework stig --profile rhel10
 
 # Dry-run: see what would be changed without applying
 sudo hardener apply --dry-run --all
@@ -713,4 +718,4 @@ This project draws inspiration from established security tools including:
 **Contact**: tidynest@proton.me
 **Repository**: https://github.com/tidynest/linux-system-hardener
 
-**Last Updated**: 2026-07-01
+**Last Updated**: 2026-07-17

@@ -1,6 +1,6 @@
 # Linux System Hardener - Architecture Documentation
 
-**Last Updated:** 2026-06-28
+**Last Updated:** 2026-07-17
 **Version:** 1.2.2
 
 ---
@@ -431,6 +431,27 @@ CREATE TABLE file_states (
 | HIPAA | 14 | Healthcare security requirements |
 | GDPR | 12 | EU data protection (Article 32) |
 | ISO 27001:2022 | 93 | ISO/IEC 27001:2022 Annex A controls (4 themes) |
+
+### Compliance profiles (report-time ID translation)
+
+Plugins always emit **canonical** control identifiers (RHEL 8 baseline for
+STIG, distribution-independent CIS numbering) — that scheme is the internal
+source of truth and never varies by target. Profiles are applied at report
+time: `hardener-compliance/src/profiles.rs` holds sourced translation tables
+(canonical → benchmark-specific id + title, one-to-many where a benchmark
+split a collapsed control), and the `ReportGenerator` passes findings,
+plugin coverage, and the curated catalogue through the same `translate` pass
+so both sides of every match render one identifier scheme. A canonical id
+with no sourced counterpart is omitted from the profiled report — honest
+absence, never a guessed mapping.
+
+Profiles: `generic` (default everywhere; STIG headings name their RHEL 8
+baseline) and `rhel10` (DISA RHEL 10 STIG V1R1 + CIS RHEL 10 Benchmark
+v1.0.1). Resolution reads the scanned system's `/etc/os-release` through the
+scan executor — per host in `batch report` and desktop fleet scans, so mixed
+fleets assess each host against its own benchmark — and is overridable with
+`--profile`. RHEL-family major 10 selects `rhel10`; detection failure
+degrades to `generic` and never fails a scan.
 
 ---
 

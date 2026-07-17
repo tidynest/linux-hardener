@@ -1,6 +1,6 @@
 # Linux System Hardener - File Map
 
-**Last Updated:** 2026-06-23
+**Last Updated:** 2026-07-17
 
 This document lists all source files with their purpose and key exports.
 
@@ -210,6 +210,7 @@ pub struct FileState {
 | `src/lib.rs` | Module exports | Re-exports |
 | `src/report.rs` | Report types | `ComplianceReport`, `ControlResult`, `ComplianceSummary` |
 | `src/generator.rs` | Report generation | `ReportGenerator` |
+| `src/profiles.rs` | Report-time profile ID translation (sourced RHEL 10 STIG V1R1 / CIS v1.0.1 tables) | `translate()`, `translate_all()`, `profile_label()`, `resolve_profile()` |
 | `src/config.rs` | Report configuration | `ReportConfig` |
 | `src/frameworks/mod.rs` | Framework routing and curated catalogue aggregation | `get_controls()`, `curated_controls()` |
 | `src/frameworks/cis.rs` | CIS Benchmark curated catalogue | CIS control definitions |
@@ -788,4 +789,4 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | `hardener-common/src/types.rs` | Added `FindingPolicyException` struct |
 | `hardener-cli/src/cli.rs` | Added `--config`, `--audit`, `--compliance`, `--exit-code` flags, `ScanMode` enum |
 
-**Last Updated**: 2026-06-29
+**Last Updated**: 2026-07-17

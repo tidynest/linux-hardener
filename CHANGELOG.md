@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- RHEL 10 compliance profiles: `report` and `batch report` render DISA RHEL 10
+  STIG V1R1 and CIS RHEL 10 Benchmark v1.0.1 control identifiers on
+  RHEL-10-family hosts (RHEL/Rocky/Alma 10). Profiles resolve automatically
+  from the scanned system's `/etc/os-release` — per host in batch, through the
+  scan executor for `--ssh` targets — and are overridable with
+  `--profile <generic|rhel10>`. Translation happens at report time from
+  sourced tables (official DISA V1R1 XCCDF; ComplianceAsCode's `cis_rhel10.yml`
+  v1.0.1 encoding): canonical controls without a sourced counterpart are
+  omitted from the profiled report rather than guessed, and generic STIG
+  headings now name their RHEL 8 baseline honestly. Desktop report and fleet
+  posture resolve the same way.
 - Per-host scan history in the desktop fleet view: expanding a host row now
   shows its persisted sessions (from the scheduler database that `batch scan`
   and scheduled scans write) with severity counts and a better/worse/same
@@ -32,6 +43,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   networking and an authorised test key.
 
 ### Fixed
+- The ssh plugin's three STIG crypto mappings carried V-IDs that name
+  unrelated rules in the real RHEL 8 STIG (V-230290/1/2 are known-hosts
+  authentication, Kerberos and separate-/var). Ciphers and MACs now carry
+  their true V2R7 identifiers (`RHEL-08-010291`/V-230252 and
+  `RHEL-08-010290`/V-230251, both CAT I), and the KexAlgorithms check no
+  longer claims a STIG control at all — its rule was removed from the RHEL 8
+  STIG in V2R6 and none exists in the RHEL 10 STIG.
 - The SSH executor's remote `write_file` no longer appends a spurious
   trailing newline to newline-terminated content, so files written over
   `--ssh` (apply, checkpoint restore) round-trip byte-exact instead of
