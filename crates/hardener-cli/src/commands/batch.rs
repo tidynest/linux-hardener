@@ -600,7 +600,7 @@ async fn persist_host(
 /// Best-effort per-host profile resolution: reads `/etc/os-release` through
 /// the host's own executor and resolves it. Any failure — unreadable file,
 /// unparseable content — falls back to `Generic` and never fails the scan.
-async fn detect_host_profile(executor: &dyn SystemExecutor) -> ComplianceProfile {
+pub(crate) async fn detect_host_profile(executor: &dyn SystemExecutor) -> ComplianceProfile {
     if let Ok(content) = executor
         .read_file(std::path::Path::new("/etc/os-release"))
         .await

@@ -6,10 +6,9 @@ use chrono::Local;
 use hardener_common::types::{ComplianceFramework, ComplianceProfile};
 use hardener_compliance::{
     JsonFormatter, OutputFormat, ReportConfig, ReportFormatter, ReportGenerator, Scenario,
-    TextFormatter, profile_label, resolve_profile,
+    TextFormatter, profile_label,
 };
 use hardener_core::{Context, Finding, PluginMetadata, executor::SystemExecutor};
-use hardener_distro::Distribution;
 use hardener_plugins::create_plugin_registry;
 use hardener_scheduler::db::ScanFinding;
 use std::{fs, io, io::Write, sync::Arc};
@@ -28,14 +27,12 @@ pub async fn run(
     // Determine scenario/frameworks (shared with `batch report`).
     let scenario = resolve_scenario(framework, scenario, quiet)?;
 
-    // An explicit --profile wins; otherwise the local distribution decides,
-    // with any detection failure silently falling back to Generic.
+    // An explicit --profile wins; otherwise the scanned system decides — read
+    // through the scan executor so a `--ssh` target resolves from ITS
+    // os-release, not the controller's. Failure falls back to Generic.
     let profile = match profile {
         Some(value) => parse_profile(&value)?,
-        None => Distribution::detect()
-            .ok()
-            .map(|distro| resolve_profile(&distro))
-            .unwrap_or_default(),
+        None => super::batch::detect_host_profile(executor.as_ref()).await,
     };
     if !quiet && profile != ComplianceProfile::Generic {
         eprintln!("Profile: {}", profile_line(profile, &scenario));
