@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-delete-checkpoint"
+description = "Enables the delete_checkpoint command without any pre-configured scope."
+commands.allow = ["delete_checkpoint"]
+
+[[permission]]
+identifier = "deny-delete-checkpoint"
+description = "Denies the delete_checkpoint command without any pre-configured scope."
+commands.deny = ["delete_checkpoint"]

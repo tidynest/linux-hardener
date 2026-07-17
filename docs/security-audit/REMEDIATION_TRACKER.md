@@ -194,8 +194,8 @@ These findings require design-level changes that touch multiple components or al
 ## 4. Defence in Depth
 
 These are lower-priority findings that improve overall security posture without
-addressing immediate vulnerabilities. All are now resolved except one explicitly
-deferred item (SAM-039). The **Status** column replaces the original scheduling
+addressing immediate vulnerabilities. All are now resolved, including the
+formerly deferred SAM-039. The **Status** column replaces the original scheduling
 hints, reconciled against the §1 Remediation Table (items also tracked there) and
 [remaining-work.md](../plans/remaining-work.md) §2 for the six items unique to this
 section (SAM-061/062/063/070/074/076), then spot-verified in code.
@@ -207,7 +207,7 @@ section (SAM-061/062/063/070/074/076), then spot-verified in code.
 | SAM-060 | Environment | Use absolute paths for all system commands | Fixed |
 | SAM-061 | Environment | Use passwd lookup instead of HOME env var | Fixed |
 | SAM-053 | Config Trust | Ignore user config when running as root via pkexec | Fixed |
-| SAM-039 | Capability | Define explicit Tauri capability ACLs for custom commands | **Deferred** (post-v1.0) |
+| SAM-039 | Capability | Define explicit Tauri capability ACLs for custom commands | Fixed (AppManifest per-command ACL) |
 | SAM-044 | Rate Limiting | Add minimum interval between privileged operations | Fixed |
 | SAM-035 | Email | Sanitise hostname in email subject | Fixed |
 | SAM-020 | File Safety | Use O_CREAT O_EXCL for backup file creation | Fixed (randomised suffix, no-dereference) |
@@ -224,12 +224,20 @@ section (SAM-061/062/063/070/074/076), then spot-verified in code.
 | SAM-074 | Frontend | Validate theme from localStorage against allowlist | Fixed |
 | SAM-076 | Code Quality | Standardise IPC parameter key casing | Fixed |
 
-> **SAM-039 (deferred):** explicit per-command Tauri capability ACLs require
-> refactoring all custom commands into a dedicated Tauri plugin. The current
-> `default.json` capability grants only `core:default` + `dialog:default`; the
-> existing `PrivilegedOpGuard` + pkexec + IPC input validation is sufficient for
-> the v1.x threat model. Revisit post-v1.0 — see
-> [remaining-work.md](../plans/remaining-work.md) §2.
+> **SAM-039 (fixed):** the original analysis assumed per-command ACLs required
+> refactoring all custom commands into a dedicated Tauri plugin. Tauri 2's
+> `tauri_build::AppManifest` made that pivot unnecessary: `src-tauri/build.rs`
+> now declares all 29 application commands via
+> `AppManifest::new().commands(&[...])`, which autogenerates
+> `allow-*`/`deny-*` permissions per command and switches the runtime ACL
+> check on for application commands (`has_app_acl`). The commands stayed in
+> `src-tauri/src/commands.rs` untouched. `capabilities/default.json` grants
+> each of the 29 permissions explicitly, ordered by risk tier, so any single
+> command is deniable by deleting one line. Enforcement is proven by
+> `src-tauri/src/acl_tests.rs` (mock-runtime invoke of an ungranted command is
+> rejected by the ACL layer before dispatch, with a granted positive control),
+> and unknown permission identifiers fail the build. This layers on top of —
+> not in place of — `PrivilegedOpGuard`, pkexec, and IPC input validation.
 
 ---
 

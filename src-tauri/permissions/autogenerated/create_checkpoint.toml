@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-create-checkpoint"
+description = "Enables the create_checkpoint command without any pre-configured scope."
+commands.allow = ["create_checkpoint"]
+
+[[permission]]
+identifier = "deny-create-checkpoint"
+description = "Denies the create_checkpoint command without any pre-configured scope."
+commands.deny = ["create_checkpoint"]

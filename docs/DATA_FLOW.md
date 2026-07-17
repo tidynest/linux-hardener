@@ -530,6 +530,13 @@ struct Finding {
 
 ### Tauri Commands Available
 
+Every command below is gated by a per-command capability ACL (SAM-039): the
+command list in `src-tauri/build.rs` (`tauri_build::AppManifest`) autogenerates
+`allow-*`/`deny-*` permissions, and `src-tauri/capabilities/default.json` must
+grant each one for the main window. Three places must stay in sync when a
+command is added or removed: `src/main.rs` (`generate_handler!`), `build.rs`
+(`COMMANDS`), and `capabilities/default.json`.
+
 **Scanning**
 
 | Command | Parameters | Returns |

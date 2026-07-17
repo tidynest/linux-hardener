@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-latest-scan"
+description = "Enables the get_latest_scan command without any pre-configured scope."
+commands.allow = ["get_latest_scan"]
+
+[[permission]]
+identifier = "deny-get-latest-scan"
+description = "Denies the get_latest_scan command without any pre-configured scope."
+commands.deny = ["get_latest_scan"]

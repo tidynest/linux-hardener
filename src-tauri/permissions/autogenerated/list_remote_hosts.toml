@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-list-remote-hosts"
+description = "Enables the list_remote_hosts command without any pre-configured scope."
+commands.allow = ["list_remote_hosts"]
+
+[[permission]]
+identifier = "deny-list-remote-hosts"
+description = "Denies the list_remote_hosts command without any pre-configured scope."
+commands.deny = ["list_remote_hosts"]

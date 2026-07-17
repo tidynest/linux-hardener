@@ -177,6 +177,354 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Enables the connect_remote command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-connect-remote",
+          "markdownDescription": "Enables the connect_remote command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the create_checkpoint command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-create-checkpoint",
+          "markdownDescription": "Enables the create_checkpoint command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the delete_checkpoint command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-delete-checkpoint",
+          "markdownDescription": "Enables the delete_checkpoint command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the delete_remote_host command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-delete-remote-host",
+          "markdownDescription": "Enables the delete_remote_host command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the disconnect_remote command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-disconnect-remote",
+          "markdownDescription": "Enables the disconnect_remote command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the export_compliance_report command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-export-compliance-report",
+          "markdownDescription": "Enables the export_compliance_report command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the generate_compliance_report command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-generate-compliance-report",
+          "markdownDescription": "Enables the generate_compliance_report command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_checkpoint_detail command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-checkpoint-detail",
+          "markdownDescription": "Enables the get_checkpoint_detail command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_checkpoints command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-checkpoints",
+          "markdownDescription": "Enables the get_checkpoints command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_host_history command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-host-history",
+          "markdownDescription": "Enables the get_host_history command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_latest_scan command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-latest-scan",
+          "markdownDescription": "Enables the get_latest_scan command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_scan_history command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-scan-history",
+          "markdownDescription": "Enables the get_scan_history command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_scan_session command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-scan-session",
+          "markdownDescription": "Enables the get_scan_session command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_scheduler_config command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-scheduler-config",
+          "markdownDescription": "Enables the get_scheduler_config command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_plugins command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-plugins",
+          "markdownDescription": "Enables the list_plugins command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_remote_hosts command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-remote-hosts",
+          "markdownDescription": "Enables the list_remote_hosts command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pick_config_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pick-config-file",
+          "markdownDescription": "Enables the pick_config_file command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the run_apply command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-run-apply",
+          "markdownDescription": "Enables the run_apply command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the run_apply_dry_run command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-run-apply-dry-run",
+          "markdownDescription": "Enables the run_apply_dry_run command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the run_fleet_apply command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-run-fleet-apply",
+          "markdownDescription": "Enables the run_fleet_apply command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the run_fleet_rollback command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-run-fleet-rollback",
+          "markdownDescription": "Enables the run_fleet_rollback command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the run_fleet_scan command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-run-fleet-scan",
+          "markdownDescription": "Enables the run_fleet_scan command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the run_remote_scan command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-run-remote-scan",
+          "markdownDescription": "Enables the run_remote_scan command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the run_rollback command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-run-rollback",
+          "markdownDescription": "Enables the run_rollback command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the run_scan command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-run-scan",
+          "markdownDescription": "Enables the run_scan command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the save_remote_host command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-save-remote-host",
+          "markdownDescription": "Enables the save_remote_host command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the save_scheduler_config command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-save-scheduler-config",
+          "markdownDescription": "Enables the save_scheduler_config command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the test_notification command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-test-notification",
+          "markdownDescription": "Enables the test_notification command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the validate_config command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-validate-config",
+          "markdownDescription": "Enables the validate_config command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the connect_remote command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-connect-remote",
+          "markdownDescription": "Denies the connect_remote command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the create_checkpoint command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-create-checkpoint",
+          "markdownDescription": "Denies the create_checkpoint command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the delete_checkpoint command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-delete-checkpoint",
+          "markdownDescription": "Denies the delete_checkpoint command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the delete_remote_host command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-delete-remote-host",
+          "markdownDescription": "Denies the delete_remote_host command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the disconnect_remote command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-disconnect-remote",
+          "markdownDescription": "Denies the disconnect_remote command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the export_compliance_report command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-export-compliance-report",
+          "markdownDescription": "Denies the export_compliance_report command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the generate_compliance_report command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-generate-compliance-report",
+          "markdownDescription": "Denies the generate_compliance_report command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_checkpoint_detail command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-checkpoint-detail",
+          "markdownDescription": "Denies the get_checkpoint_detail command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_checkpoints command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-checkpoints",
+          "markdownDescription": "Denies the get_checkpoints command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_host_history command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-host-history",
+          "markdownDescription": "Denies the get_host_history command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_latest_scan command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-latest-scan",
+          "markdownDescription": "Denies the get_latest_scan command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_scan_history command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-scan-history",
+          "markdownDescription": "Denies the get_scan_history command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_scan_session command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-scan-session",
+          "markdownDescription": "Denies the get_scan_session command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_scheduler_config command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-scheduler-config",
+          "markdownDescription": "Denies the get_scheduler_config command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_plugins command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-plugins",
+          "markdownDescription": "Denies the list_plugins command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_remote_hosts command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-remote-hosts",
+          "markdownDescription": "Denies the list_remote_hosts command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pick_config_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pick-config-file",
+          "markdownDescription": "Denies the pick_config_file command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the run_apply command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-run-apply",
+          "markdownDescription": "Denies the run_apply command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the run_apply_dry_run command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-run-apply-dry-run",
+          "markdownDescription": "Denies the run_apply_dry_run command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the run_fleet_apply command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-run-fleet-apply",
+          "markdownDescription": "Denies the run_fleet_apply command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the run_fleet_rollback command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-run-fleet-rollback",
+          "markdownDescription": "Denies the run_fleet_rollback command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the run_fleet_scan command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-run-fleet-scan",
+          "markdownDescription": "Denies the run_fleet_scan command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the run_remote_scan command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-run-remote-scan",
+          "markdownDescription": "Denies the run_remote_scan command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the run_rollback command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-run-rollback",
+          "markdownDescription": "Denies the run_rollback command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the run_scan command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-run-scan",
+          "markdownDescription": "Denies the run_scan command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the save_remote_host command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-save-remote-host",
+          "markdownDescription": "Denies the save_remote_host command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the save_scheduler_config command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-save-scheduler-config",
+          "markdownDescription": "Denies the save_scheduler_config command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the test_notification command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-test-notification",
+          "markdownDescription": "Denies the test_notification command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the validate_config command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-validate-config",
+          "markdownDescription": "Denies the validate_config command without any pre-configured scope."
+        },
+        {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",
           "type": "string",
           "const": "core:default",

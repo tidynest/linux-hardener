@@ -32,3 +32,6 @@ dirs = { workspace = true }
 hostname = { workspace = true }
 tempfile = { workspace = true }
 whoami = { workspace = true }
+
+[dev-dependencies]
+tauri = { version = "2.11.1", features = ["test"] }

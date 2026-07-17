@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- Per-command Tauri capability ACLs for the desktop app (SAM-039, issue #22):
+  `src-tauri/build.rs` now declares all 29 IPC commands via
+  `tauri_build::AppManifest`, autogenerating an `allow-*`/`deny-*` permission
+  pair per command and enabling Tauri's runtime ACL check for application
+  commands. The main-window capability grants each permission explicitly,
+  ordered by risk tier, so any single command can be revoked by removing one
+  line from `capabilities/default.json`. Enforcement is verified by
+  mock-runtime tests (`src-tauri/src/acl_tests.rs`): invoking an ungranted
+  command is rejected by the ACL layer before dispatch. Layers on top of the
+  existing IPC validation, `PrivilegedOpGuard`, and pkexec boundary.
+
 ### Added
 - FedRAMP compliance framework: `report --framework fedramp` (CLI and desktop,
   including the fleet posture set, `--scenario all` and

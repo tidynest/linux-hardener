@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod acl_tests;
 mod commands;
 mod validation;
 

@@ -120,6 +120,8 @@ The Tauri desktop application uses `pkexec` (polkit) for operations that require
 
 3. **Polkit Agent Requirement**: A polkit authentication agent must be running in the desktop session (GNOME, KDE, Hyprland, etc. all provide one).
 
+4. **Per-Command Capability ACLs**: Every application IPC command is declared in `src-tauri/build.rs` (`tauri_build::AppManifest`), which autogenerates an `allow-*`/`deny-*` permission pair per command and enables Tauri's runtime ACL check for application commands. The main-window capability (`src-tauri/capabilities/default.json`) grants each of the 29 commands explicitly, grouped by risk tier; a command whose permission is removed is rejected by the ACL layer before argument deserialisation or handler dispatch. This layers beneath the existing IPC input validation, `PrivilegedOpGuard` rate limiting, and pkexec boundary rather than replacing any of them.
+
 ## Secure Development Practices
 
 The project follows these security practices:
@@ -202,4 +204,4 @@ For security concerns: **tidynest@proton.me**
 
 For general issues: [GitHub Issues](https://github.com/tidynest/linux-system-hardener/issues)
 
-**Last Updated**: 2026-07-01
+**Last Updated**: 2026-07-17

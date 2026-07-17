@@ -32,7 +32,7 @@ All 6 items fixed. SSH path quoting (item 4) was already correct on inspection.
 
 ## Resolved — Defence-in-Depth (Deferred SAM Items)
 
-6 of 7 items fixed. SAM-039 deferred to post-v1.0 (requires refactoring all commands into a Tauri plugin; existing PrivilegedOpGuard + pkexec + input validation is sufficient).
+All 7 items fixed. SAM-039 landed post-v1.2.2 without the anticipated plugin refactor: `tauri_build::AppManifest` in `src-tauri/build.rs` autogenerates per-command permissions, granted explicitly in `capabilities/default.json`.
 
 | SAM-ID | Category | Fix |
 |--------|----------|-----|
@@ -127,7 +127,7 @@ All 21 items fixed across 8 crates.
 
 ## Post-v1.0.0
 
-- SAM-039: Explicit Tauri capability ACLs (requires plugin refactor)
+- ~~SAM-039: Explicit Tauri capability ACLs~~ — done via `AppManifest` per-command permissions (no plugin refactor needed)
 - Multi-host management UI, historical trends, alert notifications
 - SSH password auth, parallel scanning, jump host support
 - Ansible/Puppet/Salt/Chef integration modules

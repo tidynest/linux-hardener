@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-save-remote-host"
+description = "Enables the save_remote_host command without any pre-configured scope."
+commands.allow = ["save_remote_host"]
+
+[[permission]]
+identifier = "deny-save-remote-host"
+description = "Denies the save_remote_host command without any pre-configured scope."
+commands.deny = ["save_remote_host"]
