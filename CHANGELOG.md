@@ -89,6 +89,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   clock, written to stderr so JSON stdout stays machine-parseable.
 
 ### Changed
+- README presentation overhaul (issue #23): new Midnight Teal wordmark
+  (`docs/assets/logo.svg` + dark variant, selected via `<picture>` and
+  `prefers-color-scheme`), shields badges recoloured to the same teal palette
+  plus a CI workflow-status badge, the long CLI usage fence folded into a short
+  "most common commands" block with one collapsible `<details>` section per
+  verb, plugin/distro table statuses and completed roadmap headings rendered
+  as ✅ glyphs, and the ASCII crate tree replaced by a Mermaid dependency
+  graph verified against the workspace manifests (directory layout kept in a
+  collapsible block). Stale counts refreshed: tests badge now reads 750+ and
+  the compliance crate is annotated with its 10 frameworks.
 - Scan performance: the `scan` and `report`/`batch` scan paths now run all
   plugins concurrently (`futures::future::join_all`; output order is
   preserved by rendering in plugin order), `LocalExecutor` spawns commands

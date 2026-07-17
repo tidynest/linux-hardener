@@ -1,12 +1,18 @@
-# Linux System Hardener
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
+    <img src="docs/assets/logo.svg" alt="Linux System Hardener" height="72">
+  </picture>
+</p>
 
-<p>
-  <img src="https://img.shields.io/badge/version-1.2.2-2563eb?style=flat-square" alt="Version 1.2.2">
-  <img src="https://img.shields.io/badge/license-Apache--2.0-475569?style=flat-square" alt="License Apache-2.0">
-  <img src="https://img.shields.io/badge/rust-1.85%2B-b45309?style=flat-square&logo=rust&logoColor=white" alt="Rust 1.85+">
-  <img src="https://img.shields.io/aur/version/linux-system-hardener?style=flat-square&logo=archlinux&logoColor=white&label=AUR" alt="AUR package">
-  <img src="https://img.shields.io/badge/platform-Linux-1e293b?style=flat-square&logo=linux&logoColor=white" alt="Platform Linux">
-  <img src="https://img.shields.io/badge/tests-660%20passing-16a34a?style=flat-square" alt="660 tests passing">
+<p align="center">
+  <a href="https://github.com/tidynest/linux-system-hardener/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/tidynest/linux-system-hardener/ci.yml?branch=main&style=flat-square&label=CI&labelColor=134e4a" alt="CI status"></a>
+  <img src="https://img.shields.io/badge/version-1.2.2-0f766e?style=flat-square&labelColor=134e4a" alt="Version 1.2.2">
+  <img src="https://img.shields.io/badge/license-Apache--2.0-0f766e?style=flat-square&labelColor=134e4a" alt="License Apache-2.0">
+  <img src="https://img.shields.io/badge/rust-1.85%2B-0f766e?style=flat-square&labelColor=134e4a&logo=rust&logoColor=white" alt="Rust 1.85+">
+  <img src="https://img.shields.io/aur/version/linux-system-hardener?style=flat-square&logo=archlinux&logoColor=white&label=AUR&color=0f766e&labelColor=134e4a" alt="AUR package">
+  <img src="https://img.shields.io/badge/platform-Linux-0f766e?style=flat-square&labelColor=134e4a&logo=linux&logoColor=white" alt="Platform Linux">
+  <img src="https://img.shields.io/badge/tests-750%2B%20passing-0d9488?style=flat-square&labelColor=134e4a" alt="750+ tests passing">
 </p>
 
 A comprehensive Linux security automation tool with multi-distribution support, built in Rust. Provides automated security scanning, hardening, and compliance reporting with full rollback capabilities.
@@ -70,14 +76,16 @@ The tool is designed for system administrators, DevOps engineers, and security p
 
 | Plugin | Description | Status |
 |--------|-------------|--------|
-| **Kernel Hardening** | sysctl security parameters (ASLR, ptrace, etc.) | Complete |
-| **SSH Hardening** | OpenSSH configuration security | Complete |
-| **Firewall Hardening** | nftables/firewalld/ufw rule management | Complete |
-| **PAM Authentication Hardening** | Pluggable Authentication Modules | Complete |
-| **Service Minimisation** | Disable unnecessary services | Complete |
-| **Audit Rules Hardening** | auditd rules and configuration | Complete |
-| **File Permissions Hardening** | File permission security | Complete |
-| **MAC System Hardening** | SELinux/AppArmor configuration | Complete |
+| **Kernel Hardening** | sysctl security parameters (ASLR, ptrace, etc.) | ✅ |
+| **SSH Hardening** | OpenSSH configuration security | ✅ |
+| **Firewall Hardening** | nftables/firewalld/ufw rule management | ✅ |
+| **PAM Authentication Hardening** | Pluggable Authentication Modules | ✅ |
+| **Service Minimisation** | Disable unnecessary services | ✅ |
+| **Audit Rules Hardening** | auditd rules and configuration | ✅ |
+| **File Permissions Hardening** | File permission security | ✅ |
+| **MAC System Hardening** | SELinux/AppArmor configuration | ✅ |
+
+<sub>✅ = complete</sub>
 
 ### Core Infrastructure
 
@@ -91,12 +99,14 @@ The tool is designed for system administrators, DevOps engineers, and security p
 
 | Distribution | Package Manager | Init System | Status |
 |--------------|-----------------|-------------|--------|
-| Ubuntu 22.04 LTS+ (incl. 26.04) | apt | systemd | Supported |
-| Debian 12+ (incl. 13 "Trixie") | apt | systemd | Supported |
-| Fedora 40+ (incl. 44) | dnf | systemd | Supported |
-| RHEL 9+ (incl. 10) | dnf | systemd | Supported |
-| Arch Linux (rolling) | pacman | systemd | Supported |
-| openSUSE Leap 15.6 / 16, Tumbleweed | zypper | systemd | Supported |
+| Ubuntu 22.04 LTS+ (incl. 26.04) | apt | systemd | ✅ |
+| Debian 12+ (incl. 13 "Trixie") | apt | systemd | ✅ |
+| Fedora 40+ (incl. 44) | dnf | systemd | ✅ |
+| RHEL 9+ (incl. 10) | dnf | systemd | ✅ |
+| Arch Linux (rolling) | pacman | systemd | ✅ |
+| openSUSE Leap 15.6 / 16, Tumbleweed | zypper | systemd | ✅ |
+
+<sub>✅ = supported</sub>
 
 > Support is **family-based**: detection maps any release of the Debian, Red Hat,
 > Arch or SUSE families to the same hardening behaviour, so current releases
@@ -129,7 +139,7 @@ The tool is designed for system administrators, DevOps engineers, and security p
 ### Test Coverage
 
 ```
-Rust workspace:  660 passed · 0 failed · 38 ignored   (>90% coverage)
+Rust workspace:  750+ passed · 0 failed · 38 ignored   (>90% coverage)
 GUI / desktop:   113 Playwright (Web UI, 5 distros) · 95 desktop (UX + functional) · 21 Node.js
 ```
 
@@ -143,6 +153,40 @@ GUI / desktop:   113 Playwright (Web UI, 5 distros) · 95 desktop (UX + function
 
 ## Architecture
 
+Direct dependencies between the workspace crates (dotted = optional feature or
+WASM bundling rather than a Cargo dependency):
+
+```mermaid
+graph TD
+    CLI["hardener-cli<br>(CLI binary)"]
+    DESKTOP["linux-hardener-desktop<br>(Tauri backend)"]
+    UI["hardener-ui<br>(Leptos/WASM frontend)"]
+    PLUGINS["hardener-plugins<br>(8 security plugins)"]
+    COMPLIANCE["hardener-compliance<br>(10 frameworks)"]
+    SCHEDULER["hardener-scheduler<br>(scan daemon)"]
+    CORE["hardener-core<br>(plugin trait, executors)"]
+    STATE["hardener-state<br>(checkpoints, audit log)"]
+    DISTRO["hardener-distro<br>(distribution detection)"]
+    COMMON["hardener-common<br>(shared utilities)"]
+    TYPES["hardener-types<br>(WASM-safe shared types)"]
+
+    CLI --> PLUGINS & COMPLIANCE & SCHEDULER & CORE & STATE & DISTRO & COMMON & TYPES
+    DESKTOP --> PLUGINS & COMPLIANCE & SCHEDULER & CORE & STATE & DISTRO & COMMON & TYPES
+    DESKTOP -. "bundles prebuilt WASM dist" .-> UI
+    UI --> TYPES
+    COMPLIANCE --> PLUGINS & CORE & DISTRO & COMMON & TYPES
+    PLUGINS --> CORE & STATE & COMMON
+    SCHEDULER --> CORE & COMMON
+    CORE -. "optional (system feature)" .-> STATE
+    CORE --> COMMON & TYPES
+    STATE --> COMMON & TYPES
+    DISTRO --> COMMON
+    COMMON --> TYPES
+```
+
+<details>
+<summary>Directory layout</summary>
+
 ```
 linux-system-hardener/
 ├── crates/
@@ -152,7 +196,7 @@ linux-system-hardener/
 │   ├── hardener-distro/      # Distribution detection and adaptation
 │   ├── hardener-plugins/     # Security plugin implementations (8 plugins)
 │   ├── hardener-state/       # Checkpoint manager, audit logging
-│   ├── hardener-compliance/  # Compliance framework mapping (7 frameworks)
+│   ├── hardener-compliance/  # Compliance framework mapping (10 frameworks)
 │   ├── hardener-scheduler/   # Scheduled scanning daemon
 │   ├── hardener-cli/         # Command-line interface binary
 │   └── hardener-ui/          # Leptos WASM frontend components
@@ -160,6 +204,8 @@ linux-system-hardener/
 ├── scripts/                  # Development and testing utilities
 └── docs/                     # Project documentation
 ```
+
+</details>
 
 ### Key Design Principles
 
@@ -344,10 +390,36 @@ The web app is useful for UI development and testing. All pages render with prop
 
 ### Command Line
 
+The commands you will use most:
+
+```bash
+hardener plugins                        # List available security plugins
+hardener scan                           # Scan the system for security issues
+hardener scan --format json             # Machine-readable scan output
+hardener report --framework cis         # Compliance report (10 frameworks)
+sudo hardener apply --dry-run --all     # Preview hardening without changing anything
+sudo hardener apply --all               # Apply all recommended hardening
+hardener checkpoint list                # List rollback checkpoints
+sudo hardener rollback <checkpoint-id>  # Roll back to a checkpoint
+hardener history list                   # Recent scan sessions
+```
+
+Every verb in detail:
+
+<details>
+<summary><code>hardener plugins</code> — list available security plugins</summary>
+
 ```bash
 # List available security plugins
 hardener plugins
+```
 
+</details>
+
+<details>
+<summary><code>hardener scan</code> — scan the system for security issues</summary>
+
+```bash
 # Scan system for security issues
 hardener scan
 
@@ -372,7 +444,40 @@ hardener scan --compliance
 
 # CI/CD mode - exit with code 1 if findings exist
 hardener scan --compliance --exit-code
+```
 
+</details>
+
+<details>
+<summary><code>hardener apply</code> — apply hardening recommendations (dry-run available)</summary>
+
+```bash
+# Dry-run: see what would be changed without applying
+sudo hardener apply --dry-run --all
+
+# Apply all recommended hardening
+sudo hardener apply --all
+
+# Apply specific plugin
+sudo hardener apply --plugin kernel-hardening
+```
+
+</details>
+
+<details>
+<summary><code>hardener rollback</code> — restore a previous checkpoint</summary>
+
+```bash
+# Rollback to a previous checkpoint
+sudo hardener rollback <checkpoint-id>
+```
+
+</details>
+
+<details>
+<summary><code>hardener report</code> — compliance reports against 10 frameworks</summary>
+
+```bash
 # Interactive report wizard
 hardener report --interactive
 
@@ -382,16 +487,14 @@ hardener report --framework cis --report-format csv --output report.csv
 
 # Force a compliance ID profile (auto-detected from the scanned system otherwise)
 hardener report --framework stig --profile rhel10
+```
 
-# Dry-run: see what would be changed without applying
-sudo hardener apply --dry-run --all
+</details>
 
-# Apply all recommended hardening
-sudo hardener apply --all
+<details>
+<summary><code>hardener checkpoint</code> — create and inspect state snapshots</summary>
 
-# Apply specific plugin
-sudo hardener apply --plugin kernel-hardening
-
+```bash
 # Create a checkpoint before making changes
 sudo hardener checkpoint create "before-hardening"
 
@@ -400,10 +503,14 @@ hardener checkpoint list
 
 # Show checkpoint details
 hardener checkpoint show <checkpoint-id>
+```
 
-# Rollback to a previous checkpoint
-sudo hardener rollback <checkpoint-id>
+</details>
 
+<details>
+<summary><code>hardener history</code> — browse and export past scan sessions</summary>
+
+```bash
 # View scan history (list recent sessions)
 hardener history list
 
@@ -417,7 +524,14 @@ hardener history show <session-id>
 # Export scan session to JSON file
 hardener history export <session-id>
 hardener history export <session-id> --output /path/to/export.json
+```
 
+</details>
+
+<details>
+<summary><code>hardener daemon</code> — run the scheduled scanning daemon</summary>
+
+```bash
 # Start the scheduled scanning daemon
 hardener daemon start
 
@@ -426,7 +540,14 @@ hardener daemon run-once
 
 # Show scheduler status and scan history
 hardener daemon status --limit 10
+```
 
+</details>
+
+<details>
+<summary><code>hardener systemd</code> — generate and manage systemd timers</summary>
+
+```bash
 # Generate systemd unit files (outputs to stdout)
 hardener systemd generate
 
@@ -443,6 +564,8 @@ hardener systemd status
 # Remove systemd timer
 sudo hardener systemd uninstall
 ```
+
+</details>
 
 ### SSH Remote Scanning
 
@@ -631,7 +754,7 @@ See [ROADMAP.md](ROADMAP.md) for detailed implementation plans for upcoming feat
 <details>
 <summary><b>Release history — v0.2.0 → v1.0.0</b> (click to expand)</summary>
 
-### v0.2.0 (Complete)
+### ✅ v0.2.0
 - [x] Config file support (`~/.config/linux-hardener/`)
 - [x] CLI flags: `--config`, `--audit`, `--compliance`, `--exit-code`
 - [x] Policy exception system with audit trail
@@ -640,7 +763,7 @@ See [ROADMAP.md](ROADMAP.md) for detailed implementation plans for upcoming feat
 - [x] PDF report formatter with automatic timestamped filenames and colour-coded badges
 - [x] GUI compliance report page
 
-### v0.3.0 (Complete)
+### ✅ v0.3.0
 - [x] SystemExecutor abstraction layer for local/remote operations
 - [x] Remote scanning via SSH
 - [x] SSH CLI flags: `--ssh`, `--ssh-key`, `--port`, `--ssh-timeout`, `--ssh-no-verify`
@@ -657,7 +780,7 @@ See [ROADMAP.md](ROADMAP.md) for detailed implementation plans for upcoming feat
 - [x] Browser mode support (Web UI works without Tauri desktop wrapper)
 - [x] CI/CD GitHub Actions integration
 
-### v0.3.1 - GUI Polish & Testing (Complete)
+### ✅ v0.3.1 - GUI Polish & Testing
 - [x] Fix "Loading..." text persistence
 - [x] GUI dark terminal theme with CSS Variables
 - [x] Security score shows "--/100" before scan
@@ -672,7 +795,7 @@ See [ROADMAP.md](ROADMAP.md) for detailed implementation plans for upcoming feat
 - [x] CLI functional testing (97 tests: 31 unit + 66 functional)
 - [x] Safe testing environment (systemd-nspawn container)
 
-### v0.3.2 - GUI Major Redesign (Complete)
+### ✅ v0.3.2 - GUI Major Redesign
 - [x] Page redesign (Dashboard, Analysis, Hardening restructured with new layout and accessibility)
 - [x] Session 1: Overflow fixes, skip link, tab ARIA accessibility
 - [x] Session 2: CSS utility classes (flex/grid/gap), responsive testing (320-1920px)
@@ -683,7 +806,7 @@ See [ROADMAP.md](ROADMAP.md) for detailed implementation plans for upcoming feat
 - [x] Root privilege escalation via pkexec
 - [x] Bug fixes: Security score calculation, false positives, validate() stubs, kernel rollback
 
-### v0.3.3 - Distribution Validation (Complete)
+### ✅ v0.3.3 - Distribution Validation
 - [x] Arch Linux validation (123/123 tests pass) - covers Manjaro, EndeavourOS, Garuda
 - [x] Debian 12 validation (123/123 tests pass) - covers Ubuntu, Linux Mint, Pop!_OS, elementary
 - [x] Fedora 41 validation (123/123 tests pass) - covers RHEL, CentOS, AlmaLinux, Oracle Linux
@@ -692,7 +815,7 @@ See [ROADMAP.md](ROADMAP.md) for detailed implementation plans for upcoming feat
 
 > **Note on family coverage:** Each distribution covers its entire family. All distributions in a family map to the same `DistroFamily` enum and use identical hardener code paths.
 
-### v0.4.0 - GUI/CLI Parity & UI Polish (Complete)
+### ✅ v0.4.0 - GUI/CLI Parity & UI Polish
 - [x] GUI/CLI feature parity (scan filtering, checkpoint CRUD, report export, scan history, audit/compliance modes)
 - [x] Scheduler UI (schedule config, notification config, email/webhook, test notification)
 - [x] Config file picker in desktop app
@@ -702,7 +825,7 @@ See [ROADMAP.md](ROADMAP.md) for detailed implementation plans for upcoming feat
 - [~] Historical security trends — CLI `history trends` shipped (per-host; see v1.2.0); desktop trends visualisation deferred
 - [ ] Test on GNOME, KDE, XFCE desktop environments (pkexec/polkit agents) — deferred (human-run; CI validates headless nspawn containers only)
 
-### v1.0.0 - Production Release (Complete)
+### ✅ v1.0.0 - Production Release
 - [x] Security audit completed
 - [x] Package distribution (AUR)
 - [x] Comprehensive user documentation
