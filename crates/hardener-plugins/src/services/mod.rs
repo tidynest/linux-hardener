@@ -337,14 +337,118 @@ const UNNECESSARY_SERVICES: &[ServiceDirective] = &[
     },
 ];
 
+/// Unit-file states `systemctl is-enabled` reports success for.
+const ENABLED_STATES: &[&str] = &[
+    "enabled",
+    "enabled-runtime",
+    "alias",
+    "static",
+    "indirect",
+    "generated",
+    "transient",
+];
+
+/// Snapshot of systemd service state built from two `systemctl` listings.
+///
+/// The scan path used three spawns per assessed service; batching collapses
+/// that to two spawns total, which matters most when each spawn is an SSH
+/// round-trip. Apply/validate keep the per-service probes — they must observe
+/// live state between mutations.
+#[derive(Default)]
+struct ServiceStates {
+    /// `list-unit-files` STATE column, keyed by unit name.
+    unit_files: std::collections::HashMap<String, String>,
+    /// `list-units` ACTIVE column, keyed by unit name.
+    active_units: std::collections::HashMap<String, String>,
+}
+
+impl ServiceStates {
+    /// Loads both listings through the context's executor.
+    ///
+    /// The assessed unit names are passed as patterns — an unfiltered
+    /// `list-unit-files` enumerates every unit file on disk, which measured
+    /// two orders of magnitude slower than the pattern-filtered listing.
+    async fn load(ctx: &Context) -> Result<Self> {
+        let units: Vec<String> = UNNECESSARY_SERVICES
+            .iter()
+            .map(|directive| Self::unit(directive.service_name))
+            .collect();
+
+        let mut unit_file_args = vec!["list-unit-files", "--type=service", "--no-legend"];
+        unit_file_args.extend(units.iter().map(String::as_str));
+        let unit_files = ctx
+            .executor()
+            .execute_command("systemctl", &unit_file_args)
+            .await?;
+
+        let mut unit_args = vec![
+            "list-units",
+            "--type=service",
+            "--all",
+            "--no-legend",
+            "--plain",
+        ];
+        unit_args.extend(units.iter().map(String::as_str));
+        let loaded_units = ctx
+            .executor()
+            .execute_command("systemctl", &unit_args)
+            .await?;
+
+        Ok(Self {
+            unit_files: parse_unit_column(&unit_files.stdout, 1),
+            active_units: parse_unit_column(&loaded_units.stdout, 2),
+        })
+    }
+
+    fn unit(service_name: &str) -> String {
+        format!("{service_name}.service")
+    }
+
+    fn exists(&self, service_name: &str) -> bool {
+        self.unit_files.contains_key(&Self::unit(service_name))
+    }
+
+    /// Mirrors the exit-code semantics of `systemctl is-enabled`.
+    fn enabled(&self, service_name: &str) -> bool {
+        self.unit_files
+            .get(&Self::unit(service_name))
+            .is_some_and(|state| ENABLED_STATES.contains(&state.as_str()))
+    }
+
+    /// Mirrors the exit-code semantics of `systemctl is-active`.
+    fn active(&self, service_name: &str) -> bool {
+        self.active_units
+            .get(&Self::unit(service_name))
+            .is_some_and(|state| state == "active" || state == "reloading")
+    }
+}
+
+/// Parses a whitespace-separated `systemctl` listing into unit → column value.
+fn parse_unit_column(stdout: &str, column: usize) -> std::collections::HashMap<String, String> {
+    stdout
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            let unit = fields.next()?;
+            let value = fields.nth(column - 1)?;
+            Some((unit.to_string(), value.to_string()))
+        })
+        .collect()
+}
+
 /// Checks if a systemd service unit exists on the system.
+///
+/// The pattern needs the `.service` suffix — `list-unit-files` does not
+/// mangle bare names the way `is-enabled`/`is-active` do, so an unsuffixed
+/// pattern matches nothing and every service looked absent.
 async fn is_service_exists(ctx: &Context, service_name: &str) -> Result<bool> {
+    let unit = format!("{service_name}.service");
     let output = ctx
         .executor()
-        .execute_command("systemctl", &["list-unit-files", service_name])
+        .execute_command("systemctl", &["list-unit-files", &unit])
         .await?;
 
-    Ok(output.stdout.contains(service_name))
+    Ok(output.stdout.contains(&unit))
 }
 
 /// Checks if a service is enabled to start at boot.
@@ -433,22 +537,19 @@ impl HardeningPlugin for ServicesHardeningPlugin {
         let start = Instant::now();
         let mut findings = Vec::new();
 
+        // Two spawns cover every service; a failed listing degrades to "no
+        // findings", matching the old per-service probes' error handling.
+        let states = ServiceStates::load(ctx).await.unwrap_or_default();
+
         // Check each service in our list
         for directive in UNNECESSARY_SERVICES {
             // Skip if service doesn't exist on the system
-            if !is_service_exists(ctx, directive.service_name)
-                .await
-                .unwrap_or(false)
-            {
+            if !states.exists(directive.service_name) {
                 continue;
             }
 
-            let is_enabled = is_service_enabled(ctx, directive.service_name)
-                .await
-                .unwrap_or(false);
-            let is_active = is_service_active(ctx, directive.service_name)
-                .await
-                .unwrap_or(false);
+            let is_enabled = states.enabled(directive.service_name);
+            let is_active = states.active(directive.service_name);
 
             // Only create finding if service is enabled or active
             if is_enabled || is_active {
