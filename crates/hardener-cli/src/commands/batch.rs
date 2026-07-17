@@ -1,4 +1,4 @@
-//! `hardener batch scan` — scan many remote hosts concurrently.
+//! `hardener batch scan`: scan many remote hosts concurrently.
 
 use super::state::{effective_user, get_audit_logger, get_checkpoint_manager};
 use crate::cli::OutputFormat as CliOutputFormat;
@@ -420,7 +420,7 @@ pub fn host_report(outcome: HostOutcome, generator: &ReportGenerator) -> HostRep
 }
 
 /// Assesses every outcome with a generator carrying that host's own resolved
-/// profile — or the fleet-wide `--profile` override when one was given. The
+/// profile, or the fleet-wide `--profile` override when one was given. The
 /// per-host generator (and coverage clone) is cheap at fleet scale.
 fn assess_outcomes(
     outcomes: Vec<HostOutcome>,
@@ -598,8 +598,8 @@ async fn persist_host(
 }
 
 /// Best-effort per-host profile resolution: reads `/etc/os-release` through
-/// the host's own executor and resolves it. Any failure — unreadable file,
-/// unparseable content — falls back to `Generic` and never fails the scan.
+/// the host's own executor and resolves it. Any failure (unreadable file,
+/// unparseable content) falls back to `Generic` and never fails the scan.
 pub(crate) async fn detect_host_profile(executor: &dyn SystemExecutor) -> ComplianceProfile {
     if let Ok(content) = executor
         .read_file(std::path::Path::new("/etc/os-release"))
@@ -958,7 +958,7 @@ fn render_rollback_json(outcomes: &[RollbackOutcome]) -> String {
 /// True if the executor's session is root (uid 0) or has passwordless sudo.
 ///
 /// Fails closed: any error from `id -u` or `sudo -n true` is treated as
-/// "not privileged" — never as privileged. The privilege gate must never
+/// "not privileged", never as privileged. The privilege gate must never
 /// pass on ambiguity.
 async fn is_privileged(executor: &dyn SystemExecutor) -> bool {
     if let Ok(out) = executor.execute_command("id", &["-u"]).await
@@ -1013,7 +1013,7 @@ async fn apply_one(
         checkpoint,
         None, // batch logs audit itself, post-phase (Task 6)
         &CliOutputFormat::Json,
-        true, // quiet — per-host rows convey the outcome
+        true, // quiet: per-host rows convey the outcome
     )
     .await;
     ApplyOutcome {
@@ -2041,7 +2041,7 @@ mod tests {
     #[tokio::test]
     async fn scan_all_preserves_order_and_isolates_failures() {
         // Three unreachable hosts (loopback port 1 is always refused). Each must
-        // come back Failed, in input order, with none lost — exercising the real
+        // come back Failed, in input order, with none lost, exercising the real
         // spawn -> bounded-collect -> assemble_ordered wiring end to end.
         let hosts: Vec<RemoteHostProfile> = ["alpha", "bravo", "charlie"]
             .iter()

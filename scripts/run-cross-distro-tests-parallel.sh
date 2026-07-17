@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# PARALLEL CROSS-DISTRO TEST RUNNER — Linux System Hardener
+# PARALLEL CROSS-DISTRO TEST RUNNER: Linux System Hardener
 # =============================================================================
 # Runs full-test-suite.sh in PARALLEL across all systemd-nspawn containers.
 # Uses background processes to test multiple distros simultaneously.
@@ -199,7 +199,7 @@ run_single_distro() {
     local logfile="$RESULTS_DIR/${distro}.log"
     
     if [[ ! -d "$container_path" ]]; then
-        echo "[$distro] ${YELLOW}SKIP${NC} — container not found"
+        echo "[$distro] ${YELLOW}SKIP${NC}: container not found"
         echo "CONTAINER NOT FOUND: $container_path" > "$logfile"
         return 99
     fi
@@ -223,11 +223,11 @@ run_single_distro() {
     total=$(echo "$stripped" | grep -oP 'Total Tests:\s+\K\d+' 2>/dev/null || echo "0")
     
     if [[ $exit_code -eq 0 ]] && [[ "$total" -gt 0 ]]; then
-        echo "[$distro] ${GREEN}PASS${NC} — $passed/$total passed, $skipped skipped"
+        echo "[$distro] ${GREEN}PASS${NC}: $passed/$total passed, $skipped skipped"
     elif [[ "$total" -eq 0 ]]; then
-        echo "[$distro] ${RED}ERR${NC} — no results (exit: $exit_code)"
+        echo "[$distro] ${RED}ERR${NC}: no results (exit: $exit_code)"
     else
-        echo "[$distro] ${RED}FAIL${NC} — $failed failed (exit: $exit_code)"
+        echo "[$distro] ${RED}FAIL${NC}: $failed failed (exit: $exit_code)"
     fi
     
     echo "$passed" > "$RESULTS_DIR/.${distro}.passed"
@@ -339,7 +339,7 @@ echo ""
 if [[ $overall_exit -eq 0 ]]; then
     echo -e "${GREEN}All distros passed.${NC}"
 else
-    echo -e "${RED}Some distros had failures — check logs.${NC}"
+    echo -e "${RED}Some distros had failures: check logs.${NC}"
 fi
 
 exit $overall_exit

@@ -1,4 +1,4 @@
-//! Checkpoint commands — create, list, show, delete, and rollback operations.
+//! Checkpoint commands: create, list, show, delete, and rollback operations.
 
 use std::sync::Arc;
 

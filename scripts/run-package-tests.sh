@@ -6,7 +6,7 @@
 # validates the file layout, permissions, and functional correctness.
 #
 # Mirrors the structure of run-cross-distro-tests.sh but focuses on
-# packaging — install, validate, functional test, uninstall.
+# packaging: install, validate, functional test, uninstall.
 #
 # Usage: sudo ./scripts/run-package-tests.sh [OPTIONS]
 #
@@ -323,7 +323,7 @@ echo ""
 if [[ $overall_exit -eq 0 ]]; then
     echo -e "${GREEN}All distros passed.${NC}"
 else
-    echo -e "${RED}Some distros had failures — check logs.${NC}"
+    echo -e "${RED}Some distros had failures: check logs.${NC}"
 fi
 
 exit $overall_exit

@@ -2,7 +2,7 @@
 
 Command reference for the `hardener` binary (`crates/hardener-cli/`).
 
-**Binary locations** (relative to the cargo target directory — `./target` by
+**Binary locations** (relative to the cargo target directory, `./target` by
 default, or wherever `CARGO_TARGET_DIR`/`[build] target-dir` points):
 - Debug: `debug/hardener`
 - Release: `release/hardener`
@@ -49,7 +49,7 @@ Short names (above) and full names (e.g. `kernel-hardening`, `ssh-hardening`) ar
 
 ## scan
 
-Scan the system for security misconfigurations. Read-only — makes no changes.
+Scan the system for security misconfigurations. Read-only: makes no changes.
 
 ```
 hardener scan [FLAGS]
@@ -212,7 +212,7 @@ hardener report [FLAGS]
 `--profile` selects which benchmark's control identifiers the report renders.
 It auto-detects from the scanned system's `/etc/os-release` (read through the
 scan executor, so a `--ssh` target resolves from its own os-release):
-RHEL-family major 10 (RHEL/Rocky/Alma 10) selects `rhel10` — DISA RHEL 10
+RHEL-family major 10 (RHEL/Rocky/Alma 10) selects `rhel10`: DISA RHEL 10
 STIG V1R1 and CIS RHEL 10 Benchmark v1.0.1 identifiers; everything else uses
 the `generic` baseline (RHEL 8 STIG identifiers, distribution-independent CIS
 numbering). Canonical controls without a sourced counterpart in the selected
@@ -260,7 +260,7 @@ hardener batch scan (--all | --host a,b | --ssh user@host) [FLAGS]
 | `--concurrency <N>` | Maximum hosts scanned in parallel | `8` |
 | `--output <FILE>` | Write report to a file instead of stdout | stdout |
 
-Tiered exit codes: `0` — no findings; `1` — findings present; `2` — one or more host errors.
+Tiered exit codes: `0` = no findings; `1` = findings present; `2` = one or more host errors.
 
 **Examples:**
 
@@ -296,7 +296,7 @@ STIG V1R1 / CIS RHEL 10 v1.0.1 identifiers while the rest of the fleet keeps
 the generic baseline, in the same run. JSON rows carry each host's resolved
 `profile`. An explicit `--profile` forces one profile fleet-wide.
 
-Tiered exit codes: `0` — all controls passing; `1` — any failing control; `2` — any host error.
+Tiered exit codes: `0` = all controls passing; `1` = any failing control; `2` = any host error.
 
 **Examples:**
 
@@ -324,7 +324,7 @@ hardener batch apply (--all | --host a,b | --ssh user@host) [FLAGS]
 | `--concurrency <N>` | Maximum hosts applied in parallel | `8` |
 | `--output <FILE>` | Write report to a file instead of stdout | stdout |
 
-Tiered exit codes: `0` — clean; `1` — apply or validation failure; `2` — connect, privilege, or usage error.
+Tiered exit codes: `0` = clean; `1` = apply or validation failure; `2` = connect, privilege, or usage error.
 
 **Examples:**
 
@@ -508,7 +508,7 @@ hardener history trends --host ops@10.0.0.5:22 --limit 10
 
 Compare each host's two newest completed scans. Reports any host whose latest
 scan is worse than the previous one. Exits `1` when any regression is found,
-`0` when all hosts are stable or improving — suitable as a CI gate.
+`0` when all hosts are stable or improving, suitable as a CI gate.
 
 ```
 hardener history regressions [FLAGS]

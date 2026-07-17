@@ -1,4 +1,4 @@
-# BUG D & BUG E Analysis — Permission-Denied False Negatives
+# BUG D & BUG E Analysis: Permission-Denied False Negatives
 
 **Date**: 2026-02-25
 **Status**: Both bugs ALREADY FIXED in production code. This document analyses the fix patterns and cross-plugin audit results.
@@ -13,7 +13,7 @@ Both have been fixed. All 8 plugins have been reviewed for the same class of bug
 
 ---
 
-## BUG D — Firewall: Permission Denied Reports "Disabled"
+## BUG D: Firewall: Permission Denied Reports "Disabled"
 
 ### Location
 - **Test**: `crates/hardener-plugins/tests/firewall_mock_tests.rs:142-189`
@@ -23,12 +23,12 @@ Both have been fixed. All 8 plugins have been reviewed for the same class of bug
 ### Root Cause
 `ufw status` requires root. When run without root, exit code 1 + stderr "You need to be root". The old code treated any failure of `ufw status` as "firewall disabled".
 
-### Fix Strategy — Two-level fallback
+### Fix Strategy: Two-level fallback
 1. **Primary**: `systemctl is-active ufw` (doesn't require root)
 2. **Secondary**: `ufw status` (requires root, used as fallback)
 3. **Error path**: If both fail, propagate "Unable to determine UFW status (permission denied)" instead of "Firewall disabled"
 
-The scan method in `firewall/mod.rs:266-302` checks the error message — only creates a "disabled" finding if the error does NOT contain "permission denied".
+The scan method in `firewall/mod.rs:266-302` checks the error message: only creates a "disabled" finding if the error does NOT contain "permission denied".
 
 ### Regression Test
 ```rust
@@ -40,7 +40,7 @@ async fn test_firewall_scan_permission_denied_should_not_report_disabled() {
 
 ---
 
-## BUG E — Audit: Permission Denied Reports All Rules Missing
+## BUG E: Audit: Permission Denied Reports All Rules Missing
 
 ### Location
 - **Test**: `crates/hardener-plugins/tests/audit_mock_tests.rs:423-473`
@@ -49,11 +49,11 @@ async fn test_firewall_scan_permission_denied_should_not_report_disabled() {
 ### Root Cause
 `auditctl -l` requires root. When run without root, exit code 1 + stderr "You must be root". The old code created 25 "rule not configured" findings for every rule it couldn't verify.
 
-### Fix Strategy — Enum-based permission detection
+### Fix Strategy: Enum-based permission detection
 ```rust
 enum AuditRulesResult {
     Rules(Vec<String>),      // Successfully read (may be empty)
-    PermissionDenied,         // Can't determine — don't create findings
+    PermissionDenied,         // Can't determine: don't create findings
 }
 ```
 
@@ -78,7 +78,7 @@ async fn test_audit_scan_permission_denied_should_not_report_missing_rules() {
 | **Kernel** | Safe | File-based reads (`/proc/sys/`), not command-based |
 | **SSH** | Safe | File-based reads (`/etc/ssh/sshd_config`) |
 | **PAM** | Safe | File-based reads (`/etc/security/pwquality.conf`) |
-| **Services** | Safe | `systemctl` checks use `.unwrap_or(false)` — missing = no finding |
+| **Services** | Safe | `systemctl` checks use `.unwrap_or(false)`: missing = no finding |
 | **Permissions** | Safe | `chmod` failures tracked as `change_success: false` |
 | **MAC** | Safe | Policy-based, system-level error handling |
 

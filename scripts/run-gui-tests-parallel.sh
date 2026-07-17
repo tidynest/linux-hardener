@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# PARALLEL WEB UI GUI TEST ORCHESTRATOR — Linux System Hardener
+# PARALLEL WEB UI GUI TEST ORCHESTRATOR: Linux System Hardener
 # =============================================================================
 # Runs Playwright GUI tests in PARALLEL across all systemd-nspawn containers.
 # Uses background processes to test multiple distros simultaneously.
@@ -133,7 +133,7 @@ run_single_distro() {
     local logfile="$RESULTS_DIR/${distro}-webui.log"
     
     if [[ ! -d "$container_path" ]]; then
-        echo "[$distro] ${YELLOW}SKIP${NC} — container not found"
+        echo "[$distro] ${YELLOW}SKIP${NC}: container not found"
         echo "CONTAINER NOT FOUND: $container_path" > "$logfile"
         return 99
     fi
@@ -242,7 +242,7 @@ echo ""
 if [[ $overall_exit -eq 0 ]]; then
     echo -e "${GREEN}All Web UI tests passed.${NC}"
 else
-    echo -e "${RED}Some distros had failures — check logs.${NC}"
+    echo -e "${RED}Some distros had failures: check logs.${NC}"
 fi
 
 exit $overall_exit

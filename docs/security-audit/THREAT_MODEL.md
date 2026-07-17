@@ -1,8 +1,8 @@
-# Threat Model — Linux System Hardener
+# Threat Model: Linux System Hardener
 
 **Document Version:** 1.0
 **Date:** 2026-02-25
-**Auditor:** Security Audit Agent 1 — Threat Model
+**Auditor:** Security Audit Agent 1, Threat Model
 **Scope:** Full workspace (11 crates + Tauri desktop app)
 
 ---
@@ -155,17 +155,17 @@ User (unprivileged)                Root (privileged)
 
 ### AS-3: Tauri IPC Commands (25 commands)
 
-**Entry point:** `src-tauri/src/commands.rs` — all `#[tauri::command]` functions.
+**Entry point:** `src-tauri/src/commands.rs`, all `#[tauri::command]` functions.
 
 **Inputs:**
 - `run_scan`: plugin IDs (Vec<String>), config path (Option<String>)
 - `run_apply`: plugin IDs (Vec<String>), config path (Option<String>)
 - `run_rollback`: checkpoint ID (String), config path (Option<String>)
-- `validate_config`: path (String) — arbitrary filesystem path
-- `save_remote_host`: profile (RemoteHostProfile) — hostname, user, key file, port
-- `save_scheduler_config`: config (SchedulerUiConfig) — cron expr, webhook URLs, SMTP settings
+- `validate_config`: path (String), arbitrary filesystem path
+- `save_remote_host`: profile (RemoteHostProfile), hostname, user, key file, port
+- `save_scheduler_config`: config (SchedulerUiConfig), cron expr, webhook URLs, SMTP settings
 - `export_compliance_report`: frameworks, format, output path (Option<String>)
-- `connect_remote`: name (String) — used to look up SSH host profile
+- `connect_remote`: name (String), used to look up SSH host profile
 - All checkpoint/session ID lookups
 
 **Validation:** Minimal. Plugin IDs are string-matched against registry. Paths are not sanitised for traversal. The `export_compliance_report` command writes to user-specified paths.
@@ -178,7 +178,7 @@ User (unprivileged)                Root (privileged)
 - `cat '{path}'` (read_file)
 - `sudo tee '{path}' > /dev/null << 'HARDENER_EOF'\n{content}\nHARDENER_EOF` (write_file)
 - `stat -c '%F %a %s' '{path}'` (file_metadata)
-- `{program} {args.join(" ")}` (execute_command — no quoting)
+- `{program} {args.join(" ")}` (execute_command, no quoting)
 
 **Validation:** File paths are formatted using `path.display()` inside single quotes. However, paths containing single quotes would break the quoting. The `execute_command` method concatenates arguments with spaces and NO quoting.
 
@@ -273,7 +273,7 @@ ConfigLoader ──► HardenerConfig ──► PluginConfig
                           SQLite + Signing Key
 ```
 
-**Trust notes:** User-supplied configuration values flow through pkexec into root-level file writes. The config path itself (`--config`) is passed through pkexec as a CLI argument. The root process reads the file — if the path points to an attacker-controlled file, malicious directives could be applied.
+**Trust notes:** User-supplied configuration values flow through pkexec into root-level file writes. The config path itself (`--config`) is passed through pkexec as a CLI argument. The root process reads the file, and if the path points to an attacker-controlled file, malicious directives could be applied.
 
 ### DF-3: Rollback Flow (Write, Root Required)
 
@@ -371,21 +371,21 @@ ScanSummary ──► NotificationDispatcher
 
 | Asset | Location | Protection | Sensitivity |
 |-------|----------|------------|-------------|
-| Ed25519 signing key | `/var/lib/linux-hardener/signing.key` | 0600 permissions | Critical — forges checkpoint signatures |
-| SMTP password | `HARDENER_SMTP_PASSWORD` env var | Process environment | High — email credential |
-| SSH private keys | User-configured paths | File system permissions | Critical — remote host access |
+| Ed25519 signing key | `/var/lib/linux-hardener/signing.key` | 0600 permissions | Critical: forges checkpoint signatures |
+| SMTP password | `HARDENER_SMTP_PASSWORD` env var | Process environment | High: email credential |
+| SSH private keys | User-configured paths | File system permissions | Critical: remote host access |
 
 ### Data Stores
 
 | Asset | Location | Protection | Sensitivity |
 |-------|----------|------------|-------------|
-| System checkpoint DB | `/var/lib/linux-hardener/checkpoints.db` | Root-owned directory | Critical — contains system file backups |
-| User checkpoint DB | `~/.local/share/linux-hardener/checkpoints.db` | User-owned | High — scan results, some file states |
-| Audit log | `~/.local/share/linux-hardener/audit.log` | User-owned | High — tamper-evident operation history |
-| Hosts config | `~/.config/linux-hardener/hosts.toml` | User-owned | High — SSH connection details |
-| Hardener config | `~/.config/linux-hardener/config.toml` | User-owned | Medium — policy exceptions, webhook URLs |
-| System config | `/etc/linux-hardener/config.toml` | Root-owned | Medium — org-wide policy |
-| Scheduler DB | Configurable path | Depends on config | Medium — scan history |
+| System checkpoint DB | `/var/lib/linux-hardener/checkpoints.db` | Root-owned directory | Critical: contains system file backups |
+| User checkpoint DB | `~/.local/share/linux-hardener/checkpoints.db` | User-owned | High: scan results, some file states |
+| Audit log | `~/.local/share/linux-hardener/audit.log` | User-owned | High: tamper-evident operation history |
+| Hosts config | `~/.config/linux-hardener/hosts.toml` | User-owned | High: SSH connection details |
+| Hardener config | `~/.config/linux-hardener/config.toml` | User-owned | Medium: policy exceptions, webhook URLs |
+| System config | `/etc/linux-hardener/config.toml` | Root-owned | Medium: org-wide policy |
+| Scheduler DB | Configurable path | Depends on config | Medium: scan history |
 
 ### System Files Modified (Apply Operations)
 
@@ -404,9 +404,9 @@ ScanSummary ──► NotificationDispatcher
 
 | Asset | Type | Sensitivity |
 |-------|------|-------------|
-| Compliance reports (HTML/PDF/CSV/JSON) | Files | Medium — system security posture |
-| Systemd unit files | Service config | Low — but controls execution |
-| JSON scan output | Files | Medium — finding details |
+| Compliance reports (HTML/PDF/CSV/JSON) | Files | Medium: system security posture |
+| Systemd unit files | Service config | Low, but controls execution |
+| JSON scan output | Files | Medium: finding details |
 
 ---
 
@@ -585,7 +585,7 @@ The following security concerns were identified during the threat model analysis
 - **CWE:** CWE-22 (Path Traversal)
 - **Location:** `src-tauri/src/commands.rs:349-386` (`run_apply()`)
 - **Description:** The `config_path` parameter from the Tauri IPC call is passed directly as `--config <path>` to the pkexec-elevated CLI process. The path is not validated for traversal, symlinks, or existence before being passed to the root process.
-- **Attack Scenario:** A malicious frontend (or compromised WASM) could pass `--config /tmp/malicious.toml` where the file contains directives that weaken security. Since pkexec prompts for authentication, the user must approve — but the config file contents are opaque at that point.
+- **Attack Scenario:** A malicious frontend (or compromised WASM) could pass `--config /tmp/malicious.toml` where the file contains directives that weaken security. Since pkexec prompts for authentication, the user must approve, but the config file contents are opaque at that point.
 
 ---
 

@@ -1,4 +1,4 @@
-//! Fleet scan results table — one row per host, expandable to its findings.
+//! Fleet scan results table: one row per host, expandable to its findings.
 
 use crate::components::FindingsGrid;
 use crate::tauri_bindings::invoke_get_host_history;
@@ -15,7 +15,7 @@ fn direction_cell(direction: Option<&str>) -> (&'static str, &'static str) {
         Some("worse") => ("\u{2191} worse", "fleet-trend-worse"),
         Some("better") => ("\u{2193} better", "fleet-trend-better"),
         Some("same") => ("= same", "fleet-trend-same"),
-        _ => ("\u{2014}", "fleet-trend-none"),
+        _ => ("-", "fleet-trend-none"),
     }
 }
 
@@ -33,7 +33,7 @@ fn toggle_expanded(expanded: RwSignal<Option<String>>, host: &str) {
 /// CIS score cell for a host row: `(formatted percent, colour class)`, or `None`
 /// to render an em dash when the host has no CIS posture (e.g. it failed).
 /// ponytail: thresholds mirror `mini_security_score` (71/41) on the same 0-100
-/// scale — kept inline for the one call site rather than shared.
+/// scale, kept inline for the one call site rather than shared.
 fn cis_cell(compliance: &[FleetFrameworkPosture]) -> Option<(String, &'static str)> {
     let cis = compliance
         .iter()
@@ -159,7 +159,7 @@ pub fn FleetTable(#[prop(into)] scans: Signal<Vec<FleetHostScan>>) -> impl IntoV
                                                 Some((text, class)) => {
                                                     view! { <td class={class}>{text}</td> }.into_any()
                                                 }
-                                                None => view! { <td>{"—"}</td> }.into_any(),
+                                                None => view! { <td>{"-"}</td> }.into_any(),
                                             }}
                                             <td>{t.critical}</td>
                                             <td>{t.high}</td>
@@ -222,7 +222,7 @@ pub fn FleetTable(#[prop(into)] scans: Signal<Vec<FleetHostScan>>) -> impl IntoV
                                                                 Some(rows) if rows.is_empty() => {
                                                                     view! {
                                                                         <p class="empty-state">
-                                                                            "No persisted history for this host — CLI batch and scheduled scans populate it."
+                                                                            "No persisted history for this host (CLI batch and scheduled scans populate it)."
                                                                         </p>
                                                                     }
                                                                         .into_any()
@@ -319,7 +319,7 @@ mod tests {
             ("\u{2193} better", "fleet-trend-better")
         );
         assert_eq!(direction_cell(Some("same")), ("= same", "fleet-trend-same"));
-        assert_eq!(direction_cell(None), ("\u{2014}", "fleet-trend-none"));
+        assert_eq!(direction_cell(None), ("-", "fleet-trend-none"));
     }
 
     #[test]

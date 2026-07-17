@@ -20,7 +20,7 @@ Runs every test across all 11 crates. Currently 660+ tests.
 cargo test --workspace --exclude linux-hardener-desktop --exclude hardener-ui
 ```
 
-Excludes the Tauri backend and WASM frontend crates — used in CI where GUI dependencies may not be available.
+Excludes the Tauri backend and WASM frontend crates; used in CI where GUI dependencies may not be available.
 
 ### Single crate
 
@@ -102,7 +102,7 @@ Container name: `hardener-test-opensuse`
 
 The suites above run containers via `nspawn --pipe` (no network, no sshd). The
 `#[ignore]` SSH integration tests need a *booted* container with networking and
-an authorised key instead — the SSH executor is key/agent-auth only, so the
+an authorised key instead; the SSH executor is key/agent-auth only, so the
 containers' root password is not usable:
 
 ```bash
@@ -267,7 +267,7 @@ Test results are written to `test-results/gui/`.
 
 ## CI Pipeline Commands
 
-These run automatically via GitHub Actions — listed here for reference and local reproduction.
+These run automatically via GitHub Actions; listed here for reference and local reproduction.
 
 ### ci.yml (every push/PR to main)
 

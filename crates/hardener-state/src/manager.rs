@@ -27,7 +27,7 @@ const DEFAULT_ROLLBACK_PREFIXES: &[&str] = &[
     "/etc/firewalld",
     "/etc/ufw",
     "/etc/sudoers",
-    // Account databases (CIS 6.1.2–6.1.5) — checkpointed by the permissions
+    // Account databases (CIS 6.1.2-6.1.5): checkpointed by the permissions
     // plugin; `starts_with` also covers their `-` backup twins (e.g. /etc/passwd-).
     "/etc/passwd",
     "/etc/group",
@@ -727,8 +727,8 @@ impl CheckpointManager {
         }
 
         // Determine the required action. `file_permissions` holds the full
-        // st_mode (type bit included), so any path that existed at capture — a
-        // directory, or a file that was unreadable, even one with 0000 perms —
+        // st_mode (type bit included), so any path that existed at capture (a
+        // directory, or a file that was unreadable, even one with 0000 perms)
         // has a non-zero mode and gets its permissions/owner re-applied. Only a
         // path absent at checkpoint time is stored as 0, meaning "remove on restore".
         let action = match &file_state.file_content {
@@ -760,7 +760,7 @@ impl CheckpointManager {
             }
         }
 
-        // Restore permissions — best-effort; a failure is a warning, not a fatal error.
+        // Restore permissions: best-effort; a failure is a warning, not a fatal error.
         // ponytail: chmod/chown/rm run without sudo, so on a remote host these
         // succeed only when the ssh user owns/can-modify the target (typically
         // root). Non-root remote restore therefore degrades to content-only
@@ -774,7 +774,7 @@ impl CheckpointManager {
             .err()
             .map(|e| format!("chmod {path_str}: {e}"));
 
-        // Restore ownership — best-effort.
+        // Restore ownership: best-effort.
         let owner_str = format!(
             "{}:{}",
             file_state.file_owner_uid, file_state.file_owner_gid
@@ -937,7 +937,7 @@ mod tests {
 
     #[test]
     fn default_prefixes_cover_account_database_paths() {
-        // The permissions plugin checkpoints these (CIS 6.1.2–6.1.5). Rollback's
+        // The permissions plugin checkpoints these (CIS 6.1.2-6.1.5). Rollback's
         // Phase-1 allowlist matches via `starts_with`, so each must be covered or
         // the entire rollback aborts (regression: exit 1 on apply→rollback).
         for path in ["/etc/passwd", "/etc/group", "/etc/shadow", "/etc/gshadow"] {
@@ -945,7 +945,7 @@ mod tests {
                 DEFAULT_ROLLBACK_PREFIXES
                     .iter()
                     .any(|p| path.starts_with(p)),
-                "{path} not covered by DEFAULT_ROLLBACK_PREFIXES — rollback would abort"
+                "{path} not covered by DEFAULT_ROLLBACK_PREFIXES (rollback would abort)"
             );
         }
     }
@@ -977,7 +977,7 @@ mod tests {
                     exists: true,
                     is_file: true,
                     is_dir: false,
-                    mode: 0o100000, // S_IFREG | 0000 perms — what the fixed local executor reports
+                    mode: 0o100000, // S_IFREG | 0000 perms: what the fixed local executor reports
                     size: 0,
                     uid: 0,
                     gid: 0,
@@ -1018,7 +1018,7 @@ mod tests {
     }
 
     /// Builds a CheckpointManager over a temporary in-memory SQLite database
-    /// with a freshly generated signing key — no filesystem privileges needed.
+    /// with a freshly generated signing key: no filesystem privileges needed.
     async fn test_manager() -> CheckpointManager {
         let dir = tempfile::tempdir().expect("tempdir");
         let db_path = dir.path().join("mgr_test.db");
@@ -1079,7 +1079,7 @@ mod tests {
 
     #[tokio::test]
     async fn rollback_restores_directory_permissions_not_skipped() {
-        // A directory's captured mode (0o755) carries no S_IFDIR bit — `file_metadata`
+        // A directory's captured mode (0o755) carries no S_IFDIR bit; `file_metadata`
         // masks the type bit off. Rollback must still re-apply its permissions rather
         // than skip or remove it. Regression guard for the masked-mode directory bug.
         let ok = hardener_common::executor::CommandOutput {

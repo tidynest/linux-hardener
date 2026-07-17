@@ -1,8 +1,8 @@
-# Security Hardening Phase 2 — Implementation Plan
+# Security Hardening Phase 2: Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Fix remaining security gaps discovered during deep verification of the original remediation work — 2 High, 5 Medium, and 6 Low severity items across 11 tasks.
+**Goal:** Fix remaining security gaps discovered during deep verification of the original remediation work: 2 High, 5 Medium, and 6 Low severity items across 11 tasks.
 
 **Architecture:** All fixes are localised to existing modules. No new crates or architectural changes. Error sanitisation is centralised through a single helper. Audit timestamp fix adds a parameter to existing constructors. Signing fix changes return type from `Vec<u8>` to `Result<Vec<u8>>`.
 
@@ -16,11 +16,11 @@ Two `.unwrap()` calls in the IPC command `get_checkpoints()` can crash the Tauri
 
 **Files:**
 - Modify: `src-tauri/src/commands.rs:670-700`
-- Test: `src-tauri/src/validation.rs` (inline `#[cfg(test)]` — no separate test file for commands)
+- Test: `src-tauri/src/validation.rs` (inline `#[cfg(test)]`, no separate test file for commands)
 
 **Step 1: Write the fix**
 
-In `src-tauri/src/commands.rs`, replace the `.unwrap()` calls inside the checkpoint collection loops with graceful error handling. The manager is already created successfully in the outer `let Ok(manager)` guard — reuse that pattern.
+In `src-tauri/src/commands.rs`, replace the `.unwrap()` calls inside the checkpoint collection loops with graceful error handling. The manager is already created successfully in the outer `let Ok(manager)` guard: reuse that pattern.
 
 Replace lines 680-683:
 ```rust
@@ -124,7 +124,7 @@ async fn test_sign_returns_error_in_verify_only_mode() {
 **Step 2: Run to verify it fails**
 
 Run: `cargo test -p hardener-state --test signing_tests test_sign_returns_error_in_verify_only_mode 2>&1 | tail -10`
-Expected: FAIL — `sign()` currently returns `Vec<u8>`, not `Result`
+Expected: FAIL, `sign()` currently returns `Vec<u8>`, not `Result`
 
 **Step 3: Change `sign()` signature and implementation**
 
@@ -185,9 +185,9 @@ git commit -m "fix: return Result from sign() instead of panicking in verify-onl
 
 ---
 
-## Task 3: Fix audit log timestamp TOCTOU [Medium — SAM-031]
+## Task 3: Fix audit log timestamp TOCTOU [Medium, SAM-031]
 
-`log_action()` and `log_failure()` each call `Utc::now()` twice — once for the hash input, once inside `AuditEntry::new()`. At second boundaries the timestamps can differ, corrupting the hash chain and causing false tamper alerts.
+`log_action()` and `log_failure()` each call `Utc::now()` twice: once for the hash input, once inside `AuditEntry::new()`. At second boundaries the timestamps can differ, corrupting the hash chain and causing false tamper alerts.
 
 **Files:**
 - Modify: `crates/hardener-state/src/audit.rs:66-97` (constructors) and `270-351` (log methods)
@@ -214,7 +214,7 @@ async fn test_audit_log_entry_timestamp_matches_hash() {
         .await
         .unwrap();
 
-    // Verify integrity — this will fail if hash timestamp != entry timestamp
+    // Verify integrity: this will fail if hash timestamp != entry timestamp
     let result = AuditLogger::verify_integrity(&log_path).await;
     assert!(result.is_ok(), "Hash chain verification failed: {result:?}");
 }
@@ -370,7 +370,7 @@ git commit -m "fix: eliminate audit log timestamp TOCTOU by computing once per e
 
 ---
 
-## Task 4: Centralise error sanitisation across all IPC commands [Medium — SAM-069 + SAM-068]
+## Task 4: Centralise error sanitisation across all IPC commands [Medium, SAM-069 + SAM-068]
 
 `sanitise_error()` is only applied to 2 out of ~35 error paths in `commands.rs`. Internal filesystem paths, SSH details, and subprocess stderr leak to the GUI frontend.
 
@@ -481,7 +481,7 @@ git commit -m "security: add rate limiting to test_notification IPC command"
 
 ---
 
-## Task 6: Fix audit plugin backup symlink attack [Low — SAM-050]
+## Task 6: Fix audit plugin backup symlink attack [Low, SAM-050]
 
 The audit plugin creates backups using `cp` with a predictable timestamp-based filename. An attacker could pre-create a symlink at the expected path.
 
@@ -501,7 +501,7 @@ async fn test_backup_filename_is_unpredictable() {
     let ts2 = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
     // If filenames are timestamp-only, both are identical within a second
     // After fix: random suffix makes them different
-    // This test documents the expectation — the actual fix adds randomness
+    // This test documents the expectation: the actual fix adds randomness
     assert_eq!(ts1, ts2, "Precondition: timestamps within same second are identical");
 }
 ```
@@ -559,7 +559,7 @@ git commit -m "security: add unpredictable suffix and no-dereference flag to aud
 
 ---
 
-## Task 7: Add permission mode semantic validation [Low — SAM-049]
+## Task 7: Add permission mode semantic validation [Low, SAM-049]
 
 The permissions validator accepts syntactically correct but dangerous modes like SUID (`4755`), SGID (`2755`), and world-writable (`0777`).
 
@@ -606,7 +606,7 @@ Add to the existing `#[cfg(test)]` module in `config_validation.rs`:
 **Step 2: Run to verify they fail**
 
 Run: `cargo test -p hardener-core config_validation::tests::test_permissions_rejects 2>&1 | tail -10`
-Expected: FAIL — current validator accepts all syntactically valid modes
+Expected: FAIL, current validator accepts all syntactically valid modes
 
 **Step 3: Add semantic validation**
 
@@ -655,9 +655,9 @@ git commit -m "security: reject SUID/SGID/world-writable permission modes in con
 
 ---
 
-## Task 8: Add deterministic ordering to checkpoint digest [Low — SAM-056]
+## Task 8: Add deterministic ordering to checkpoint digest [Low, SAM-056]
 
-The `generate_digest` function hashes file states in iteration order. At verification time, SQLite returns rows in implicit rowid order — correct today but fragile. Make it explicit.
+The `generate_digest` function hashes file states in iteration order. At verification time, SQLite returns rows in implicit rowid order: correct today but fragile. Make it explicit.
 
 **Files:**
 - Modify: `crates/hardener-state/src/manager.rs:512-520` (query) and `253-280` (digest)
@@ -729,7 +729,7 @@ In `generate_digest` (around line 268), add a sort before the loop:
     }
 ```
 
-**Important:** Since `generate_digest` is used for both creation and verification, sorting in both places ensures consistency. No existing checkpoints are broken because the sort must match in both directions — and both now use the same sorted order.
+**Important:** Since `generate_digest` is used for both creation and verification, sorting in both places ensures consistency. No existing checkpoints are broken because the sort must match in both directions: and both now use the same sorted order.
 
 **Step 3: Run tests**
 
@@ -745,7 +745,7 @@ git commit -m "fix: use deterministic file ordering in checkpoint digest computa
 
 ---
 
-## Task 9: Escape remaining CSV fields [Low — SAM-059]
+## Task 9: Escape remaining CSV fields [Low, SAM-059]
 
 `control_id` and `report_framework` are written to CSV without passing through `escape_csv_field()`.
 
@@ -763,7 +763,7 @@ Add to the inline test module:
         let report = create_test_report();
         let formatter = CsvFormatter;
         let output = formatter.format(&report);
-        // Verify no unescaped fields — every field with potential special chars
+        // Verify no unescaped fields: every field with potential special chars
         // should go through escape_csv_field
         for line in output.lines().skip(1) {
             // Each field should not contain raw commas outside quotes
@@ -824,7 +824,7 @@ git commit -m "fix: escape control_id and framework fields in CSV output"
 
 ---
 
-## Task 10: Add firewalld zone name validation [Low — SAM-048]
+## Task 10: Add firewalld zone name validation [Low, SAM-048]
 
 `get_default_zone()` accepts the remote host's response verbatim. A compromised host could return a malicious zone name.
 
@@ -857,7 +857,7 @@ fn test_zone_name_validation() {
 **Step 2: Run to verify it fails**
 
 Run: `cargo test -p hardener-plugins firewall_mock_tests::test_zone_name_validation 2>&1 | tail -5`
-Expected: FAIL — function doesn't exist yet
+Expected: FAIL, function doesn't exist yet
 
 **Step 3: Add `validate_zone_name` and wire it in**
 
@@ -913,7 +913,7 @@ git commit -m "security: validate firewalld zone name from remote hosts"
 
 ---
 
-## Task 11: Add kernel sysctl key validation [Low — SAM-021 defence-in-depth]
+## Task 11: Add kernel sysctl key validation [Low, SAM-021 defence-in-depth]
 
 The kernel plugin only processes hardcoded parameter names so this is safe today, but no explicit validation prevents future regressions. Add key format validation.
 
@@ -949,7 +949,7 @@ Add to the inline `#[cfg(test)]` module:
 **Step 2: Run to verify they fail**
 
 Run: `cargo test -p hardener-core config_validation::tests::test_kernel_key 2>&1 | tail -10`
-Expected: FAIL — function doesn't exist
+Expected: FAIL, function doesn't exist
 
 **Step 3: Add `validate_directive_key`**
 

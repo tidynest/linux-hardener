@@ -103,7 +103,7 @@ create_container() {
     podman rm -f "$tmp_container" >/dev/null 2>&1 || true
 
     if [[ ! -x "$CONTAINER_PATH/usr/bin/bash" ]]; then
-        log_error "Image export incomplete — /usr/bin/bash missing"
+        log_error "Image export incomplete: /usr/bin/bash missing"
         rm -rf "$CONTAINER_PATH"
         exit 1
     fi
@@ -111,7 +111,7 @@ create_container() {
 
     # The image ships minimal; install systemd and base tooling so it can boot
     # and so the config steps below (useradd/chpasswd) have their binaries.
-    # Native dnf, native keys — GPG verification works.
+    # Native dnf, native keys: GPG verification works.
     cp /etc/resolv.conf "$CONTAINER_PATH/etc/resolv.conf" 2>/dev/null || true
     log_info "Installing systemd and base tooling..."
     systemd-nspawn --quiet --directory="$CONTAINER_PATH" \

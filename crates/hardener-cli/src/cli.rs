@@ -1,4 +1,4 @@
-//! CLI argument definitions — clap derive-based parser for all subcommands and global flags.
+//! CLI argument definitions: clap derive-based parser for all subcommands and global flags.
 
 use clap::{Parser, Subcommand, ValueEnum};
 pub(crate) use hardener_compliance::OutputFormat;

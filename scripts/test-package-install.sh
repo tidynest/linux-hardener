@@ -59,7 +59,7 @@ check_file() {
     if [[ "$actual_mode" == "$expected_mode" ]]; then
         log_pass "$path ($actual_mode)"
     else
-        log_fail "$path — expected $expected_mode, got $actual_mode"
+        log_fail "$path: expected $expected_mode, got $actual_mode"
     fi
 }
 
@@ -74,7 +74,7 @@ check_dir() {
     if [[ "$actual_mode" == "$expected_mode" ]]; then
         log_pass "$path/ ($actual_mode)"
     else
-        log_fail "$path/ — expected $expected_mode, got $actual_mode"
+        log_fail "$path/: expected $expected_mode, got $actual_mode"
     fi
 }
 
@@ -109,10 +109,10 @@ if [[ ! -x "$BINARY" ]]; then
 fi
 
 # =============================================================================
-# 1. INSTALL — Mirror PKGBUILD package()
+# 1. INSTALL: Mirror PKGBUILD package()
 # =============================================================================
 
-log_header "1. INSTALL — Simulated Package Install"
+log_header "1. INSTALL: Simulated Package Install"
 
 log_info "Binary: $BINARY"
 
@@ -120,7 +120,7 @@ log_info "Binary: $BINARY"
 install -Dm755 "$BINARY" /usr/bin/hardener
 log_pass "Installed /usr/bin/hardener"
 
-# Desktop binary (optional — skip if not built)
+# Desktop binary (optional: skip if not built)
 DESKTOP_BINARY="$PROJECT_DIR/src-tauri/target/release/linux-hardener-desktop"
 if [[ -x "$DESKTOP_BINARY" ]]; then
     install -Dm755 "$DESKTOP_BINARY" /usr/bin/linux-hardener-desktop
@@ -163,10 +163,10 @@ install -dm700 /var/log/linux-hardener
 log_pass "Created state/log directories"
 
 # =============================================================================
-# 2. VALIDATE — Check every installed file
+# 2. VALIDATE: Check every installed file
 # =============================================================================
 
-log_header "2. VALIDATE — File Layout & Permissions"
+log_header "2. VALIDATE: File Layout & Permissions"
 
 check_file /usr/bin/hardener 755
 check_file /usr/lib/systemd/system/linux-hardener.service 644
@@ -183,10 +183,10 @@ if [[ -x /usr/bin/linux-hardener-desktop ]]; then
 fi
 
 # =============================================================================
-# 3. SYSTEMD — Unit syntax check
+# 3. SYSTEMD: Unit syntax check
 # =============================================================================
 
-log_header "3. SYSTEMD — Unit Syntax"
+log_header "3. SYSTEMD: Unit Syntax"
 
 if command -v systemd-analyze &>/dev/null; then
     for unit in linux-hardener.service linux-hardener.timer; do
@@ -194,7 +194,7 @@ if command -v systemd-analyze &>/dev/null; then
             log_pass "systemd-analyze verify $unit"
         else
             # Allow failure in containers without full systemd
-            log_pass "systemd-analyze verify $unit (partial — container)"
+            log_pass "systemd-analyze verify $unit (partial: container)"
         fi
     done
 else
@@ -203,10 +203,10 @@ else
 fi
 
 # =============================================================================
-# 4. MAN PAGE — Rendering
+# 4. MAN PAGE: Rendering
 # =============================================================================
 
-log_header "4. MAN PAGE — Rendering"
+log_header "4. MAN PAGE: Rendering"
 
 if command -v man &>/dev/null; then
     if man -l /usr/share/man/man1/hardener.1 > /dev/null 2>&1; then
@@ -219,10 +219,10 @@ else
 fi
 
 # =============================================================================
-# 5. FUNCTIONAL — Non-destructive CLI tests
+# 5. FUNCTIONAL: Non-destructive CLI tests
 # =============================================================================
 
-log_header "5. FUNCTIONAL — CLI Tests"
+log_header "5. FUNCTIONAL: CLI Tests"
 
 # Version
 version_out=$(hardener --version 2>&1)
@@ -265,17 +265,17 @@ else
 fi
 
 # =============================================================================
-# 6. DESTRUCTIVE — Apply & Rollback (gated by --apply)
+# 6. DESTRUCTIVE: Apply & Rollback (gated by --apply)
 # =============================================================================
 
 if [[ "$DO_APPLY" == "true" ]]; then
-    log_header "6. DESTRUCTIVE — Apply & Rollback"
+    log_header "6. DESTRUCTIVE: Apply & Rollback"
 
     # Apply single plugin
     if hardener apply --plugin kernel-hardening &>/dev/null; then
         log_pass "hardener apply --plugin kernel-hardening"
     else
-        log_pass "hardener apply --plugin kernel-hardening (partial — container)"
+        log_pass "hardener apply --plugin kernel-hardening (partial: container)"
     fi
 
     # Check checkpoint was created
@@ -295,15 +295,15 @@ if [[ "$DO_APPLY" == "true" ]]; then
         log_skip "rollback (no checkpoint)"
     fi
 else
-    log_header "6. DESTRUCTIVE — Skipped (use --apply)"
+    log_header "6. DESTRUCTIVE: Skipped (use --apply)"
     log_skip "apply + rollback tests require --apply flag"
 fi
 
 # =============================================================================
-# 7. UNINSTALL — Remove all installed files
+# 7. UNINSTALL: Remove all installed files
 # =============================================================================
 
-log_header "7. UNINSTALL — Clean Removal"
+log_header "7. UNINSTALL: Clean Removal"
 
 rm -f /usr/bin/hardener
 rm -f /usr/bin/linux-hardener-desktop
@@ -380,7 +380,7 @@ if [[ $TESTS_FAILED -eq 0 ]]; then
     exit 0
 else
     log "${RED}╔════════════════════════════════════════╗${NC}"
-    log "${RED}║  SOME TESTS FAILED — SEE ABOVE         ║${NC}"
+    log "${RED}║  SOME TESTS FAILED: SEE ABOVE         ║${NC}"
     log "${RED}╚════════════════════════════════════════╝${NC}"
     exit 1
 fi

@@ -199,7 +199,7 @@ impl MacHardeningPlugin {
 /// the AppArmor and "no-mac-system" findings: the relevant SSG rules
 /// (`all_apparmor_profiles_enforced`, `package_apparmor_installed`) declare no
 /// `stigid@`/`pcidss`, and `selinux_state` itself declares no `pcidss`.
-/// Finding types the MAC plugin can raise — the keys understood by
+/// Finding types the MAC plugin can raise: the keys understood by
 /// [`get_mac_compliance_mappings`]. Keep in sync with that match.
 const MAC_FINDING_TYPES: &[&str] = &[
     "no-mac-system",
@@ -237,7 +237,7 @@ fn soc2(id: &str, title: &str) -> ComplianceMapping {
 /// Builds a NIST SP 800-171 Revision 3 mapping. `id` is the requirement
 /// number (e.g. `3.1.2`); `title` the published requirement name; the
 /// section is the requirement's official family. Every id is translated from
-/// this plugin's 800-53 entries via the r3 source-control table — never
+/// this plugin's 800-53 entries via the r3 source-control table, never
 /// invented.
 fn nist171(id: &str, title: &str) -> ComplianceMapping {
     ComplianceMapping {
@@ -250,7 +250,7 @@ fn nist171(id: &str, title: &str) -> ComplianceMapping {
 
 /// Builds a FedRAMP mapping. FedRAMP's control set is NIST 800-53 at the
 /// Moderate (Rev 5) baseline, so `id`/`title` mirror this plugin's 800-53
-/// entries verbatim — each id is checked against the GSA rev5 Moderate
+/// entries verbatim; each id is checked against the GSA rev5 Moderate
 /// baseline before it is mapped, never invented. The section is the control's
 /// 800-53 family.
 fn fedramp(id: &str, title: &str) -> ComplianceMapping {
@@ -310,7 +310,7 @@ fn get_mac_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
                 compliance_section: Some("Organizational".to_string()),
             },
             // SOC 2: CC6.8 mirrors the AC-3 enforcement intent expressed as MAC
-            // confinement — enforced policy contains unauthorised software activity.
+            // confinement: enforced policy contains unauthorised software activity.
             soc2(
                 "CC6.8",
                 "Prevent or detect the introduction of unauthorized or malicious software",
@@ -372,7 +372,7 @@ fn get_mac_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
                 compliance_section: Some("Organizational".to_string()),
             },
             // SOC 2: CC6.8 mirrors the AC-3 enforcement intent expressed as MAC
-            // confinement — enforced policy contains unauthorised software activity.
+            // confinement: enforced policy contains unauthorised software activity.
             soc2(
                 "CC6.8",
                 "Prevent or detect the introduction of unauthorized or malicious software",
@@ -383,7 +383,7 @@ fn get_mac_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
             fedramp("AC-3", "Access Enforcement"),
         ],
         // SSG: all_apparmor_profiles_enforced (CIS only). NIST AC-3 access
-        // enforcement applies — this is the AppArmor expression of the same
+        // enforcement applies; this is the AppArmor expression of the same
         // MAC-not-enforced control as selinux-not-enforcing.
         "apparmor-complain-mode" | "apparmor-no-profiles" => vec![
             ComplianceMapping {
@@ -430,7 +430,7 @@ fn get_mac_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
                 compliance_section: Some("Organizational".to_string()),
             },
             // SOC 2: CC6.8 mirrors the AC-3 enforcement intent expressed as MAC
-            // confinement — enforced policy contains unauthorised software activity.
+            // confinement: enforced policy contains unauthorised software activity.
             soc2(
                 "CC6.8",
                 "Prevent or detect the introduction of unauthorized or malicious software",
@@ -609,7 +609,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                 // Check for exception before enforcing
                 if let Some(exception) = config.has_valid_exception("selinux-enforcing") {
                     info!(
-                        "Skipping SELinux enforcement — exception: {}",
+                        "Skipping SELinux enforcement (exception: {})",
                         exception.reason
                     );
                     apply_changes.push(Change {
@@ -646,7 +646,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                 // Check for exception before AppArmor enforcement guidance
                 if let Some(exception) = config.has_valid_exception("apparmor-enforce") {
                     info!(
-                        "Skipping AppArmor enforcement — exception: {}",
+                        "Skipping AppArmor enforcement (exception: {})",
                         exception.reason
                     );
                     apply_changes.push(Change {
@@ -704,7 +704,7 @@ impl HardeningPlugin for MacHardeningPlugin {
         info!("MAC configuration files restored from checkpoint");
 
         // Reload SELinux/AppArmor based on what's available
-        // Try SELinux first — restore mode from the config we just rolled back
+        // Try SELinux first: restore mode from the config we just rolled back
         let selinux_mode = std::fs::read_to_string("/etc/selinux/config")
             .ok()
             .and_then(|content| {

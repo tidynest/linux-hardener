@@ -53,7 +53,7 @@ fn unique_delimiter(content: &str) -> String {
 /// Builds the remote heredoc write command. The separator newline before the
 /// delimiter is only inserted when the content does not already end with one,
 /// so newline-terminated content round-trips byte-exact (matching
-/// `LocalExecutor`). Content without a final newline still gains one — a
+/// `LocalExecutor`). Content without a final newline still gains one; a
 /// heredoc body is always newline-terminated.
 fn tee_command(path: &Path, content: &str) -> String {
     let escaped = shell_escape(&path.display().to_string());
@@ -225,7 +225,7 @@ impl SystemExecutor for SshExecutor {
 }
 
 /// Parses `stat -c '%F %a %s %u %g'` output (or the `NOTFOUND` sentinel) into
-/// `FileMetadata`. Pure — no I/O — so the parse is unit-testable off a real host.
+/// `FileMetadata`. Pure (no I/O) so the parse is unit-testable off a real host.
 ///
 /// The file-type bit from `%F` is OR-ed into `mode`, so any existing path has a
 /// non-zero mode. Checkpoint rollback reads `mode == 0` as "did not exist at
@@ -247,7 +247,7 @@ fn parse_stat_metadata(stdout: &str) -> Option<FileMetadata> {
         });
     }
 
-    // "%F %a %s %u %g" — %F (file type) may contain spaces, so split from the
+    // "%F %a %s %u %g": %F (file type) may contain spaces, so split from the
     // right: rsplitn(5, ' ') yields [gid, uid, size, mode, file_type].
     let parts: Vec<&str> = stdout.rsplitn(5, ' ').collect();
     if parts.len() < 5 {
@@ -256,7 +256,7 @@ fn parse_stat_metadata(stdout: &str) -> Option<FileMetadata> {
     let file_type = parts[4];
     let is_dir = file_type.contains("directory");
     let permission_bits = u32::from_str_radix(parts[3], 8).unwrap_or(0);
-    // S_IFDIR for directories, S_IFREG otherwise — covers every path the
+    // S_IFDIR for directories, S_IFREG otherwise, covers every path the
     // checkpoint layer captures (special files are never checkpointed).
     let type_bit = if is_dir { 0o040000 } else { 0o100000 };
 

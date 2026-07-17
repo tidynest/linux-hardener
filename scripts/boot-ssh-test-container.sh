@@ -7,7 +7,7 @@
 #
 # Networking is configured statically on both veth ends (the containers do not
 # run systemd-networkd, and the host running NetworkManager leaves ve-* alone),
-# so nothing persistent is enabled on host or container — the addresses die
+# so nothing persistent is enabled on host or container, the addresses die
 # with the machine.
 #
 # Usage: sudo ./scripts/boot-ssh-test-container.sh [machine-name]
@@ -24,7 +24,7 @@ HOME_DIR="$(getent passwd "${SUDO_USER:-$USER}" | cut -d: -f6)"
 KEY="${SSH_TEST_KEY:-$HOME_DIR/.ssh/hardener_test_ed25519}"
 
 [[ -d "$ROOT" ]] || {
-    echo "container $ROOT missing — run create-test-container.sh first" >&2
+    echo "container $ROOT missing: run create-test-container.sh first" >&2
     exit 1
 }
 if [[ ! -f "$KEY" ]]; then

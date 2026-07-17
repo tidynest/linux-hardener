@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# WEB UI GUI TEST ORCHESTRATOR — Linux System Hardener
+# WEB UI GUI TEST ORCHESTRATOR: Linux System Hardener
 # =============================================================================
 # Runs Playwright GUI tests inside systemd-nspawn containers.
 #
@@ -224,7 +224,7 @@ echo ""
 if [[ $overall_exit -eq 0 ]]; then
     echo -e "${GREEN}All Web UI tests passed.${NC}"
 else
-    echo -e "${RED}Some distros had failures — check logs.${NC}"
+    echo -e "${RED}Some distros had failures: check logs.${NC}"
 fi
 
 exit $overall_exit

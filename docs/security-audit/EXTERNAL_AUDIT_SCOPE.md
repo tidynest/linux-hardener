@@ -1,8 +1,8 @@
-# External Security Audit — Scope & Preparation
+# External Security Audit: Scope & Preparation
 
 **Status:** prepared 2026-07-17, awaiting vendor selection and budget decision
-(issue #19). Internal remediation is complete — 53/53 findings resolved, see
-`REMEDIATION_TRACKER.md` — which is precisely the right time to buy outside
+(issue #19). Internal remediation is complete (53/53 findings resolved, see
+`REMEDIATION_TRACKER.md`), which is precisely the right time to buy outside
 eyes.
 
 ---
@@ -30,7 +30,7 @@ eyes.
 - **Checkpoint & audit-log integrity:** Ed25519 signing, AES-256-GCM key at
   `/etc/linux-hardener/signing.key` (root 0400), SQLite WAL databases under
   `/var/lib/linux-hardener/`, the hash-chain audit log
-  (`/var/log/linux-hardener/audit.log`) — tamper-evidence claims should be
+  (`/var/log/linux-hardener/audit.log`); tamper-evidence claims should be
   attacked directly.
 - **Parser attack surface:** config TOML loading order, `sshd_config` and
   PAM file editing (including `sshd -t` pre-write validation), os-release
@@ -47,7 +47,7 @@ eyes.
 Trail of Bits · X41 D-Sec · Radically Open Security · Cure53 ·
 Include Security. For an open-source security tool, also apply to
 OSTIF / Sovereign Tech Fund-style programmes that sponsor audits for
-security-relevant OSS — a credible funding route given the tool's nature.
+security-relevant OSS, a credible funding route given the tool's nature.
 
 ## Handover pack (assemble at engagement start)
 
@@ -59,7 +59,7 @@ security-relevant OSS — a credible funding route given the tool's nature.
 
 ## Logistics decisions (owner: maintainer)
 
-- Budget band and timeline — TBD.
+- Budget band and timeline: TBD.
 - Disclosure: findings land as private GitHub Security Advisories first,
   get fixed, then publish; maintainer triages.
 - After the audit: file each finding (private advisory if exploitable),

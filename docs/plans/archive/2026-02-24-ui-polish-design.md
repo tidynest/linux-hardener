@@ -1,4 +1,4 @@
-# UI Polish Pass — Design
+# UI Polish Pass: Design
 
 ## Goal
 
@@ -9,7 +9,7 @@ Eliminate wasted space across all four pages (Dashboard, Remote, Hardening, Sche
 | Decision | Choice |
 |----------|--------|
 | Scope | All four pages |
-| Empty states | Hybrid — fill with guidance where useful, collapse where unnecessary |
+| Empty states | Hybrid: fill with guidance where useful, collapse where unnecessary |
 | Side-by-side pattern | Match Scheduler's `flex-row` + fix height-matching via `align-self: start` |
 | Remote idle state | Keep two-panel, fill right side with quick-start guide, drop `min-height` |
 
@@ -36,7 +36,7 @@ One reusable class for all side-by-side layouts:
 
 ### 1. Dashboard
 
-- Remove `flex: 1 1 auto` from `.recent-activity` — let it size to content
+- Remove `flex: 1 1 auto` from `.recent-activity`, let it size to content
 - Improve empty state: "Run a scan from Quick Actions to see activity here"
 
 ### 2. Remote Page
@@ -48,13 +48,13 @@ One reusable class for all side-by-side layouts:
   3. Run a remote scan
 - Guide hidden when connection is active (existing `Show` conditional)
 
-### 3. Hardening — Configure Tab
+### 3. Hardening: Configure Tab
 
 - Profile + Plugin Control: side-by-side using `.two-col-row`
 - ConfigFileCard: stays full-width above (spans both columns)
 - Apply Controls: remove wrapper card, standalone button below the row
 
-### 4. Hardening — History Tab
+### 4. Hardening: History Tab
 
 - Latest Apply + Latest Rollback: side-by-side using `.two-col-row`
 - Empty states get directional text pointing users to the right action

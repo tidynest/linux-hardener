@@ -105,8 +105,8 @@ docker run --rm --pid=host \
 Scan and report run read-only against the mounted host state.
 `systemctl`/D-Bus-dependent checks (services, parts of audit/MAC/firewall)
 degrade to tool-unavailable findings rather than lying. `apply` is unsupported
-in a container by design — it would require `--privileged` plus host
-namespaces, defeating the isolation — so install natively to apply hardening.
+in a container by design (it would require `--privileged` plus host
+namespaces, defeating the isolation), so install natively to apply hardening.
 Full usage and the capability boundary:
 [`packaging/docker/README.md`](../packaging/docker/README.md).
 
@@ -145,7 +145,7 @@ cd linux-system-hardener
 # CLI only (static musl binary)
 cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli
 
-# Desktop GUI (workspace member — builds into the workspace target directory)
+# Desktop GUI (workspace member, builds into the workspace target directory)
 cargo build --release -p linux-hardener-desktop
 
 # Install

@@ -531,7 +531,7 @@ mod tests {
 
     #[test]
     fn blocked_addr_v4_mapped_v6() {
-        // ::ffff:127.0.0.1 — mapped loopback must be caught
+        // ::ffff:127.0.0.1: mapped loopback must be caught
         assert!(is_blocked_addr("::ffff:127.0.0.1".parse().unwrap()));
         assert!(is_blocked_addr("::ffff:10.0.0.1".parse().unwrap()));
     }

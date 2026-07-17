@@ -344,7 +344,7 @@ async fn test_firewall_apply_skips_exceptions() {
         )
         .with_command("ufw", &["allow", "from", "127.0.0.1/8"], ok.clone())
         .with_command("ufw", &["allow"], ok.clone())
-        // No SSH rule registered — if the plugin tries to call it, the mock errors
+        // No SSH rule registered: if the plugin tries to call it, the mock errors
         .with_command("ufw", &["deny"], ok);
 
     let mut ctx = Context::with_executor(Arc::new(executor.clone()));
@@ -405,7 +405,7 @@ async fn test_firewall_validate_skips_exceptions() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = FirewallHardeningPlugin::new();
 
-    // Exception on the SSH rule — should reduce baseline count from 4 to 3
+    // Exception on the SSH rule: should reduce baseline count from 4 to 3
     let mut config = PluginConfig::default();
     config.exceptions.insert(
         "ssh".to_string(),

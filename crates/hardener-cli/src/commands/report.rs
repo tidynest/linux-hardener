@@ -27,7 +27,7 @@ pub async fn run(
     // Determine scenario/frameworks (shared with `batch report`).
     let scenario = resolve_scenario(framework, scenario, quiet)?;
 
-    // An explicit --profile wins; otherwise the scanned system decides — read
+    // An explicit --profile wins; otherwise the scanned system decides, read
     // through the scan executor so a `--ssh` target resolves from ITS
     // os-release, not the controller's. Failure falls back to Generic.
     let profile = match profile {
@@ -72,7 +72,7 @@ pub async fn run(
         eprintln!("Generating compliance report...");
     }
 
-    // Generate reports. The coverage set is what the plugins actually assess —
+    // Generate reports. The coverage set is what the plugins actually assess,
     // it tells the generator which controls may report Pass/Fail vs ManualReview.
     let generator = ReportGenerator::new(config, hardener_plugins::compliance_coverage());
     let reports = generator.generate(&findings);
@@ -165,7 +165,7 @@ pub async fn scan_grouped(
         })
         .collect();
 
-    // Plugins are independent — scan them concurrently. join_all yields
+    // Plugins are independent, scan them concurrently. join_all yields
     // results in input order, so groups stay in registry (plugin-id) order.
     let scans =
         futures::future::join_all(handles.iter().map(|(_, plugin)| plugin.scan(&ctx))).await;

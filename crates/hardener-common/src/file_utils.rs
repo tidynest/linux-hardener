@@ -405,7 +405,7 @@ where
     // Write atomically
     match update_file_atomically(path, &new_content) {
         Ok(_) => {
-            // Success — cleanup backup (non-fatal if this fails)
+            // Success: cleanup backup (non-fatal if this fails)
             if let Err(e) = std::fs::remove_file(backup) {
                 warn!("Failed to remove backup file: {}", e);
             }

@@ -179,7 +179,7 @@ impl TestFixture {
     /// Builds a `MockExecutor` seeded with the current on-disk state of the given paths.
     ///
     /// Files are seeded with their content and real mode bits; directories are seeded
-    /// with their mode bits only (no recursion — callers seed each path they need).
+    /// with their mode bits only (no recursion; callers seed each path they need).
     /// This lets `create_checkpoint` use the executor path while rollback still writes
     /// to the real tempdir on disk.
     pub fn mock_for_paths(&self, paths: &[&Path]) -> MockExecutor {

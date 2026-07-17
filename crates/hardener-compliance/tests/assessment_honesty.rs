@@ -5,7 +5,7 @@
 //! 1. **No false pass.** A control the hardening engine does not assess must be
 //!    reported as `ManualReview`, never a green `Pass`. "Assessed" is declared by
 //!    the engine's coverage set (`hardener_plugins::compliance_coverage()`),
-//!    injected into the generator — not inferred from the absence of a finding.
+//!    injected into the generator, not inferred from the absence of a finding.
 //! 2. **Option B.** A control that *is* assessed and has no finding reports
 //!    `Pass`, so a genuinely hardened system scores accurately rather than being
 //!    buried under manual review.
@@ -30,7 +30,7 @@ fn mapping(framework: ComplianceFramework, id: &str) -> ComplianceMapping {
     }
 }
 
-/// An insecure `PermitRootLogin` finding, tagged for both CIS and STIG — the
+/// An insecure `PermitRootLogin` finding, tagged for both CIS and STIG: the
 /// shape the SSH plugin now emits (multi-framework mappings).
 fn insecure_root_login() -> Finding {
     Finding {
@@ -75,7 +75,7 @@ fn report_for(
 #[test]
 fn unassessed_curated_controls_are_manual_review_not_false_pass() {
     // CIS ships a curated catalogue. With an empty coverage set the engine
-    // assesses nothing, so every control must require manual review — never a
+    // assesses nothing, so every control must require manual review, never a
     // fabricated "100% compliant".
     let report = report_for(ComplianceFramework::CIS, vec![], &[]);
     let s = &report.report_summary;
@@ -129,7 +129,7 @@ fn assessed_failing_control_reports_fail() {
 #[test]
 fn derived_framework_reports_only_assessed_controls() {
     // STIG has no curated catalogue: its controls are derived from coverage.
-    // A clean system reports every covered control as Pass — Option B — and
+    // A clean system reports every covered control as Pass (Option B) and
     // introduces no manual-review noise from controls the engine never checks.
     let coverage = vec![
         mapping(ComplianceFramework::STIG, "RHEL-08-010430"),

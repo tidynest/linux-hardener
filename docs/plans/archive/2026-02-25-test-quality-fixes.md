@@ -2,7 +2,7 @@
 
 **Date**: 2026-02-25
 **Scope**: All test code across 11 crates (21 test files, ~7,928 lines)
-**Status**: Documented — code changes pending manual implementation
+**Status**: Documented, code changes pending manual implementation
 
 ---
 
@@ -18,7 +18,7 @@
 
 ---
 
-## 1. Bare Assertions (Priority 1 — HIGH)
+## 1. Bare Assertions (Priority 1: HIGH)
 
 60+ `assert!()` calls lack descriptive messages, making failures hard to diagnose.
 
@@ -58,7 +58,7 @@
 
 ---
 
-## 2. println!() in Tests (Priority 2 — MEDIUM)
+## 2. println!() in Tests (Priority 2: MEDIUM)
 
 80+ calls across 11 test files. Two strategies:
 
@@ -107,7 +107,7 @@ assert!(scan_result.scan_duration_us > 0, "Should record scan duration");
 
 ---
 
-## 3. Setup Boilerplate (Priority 3 — MEDIUM)
+## 3. Setup Boilerplate (Priority 3: MEDIUM)
 
 ### Pattern A: Kernel Mock Executors
 
@@ -172,7 +172,7 @@ fn assert_scan_structure(result: &ScanResult, expected_id: &PluginId) {
 
 ---
 
-## 4. Bare panic!() (Priority 4 — LOW)
+## 4. Bare panic!() (Priority 4: LOW)
 
 **File**: `hardener-plugins/tests/ssh_tests.rs:172`
 
@@ -180,7 +180,7 @@ fn assert_scan_structure(result: &ScanResult, expected_id: &PluginId) {
 // Current
 Err(e) => { panic!("Apply failed: {}", e); }
 
-// Fix — use unwrap_or_else for cleaner pattern
+// Fix: use unwrap_or_else for cleaner pattern
 let apply_result = result.unwrap_or_else(|e| {
     panic!("SSH apply failed (expected success with root): {e}")
 });
@@ -188,7 +188,7 @@ let apply_result = result.unwrap_or_else(|e| {
 
 ---
 
-## 5. Test Naming (Priority 5 — LOW)
+## 5. Test Naming (Priority 5: LOW)
 
 Naming is already mostly consistent (`test_<component>_<scenario>`). Only minor variance exists. Optional: add a doc comment at the top of each test file:
 

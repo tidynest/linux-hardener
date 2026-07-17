@@ -1,8 +1,8 @@
-# Remaining Work — Linux System Hardener
+# Remaining Work: Linux System Hardener
 
 > **Last Updated:** 2026-02-27 | **Version:** 1.0.2
 >
-> ⚠️ **Superseded (2026-06-19).** This snapshot predates the v1.0.0–v1.0.5
+> ⚠️ **Superseded (2026-06-19).** This snapshot predates the v1.0.0-v1.0.5
 > releases and its "gap to v1.0.0" framing is historical. For the current state
 > and the live task list see [NEXT.md](../../NEXT.md) and [ROADMAP.md](../../ROADMAP.md).
 > Retained for history.
@@ -15,7 +15,7 @@ Feature-complete at v0.3.3. All 8 plugins, CLI, GUI, compliance reporting, remot
 
 ---
 
-## Resolved — Code Quality & Correctness
+## Resolved: Code Quality & Correctness
 
 All 6 items fixed. SSH path quoting (item 4) was already correct on inspection.
 
@@ -23,14 +23,14 @@ All 6 items fixed. SSH path quoting (item 4) was already correct on inspection.
 |---|------|-----|
 | 1 | SELinux rollback ignored saved mode | Reads `SELINUX=` from restored config before `setenforce` |
 | 2 | Service commands ignored exit codes | `stop/disable/mask` now check `output.success()` |
-| 3 | Plugin registration errors discarded | `let _ =` replaced with `expect()` — panics on programming bugs |
+| 3 | Plugin registration errors discarded | `let _ =` replaced with `expect()`: panics on programming bugs |
 | 4 | SSH path quoting | Already handled by `shell_escape()` using `'\''` pattern |
 | 5 | PDF bytes corrupted through String | Call sites now use `format_bytes()` directly, bypassing String |
 | 6 | Test in production binary | Moved `test_family_mapping` inside `#[cfg(test)] mod tests` |
 
 ---
 
-## Resolved — Defence-in-Depth (Deferred SAM Items)
+## Resolved: Defence-in-Depth (Deferred SAM Items)
 
 All 7 items fixed. SAM-039 landed post-v1.2.2 without the anticipated plugin refactor: `tauri_build::AppManifest` in `src-tauri/build.rs` autogenerates per-command permissions, granted explicitly in `capabilities/default.json`.
 
@@ -45,7 +45,7 @@ All 7 items fixed. SAM-039 landed post-v1.2.2 without the anticipated plugin ref
 
 ---
 
-## Resolved — Crate-Level Design Flags
+## Resolved: Crate-Level Design Flags
 
 All 21 items fixed across 8 crates.
 
@@ -78,39 +78,39 @@ All 21 items fixed across 8 crates.
 | Should-Have | Polkit policy file | Nicer auth dialogs instead of raw pkexec |
 | Should-Have | WCAG AA contrast audit | Accessibility compliance for the GUI |
 
-### Phase 1 — Infrastructure (Complete)
+### Phase 1: Infrastructure (Complete)
 
-- [x] `systemd/linux-hardener.service` + `.timer` — oneshot + daily 02:00 timer, sandboxed with `ProtectSystem=strict`
-- [x] `data/linux-hardener.desktop` — XDG 1.0 compliant desktop entry
-- [x] `data/config.toml.example` — commented defaults for all 8 plugins
-- [x] `data/hardener.1` — full man page covering all commands and options
-- [x] `data/com.tidynest.linux-hardener.policy` — polkit actions for apply + rollback
-- [x] `packaging/` — PKGBUILD (AUR), `.spec` (RPM), `debian/` tree — all install man page, polkit policy, config, log dir
+- [x] `systemd/linux-hardener.service` + `.timer`: oneshot + daily 02:00 timer, sandboxed with `ProtectSystem=strict`
+- [x] `data/linux-hardener.desktop`: XDG 1.0 compliant desktop entry
+- [x] `data/config.toml.example`: commented defaults for all 8 plugins
+- [x] `data/hardener.1`: full man page covering all commands and options
+- [x] `data/com.tidynest.linux-hardener.policy`: polkit actions for apply + rollback
+- [x] `packaging/`: PKGBUILD (AUR), `.spec` (RPM), `debian/` tree, all install man page, polkit policy, config, log dir
 
-### Phase 2 — Quality
+### Phase 2: Quality
 
-- [x] Review `SECURITY.md` completeness — corrected 3 stale Known Limitations, added 8 security practices, updated version table
-- [x] Write install/upgrade guide per distro family — `docs/INSTALL.md` covers all 5 families + source + binary + troubleshooting
-- [x] Final cross-distro validation run — `run-package-tests.sh` all 5 distros green (25/28, 3 expected skips)
-- [x] Verify musl binary on all 5 distros — musl binary installed + functional tests passed in all containers
+- [x] Review `SECURITY.md` completeness: corrected 3 stale Known Limitations, added 8 security practices, updated version table
+- [x] Write install/upgrade guide per distro family: `docs/INSTALL.md` covers all 5 families + source + binary + troubleshooting
+- [x] Final cross-distro validation run: `run-package-tests.sh` all 5 distros green (25/28, 3 expected skips)
+- [x] Verify musl binary on all 5 distros: musl binary installed + functional tests passed in all containers
 
-### Phase 3 — Packaging (Complete)
+### Phase 3: Packaging (Complete)
 
 - [x] Simulated package install test scripts (`scripts/test-package-install.sh` + `scripts/run-package-tests.sh`)
 - [x] Man page version fixed to match current version, wired into `release.sh` auto-bump + verify
 - [x] `tauri.conf.json` added to `release.sh` auto-bump + verify
 - [x] Test full install -> scan -> apply -> rollback cycle per package (via `run-package-tests.sh --apply`)
-- [x] Build and test AUR package locally with `makepkg` (post-tag) — PKGBUILD validated, container tests pass
-- [x] Build and test `.deb` with `dpkg-buildpackage` or `cargo-deb` (post-tag) — container tests pass
-- [x] Build and test `.rpm` with `rpmbuild` (post-tag) — container tests pass (fedora, rhel, opensuse)
+- [x] Build and test AUR package locally with `makepkg` (post-tag): PKGBUILD validated, container tests pass
+- [x] Build and test `.deb` with `dpkg-buildpackage` or `cargo-deb` (post-tag): container tests pass
+- [x] Build and test `.rpm` with `rpmbuild` (post-tag): container tests pass (fedora, rhel, opensuse)
 
-### Phase 4 — Release
+### Phase 4: Release
 
 - [x] CHANGELOG consolidated for v1.0.0
 - [x] ROADMAP updated for v1.0.0
 - [x] Project cleanup (dead files, stale worktree, .idea untracked, scripts README)
 - [x] Run `./scripts/release.sh major` (bumps versions, commits, tags, pushes)
-- [x] Build actual AUR/deb/rpm packages from tagged release — package specs bumped to 1.0.0, all containers tested
+- [x] Build actual AUR/deb/rpm packages from tagged release: package specs bumped to 1.0.0, all containers tested
 - [x] GitHub release with binary assets
 
 ### Risk Assessment
@@ -127,7 +127,7 @@ All 21 items fixed across 8 crates.
 
 ## Post-v1.0.0
 
-- ~~SAM-039: Explicit Tauri capability ACLs~~ — done via `AppManifest` per-command permissions (no plugin refactor needed)
+- ~~SAM-039: Explicit Tauri capability ACLs~~, done via `AppManifest` per-command permissions (no plugin refactor needed)
 - Multi-host management UI, historical trends, alert notifications
 - SSH password auth, parallel scanning, jump host support
 - Ansible/Puppet/Salt/Chef integration modules

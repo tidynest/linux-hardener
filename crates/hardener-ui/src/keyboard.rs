@@ -46,18 +46,18 @@ pub fn use_global_keyboard(app_state: AppState) {
         let alt = ev.alt_key();
 
         match ev.key().as_str() {
-            // F11 — Toggle fullscreen
+            // F11: Toggle fullscreen
             "F11" => {
                 ev.prevent_default();
                 toggle_fullscreen(is_fullscreen);
             }
 
-            // Escape — Priority chain
+            // Escape: Priority chain
             "Escape" => {
                 handle_escape(app_state, is_fullscreen);
             }
 
-            // Ctrl+1..5 — Page navigation
+            // Ctrl+1..5: Page navigation
             "1" if ctrl && !shift && !alt => {
                 ev.prevent_default();
                 navigate("/", Default::default());
@@ -79,7 +79,7 @@ pub fn use_global_keyboard(app_state: AppState) {
                 navigate("/scheduler", Default::default());
             }
 
-            // Ctrl+Shift+S — Trigger scan from anywhere
+            // Ctrl+Shift+S: Trigger scan from anywhere
             "S" if ctrl && shift && !alt => {
                 ev.prevent_default();
                 if !app_state.is_scanning.get_untracked() {
@@ -87,7 +87,7 @@ pub fn use_global_keyboard(app_state: AppState) {
                 }
             }
 
-            // Alt+T — Cycle theme
+            // Alt+T: Cycle theme
             "t" if alt && !ctrl && !shift => {
                 ev.prevent_default();
                 cycle_theme();
@@ -97,7 +97,7 @@ pub fn use_global_keyboard(app_state: AppState) {
         }
     });
 
-    // Attach to document — runs once, cleaned up on dispose
+    // Attach to document: runs once, cleaned up on dispose
     if let Some(document) = web_sys::window().and_then(|w| w.document()) {
         let _ =
             document.add_event_listener_with_callback("keydown", handler.as_ref().unchecked_ref());
@@ -137,7 +137,7 @@ fn toggle_fullscreen(is_fullscreen: RwSignal<bool>) {
     }
 }
 
-/// Escape key priority chain — closes the most specific overlay first.
+/// Escape key priority chain: closes the most specific overlay first.
 fn handle_escape(app_state: AppState, is_fullscreen: RwSignal<bool>) {
     // 1. Exit fullscreen
     if is_fullscreen.get_untracked() {

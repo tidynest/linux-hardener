@@ -10,7 +10,7 @@ This document tracks the development progress and planned features for Linux Sys
 
 ## Completed Features
 
-### v0.1.0 — Core Infrastructure ✅
+### v0.1.0: Core Infrastructure ✅
 
 - [x] Plugin system with dependency-aware execution
 - [x] Checkpoint system with Ed25519 signatures
@@ -19,7 +19,7 @@ This document tracks the development progress and planned features for Linux Sys
 - [x] Desktop application (Tauri + Leptos)
 - [x] Full plugin rollback integration with checkpoint system
 
-### v0.1.x — Security Plugins (8/8) ✅
+### v0.1.x: Security Plugins (8/8) ✅
 
 - [x] Kernel Hardening (sysctl parameters)
 - [x] SSH Hardening (OpenSSH configuration)
@@ -30,7 +30,7 @@ This document tracks the development progress and planned features for Linux Sys
 - [x] Permissions Hardening (file permissions)
 - [x] MAC Hardening (SELinux/AppArmor)
 
-### v0.1.x — Compliance Report Generation ✅
+### v0.1.x: Compliance Report Generation ✅
 
 - [x] CLI `report` command with direct mode
 - [x] CIS Benchmark framework
@@ -45,7 +45,7 @@ This document tracks the development progress and planned features for Linux Sys
 - [x] HTML output formatter
 - [x] All plugins with compliance mappings
 
-### v0.2.0 — CLI & Reporting Enhancements ✅
+### v0.2.0: CLI & Reporting Enhancements ✅
 
 - [x] Config file support (`~/.config/linux-hardener/`)
 - [x] CLI flags: `--config`, `--audit`, `--compliance`, `--exit-code`
@@ -59,7 +59,7 @@ This document tracks the development progress and planned features for Linux Sys
 
 ## In Progress
 
-### v0.3.0 — Remote & Automation ✅
+### v0.3.0: Remote & Automation ✅
 
 | Feature | Description | Priority | Status |
 |---------|-------------|----------|--------|
@@ -108,9 +108,9 @@ This document tracks the development progress and planned features for Linux Sys
   - Atomic scan guard to prevent overlapping scans
   - `run_once()` for manual/testing triggers
 - [x] CLI `daemon` command
-  - `hardener daemon start` — starts scheduling daemon
-  - `hardener daemon run-once` — single scan without scheduler
-  - `hardener daemon status` — shows config and scan history
+  - `hardener daemon start`: starts scheduling daemon
+  - `hardener daemon run-once`: single scan without scheduler
+  - `hardener daemon status`: shows config and scan history
 - [x] `Notifier` trait and `NotificationDispatcher`
 - [x] `EmailNotifier` (lettre SMTP)
 - [x] `WebhookNotifier` (Slack/Discord/generic)
@@ -119,14 +119,14 @@ This document tracks the development progress and planned features for Linux Sys
   - Cron-to-systemd calendar expression conversion
   - Security hardening directives in service unit
 - [x] CLI `systemd` commands
-  - `hardener systemd generate` — output unit files to stdout or directory
-  - `hardener systemd install` — install and enable timer (system or user)
-  - `hardener systemd uninstall` — disable and remove units
-  - `hardener systemd status` — show timer/service status
+  - `hardener systemd generate`: output unit files to stdout or directory
+  - `hardener systemd install`: install and enable timer (system or user)
+  - `hardener systemd uninstall`: disable and remove units
+  - `hardener systemd status`: show timer/service status
 - [x] CLI `history` commands
-  - `hardener history list` — list recent scan sessions with filtering
-  - `hardener history show <id>` — display session details and findings
-  - `hardener history export <id>` — export session to JSON file
+  - `hardener history list`: list recent scan sessions with filtering
+  - `hardener history show <id>`: display session details and findings
+  - `hardener history export <id>`: export session to JSON file
 
 #### C. WASM Compilation Fix ✅
 
@@ -144,7 +144,7 @@ This document tracks the development progress and planned features for Linux Sys
 
 ---
 
-### v0.3.1 — GUI Polish & Testing ✅
+### v0.3.1: GUI Polish & Testing ✅
 
 | Feature | Description | Priority | Status |
 |---------|-------------|----------|--------|
@@ -191,7 +191,7 @@ This document tracks the development progress and planned features for Linux Sys
 > **Test Results**: See [docs/DISTRIBUTION_VALIDATION.md](docs/DISTRIBUTION_VALIDATION.md)
 
 **Root Test Highlights**:
-- 47 findings as root (vs 11 as non-root) — plugins now have full access
+- 47 findings as root (vs 11 as non-root): plugins now have full access
 - 26 audit findings visible with root access
 - Kernel apply: changes applied, `kptr_restrict=2` verified
 - All 6 compliance frameworks: reports generated
@@ -223,7 +223,7 @@ sudo ./scripts/root-test-suite.sh --apply      # Full tests (apply + rollback)
 
 ---
 
-### v0.3.2 — Frontend Layout & Accessibility ✅
+### v0.3.2: Frontend Layout & Accessibility ✅
 
 > **Implementation Guide**: See [docs/FRONTEND_LAYOUT_PLAN.md](docs/archive/FRONTEND_LAYOUT_PLAN.md)
 
@@ -293,10 +293,10 @@ sudo ./scripts/root-test-suite.sh --apply      # Full tests (apply + rollback)
 
 #### F. GUI Bug Fixes (Session 6) ✅
 
-- [x] **Issue H**: Score mismatch Dashboard vs Analysis — unified `calculate_all_scores()` function
-- [x] **Issue J**: Generate Reports no feedback — added status message display with success/error styling
-- [x] **Issue K**: Checkpoints not visible after Apply — `get_checkpoints()` now reads both user + system databases
-- [x] **Issue L**: Theme selector unreadable — CSS `appearance: none` reset with custom SVG dropdown arrow
+- [x] **Issue H**: Score mismatch Dashboard vs Analysis, unified `calculate_all_scores()` function
+- [x] **Issue J**: Generate Reports no feedback, added status message display with success/error styling
+- [x] **Issue K**: Checkpoints not visible after Apply, `get_checkpoints()` now reads both user + system databases
+- [x] **Issue L**: Theme selector unreadable, CSS `appearance: none` reset with custom SVG dropdown arrow
 - [x] Added Refresh button to checkpoint section for manual reload
 - [x] MiniSecurityScore now shares compliance-based scoring algorithm with SecurityScore
 
@@ -376,7 +376,7 @@ User clicks "Apply"
 
 ---
 
-### v0.3.3 — Distribution Validation ✅
+### v0.3.3: Distribution Validation ✅
 
 | Distribution | Family | Version | Tests | Pass | Fail | Skip | Status |
 |--------------|--------|---------|-------|------|------|------|--------|
@@ -404,11 +404,11 @@ User clicks "Apply"
 
 ---
 
-### v0.4.0 — GUI/CLI Feature Parity & Web Interface
+### v0.4.0: GUI/CLI Feature Parity & Web Interface
 
 > **Implementation Guide**: See [docs/GUI_CLI_PARITY_PLAN.md](docs/GUI_CLI_PARITY_PLAN.md)
 
-#### A. GUI/CLI Parity — P0-P1 Features
+#### A. GUI/CLI Parity: P0-P1 Features
 
 | Feature | CLI Equivalent | Priority | Status |
 |---------|----------------|----------|--------|
@@ -420,7 +420,7 @@ User clicks "Apply"
 | Report export to file | `report --output` | P1 | ✅ Complete |
 | Report format selection | `report --report-format` | P1 | ✅ Complete |
 
-#### B. GUI/CLI Parity — P2-P3 Features
+#### B. GUI/CLI Parity: P2-P3 Features
 
 | Feature | CLI Equivalent | Priority | Status |
 |---------|----------------|----------|--------|
@@ -456,7 +456,7 @@ User clicks "Apply"
 
 ---
 
-### v1.0.0 — Production Release ✅
+### v1.0.0: Production Release ✅
 
 | Feature | Description | Priority | Status |
 |---------|-------------|----------|--------|
@@ -468,7 +468,7 @@ User clicks "Apply"
 
 ---
 
-### v1.0.2 — CLI Fixes & Desktop UX ✅
+### v1.0.2: CLI Fixes & Desktop UX ✅
 
 | Feature | Description | Priority | Status |
 |---------|-------------|----------|--------|
@@ -514,7 +514,7 @@ report zero `ManualReview` for covered controls.
 | Honest manual-review status | Stop reporting unassessed controls as `Pass` | High | ✅ Complete |
 | Per-control multi-framework mappings | Plugins emit STIG/NIST/PCI-DSS/HIPAA/GDPR/ISO 27001 control IDs alongside CIS | High | ✅ Complete |
 | Catalogue id reconciliation | Unify catalogue vs SSG-scheme ids for clean reports | Low | ⬜ Pending |
-| Option B — `Pass` for checked-passing controls | Per-control coverage set; every non-CIS framework reports zero `ManualReview` | Low | ✅ Complete |
+| Option B: `Pass` for checked-passing controls | Per-control coverage set; every non-CIS framework reports zero `ManualReview` | Low | ✅ Complete |
 | CIS curated-catalogue coverage | 11 CIS controls now genuinely assessed; `report --framework cis` shows 6 `ManualReview` (from 17), the remainder genuinely out of scope | Medium | ✅ Complete |
 
 ### Additional Compliance Frameworks
@@ -522,9 +522,9 @@ report zero `ManualReview` for covered controls.
 | Framework | Description | Priority | Status |
 |-----------|-------------|----------|--------|
 | ISO/IEC 27001:2022 | 93 Annex A controls across 4 themes; catalogue implemented and findings mapped to the Technological theme | Medium | ✅ Complete |
-| SOC 2 | Service organisation controls (AICPA Trust Services Criteria) | Low | ⬜ Pending |
-| FedRAMP | Federal Risk and Authorization Management Program | Low | ⬜ Pending |
-| NIST SP 800-171 | Add alongside 800-53; support Rev 2 (currently mandated) and Rev 3 (2024) | Low | ⬜ Pending |
+| SOC 2 | Service organisation controls (AICPA Trust Services Criteria) | Low | ✅ Complete |
+| FedRAMP | Federal Risk and Authorization Management Program | Low | ✅ Complete |
+| NIST SP 800-171 | Rev 3 CUI requirements, crosswalked from the plugins' 800-53 controls | Low | ✅ Complete |
 
 ### Advanced Features
 
@@ -532,7 +532,7 @@ report zero `ManualReview` for covered controls.
 |---------|-------------|----------|--------|
 | SSH crypto-algorithm hardening | Harden `KexAlgorithms`/`Ciphers`/`MACs`, incl. post-quantum kex (`mlkem768x25519-sha256`, default in OpenSSH 10). Must detect supported algorithms (`ssh -Q kex`) and run `sshd -t` before restart to avoid lockout | High | ✅ Done |
 | RHEL 10 compliance profiles | DISA RHEL 10 STIG V1R1 (2026-06) and CIS RHEL 10 v1.0.1 now exist | Medium | ⬜ Pending |
-| Multi-host SSH management | Manage/monitor multiple hosts from one UI: host profiles, parallel scanning, trend history, regression alerts | Medium | ✅ Largely done — CLI `batch scan/report/apply/rollback` + `history trends/regressions` + scheduler regression alerts; GUI Fleet scan/compliance/apply/rollback shipped (GUI polish remains) |
+| Multi-host SSH management | Manage/monitor multiple hosts from one UI: host profiles, parallel scanning, trend history, regression alerts | Medium | ✅ Largely done: CLI `batch scan/report/apply/rollback` + `history trends/regressions` + scheduler regression alerts; GUI Fleet scan/compliance/apply/rollback shipped (GUI polish remains) |
 | Security audit (external) | Third-party security review | Medium | ⬜ Pending |
 | Performance optimisation | Scan speed improvements | Medium | ⬜ Pending |
 | Internationalisation | Multi-language support | Low | ⬜ Pending |
@@ -580,10 +580,10 @@ report zero `ManualReview` for covered controls.
 **4. Package Manager Helpers**
 - Added to `hardener-distro/src/package/mod.rs`:
   - `PackageNameRules` enum (Debian, Rpm, Arch)
-  - `validate_package_name()` — shared validation with distro-specific rules
-  - `validate_package_names()` — batch validation helper
-  - `execute_command()` — generic command runner with error handling
-  - `parse_rpm_package_list()` — shared RPM output parser for dnf/zypper
+  - `validate_package_name()`: shared validation with distro-specific rules
+  - `validate_package_names()`: batch validation helper
+  - `execute_command()`: generic command runner with error handling
+  - `parse_rpm_package_list()`: shared RPM output parser for dnf/zypper
 - All 4 package managers (apt, dnf, zypper, pacman) refactored to use shared helpers
 - Reduced ~190 lines of duplicate code
 
@@ -605,7 +605,7 @@ report zero `ManualReview` for covered controls.
 | Category | Structs | Reasoning |
 |----------|---------|-----------|
 | Suffix pattern `_count` | ScanSession, ScanSummary | Consistent naming with `critical_count`, `high_count`, etc. |
-| Database DTOs | ScanFinding, ScanFindingRow | Fields match database columns — acceptable for DTO boundary |
+| Database DTOs | ScanFinding, ScanFindingRow | Fields match database columns, acceptable for DTO boundary |
 | Named aggregation | SeverityCounts | Struct name provides context |
 | Framework conventions | Cli, SshConnectionConfig | Clap/SSH standard conventions |
 | UI definitions | FrameworkScore, TabDef, PluginDef | Simple internal types with clear context |
@@ -671,6 +671,9 @@ plugin-declared per-control coverage (Option B): an assessed control reports
 | HIPAA | 14 | ✅ Yes | Healthcare security requirements |
 | GDPR | 12 | ✅ Yes | EU data protection (Article 32) |
 | ISO/IEC 27001:2022 | 93 | ✅ Yes | Information security management (Annex A, 4 themes) |
+| SOC 2 | 5 | ✅ Yes | AICPA Trust Services Criteria (2017, CC-series; coverage-derived) |
+| NIST SP 800-171 | 14 | ✅ Yes | Revision 3 CUI requirements, crosswalked from 800-53 (coverage-derived) |
+| FedRAMP | 19 | ✅ Yes | Moderate (Rev 5) baseline members among the 800-53 controls (coverage-derived) |
 
 ---
 

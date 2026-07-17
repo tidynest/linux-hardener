@@ -21,7 +21,7 @@ fn copy_to_clipboard(text: String, status: RwSignal<Option<bool>>) {
 
         status.set(Some(ok));
 
-        // Reset after 2 s via setTimeout — avoids adding gloo-timers dependency
+        // Reset after 2 s via setTimeout (avoids adding gloo-timers dependency)
         if let Some(window) = web_sys::window() {
             let cb = Closure::once(move || status.set(None));
             let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(

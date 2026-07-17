@@ -79,7 +79,7 @@ pub async fn list(
 }
 
 /// Shows a per-host security trend: completed scans oldest-first, each with its
-/// change from the previous scan. Derived on query from the persisted sessions —
+/// change from the previous scan. Derived on query from the persisted sessions,
 /// no separate score is stored.
 pub async fn trends(format: OutputFormat, quiet: bool, host: &str, limit: u32) -> Result<()> {
     let db = open_database().await?;
@@ -139,7 +139,7 @@ pub async fn trends(format: OutputFormat, quiet: bool, host: &str, limit: u32) -
                 let delta = p
                     .delta_total
                     .map(|d| format!("{:+}", d))
-                    .unwrap_or_else(|| "—".to_string());
+                    .unwrap_or_else(|| "-".to_string());
                 println!(
                     "{:<19}  {:>5} {:>4} {:>4} {:>4} {:>4}  {:>7}  {}",
                     format_timestamp(p.started_at),
@@ -505,11 +505,11 @@ mod tests {
     fn find_regressions_flags_only_worse_latest() {
         // Newest-first, as list_sessions returns.
         let sessions = vec![
-            session("web", 200, 2, 0),  // latest: 2 crit — worse than prior (1 crit)
+            session("web", 200, 2, 0),  // latest: 2 crit, worse than prior (1 crit)
             session("web", 100, 1, 0),  // prior
             session("db", 200, 0, 1),   // latest: better than prior
             session("db", 100, 0, 3),   // prior
-            session("solo", 100, 5, 5), // single scan — nothing to compare
+            session("solo", 100, 5, 5), // single scan, nothing to compare
         ];
 
         let regs = find_regressions(&sessions);

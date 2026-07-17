@@ -48,7 +48,7 @@ fn pam_mapping(framework: ComplianceFramework, control_id: &str, title: &str) ->
 /// Builds a [`ComplianceMapping`] under an explicit section.
 ///
 /// Used for frameworks whose catalogue groups controls differently from the
-/// default "Access Control" section — notably ISO/IEC 27001:2022, whose Annex A
+/// default "Access Control" section, notably ISO/IEC 27001:2022, whose Annex A
 /// controls live under the "Technological" theme.
 fn pam_mapping_in(
     framework: ComplianceFramework,
@@ -118,7 +118,7 @@ fn pam_soc2_logical_access() -> ComplianceMapping {
 /// NIST SP 800-171 Revision 3 mapping for PAM password-quality and ageing checks.
 ///
 /// Requirement 3.5.7 (Password Management) is sourced from 800-53 IA-5(1) in
-/// the r3 source-control table — the control the password arms here already
+/// the r3 source-control table: the control the password arms here already
 /// cite as IA-5(1)(a)/(d). Family: Identification and Authentication.
 fn pam_nist171_password_mgmt() -> ComplianceMapping {
     pam_mapping_in(
@@ -174,7 +174,7 @@ fn pam_fedramp_password_ageing() -> ComplianceMapping {
 ///
 /// AC-7 is a FedRAMP Moderate (Rev 5) baseline member (GSA rev5 baseline);
 /// the lockout arm's AC-7(a) entry mirrors across verbatim under the shared
-/// "Access Control" section — the control's official 800-53 family.
+/// "Access Control" section: the control's official 800-53 family.
 fn pam_fedramp_unsuccessful_logons() -> ComplianceMapping {
     pam_mapping(
         ComplianceFramework::FedRAMP,
@@ -738,10 +738,10 @@ impl HardeningPlugin for PamHardeningPlugin {
 
         // Step 3: Apply each directive
         for directive in PAM_DIRECTIVES {
-            // Check for a valid exception — skip this directive if exempted
+            // Check for a valid exception: skip this directive if exempted
             if let Some(exception) = config.has_valid_exception(directive.pam_directive_name) {
                 info!(
-                    "Skipping {} — exception: {}",
+                    "Skipping {} (exception: {})",
                     directive.pam_directive_name, exception.reason
                 );
                 changes.push(Change {
@@ -846,7 +846,7 @@ impl HardeningPlugin for PamHardeningPlugin {
 
                     // An inline pam.d arg overrides the .conf, so writing the
                     // .conf would be a silent no-op. Never auto-edit the auth
-                    // stack (a malformed edit can lock users out) — report the
+                    // stack (a malformed edit can lock users out); report the
                     // manual action and mark the run unsuccessful.
                     if let Some(value) = inline {
                         warn!(
@@ -1138,7 +1138,7 @@ enum PamConfigFile {
 enum PamCompare {
     /// Current must equal the secure value.
     Exact,
-    /// Current must be ≤ the secure value (e.g. faillock `deny` — lock no later).
+    /// Current must be ≤ the secure value (e.g. faillock `deny`, lock no later).
     AtMost,
     /// Current must be ≥ the secure value (e.g. pwhistory `remember`).
     AtLeast,
@@ -1503,7 +1503,7 @@ mod tests {
 
     /// Confirms the 800-171r3 crosswalk: password-quality checks translate
     /// IA-5(1) to 3.5.7, the faillock check translates AC-7 to 3.1.8, and the
-    /// pwhistory check — whose SSG rule carries no 800-53 reference — honestly
+    /// pwhistory check (whose SSG rule carries no 800-53 reference) honestly
     /// carries no 800-171 mapping.
     #[test]
     fn pam_checks_map_nist_800_171_requirements() {
@@ -1535,8 +1535,8 @@ mod tests {
 
     /// Confirms the FedRAMP derivation: IA-5(1) and AC-7 are both GSA rev5
     /// Moderate baseline members, so the quality and lockout checks mirror
-    /// their 800-53 ids verbatim; the pwhistory check — whose SSG rule
-    /// carries no 800-53 reference — honestly carries no FedRAMP mapping.
+    /// their 800-53 ids verbatim; the pwhistory check (whose SSG rule
+    /// carries no 800-53 reference) honestly carries no FedRAMP mapping.
     #[test]
     fn pam_checks_map_fedramp_moderate_controls() {
         let fedramp_for = |check: &str| {
@@ -1580,7 +1580,7 @@ mod tests {
             pam_compare: PamCompare::AtMost,
         };
         assert!(pam_violates(&deny, Some("10"))); // too loose
-        assert!(!pam_violates(&deny, Some("3"))); // stricter — compliant
+        assert!(!pam_violates(&deny, Some("3"))); // stricter, compliant
         assert!(!pam_violates(&deny, Some("5")));
         assert!(pam_violates(&deny, None)); // not configured
 
@@ -1591,10 +1591,10 @@ mod tests {
             ..deny
         };
         assert!(pam_violates(&remember, Some("2"))); // too few
-        assert!(!pam_violates(&remember, Some("10"))); // stricter — compliant
+        assert!(!pam_violates(&remember, Some("10"))); // stricter, compliant
         assert!(!pam_violates(&remember, Some("5")));
 
-        // Spread from `remember` (not `deny`, already moved above) — PamDirective isn't Copy.
+        // Spread from `remember` (not `deny`, already moved above); PamDirective isn't Copy.
         let exact = PamDirective {
             pam_compare: PamCompare::Exact,
             pam_secure_value: "14",

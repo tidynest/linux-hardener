@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# TAURI DESKTOP GUI TEST INNER SCRIPT — Runs INSIDE Arch nspawn container
+# TAURI DESKTOP GUI TEST INNER SCRIPT: Runs INSIDE Arch nspawn container
 # =============================================================================
 # Tests the actual Tauri binary with Xvfb + xdotool. Real IPC, real backend.
 # Only commands that don't need pkexec are tested (5 of 7).
@@ -75,7 +75,7 @@ install_deps() {
         pacman -Sy --noconfirm --needed \
             webkit2gtk-4.1 xorg-server-xvfb xdotool xorg-xwd imagemagick 2>/dev/null || true
     else
-        echo -e "${RED}[deps] Not an Arch container — Tauri tests require Arch for ABI match${NC}"
+        echo -e "${RED}[deps] Not an Arch container: Tauri tests require Arch for ABI match${NC}"
         exit 99
     fi
 }
@@ -169,7 +169,7 @@ run_tests() {
         if [[ "$size" -gt 3000 ]]; then
             pass "T-TAURI-03: Initial render (screenshot ${size} bytes)"
         else
-            fail "T-TAURI-03: Initial render" "Screenshot too small (${size} bytes — likely blank)"
+            fail "T-TAURI-03: Initial render" "Screenshot too small (${size} bytes: likely blank)"
         fi
     else
         fail "T-TAURI-03: Initial render" "Screenshot capture failed"
@@ -198,7 +198,7 @@ run_tests() {
     if [[ "$scan_size" -ne "$init_size" ]] || [[ "$scan_size" -gt 10000 ]]; then
         pass "T-TAURI-05: Scan data rendered (size changed: ${init_size} -> ${scan_size})"
     else
-        skip "T-TAURI-05: Scan data rendered" "Cannot verify content — visual comparison only"
+        skip "T-TAURI-05: Scan data rendered" "Cannot verify content: visual comparison only"
     fi
 
     # --- T-TAURI-06: DB persistence ---

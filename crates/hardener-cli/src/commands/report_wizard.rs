@@ -67,6 +67,11 @@ const FRAMEWORKS: &[FrameworkInfo] = &[
         description: "EU General Data Protection Regulation (Article 32)",
     },
     FrameworkInfo {
+        framework: ComplianceFramework::ISO27001,
+        name: "ISO 27001",
+        description: "ISO/IEC 27001:2022 Annex A information security controls",
+    },
+    FrameworkInfo {
         framework: ComplianceFramework::SOC2,
         name: "SOC 2",
         description: "AICPA Trust Services Criteria",
@@ -588,4 +593,27 @@ fn framework_icon(framework: &ComplianceFramework) -> &'static str {
 
 fn framework_display_name(framework: &ComplianceFramework) -> &'static str {
     framework.full_name()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    /// The custom picker must offer every supported framework. This guards the
+    /// regression where ISO 27001 was defined everywhere except this table.
+    #[test]
+    fn frameworks_table_is_complete_and_unique() {
+        let listed: HashSet<ComplianceFramework> = FRAMEWORKS.iter().map(|f| f.framework).collect();
+        assert_eq!(
+            listed.len(),
+            FRAMEWORKS.len(),
+            "duplicate framework in the picker table"
+        );
+        assert_eq!(listed.len(), 10, "picker must list all 10 frameworks");
+        assert!(
+            listed.contains(&ComplianceFramework::ISO27001),
+            "ISO 27001 missing from the picker table"
+        );
+    }
 }

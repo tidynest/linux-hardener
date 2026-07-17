@@ -27,8 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are invented: every mapping mirrors a plugin's existing 800-53 entry
   verbatim, filtered to membership in the official GSA rev5 Moderate baseline
   (version 5.1.1+fedramp-20240111-0, 323 controls). All 18 base controls the
-  plugins cite are baseline members — including SC-5, SI-11 and SI-16, which
-  800-171r3 tailors out — giving 19 distinct printed control ids across six
+  plugins cite are baseline members (including SC-5, SI-11 and SI-16, which
+  800-171r3 tailors out), giving 19 distinct printed control ids across six
   800-53 families. Like SOC 2 and 800-171, the catalogue is derived from live
   plugin coverage, so every reported control is genuinely assessed.
 - NIST SP 800-171 compliance framework: `report --framework 800-171` (CLI and
@@ -36,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--scenario government`) assesses against SP 800-171 Revision 3 (May 2024),
   the protection standard for Controlled Unclassified Information in
   nonfederal systems. Every requirement id is crosswalked from the plugins'
-  existing 800-53 control entries via the official r3 source-control table —
+  existing 800-53 control entries via the official r3 source-control table:
   14 distinct requirements across six families (access control, audit,
   configuration management, identification & authentication, communications
   protection, system integrity). Controls that 800-171r3 tailors out as not
@@ -46,9 +46,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SOC 2 compliance framework: `report --framework soc2` (CLI and desktop,
   including the fleet posture set and `--scenario all`) assesses against the
   AICPA 2017 Trust Services Criteria (with the 2022 points of focus). All
-  eight plugins map their checks onto five common criteria — CC6.1 (logical
+  eight plugins map their checks onto five common criteria, CC6.1 (logical
   access), CC6.6 (boundary protection), CC6.8 (unauthorised software), CC7.1
-  (configuration-change detection) and CC7.2 (anomaly monitoring) — each
+  (configuration-change detection) and CC7.2 (anomaly monitoring), each
   mapping mirroring the check's existing sourced NIST/CIS intent. SOC 2 has no
   curated catalogue: its control list is derived from live plugin coverage, so
   every reported criterion is genuinely assessed (Pass/Fail, never a false
@@ -57,8 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - RHEL 10 compliance profiles: `report` and `batch report` render DISA RHEL 10
   STIG V1R1 and CIS RHEL 10 Benchmark v1.0.1 control identifiers on
   RHEL-10-family hosts (RHEL/Rocky/Alma 10). Profiles resolve automatically
-  from the scanned system's `/etc/os-release` — per host in batch, through the
-  scan executor for `--ssh` targets — and are overridable with
+  from the scanned system's `/etc/os-release` (per host in batch, through the
+  scan executor for `--ssh` targets) and are overridable with
   `--profile <generic|rhel10>`. Translation happens at report time from
   sourced tables (official DISA V1R1 XCCDF; ComplianceAsCode's `cis_rhel10.yml`
   v1.0.1 encoding): canonical controls without a sourced counterpart are
@@ -74,7 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Live per-host progress during desktop fleet scans: the Fleet page now
   shows each host as pending/finished/failed with an n-of-total counter
   while the scan runs, driven by a `fleet-progress` Tauri event emitted as
-  each host completes. Progress is best-effort and purely cosmetic — the
+  each host completes. Progress is best-effort and purely cosmetic: the
   scan's outcome remains the awaited command result.
 - Ad-hoc SSH targets in the desktop fleet pages: both **Fleet** (scan) and
   **Fleet Apply** (apply/rollback) now accept `user@host[:port]` targets that
@@ -115,20 +115,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   plugins concurrently (`futures::future::join_all`; output order is
   preserved by rendering in plugin order), `LocalExecutor` spawns commands
   through `tokio::process` so concurrent scans genuinely overlap, and the
-  services plugin batches its systemctl probing — two pattern-filtered
+  services plugin batches its systemctl probing: two pattern-filtered
   listings (`list-unit-files`/`list-units`) for the whole scan instead of up
   to three spawns per service. Measured locally (debug build, 8 plugins):
   wall clock ~25 ms → ~10 ms per scan; the services plugin ~13 ms → ~8 ms and
   15 spawns → 2. Remote scans gain more: each spawn saved is an SSH
   round-trip. The scheduler's `PluginManager::execute_scan` stays
-  deliberately sequential — it honours the dependency graph and only the
+  deliberately sequential: it honours the dependency graph and only the
   daemon uses it. Criterion benches remain deliberately out of scope; the
   `--timings` flag plus these recorded numbers are the measurement story.
 
 ### Fixed
 - The services plugin's existence probe called
   `systemctl list-unit-files <name>` without the `.service` suffix, which
-  `list-unit-files` does not mangle the way `is-enabled`/`is-active` do — the
+  `list-unit-files` does not mangle the way `is-enabled`/`is-active` do: the
   pattern matched nothing, so every service looked absent and the plugin
   scanned, validated and applied as a silent no-op. The batched scan listings
   and the suffixed per-service probe now detect enabled services again
@@ -139,7 +139,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   authentication, Kerberos and separate-/var). Ciphers and MACs now carry
   their true V2R7 identifiers (`RHEL-08-010291`/V-230252 and
   `RHEL-08-010290`/V-230251, both CAT I), and the KexAlgorithms check no
-  longer claims a STIG control at all — its rule was removed from the RHEL 8
+  longer claims a STIG control at all: its rule was removed from the RHEL 8
   STIG in V2R6 and none exists in the RHEL 10 STIG.
 - The SSH executor's remote `write_file` no longer appends a spurious
   trailing newline to newline-terminated content, so files written over
@@ -162,13 +162,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Checkpoint rollback could delete files with `0000` permissions.** The
   executor captured a file's mode with the type bits masked off, so a regular
   file whose permissions are `0000` (as `/etc/shadow` and `/etc/gshadow` ship on
-  Arch Linux) was recorded as mode `0` — indistinguishable from "did not exist
-  at checkpoint time" — and rollback removed it instead of restoring its
+  Arch Linux) was recorded as mode `0` (indistinguishable from "did not exist
+  at checkpoint time") and rollback removed it instead of restoring its
   permissions. The local and SSH (`--ssh`) executors now preserve the file-type
   bit, so an existing file is never mistaken for an absent one.
 - **The permissions plugin's apply → rollback cycle aborted with a
   path-not-allowed error.** The account-database files newly checkpointed for
-  CIS 6.1.2–6.1.5 (`/etc/passwd`, `/etc/group`, `/etc/shadow`, `/etc/gshadow`)
+  CIS 6.1.2-6.1.5 (`/etc/passwd`, `/etc/group`, `/etc/shadow`, `/etc/gshadow`)
   were absent from the rollback allowlist, so rolling back a permissions
   checkpoint failed outright (the cross-distro suite's per-plugin lifecycle
   exited 1 on every distribution). They are now allow-listed. Regression tests
@@ -187,10 +187,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **CIS compliance coverage completion.** Eleven curated CIS controls are now
   genuinely assessed instead of `ManualReview`: file permissions on
-  `/etc/{passwd,group,shadow,gshadow}` (6.1.2–6.1.5), ICMP redirect and
-  martian-packet sysctls (3.2.2–3.2.4), `xinetd` removal (2.1.1), firewall
+  `/etc/{passwd,group,shadow,gshadow}` (6.1.2-6.1.5), ICMP redirect and
+  martian-packet sysctls (3.2.2-3.2.4), `xinetd` removal (2.1.1), firewall
   installed (3.4.1.1), and faillock/pwhistory (5.3.2/5.3.3). `report --framework
-  cis` now reports 6 `ManualReview` (down from 17) — the remainder are honestly
+  cis` now reports 6 `ManualReview` (down from 17): the remainder are honestly
   out of scope (cron.allow, sshd_config perms, SSH Protocol 2, SELinux
   bootloader/policy, X11). Each newly-checked item also gains a
   checkpoint-protected apply action.
@@ -199,7 +199,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wrappers that validate `pkexec` privilege escalation across desktops, and a
   `docs/de-compatibility.md` matrix documenting the polkit agent each DE needs.
 
-- **Desktop Fleet Apply page** — apply and roll back hardening across saved
+- **Desktop Fleet Apply page**: apply and roll back hardening across saved
   hosts over SSH from the GUI, by shelling out to the audited `batch apply`/`rollback`
   CLI. Mandatory dry-run preview + confirmation before any change; the page is
   read-only until you confirm.
@@ -208,7 +208,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (per-host critical/high/medium/low/info tallies, expandable to that host's
   findings). Reuses the single-host scan path in-process; per-host failure is
   isolated. Fleet apply/rollback and compliance scoring remain CLI-only.
-- **Desktop fleet view — compliance scores.** Each fleet host row now shows a
+- **Desktop fleet view: compliance scores.** Each fleet host row now shows a
   colour-coded CIS compliance score, and the row's expander lists every
   framework's score with pass/fail/manual/NA counts. Derived in-process from the
   findings already scanned (no extra SSH); the view remains read-only.
@@ -221,10 +221,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and Debian a `Suggests` for the same.
 
 ### Security
-- **RUSTSEC-2026-0190** — Updated `anyhow` 1.0.100 → 1.0.103, fixing an
+- **RUSTSEC-2026-0190**: Updated `anyhow` 1.0.100 → 1.0.103, fixing an
   unsoundness (undefined behaviour) in `Error::downcast_mut()` after
   `Error::context()`.
-- **RUSTSEC-2026-0192** — `ttf-parser` flagged unmaintained with no safe upgrade;
+- **RUSTSEC-2026-0192**: `ttf-parser` flagged unmaintained with no safe upgrade;
   accepted in `deny.toml`. Transitive via `krilla`→`rustybuzz` for PDF
   compliance-report export; no first-party usage, no runtime attack surface.
 - **Permission checks never loosen `/etc/shadow`/`/etc/gshadow`.** These files
@@ -245,7 +245,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.1.0] - 2026-06-24
 
 ### Added
-- **`hardener batch apply`** — apply hardening across many hosts concurrently.
+- **`hardener batch apply`**: apply hardening across many hosts concurrently.
   Dry-run by default (validates each host and reports what would change); pass
   `--execute` to perform real changes. Before executing on a host the command
   probes for privilege (uid 0 or passwordless `sudo`); a non-privileged host is
@@ -254,7 +254,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   codes: 0 all clean, 1 any apply or validation failure, 2 any connect, privilege
   or usage error. Flags mirror `batch scan`: `--all`, `--host`, `--ssh`,
   `--plugin`, `--concurrency`, `--format`, `--output`, `--quiet`.
-- **`hardener batch rollback`** — roll back many hosts concurrently to their
+- **`hardener batch rollback`**: roll back many hosts concurrently to their
   latest per-plugin checkpoint (`<plugin-id>-pre-apply`). Dry-run by
   default (previews per host which checkpoint(s) would be restored); pass
   `--execute` to restore. Before executing on a host it probes for privilege
@@ -265,14 +265,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   clean, 1 any checkpoint restore failure, 2 any connect, privilege or usage
   error. Flags mirror `batch apply`: `--all`, `--host`, `--ssh`, `--plugin`,
   `--execute`, `--concurrency`, `--format`, `--output`, `--quiet`.
-- **`hardener batch report`** — assess multiple hosts against a compliance
+- **`hardener batch report`**: assess multiple hosts against a compliance
   framework or scenario in one concurrent run, printing a fleet posture table
   (host × framework → score and pass/fail/manual/N-A control counts) with a
   tiered exit code (0 compliant / 1 failing control / 2 host error) for CI
   gating. Reuses the `batch scan` engine; `--format json` and `--output`
   supported.
 - **Per-host security trend.** `hardener history trends --host <key>` charts a
-  host's completed scans oldest-first — per-severity counts, the change in total
+  host's completed scans oldest-first: per-severity counts, the change in total
   findings, and a per-scan direction (`better`/`worse`/`same`) computed by
   severity priority (a new critical outranks any number of lower-severity
   improvements). Derived on query from the persisted scan history; no score is
@@ -286,12 +286,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   has findings above a threshold. New `notify_mode` setting: `findings` (default,
   unchanged behaviour), `regression` (quiet until the posture worsens), or `both`.
   Regressions are measured at the existing `notify_min_severity` floor and the
-  alert is annotated with the per-severity deltas. Self-deduping — fires only on
+  alert is annotated with the per-severity deltas. Self-deduping: fires only on
   the scan where the posture changes.
 - **Batch scan persists per-host history.** `hardener batch scan` now records each
   host's results to the scan-history database keyed by host (the inventory name,
   or `user@host:port` for ad-hoc `--ssh` hosts); read them back with
-  `hardener history list --host <key>`. Persistence is best-effort — a history
+  `hardener history list --host <key>`. Persistence is best-effort: a history
   write failure never changes a host's scan result. The history pool now uses
   SQLite WAL so concurrent per-host writes are safe.
 - **Multi-host batch scanning.** `hardener batch scan` scans many hosts at once
@@ -303,7 +303,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **ISO/IEC 27001:2022 compliance framework.** The empty `ISO27001` stub is
   replaced with the full 93-control Annex A:2022 catalogue (Organizational,
   People, Physical, Technological themes), and plugin findings map to the
-  Technological controls — so ISO 27001 reports now assess real system state.
+  Technological controls, so ISO 27001 reports now assess real system state.
 - **Multi-framework compliance mappings.** All 8 plugins now tag findings with
   STIG, NIST 800-53, PCI-DSS, HIPAA, GDPR and ISO 27001:2022 control IDs
   (sourced from ComplianceAsCode/SSG and the project catalogues) alongside CIS,
@@ -311,13 +311,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reporting `ManualReview`. A wrong mapping can only cause a false *failure*,
   never a false pass.
 - **Plugin-declared compliance coverage (single source of truth).** Each plugin
-  now exposes `coverage()` — the complete set of `(framework, control)` it can
-  assess — aggregated by `hardener_plugins::compliance_coverage()` and injected
+  now exposes `coverage()` (the complete set of `(framework, control)` it can
+  assess) aggregated by `hardener_plugins::compliance_coverage()` and injected
   into the report generator. This replaces the framework-level
   `AUTOMATED_FRAMEWORKS` flag with per-control coverage, so partial framework
   support is reported honestly.
 - **Accurate `Pass` for hardened systems.** A control the engine assesses and
-  finds compliant now reports `Pass` for *every* framework, not just CIS — so a
+  finds compliant now reports `Pass` for *every* framework, not just CIS, so a
   genuinely hardened host scores accurately instead of being buried under
   `ManualReview`.
 - **SSH crypto-algorithm hardening.** The SSH plugin now hardens `KexAlgorithms`,
@@ -344,7 +344,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `fs.protected_hardlinks` / `fs.protected_symlinks` with CIS `1.6.1`, but the
   upstream SSG rules (`sysctl_fs_protected_hardlinks/symlinks`) carry no CIS
   reference, and `1.6.1` is the Mandatory Access Control subsection header (the
-  curated catalogue already lists `1.6.1.1`–`1.6.1.4` there). The mapping is
+  curated catalogue already lists `1.6.1.1`-`1.6.1.4` there). The mapping is
   dropped; the sourced NIST `CM-6(a)`/`AC-6(1)` and STIG `OL08-00-010373/4`
   mappings are kept.
 - **Desktop compliance commands build again.** The phase-3 coverage change gave
@@ -363,21 +363,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with no matching finding previously defaulted to `Pass`, reporting coverage the
   engine had not actually evaluated. Such controls now report `ManualReview`
   until a mapping exists, and the generator surfaces any finding-referenced
-  control missing from a framework's catalogue — so an incomplete mapping can
+  control missing from a framework's catalogue, so an incomplete mapping can
   only ever over-report a failure, never a pass.
 
 ### Changed
 - **`tauri` 2.11.2 → 2.11.3.** Routine patch bump (no CVE); pulls the matching
   `tauri-runtime`/`tauri-utils`/`wry` updates in the lockfile.
 - **Curated CIS SSH section completed.** The curated CIS catalogue now lists the
-  strong-crypto SSH controls `5.2.14`–`5.2.16` (Key Exchange, Ciphers, MACs)
+  strong-crypto SSH controls `5.2.14`-`5.2.16` (Key Exchange, Ciphers, MACs)
   alongside the existing `5.2.x` entries, so the SSH plugin's crypto assessment
   is reflected in the curated standard rather than surfacing only via the
   coverage merge.
 - **Non-CIS catalogues are derived from plugin coverage.** The hand-written
-  STIG / NIST 800-53 / PCI-DSS / HIPAA / GDPR catalogues — whose identifier
+  STIG / NIST 800-53 / PCI-DSS / HIPAA / GDPR catalogues (whose identifier
   schemes diverged from the upstream (SSG) IDs the plugins emit, producing
-  duplicate and `ManualReview`-only noise — are removed. Each of those
+  duplicate and `ManualReview`-only noise) are removed. Each of those
   frameworks' reports now lists exactly the controls the engine assesses, on a
   single identifier scheme. CIS and ISO/IEC 27001:2022 keep their curated
   catalogues (the full standard, with unassessed controls flagged
@@ -406,10 +406,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by coverage-derived catalogues and per-control coverage (see above).
 
 ### Security
-- **RUSTSEC-2026-0185** — Updated `quinn-proto` 0.11.14 → 0.11.15 (remote memory
+- **RUSTSEC-2026-0185**: Updated `quinn-proto` 0.11.14 → 0.11.15 (remote memory
   exhaustion, CVSS 7.5: unbounded out-of-order QUIC stream reassembly; pulled
   transitively).
-- **RUSTSEC-2026-0173** — `proc-macro-error2` flagged unmaintained with no safe
+- **RUSTSEC-2026-0173**: `proc-macro-error2` flagged unmaintained with no safe
   upgrade; accepted in `deny.toml`. Compile-time-only proc-macro, transitive via
   the Leptos macro stack (`leptos_macro`/`leptos_router`/`rstml`), no runtime
   attack surface.
@@ -419,9 +419,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.5] - 2026-05-24
 
 ### Security
-- **CVE-2026-42184 / GHSA-7gmj-67g7-phm9** — Updated `tauri` 2.9.5 → 2.11.2, fixing an origin-confusion flaw that could let remote pages invoke local-only IPC commands.
-- **RUSTSEC-2026-0141** — Updated `lettre` 0.11.19 → 0.11.22 (TLS hostname verification bypass in the Boring TLS backend; not exposed — the project builds `lettre` with the rustls backend).
-- **RUSTSEC-2026-0104** — Updated `rustls-webpki` 0.103.12 → 0.103.13 (reachable panic when parsing a certificate revocation list).
+- **CVE-2026-42184 / GHSA-7gmj-67g7-phm9**: Updated `tauri` 2.9.5 → 2.11.2, fixing an origin-confusion flaw that could let remote pages invoke local-only IPC commands.
+- **RUSTSEC-2026-0141**: Updated `lettre` 0.11.19 → 0.11.22 (TLS hostname verification bypass in the Boring TLS backend; not exposed: the project builds `lettre` with the rustls backend).
+- **RUSTSEC-2026-0104**: Updated `rustls-webpki` 0.103.12 → 0.103.13 (reachable panic when parsing a certificate revocation list).
 
 ## [1.0.4] - 2026-04-15
 
@@ -433,10 +433,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added (Testing Infrastructure)
 - **Parallel test runners**: 4 new scripts for concurrent cross-distro testing
-  - `run-gui-tests-parallel.sh` — Web UI tests across 5 distros simultaneously
-  - `run-cross-distro-tests-parallel.sh` — CLI tests across 5 distros simultaneously
-  - `run-desktop-tests.sh` — Tauri desktop GUI tests (auto-starts app)
-  - `run-all-tests-parallel.sh` — Master runner with `--desktop` flag
+  - `run-gui-tests-parallel.sh`: Web UI tests across 5 distros simultaneously
+  - `run-cross-distro-tests-parallel.sh`: CLI tests across 5 distros simultaneously
+  - `run-desktop-tests.sh`: Tauri desktop GUI tests (auto-starts app)
+  - `run-all-tests-parallel.sh`: Master runner with `--desktop` flag
 - **Scripts documentation**: `scripts/README.md` expanded with +207 lines covering all parallel test workflows
 
 ### Fixed (GUI Tests)
@@ -458,7 +458,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **User-mode systemd**: `systemd install --user` now generates correct user-scoped unit paths
 
 ### Added (Desktop UX)
-- **Keyboard navigation**: Global shortcuts — Ctrl+1-5 (page nav), Alt+T (theme cycle), Escape (close panels/fullscreen), F11 (fullscreen)
+- **Keyboard navigation**: Global shortcuts: Ctrl+1-5 (page nav), Alt+T (theme cycle), Escape (close panels/fullscreen), F11 (fullscreen)
 - **ARIA accessibility**: Full WAI-ARIA tabs pattern (`role="tab"`, `role="tablist"`, `role="tabpanel"`), skip link, `aria-selected`, `aria-live` regions
 - **Shared TabBar component**: Reusable `TabBar` with keyboard nav (ArrowLeft/Right, Home, End) and ARIA, migrated Analysis and Hardening pages
 - **CopyButton component**: Async Clipboard API integration with visual feedback for compliance reports
@@ -477,7 +477,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0] - 2026-02-27
 
-### 1.0.0 — Production Release
+### 1.0.0: Production Release
 
 First stable release. Feature-complete Linux system hardener with 8 security plugins, CLI and desktop GUI, compliance reporting across 6 frameworks, remote SSH scanning, scheduled scanning with notifications, and checkpoint/rollback. Validated across 5 Linux distributions (Arch, Debian, Fedora, Rocky 9, openSUSE).
 
@@ -528,7 +528,7 @@ First stable release. Feature-complete Linux system hardener with 8 security plu
 
 ### Changed (UI Polish Pass 2026-02-24)
 - **Dashboard**: `RecentActivity` card no longer stretches to fill remaining page height
-  - Removed `flex: 1 1 auto` and `min-height: 150px` — card sizes to content
+  - Removed `flex: 1 1 auto` and `min-height: 150px`, card sizes to content
   - Empty-state hint directs users to Quick Actions above
 - **Remote Page**: Empty right panel replaced with numbered quick-start guide
   - Dropped `min-height: 400px` on `.remote-layout`
@@ -679,8 +679,8 @@ First stable release. Feature-complete Linux system hardener with 8 security plu
 
 ### Fixed (GUI Testing 2026-02-23)
 - **GUI Test HTML Generation**: `mock-index.html` removed; `gui-test-inner.sh` now generates `index.html` at
-  serve-time by reading `dist/index.html`, stripping SRI integrity attributes, and injecting `tauri-mock.js`
-  — eliminates hash drift when the WASM bundle changes
+  serve-time by reading `dist/index.html`, stripping SRI integrity attributes, and injecting `tauri-mock.js`,
+  eliminating hash drift when the WASM bundle changes
 
 ### Added (Distribution Validation)
 - **Container Test Scripts**: Distribution-specific container creation scripts

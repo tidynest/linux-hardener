@@ -9,6 +9,7 @@ Author: Eric Jingryd
 """
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import List, Dict, Set
@@ -53,6 +54,17 @@ class NamingValidator:
     def __init__(self, project_root: Path):
         self.project_root = project_root
         self.issues: List[ValidationIssue] = []
+
+        # Em-dash and en-dash are forbidden project-wide (they read as an AI
+        # tell). The scan covers tracked prose and source; use comma, colon,
+        # parentheses, or a plain hyphen instead. See docs/NAMING_CONVENTIONS.md.
+        # Pattern uses unicode escapes (not literal glyphs) so this file does
+        # not flag itself. Matches em-dash, en-dash, and their Rust \u escapes.
+        _em, _en = chr(0x2014), chr(0x2013)
+        self.dash_pattern = re.compile('[' + _em + _en + ']|' + r'\\u\{201[34]\}')
+        self.dash_scan_suffixes = {
+            '.md', '.rs', '.toml', '.py', '.sh', '.txt', '.yml', '.yaml', '.json',
+        }
 
         # Patterns for different naming conventions
         self.patterns = {
@@ -137,6 +149,9 @@ class NamingValidator:
 
             self.validate_file(rust_file)
 
+        # Repo-wide em/en dash scan across tracked prose and source
+        self.check_dashes()
+
         # Print results
         self.print_results()
 
@@ -193,6 +208,39 @@ class NamingValidator:
 
         except Exception as e:
             print(f"⚠️  Error reading {file_path}: {e}")
+
+    def check_dashes(self):
+        """Flag em-dashes and en-dashes in tracked prose and source files."""
+        try:
+            tracked = subprocess.run(
+                ['git', 'ls-files', '-z'],
+                cwd=self.project_root,
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.split('\0')
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            print(f"⚠️  Dash scan skipped (git unavailable): {e}")
+            return
+
+        for rel in tracked:
+            if not rel or Path(rel).suffix not in self.dash_scan_suffixes:
+                continue
+            path = self.project_root / rel
+            try:
+                lines = path.read_text(encoding='utf-8').split('\n')
+            except (OSError, UnicodeDecodeError):
+                continue
+            for line_num, line in enumerate(lines, start=1):
+                if self.dash_pattern.search(line):
+                    self.issues.append(ValidationIssue(
+                        file_path=path,
+                        line_number=line_num,
+                        severity=Severity.ERROR,
+                        category="Forbidden Dash",
+                        issue="Em-dash or en-dash is forbidden project-wide",
+                        suggestion="Use a comma, colon, parentheses, or plain hyphen",
+                    ))
 
     def validate_line(self, file_path: Path, line_num: int, line: str,
                       is_component: bool = False, in_test: bool = False):

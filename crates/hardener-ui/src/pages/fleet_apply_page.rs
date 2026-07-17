@@ -1,4 +1,4 @@
-//! Fleet Apply page — apply/roll back hardening across saved hosts (mutating).
+//! Fleet Apply page: apply/roll back hardening across saved hosts (mutating).
 
 use std::collections::HashSet;
 
@@ -334,7 +334,7 @@ fn render_apply(out: &[ApplyOutcome]) -> String {
                 ApplyStatus::Applied { ok, failed } => format!("applied {ok}, failed {failed}"),
                 ApplyStatus::Failed { error } => format!("ERROR: {error}"),
             };
-            format!("{} ({}) \u{2014} {}", o.name, o.target, s)
+            format!("{} ({}): {}", o.name, o.target, s)
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -353,7 +353,7 @@ fn render_rollback(out: &[RollbackOutcome]) -> String {
                 RollbackStatus::NothingToDo => "nothing to roll back".to_string(),
                 RollbackStatus::Failed { error } => format!("ERROR: {error}"),
             };
-            format!("{} ({}) \u{2014} {}", o.name, o.target, s)
+            format!("{} ({}): {}", o.name, o.target, s)
         })
         .collect::<Vec<_>>()
         .join("\n")

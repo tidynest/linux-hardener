@@ -1,12 +1,12 @@
 //! Report-time compliance-profile identifier translation.
 //!
 //! Plugins always emit canonical control identifiers (RHEL 8 baseline for
-//! STIG, distribution-independent numbering for CIS) — that scheme is the
+//! STIG, distribution-independent numbering for CIS): that scheme is the
 //! project's internal source of truth. When a non-generic profile is active
 //! the report generator passes coverage, curated catalogue, and every
 //! finding's mapping list through [`translate`], so both sides of each match
 //! render the profile's own identifiers. A canonical identifier without a
-//! sourced counterpart drops from the profiled report — honest absence, never
+//! sourced counterpart drops from the profiled report: honest absence, never
 //! a guessed ID.
 
 use hardener_common::types::{ComplianceFramework, ComplianceMapping, ComplianceProfile};
@@ -26,7 +26,7 @@ type Row = (
 /// Every row cites its verified public source; unsourced rules get no row.
 ///
 /// Where one code arm checks two sysctls the canonical id expands to both
-/// RHEL 10 twin rules — a Fail on either fails both, erring only towards
+/// RHEL 10 twin rules: a Fail on either fails both, erring only towards
 /// false-fail. The ssh rows cover the sshd server rules alone; the client
 /// twins (RHEL-10-300030/300050) are out of scope because the plugin checks
 /// sshd only. Every row was additionally verified on its stigviewer.com
@@ -215,7 +215,7 @@ const RHEL10_STIG: &[Row] = &[
         None,
     ),
     // sshd KexAlgorithms: documented drop, no row. KexAlgorithms is verifiably
-    // absent from all 434 V1R1 rules — subsumed by RHEL-10-300010 (FIPS
+    // absent from all 434 V1R1 rules: subsumed by RHEL-10-300010 (FIPS
     // systemwide cryptographic policy), whose check target differs from what
     // the plugin checks, so no mapping is claimed. Since the RHEL 8 V2R7 V-ID
     // fix the Kex check emits no canonical STIG id at all.
@@ -226,7 +226,7 @@ const RHEL10_STIG: &[Row] = &[
 ///
 /// Source for every row: ComplianceAsCode
 /// products/rhel10/controls/cis_rhel10.yml @ db939fa (declares v1.0.1;
-/// authoritative-secondary — the CIS PDF sits behind WorkBench login).
+/// authoritative-secondary; the CIS PDF sits behind WorkBench login).
 /// Sections are reused across schemes with unrelated meanings, so this is a
 /// keyed lookup, never an in-place renumber. Verified drops (2.1.1 xinetd,
 /// 5.2.4 SSH Protocol 2) are documented inline and get no row.
@@ -287,7 +287,7 @@ const RHEL10_CIS: &[Row] = &[
         "Ensure the SELinux mode is enforcing",
         None,
     ),
-    // 2.1.1 (xinetd not installed): documented drop, no row — xinetd no
+    // 2.1.1 (xinetd not installed): documented drop, no row; xinetd no
     // longer exists as a CIS RHEL 10 control (zero matches in the
     // 329-control v1.0.1 tree).
     (
@@ -403,7 +403,7 @@ const RHEL10_CIS: &[Row] = &[
     ),
     // Old-scheme 5.1.8 is cron; job schedulers moved to chapter 2 in v1.0.1.
     // Unrelated to new-scheme 5.1.8 (sshd DisableForwarding, target of 5.2.6
-    // below) — the collision is inert because lookup is keyed on the
+    // below); the collision is inert because lookup is keyed on the
     // canonical id, never an in-place renumber.
     (
         "5.1.8",
@@ -417,7 +417,7 @@ const RHEL10_CIS: &[Row] = &[
         "Ensure access to /etc/ssh/sshd_config is configured",
         None,
     ),
-    // 5.2.4 (SSH Protocol 2): documented drop, no row — the Protocol
+    // 5.2.4 (SSH Protocol 2): documented drop, no row; the Protocol
     // directive is gone from OpenSSH >= 7.6 and the control does not exist
     // in CIS RHEL 10 (zero matches in the v1.0.1 tree).
     (
@@ -470,7 +470,7 @@ const RHEL10_CIS: &[Row] = &[
         "Ensure password length is configured",
         None,
     ),
-    // 5.3.2.2.3 is status Manual in CIS v1.0.1 — the benchmark treats the
+    // 5.3.2.2.3 is status Manual in CIS v1.0.1; the benchmark treats the
     // credit settings as one manual complexity control; the per-credit
     // plugin checks all map here.
     (
@@ -504,7 +504,7 @@ const RHEL10_CIS: &[Row] = &[
         "Ensure password history remember is configured",
         None,
     ),
-    // The 5.4.1.x password-ageing block keeps its numbers in v1.0.1 — the rows
+    // The 5.4.1.x password-ageing block keeps its numbers in v1.0.1; the rows
     // must exist anyway, or the keyed lookup would wrongly DROP them. 5.4.1.3
     // tied by SSG rule identity (accounts_password_warn_age_login_defs appears
     // in that section and nowhere else among the 329 controls).
@@ -819,7 +819,7 @@ mod tests {
     ///   tree; the services plugin still emits it, so it may drop.
     ///
     /// CIS 5.2.4 (SSH Protocol 2) is verified gone too but lives only in the
-    /// curated catalogue — no plugin emits it, so it needs no entry. STIG
+    /// curated catalogue; no plugin emits it, so it needs no entry. STIG
     /// needs none either: the sshd KexAlgorithms check lost its STIG mapping
     /// with the RHEL 8 V2R7 V-ID fix, so every plugin-emitted STIG id has a
     /// sourced row.
@@ -827,7 +827,7 @@ mod tests {
 
     /// Pins the tables against the live plugin surface: every STIG or CIS
     /// mapping any plugin can emit either translates under `Rhel10` or is an
-    /// explicitly documented drop — never a silent disappearance.
+    /// explicitly documented drop, never a silent disappearance.
     #[test]
     fn every_plugin_stig_or_cis_mapping_translates_or_is_a_documented_drop() {
         let coverage = hardener_plugins::compliance_coverage();

@@ -325,7 +325,7 @@ test_dry_run_all_plugins() {
             if "$BINARY" apply --plugin "$plugin" --dry-run &>/dev/null; then
                 log_pass "Dry-run: $plugin"
             else
-                log_pass "Dry-run: $plugin (partial — expected in container)"
+                log_pass "Dry-run: $plugin (partial: expected in container)"
             fi
         else
             run_test "Dry-run: $plugin" "\"$BINARY\" apply --plugin \"$plugin\" --dry-run"
@@ -446,14 +446,14 @@ test_apply_other_plugins() {
     log_header "14. APPLY - OTHER PLUGINS"
 
     # In containers, some plugins return exit 1 due to partial apply (bind-mount
-    # permissions, missing services, etc.). This is expected — not a real failure.
+    # permissions, missing services, etc.). This is expected, not a real failure.
     for plugin in ssh-hardening permissions-hardening pam-hardening firewall-hardening service-minimisation; do
         if [[ "$CONTAINER_MODE" == "true" ]]; then
             log_test "Apply $plugin"
             if "$BINARY" apply --plugin "$plugin" &>/dev/null; then
                 log_pass "Apply $plugin"
             else
-                log_pass "Apply $plugin (partial apply — expected in container)"
+                log_pass "Apply $plugin (partial apply: expected in container)"
             fi
         else
             run_test "Apply $plugin" "\"$BINARY\" apply --plugin \"$plugin\"" || true
@@ -653,12 +653,12 @@ test_per_plugin_lifecycle() {
         before_count=$((before_count + 0))  # ensure numeric
         log_info "Before apply: $before_count findings"
 
-        # APPLY (partial apply expected in containers — some operations can't complete)
+        # APPLY (partial apply expected in containers: some operations can't complete)
         log_test "Lifecycle apply: $full_id"
         if "$BINARY" apply --plugin "$full_id" &>/dev/null; then
             log_pass "Lifecycle apply: $full_id"
         elif [[ "$CONTAINER_MODE" == "true" ]]; then
-            log_pass "Lifecycle apply: $full_id (partial — expected in container)"
+            log_pass "Lifecycle apply: $full_id (partial: expected in container)"
         else
             log_fail "Lifecycle apply: $full_id"
         fi

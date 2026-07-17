@@ -332,7 +332,7 @@ echo ""
 if [[ $overall_exit -eq 0 ]]; then
     echo -e "${GREEN}All distros passed.${NC}"
 else
-    echo -e "${RED}Some distros had failures — check logs.${NC}"
+    echo -e "${RED}Some distros had failures: check logs.${NC}"
 fi
 
 # =============================================================================
@@ -343,7 +343,7 @@ if [[ "$DO_GUI" == "true" ]]; then
     echo ""
     echo -e "${MAGENTA}╔$(printf '═%.0s' $(seq 1 $BOX_W))╗${NC}"
     print_boxline ""
-    print_boxline "   GUI TESTS (Web UI — Playwright)"
+    print_boxline "   GUI TESTS (Web UI: Playwright)"
     print_boxline ""
     echo -e "${MAGENTA}╚$(printf '═%.0s' $(seq 1 $BOX_W))╝${NC}"
     echo ""
@@ -354,7 +354,7 @@ if [[ "$DO_GUI" == "true" ]]; then
     if "$SCRIPT_DIR/run-gui-tests.sh" "${gui_args[@]}"; then
         echo -e "${GREEN}GUI tests passed.${NC}"
     else
-        echo -e "${RED}GUI tests had failures — check test-results/gui/${NC}"
+        echo -e "${RED}GUI tests had failures: check test-results/gui/${NC}"
         overall_exit=1
     fi
 fi

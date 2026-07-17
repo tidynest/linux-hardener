@@ -1,4 +1,4 @@
-//! Schedule configuration section — enable/disable, cron schedule, plugins, severity.
+//! Schedule configuration section: enable/disable, cron schedule, plugins, severity.
 
 use crate::state::AppState;
 use crate::tauri_bindings;
@@ -35,7 +35,7 @@ const PLUGIN_IDS: &[&str] = &[
 pub fn ScheduleSection() -> impl IntoView {
     let app_state = expect_context::<AppState>();
 
-    // Local form state — populated from loaded config via Effect
+    // Local form state: populated from loaded config via Effect
     let enabled = RwSignal::new(false);
     let selected_preset = RwSignal::new(String::new());
     let custom_cron = RwSignal::new(String::new());
@@ -76,7 +76,7 @@ pub fn ScheduleSection() -> impl IntoView {
             .unwrap_or_default()
     };
 
-    // Save handler — merges schedule fields into existing config, preserving notifications
+    // Save handler: merges schedule fields into existing config, preserving notifications
     let handle_save = move |_| {
         let cron = effective_cron();
         let plugins = selected_plugins.get_untracked();

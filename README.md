@@ -22,14 +22,14 @@ A comprehensive Linux security automation tool with multi-distribution support, 
 ## Screenshots
 
 <p align="center">
-  <img src="docs/assets/screenshots/dashboard.png" alt="System Security Dashboard — security score and quick actions" width="820">
+  <img src="docs/assets/screenshots/dashboard.png" alt="System Security Dashboard: security score and quick actions" width="820">
 </p>
 <p align="center">
-  <img src="docs/assets/screenshots/analysis-findings.png" alt="Security Analysis — findings colour-coded by severity" width="49%">
-  <img src="docs/assets/screenshots/hardening.png" alt="System Hardening — security profiles and per-plugin control" width="49%">
+  <img src="docs/assets/screenshots/analysis-findings.png" alt="Security Analysis: findings colour-coded by severity" width="49%">
+  <img src="docs/assets/screenshots/hardening.png" alt="System Hardening: security profiles and per-plugin control" width="49%">
 </p>
 
-<p align="center"><sub>Desktop app (Tauri + Leptos) on the Midnight Teal theme — Dashboard, Security Analysis, and System Hardening from a live host scan.</sub></p>
+<p align="center"><sub>Desktop app (Tauri + Leptos) on the Midnight Teal theme: Dashboard, Security Analysis, and System Hardening from a live host scan.</sub></p>
 
 ---
 
@@ -59,8 +59,8 @@ Linux System Hardener automates the process of securing Linux servers and workst
 - **Reporting** compliance status against CIS, STIG, NIST 800-53, PCI-DSS,
   HIPAA, GDPR, ISO/IEC 27001:2022, SOC 2 (Trust Services Criteria),
   NIST SP 800-171 Revision 3 (Controlled Unclassified Information) and
-  FedRAMP (Moderate Rev 5 baseline of 800-53 controls) —
-  findings are mapped to each framework's
+  FedRAMP (Moderate Rev 5 baseline of 800-53 controls).
+  Findings are mapped to each framework's
   controls (controls the engine cannot automatically assess are flagged for
   manual review rather than assumed compliant). RHEL-10-family hosts are
   assessed against DISA RHEL 10 STIG V1R1 and CIS RHEL 10 Benchmark v1.0.1
@@ -120,14 +120,14 @@ The tool is designed for system administrators, DevOps engineers, and security p
 - **Desktop Application**: Tauri-based native app with Leptos (Rust) frontend
 - **Web Interface**: Runs in browser via Trunk (WASM)
 - **Dark Terminal Theme**: Professional security-focused aesthetic with colour-coded severity states (7 themes including WCAG AAA High Contrast)
-- **Keyboard Navigation**: Full keyboard control — Ctrl+1-5 (pages), Alt+T (themes), Escape (close), F11 (fullscreen), Arrow keys (tabs and grids)
+- **Keyboard Navigation**: Full keyboard control: Ctrl+1-5 (pages), Alt+T (themes), Escape (close), F11 (fullscreen), Arrow keys (tabs and grids)
 - **ARIA Accessibility**: WAI-ARIA tabs, skip link, `aria-selected`, `aria-live` regions, focus management
 - **Progressive Disclosure**: Simple overview with drill-down for details
 - **Real-time Feedback**: Live scan progress and results
 - **Multi-host Fleet View** (desktop): A read-only **Fleet** page scans several
-  saved inventory hosts concurrently and shows each host's severity posture —
-  per-host critical/high/medium/low/info tallies and a colour-coded CIS
-  compliance score — and expands to reveal that host's findings plus a
+  saved inventory hosts concurrently and shows each host's severity posture
+  (per-host critical/high/medium/low/info tallies and a colour-coded CIS
+  compliance score) and expands to reveal that host's findings plus a
   per-framework compliance breakdown (pass/fail/manual/NA counts).
 
 ---
@@ -153,34 +153,38 @@ GUI / desktop:   113 Playwright (Web UI, 5 distros) · 95 desktop (UX + function
 
 ## Architecture
 
-Direct dependencies between the workspace crates (dotted = optional feature or
-WASM bundling rather than a Cargo dependency):
+Workspace crate dependencies, grouped by layer. Every crate also depends on
+`hardener-common` and `hardener-types`; those edges are omitted for clarity.
+Dotted edges are an optional feature or WASM bundling rather than a Cargo
+dependency.
 
 ```mermaid
 graph TD
-    CLI["hardener-cli<br>(CLI binary)"]
-    DESKTOP["linux-hardener-desktop<br>(Tauri backend)"]
-    UI["hardener-ui<br>(Leptos/WASM frontend)"]
-    PLUGINS["hardener-plugins<br>(8 security plugins)"]
-    COMPLIANCE["hardener-compliance<br>(10 frameworks)"]
-    SCHEDULER["hardener-scheduler<br>(scan daemon)"]
-    CORE["hardener-core<br>(plugin trait, executors)"]
-    STATE["hardener-state<br>(checkpoints, audit log)"]
-    DISTRO["hardener-distro<br>(distribution detection)"]
-    COMMON["hardener-common<br>(shared utilities)"]
-    TYPES["hardener-types<br>(WASM-safe shared types)"]
+    subgraph binaries [Binaries]
+        CLI["hardener-cli<br>(CLI binary)"]
+        DESKTOP["linux-hardener-desktop<br>(Tauri backend)"]
+        UI["hardener-ui<br>(Leptos/WASM frontend)"]
+    end
+    subgraph domain [Domain]
+        PLUGINS["hardener-plugins<br>(8 security plugins)"]
+        COMPLIANCE["hardener-compliance<br>(10 frameworks)"]
+        SCHEDULER["hardener-scheduler<br>(scan daemon)"]
+        CORE["hardener-core<br>(plugin trait, executors)"]
+        STATE["hardener-state<br>(checkpoints, audit log)"]
+        DISTRO["hardener-distro<br>(distribution detection)"]
+    end
+    subgraph foundation [Foundation]
+        COMMON["hardener-common<br>(shared utilities)"]
+        TYPES["hardener-types<br>(WASM-safe shared types)"]
+    end
 
-    CLI --> PLUGINS & COMPLIANCE & SCHEDULER & CORE & STATE & DISTRO & COMMON & TYPES
-    DESKTOP --> PLUGINS & COMPLIANCE & SCHEDULER & CORE & STATE & DISTRO & COMMON & TYPES
-    DESKTOP -. "bundles prebuilt WASM dist" .-> UI
-    UI --> TYPES
-    COMPLIANCE --> PLUGINS & CORE & DISTRO & COMMON & TYPES
-    PLUGINS --> CORE & STATE & COMMON
-    SCHEDULER --> CORE & COMMON
+    CLI --> PLUGINS & COMPLIANCE & SCHEDULER & CORE & STATE & DISTRO
+    DESKTOP --> PLUGINS & COMPLIANCE & SCHEDULER & CORE & STATE & DISTRO
+    COMPLIANCE --> PLUGINS & CORE & DISTRO
+    PLUGINS --> CORE & STATE
+    SCHEDULER --> CORE
     CORE -. "optional (system feature)" .-> STATE
-    CORE --> COMMON & TYPES
-    STATE --> COMMON & TYPES
-    DISTRO --> COMMON
+    DESKTOP -. "bundles prebuilt WASM dist" .-> UI
     COMMON --> TYPES
 ```
 
@@ -250,7 +254,7 @@ docker run --rm --pid=host \
 Scan and report run read-only against the mounted host state.
 `systemctl`/D-Bus-dependent checks (services, parts of audit/MAC/firewall)
 degrade to tool-unavailable findings rather than lying, and `apply` is
-unsupported in a container by design — it would need `--privileged` plus host
+unsupported in a container by design: it would need `--privileged` plus host
 namespaces, defeating the isolation. Details in
 [`packaging/docker/README.md`](packaging/docker/README.md).
 
@@ -407,7 +411,7 @@ hardener history list                   # Recent scan sessions
 Every verb in detail:
 
 <details>
-<summary><code>hardener plugins</code> — list available security plugins</summary>
+<summary><code>hardener plugins</code>: list available security plugins</summary>
 
 ```bash
 # List available security plugins
@@ -417,7 +421,7 @@ hardener plugins
 </details>
 
 <details>
-<summary><code>hardener scan</code> — scan the system for security issues</summary>
+<summary><code>hardener scan</code>: scan the system for security issues</summary>
 
 ```bash
 # Scan system for security issues
@@ -449,7 +453,7 @@ hardener scan --compliance --exit-code
 </details>
 
 <details>
-<summary><code>hardener apply</code> — apply hardening recommendations (dry-run available)</summary>
+<summary><code>hardener apply</code>: apply hardening recommendations (dry-run available)</summary>
 
 ```bash
 # Dry-run: see what would be changed without applying
@@ -465,7 +469,7 @@ sudo hardener apply --plugin kernel-hardening
 </details>
 
 <details>
-<summary><code>hardener rollback</code> — restore a previous checkpoint</summary>
+<summary><code>hardener rollback</code>: restore a previous checkpoint</summary>
 
 ```bash
 # Rollback to a previous checkpoint
@@ -475,7 +479,7 @@ sudo hardener rollback <checkpoint-id>
 </details>
 
 <details>
-<summary><code>hardener report</code> — compliance reports against 10 frameworks</summary>
+<summary><code>hardener report</code>: compliance reports against 10 frameworks</summary>
 
 ```bash
 # Interactive report wizard
@@ -492,7 +496,7 @@ hardener report --framework stig --profile rhel10
 </details>
 
 <details>
-<summary><code>hardener checkpoint</code> — create and inspect state snapshots</summary>
+<summary><code>hardener checkpoint</code>: create and inspect state snapshots</summary>
 
 ```bash
 # Create a checkpoint before making changes
@@ -508,7 +512,7 @@ hardener checkpoint show <checkpoint-id>
 </details>
 
 <details>
-<summary><code>hardener history</code> — browse and export past scan sessions</summary>
+<summary><code>hardener history</code>: browse and export past scan sessions</summary>
 
 ```bash
 # View scan history (list recent sessions)
@@ -529,7 +533,7 @@ hardener history export <session-id> --output /path/to/export.json
 </details>
 
 <details>
-<summary><code>hardener daemon</code> — run the scheduled scanning daemon</summary>
+<summary><code>hardener daemon</code>: run the scheduled scanning daemon</summary>
 
 ```bash
 # Start the scheduled scanning daemon
@@ -545,7 +549,7 @@ hardener daemon status --limit 10
 </details>
 
 <details>
-<summary><code>hardener systemd</code> — generate and manage systemd timers</summary>
+<summary><code>hardener systemd</code>: generate and manage systemd timers</summary>
 
 ```bash
 # Generate systemd unit files (outputs to stdout)
@@ -600,7 +604,7 @@ hardener batch scan --host web-01,db-02 --concurrency 16
 # Assess the entire fleet against CIS and print a posture table
 hardener batch report --all --framework cis
 
-# Preview hardening across the fleet (dry-run — no changes made)
+# Preview hardening across the fleet (dry-run, no changes made)
 hardener batch apply --all
 
 # Apply to two hosts, four at a time
@@ -644,9 +648,9 @@ host) and privilege-gated on `--execute`.
 | Arrow keys | Navigate tab bars and findings grid |
 | Enter/Space | Open finding detail |
 
-The desktop app has seven pages. `Ctrl+1`–`5` cover the first five (Dashboard,
-Analysis, Hardening, Remote, Scheduler); the two multi-host pages — **Fleet**
-(read-only fleet scan) and **Fleet Apply** (apply/roll back across hosts) — are
+The desktop app has seven pages. `Ctrl+1`-`5` cover the first five (Dashboard,
+Analysis, Hardening, Remote, Scheduler); the two multi-host pages, **Fleet**
+(read-only fleet scan) and **Fleet Apply** (apply/roll back across hosts), are
 reached from the navigation bar and have no dedicated shortcut yet.
 
 ---
@@ -752,7 +756,7 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 See [ROADMAP.md](ROADMAP.md) for detailed implementation plans for upcoming features.
 
 <details>
-<summary><b>Release history — v0.2.0 → v1.0.0</b> (click to expand)</summary>
+<summary><b>Release history: v0.2.0 → v1.0.0</b> (click to expand)</summary>
 
 ### ✅ v0.2.0
 - [x] Config file support (`~/.config/linux-hardener/`)
@@ -821,9 +825,9 @@ See [ROADMAP.md](ROADMAP.md) for detailed implementation plans for upcoming feat
 - [x] Config file picker in desktop app
 - [x] UI polish pass (side-by-side layouts, card standardisation, responsive fixes)
 - [x] Severity filter in scan results
-- [x] Multi-host management from single UI — **Fleet** scan view, compliance scores, **Fleet Apply** (apply/rollback), ad-hoc SSH targets, live scan progress, and per-host history
-- [~] Historical security trends — CLI `history trends` shipped (per-host; see v1.2.0); desktop trends visualisation deferred
-- [ ] Test on GNOME, KDE, XFCE desktop environments (pkexec/polkit agents) — deferred (human-run; CI validates headless nspawn containers only)
+- [x] Multi-host management from single UI: **Fleet** scan view, compliance scores, **Fleet Apply** (apply/rollback), ad-hoc SSH targets, live scan progress, and per-host history
+- [~] Historical security trends: CLI `history trends` shipped (per-host; see v1.2.0); desktop trends visualisation deferred
+- [ ] Test on GNOME, KDE, XFCE desktop environments (pkexec/polkit agents): deferred (human-run; CI validates headless nspawn containers only)
 
 ### ✅ v1.0.0 - Production Release
 - [x] Security audit completed
@@ -839,10 +843,10 @@ See [ROADMAP.md](ROADMAP.md) for detailed implementation plans for upcoming feat
 - [x] Scheduler regression alerts (`notify_mode`: findings / regression / both)
 - [x] Remote-correct checkpoints (capture/restore through the executor; host-keyed; cross-host restore refused)
 - [x] ISO/IEC 27001:2022 framework + multi-framework finding mappings (STIG/NIST/PCI-DSS/HIPAA/GDPR)
-- [x] CIS coverage completion — 11 CIS controls now genuinely assessed (Pass/Fail); `report --framework cis` shows 6 ManualReview, down from 17
-- [x] PAM/permissions assessment improvements — faillock/pwhistory use threshold comparison; shadow/gshadow use allowed-bits mask (never loosens stricter settings)
-- [x] Desktop **Fleet** view — read-only multi-host scan posture with CIS compliance scores and per-framework breakdown
-- [x] Fleet apply/rollback in the GUI — shells out to the audited `batch apply/rollback`; mandatory dry-run + confirm modal before any change
+- [x] CIS coverage completion: 11 CIS controls now genuinely assessed (Pass/Fail); `report --framework cis` shows 6 ManualReview, down from 17
+- [x] PAM/permissions assessment improvements: faillock/pwhistory use threshold comparison; shadow/gshadow use allowed-bits mask (never loosens stricter settings)
+- [x] Desktop **Fleet** view: read-only multi-host scan posture with CIS compliance scores and per-framework breakdown
+- [x] Fleet apply/rollback in the GUI: shells out to the audited `batch apply/rollback`; mandatory dry-run + confirm modal before any change
 - [x] Polkit desktop-environment test tooling (`scripts/detect-polkit-agent.sh`, `test-polkit-matrix.sh`, DE-specific wrappers, `docs/de-compatibility.md`)
 
 ---

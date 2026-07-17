@@ -121,7 +121,7 @@ fn GlobalHooks() -> impl IntoView {
     let app_state = expect_context::<AppState>();
     keyboard::use_global_keyboard(app_state);
     navigation::use_scroll_and_focus_on_navigate();
-    // Renders nothing — purely side-effect driven
+    // Renders nothing: purely side-effect driven
 }
 
 use wasm_bindgen::JsCast;

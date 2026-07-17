@@ -1,5 +1,5 @@
 #!/bin/bash
-# Functional test suite — tests core app operations, not just keyboard UX
+# Functional test suite: tests core app operations, not just keyboard UX
 # Safe to run while using other windows: every interaction re-focuses the Tauri window.
 set -uo pipefail
 
@@ -9,8 +9,8 @@ declare -a FAILURES=()
 TAURI_ADDR=""
 
 pass() { ((PASS++)); echo "  PASS: $1"; }
-fail() { ((FAIL++)); FAILURES+=("$1 — $2"); echo "  FAIL: $1 — $2"; }
-skip() { ((SKIP++)); echo "  SKIP: $1 — $2"; }
+fail() { ((FAIL++)); FAILURES+=("$1 - $2"); echo "  FAIL: $1 - $2"; }
+skip() { ((SKIP++)); echo "  SKIP: $1 - $2"; }
 section() { echo ""; echo "=== $1 ==="; }
 
 # Cache the Tauri window address once at startup (doesn't change during session)
@@ -25,7 +25,7 @@ for c in json.load(sys.stdin):
   return 0
 }
 
-# Re-focus the Tauri window (fast — just a hyprctl call, ~5ms)
+# Re-focus the Tauri window (fast: just a hyprctl call, ~5ms)
 refocus() {
   hyprctl dispatch focuswindow "address:$TAURI_ADDR" >/dev/null 2>&1
   sleep 0.15
@@ -89,7 +89,7 @@ shot "fn-04-dashboard-score.png"
 pass "Dashboard score screenshot captured"
 
 # ─────────────────────────────────────────────────
-section "3. ANALYSIS PAGE — FINDINGS POPULATED"
+section "3. ANALYSIS PAGE: FINDINGS POPULATED"
 # ─────────────────────────────────────────────────
 
 tw -M ctrl -k 2 -m ctrl; sleep 0.8
@@ -114,7 +114,7 @@ tw -k Home; sleep 0.2
 tw -k Return; sleep 0.5
 
 # ─────────────────────────────────────────────────
-section "4. FINDING DETAIL — CONTENT VERIFICATION"
+section "4. FINDING DETAIL: CONTENT VERIFICATION"
 # ─────────────────────────────────────────────────
 
 # Tab into findings grid
@@ -136,7 +136,7 @@ pass "Different finding selected and displayed"
 tw -k Escape; sleep 0.3
 
 # ─────────────────────────────────────────────────
-section "5. COMPLIANCE TAB — FRAMEWORK SELECTION & REPORT"
+section "5. COMPLIANCE TAB: FRAMEWORK SELECTION & REPORT"
 # ─────────────────────────────────────────────────
 
 tw -M ctrl -k 2 -m ctrl; sleep 0.6
@@ -171,7 +171,7 @@ shot "fn-11-compliance-report.png"
 pass "Generate Reports button activated"
 
 # ─────────────────────────────────────────────────
-section "6. COMPLIANCE — EXPORT FORMAT"
+section "6. COMPLIANCE: EXPORT FORMAT"
 # ─────────────────────────────────────────────────
 
 # Tab to export format dropdown
@@ -222,7 +222,7 @@ shot "fn-16-history-loaded.png"
 pass "Historical scan loaded"
 
 # ─────────────────────────────────────────────────
-section "8. HARDENING — PROFILE SELECTION"
+section "8. HARDENING: PROFILE SELECTION"
 # ─────────────────────────────────────────────────
 
 tw -M ctrl -k 3 -m ctrl; sleep 0.6
@@ -247,7 +247,7 @@ tw -k Up; sleep 0.2
 tw -k Up; sleep 0.3
 
 # ─────────────────────────────────────────────────
-section "9. HARDENING — PLUGIN CHECKBOXES"
+section "9. HARDENING: PLUGIN CHECKBOXES"
 # ─────────────────────────────────────────────────
 
 # Tab to first plugin checkbox
@@ -272,7 +272,7 @@ shot "fn-21-plugins-selected.png"
 pass "Multiple plugins selected"
 
 # ─────────────────────────────────────────────────
-section "10. HARDENING — PREVIEW CHANGES"
+section "10. HARDENING: PREVIEW CHANGES"
 # ─────────────────────────────────────────────────
 
 # Tab past remaining checkboxes to Preview Changes button
@@ -293,7 +293,7 @@ shot "fn-24-preview-cancelled.png"
 pass "Preview cancelled safely"
 
 # ─────────────────────────────────────────────────
-section "11. HARDENING — CHECKPOINT CREATE"
+section "11. HARDENING: CHECKPOINT CREATE"
 # ─────────────────────────────────────────────────
 
 tw -M ctrl -k 3 -m ctrl; sleep 0.6
@@ -318,7 +318,7 @@ shot "fn-26-checkpoint-created.png"
 pass "Create Checkpoint activated"
 
 # ─────────────────────────────────────────────────
-section "12. REMOTE — ADD HOST FORM"
+section "12. REMOTE: ADD HOST FORM"
 # ─────────────────────────────────────────────────
 
 tw -M ctrl -k 4 -m ctrl; sleep 0.6
@@ -364,7 +364,7 @@ shot "fn-30-host-saved.png"
 pass "Host saved"
 
 # ─────────────────────────────────────────────────
-section "13. REMOTE — VERIFY HOST APPEARS IN LIST"
+section "13. REMOTE: VERIFY HOST APPEARS IN LIST"
 # ─────────────────────────────────────────────────
 
 sleep 0.5
@@ -373,7 +373,7 @@ shot "fn-31-host-in-list.png"
 pass "Host list view after save"
 
 # ─────────────────────────────────────────────────
-section "14. REMOTE — DELETE HOST"
+section "14. REMOTE: DELETE HOST"
 # ─────────────────────────────────────────────────
 
 # Tab to delete button area (Connect, Edit, Delete per host)
@@ -392,7 +392,7 @@ pass "Host delete flow executed"
 tw -k Escape; sleep 0.3
 
 # ─────────────────────────────────────────────────
-section "15. SCHEDULER — ENABLE & CONFIGURE"
+section "15. SCHEDULER: ENABLE & CONFIGURE"
 # ─────────────────────────────────────────────────
 
 tw -M ctrl -k 5 -m ctrl; sleep 0.6
@@ -437,7 +437,7 @@ shot "fn-37-schedule-saved.png"
 pass "Schedule saved"
 
 # ─────────────────────────────────────────────────
-section "16. SCHEDULER — NOTIFICATIONS CONFIG"
+section "16. SCHEDULER: NOTIFICATIONS CONFIG"
 # ─────────────────────────────────────────────────
 
 # Tab to Email enable checkbox
@@ -466,7 +466,7 @@ pass "Webhook notifications enabled"
 tw -k Tab; sleep 0.2
 tw -s 60 "https://hooks.example.com/test"; sleep 0.2
 
-# Format dropdown — select Slack
+# Format dropdown: select Slack
 tw -k Tab; sleep 0.2
 tw -k space; sleep 0.3
 tw -k Down; sleep 0.2
@@ -480,7 +480,7 @@ shot "fn-40-notifications-saved.png"
 pass "Notifications saved"
 
 # ─────────────────────────────────────────────────
-section "17. SCHEDULER — TEST NOTIFICATION"
+section "17. SCHEDULER: TEST NOTIFICATION"
 # ─────────────────────────────────────────────────
 
 tw -k Tab; sleep 0.2
@@ -508,7 +508,7 @@ for _ in $(seq 1 6); do
 done
 
 # ─────────────────────────────────────────────────
-section "19. DASHBOARD — VIEW ANALYSIS BUTTON"
+section "19. DASHBOARD: VIEW ANALYSIS BUTTON"
 # ─────────────────────────────────────────────────
 
 tw -M ctrl -k 1 -m ctrl; sleep 0.6
@@ -521,7 +521,7 @@ shot "fn-44-view-analysis-nav.png"
 pass "View Analysis button navigates to Analysis"
 
 # ─────────────────────────────────────────────────
-section "20. DASHBOARD — CONFIGURE HARDENING BUTTON"
+section "20. DASHBOARD: CONFIGURE HARDENING BUTTON"
 # ─────────────────────────────────────────────────
 
 tw -M ctrl -k 1 -m ctrl; sleep 0.6
@@ -534,7 +534,7 @@ shot "fn-45-configure-hardening-nav.png"
 pass "Configure Hardening button navigates to Hardening"
 
 # ─────────────────────────────────────────────────
-section "21. ERROR STATE — REMOTE CONNECT (no real host)"
+section "21. ERROR STATE: REMOTE CONNECT (no real host)"
 # ─────────────────────────────────────────────────
 
 tw -M ctrl -k 4 -m ctrl; sleep 0.6
@@ -542,7 +542,7 @@ tw -M ctrl -k 4 -m ctrl; sleep 0.6
 # Tab to Connect button
 tabtimes 9
 
-# Connect (should fail gracefully — no real host)
+# Connect (should fail gracefully: no real host)
 tw -k Return; sleep 3.0
 shot "fn-46-connect-error.png"
 pass "Remote connect error handled gracefully"
@@ -550,7 +550,7 @@ pass "Remote connect error handled gracefully"
 tw -k Escape; sleep 0.3
 
 # ─────────────────────────────────────────────────
-# CLEANUP — Reset app state
+# CLEANUP: Reset app state
 # ─────────────────────────────────────────────────
 tw -M ctrl -k 1 -m ctrl; sleep 0.5
 

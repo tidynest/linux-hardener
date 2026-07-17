@@ -356,7 +356,7 @@ mod tests {
     #[test]
     fn regression_respects_floor() {
         let prev = prev_session(0, 0, 0, 3); // 3 low
-        let cur = make_summary(0, 0, 0, 5); // 5 low — worse only at Low level
+        let cur = make_summary(0, 0, 0, 5); // 5 low, worse only at Low level
         // Floor High: low changes are below the floor -> not a regression.
         let (send, _) = alert_decision(NotifyMode::Regression, Severity::High, Some(&prev), &cur);
         assert!(!send);

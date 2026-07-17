@@ -92,7 +92,7 @@ const SSH_DIRECTIVES: &[SshConfigDirective] = &[
 /// computed at apply time as the intersection of [`Self::crypto_desired`] (a
 /// hardcoded strong allow-list) with the algorithms the local sshd actually
 /// supports (queried via `ssh -Q`). This guarantees we never emit an algorithm
-/// the host cannot parse — which would make `sshd` refuse to start (lockout).
+/// the host cannot parse, which would make `sshd` refuse to start (lockout).
 #[derive(Clone, Debug)]
 struct SshCryptoDirective {
     /// The directive name as it appears in sshd_config.
@@ -166,7 +166,7 @@ const SSH_CRYPTO_DIRECTIVES: &[SshCryptoDirective] = &[
 /// given category via `ssh -Q <query_arg>` and returns them as a list.
 ///
 /// One algorithm is printed per line. Returns an empty vector if the command is
-/// unavailable or fails — callers treat "no known support" as "set nothing",
+/// unavailable or fails; callers treat "no known support" as "set nothing",
 /// which keeps the host default rather than risking an unparseable value.
 pub async fn supported_algorithms(
     executor: &dyn hardener_core::SystemExecutor,
@@ -198,7 +198,7 @@ pub async fn supported_algorithms(
 /// the hardcoded strong `desired` list, no weak algorithm can ever be emitted;
 /// because every element is also present in `supported`, we never hand `sshd` an
 /// algorithm it cannot parse. An empty result means "host supports none of our
-/// strong choices" — the caller then skips the directive entirely.
+/// strong choices": the caller then skips the directive entirely.
 pub fn select_algorithms(desired: &[&str], supported: &[String]) -> Vec<String> {
     desired
         .iter()
@@ -211,7 +211,7 @@ pub fn select_algorithms(desired: &[&str], supported: &[String]) -> Vec<String> 
 /// running `sshd -t -f <temp>`.
 ///
 /// This runs before the real config is ever written, so a config that would
-/// make the daemon refuse to start is rejected here — no write, no restart, no
+/// make the daemon refuse to start is rejected here: no write, no restart, no
 /// lockout. The temporary file is always removed, including on the error paths.
 pub async fn validate_sshd_config(
     executor: &dyn hardener_core::SystemExecutor,
@@ -361,7 +361,7 @@ fn soc2(id: &str, title: &str) -> ComplianceMapping {
 /// Builds a NIST SP 800-171 Revision 3 mapping. `id` is the requirement
 /// number (e.g. `3.13.11`); `title` the published requirement name; the
 /// section is the requirement's official family. Every id is translated from
-/// this plugin's 800-53 entries via the r3 source-control table — never
+/// this plugin's 800-53 entries via the r3 source-control table, never
 /// invented.
 fn nist171(id: &str, title: &str) -> ComplianceMapping {
     ComplianceMapping {
@@ -374,7 +374,7 @@ fn nist171(id: &str, title: &str) -> ComplianceMapping {
 
 /// Builds a FedRAMP mapping. FedRAMP's control set is NIST 800-53 at the
 /// Moderate (Rev 5) baseline, so `id`/`title` mirror this plugin's 800-53
-/// entries verbatim — each id is checked against the GSA rev5 Moderate
+/// entries verbatim; each id is checked against the GSA rev5 Moderate
 /// baseline before it is mapped, never invented. The section is the control's
 /// 800-53 family.
 fn fedramp(id: &str, title: &str) -> ComplianceMapping {
@@ -771,7 +771,7 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
             },
             // DISA RHEL 8 STIG V2R7 XCCDF (dl.dod.cyber.mil U_RHEL_8_V2R7_STIG.zip):
             // the sshd MACs rule is RHEL-08-010290 / V-230251 (CAT I). The
-            // 010290 = MACs / 010291 = Ciphers pairing is DISA's own numbering —
+            // 010290 = MACs / 010291 = Ciphers pairing is DISA's own numbering,
             // reversed versus intuition, deliberately left as published. The id
             // formerly here, "V-230292", names an unrelated rule in the real
             // benchmark (RHEL-08-010540, separate /var file system, CAT III).
@@ -1068,10 +1068,10 @@ impl HardeningPlugin for SshHardeningPlugin {
 
         // Step 5: Apply each directive.
         for directive in SSH_DIRECTIVES {
-            // Check for a valid exception — skip this directive if exempted
+            // Check for a valid exception: skip this directive if exempted
             if let Some(exception) = config.has_valid_exception(directive.ssh_directive_name) {
                 info!(
-                    "Skipping {} — exception: {}",
+                    "Skipping {} (exception: {})",
                     directive.ssh_directive_name, exception.reason
                 );
                 changes.push(Change {
@@ -1140,7 +1140,7 @@ impl HardeningPlugin for SshHardeningPlugin {
         for crypto in SSH_CRYPTO_DIRECTIVES {
             if let Some(exception) = config.has_valid_exception(crypto.crypto_directive_name) {
                 info!(
-                    "Skipping {} — exception: {}",
+                    "Skipping {} (exception: {})",
                     crypto.crypto_directive_name, exception.reason
                 );
                 changes.push(Change {
@@ -1215,7 +1215,7 @@ impl HardeningPlugin for SshHardeningPlugin {
 
         // Step 5c: Validate the candidate config with `sshd -t` BEFORE touching
         // the live file. If sshd would refuse to start, abort here: no write, no
-        // restart — the running daemon and its config are left fully intact, so
+        // restart; the running daemon and its config are left fully intact, so
         // there is no lockout path.
         if let Err(e) = validate_sshd_config(ctx.executor().as_ref(), &config_content).await {
             error!("Candidate sshd_config failed validation, aborting apply: {e}");

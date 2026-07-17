@@ -129,7 +129,7 @@ Key change: `findings: Signal<Vec<Finding>>` prop replaces internal `app_state.s
 **Step 2: Verify build**
 
 Run: `cargo check -p hardener-ui --target wasm32-unknown-unknown`
-Expected: Compile error in `findings_tab.rs` (calling `FindingsGrid` without prop) — expected, fixed in Task 3.
+Expected: Compile error in `findings_tab.rs` (calling `FindingsGrid` without prop), expected, fixed in Task 3.
 
 ---
 
@@ -182,7 +182,7 @@ fn parse_severity(value: &str) -> Option<Severity> {
 /// Findings tab content displaying the scanner results.
 ///
 /// Contains a severity filter dropdown in the header, the findings grid,
-/// and the detail panel. Filtering is client-side — all findings remain
+/// and the detail panel. Filtering is client-side: all findings remain
 /// in memory and the dropdown instantly adjusts which are visible.
 #[component]
 pub fn FindingsTab() -> impl IntoView {
@@ -280,7 +280,7 @@ Expected: compiles cleanly
 **Step 3: Verify full test suite**
 
 Run: `cargo test --workspace`
-Expected: all tests pass (no test changes needed — this is UI-only)
+Expected: all tests pass (no test changes needed, this is UI-only)
 
 **Step 4: Commit**
 
@@ -309,7 +309,7 @@ cargo tauri dev
 3. Select "High" from dropdown
 4. Confirm count updates to "Y of X findings"
 5. Confirm only High + Critical rows visible
-6. Select "All" — full list returns
+6. Select "All": full list returns
 
 **Step 3: Update ROADMAP.md**
 

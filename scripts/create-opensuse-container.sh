@@ -5,7 +5,7 @@
 # Bootstraps by pulling the official openSUSE Leap container image with podman
 # and exporting its root filesystem. Leap 16 dropped the OBS lxc rootfs tarball,
 # and cross-host `zypper --root` bootstrap fails on the filesystem package's
-# usrmerge scriptlet — the prebuilt image runs its scriptlets natively instead.
+# usrmerge scriptlet: the prebuilt image runs its scriptlets natively instead.
 #
 # Usage:
 #   ./scripts/create-opensuse-container.sh        # Create container
@@ -83,7 +83,7 @@ create_container() {
     log_info "Pulling official openSUSE Leap image via podman..."
 
     # Pull the official image and export its root filesystem. Scriptlets run
-    # inside the native image at build time, so nothing executes on the host —
+    # inside the native image at build time, so nothing executes on the host,
     # this is what makes it work where `zypper --root` from Arch does not.
     local tmp_container="hardener-opensuse-export-$$"
 
@@ -105,7 +105,7 @@ create_container() {
 
     # Sanity: the export must contain a usable base system.
     if [[ ! -x "$CONTAINER_PATH/usr/bin/bash" ]]; then
-        log_error "Image export incomplete — /usr/bin/bash missing"
+        log_error "Image export incomplete: /usr/bin/bash missing"
         rm -rf "$CONTAINER_PATH"
         exit 1
     fi

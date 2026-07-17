@@ -70,7 +70,7 @@ feature-depth = 1
 # A list of advisory IDs to ignore. Note that ignored advisories will still
 # output a note when they are encountered.
 ignore = [
-    # GTK3 bindings (atk/gdk/gtk/glib stack) are unmaintained upstream — gtk-rs has
+    # GTK3 bindings (atk/gdk/gtk/glib stack) are unmaintained upstream, gtk-rs has
     # moved to GTK4, but Tauri v2 / wry still require GTK3 on Linux. Pulled in
     # transitively via wry -> tauri-runtime-wry; no first-party usage, no fix path.
     { id = "RUSTSEC-2024-0411", reason = "gtk3 binding unmaintained (EOL); transitive via wry->tauri" },
@@ -83,7 +83,7 @@ ignore = [
     { id = "RUSTSEC-2024-0418", reason = "gtk3 binding unmaintained (EOL); transitive via wry->tauri" },
     { id = "RUSTSEC-2024-0419", reason = "gtk3 binding unmaintained (EOL); transitive via wry->tauri" },
     { id = "RUSTSEC-2024-0420", reason = "gtk3 binding unmaintained (EOL); transitive via wry->tauri" },
-    # Unmaintained transitive utility/macro crates — no first-party usage, no drop-in replacement.
+    # Unmaintained transitive utility/macro crates: no first-party usage, no drop-in replacement.
     { id = "RUSTSEC-2024-0370", reason = "proc-macro-error unmaintained; transitive build/macro dep" },
     { id = "RUSTSEC-2026-0173", reason = "proc-macro-error2 unmaintained (fork of 2024-0370, also EOL); no safe upgrade; transitive via leptos macro stack, no first-party usage" },
     { id = "RUSTSEC-2024-0436", reason = "paste unmaintained; transitive macro dep" },

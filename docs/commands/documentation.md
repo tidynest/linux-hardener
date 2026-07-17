@@ -30,7 +30,7 @@ Skips the slower validators (`validate_cli_docs.py` and `validate_compliance_doc
 ./scripts/validate_all.py --fix
 ```
 
-Where possible, automatically corrects issues (e.g. outdated "Last Updated" dates). Not all validators support auto-fix — those that don't will still report errors for manual resolution.
+Where possible, automatically corrects issues (e.g. outdated "Last Updated" dates). Not all validators support auto-fix; those that don't will still report errors for manual resolution.
 
 ---
 

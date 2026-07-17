@@ -211,7 +211,7 @@ fn format_timestamp(timestamp: i64) -> String {
 ///
 /// Searches in order: sibling of current exe, dev workspace target,
 /// then PATH via `which`. Every candidate is resolved to a canonical
-/// absolute path before being returned — bare command names are never
+/// absolute path before being returned; bare command names are never
 /// returned to prevent PATH-based privilege escalation through pkexec.
 fn get_hardener_binary_path() -> Result<String, String> {
     // Check sibling directory of current executable (works in dev and production)
@@ -235,7 +235,7 @@ fn get_hardener_binary_path() -> Result<String, String> {
         }
     }
 
-    // Resolve via PATH — capture the actual absolute path from `which`
+    // Resolve via PATH: capture the actual absolute path from `which`
     if let Ok(output) = std::process::Command::new("/usr/bin/which")
         .arg("hardener")
         .output()
@@ -823,7 +823,7 @@ async fn collect_findings() -> Result<Vec<Finding>, String> {
     Ok(findings)
 }
 
-/// Resolves the compliance profile of the machine this desktop runs on —
+/// Resolves the compliance profile of the machine this desktop runs on:
 /// the local report commands always assess the local system. Detection
 /// failure falls back to `Generic`, never an error.
 fn local_profile() -> ComplianceProfile {
@@ -1214,8 +1214,8 @@ async fn scan_with_executor(
 }
 
 /// Best-effort per-host profile resolution: reads `/etc/os-release` through
-/// the host's own executor and resolves it. Any failure — unreadable file,
-/// unparseable content — falls back to `Generic` and never fails the scan.
+/// the host's own executor and resolves it. Any failure (unreadable file,
+/// unparseable content) falls back to `Generic` and never fails the scan.
 async fn detect_host_profile(executor: &dyn hardener_core::SystemExecutor) -> ComplianceProfile {
     if let Ok(content) = executor
         .read_file(std::path::Path::new("/etc/os-release"))
@@ -1234,15 +1234,15 @@ const FLEET_CONCURRENCY: usize = 8;
 /// Scans many hosts concurrently, isolating per-host failure and preserving
 /// input order. `scan_one` produces one host's resolved compliance profile and
 /// scan results (or an error that becomes a `Failed` row). Each returned row
-/// pairs the host's profile with its scan — the profile drives posture scoring
+/// pairs the host's profile with its scan: the profile drives posture scoring
 /// and is `Generic` for failed hosts. `on_progress` fires once per completed
-/// host, in completion order, with (host row, completed count, total) — the
+/// host, in completion order, with (host row, completed count, total): the
 /// UI's live progress hook. Generic so the orchestration is unit-testable
 /// without real SSH or a Tauri app handle.
 ///
 /// ponytail: a spawned task that *panics* (rather than returning `Err`) keeps
 /// its pre-filled `Failed` slot, so the result always has exactly one row per
-/// input host in input order — never a silently dropped host (panicked tasks
+/// input host in input order, never a silently dropped host (panicked tasks
 /// emit no progress event; the scan still ends because the invoke resolves).
 async fn scan_fleet<F, Fut>(
     host_names: Vec<String>,
@@ -1356,7 +1356,7 @@ const FLEET_FRAMEWORKS: [ComplianceFramework; 9] = [
 
 /// Builds the report generator used for fleet compliance scoring (all
 /// `FLEET_FRAMEWORKS` in one pass) under one host's resolved profile.
-/// Built per host — profiles differ across a mixed fleet, so callers fetch
+/// Built per host: profiles differ across a mixed fleet, so callers fetch
 /// coverage once and clone it per host (cheap at fleet scale).
 fn fleet_report_generator(
     profile: ComplianceProfile,
@@ -1400,7 +1400,7 @@ fn adhoc_profile(target: &str) -> Result<RemoteHostProfile, String> {
 /// Scans several hosts concurrently and returns each host's severity posture:
 /// saved inventory hosts by name plus ad-hoc `user@host[:port]` targets.
 /// Read-only: opens a short-lived SSH connection per host, scans, and drops it.
-/// Per-host failure is isolated — a failed host is a `Failed` row whilst the
+/// Per-host failure is isolated: a failed host is a `Failed` row whilst the
 /// others still complete.
 #[tauri::command]
 pub async fn run_fleet_scan(
@@ -1476,7 +1476,7 @@ pub async fn run_fleet_scan(
                 );
 
                 let results = scan_with_executor(executor.clone(), plugin_ids.as_deref()).await?;
-                // The connection is still open — resolve the host's own
+                // The connection is still open: resolve the host's own
                 // compliance profile from its /etc/os-release while it is.
                 Ok((detect_host_profile(executor.as_ref()).await, results))
             }
@@ -1485,7 +1485,7 @@ pub async fn run_fleet_scan(
     )
     .await;
 
-    // Derive each host's compliance posture from the findings already scanned —
+    // Derive each host's compliance posture from the findings already scanned:
     // in-memory, no extra SSH. Each host gets a generator carrying its own
     // resolved profile; the coverage set is fetched once and cloned per host.
     let coverage = hardener_plugins::compliance_coverage();
@@ -1861,7 +1861,7 @@ fn sessions_to_info(
 }
 
 /// Per-host scan history from the scheduler database. Written by `batch scan`
-/// and scheduled scans — GUI fleet scans are in-memory and do not persist
+/// and scheduled scans; GUI fleet scans are in-memory and do not persist
 /// here. `host` is the inventory name or the canonical ad-hoc target.
 #[tauri::command]
 pub async fn get_host_history(
@@ -1890,7 +1890,7 @@ pub async fn get_host_history(
 // ---------------------------------------------------------------------------
 
 /// Runs a fleet apply via the audited CLI. `execute = false` is a dry-run
-/// (preview); `true` mutates. JSON is read regardless of exit code — tiered
+/// (preview); `true` mutates. JSON is read regardless of exit code: tiered
 /// exit codes carry per-host results.
 #[tauri::command]
 pub async fn run_fleet_apply(
@@ -1921,7 +1921,7 @@ pub async fn run_fleet_rollback(
 }
 
 /// Spawns `hardener batch <verb>` and parses its outcome JSON. Shared by apply
-/// and rollback. No pkexec — remote hosts authenticate over SSH via the saved
+/// and rollback. No pkexec: remote hosts authenticate over SSH via the saved
 /// inventory profiles (or the ad-hoc targets) the CLI reads, so the local
 /// `PrivilegedOpGuard` (which serialises local pkexec mutations) deliberately
 /// does not apply here.
@@ -2154,7 +2154,7 @@ mod fleet_tests {
         );
     }
 
-    // The scheduler's session row — distinct from hardener_state::ScanSession.
+    // The scheduler's session row: distinct from hardener_state::ScanSession.
     fn session(
         started_at: i64,
         counts: (i32, i32, i32, i32, i32),
@@ -2198,7 +2198,7 @@ mod fleet_tests {
 
     #[test]
     fn sessions_to_info_take_bounds_rows_but_keeps_last_direction() {
-        // The +1 over-fetch: two sessions, take 1 — the single shown row still
+        // The +1 over-fetch: two sessions, take 1, the single shown row still
         // gets its direction from the older, hidden session.
         let sessions = vec![session(200, (0, 0, 1, 0, 0)), session(100, (0, 0, 1, 0, 0))];
         let rows = sessions_to_info(&sessions, 1);
@@ -2237,7 +2237,7 @@ mod fleet_tests {
         assert_eq!(p.port, 2222);
         assert!(
             adhoc_profile("-oProxyCommand=x").is_err(),
-            "a leading dash must be rejected — ssh would read it as an option"
+            "a leading dash must be rejected: ssh would read it as an option"
         );
         assert!(adhoc_profile("").is_err(), "empty target rejected");
         assert!(

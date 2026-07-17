@@ -441,7 +441,7 @@ async fn test_mac_scan_with_remote_executor() {
 
 #[tokio::test]
 async fn test_mac_apply_skips_exceptions() {
-    // SELinux permissive — but NO setenforce command registered.
+    // SELinux permissive, but NO setenforce command registered.
     // If the plugin tries to call setenforce, the mock will error → test fails.
     let executor = selinux_permissive_executor();
     let mut ctx = Context::with_executor(Arc::new(executor.clone()));

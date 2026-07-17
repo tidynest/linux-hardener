@@ -33,9 +33,9 @@ PASS_MIN_DAYS 1
 PASS_WARN_AGE 7
 "#,
         )
-        // faillock.conf: deny=3 is stricter than the threshold of 5 — compliant
+        // faillock.conf: deny=3 is stricter than the threshold of 5, compliant
         .with_file("/etc/security/faillock.conf", "deny = 3\n")
-        // pwhistory.conf: remember=10 exceeds the minimum of 5 — compliant
+        // pwhistory.conf: remember=10 exceeds the minimum of 5, compliant
         .with_file("/etc/security/pwhistory.conf", "remember = 10\n")
 }
 
@@ -514,7 +514,7 @@ async fn test_pam_apply_respects_directives() {
 
 /// No-loosen contract for threshold directives (CIS 5.3.2/5.3.3): when
 /// faillock/pwhistory already hold a STRICTER value than the compliant boundary,
-/// apply must leave them untouched — never rewrite `deny = 3` up to `deny = 5`.
+/// apply must leave them untouched, never rewrite `deny = 3` up to `deny = 5`.
 #[tokio::test]
 async fn test_pam_apply_never_loosens_stricter_thresholds() {
     // deny = 3 is stricter than the boundary of 5; remember = 10 exceeds the
@@ -778,7 +778,7 @@ async fn pam_apply_refuses_inline_pamd_override() {
                 "/etc/login.defs",
                 "PASS_MAX_DAYS 90\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n",
             )
-            // faillock.conf empty — the inline arg is what counts
+            // faillock.conf empty; the inline arg is what counts
             .with_file("/etc/security/faillock.conf", "")
             .with_file("/etc/security/pwhistory.conf", "remember = 10\n")
             // Non-compliant inline: deny=10 overrides the .conf at runtime

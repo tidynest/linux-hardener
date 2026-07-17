@@ -24,7 +24,7 @@ pub struct ReportGenerator {
 impl ReportGenerator {
     /// Creates a new ReportGenerator.
     ///
-    /// `coverage` is the engine's automated-coverage set — the union of every
+    /// `coverage` is the engine's automated-coverage set: the union of every
     /// control any plugin can assess. Callers obtain it from
     /// `hardener_plugins::compliance_coverage()`; the compliance crate stays
     /// independent of the plugins crate by taking it as a parameter.
@@ -38,7 +38,7 @@ impl ReportGenerator {
     pub fn generate(&self, findings: &[Finding]) -> Vec<ComplianceReport> {
         // Rewrite every mapping list once for the active profile so findings,
         // coverage, and catalogue all match on one identifier scheme. These
-        // are report-internal copies — the caller's findings stay canonical.
+        // are report-internal copies; the caller's findings stay canonical.
         let profile = self.config.profile;
         let findings: Vec<Finding> = findings
             .iter()
@@ -73,7 +73,7 @@ impl ReportGenerator {
             .collect();
 
         // Build the control catalogue: the curated standard (CIS / ISO 27001),
-        // if any — itself profile-translated — merged with the derived coverage
+        // if any (itself profile-translated), merged with the derived coverage
         // set and deduplicated by id. For frameworks without a curated catalogue
         // the result *is* the coverage set, so every listed control is assessed
         // and reports `Pass`/`Fail`.
@@ -452,7 +452,7 @@ mod tests {
     #[test]
     fn noncatalogue_finding_still_surfaces_as_failure() {
         // A finding whose control id is in neither catalogue nor coverage must
-        // still fail — a wrong mapping can only ever over-report a failure.
+        // still fail; a wrong mapping can only ever over-report a failure.
         let mut finding = cis_finding("1.5.1");
         finding
             .finding_compliance

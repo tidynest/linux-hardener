@@ -136,7 +136,7 @@ fn soc2(id: &str, title: &str) -> ComplianceMapping {
 /// Builds a NIST SP 800-171 Revision 3 mapping. `id` is the requirement
 /// number (e.g. `3.13.1`); `title` the published requirement name; the
 /// section is the requirement's official family. Every id is translated from
-/// this plugin's 800-53 entries via the r3 source-control table — never
+/// this plugin's 800-53 entries via the r3 source-control table, never
 /// invented.
 fn nist171(id: &str, title: &str) -> ComplianceMapping {
     let family = if id.starts_with("3.13.") {
@@ -154,7 +154,7 @@ fn nist171(id: &str, title: &str) -> ComplianceMapping {
 
 /// Builds a FedRAMP mapping. FedRAMP's control set is NIST 800-53 at the
 /// Moderate (Rev 5) baseline, so `id`/`title` mirror this plugin's 800-53
-/// entries verbatim — each id is checked against the GSA rev5 Moderate
+/// entries verbatim; each id is checked against the GSA rev5 Moderate
 /// baseline before it is mapped, never invented. The section is the control's
 /// 800-53 family, derived from the id prefix.
 fn fedramp(id: &str, title: &str) -> ComplianceMapping {
@@ -528,7 +528,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
             let id = rule_id(&rule);
             if let Some(exception) = config.has_valid_exception(&id) {
                 info!(
-                    "Skipping firewall rule '{}' — exception: {}",
+                    "Skipping firewall rule '{}' (exception: {})",
                     id, exception.reason
                 );
                 apply_changes.push(Change {

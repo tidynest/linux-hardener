@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# TAURI DESKTOP GUI TEST ORCHESTRATOR — Linux System Hardener
+# TAURI DESKTOP GUI TEST ORCHESTRATOR: Linux System Hardener
 # =============================================================================
 # Runs Tauri desktop tests inside Arch nspawn container (WebKitGTK ABI match).
 #
@@ -72,7 +72,7 @@ Usage: sudo ./scripts/run-tauri-gui-tests.sh
 Runs xdotool-based tests against the real Tauri binary inside an Arch
 systemd-nspawn container with Xvfb virtual display.
 
-Tests real IPC — actual scans, real database writes, real compliance reports.
+Tests real IPC: actual scans, real database writes, real compliance reports.
 Only Arch container is used (WebKitGTK ABI must match host).
 
 Output:

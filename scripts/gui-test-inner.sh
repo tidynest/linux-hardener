@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# GUI TEST INNER SCRIPT — Runs INSIDE systemd-nspawn container
+# GUI TEST INNER SCRIPT: Runs INSIDE systemd-nspawn container
 # =============================================================================
 # Installs deps, sets up Xvfb + HTTP server, runs Playwright tests.
 # Expects /project bind-mount with dist/ and gui-tests/ directories.
@@ -28,36 +28,36 @@ NC='\033[0m'
 
 install_deps() {
     if command -v pacman &>/dev/null; then
-        echo -e "${CYAN}[deps] Arch — installing packages...${NC}"
+        echo -e "${CYAN}[deps] Arch: installing packages...${NC}"
         pacman -Sy --noconfirm --needed \
             python xorg-server-xvfb chromium nodejs npm 2>/dev/null || true
     elif command -v apt-get &>/dev/null; then
-        echo -e "${CYAN}[deps] Debian — installing packages...${NC}"
+        echo -e "${CYAN}[deps] Debian: installing packages...${NC}"
         apt-get update -qq
         DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
             python3 xvfb chromium nodejs npm 2>/dev/null || true
     elif command -v dnf &>/dev/null; then
         # Rocky/RHEL needs EPEL + CRB for Chromium, Xvfb, nodejs
         if grep -qi 'rocky\|rhel\|centos\|alma' /etc/os-release 2>/dev/null; then
-            echo -e "${CYAN}[deps] RHEL/Rocky — enabling EPEL + CRB + Node 20...${NC}"
+            echo -e "${CYAN}[deps] RHEL/Rocky: enabling EPEL + CRB + Node 20...${NC}"
             dnf install -y -q epel-release 2>/dev/null || true
             dnf config-manager --set-enabled crb 2>/dev/null || true
             dnf module reset -y -q nodejs 2>/dev/null || true
             dnf module enable -y -q nodejs:20 2>/dev/null || true
         else
-            echo -e "${CYAN}[deps] Fedora — installing packages...${NC}"
+            echo -e "${CYAN}[deps] Fedora: installing packages...${NC}"
         fi
         dnf install -y -q \
             python3 xorg-x11-server-Xvfb chromium-headless nodejs npm 2>/dev/null || true
     elif command -v zypper &>/dev/null; then
-        echo -e "${CYAN}[deps] openSUSE — installing packages...${NC}"
+        echo -e "${CYAN}[deps] openSUSE: installing packages...${NC}"
         zypper --gpg-auto-import-keys refresh 2>/dev/null || true
         zypper --non-interactive install -y \
             python3 xorg-x11-server-Xvfb chromium \
             nodejs20 npm20 nodejs-common \
             libpango-1_0-0 libicu73_2 Mesa-libGL1 2>/dev/null || true
     else
-        echo -e "${RED}[deps] Unknown distro — skipping package install${NC}"
+        echo -e "${RED}[deps] Unknown distro: skipping package install${NC}"
     fi
 }
 
@@ -143,7 +143,7 @@ run_playwright() {
     echo -e "${CYAN}[playwright] Installing npm dependencies...${NC}"
     cd "$GUI_TESTS"
 
-    # Install Playwright (npm deps only — use system Chromium, not bundled)
+    # Install Playwright (npm deps only: use system Chromium, not bundled)
     npm install --no-audit --no-fund 2>/dev/null
     export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
@@ -205,7 +205,7 @@ trap cleanup EXIT
 
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
-echo "║  GUI TEST RUNNER (Web UI — Playwright)                       ║"
+echo "║  GUI TEST RUNNER (Web UI: Playwright)                       ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 

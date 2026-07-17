@@ -416,10 +416,10 @@ struct Finding {
 ┌──────────────────────────────────────────────────────────────┐
 │  ReportGenerator::new(config, coverage).generate(findings)   │
 │  coverage = hardener_plugins::compliance_coverage()          │
-│   (union of every plugin's coverage() — the assessed set)    │
+│   (union of every plugin's coverage() - the assessed set)    │
 │  ├─ Profile translation (config.profile, default generic):   │
 │  │   findings' mappings, coverage, and curated catalogue all │
-│  │   pass through profiles::translate — rhel10 renders DISA  │
+│  │   pass through profiles::translate - rhel10 renders DISA  │
 │  │   RHEL 10 STIG V1R1 / CIS v1.0.1 ids; unsourced ids drop  │
 │  ├─ Build control catalogue:                                 │
 │  │   • CIS / ISO 27001: curated catalogue (full standard)    │
@@ -432,7 +432,7 @@ struct Finding {
 │      ├─ Determine status:                                    │
 │      │   • Fail: has related findings                        │
 │      │   • Pass: no findings AND control in coverage set      │
-│      │     (Option B — true for every framework)             │
+│      │     (Option B - true for every framework)             │
 │      │   • ManualReview: no findings, control NOT in coverage │
 │      │     (curated CIS/ISO controls the engine can't assess) │
 │      │   • NotApplicable: not relevant to this system         │
@@ -597,7 +597,7 @@ command is added or removed: `src/main.rs` (`generate_handler!`), `build.rs`
 | `run_fleet_apply` | `hosts: Vec<String>`, `plugins: Vec<String>`, `execute: bool` | `Vec<ApplyOutcome>` |
 | `run_fleet_rollback` | `hosts: Vec<String>`, `plugins: Vec<String>`, `execute: bool` | `Vec<RollbackOutcome>` |
 
-`run_fleet_apply` and `run_fleet_rollback` spawn `hardener batch apply`/`rollback --format json` as a subprocess (no pkexec; remote authentication uses each host's saved SSH profile). The child process output is parsed into `Vec<ApplyOutcome>` / `Vec<RollbackOutcome>` respectively. `execute: false` (the default) is a dry-run preview — it omits `--execute`; the Fleet Apply page enforces a dry-run before showing the confirmation modal. `list_plugins` returns the available plugin metadata and is shared with the Fleet Apply page for its plugin multi-select.
+`run_fleet_apply` and `run_fleet_rollback` spawn `hardener batch apply`/`rollback --format json` as a subprocess (no pkexec; remote authentication uses each host's saved SSH profile). The child process output is parsed into `Vec<ApplyOutcome>` / `Vec<RollbackOutcome>` respectively. `execute: false` (the default) is a dry-run preview: it omits `--execute`; the Fleet Apply page enforces a dry-run before showing the confirmation modal. `list_plugins` returns the available plugin metadata and is shared with the Fleet Apply page for its plugin multi-select.
 
 **Scheduler**
 
@@ -1123,7 +1123,7 @@ pub struct Daemon {
          ▼
 ┌──────────────────────────────────────────────────────────────┐
 │  src-tauri/src/commands.rs::run_fleet_scan()                 │
-│  ├─ #[tauri::command] — registered in main.rs                │
+│  ├─ #[tauri::command] - registered in main.rs                │
 │  ├─ Validates plugin_ids via validate_plugin_ids()           │
 │  ├─ Validates each host_name via validate_ipc_string()       │
 │  └─ Calls scan_fleet(host_names, plugin_ids)                 │
@@ -1131,7 +1131,7 @@ pub struct Daemon {
          │
          ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  scan_fleet() — generic bounded-concurrent orchestrator      │
+│  scan_fleet() - generic bounded-concurrent orchestrator      │
 │  ├─ tokio::sync::Semaphore cap 8 (bounded parallelism)       │
 │  ├─ Per-host output slots pre-filled (panic-safe ordering)   │
 │  ├─ Input order preserved in result Vec                      │
@@ -1214,7 +1214,7 @@ impl SeverityTallies {
     pub fn from_results(results: &[ScanResult]) -> Self;
 }
 
-/// Per-framework compliance posture for a fleet host (summary only — no
+/// Per-framework compliance posture for a fleet host (summary only, no
 /// per-control detail, which already travels in `FleetHostScan::scan_results`).
 pub struct FleetFrameworkPosture {
     pub framework: ComplianceFramework,
@@ -1272,7 +1272,7 @@ pub enum RollbackStatus {
 
 | Aspect | Remote page (single host) | Fleet page (many hosts) |
 |--------|--------------------------|------------------------|
-| Connection | Persistent — connect once, scan, disconnect | Per-scan — connect, scan, drop |
+| Connection | Persistent: connect once, scan, disconnect | Per-scan: connect, scan, drop |
 | Concurrency | Sequential (one host at a time) | Up to 8 hosts in parallel |
 | State | `AppState` remote signals | Page-local Leptos signals |
 | Checkpoint/Audit | N/A (scan only) | N/A (scan only, structurally) |

@@ -79,7 +79,7 @@ pub async fn create_checkpoint_for_apply(
 
 /// Creates a metadata-only checkpoint before applying permission changes.
 ///
-/// Captures only mode/uid/gid for each path — no file contents, no recursion.
+/// Captures only mode/uid/gid for each path: no file contents, no recursion.
 /// Suitable for plugins that only modify permissions or ownership.
 pub async fn create_checkpoint_metadata_only_for_apply(
     ctx: &hardener_core::Context,

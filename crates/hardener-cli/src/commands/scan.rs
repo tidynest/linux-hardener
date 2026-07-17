@@ -1,4 +1,4 @@
-//! Scan command — runs security plugins with filtering and persists results to history.
+//! Scan command: runs security plugins with filtering and persists results to history.
 
 use crate::cli::{OutputFormat, ScanMode, SeverityFilter};
 use crate::commands::daemon::load_scheduler_config;
@@ -186,7 +186,7 @@ fn is_valid_plugin_name(name: &str, valid_ids: &[&str]) -> bool {
 
 /// Persists scan results to the history database.
 ///
-/// Failures are logged but do not propagate — scan output is already displayed,
+/// Failures are logged but do not propagate; scan output is already displayed,
 /// so history persistence is best-effort.
 async fn persist_scan_session(results: &[(PluginMetadata, Vec<Finding>)]) {
     let db = match open_history_db().await {

@@ -113,7 +113,7 @@ rm -rf /var/lib/linux-hardener
 info "Cleaned /var/lib/linux-hardener"
 
 # =============================================================================
-# TEST 1: KERNEL PLUGIN — sysctl values + config file
+# TEST 1: KERNEL PLUGIN: sysctl values + config file
 # =============================================================================
 header "TEST 1: KERNEL PLUGIN ROLLBACK"
 
@@ -170,7 +170,7 @@ if [[ -n "$KERNEL_CP" ]]; then
 fi
 
 # =============================================================================
-# TEST 2: SSH PLUGIN — sshd_config content restoration
+# TEST 2: SSH PLUGIN: sshd_config content restoration
 # =============================================================================
 header "TEST 2: SSH PLUGIN ROLLBACK"
 
@@ -224,11 +224,11 @@ else
 fi
 
 # =============================================================================
-# TEST 3: PERMISSIONS PLUGIN — directory mode restoration
+# TEST 3: PERMISSIONS PLUGIN: directory mode restoration
 # =============================================================================
 header "TEST 3: PERMISSIONS PLUGIN ROLLBACK"
 
-# Record BEFORE state — /root permissions
+# Record BEFORE state: /root permissions
 BEFORE_ROOT_MODE=$(stat -c '%a' /root 2>/dev/null || echo "N/A")
 info "BEFORE: /root mode=$BEFORE_ROOT_MODE"
 
@@ -305,14 +305,14 @@ header "TEST 5: MULTI-PLUGIN CHECKPOINT ORDERING"
 # Clean checkpoints
 rm -rf /var/lib/linux-hardener
 
-# Apply two plugins sequentially — each creates its own checkpoint
+# Apply two plugins sequentially: each creates its own checkpoint
 info "Applying kernel-hardening..."
 "$BINARY" apply --plugin kernel-hardening 2>&1 >/dev/null || true
 
 info "Applying ssh-hardening..."
 "$BINARY" apply --plugin ssh-hardening 2>&1 >/dev/null || true
 
-# List checkpoints — should have at least 2
+# List checkpoints: should have at least 2
 CP_COUNT=$("$BINARY" checkpoint list 2>&1 | grep -cE 'cp_[0-9]+_[a-f0-9]+' || echo "0")
 info "Checkpoint count: $CP_COUNT"
 

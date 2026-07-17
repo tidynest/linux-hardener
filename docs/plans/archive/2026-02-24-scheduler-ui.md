@@ -10,11 +10,11 @@
 
 ## Task 1: WASM-safe Scheduler Types in hardener-types
 
-The `SchedulerConfig` in `hardener-scheduler` depends on `PathBuf`, `libc`, `HashMap` — too heavy for WASM. We need a lightweight mirror in `hardener-types` that the frontend can deserialise.
+The `SchedulerConfig` in `hardener-scheduler` depends on `PathBuf`, `libc`, `HashMap`: too heavy for WASM. We need a lightweight mirror in `hardener-types` that the frontend can deserialise.
 
 **Files:**
 - Create: `crates/hardener-types/src/scheduler.rs`
-- Modify: `crates/hardener-types/src/lib.rs:13` — add `pub mod scheduler;`
+- Modify: `crates/hardener-types/src/lib.rs:13`, add `pub mod scheduler;`
 
 **Step 1: Create the WASM-safe scheduler types**
 
@@ -48,7 +48,7 @@ pub struct NotificationUiConfig {
     pub webhooks: WebhookUiConfig,
 }
 
-/// Email notification settings (GUI subset — no SMTP internals).
+/// Email notification settings (GUI subset: no SMTP internals).
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct EmailUiConfig {
@@ -95,14 +95,14 @@ feat(types): add WASM-safe scheduler UI config types
 
 ---
 
-## Task 2: Tauri IPC Commands — get, save, test
+## Task 2: Tauri IPC Commands: get, save, test
 
 Three new commands in the Tauri backend that read/write the `[scheduler]` section of `config.toml` and dispatch a test notification.
 
 **Files:**
-- Modify: `src-tauri/src/commands.rs` — add `get_scheduler_config`, `save_scheduler_config`, `test_notification`
-- Modify: `src-tauri/src/main.rs` — register the 3 new commands
-- Modify: `src-tauri/Cargo.toml` — add `hardener-scheduler` dependency (for config types and notification dispatcher)
+- Modify: `src-tauri/src/commands.rs`, add `get_scheduler_config`, `save_scheduler_config`, `test_notification`
+- Modify: `src-tauri/src/main.rs`, register the 3 new commands
+- Modify: `src-tauri/Cargo.toml`, add `hardener-scheduler` dependency (for config types and notification dispatcher)
 
 **Step 1: Add hardener-scheduler dependency to Tauri**
 
@@ -118,7 +118,7 @@ And `hardener-types`:
 hardener-types = { path = "../crates/hardener-types" }
 ```
 
-(Check if `hardener-types` is already present — it may be pulled transitively.)
+(Check if `hardener-types` is already present: it may be pulled transitively.)
 
 **Step 2: Add a helper to get the config file path**
 
@@ -318,8 +318,8 @@ feat(tauri): add scheduler config IPC commands
 Wire the three new Tauri commands into the WASM binding layer.
 
 **Files:**
-- Modify: `crates/hardener-ui/src/tauri_bindings.rs:341` — add 3 new functions
-- Modify: `crates/hardener-ui/src/types.rs:1` — re-export scheduler types
+- Modify: `crates/hardener-ui/src/tauri_bindings.rs:341`, add 3 new functions
+- Modify: `crates/hardener-ui/src/types.rs:1`, re-export scheduler types
 
 **Step 1: Add type re-exports**
 
@@ -393,9 +393,9 @@ feat(ui): add WASM bindings for scheduler IPC commands
 Add scheduler-specific signals to AppState.
 
 **Files:**
-- Modify: `crates/hardener-ui/src/state/mod.rs:2` — import `SchedulerUiConfig`
-- Modify: `crates/hardener-ui/src/state/mod.rs:12-55` — add 3 new signals
-- Modify: `crates/hardener-ui/src/state/mod.rs:58-79` — add defaults
+- Modify: `crates/hardener-ui/src/state/mod.rs:2`, import `SchedulerUiConfig`
+- Modify: `crates/hardener-ui/src/state/mod.rs:12-55`, add 3 new signals
+- Modify: `crates/hardener-ui/src/state/mod.rs:58-79`, add defaults
 
 **Step 1: Add import**
 
@@ -443,14 +443,14 @@ The main page with two Card sections.
 
 **Files:**
 - Create: `crates/hardener-ui/src/pages/scheduler_page.rs`
-- Modify: `crates/hardener-ui/src/pages/mod.rs` — add module + re-export
+- Modify: `crates/hardener-ui/src/pages/mod.rs`, add module + re-export
 
 **Step 1: Create the page component**
 
 In `crates/hardener-ui/src/pages/scheduler_page.rs`:
 
 ```rust
-//! Scheduler configuration page — manage scan schedules and notifications.
+//! Scheduler configuration page: manage scan schedules and notifications.
 
 use crate::components::Card;
 use crate::components::{NotificationSection, ScheduleSection};
@@ -498,7 +498,7 @@ pub mod scheduler_page;
 pub use scheduler_page::SchedulerPage;
 ```
 
-**Step 3: Commit** (will fail to compile until Task 6 — that's expected, commit after Task 6)
+**Step 3: Commit** (will fail to compile until Task 6, that's expected, commit after Task 6)
 
 ---
 
@@ -512,7 +512,7 @@ The schedule configuration form: enabled toggle, preset dropdown, custom cron, p
 **Step 1: Create the component**
 
 ```rust
-//! Schedule configuration section — enable/disable, cron schedule, plugins, severity.
+//! Schedule configuration section: enable/disable, cron schedule, plugins, severity.
 
 use crate::state::AppState;
 use crate::tauri_bindings;
@@ -536,7 +536,7 @@ const PLUGIN_IDS: &[&str] = &[
 pub fn ScheduleSection() -> impl IntoView {
     let app_state = expect_context::<AppState>();
 
-    // Local form state — populated from loaded config via Effect
+    // Local form state: populated from loaded config via Effect
     let enabled = RwSignal::new(false);
     let selected_preset = RwSignal::new(String::new());
     let custom_cron = RwSignal::new(String::new());
@@ -764,7 +764,7 @@ pub fn ScheduleSection() -> impl IntoView {
 }
 ```
 
-**Step 2: Commit** (combined with Task 7 — both components needed before page compiles)
+**Step 2: Commit** (combined with Task 7, both components needed before page compiles)
 
 ---
 
@@ -778,7 +778,7 @@ Email config, webhook config, and test button.
 **Step 1: Create the component**
 
 ```rust
-//! Notification configuration section — email, webhook, and test button.
+//! Notification configuration section: email, webhook, and test button.
 
 use crate::state::AppState;
 use crate::tauri_bindings;
@@ -1068,9 +1068,9 @@ feat(ui): add ScheduleSection and NotificationSection components
 Wire the SchedulerPage into the router and nav bar.
 
 **Files:**
-- Modify: `crates/hardener-ui/src/lib.rs:15` — import SchedulerPage
-- Modify: `crates/hardener-ui/src/lib.rs:60` — add nav link
-- Modify: `crates/hardener-ui/src/lib.rs:94` — add route
+- Modify: `crates/hardener-ui/src/lib.rs:15`, import SchedulerPage
+- Modify: `crates/hardener-ui/src/lib.rs:60`, add nav link
+- Modify: `crates/hardener-ui/src/lib.rs:94`, add route
 
 **Step 1: Add import** (line 15)
 
@@ -1113,7 +1113,7 @@ feat(ui): add Scheduler page route and navigation link
 Add styles for the scheduler form components.
 
 **Files:**
-- Modify: `crates/hardener-ui/styles.css` — append scheduler styles
+- Modify: `crates/hardener-ui/styles.css`, append scheduler styles
 
 **Step 1: Add styles**
 
@@ -1250,7 +1250,7 @@ feat(ui): add scheduler page styles
 Add mock handlers for the 3 new scheduler commands.
 
 **Files:**
-- Modify: `gui-tests/tauri-mock.js` — add handlers before the `default:` case (around line 545)
+- Modify: `gui-tests/tauri-mock.js`, add handlers before the `default:` case (around line 545)
 
 **Step 1: Add mock state and handlers**
 
@@ -1301,9 +1301,9 @@ feat(test): add scheduler IPC mocks to tauri-mock.js
 Update ROADMAP, CHANGELOG, and FILE_MAP.
 
 **Files:**
-- Modify: `docs/ROADMAP.md` — mark Scheduler UI complete
-- Modify: `docs/CHANGELOG.md` — add entry
-- Modify: `docs/FILE_MAP.md` — add new files (if this file exists)
+- Modify: `docs/ROADMAP.md`, mark Scheduler UI complete
+- Modify: `docs/CHANGELOG.md`, add entry
+- Modify: `docs/FILE_MAP.md`, add new files (if this file exists)
 
 **Step 1: Update ROADMAP**
 
@@ -1326,10 +1326,10 @@ Add under today's date:
 
 Add new files:
 ```
-crates/hardener-types/src/scheduler.rs         — WASM-safe scheduler config types
-crates/hardener-ui/src/pages/scheduler_page.rs — Scheduler page component
-crates/hardener-ui/src/components/schedule_section.rs     — Schedule config form
-crates/hardener-ui/src/components/notification_section.rs — Notification config form
+crates/hardener-types/src/scheduler.rs         - WASM-safe scheduler config types
+crates/hardener-ui/src/pages/scheduler_page.rs: Scheduler page component
+crates/hardener-ui/src/components/schedule_section.rs     - Schedule config form
+crates/hardener-ui/src/components/notification_section.rs: Notification config form
 ```
 
 **Step 4: Commit**

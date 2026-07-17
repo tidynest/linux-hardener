@@ -51,12 +51,12 @@ Features that can be deferred to later versions.
 | **Compliance mode toggle** | `scan --compliance` | P2 | Policy violation focus |
 | **Plugin listing** | `plugins` command | P2 | Know what's available |
 | **Checkpoint details** | `checkpoint show` | P2 | View checkpoint contents |
-| **Remote scanning (single host)** | `--ssh` flags | P3 | Complex SSH config UI — ✅ COMPLETE (Remote page) |
-| **Fleet scanning (read-only)** | `batch scan` | P3 | Multi-host concurrent scan in GUI — ✅ COMPLETE (Fleet page) |
-| **Fleet apply / rollback** | `batch apply`, `batch rollback` | P3 | Write operations across fleet — ✅ COMPLETE (Fleet Apply page) |
-| **Fleet compliance columns** | `batch report` | P3 | Per-host compliance score in GUI — ✅ COMPLETE (Fleet page CIS columns) |
-| **Scheduler UI** | `daemon` commands | P3 | Daemon management — ✅ COMPLETE (Scheduler page) |
-| **Config file picker** | `--config FILE` | P3 | Power user feature — ✅ COMPLETE |
+| **Remote scanning (single host)** | `--ssh` flags | P3 | Complex SSH config UI, ✅ COMPLETE (Remote page) |
+| **Fleet scanning (read-only)** | `batch scan` | P3 | Multi-host concurrent scan in GUI, ✅ COMPLETE (Fleet page) |
+| **Fleet apply / rollback** | `batch apply`, `batch rollback` | P3 | Write operations across fleet, ✅ COMPLETE (Fleet Apply page) |
+| **Fleet compliance columns** | `batch report` | P3 | Per-host compliance score in GUI, ✅ COMPLETE (Fleet page CIS columns) |
+| **Scheduler UI** | `daemon` commands | P3 | Daemon management, ✅ COMPLETE (Scheduler page) |
+| **Config file picker** | `--config FILE` | P3 | Power user feature, ✅ COMPLETE |
 
 ---
 

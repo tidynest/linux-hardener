@@ -33,7 +33,7 @@ impl RemoteHostProfile {
     /// Parses an ad-hoc `user@host[:port]` target into a profile. A `:port`
     /// suffix overrides `port` (the caller's default); `name` is the bare
     /// hostname, matching the CLI's inline-host convention. Shared by the CLI's
-    /// `--ssh` flag and the desktop's ad-hoc fleet hosts — one parser, no
+    /// `--ssh` flag and the desktop's ad-hoc fleet hosts: one parser, no
     /// drift. ponytail: unbracketed IPv6 keeps its default port (no unambiguous
     /// `host:port` form); add bracketed `[addr]` support only if a user needs it.
     pub fn from_target(

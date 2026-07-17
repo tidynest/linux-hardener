@@ -16,7 +16,7 @@ const ENCRYPTED_KEY_MAGIC: &[u8; 4] = b"LSH1";
 ///
 /// Supports both signing and verification-only modes.
 /// When only a public key is available, sign operations will fail
-/// but verification still works — providing trust separation (SAM-014).
+/// but verification still works, providing trust separation (SAM-014).
 #[derive(Clone)]
 pub struct CheckpointSigner {
     signing_key: Option<SigningKey>,
@@ -113,7 +113,7 @@ impl CheckpointSigner {
         let raw_key = if file_bytes.starts_with(ENCRYPTED_KEY_MAGIC) {
             Self::decrypt_key(&file_bytes)?
         } else if file_bytes.len() == 32 {
-            // Legacy unencrypted format — migrate to encrypted on next save
+            // Legacy unencrypted format: migrate to encrypted on next save
             file_bytes
         } else {
             return Err(HardeningError::Config(

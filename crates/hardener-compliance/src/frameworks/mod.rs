@@ -3,7 +3,7 @@
 //! Only CIS and ISO/IEC 27001:2022 ship a hand-curated control catalogue. Every
 //! other framework's catalogue is *derived* from the live plugin coverage set at
 //! report time (see `generator::ReportGenerator`), so the controls it reports are
-//! exactly the ones the engine actually assesses — a single source of truth, no
+//! exactly the ones the engine actually assesses: a single source of truth, no
 //! hand-maintained crosswalk to drift out of sync.
 
 pub mod cis;

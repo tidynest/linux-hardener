@@ -1,4 +1,4 @@
-//! CLI output formatting — multiplexes between JSON and coloured terminal output.
+//! CLI output formatting: multiplexes between JSON and coloured terminal output.
 
 use colored::Colorize;
 use hardener_common::types::Severity;

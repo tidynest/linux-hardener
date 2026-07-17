@@ -2,17 +2,17 @@
 
 This document tracks validation testing across supported Linux distributions.
 
-**Last full cross-distro validation:** hardener **1.1.0** (CLI suite, 2026-06-28 — see [v1.1.0 Re-validation](#v110-re-validation-2026-06-28))
-**Baseline validation:** hardener 0.3.3 (2026-02-23 — detailed per-distro sections below remain the reference breakdown)
+**Last full cross-distro validation:** hardener **1.1.0** (CLI suite, 2026-06-28, see [v1.1.0 Re-validation](#v110-re-validation-2026-06-28))
+**Baseline validation:** hardener 0.3.3 (2026-02-23, detailed per-distro sections below remain the reference breakdown)
 **Container set:** unchanged since baseline (Arch rolling, Debian 12, Fedora 41, Rocky 9, openSUSE Leap 15.6); distro-version refresh still pending
 
 > **Currency note (2026-06-28):** the v1.1.0 binary has now been re-validated
 > across all five containers (see [v1.1.0 Re-validation](#v110-re-validation-2026-06-28)).
-> However, the **container distro versions are unchanged** from the baseline run —
+> However, the **container distro versions are unchanged** from the baseline run,
 > newer stable releases (**Debian 13 "Trixie", Ubuntu 26.04 LTS, Fedora 44,
 > RHEL 10, openSUSE Leap 16**) have **not** yet been validated, as that requires
 > recreating the containers. Family-based detection still routes them correctly.
-> **openSUSE Leap 15.x reached end-of-life in April 2026** — re-pin the SUSE
+> **openSUSE Leap 15.x reached end-of-life in April 2026:** re-pin the SUSE
 > container target to Leap 16 when refreshing. The version refresh remains a P3
 > task in `NEXT.md`.
 
@@ -28,11 +28,11 @@ This document tracks validation testing across supported Linux distributions.
 | Rocky Linux | Red Hat | 9 | 2026-06-28 | 127 | 127 | 0 | 6 | 100% | VALIDATED |
 | openSUSE | SUSE | Leap 15.6 | 2026-06-28 | 127 | 127 | 0 | 6 | 100% | VALIDATED |
 
-> **v1.1.0 (2026-06-28), clean run — 127/127 on all five.** The suite grew from
+> **v1.1.0 (2026-06-28), clean run: 127/127 on all five.** The suite grew from
 > 123 to 127 tests: ISO/IEC 27001:2022 added as the 7th report framework, plus
 > `history trends`/`history regressions` cases. Two harness issues found and fixed during
-> re-validation — stale `daemon status` invocations and an intermittent JSON-grep
-> flake — are written up under [v1.1.0 Re-validation](#v110-re-validation-2026-06-28).
+> re-validation (stale `daemon status` invocations and an intermittent JSON-grep
+> flake) are written up under [v1.1.0 Re-validation](#v110-re-validation-2026-06-28).
 > No product regressions. The musl static binary works across all glibc versions.
 
 > **Note on family coverage:** Each validated distribution covers its entire family:
@@ -48,7 +48,7 @@ This document tracks validation testing across supported Linux distributions.
 
 ## Docker Image Validation (2026-07-17)
 
-The container image (`packaging/docker/Dockerfile` — `rust:1.97-alpine` build
+The container image (`packaging/docker/Dockerfile`, `rust:1.97-alpine` build
 stage, `FROM scratch` runtime carrying only the static musl binary) was built
 from a clean tree and validated on the Arch host (Docker 29.6.1). The image
 supports **scan and report only**; `apply` is unsupported in-container by
@@ -57,22 +57,22 @@ design and was deliberately not validated. Usage and the capability boundary:
 
 | Item | Result |
 |------|--------|
-| `docker build -f packaging/docker/Dockerfile .` (repo root context) | OK — 5 m 40 s cold build, image 13.6 MB |
+| `docker build -f packaging/docker/Dockerfile .` (repo root context) | OK: 5 m 40 s cold build, image 13.6 MB |
 | Binary in image | `hardener 1.2.2`, static-pie, stripped |
 | Documented scan (`--pid=host`, `/etc` `/var/log` `/usr/lib` read-only, `scan --format json`) | Exit 0, valid JSON, 19 findings |
 | Same scan as `--user 1000:1000` | Identical to the root-in-container run (19 findings, same IDs) |
 | Native run of the identical binary (extracted from image, non-root host user) | 20 findings |
 | Scan with additional `-v /boot:/boot:ro -v /root:/root:ro` | 21 findings (= native 20 + audit degradation below) |
-| `report --framework cis` in-container | Exit 0 — 44 controls: 26 pass, 12 fail, 6 manual review |
+| `report --framework cis` in-container | Exit 0, 44 controls: 26 pass, 12 fail, 6 manual review |
 
 **Finding-ID delta, container vs native (same binary, so the delta isolates
-the container environment — exactly 3 IDs differ):**
+the container environment: exactly 3 IDs differ):**
 
 - `permissions-hardening`: `perm--root` (0750) and `perm--boot` (0755) are
   absent in-container because `/root` and `/boot` sit outside the documented
   mounts; mounting them read-only restores both findings.
 - `audit-hardening`: the container adds `audit_not_installed` because it
-  cannot see the host's service manager (auditd is running on the host) — the
+  cannot see the host's service manager (auditd is running on the host): the
   documented tool-unavailable degradation, to be read as *unverifiable
   in-container*, not as host truth.
 - Every other finding ID is identical (kernel 4, mac 1, pam 10, ssh 3,
@@ -87,7 +87,7 @@ Remote `--ssh` operations are unavailable in the image (no ssh client binary).
 The v1.1.0 musl static binary (`hardener 1.1.0`, ~13.6 MB, `static-pie`) was run
 through the full CLI suite (`sudo ./scripts/run-cross-distro-tests.sh --apply`)
 across all five containers. The GUI/Playwright suite was **subsequently re-run and
-is green on all five distros** (113 tests across 9 specs, 2026-06-29 — adds fleet,
+is green on all five distros** (113 tests across 9 specs, 2026-06-29, adds fleet,
 fleet-apply, remote, and scheduler coverage).
 
 ### Result (final, all harness fixes applied)
@@ -100,21 +100,21 @@ fleet-apply, remote, and scheduler coverage).
 | rhel (Rocky 9) | 127 | 127 | 0 | 6 | 0 |
 | opensuse | 127 | 127 | 0 | 6 | 0 |
 
-### Failure analysis — no product regressions
+### Failure analysis: no product regressions
 
 The validation ran in two passes; every failure was triaged directly against the
 v1.1.0 binary, which emits all expected output correctly.
 
-**Pass 1 — stale test/doc drift (fixed).** `daemon status` failed on all 5 distros
+**Pass 1: stale test/doc drift (fixed).** `daemon status` failed on all 5 distros
 because the suite (and the README) used the pre-v1.1.0 positional form
 `daemon status 5`; v1.1.0 renamed it to `-l, --limit <N>`, so the old form errors
 (`unexpected argument '5'`, exit 2). Fixed both suite invocations to `--limit 5`
 and corrected the README. **Confirmed:** every `daemon status` test passes on all
 5 distros.
 
-**Pass 2 — intermittent JSON-grep flake (resolved).** After the daemon fix, some
-structure checks intermittently failed to find a field that was demonstrably present
-— `"plugin_id"` (`--format json scan`), `report_framework` (`report --report-format
+**Pass 2: intermittent JSON-grep flake (resolved).** After the daemon fix, some
+structure checks intermittently failed to find a field that was demonstrably present:
+`"plugin_id"` (`--format json scan`), `report_framework` (`report --report-format
 json`), `Checkpoints`/`cp_` (`checkpoint list`). Triage steps, each ruling out a
 hypothesis:
 

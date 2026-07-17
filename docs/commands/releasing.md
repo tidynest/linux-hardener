@@ -16,7 +16,7 @@ For the full release workflow (branching strategy, hotfix process, pre-release c
 ./scripts/release.sh major --dry-run
 ```
 
-Shows exactly what would happen: version bump, files modified, tests run, tags created, remotes pushed — but writes nothing and pushes nothing.
+Shows exactly what would happen: version bump, files modified, tests run, tags created, remotes pushed, but writes nothing and pushes nothing.
 
 ### Actual release
 

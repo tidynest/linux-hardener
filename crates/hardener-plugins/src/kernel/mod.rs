@@ -258,7 +258,7 @@ fn soc2(id: &str, title: &str) -> ComplianceMapping {
 /// number (e.g. `3.4.2`); `title` the published requirement name. The section
 /// is the requirement's official family, derived from the id's family number.
 /// Every id is translated from this plugin's 800-53 entries via the r3
-/// source-control table — never invented.
+/// source-control table, never invented.
 fn nist171(id: &str, title: &str) -> ComplianceMapping {
     let family = match id.split('.').nth(1) {
         Some("1") => "Access Control",
@@ -276,7 +276,7 @@ fn nist171(id: &str, title: &str) -> ComplianceMapping {
 
 /// Builds a FedRAMP mapping. FedRAMP's control set is NIST 800-53 at the
 /// Moderate (Rev 5) baseline, so `id`/`title` mirror this plugin's 800-53
-/// entries verbatim — each id is checked against the GSA rev5 Moderate
+/// entries verbatim; each id is checked against the GSA rev5 Moderate
 /// baseline before it is mapped, never invented. The section is the control's
 /// 800-53 family, derived from the id prefix.
 fn fedramp(id: &str, title: &str) -> ComplianceMapping {
@@ -618,7 +618,7 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 fedramp("SC-7", "Boundary Protection"),
             ]
         }
-        // CIS 3.2.2/3.2.3/3.2.4 — one arm per control covers both the `.all`
+        // CIS 3.2.2/3.2.3/3.2.4: one arm per control covers both the `.all`
         // and `.default` sysctls. SSG: sysctl_net_ipv4_conf_{all,default}_*
         n if n.contains("accept_redirects") => vec![
             ComplianceMapping {
@@ -810,11 +810,11 @@ impl HardeningPlugin for KernelHardeningPlugin {
 
         // Apply each parameter to runtime AND build config file content.
         for (param_name, expected_value, param_description, _severity) in KERNEL_PARAMS {
-            // Check for a valid exception — skip this parameter if exempted
+            // Check for a valid exception: skip this parameter if exempted
             if let Some(exception) = config.has_valid_exception(param_name) {
-                info!("Skipping {} — exception: {}", param_name, exception.reason);
+                info!("Skipping {} (exception: {})", param_name, exception.reason);
                 sysctl_config_content.push_str(&format!(
-                    "# {} — SKIPPED (exception: {})\n\n",
+                    "# {}: SKIPPED (exception: {})\n\n",
                     param_name, exception.reason
                 ));
                 apply_changes.push(Change {
@@ -1170,8 +1170,8 @@ mod tests {
     /// Confirms the FedRAMP derivation: every mapped id mirrors the
     /// parameter's existing 800-53 entries verbatim, filtered to the GSA
     /// rev5 Moderate baseline. Every 800-53 control this plugin cites is a
-    /// baseline member — including SC-5 and SI-11, which 800-171r3 tailors
-    /// out — so no parameter loses its mapping.
+    /// baseline member (including SC-5 and SI-11, which 800-171r3 tailors
+    /// out), so no parameter loses its mapping.
     #[test]
     fn kernel_params_map_fedramp_moderate_controls() {
         let ids_for = |param: &str| -> Vec<String> {

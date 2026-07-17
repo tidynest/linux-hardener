@@ -2,7 +2,7 @@
 //! deniable through the capability ACL.
 //!
 //! `tauri::test::mock_context` ships an empty resolved ACL with
-//! `has_app_acl = false`, which would skip the app-command check entirely —
+//! `has_app_acl = false`, which would skip the app-command check entirely,
 //! the opposite of the production build, where the `AppManifest` in
 //! `build.rs` switches enforcement on. These tests install an authority
 //! mirroring production (`has_app_acl = true` plus an explicit allow-list)
@@ -68,7 +68,7 @@ fn invoke(
 }
 
 /// A command whose `allow-*` permission is absent must be rejected by the
-/// ACL layer itself — before argument deserialisation or the command body.
+/// ACL layer itself, before argument deserialisation or the command body.
 #[test]
 fn ungranted_command_is_rejected_by_acl() {
     let (_app, webview) = mock_webview(&["validate_config"]);

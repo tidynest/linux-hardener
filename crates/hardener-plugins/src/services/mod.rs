@@ -52,7 +52,7 @@ fn service_mapping(
 /// Builds a [`ComplianceMapping`] under an explicit section.
 ///
 /// Used for frameworks whose catalogue groups controls differently from the
-/// default "Services" section — notably ISO/IEC 27001:2022, whose Annex A
+/// default "Services" section, notably ISO/IEC 27001:2022, whose Annex A
 /// controls live under the "Technological" theme.
 fn service_mapping_in(
     framework: ComplianceFramework,
@@ -118,7 +118,7 @@ fn service_iso_networks() -> ComplianceMapping {
 /// SOC 2 mapping for service-minimisation controls.
 ///
 /// CC6.8 mirrors the CM-7 least-functionality intent every disabled daemon
-/// serves — unneeded software is kept off the system; the section is the
+/// serves: unneeded software is kept off the system; the section is the
 /// criterion's 2017 Trust Services Criteria series.
 fn service_soc2_unauthorised_software() -> ComplianceMapping {
     service_mapping_in(
@@ -132,7 +132,7 @@ fn service_soc2_unauthorised_software() -> ComplianceMapping {
 /// NIST SP 800-171 Revision 3 mapping for service-minimisation controls.
 ///
 /// Requirement 3.4.6 (Least Functionality) is sourced from 800-53 CM-7 in the
-/// r3 source-control table — the control every mapped daemon already cites.
+/// r3 source-control table: the control every mapped daemon already cites.
 /// Family: Configuration Management.
 fn service_nist171_least_functionality() -> ComplianceMapping {
     service_mapping_in(
@@ -159,7 +159,7 @@ fn service_nist171_wireless_access() -> ComplianceMapping {
 /// FedRAMP mapping for service-minimisation controls.
 ///
 /// FedRAMP's control set is NIST 800-53 at the Moderate (Rev 5) baseline;
-/// CM-7 — the control every mapped daemon already cites — is a baseline
+/// CM-7 (the control every mapped daemon already cites) is a baseline
 /// member (GSA rev5 baseline), so it mirrors across verbatim. Family:
 /// Configuration Management.
 fn service_fedramp_least_functionality() -> ComplianceMapping {
@@ -201,10 +201,10 @@ fn service_fedramp_wireless_access() -> ComplianceMapping {
 /// unauthorised-software criterion mirrors the same minimisation intent).
 /// NIST SP 800-171 3.4.6 likewise applies to every mapped daemon (sourced
 /// from CM-7), with 3.1.16 added for Bluetooth (sourced from AC-18).
-/// FedRAMP mirrors the same 800-53 entries verbatim — CM-7 for every mapped
+/// FedRAMP mirrors the same 800-53 entries verbatim: CM-7 for every mapped
 /// daemon and AC-18 for Bluetooth, both FedRAMP Moderate (Rev 5) baseline
 /// members.
-/// HIPAA is omitted — none of these daemons map cleanly to a Security Rule
+/// HIPAA is omitted: none of these daemons map cleanly to a Security Rule
 /// specification.
 /// Every compliance mapping this plugin can emit, across all services it
 /// assesses. Aggregated into the engine's automated-coverage set.
@@ -352,7 +352,7 @@ const ENABLED_STATES: &[&str] = &[
 ///
 /// The scan path used three spawns per assessed service; batching collapses
 /// that to two spawns total, which matters most when each spawn is an SSH
-/// round-trip. Apply/validate keep the per-service probes — they must observe
+/// round-trip. Apply/validate keep the per-service probes; they must observe
 /// live state between mutations.
 #[derive(Default)]
 struct ServiceStates {
@@ -365,7 +365,7 @@ struct ServiceStates {
 impl ServiceStates {
     /// Loads both listings through the context's executor.
     ///
-    /// The assessed unit names are passed as patterns — an unfiltered
+    /// The assessed unit names are passed as patterns: an unfiltered
     /// `list-unit-files` enumerates every unit file on disk, which measured
     /// two orders of magnitude slower than the pattern-filtered listing.
     async fn load(ctx: &Context) -> Result<Self> {
@@ -438,7 +438,7 @@ fn parse_unit_column(stdout: &str, column: usize) -> std::collections::HashMap<S
 
 /// Checks if a systemd service unit exists on the system.
 ///
-/// The pattern needs the `.service` suffix — `list-unit-files` does not
+/// The pattern needs the `.service` suffix; `list-unit-files` does not
 /// mangle bare names the way `is-enabled`/`is-active` do, so an unsuffixed
 /// pattern matches nothing and every service looked absent.
 async fn is_service_exists(ctx: &Context, service_name: &str) -> Result<bool> {
@@ -636,10 +636,10 @@ impl HardeningPlugin for ServicesHardeningPlugin {
                 continue;
             }
 
-            // Check for a valid exception — skip this service if exempted
+            // Check for a valid exception: skip this service if exempted
             if let Some(exception) = config.has_valid_exception(directive.service_name) {
                 info!(
-                    "Skipping {} — exception: {}",
+                    "Skipping {} (exception: {})",
                     directive.service_name, exception.reason
                 );
                 changes.push(Change {
@@ -875,7 +875,7 @@ mod tests {
     /// Confirms a representative disabled service (bluetooth) now carries the
     /// governance-framework mappings: ISO/IEC 27001:2022 (8.20 Networks security
     /// plus the 8.19/8.9 minimisation pair, under "Technological") and GDPR
-    /// "TM-SH". HIPAA is intentionally absent — no service maps cleanly to a
+    /// "TM-SH". HIPAA is intentionally absent: no service maps cleanly to a
     /// HIPAA Security Rule specification.
     #[test]
     fn xinetd_is_in_the_coverage_set() {

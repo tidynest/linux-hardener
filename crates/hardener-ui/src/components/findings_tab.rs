@@ -35,7 +35,7 @@ fn parse_severity(value: &str) -> Option<Severity> {
 /// View mode for findings display.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ViewMode {
-    /// Show all findings (audit-style — full assessment).
+    /// Show all findings (audit-style, full assessment).
     All,
     /// Show only findings without policy exceptions (compliance violations).
     Compliance,
@@ -44,7 +44,7 @@ enum ViewMode {
 /// Findings tab content displaying the scanner results.
 ///
 /// Contains severity and view-mode filters in the header, the findings grid,
-/// and the detail panel. Both filters are client-side — all findings remain
+/// and the detail panel. Both filters are client-side: all findings remain
 /// in memory and the dropdowns instantly adjust which are visible.
 #[component]
 pub fn FindingsTab() -> impl IntoView {

@@ -35,7 +35,7 @@ Delete the empty `Config` struct. `PluginConfig` (already in `config.rs`) has: `
 
 **Tauri commands**: No change needed (shells out to CLI via pkexec).
 
-**Tests**: Replace `&Config` with `&PluginConfig::default()` (enabled=true, empty directives/exceptions — identical behaviour).
+**Tests**: Replace `&Config` with `&PluginConfig::default()` (enabled=true, empty directives/exceptions, identical behaviour).
 
 ### SSH Plugin Pilot
 

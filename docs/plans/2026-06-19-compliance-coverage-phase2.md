@@ -1,4 +1,4 @@
-# Compliance Coverage — Phase 2 Design Proposal
+# Compliance Coverage: Phase 2 Design Proposal
 
 > **Status:** IMPLEMENTED (2026-06-20). Option B adopted as recommended; coverage
 > is plugin-declared via `coverage()` per plugin, aggregated by
@@ -23,7 +23,7 @@ The blocker is that phase-1 coverage is tracked at **framework granularity**
 framework-level granularity is wrong: unmapped controls of that framework would
 revert to a false `Pass`. Phase 2 must move to **per-control coverage**.
 
-## 2. Coverage model — DECISION NEEDED
+## 2. Coverage model: DECISION NEEDED
 
 How does the generator know a control was actually assessed (→ `Pass`/`Fail`)
 versus not (→ `ManualReview`)? A clean scan emits no findings, so "no finding"
@@ -49,24 +49,24 @@ partial coverage, which is the realistic rollout path.
   1. Add `fn compliance_coverage(&self) -> Vec<ComplianceMapping>` to the
      `HardeningPlugin` trait (default `vec![]`); aggregate in `hardener-plugins`;
      the CLI/Tauri/scheduler (which build the registry) pass the set into
-     `ReportGenerator`. **Preferred** — single source of truth, no duplication.
-  2. A static table in `hardener-compliance`. Rejected — duplicates plugin knowledge.
+     `ReportGenerator`. **Preferred**: single source of truth, no duplication.
+  2. A static table in `hardener-compliance`. Rejected: duplicates plugin knowledge.
 - **Generator change:** `ManualReview` only when the control's `(framework, id)`
   is **not** in the coverage set; otherwise `Pass`/`Fail` as today. Replaces the
   framework-level `is_automated()` check.
 
-## 4. Crosswalk data — sourcing strategy (do NOT hand-invent)
+## 4. Crosswalk data: sourcing strategy (do NOT hand-invent)
 
 Wrong mappings re-introduce false compliance, so mappings must come from
 authoritative sources and be reviewed, not guessed.
 
 - **Primary: [ComplianceAsCode/SSG](https://github.com/ComplianceAsCode/content)**
-  — maps each concrete rule (e.g. `sshd_disable_root_login`) to CIS Benchmark,
+  maps each concrete rule (e.g. `sshd_disable_root_login`) to CIS Benchmark,
   DISA STIG/SRG, NIST 800-53, PCI-DSS simultaneously. This matches our model
   (findings keyed by concrete check), so it is the right source for STIG/NIST/PCI.
 - **Control-level:** [CIS Controls v8.1 → NIST SP 800-53 Rev 5](https://www.cisecurity.org/insights/white-papers/cis-controls-v8-1-mapping-to-nist-sp-800-53-rev-5)
   and the NIST OLIR program (standardised crosswalk format). Note: these map CIS
-  *Controls* (Safeguards), not CIS *Benchmark* line items — secondary reference only.
+  *Controls* (Safeguards), not CIS *Benchmark* line items: secondary reference only.
 - **HIPAA / GDPR:** no line-item technical crosswalk exists; mappings are
   interpretive (e.g. HIPAA §164.312 ↔ access/audit controls). Mark **low
   confidence**, keep coarse, and require explicit review.
@@ -74,17 +74,17 @@ authoritative sources and be reviewed, not guessed.
 
 ## 5. Incremental rollout (reviewable portions)
 
-1. Implement Option B mechanism (trait method + generator + tests) — no mappings yet; behaviour unchanged.
-2. Per plugin, add sourced mappings (start with SSH, then kernel, then the rest) — one PR-sized portion each, reviewed against SSG.
+1. Implement Option B mechanism (trait method + generator + tests): no mappings yet; behaviour unchanged.
+2. Per plugin, add sourced mappings (start with SSH, then kernel, then the rest): one PR-sized portion each, reviewed against SSG.
 3. Add each newly-covered `(framework, control_id)` to coverage automatically via the trait method (no `AUTOMATED_FRAMEWORKS` edit needed).
 4. Once a framework is meaningfully covered, surface it in the report wizard / docs.
 5. ISO/IEC 27001:2022 catalogue (`iso27001.rs`, 93 Annex A controls) lands here, mapped via SSG's ISO references where available.
 
 ## 6. Risks
 
-- **Mapping accuracy is paramount** — a wrong mapping is worse than `ManualReview`. Review every mapping against SSG; prefer omission over a guess.
-- **SSG rule ↔ our check alignment** — our checks must correspond to the SSG rule whose mappings we borrow; verify per check.
-- **Catalogue vs coverage drift** — a framework's catalogue (`get_controls`) and its assessed set must be reconciled; controls in the catalogue but never assessed stay `ManualReview` (correct).
+- **Mapping accuracy is paramount**: a wrong mapping is worse than `ManualReview`. Review every mapping against SSG; prefer omission over a guess.
+- **SSG rule ↔ our check alignment**: our checks must correspond to the SSG rule whose mappings we borrow; verify per check.
+- **Catalogue vs coverage drift**: a framework's catalogue (`get_controls`) and its assessed set must be reconciled; controls in the catalogue but never assessed stay `ManualReview` (correct).
 
 ## 7. Decision requested
 

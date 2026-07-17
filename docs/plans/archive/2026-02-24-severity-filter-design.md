@@ -1,4 +1,4 @@
-# Severity Filter — GUI Design
+# Severity Filter: GUI Design
 
 **Date**: 2026-02-24
 **Status**: Implemented

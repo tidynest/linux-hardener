@@ -309,7 +309,7 @@ Before any release:
 - [ ] CHANGELOG.md is updated
 - [ ] Documentation is current
 - [ ] Security audit passes (`cargo audit`)
-- [ ] Dependency policy passes (`cargo deny check` — licenses, advisories, bans)
+- [ ] Dependency policy passes (`cargo deny check`: licenses, advisories, bans)
 - [ ] Working directory is clean
 - [ ] On `main` branch
 

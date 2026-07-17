@@ -173,7 +173,7 @@ Hosts are read from the inventory file:
 
 ~/.config/linux-hardener/hosts.toml
 
-This file is shared with the desktop GUI — hosts you add through the GUI's host
+This file is shared with the desktop GUI: hosts you add through the GUI's host
 list appear here, and entries you hand-edit appear in the GUI. You can also scan
 ad-hoc hosts that are not in the inventory with the --ssh flag.
 
@@ -242,7 +242,7 @@ multiple saved inventory hosts from the GUI without using the CLI.
 | `hardener batch scan` (CLI) | Inventory + ad-hoc `--ssh` | No | Yes |
 | `hardener batch apply` (CLI) | Inventory + ad-hoc `--ssh` | Yes (with `--execute`) | Yes |
 
-The Fleet page reuses the single-host `scan_with_executor` helper internally —
+The Fleet page reuses the single-host `scan_with_executor` helper internally,
 the same plugin path that powers the Remote page and the CLI's `--ssh` scan.
 Read-only is structural: the fleet scan context carries no checkpoint manager or
 audit logger, so apply and rollback paths are unreachable from the Fleet page.
@@ -374,7 +374,7 @@ Current limitations of SSH remote scanning:
 | Fleet: inventory hosts only     | GUI Fleet page does not accept ad-hoc `--ssh` targets        |
 
 Parallel multi-host scanning is available via `hardener batch scan` (CLI) and
-the desktop **Fleet** page — see *Batch Scanning Multiple Hosts* and
+the desktop **Fleet** page, see *Batch Scanning Multiple Hosts* and
 *Desktop Fleet View* above.
 
 Future Enhancements

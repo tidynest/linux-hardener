@@ -517,8 +517,8 @@ async fn test_audit_scan_permission_denied_should_not_report_missing_rules() {
 
 #[tokio::test]
 async fn test_audit_apply_skips_exceptions() {
-    // Auditd installed, enabled, running — apply writes rules file.
-    // Exception on "modules" category — those 3 rules should be absent.
+    // Auditd installed, enabled, running: apply writes rules file.
+    // Exception on "modules" category: those 3 rules should be absent.
     let ok = CommandOutput {
         stdout: String::new(),
         stderr: String::new(),
@@ -605,7 +605,7 @@ async fn test_audit_apply_skips_exceptions() {
 
 #[tokio::test]
 async fn test_audit_validate_skips_exceptions() {
-    // Partial rules (only identity) — normally many missing.
+    // Partial rules (only identity); normally many missing.
     // Exception on "modules" should reduce the missing count.
     let executor = partial_rules_executor();
     let ctx = Context::with_executor(Arc::new(executor));

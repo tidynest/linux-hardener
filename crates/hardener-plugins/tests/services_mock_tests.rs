@@ -58,7 +58,7 @@ fn with_units(executor: MockExecutor, stdout: &str) -> MockExecutor {
 /// Creates a mock executor where all unnecessary services are disabled.
 fn clean_system_executor() -> MockExecutor {
     let executor = MockExecutor::new().with_command_exists("systemctl", true);
-    // Services exist but are disabled and not loaded — no findings expected.
+    // Services exist but are disabled and not loaded: no findings expected.
     let executor = with_unit_files(
         executor,
         "bluetooth.service disabled disabled\ncups.service disabled disabled\n",
@@ -417,7 +417,7 @@ async fn test_services_scan_spawns_exactly_two_systemctl_commands() {
     assert!(!result.scan_findings.is_empty(), "scenario has findings");
 
     // The whole scan must cost two spawns: one unit-file listing and one
-    // unit listing — never a per-service probe triple.
+    // unit listing, never a per-service probe triple.
     let log = executor.log();
     let args: Vec<&str> = log
         .commands_executed
@@ -557,7 +557,7 @@ async fn test_services_apply_skips_exceptions() {
         exit_code: 0,
     };
     // Bluetooth exists + enabled + active, but NO stop/disable/mask commands
-    // registered — if the plugin tries to call them the mock will error.
+    // registered: if the plugin tries to call them the mock will error.
     // CUPS has full commands so the rest of apply succeeds.
     let executor = MockExecutor::new()
         .with_command_exists("systemctl", true)
@@ -571,7 +571,7 @@ async fn test_services_apply_skips_exceptions() {
                 exit_code: 0,
             },
         )
-        // CUPS: exists, enabled, not active — full apply path
+        // CUPS: exists, enabled, not active: full apply path
         .with_command(
             "systemctl",
             &["list-unit-files", "cups.service"],

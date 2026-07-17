@@ -25,7 +25,7 @@ pub struct NotificationUiConfig {
     pub webhooks: WebhookUiConfig,
 }
 
-/// Email notification settings (GUI subset — no SMTP internals).
+/// Email notification settings (GUI subset: no SMTP internals).
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct EmailUiConfig {

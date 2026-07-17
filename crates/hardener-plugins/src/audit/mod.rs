@@ -345,7 +345,7 @@ async fn write_audit_rules_file(ctx: &Context, content: &str) -> Result<String> 
 /// Tries `augenrules --load` first (merges rules and loads them without
 /// restarting auditd). Falls back to `systemctl restart auditd` if
 /// augenrules is unavailable. On many distributions (including Arch),
-/// auditd ignores SIGTERM from systemd so a direct restart will fail —
+/// auditd ignores SIGTERM from systemd so a direct restart will fail;
 /// augenrules is the supported mechanism.
 async fn reload_audit_rules(ctx: &Context) -> Result<()> {
     // Preferred: augenrules merges /etc/audit/rules.d/*.rules and loads them
@@ -385,12 +385,12 @@ async fn reload_audit_rules(ctx: &Context) -> Result<()> {
 ///
 /// Multi-framework mappings are sourced from ComplianceAsCode/SSG rule
 /// `references:` blocks (see `// SSG:` comments). NIST IDs are 800-53 Rev 5
-/// (AU-* audit family); PCI-DSS is v4.0 (Requirement 10 — logging); STIG IDs
+/// (AU-* audit family); PCI-DSS is v4.0 (Requirement 10, logging); STIG IDs
 /// are the SSG-declared RHEL-family `stigid@ol8` values (the Oracle Linux 8
 /// STIG mirrors the RHEL 8 STIG content). STIG is omitted for the generic
 /// "rules"/"config" bucket because the concrete `stigid@` differs per audit
 /// rule, so no single ID applies.
-/// Finding types the audit plugin can raise — the keys understood by
+/// Finding types the audit plugin can raise: the keys understood by
 /// [`get_audit_compliance_mappings`]. Keep in sync with that match.
 const AUDIT_FINDING_TYPES: &[&str] = &[
     "not_installed",
@@ -429,7 +429,7 @@ fn soc2(id: &str, title: &str) -> ComplianceMapping {
 /// Builds a NIST SP 800-171 Revision 3 mapping. `id` is the requirement
 /// number (e.g. `3.3.1`); `title` the published requirement name; the
 /// section is the requirement's official family. Every id is translated from
-/// this plugin's 800-53 entries via the r3 source-control table — never
+/// this plugin's 800-53 entries via the r3 source-control table, never
 /// invented.
 fn nist171(id: &str, title: &str) -> ComplianceMapping {
     ComplianceMapping {
@@ -442,7 +442,7 @@ fn nist171(id: &str, title: &str) -> ComplianceMapping {
 
 /// Builds a FedRAMP mapping. FedRAMP's control set is NIST 800-53 at the
 /// Moderate (Rev 5) baseline, so `id`/`title` mirror this plugin's 800-53
-/// entries verbatim — each id is checked against the GSA rev5 Moderate
+/// entries verbatim; each id is checked against the GSA rev5 Moderate
 /// baseline before it is mapped, never invented. The section is the control's
 /// 800-53 family.
 fn fedramp(id: &str, title: &str) -> ComplianceMapping {
@@ -640,7 +640,7 @@ fn get_audit_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "Monitoring activities".to_string(),
                 compliance_section: Some("Technological".to_string()),
             },
-            // SOC 2: CC7.1 mirrors the change-detection intent — the rules watch
+            // SOC 2: CC7.1 mirrors the change-detection intent; the rules watch
             // identity files, DAC changes and deletions for configuration change.
             soc2(
                 "CC7.1",
@@ -912,14 +912,14 @@ impl HardeningPlugin for AuditHardeningPlugin {
             "delete",
             "modules",
         ] {
-            // Check for a valid exception — skip entire category if exempted
+            // Check for a valid exception: skip entire category if exempted
             if let Some(exception) = config.has_valid_exception(category) {
                 info!(
-                    "Skipping audit category '{}' — exception: {}",
+                    "Skipping audit category '{}' (exception: {})",
                     category, exception.reason
                 );
                 rules_content.push_str(&format!(
-                    "# {} — SKIPPED (exception: {})\n\n",
+                    "# {}: SKIPPED (exception: {})\n\n",
                     category.to_uppercase(),
                     exception.reason
                 ));
@@ -1179,7 +1179,7 @@ mod tests {
 
     /// Confirms the SOC 2 mappings: every auditd service-state finding carries
     /// the anomaly-monitoring criterion CC7.2, and the rules bucket adds the
-    /// configuration-change detection criterion CC7.1 — both filed under the
+    /// configuration-change detection criterion CC7.1; both filed under the
     /// "System Operations" TSC series.
     #[test]
     fn audit_findings_map_soc2_monitoring_criteria() {

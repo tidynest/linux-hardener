@@ -9,8 +9,8 @@ declare -a FAILURES=()
 TAURI_ADDR=""
 
 pass() { ((PASS++)); echo "  PASS: $1"; }
-fail() { ((FAIL++)); FAILURES+=("$1 — $2"); echo "  FAIL: $1 — $2"; }
-skip() { ((SKIP++)); echo "  SKIP: $1 — $2"; }
+fail() { ((FAIL++)); FAILURES+=("$1 - $2"); echo "  FAIL: $1 - $2"; }
+skip() { ((SKIP++)); echo "  SKIP: $1 - $2"; }
 section() { echo ""; echo "=== $1 ==="; }
 
 cache_tauri_addr() {
@@ -165,7 +165,7 @@ shot "ux-17-escape-chain-noop.png"
 pass "Escape with nothing open: no-op"
 
 # ─────────────────────────────────────────────────
-section "6. TAB BAR KEYBOARD NAV — ANALYSIS (3 tabs)"
+section "6. TAB BAR KEYBOARD NAV: ANALYSIS (3 tabs)"
 # ─────────────────────────────────────────────────
 
 tw -M ctrl -k 2 -m ctrl; sleep 0.6
@@ -197,7 +197,7 @@ shot "ux-23-analysis-tab-end.png"
 pass "End → History tab"
 
 # ─────────────────────────────────────────────────
-section "7. TAB BAR KEYBOARD NAV — HARDENING (2 tabs)"
+section "7. TAB BAR KEYBOARD NAV: HARDENING (2 tabs)"
 # ─────────────────────────────────────────────────
 
 tw -M ctrl -k 3 -m ctrl; sleep 0.6
@@ -238,7 +238,7 @@ pass "History tab checkpoint area navigable"
 tw -k Escape; sleep 0.3
 
 # ─────────────────────────────────────────────────
-section "9. REMOTE PAGE — HOST LIST & FORM"
+section "9. REMOTE PAGE: HOST LIST & FORM"
 # ─────────────────────────────────────────────────
 
 tw -M ctrl -k 4 -m ctrl; sleep 0.6
@@ -316,7 +316,7 @@ shot "ux-39-skip-link-activated.png"
 pass "Skip link → #main-content"
 
 # ─────────────────────────────────────────────────
-section "14. COMPLIANCE TAB — COPY BUTTON"
+section "14. COMPLIANCE TAB: COPY BUTTON"
 # ─────────────────────────────────────────────────
 
 tw -M ctrl -k 2 -m ctrl; sleep 0.6

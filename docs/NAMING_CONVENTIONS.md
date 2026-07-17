@@ -97,7 +97,7 @@ pub fn authorize_user() -> Result<()> { }
 pub struct ColorScheme { }
 ```
 
-**Exception — verbatim external wording.** Text quoted directly from an external
+**Exception: verbatim external wording.** Text quoted directly from an external
 source keeps that source's spelling, even when American. This covers official
 compliance control titles (e.g. NIST SP 800-53 AC-6(1) *"Authorize Access to
 Security Functions"*) and external crate APIs (`printpdf`, `Color::`). These are
@@ -313,7 +313,7 @@ PluginId::new("service_hardening") // Wrong case (use kebab-case, not snake_case
 - `"audit"` alone could mean audit logging or audit rule hardening
 - `"mac"` alone could refer to MAC addresses (network) or Mandatory Access Control (security)
 - Hyphenated suffixes follow kebab-case convention for identifiers
-- All 8 plugin IDs use the `-hardening` suffix except `service-minimisation`, which is the sole exception — it uses British spelling and describes the specific function rather than appending `-hardening`
+- All 8 plugin IDs use the `-hardening` suffix except `service-minimisation`, which is the sole exception: it uses British spelling and describes the specific function rather than appending `-hardening`
 
 **Backend/Adapter Structs**:
 ```rust

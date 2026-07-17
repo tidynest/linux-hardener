@@ -1,8 +1,8 @@
-# Remote Scanning UI — Implementation Plan
+# Remote Scanning UI: Implementation Plan
 
 **Goal:** Add a "Remote" page to the GUI that lets users save SSH host profiles, connect to remote machines, and run security scans over SSH.
 
-**Architecture:** Tauri backend holds an `SshExecutor` in managed state. GUI sends connection details via IPC, Tauri connects and holds the session, then runs scans through it using the existing `PluginManager::scan()` pipeline. Results are standard `Vec<ScanResult>` — existing findings rendering works unchanged.
+**Architecture:** Tauri backend holds an `SshExecutor` in managed state. GUI sends connection details via IPC, Tauri connects and holds the session, then runs scans through it using the existing `PluginManager::scan()` pipeline. Results are standard `Vec<ScanResult>`: existing findings rendering works unchanged.
 
 **Tech Stack:** Rust, Tauri v2, Leptos/WASM, openssh crate, TOML config, hardener-types
 
@@ -580,7 +580,7 @@ feat(ui): add remote scanning signals to AppState
 
 ---
 
-## Task 7: Remote page — skeleton + routing
+## Task 7: Remote page, skeleton + routing
 
 **Files:**
 - Create: `crates/hardener-ui/src/pages/remote_page.rs`
@@ -592,7 +592,7 @@ feat(ui): add remote scanning signals to AppState
 In `crates/hardener-ui/src/pages/remote_page.rs`:
 
 ```rust
-//! Remote scanning page — manage SSH hosts and scan remote systems.
+//! Remote scanning page: manage SSH hosts and scan remote systems.
 
 use crate::components::Card;
 use crate::state::AppState;
@@ -966,7 +966,7 @@ feat(ui): add HostList sidebar component with connect/edit/delete
 
 ## Task 9: HostForm component
 
-> **User contribution opportunity:** The form validation logic is a good candidate for the user to implement — there are trade-offs around which fields to validate and how strictly.
+> **User contribution opportunity:** The form validation logic is a good candidate for the user to implement: there are trade-offs around which fields to validate and how strictly.
 
 **Files:**
 - Create: `crates/hardener-ui/src/components/host_form.rs`
@@ -1004,7 +1004,7 @@ pub fn HostForm(
     let host_key_checking = RwSignal::new(existing.as_ref().map_or(true, |p| p.host_key_checking));
     let is_saving = RwSignal::new(false);
 
-    // TODO(user): implement validate_form() — see design doc for field constraints
+    // TODO(user): implement validate_form(), see design doc for field constraints
     let is_valid = move || {
         !name.get().trim().is_empty() && !hostname.get().trim().is_empty()
     };
@@ -1315,7 +1315,7 @@ pub fn RemoteStatus() -> impl IntoView {
                             <Show when=move || !app_state.remote_scan_results.get().is_empty()>
                                 <div class="remote-results">
                                     <h4 class="remote-results-title">
-                                        {move || format!("Scan Results — {} findings", total_findings())}
+                                        {move || format!("Scan Results: {} findings", total_findings())}
                                     </h4>
                                     <table class="findings-table">
                                         <thead>
@@ -1459,8 +1459,8 @@ feat(ui): add RemoteStatus panel with scan trigger and results table
 Replace the skeleton in `remote_page.rs` with the full two-panel layout that toggles between host list and form, and shows RemoteStatus on the right.
 
 The page should manage:
-- `show_form: RwSignal<bool>` — whether to show add/edit form
-- `editing_host: RwSignal<Option<RemoteHostProfile>>` — host being edited
+- `show_form: RwSignal<bool>`, whether to show add/edit form
+- `editing_host: RwSignal<Option<RemoteHostProfile>>`, host being edited
 
 When `show_form` is true, show `HostForm` instead of `HostList` in the sidebar.
 
@@ -1508,7 +1508,7 @@ Launch the app, navigate to the Remote page, verify:
 **Step 5: Commit**
 
 ```
-feat: complete remote scanning UI — host management + SSH scan
+feat: complete remote scanning UI, host management + SSH scan
 ```
 
 ---

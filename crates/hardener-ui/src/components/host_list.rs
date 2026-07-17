@@ -38,7 +38,7 @@ pub fn HostList(#[prop(into)] on_edit: Callback<Option<RemoteHostProfile>>) -> i
     // Load on mount
     load_hosts();
 
-    // Connect handler — establishes SSH connection and stores info in AppState.
+    // Connect handler: establishes SSH connection and stores info in AppState.
     let handle_connect = move |profile: RemoteHostProfile| {
         let name = profile.name.clone();
         let hostname = profile.hostname.clone();
@@ -71,7 +71,7 @@ pub fn HostList(#[prop(into)] on_edit: Callback<Option<RemoteHostProfile>>) -> i
         });
     };
 
-    // Delete handler — removes profile and reloads list.
+    // Delete handler: removes profile and reloads list.
     let handle_delete = move |name: String| {
         leptos::task::spawn_local(async move {
             match invoke_delete_remote_host(name.clone()).await {

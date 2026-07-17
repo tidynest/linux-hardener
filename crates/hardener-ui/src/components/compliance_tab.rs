@@ -81,7 +81,7 @@ pub fn ComplianceTab() -> impl IntoView {
         });
     };
 
-    // Export handler — generates + saves to file
+    // Export handler: generates + saves to file
     let on_export = move |_| {
         let frameworks = selected_frameworks.get();
         if frameworks.is_empty() {
@@ -199,7 +199,7 @@ pub fn ComplianceTab() -> impl IntoView {
                         let na = report.report_summary.summary_not_applicable;
 
                         let copy_text = format!(
-                            "{} — {:.0}%\nPassing: {} | Failing: {} | Manual: {} | N/A: {}",
+                            "{}: {:.0}%\nPassing: {} | Failing: {} | Manual: {} | N/A: {}",
                             framework, score, passing, failing, manual, na,
                         );
 

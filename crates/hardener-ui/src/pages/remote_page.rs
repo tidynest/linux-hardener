@@ -1,4 +1,4 @@
-//! Remote scanning page — manage SSH hosts and scan remote systems.
+//! Remote scanning page: manage SSH hosts and scan remote systems.
 
 use crate::components::{Card, HostForm, HostList, RemoteStatus};
 use hardener_types::remote::RemoteHostProfile;

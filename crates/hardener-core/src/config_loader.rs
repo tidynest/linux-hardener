@@ -57,7 +57,7 @@ impl ConfigLoader {
             if let Some(path) = Self::system_config_path() {
                 config = Self::merge_source(config, &path, false)?;
             }
-            // 3. Load user config if it exists — skip when running as root
+            // 3. Load user config if it exists, skip when running as root
             //    (via pkexec) to prevent unprivileged user config from
             //    influencing root-level hardening operations.
             if !Self::is_running_as_root()

@@ -1,4 +1,4 @@
-# Config File Picker — Design
+# Config File Picker: Design
 
 **Date**: 2026-02-24
 **Status**: Implemented
@@ -12,7 +12,7 @@ Add a config file picker to the Hardening page that lets users select a custom T
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Placement | Hardening page, above Security Profile card | Config controls plugin behaviour — co-located with plugin toggles |
+| Placement | Hardening page, above Security Profile card | Config controls plugin behaviour: co-located with plugin toggles |
 | Behaviour | Store path only (like CLI `--config`) | GUI toggles remain independent; config path fed to `ConfigLoader` |
 | Input method | Text input + native file dialog (Browse button) | Power users paste paths; browse helps discovery |
 | Feedback | Path + valid/invalid + one-line summary | Compact but confirms the right file was loaded |
@@ -57,8 +57,8 @@ pub config_summary: RwSignal<Option<ConfigSummary>>,
 
 ## Tauri Commands (2 new)
 
-1. **`validate_config(path: String) -> ConfigSummary`** — parse TOML, return summary. Read-only, no privileges.
-2. **`pick_config_file() -> Option<String>`** — native file dialog via `tauri-plugin-dialog`, filtered to `.toml`.
+1. **`validate_config(path: String) -> ConfigSummary`**, parse TOML, return summary. Read-only, no privileges.
+2. **`pick_config_file() -> Option<String>`**: native file dialog via `tauri-plugin-dialog`, filtered to `.toml`.
 
 ## UI Component
 

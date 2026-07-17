@@ -28,7 +28,7 @@
 
 ---
 
-## 1. AUR — PKGBUILD
+## 1. AUR: PKGBUILD
 
 ```bash
 pkgname=linux-system-hardener
@@ -72,7 +72,7 @@ package() {
 
 ---
 
-## 2. RPM — .spec File
+## 2. RPM: .spec File
 
 ```spec
 Name:           linux-system-hardener
@@ -128,7 +128,7 @@ systemctl daemon-reload || true
 
 ---
 
-## 3. DEB — debian/ Directory
+## 3. DEB: debian/ Directory
 
 ### debian/control
 ```
@@ -285,7 +285,7 @@ Terminal=false
 ## Recommended Packaging Order
 
 1. Create systemd units + .desktop file (prerequisite)
-2. **AUR first** — simplest packaging, fast iteration
-3. **DEB** — PPA for Ubuntu auto-builds
-4. **RPM** — COPR (Fedora) or OBS (openSUSE)
-5. **AppImage** (optional) — single portable binary
+2. **AUR first**: simplest packaging, fast iteration
+3. **DEB**: PPA for Ubuntu auto-builds
+4. **RPM**: COPR (Fedora) or OBS (openSUSE)
+5. **AppImage** (optional): single portable binary

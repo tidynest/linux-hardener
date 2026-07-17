@@ -1,4 +1,4 @@
-# Remote Scanning UI — Design Document
+# Remote Scanning UI: Design Document
 
 **Date:** 2026-02-24
 **Version:** v0.4.0 (P3 feature)
@@ -35,7 +35,7 @@ WASM/Leptos  →  Tauri IPC  →  SshExecutor (in-process)
 
 Why this over CLI subprocess spawning:
 - SSH session persists across operations (connect once, scan many times)
-- Full access to `SystemExecutor` trait — reuses existing scan pipeline directly
+- Full access to `SystemExecutor` trait: reuses existing scan pipeline directly
 - No pkexec needed (SSH auth handles privilege on the remote side)
 - Connection status visible in real-time
 
@@ -43,7 +43,7 @@ Why this over CLI subprocess spawning:
 
 ## Host Profile Storage
 
-Profiles stored as TOML in `~/.config/linux-hardener/hosts.toml`. This is configuration data, not transactional — TOML is human-editable and requires no DB migration.
+Profiles stored as TOML in `~/.config/linux-hardener/hosts.toml`. This is configuration data, not transactional: TOML is human-editable and requires no DB migration.
 
 ```toml
 [[hosts]]
@@ -138,13 +138,13 @@ let ctx = Context::with_executor(Arc::new(LocalExecutor::new()));
 let ctx = Context::with_executor(active_connection.executor.clone());
 ```
 
-Scan results are `Vec<ScanResult>` — identical format. Existing findings rendering works unchanged.
+Scan results are `Vec<ScanResult>`: identical format. Existing findings rendering works unchanged.
 
 ---
 
 ## GUI Page Layout
 
-New route: `/remote` — fourth top-level navigation item.
+New route: `/remote`, fourth top-level navigation item.
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -184,8 +184,8 @@ New route: `/remote` — fourth top-level navigation item.
 
 | Field | Input type | Required | Default |
 |-------|-----------|----------|---------|
-| Display name | text | Yes | — |
-| Hostname / IP | text | Yes | — |
+| Display name | text | Yes | - |
+| Hostname / IP | text | Yes | - |
 | Username | text | No | (current user) |
 | Port | number | No | 22 |
 | Key file path | text | No | (SSH agent) |
@@ -274,11 +274,11 @@ User clicks [Disconnect]
 ## Authentication
 
 Supported methods:
-- **SSH agent** — default when no key_file specified. Uses `SSH_AUTH_SOCK`.
-- **Key file** — user provides path to private key. The `openssh` crate handles passphrase prompts via the system SSH agent.
+- **SSH agent**: default when no key_file specified. Uses `SSH_AUTH_SOCK`.
+- **Key file**: user provides path to private key. The `openssh` crate handles passphrase prompts via the system SSH agent.
 
 Not supported (intentionally):
-- Password authentication — security risk in GUI context, would require careful memory handling.
+- Password authentication: security risk in GUI context, would require careful memory handling.
 
 ---
 
@@ -315,8 +315,8 @@ The architecture cleanly supports these additions without refactoring:
 | Feature | Confidence | Notes |
 |---------|-----------|-------|
 | Remote apply/rollback | **High** | `SystemExecutor` trait already abstracts this. Apply works through the same trait methods as scan. Gate behind explicit confirmation dialogs and a per-host "allow apply" toggle. |
-| Host groups | **High** | Pure data modelling — `group: Option<String>` on profiles, filter/sort in UI. No architectural impact. |
-| Password auth | **Medium-High** | `openssh` crate supports it. GUI password input needs care: never persist, never log, clear from memory after use. Tricky part is UX — password prompts during connection need a modal dialog flow. |
-| Concurrent multi-host | **Medium** | Architecturally sound (`tokio::JoinSet` with multiple `SshExecutor`s). Complexity is in the UI — showing N concurrent progress states, handling partial failures, aggregating results. Best done over multiple sessions. |
-| Remote scan persistence | **High** | Add `remote_host` column to existing `scan_sessions` table. `ScanHistoryManager` already handles persistence — just tag sessions with origin host. |
-| Remote compliance reports | **High** | Reports generate from `Vec<ScanResult>` — they don't care whether results came from local or SSH. Once remote scan results exist, compliance is essentially free. |
+| Host groups | **High** | Pure data modelling: `group: Option<String>` on profiles, filter/sort in UI. No architectural impact. |
+| Password auth | **Medium-High** | `openssh` crate supports it. GUI password input needs care: never persist, never log, clear from memory after use. Tricky part is UX, password prompts during connection need a modal dialog flow. |
+| Concurrent multi-host | **Medium** | Architecturally sound (`tokio::JoinSet` with multiple `SshExecutor`s). Complexity is in the UI: showing N concurrent progress states, handling partial failures, aggregating results. Best done over multiple sessions. |
+| Remote scan persistence | **High** | Add `remote_host` column to existing `scan_sessions` table. `ScanHistoryManager` already handles persistence: just tag sessions with origin host. |
+| Remote compliance reports | **High** | Reports generate from `Vec<ScanResult>`: they don't care whether results came from local or SSH. Once remote scan results exist, compliance is essentially free. |

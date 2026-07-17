@@ -49,7 +49,7 @@ The host-side runners (`run-cross-distro-tests*.sh`, `run-package-tests.sh`,
 `run-tauri-gui-tests.sh`, `run-desktop-tests.sh`, `test-polkit-matrix.sh`,
 `test-polkit-no-agent.sh`) do not assume binaries live under `./target`. Each
 carries an identical self-contained `resolve_target_dir` function (no sourced
-helper — several scripts travel into containers where a host include would not
+helper, since several scripts travel into containers where a host include would not
 exist) that resolves, in order:
 
 1. `$CARGO_TARGET_DIR`, if set.
@@ -584,7 +584,7 @@ CLI documentation validation failed
 **What It Checks**:
 - Every `ComplianceFramework` enum variant appears in the ARCHITECTURE.md framework table
 - The same for the ROADMAP.md framework table
-- Per-control *counts* are no longer statically validated — post-rework the control catalogues are split between curated files (`cis.rs`, `iso27001.rs`) and plugin-declared coverage aggregated at runtime, so a static count is not meaningful here
+- Per-control *counts* are no longer statically validated: post-rework the control catalogues are split between curated files (`cis.rs`, `iso27001.rs`) and plugin-declared coverage aggregated at runtime, so a static count is not meaningful here
 
 **Exit Codes**:
 - `0`: every enum framework is documented in each table
@@ -1303,7 +1303,7 @@ sudo ./scripts/run-cross-distro-tests-parallel.sh --distro arch --apply
 | Sequential | ~15 min | 1x |
 | Parallel (8 cores) | ~3 min | 5x |
 
-**Output**: Same as sequential runner — logs in `test-results/<distro>.log`
+**Output**: Same as sequential runner: logs in `test-results/<distro>.log`
 
 ---
 
@@ -1541,7 +1541,7 @@ sudo ./scripts/run-tauri-gui-tests.sh
 
 **Usage**:
 ```bash
-# Called automatically by run-tauri-gui-tests.sh — not invoked directly
+# Called automatically by run-tauri-gui-tests.sh, not invoked directly
 /bin/bash /project/scripts/tauri-gui-test-inner.sh
 ```
 
@@ -1625,7 +1625,7 @@ Two scripts validate that the distribution packages (AUR, deb, rpm) install corr
 
 **Script**: `run-package-tests.sh`
 
-**Purpose**: Host orchestrator that validates package installs across all 5 distributions. For each distro, copies the musl binary and `test-package-install.sh` into the container, then runs the inner script via `systemd-nspawn --pipe`. Mirrors the structure of `run-cross-distro-tests.sh` but focuses on packaging — install, validate, functional test, uninstall.
+**Purpose**: Host orchestrator that validates package installs across all 5 distributions. For each distro, copies the musl binary and `test-package-install.sh` into the container, then runs the inner script via `systemd-nspawn --pipe`. Mirrors the structure of `run-cross-distro-tests.sh` but focuses on packaging: install, validate, functional test, uninstall.
 
 **Usage**:
 ```bash
@@ -1682,7 +1682,7 @@ test-results/
 
 **Usage**:
 ```bash
-# Called automatically by run-package-tests.sh — not invoked directly
+# Called automatically by run-package-tests.sh, not invoked directly
 /bin/bash /project/scripts/test-package-install.sh [--apply]
 ```
 

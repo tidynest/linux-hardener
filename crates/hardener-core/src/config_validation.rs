@@ -162,7 +162,7 @@ fn validate_ssh_value(_key: &str, value: &str) -> std::result::Result<(), String
     Ok(())
 }
 
-/// Firewall: compound keys `<rule_id>.<field>` — validate by field.
+/// Firewall: compound keys `<rule_id>.<field>`: validate by field.
 fn validate_firewall_value(key: &str, value: &str) -> std::result::Result<(), String> {
     let field = key.rsplit('.').next().unwrap_or(key);
     match field {
@@ -189,7 +189,7 @@ fn validate_firewall_value(key: &str, value: &str) -> std::result::Result<(), St
             }
         }
         "source" => {
-            // IP address or CIDR — basic structural check
+            // IP address or CIDR: basic structural check
             if value
                 .chars()
                 .all(|c| c.is_ascii_digit() || c == '.' || c == '/' || c == ':')

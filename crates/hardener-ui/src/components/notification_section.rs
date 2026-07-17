@@ -1,4 +1,4 @@
-//! Notification configuration section — email, webhook, and test button.
+//! Notification configuration section: email, webhook, and test button.
 
 use crate::state::AppState;
 use crate::tauri_bindings;
@@ -41,7 +41,7 @@ pub fn NotificationSection() -> impl IntoView {
         }
     });
 
-    // Save handler — merges notification fields into existing config, preserving schedule
+    // Save handler: merges notification fields into existing config, preserving schedule
     let handle_save = move |_| {
         app_state.is_saving_scheduler.set(true);
         save_status.set(None);

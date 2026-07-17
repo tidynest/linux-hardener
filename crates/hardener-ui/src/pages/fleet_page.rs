@@ -1,4 +1,4 @@
-//! Fleet page — scan several inventory hosts at once (read-only posture).
+//! Fleet page: scan several inventory hosts at once (read-only posture).
 
 use crate::components::{AdhocHostInput, Card, FleetTable};
 use crate::tauri_bindings::{invoke_fleet_scan, invoke_list_remote_hosts, listen_event};
@@ -19,7 +19,7 @@ pub fn FleetPage() -> impl IntoView {
     let error = RwSignal::new(None::<String>);
     // Live progress: the hosts of the running scan, and per-host completion
     // (true = that host failed). Filled by fleet-progress events; purely
-    // cosmetic — the scan's outcome is the awaited invoke result.
+    // cosmetic: the scan's outcome is the awaited invoke result.
     let expected = RwSignal::new(Vec::<String>::new());
     let progress = RwSignal::new(HashMap::<String, bool>::new());
 

@@ -32,7 +32,7 @@ Nav link: "Scheduler" added after "Remote"
 
 Two vertically stacked sections inside a single page component:
 
-### Section 1 — Schedule Configuration
+### Section 1: Schedule Configuration
 
 | Field | Widget | Notes |
 |-------|--------|-------|
@@ -48,7 +48,7 @@ Preset-to-cron mapping (6-field, seconds prefix):
 - Every 12 hours → `0 0 */12 * * *`
 - Weekly on Monday → `0 0 2 * * Mon`
 
-### Section 2 — Notifications
+### Section 2: Notifications
 
 **Email subsection:**
 | Field | Widget | Notes |
@@ -80,12 +80,12 @@ SchedulerPage ──test───→ test_notification ──→ NotificationDis
 
 | Command | Input | Output |
 |---------|-------|--------|
-| `get_scheduler_config` | — | `SchedulerUiConfig` |
+| `get_scheduler_config` | - | `SchedulerUiConfig` |
 | `save_scheduler_config` | `SchedulerUiConfig` | `()` |
-| `test_notification` | — | `Result<TestNotificationResult, String>` |
+| `test_notification` | - | `Result<TestNotificationResult, String>` |
 
 All three commands read/write the TOML config file used by the CLI daemon. The
-GUI does not start the daemon itself — it only configures it.
+GUI does not start the daemon itself: it only configures it.
 
 ## AppState Signals
 

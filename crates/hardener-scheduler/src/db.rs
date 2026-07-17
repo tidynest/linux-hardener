@@ -504,7 +504,7 @@ impl SeverityCounts {
 }
 
 /// Severity counts as a priority-ordered tuple: (critical, high, medium, low, info).
-/// Lexicographic comparison of two tuples reflects security priority — a single
+/// Lexicographic comparison of two tuples reflects security priority: a single
 /// new critical outranks any number of lower-severity changes.
 pub type SeverityTuple = (i64, i64, i64, i64, i64);
 
@@ -768,7 +768,7 @@ mod tests {
 
         // A second session: excluding it returns the other one (the prior scan).
         // With exactly two sessions this is deterministic regardless of any
-        // started_at tie — there is only one candidate left after the exclusion.
+        // started_at tie: there is only one candidate left after the exclusion.
         let second = manager.create_session("schedule", "h", &[]).await.unwrap();
         manager
             .complete_session(&second, &[], None, None)

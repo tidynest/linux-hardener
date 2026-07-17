@@ -44,6 +44,9 @@ DOC_MARKERS = {
     "HIPAA": "HIPAA",
     "GDPR": "GDPR",
     "ISO27001": "27001",  # docs write "ISO/IEC 27001:2022"
+    "SOC2": "SOC 2",  # docs write "SOC 2", not the bare variant name
+    "NIST800171": "800-171",  # docs write "NIST SP 800-171"
+    "FedRAMP": "FedRAMP",
 }
 
 

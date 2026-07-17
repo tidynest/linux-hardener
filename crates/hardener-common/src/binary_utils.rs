@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 
 /// Trusted directories to search for system binaries, in priority order.
-/// Only well-known system paths are included — no user-writable directories.
+/// Only well-known system paths are included, no user-writable directories.
 const TRUSTED_PATH: &[&str] = &[
     "/usr/bin",
     "/usr/sbin",

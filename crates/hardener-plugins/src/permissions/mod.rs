@@ -155,7 +155,7 @@ const CRITICAL_PERMISSIONS: &[PermissionDirective] = &[
 
 /// True when `current_mode` violates the directive. Exact directives require an
 /// exact match; max-mask directives flag only when a bit outside the allowed
-/// mask (`permission_mode`) is set — so a stricter mode is compliant.
+/// mask (`permission_mode`) is set, so a stricter mode is compliant.
 fn violates(directive: &PermissionDirective, current_mode: u32) -> bool {
     if directive.permission_max_mask {
         current_mode & !directive.permission_mode != 0
@@ -228,7 +228,7 @@ async fn check_path_permissions(ctx: &Context, directive: &PermissionDirective) 
 /// `references:` blocks (see `// SSG:` comments). NIST IDs are 800-53 Rev 5;
 /// PCI-DSS is v4.0. STIG is deliberately omitted for the account files below:
 /// the SSG rules `file_permissions_etc_{passwd,shadow,group,gshadow}` declare
-/// no `stigid@` — DISA covers them only via the parent SRG
+/// no `stigid@`: DISA covers them only via the parent SRG
 /// (`SRG-OS-000480-GPOS-00227`), so there is no concrete STIG control ID to
 /// cite without inventing one.
 /// Every compliance mapping this plugin can emit, across all critical paths it
@@ -260,7 +260,7 @@ fn soc2(id: &str, title: &str) -> ComplianceMapping {
 /// Builds a NIST SP 800-171 Revision 3 mapping. `id` is the requirement
 /// number (e.g. `3.1.5`); `title` the published requirement name; the
 /// section is the requirement's official family. Every id is translated from
-/// this plugin's 800-53 entries via the r3 source-control table — never
+/// this plugin's 800-53 entries via the r3 source-control table, never
 /// invented.
 fn nist171(id: &str, title: &str) -> ComplianceMapping {
     ComplianceMapping {
@@ -273,7 +273,7 @@ fn nist171(id: &str, title: &str) -> ComplianceMapping {
 
 /// Builds a FedRAMP mapping. FedRAMP's control set is NIST 800-53 at the
 /// Moderate (Rev 5) baseline, so `id`/`title` mirror this plugin's 800-53
-/// entries verbatim — each id is checked against the GSA rev5 Moderate
+/// entries verbatim; each id is checked against the GSA rev5 Moderate
 /// baseline before it is mapped, never invented. The section is the control's
 /// 800-53 family.
 fn fedramp(id: &str, title: &str) -> ComplianceMapping {
@@ -642,7 +642,7 @@ async fn apply_remote_chmod(
 
     match result {
         Ok(output) if output.success() => {
-            // Verify the change took effect — for max-mask directives, verify
+            // Verify the change took effect: for max-mask directives, verify
             // no disallowed bits remain; for exact directives, verify equality.
             let target = target_mode(directive, current_mode);
             let path = Path::new(directive.permission_path);
@@ -666,7 +666,7 @@ async fn apply_remote_chmod(
             } else {
                 Some(Change {
                     change_description: format!(
-                        "Permissions on {} unchanged (filesystem may not support chmod — \
+                        "Permissions on {} unchanged (filesystem may not support chmod, \
                          e.g. vfat/FAT32 uses mount options fmask/dmask instead)",
                         directive.permission_path
                     ),
@@ -761,10 +761,10 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
 
         // Apply permissions to all critical paths
         for directive in CRITICAL_PERMISSIONS {
-            // Check for a valid exception — skip this path if exempted
+            // Check for a valid exception: skip this path if exempted
             if let Some(exception) = config.has_valid_exception(directive.permission_path) {
                 info!(
-                    "Skipping {} — exception: {}",
+                    "Skipping {} (exception: {})",
                     directive.permission_path, exception.reason
                 );
                 changes.push(Change {
@@ -839,7 +839,7 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
             // Build an effective directive: apply any per-path override to
             // `permission_mode` while preserving `permission_max_mask`, so the
             // dry-run's compliance test matches scan/apply exactly (a stricter
-            // mode is compliant for mask directives — no spurious pending change).
+            // mode is compliant for mask directives (no spurious pending change).
             let mut effective = directive.clone();
             if let Some(mode) = config
                 .directives
@@ -948,7 +948,7 @@ mod tests {
         assert!(!violates(&shadow, 0o600));
         assert!(violates(&shadow, 0o644));
         assert!(violates(&shadow, 0o660));
-        // Apply strips disallowed bits only — never adds any.
+        // Apply strips disallowed bits only, never adds any.
         assert_eq!(target_mode(&shadow, 0o644), 0o640);
         assert_eq!(target_mode(&shadow, 0o600), 0o600);
 
@@ -986,7 +986,7 @@ mod tests {
         assert!(violates(&effective, 0o640), "0640 exceeds the 0600 mask");
         assert_eq!(target_mode(&effective, 0o640), 0o600);
 
-        // No override: baseline 0640 mask — 0000 compliant, 0644 flagged.
+        // No override: baseline 0640 mask; 0000 compliant, 0644 flagged.
         assert!(!violates(&shadow, 0o000));
         assert!(violates(&shadow, 0o644));
     }

@@ -241,7 +241,7 @@ pub fn HistorySection() -> impl IntoView {
                                             let ok = file.restore_success;
                                             view! {
                                                 <li class=if ok { "change-success" } else { "change-failure" }>
-                                                    <code>{path}</code>" — "{action}
+                                                    <code>{path}</code>" - "{action}
                                                 </li>
                                             }
                                         }).collect::<Vec<_>>()}

@@ -15,7 +15,7 @@
 //!
 //! Run: `cargo test -p hardener-cli --test batch_ssh_integration -- --ignored`
 //!
-//! Auth is key/agent only — the SSH executor has no password path.
+//! Auth is key/agent only; the SSH executor has no password path.
 
 use std::process::{Command, Output};
 
@@ -38,7 +38,7 @@ fn run_batch(args: &[&str]) -> Output {
 }
 
 /// Parses the JSON document from stdout, tolerating any preamble before the
-/// first `open` delimiter — the same contract the desktop's fleet commands
+/// first `open` delimiter, the same contract the desktop's fleet commands
 /// rely on when they shell out to `batch`.
 fn json_from(stdout: &[u8], open: char) -> serde_json::Value {
     let text = String::from_utf8_lossy(stdout);

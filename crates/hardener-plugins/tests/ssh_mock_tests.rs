@@ -417,7 +417,7 @@ fn test_select_algorithms_returns_intersection_in_desired_order() {
     ];
     // Host supports a DIFFERENT order, plus extra/legacy algorithms we must drop.
     let supported = vec![
-        "diffie-hellman-group14-sha1".to_string(), // weak — not in desired
+        "diffie-hellman-group14-sha1".to_string(), // weak, not in desired
         "curve25519-sha256".to_string(),
         "diffie-hellman-group16-sha512".to_string(),
         "mlkem768x25519-sha256".to_string(),
@@ -561,9 +561,9 @@ async fn test_validate_sshd_config_err_when_sshd_t_fails() {
 
 /// Pins the ssh plugin's STIG rows to the real RHEL 8 V2R7 benchmark: the
 /// V-230290/291/292 ids shipped previously name unrelated rules (known-hosts
-/// auth, Kerberos auth, separate /var). The corrected pairing is DISA's own —
+/// auth, Kerberos auth, separate /var). The corrected pairing is DISA's own:
 /// RHEL-08-010290 = MACs and RHEL-08-010291 = Ciphers, reversed versus
-/// intuition — and the Kex check carries no STIG mapping at all: the RHEL 8
+/// intuition, and the Kex check carries no STIG mapping at all: the RHEL 8
 /// KexAlgorithms rule (RHEL-08-040342 / V-255924) was removed in V2R6 and the
 /// RHEL 10 STIG never had one.
 #[test]
@@ -597,7 +597,7 @@ fn ssh_stig_crypto_ids_match_the_rhel8_v2r7_benchmark() {
         macs.compliance_control_title
     );
 
-    // Exactly the two crypto rules — the Kex STIG mapping is gone, and no
+    // Exactly the two crypto rules: the Kex STIG mapping is gone, and no
     // mislabelled V-23029x id survives anywhere in the plugin's coverage.
     assert_eq!(
         stig.len(),

@@ -1,6 +1,6 @@
-# Trait Refactor: Config to PluginConfig — Implementation Plan
+# Trait Refactor: Config to PluginConfig, Implementation Plan
 
-**Status:** Implemented (2026-02-22) — commits `81c13ad`, `d029629`, `b87fb1c`
+**Status:** Implemented (2026-02-22): commits `81c13ad`, `d029629`, `b87fb1c`
 
 **Goal:** Replace the empty `Config` unit struct with `PluginConfig` in the `HardeningPlugin` trait, and wire SSH as a proof-of-concept that consumes directives and exceptions.
 
@@ -64,7 +64,7 @@ fn test_has_valid_exception_expired() {
 **Step 2: Run test to verify it fails**
 
 Run: `cargo test -p hardener-core test_has_valid_exception`
-Expected: FAIL — `has_valid_exception` method does not exist
+Expected: FAIL, `has_valid_exception` method does not exist
 
 **Step 3: Write minimal implementation**
 
@@ -158,7 +158,7 @@ In `crates/hardener-core/src/testing.rs`:
 **Step 4: Verify core crate compiles**
 
 Run: `cargo check -p hardener-core`
-Expected: SUCCESS (the downstream crates will fail — that's expected, we fix them next)
+Expected: SUCCESS (the downstream crates will fail, that's expected, we fix them next)
 
 **Step 5: Commit**
 
@@ -365,7 +365,7 @@ git commit -m "refactor(plugins): update 7 plugin signatures from Config to Plug
 In `crates/hardener-plugins/src/ssh/mod.rs`:
 
 - Line 21: replace `Config` with `PluginConfig` in the import
-- Line 306: change `_config: &Config` to `config: &PluginConfig` (remove the underscore — SSH now uses it)
+- Line 306: change `_config: &Config` to `config: &PluginConfig` (remove the underscore, SSH now uses it)
 - Line 506: change `_config: &Config` to `_config: &PluginConfig` (validate stays unused for now)
 
 **Step 2: Modify the directive loop to check exceptions and directive overrides**
@@ -374,10 +374,10 @@ Replace the directive loop body in `apply()` (lines 381-421) with:
 
 ```rust
 for directive in SSH_DIRECTIVES {
-    // Check for a valid exception — skip this directive if exempted
+    // Check for a valid exception: skip this directive if exempted
     if let Some(exception) = config.has_valid_exception(directive.ssh_directive_name) {
         info!(
-            "Skipping {} — exception: {}",
+            "Skipping {}: exception: {}",
             directive.ssh_directive_name, exception.reason
         );
         changes.push(Change {
@@ -466,7 +466,7 @@ These tests import `Config` alongside other types. Change `Config` to `PluginCon
 |------|------------|-------------------|
 | `tests/ssh_tests.rs` | 2 | 74, 116 |
 | `tests/kernel_tests.rs` | 2 | 68, 109 |
-| `tests/firewall_tests.rs` | — (find Config import) | 66, 86 |
+| `tests/firewall_tests.rs` | - (find Config import) | 66, 86 |
 | `tests/pam_tests.rs` | 3 | 65, 109 |
 | `tests/audit_tests.rs` | 3 | 84, 145 |
 | `tests/mac_tests.rs` | 3 | 92, 138 |
@@ -596,4 +596,4 @@ git commit -m "docs: mark trait refactor design as implemented"
 - **No config file**: `PluginConfig::default()` has `enabled: true`, empty directives/exceptions. All hardcoded baselines apply. Identical to current behaviour.
 - **Directives set**: SSH apply uses user value instead of hardcoded baseline.
 - **Exception set**: SSH apply skips that directive with a logged audit trail.
-- **Other 7 plugins**: Ignore `_config: &PluginConfig` — zero behaviour change.
+- **Other 7 plugins**: Ignore `_config: &PluginConfig`, zero behaviour change.

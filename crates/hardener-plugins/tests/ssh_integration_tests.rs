@@ -313,7 +313,7 @@ async fn test_ssh_connection_wrong_port() {
 // =============================================================================
 
 /// Builds a CheckpointManager backed by a temporary SQLite database and a
-/// freshly generated signing key — no root access or production paths needed.
+/// freshly generated signing key: no root access or production paths needed.
 async fn test_checkpoint_manager() -> hardener_state::CheckpointManager {
     let dir = tempfile::tempdir().expect("tempdir");
     let db_path = dir.path().join("test_checkpoints.db");
@@ -360,7 +360,7 @@ async fn remote_apply_then_rollback_restores_remote_file() {
         .await
         .expect("read remote sshd_config before apply");
 
-    // Apply the SSH hardening plugin — this writes the hardened sshd_config
+    // Apply the SSH hardening plugin: this writes the hardened sshd_config
     // and, because a CheckpointManager is present in the context, also
     // captures a checkpoint of the original file via the SSH executor.
     let plugin = SshHardeningPlugin::new();
@@ -397,7 +397,7 @@ async fn remote_apply_then_rollback_restores_remote_file() {
         .checkpoint_id
         .clone();
 
-    // Roll back through the SSH executor — writes must target the remote host.
+    // Roll back through the SSH executor: writes must target the remote host.
     let result = manager
         .rollback(executor.as_ref(), &latest_id)
         .await

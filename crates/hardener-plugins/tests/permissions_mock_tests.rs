@@ -430,7 +430,7 @@ async fn test_permissions_scan_with_remote_executor() {
 /// Uses `.remote()` because MockExecutor cannot support local fchmod.
 #[tokio::test]
 async fn test_permissions_apply_detects_vfat_noop() {
-    // /boot at 0o755 — chmod will "succeed" but mode stays 0o755
+    // /boot at 0o755: chmod will "succeed" but mode stays 0o755
     let executor = MockExecutor::new()
         .remote()
         .with_file_metadata(
@@ -482,7 +482,7 @@ async fn test_permissions_apply_detects_vfat_noop() {
 
 #[tokio::test]
 async fn test_permissions_apply_respects_directives() {
-    // /boot at 0o777 — directive overrides target to 0o755 instead of baseline 0o700
+    // /boot at 0o777: directive overrides target to 0o755 instead of baseline 0o700
     // Uses `.remote()` because MockExecutor cannot support local fchmod.
     let executor = MockExecutor::new()
         .remote()
@@ -543,7 +543,7 @@ async fn test_permissions_apply_respects_directives() {
 #[tokio::test]
 async fn test_permissions_apply_skips_exceptions() {
     // /boot exists with insecure perms, but excepted
-    // NO chmod command registered — mock will error if called
+    // NO chmod command registered: mock will error if called
     let executor = MockExecutor::new().with_file_metadata(
         "/boot",
         "",

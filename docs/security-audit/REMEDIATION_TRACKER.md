@@ -236,8 +236,8 @@ section (SAM-061/062/063/070/074/076), then spot-verified in code.
 > command is deniable by deleting one line. Enforcement is proven by
 > `src-tauri/src/acl_tests.rs` (mock-runtime invoke of an ungranted command is
 > rejected by the ACL layer before dispatch, with a granted positive control),
-> and unknown permission identifiers fail the build. This layers on top of —
-> not in place of — `PrivilegedOpGuard`, pkexec, and IPC input validation.
+> and unknown permission identifiers fail the build. This layers on top of
+> (not in place of) `PrivilegedOpGuard`, pkexec, and IPC input validation.
 
 ---
 

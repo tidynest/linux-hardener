@@ -311,7 +311,7 @@ pub struct FindingPolicyException {
 ```rust
 // The trait method signature is:
 //   async fn scan(&self, ctx: &Context) -> Result<ScanResult>
-// scan() does NOT accept a PluginConfig parameter — only apply() and validate() do.
+// scan() does NOT accept a PluginConfig parameter, only apply() and validate() do.
 // Policy exceptions are resolved by the caller after scan results are returned.
 
 async fn scan(&self, ctx: &Context) -> Result<ScanResult> {

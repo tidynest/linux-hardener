@@ -1,4 +1,4 @@
-//! Ad-hoc host input — add `user@host[:port]` targets not saved in the
+//! Ad-hoc host input: add `user@host[:port]` targets not saved in the
 //! inventory. Shared by the Fleet and Fleet Apply pages.
 
 use crate::components::form_helpers::input_value;

@@ -26,7 +26,7 @@ extern "C" {
 }
 
 /// Active Tauri event subscription. Dropping it unsubscribes and releases the
-/// handler closure — hold it for as long as events should be received.
+/// handler closure: hold it for as long as events should be received.
 pub struct EventSubscription {
     unlisten: js_sys::Function,
     _handler: Closure<dyn FnMut(JsValue)>,
@@ -39,7 +39,7 @@ impl Drop for EventSubscription {
 }
 
 /// Subscribes to a Tauri event, deserialising each event's `payload` into `T`
-/// and passing it to `on_event`. Errors in browser mode (no Tauri runtime) —
+/// and passing it to `on_event`. Errors in browser mode (no Tauri runtime):
 /// callers treat live updates as best-effort and fall back gracefully.
 pub async fn listen_event<T, F>(event: &str, mut on_event: F) -> Result<EventSubscription, String>
 where

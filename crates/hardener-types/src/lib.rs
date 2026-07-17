@@ -618,7 +618,7 @@ pub enum FleetHostStatus {
     Failed(String),
 }
 
-/// One framework's compliance posture for a fleet host — summary only (no
+/// One framework's compliance posture for a fleet host: summary only (no
 /// per-control detail, which already travels in `FleetHostScan::scan_results`).
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct FleetFrameworkPosture {

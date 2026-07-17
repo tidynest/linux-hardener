@@ -82,8 +82,8 @@ For status and severity indication:
 | `--color-good` | Success, safe | `--color-good-bright` |
 | `--color-warning` | Caution, medium severity | `--color-warning-bright` |
 | `--color-critical` | Error, high severity | `--color-critical-bright` |
-| `--color-info` | Information, low severity | — |
-| `--color-pending` | Unknown, awaiting | — |
+| `--color-info` | Information, low severity | - |
+| `--color-pending` | Unknown, awaiting | - |
 
 ### 4. Interactive Colours
 

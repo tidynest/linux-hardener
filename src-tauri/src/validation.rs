@@ -177,7 +177,7 @@ pub fn validate_privileged_config_path(path: &str) -> Result<PathBuf, String> {
     let expanded = expand_home(path)?;
     reject_path_traversal(&expanded)?;
 
-    // Canonicalise (resolves symlinks — file must exist)
+    // Canonicalise (resolves symlinks; file must exist)
     let canonical = expanded
         .canonicalize()
         .map_err(|e| format!("Cannot resolve config path '{}': {e}", expanded.display()))?;

@@ -1,4 +1,4 @@
-//! Scheduler configuration page — manage scan schedules and notifications.
+//! Scheduler configuration page: manage scan schedules and notifications.
 
 use crate::components::{Card, NotificationSection, ScheduleSection};
 use crate::state::AppState;

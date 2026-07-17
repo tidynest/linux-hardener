@@ -4,7 +4,7 @@ Commands for compiling the CLI, desktop GUI, and WASM frontend.
 
 Binary paths below assume the default cargo target directory (`./target`). With
 `CARGO_TARGET_DIR` or a `[build] target-dir` in `~/.cargo/config.toml`, output
-lands under the configured directory instead — the repository's test scripts
+lands under the configured directory instead; the repository's test scripts
 resolve this automatically (see `docs/commands/testing.md`).
 
 ---
@@ -103,7 +103,7 @@ Prints Tauri version, system dependencies, and environment details for debugging
 
 ## WASM Frontend (Trunk)
 
-The Leptos frontend in `crates/hardener-ui/` is compiled to WASM via Trunk. You rarely need these directly — `cargo tauri dev` and `cargo tauri build` run them automatically.
+The Leptos frontend in `crates/hardener-ui/` is compiled to WASM via Trunk. You rarely need these directly; `cargo tauri dev` and `cargo tauri build` run them automatically.
 
 ### Dev server
 
