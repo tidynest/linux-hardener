@@ -105,6 +105,7 @@ async fn main() -> Result<()> {
         Command::Report {
             scenario,
             framework,
+            profile,
             report_format,
             output,
             interactive,
@@ -115,6 +116,7 @@ async fn main() -> Result<()> {
                 commands::report::run(
                     scenario,
                     framework,
+                    profile,
                     report_format,
                     output,
                     cli.format,
@@ -154,6 +156,7 @@ async fn main() -> Result<()> {
                 host,
                 ssh,
                 framework,
+                profile,
                 scenario,
                 concurrency,
                 output,
@@ -164,6 +167,7 @@ async fn main() -> Result<()> {
                     ssh,
                     concurrency,
                     framework,
+                    profile,
                     scenario,
                     format: cli.format,
                     output,

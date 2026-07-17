@@ -9,6 +9,7 @@ chrono = { workspace = true, features = ["serde"] }
 clap = { workspace = true }
 hardener-common = { workspace = true }
 hardener-core = { workspace = true, default-features = false }
+hardener-distro = { workspace = true }
 hardener-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

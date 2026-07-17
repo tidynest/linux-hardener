@@ -6,16 +6,19 @@ use chrono::Local;
 use hardener_common::types::{ComplianceFramework, ComplianceProfile};
 use hardener_compliance::{
     JsonFormatter, OutputFormat, ReportConfig, ReportFormatter, ReportGenerator, Scenario,
-    TextFormatter,
+    TextFormatter, profile_label, resolve_profile,
 };
 use hardener_core::{Context, Finding, PluginMetadata, executor::SystemExecutor};
+use hardener_distro::Distribution;
 use hardener_plugins::create_plugin_registry;
 use hardener_scheduler::db::ScanFinding;
 use std::{fs, io, io::Write, sync::Arc};
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     scenario: Option<String>,
     framework: Option<String>,
+    profile: Option<String>,
     report_format: String,
     output: Option<String>,
     cli_format: CliOutputFormat,
@@ -24,6 +27,19 @@ pub async fn run(
 ) -> Result<()> {
     // Determine scenario/frameworks (shared with `batch report`).
     let scenario = resolve_scenario(framework, scenario, quiet)?;
+
+    // An explicit --profile wins; otherwise the local distribution decides,
+    // with any detection failure silently falling back to Generic.
+    let profile = match profile {
+        Some(value) => parse_profile(&value)?,
+        None => Distribution::detect()
+            .ok()
+            .map(|distro| resolve_profile(&distro))
+            .unwrap_or_default(),
+    };
+    if !quiet && profile != ComplianceProfile::Generic {
+        eprintln!("Profile: {}", profile_line(profile, &scenario));
+    }
 
     // Determine output format
     let output_format = match report_format.to_lowercase().as_str() {
@@ -45,7 +61,7 @@ pub async fn run(
         scenario,
         formats: vec![output_format],
         output_dir: None,
-        profile: ComplianceProfile::default(),
+        profile,
     };
 
     if !quiet {
@@ -263,6 +279,28 @@ fn parse_framework(s: &str) -> Result<ComplianceFramework> {
     }
 }
 
+/// Parses an explicit `--profile` value. Shared by the single-host `report`
+/// and multi-host `batch report` commands.
+pub(crate) fn parse_profile(s: &str) -> Result<ComplianceProfile> {
+    s.parse::<ComplianceProfile>().map_err(|e| anyhow!(e))
+}
+
+/// Names a non-generic profile for the progress line, using the identifier
+/// scheme labels of the frameworks in scope where they exist and the plain
+/// profile name otherwise.
+fn profile_line(profile: ComplianceProfile, scenario: &Scenario) -> String {
+    let labels: Vec<&str> = scenario
+        .frameworks()
+        .iter()
+        .filter_map(|framework| profile_label(profile, *framework))
+        .collect();
+    if labels.is_empty() {
+        profile.to_string()
+    } else {
+        format!("{} identifiers", labels.join(" + "))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -305,6 +343,30 @@ mod tests {
             Some("File System"),
             "category must persist via Display, not Debug"
         );
+    }
+
+    #[test]
+    fn parse_profile_accepts_known_values_and_rejects_unknown() {
+        assert_eq!(parse_profile("rhel10").unwrap(), ComplianceProfile::Rhel10);
+        assert_eq!(
+            parse_profile("generic").unwrap(),
+            ComplianceProfile::Generic
+        );
+        let err = parse_profile("rhel9").unwrap_err().to_string();
+        assert!(err.contains("Valid options: generic, rhel10"), "{err}");
+    }
+
+    #[test]
+    fn profile_line_prefers_framework_labels() {
+        // Frameworks with a labelled RHEL 10 scheme name it outright.
+        let stig = Scenario::Custom(vec![ComplianceFramework::STIG]);
+        assert_eq!(
+            profile_line(ComplianceProfile::Rhel10, &stig),
+            "DISA RHEL 10 STIG V1R1 identifiers"
+        );
+        // Profile-invariant frameworks fall back to the plain profile name.
+        let nist = Scenario::Custom(vec![ComplianceFramework::NIST]);
+        assert_eq!(profile_line(ComplianceProfile::Rhel10, &nist), "rhel10");
     }
 
     #[tokio::test]

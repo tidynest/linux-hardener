@@ -10,6 +10,7 @@
 //! a guessed ID.
 
 use hardener_common::types::{ComplianceFramework, ComplianceMapping, ComplianceProfile};
+use hardener_distro::{Distribution, DistroFamily};
 
 /// One sourced translation row: canonical id → (target id, target title,
 /// section override). `None` keeps the canonical mapping's section. Repeat a
@@ -503,8 +504,10 @@ const RHEL10_CIS: &[Row] = &[
         "Ensure password history remember is configured",
         None,
     ),
-    // 5.4.1.1 and 5.4.1.2 keep their numbers in v1.0.1 — the rows must exist
-    // anyway, or the keyed lookup would wrongly DROP them.
+    // The 5.4.1.x password-ageing block keeps its numbers in v1.0.1 — the rows
+    // must exist anyway, or the keyed lookup would wrongly DROP them. 5.4.1.3
+    // tied by SSG rule identity (accounts_password_warn_age_login_defs appears
+    // in that section and nowhere else among the 329 controls).
     (
         "5.4.1.1",
         "5.4.1.1",
@@ -515,6 +518,12 @@ const RHEL10_CIS: &[Row] = &[
         "5.4.1.2",
         "5.4.1.2",
         "Ensure minimum password days is configured",
+        None,
+    ),
+    (
+        "5.4.1.3",
+        "5.4.1.3",
+        "Ensure password expiration warning days is configured",
         None,
     ),
     (
@@ -598,6 +607,21 @@ pub fn profile_label(
     }
 }
 
+/// Resolves the report profile for a detected distribution.
+///
+/// Only RHEL-family major 10 gets [`ComplianceProfile::Rhel10`]; every other
+/// family, major, or unparseable version stays [`ComplianceProfile::Generic`],
+/// so resolution can never fail.
+pub fn resolve_profile(distribution: &Distribution) -> ComplianceProfile {
+    if distribution.distro_family == DistroFamily::RedHat
+        && distribution.version_major() == Some(10)
+    {
+        ComplianceProfile::Rhel10
+    } else {
+        ComplianceProfile::Generic
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -608,6 +632,58 @@ mod tests {
             compliance_control_id: id.to_string(),
             compliance_control_title: format!("Control {id}"),
             compliance_section: Some("Test Section".to_string()),
+        }
+    }
+
+    fn distro(family: DistroFamily, name: &str, version: &str) -> Distribution {
+        Distribution {
+            distro_family: family,
+            distro_name: name.to_string(),
+            distro_version: version.to_string(),
+            distro_codename: None,
+        }
+    }
+
+    #[test]
+    fn resolve_profile_matrix() {
+        let cases = [
+            (
+                DistroFamily::RedHat,
+                "rocky",
+                "10",
+                ComplianceProfile::Rhel10,
+            ),
+            (
+                DistroFamily::RedHat,
+                "rhel",
+                "10.1",
+                ComplianceProfile::Rhel10,
+            ),
+            (
+                DistroFamily::RedHat,
+                "rhel",
+                "9.4",
+                ComplianceProfile::Generic,
+            ),
+            (
+                DistroFamily::Debian,
+                "ubuntu",
+                "24.04",
+                ComplianceProfile::Generic,
+            ),
+            (
+                DistroFamily::Arch,
+                "arch",
+                "rolling",
+                ComplianceProfile::Generic,
+            ),
+        ];
+        for (family, name, version, expected) in cases {
+            assert_eq!(
+                resolve_profile(&distro(family, name, version)),
+                expected,
+                "{name} {version}"
+            );
         }
     }
 
@@ -710,21 +786,13 @@ mod tests {
     ///
     /// - CIS 2.1.1 (xinetd): verified absent from the 329-control v1.0.1
     ///   tree; the services plugin still emits it, so it may drop.
-    /// - CIS 5.4.1.3 (PASS_WARN_AGE, pam): NOT verified absent — simply
-    ///   unsourced. The research tables cover the 5.4.1.1/5.4.1.2 pam extras
-    ///   but carry no 5.4.1.3 row, and the data-sourcing hard rule forbids
-    ///   inferring that its number survived; it drops from the profiled
-    ///   report until someone sources a counterpart.
     ///
     /// CIS 5.2.4 (SSH Protocol 2) is verified gone too but lives only in the
     /// curated catalogue — no plugin emits it, so it needs no entry. STIG
     /// needs none either: the sshd KexAlgorithms check lost its STIG mapping
     /// with the RHEL 8 V2R7 V-ID fix, so every plugin-emitted STIG id has a
     /// sourced row.
-    const DOCUMENTED_DROPS: &[(ComplianceFramework, &str)] = &[
-        (ComplianceFramework::CIS, "2.1.1"),
-        (ComplianceFramework::CIS, "5.4.1.3"),
-    ];
+    const DOCUMENTED_DROPS: &[(ComplianceFramework, &str)] = &[(ComplianceFramework::CIS, "2.1.1")];
 
     /// Pins the tables against the live plugin surface: every STIG or CIS
     /// mapping any plugin can emit either translates under `Rhel10` or is an

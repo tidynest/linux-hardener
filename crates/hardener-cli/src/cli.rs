@@ -110,6 +110,11 @@ pub enum Command {
         #[arg(long, conflicts_with = "scenario")]
         framework: Option<String>,
 
+        /// Compliance ID profile (generic, rhel10). Default: auto-detect from
+        /// the target system.
+        #[arg(long)]
+        profile: Option<String>,
+
         /// Output format (text, json).
         #[arg(long, default_value = "text")]
         report_format: String,
@@ -191,6 +196,11 @@ pub enum BatchAction {
         /// Single framework: cis, stig, nist, pcidss, hipaa, gdpr, iso27001.
         #[arg(long, conflicts_with = "scenario")]
         framework: Option<String>,
+
+        /// Compliance ID profile (generic, rhel10). Default: auto-detect from
+        /// the target system.
+        #[arg(long)]
+        profile: Option<String>,
 
         /// Scenario preset: server, workstation, government, healthcare,
         /// financial, gdpr, all.
@@ -497,6 +507,24 @@ mod tests {
     }
 
     #[test]
+    fn test_cli_parse_report_profile() {
+        let cli = Cli::parse_from(["hardener", "report", "--profile", "rhel10"]);
+        if let Command::Report { profile, .. } = cli.command {
+            assert_eq!(profile, Some("rhel10".to_string()));
+        } else {
+            panic!("Expected Report command");
+        }
+
+        // Omitted -> None, so the command auto-detects.
+        let cli = Cli::parse_from(["hardener", "report"]);
+        if let Command::Report { profile, .. } = cli.command {
+            assert!(profile.is_none());
+        } else {
+            panic!("Expected Report command");
+        }
+    }
+
+    #[test]
     fn test_cli_parse_checkpoint_list() {
         let cli = Cli::parse_from(["hardener", "checkpoint", "list"]);
         if let Command::Checkpoint { action } = cli.command {
@@ -751,6 +779,27 @@ mod tests {
         {
             assert!(all);
             assert_eq!(framework.as_deref(), Some("cis"));
+        } else {
+            panic!("Expected Batch Report command");
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_batch_report_profile() {
+        let cli = Cli::parse_from([
+            "hardener",
+            "batch",
+            "report",
+            "--all",
+            "--profile",
+            "rhel10",
+        ]);
+        if let Command::Batch {
+            action: BatchAction::Report { all, profile, .. },
+        } = cli.command
+        {
+            assert!(all);
+            assert_eq!(profile.as_deref(), Some("rhel10"));
         } else {
             panic!("Expected Batch Report command");
         }

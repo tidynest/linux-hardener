@@ -35,5 +35,5 @@ pub use generator::ReportGenerator;
 pub use output::{
     CsvFormatter, HtmlFormatter, JsonFormatter, PdfFormatter, ReportFormatter, TextFormatter,
 };
-pub use profiles::{profile_label, translate};
+pub use profiles::{profile_label, resolve_profile, translate};
 pub use report::{ComplianceReport, ComplianceSummary, ControlResult};

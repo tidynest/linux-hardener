@@ -16,6 +16,7 @@ path = "src/main.rs"
 hardener-common = { path = "../hardener-common" }
 hardener-compliance = { path = "../hardener-compliance" }
 hardener-core = { path = "../hardener-core" }
+hardener-distro = { path = "../hardener-distro" }
 hardener-plugins = { path = "../hardener-plugins" }
 hardener-scheduler = { path = "../hardener-scheduler" }
 hardener-state = { path = "../hardener-state" }

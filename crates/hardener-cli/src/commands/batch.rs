@@ -7,13 +7,14 @@ use crate::commands::report::{finding_to_scan_finding, scan_grouped};
 use crate::ssh_config::SshConnectionConfig;
 use anyhow::{Result, anyhow, bail};
 use hardener_common::types::{ComplianceProfile, PluginId, Severity};
-use hardener_compliance::{ReportConfig, ReportGenerator};
+use hardener_compliance::{ReportConfig, ReportGenerator, Scenario, resolve_profile};
 use hardener_core::plugin::Finding;
 use hardener_core::{ConfigLoader, HardenerConfig};
 use hardener_core::{
     PluginMetadata, SshExecutor,
     executor::{SystemExecutor, host_key_for},
 };
+use hardener_distro::Distribution;
 use hardener_scheduler::ScanHistoryManager;
 use hardener_scheduler::db::ScanFinding;
 use hardener_state::{ActionResult, ActionType, Checkpoint, CheckpointManager};
@@ -71,11 +72,15 @@ pub enum HostStatus {
 }
 
 /// One host's batch result. `name` is the inventory name (or target for ad-hoc
-/// hosts); `target` is `user@host:port` for display.
+/// hosts); `target` is `user@host:port` for display. `profile` is the
+/// compliance profile resolved from the host's own `/etc/os-release`
+/// (`Generic` when the host failed or detection did).
 #[derive(Clone, Debug, Serialize)]
 pub struct HostOutcome {
     pub name: String,
     pub target: String,
+    #[serde(default)]
+    pub profile: ComplianceProfile,
     #[serde(flatten)]
     pub status: HostStatus,
 }
@@ -198,11 +203,14 @@ pub enum HostReportStatus {
     Failed { error: String },
 }
 
-/// One host's compliance assessment outcome.
+/// One host's compliance assessment outcome. `profile` names the identifier
+/// scheme the host was assessed under; the text table omits it, JSON carries it.
 #[derive(Clone, Debug, Serialize)]
 pub struct HostReport {
     pub name: String,
     pub target: String,
+    #[serde(default)]
+    pub profile: ComplianceProfile,
     #[serde(flatten)]
     pub status: HostReportStatus,
 }
@@ -398,15 +406,46 @@ pub fn host_report(outcome: HostOutcome, generator: &ReportGenerator) -> HostRep
             HostReport {
                 name: outcome.name,
                 target: outcome.target,
+                profile: outcome.profile,
                 status: HostReportStatus::Assessed { frameworks },
             }
         }
         HostStatus::Failed { error } => HostReport {
             name: outcome.name,
             target: outcome.target,
+            profile: outcome.profile,
             status: HostReportStatus::Failed { error },
         },
     }
+}
+
+/// Assesses every outcome with a generator carrying that host's own resolved
+/// profile — or the fleet-wide `--profile` override when one was given. The
+/// per-host generator (and coverage clone) is cheap at fleet scale.
+fn assess_outcomes(
+    outcomes: Vec<HostOutcome>,
+    scenario: Scenario,
+    override_profile: Option<ComplianceProfile>,
+) -> Vec<HostReport> {
+    let coverage = hardener_plugins::compliance_coverage();
+    outcomes
+        .into_iter()
+        .map(|mut outcome| {
+            if let Some(profile) = override_profile {
+                outcome.profile = profile;
+            }
+            let generator = ReportGenerator::new(
+                ReportConfig {
+                    scenario: scenario.clone(),
+                    formats: vec![],
+                    output_dir: None,
+                    profile: outcome.profile,
+                },
+                coverage.clone(),
+            );
+            host_report(outcome, &generator)
+        })
+        .collect()
 }
 
 /// Options for `hardener batch report`.
@@ -416,6 +455,7 @@ pub struct BatchReportOptions {
     pub ssh: Vec<String>,
     pub concurrency: usize,
     pub framework: Option<String>,
+    pub profile: Option<String>,
     pub scenario: Option<String>,
     pub format: CliOutputFormat,
     pub output: Option<String>,
@@ -441,6 +481,21 @@ pub async fn run_report(opts: BatchReportOptions) -> anyhow::Result<()> {
         }
     };
 
+    // An explicit --profile forces one identifier scheme fleet-wide; without
+    // it, each host is assessed under its own detected profile.
+    let override_profile = match opts
+        .profile
+        .as_deref()
+        .map(crate::commands::report::parse_profile)
+        .transpose()
+    {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(2);
+        }
+    };
+
     let outcomes = resolve_and_scan(
         opts.all,
         &opts.host,
@@ -454,19 +509,7 @@ pub async fn run_report(opts: BatchReportOptions) -> anyhow::Result<()> {
     )
     .await;
 
-    let generator = ReportGenerator::new(
-        ReportConfig {
-            scenario,
-            formats: vec![],
-            output_dir: None,
-            profile: ComplianceProfile::default(),
-        },
-        hardener_plugins::compliance_coverage(),
-    );
-    let reports: Vec<HostReport> = outcomes
-        .into_iter()
-        .map(|o| host_report(o, &generator))
-        .collect();
+    let reports = assess_outcomes(outcomes, scenario, override_profile);
 
     let rendered = match opts.format {
         CliOutputFormat::Json => render_report_json(&reports),
@@ -554,6 +597,21 @@ async fn persist_host(
     }
 }
 
+/// Best-effort per-host profile resolution: reads `/etc/os-release` through
+/// the host's own executor and resolves it. Any failure — unreadable file,
+/// unparseable content — falls back to `Generic` and never fails the scan.
+async fn detect_host_profile(executor: &dyn SystemExecutor) -> ComplianceProfile {
+    if let Ok(content) = executor
+        .read_file(std::path::Path::new("/etc/os-release"))
+        .await
+        && let Ok(distro) = Distribution::from_os_release(&content)
+    {
+        resolve_profile(&distro)
+    } else {
+        ComplianceProfile::Generic
+    }
+}
+
 /// Scans one host using an already-built executor. Split out so tests can inject
 /// a `MockExecutor`; production callers pass a connected `SshExecutor`.
 async fn scan_with_executor(
@@ -563,7 +621,7 @@ async fn scan_with_executor(
     executor: Arc<dyn SystemExecutor>,
     history: Option<Arc<ScanHistoryManager>>,
 ) -> HostOutcome {
-    match scan_grouped(true, executor, &CliOutputFormat::Json).await {
+    match scan_grouped(true, executor.clone(), &CliOutputFormat::Json).await {
         Ok(grouped) => {
             if let Some(history) = &history {
                 persist_host(history, &host_key, &grouped).await;
@@ -573,12 +631,14 @@ async fn scan_with_executor(
             HostOutcome {
                 name,
                 target,
+                profile: detect_host_profile(executor.as_ref()).await,
                 status: HostStatus::Scanned { counts, findings },
             }
         }
         Err(e) => HostOutcome {
             name,
             target,
+            profile: ComplianceProfile::Generic,
             status: HostStatus::Failed {
                 error: e.to_string(),
             },
@@ -601,6 +661,7 @@ async fn scan_one(
         Err(e) => HostOutcome {
             name: profile.name,
             target,
+            profile: ComplianceProfile::Generic,
             status: HostStatus::Failed {
                 error: e.to_string(),
             },
@@ -681,6 +742,7 @@ async fn scan_all(
         |p| HostOutcome {
             name: p.name.clone(),
             target: display_target(p),
+            profile: ComplianceProfile::Generic,
             status: HostStatus::Failed {
                 error: "scan task did not complete".to_string(),
             },
@@ -1404,6 +1466,7 @@ mod tests {
         HostReport {
             name: name.into(),
             target: format!("u@{name}:22"),
+            profile: ComplianceProfile::Generic,
             status: HostReportStatus::Assessed { frameworks },
         }
     }
@@ -1411,6 +1474,7 @@ mod tests {
         HostReport {
             name: name.into(),
             target: format!("u@{name}:22"),
+            profile: ComplianceProfile::Generic,
             status: HostReportStatus::Failed {
                 error: "refused".into(),
             },
@@ -1442,6 +1506,7 @@ mod tests {
         let scanned = HostOutcome {
             name: "web-01".into(),
             target: "u@web-01:22".into(),
+            profile: ComplianceProfile::Generic,
             status: HostStatus::Scanned {
                 counts: SeverityCounts::default(),
                 findings: vec![],
@@ -1600,6 +1665,7 @@ mod tests {
         HostOutcome {
             name: "h".into(),
             target: "u@h:22".into(),
+            profile: ComplianceProfile::Generic,
             status: HostStatus::Scanned {
                 counts: SeverityCounts {
                     high: total_high,
@@ -1614,6 +1680,7 @@ mod tests {
         HostOutcome {
             name: "h".into(),
             target: "u@h:22".into(),
+            profile: ComplianceProfile::Generic,
             status: HostStatus::Failed {
                 error: "boom".into(),
             },
@@ -1624,6 +1691,7 @@ mod tests {
         HostOutcome {
             name: name.into(),
             target: format!("u@{name}:22"),
+            profile: ComplianceProfile::Generic,
             status: HostStatus::Scanned {
                 counts,
                 findings: vec![],
@@ -1635,6 +1703,7 @@ mod tests {
         HostOutcome {
             name: name.into(),
             target: format!("u@{name}:22"),
+            profile: ComplianceProfile::Generic,
             status: HostStatus::Failed {
                 error: "did not complete".into(),
             },
@@ -1788,6 +1857,53 @@ mod tests {
         assert!(
             matches!(outcome.status, HostStatus::Scanned { .. }),
             "a mock executor should yield a Scanned outcome, not a connection failure",
+        );
+        assert_eq!(
+            outcome.profile,
+            ComplianceProfile::Generic,
+            "no os-release on the mock host resolves to Generic, never an error",
+        );
+    }
+
+    /// Scans a mock host whose `/etc/os-release` declares Rocky Linux 10.
+    async fn rocky10_outcome() -> HostOutcome {
+        use hardener_core::MockExecutor;
+        let exec = Arc::new(MockExecutor::new().with_file(
+            "/etc/os-release",
+            "NAME=\"Rocky Linux\"\nID=\"rocky\"\nVERSION_ID=\"10.0\"\n",
+        ));
+        scan_with_executor("r10".into(), "u@r10:22".into(), "r10".into(), exec, None).await
+    }
+
+    #[tokio::test]
+    async fn scan_resolves_rocky_10_profile_and_report_carries_it() {
+        let outcome = rocky10_outcome().await;
+        assert!(matches!(outcome.status, HostStatus::Scanned { .. }));
+        assert_eq!(outcome.profile, ComplianceProfile::Rhel10);
+
+        // Without an override the host's own profile rides into its report
+        // row, and the JSON document exposes it per host.
+        let reports = assess_outcomes(vec![outcome], Scenario::Server, None);
+        assert_eq!(reports[0].profile, ComplianceProfile::Rhel10);
+        let json = render_report_json(&reports);
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["hosts"][0]["profile"], "rhel10");
+    }
+
+    #[tokio::test]
+    async fn batch_report_profile_override_forces_every_host() {
+        let outcome = rocky10_outcome().await;
+        assert_eq!(outcome.profile, ComplianceProfile::Rhel10);
+
+        let reports = assess_outcomes(
+            vec![outcome],
+            Scenario::Server,
+            Some(ComplianceProfile::Generic),
+        );
+        assert_eq!(
+            reports[0].profile,
+            ComplianceProfile::Generic,
+            "an explicit --profile beats per-host detection",
         );
     }
 
@@ -1959,6 +2075,7 @@ mod tests {
         let out = render_text(&[HostOutcome {
             name: "cache".into(),
             target: "u@cache:22".into(),
+            profile: ComplianceProfile::Generic,
             status: HostStatus::Failed {
                 error: "connection refused".into(),
             },
