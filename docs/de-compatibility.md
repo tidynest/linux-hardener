@@ -4,6 +4,22 @@ Linux System Hardener uses `pkexec` (polkit) for privilege escalation when
 applying hardening rules or rolling back checkpoints. This requires a running
 polkit authentication agent that presents the password dialog.
 
+## Identifier Namespaces (verified 2026-07-17 — do not re-chase)
+
+Two deliberately different identifier namespaces exist:
+
+- **Polkit action ids** — `com.tidynest.linux-hardener.apply` /
+  `com.tidynest.linux-hardener.rollback`, declared in
+  `data/com.tidynest.linux-hardener.policy`, installed by every package to
+  `/usr/share/polkit-1/actions/com.tidynest.linux-hardener.policy`
+  (PKGBUILD line ~103; rpm spec and debian rules mirror it).
+  `scripts/detect-polkit-agent.sh` checks exactly this id and path — they
+  agree with what ships.
+- **Tauri bundle identifier** — `com.ericjingryd.linux-hardener` in
+  `src-tauri/tauri.conf.json`. This names the desktop application bundle,
+  not the polkit action; the two are unrelated namespaces and their
+  difference is intentional, not drift.
+
 ## Polkit Agent Requirements
 
 | Desktop | Agent Process | Package (Arch) | Package (Fedora) | Package (Debian/Ubuntu) | Notes |
