@@ -51,8 +51,9 @@ Linux System Hardener automates the process of securing Linux servers and workst
 - **Applying** hardening recommendations automatically
 - **Rolling back** changes safely using checkpoint snapshots
 - **Reporting** compliance status against CIS, STIG, NIST 800-53, PCI-DSS,
-  HIPAA, GDPR, ISO/IEC 27001:2022, SOC 2 (Trust Services Criteria) and
-  NIST SP 800-171 Revision 3 (Controlled Unclassified Information) —
+  HIPAA, GDPR, ISO/IEC 27001:2022, SOC 2 (Trust Services Criteria),
+  NIST SP 800-171 Revision 3 (Controlled Unclassified Information) and
+  FedRAMP (Moderate Rev 5 baseline of 800-53 controls) —
   findings are mapped to each framework's
   controls (controls the engine cannot automatically assess are flagged for
   manual review rather than assumed compliant). RHEL-10-family hosts are

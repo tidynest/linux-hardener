@@ -110,6 +110,7 @@ fn test_compliance_framework_display() {
         format!("{}", ComplianceFramework::NIST800171),
         "NIST 800-171"
     );
+    assert_eq!(format!("{}", ComplianceFramework::FedRAMP), "FedRAMP");
 }
 
 #[test]
@@ -131,6 +132,10 @@ fn test_compliance_framework_full_name() {
     assert_eq!(
         ComplianceFramework::NIST800171.full_name(),
         "NIST SP 800-171"
+    );
+    assert_eq!(
+        ComplianceFramework::FedRAMP.full_name(),
+        "FedRAMP Moderate Baseline"
     );
 }
 
@@ -198,6 +203,13 @@ fn test_compliance_framework_description() {
             .contains("Controlled Unclassified Information"),
         "NIST800171 description should mention Controlled Unclassified Information, got: {}",
         ComplianceFramework::NIST800171.description()
+    );
+    assert!(
+        ComplianceFramework::FedRAMP
+            .description()
+            .contains("Moderate baseline"),
+        "FedRAMP description should mention the Moderate baseline, got: {}",
+        ComplianceFramework::FedRAMP.description()
     );
 }
 

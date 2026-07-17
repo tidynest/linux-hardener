@@ -13,7 +13,7 @@ pub enum Scenario {
     Server,
     /// Desktop/laptop security (CIS Workstation).
     Workstation,
-    /// Government compliance (STIG, NIST 800-53, NIST SP 800-171).
+    /// Government compliance (STIG, NIST 800-53, NIST SP 800-171, FedRAMP).
     Government,
     /// Healthcare systems (HIPAA, NIST).
     Healthcare,
@@ -37,6 +37,7 @@ impl Scenario {
                 ComplianceFramework::STIG,
                 ComplianceFramework::NIST,
                 ComplianceFramework::NIST800171,
+                ComplianceFramework::FedRAMP,
             ],
             Scenario::Healthcare => vec![ComplianceFramework::HIPAA, ComplianceFramework::NIST],
             Scenario::Financial => vec![ComplianceFramework::PCIDSS, ComplianceFramework::CIS],
@@ -50,6 +51,7 @@ impl Scenario {
                 ComplianceFramework::GDPR,
                 ComplianceFramework::SOC2,
                 ComplianceFramework::NIST800171,
+                ComplianceFramework::FedRAMP,
             ],
             Scenario::Custom(frameworks) => frameworks.clone(),
         }

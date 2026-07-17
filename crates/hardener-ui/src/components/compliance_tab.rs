@@ -23,6 +23,7 @@ pub fn ComplianceTab() -> impl IntoView {
         ("iso27001", "ISO 27001"),
         ("soc2", "SOC 2"),
         ("800-171", "NIST 800-171"),
+        ("fedramp", "FedRAMP"),
     ];
 
     // Track selected frameworks

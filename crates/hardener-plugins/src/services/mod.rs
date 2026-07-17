@@ -156,6 +156,34 @@ fn service_nist171_wireless_access() -> ComplianceMapping {
     )
 }
 
+/// FedRAMP mapping for service-minimisation controls.
+///
+/// FedRAMP's control set is NIST 800-53 at the Moderate (Rev 5) baseline;
+/// CM-7 — the control every mapped daemon already cites — is a baseline
+/// member (GSA rev5 baseline), so it mirrors across verbatim. Family:
+/// Configuration Management.
+fn service_fedramp_least_functionality() -> ComplianceMapping {
+    service_mapping_in(
+        ComplianceFramework::FedRAMP,
+        "CM-7",
+        "Least Functionality",
+        "Configuration Management",
+    )
+}
+
+/// FedRAMP mapping for the Bluetooth daemon check.
+///
+/// AC-18 is a FedRAMP Moderate (Rev 5) baseline member (GSA rev5 baseline),
+/// mirroring the arm's existing 800-53 entry. Family: Access Control.
+fn service_fedramp_wireless_access() -> ComplianceMapping {
+    service_mapping_in(
+        ComplianceFramework::FedRAMP,
+        "AC-18",
+        "Wireless Access",
+        "Access Control",
+    )
+}
+
 /// Returns compliance mappings for service findings.
 ///
 /// Multi-framework control IDs are sourced from the ComplianceAsCode/SSG rule
@@ -173,6 +201,9 @@ fn service_nist171_wireless_access() -> ComplianceMapping {
 /// unauthorised-software criterion mirrors the same minimisation intent).
 /// NIST SP 800-171 3.4.6 likewise applies to every mapped daemon (sourced
 /// from CM-7), with 3.1.16 added for Bluetooth (sourced from AC-18).
+/// FedRAMP mirrors the same 800-53 entries verbatim — CM-7 for every mapped
+/// daemon and AC-18 for Bluetooth, both FedRAMP Moderate (Rev 5) baseline
+/// members.
 /// HIPAA is omitted — none of these daemons map cleanly to a Security Rule
 /// specification.
 /// Every compliance mapping this plugin can emit, across all services it
@@ -196,6 +227,8 @@ fn get_service_compliance_mappings(service_name: &str) -> Vec<ComplianceMapping>
             service_mapping(ComplianceFramework::NIST, "CM-7", "Least Functionality"),
             // 800-171r3 3.4.6 ← 800-53 CM-7 (SP 800-171r3 source-control table).
             service_nist171_least_functionality(),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 CM-7.
+            service_fedramp_least_functionality(),
             service_gdpr_hardening(),
             service_soc2_unauthorised_software(),
         ]
@@ -213,6 +246,8 @@ fn get_service_compliance_mappings(service_name: &str) -> Vec<ComplianceMapping>
             service_mapping(ComplianceFramework::NIST, "CM-7", "Least Functionality"),
             // 800-171r3 3.4.6 ← 800-53 CM-7 (SP 800-171r3 source-control table).
             service_nist171_least_functionality(),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 CM-7.
+            service_fedramp_least_functionality(),
             service_gdpr_hardening(),
             service_iso_networks(),
             service_soc2_unauthorised_software(),
@@ -230,6 +265,8 @@ fn get_service_compliance_mappings(service_name: &str) -> Vec<ComplianceMapping>
             service_mapping(ComplianceFramework::NIST, "CM-7", "Least Functionality"),
             // 800-171r3 3.4.6 ← 800-53 CM-7 (SP 800-171r3 source-control table).
             service_nist171_least_functionality(),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 CM-7.
+            service_fedramp_least_functionality(),
             service_gdpr_hardening(),
             service_soc2_unauthorised_software(),
         ]
@@ -243,9 +280,13 @@ fn get_service_compliance_mappings(service_name: &str) -> Vec<ComplianceMapping>
             service_mapping(ComplianceFramework::NIST, "AC-18", "Wireless Access"),
             // 800-171r3 3.1.16 ← 800-53 AC-18 (SP 800-171r3 source-control table).
             service_nist171_wireless_access(),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 AC-18.
+            service_fedramp_wireless_access(),
             service_mapping(ComplianceFramework::NIST, "CM-7", "Least Functionality"),
             // 800-171r3 3.4.6 ← 800-53 CM-7 (SP 800-171r3 source-control table).
             service_nist171_least_functionality(),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 CM-7.
+            service_fedramp_least_functionality(),
             service_gdpr_hardening(),
             service_iso_networks(),
             service_soc2_unauthorised_software(),
@@ -813,6 +854,29 @@ mod tests {
                 ids.contains(&"3.1.16".to_string()),
                 service == "bluetooth",
                 "only bluetooth carries the wireless-access requirement"
+            );
+        }
+    }
+
+    /// Confirms the FedRAMP derivation: CM-7 and AC-18 are both GSA rev5
+    /// Moderate baseline members, so every mapped daemon mirrors CM-7 and
+    /// Bluetooth additionally mirrors AC-18, verbatim from the 800-53 entries.
+    #[test]
+    fn services_map_fedramp_moderate_controls() {
+        for service in ["xinetd", "avahi-daemon", "cups", "bluetooth"] {
+            let ids: Vec<_> = get_service_compliance_mappings(service)
+                .into_iter()
+                .filter(|m| m.compliance_framework == ComplianceFramework::FedRAMP)
+                .map(|m| m.compliance_control_id)
+                .collect();
+            assert!(
+                ids.contains(&"CM-7".to_string()),
+                "{service} must carry FedRAMP CM-7"
+            );
+            assert_eq!(
+                ids.contains(&"AC-18".to_string()),
+                service == "bluetooth",
+                "only bluetooth carries the wireless-access control"
             );
         }
     }

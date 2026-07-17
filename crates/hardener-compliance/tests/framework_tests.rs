@@ -114,6 +114,7 @@ fn test_only_cis_and_iso_are_curated() {
         ComplianceFramework::GDPR,
         ComplianceFramework::SOC2,
         ComplianceFramework::NIST800171,
+        ComplianceFramework::FedRAMP,
     ] {
         assert!(
             frameworks::curated_controls(&framework).is_none(),

@@ -372,6 +372,20 @@ fn nist171(id: &str, title: &str) -> ComplianceMapping {
     }
 }
 
+/// Builds a FedRAMP mapping. FedRAMP's control set is NIST 800-53 at the
+/// Moderate (Rev 5) baseline, so `id`/`title` mirror this plugin's 800-53
+/// entries verbatim — each id is checked against the GSA rev5 Moderate
+/// baseline before it is mapped, never invented. The section is the control's
+/// 800-53 family.
+fn fedramp(id: &str, title: &str) -> ComplianceMapping {
+    ComplianceMapping {
+        compliance_framework: ComplianceFramework::FedRAMP,
+        compliance_control_id: id.to_string(),
+        compliance_control_title: title.to_string(),
+        compliance_section: Some("System and Communications Protection".to_string()),
+    }
+}
+
 /// Returns compliance mappings for a given SSH directive.
 /// Every compliance mapping this plugin can emit, across all SSH config and
 /// crypto directives it assesses. Aggregated into the engine's coverage set.
@@ -678,6 +692,8 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
             ),
             // 800-171r3 3.13.11 ← 800-53 SC-13 (SP 800-171r3 source-control table).
             nist171("3.13.11", "Cryptographic Protection"),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 SC-13.
+            fedramp("SC-13", "Cryptographic Protection"),
         ],
         "Ciphers" => vec![
             ComplianceMapping {
@@ -743,6 +759,8 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
             ),
             // 800-171r3 3.13.8 ← 800-53 SC-8 (SP 800-171r3 source-control table).
             nist171("3.13.8", "Transmission and Storage Confidentiality"),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 SC-8.
+            fedramp("SC-8", "Transmission Confidentiality and Integrity"),
         ],
         "MACs" => vec![
             ComplianceMapping {
@@ -810,6 +828,8 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
             ),
             // 800-171r3 3.13.8 ← 800-53 SC-8 (SP 800-171r3 source-control table).
             nist171("3.13.8", "Transmission and Storage Confidentiality"),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 SC-8.
+            fedramp("SC-8", "Transmission Confidentiality and Integrity"),
         ],
         _ => vec![],
     }

@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- FedRAMP compliance framework: `report --framework fedramp` (CLI and desktop,
+  including the fleet posture set, `--scenario all` and
+  `--scenario government`) assesses against the FedRAMP Moderate baseline
+  (Rev 5). FedRAMP's control set is NIST 800-53 at a baseline, so no new ids
+  are invented: every mapping mirrors a plugin's existing 800-53 entry
+  verbatim, filtered to membership in the official GSA rev5 Moderate baseline
+  (version 5.1.1+fedramp-20240111-0, 323 controls). All 18 base controls the
+  plugins cite are baseline members — including SC-5, SI-11 and SI-16, which
+  800-171r3 tailors out — giving 19 distinct printed control ids across six
+  800-53 families. Like SOC 2 and 800-171, the catalogue is derived from live
+  plugin coverage, so every reported control is genuinely assessed.
 - NIST SP 800-171 compliance framework: `report --framework 800-171` (CLI and
   desktop, including the fleet posture set, `--scenario all` and
   `--scenario government`) assesses against SP 800-171 Revision 3 (May 2024),

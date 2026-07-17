@@ -142,6 +142,47 @@ fn pam_nist171_unsuccessful_logons() -> ComplianceMapping {
     )
 }
 
+/// FedRAMP mapping for PAM password-quality checks.
+///
+/// FedRAMP's control set is NIST 800-53 at the Moderate (Rev 5) baseline;
+/// IA-5(1) is a baseline member (GSA rev5 baseline), so the quality arms'
+/// existing IA-5(1)(a) entry mirrors across verbatim. Family: Identification
+/// and Authentication.
+fn pam_fedramp_password_quality() -> ComplianceMapping {
+    pam_mapping_in(
+        ComplianceFramework::FedRAMP,
+        "IA-5(1)(a)",
+        "Authenticator Management | Password-Based Authentication",
+        "Identification and Authentication",
+    )
+}
+
+/// FedRAMP mapping for PAM password-ageing checks.
+///
+/// Same baseline membership as [`pam_fedramp_password_quality`]; the ageing
+/// arms cite part (d) of IA-5(1), so the printed id follows suit.
+fn pam_fedramp_password_ageing() -> ComplianceMapping {
+    pam_mapping_in(
+        ComplianceFramework::FedRAMP,
+        "IA-5(1)(d)",
+        "Authenticator Management | Password-Based Authentication",
+        "Identification and Authentication",
+    )
+}
+
+/// FedRAMP mapping for the PAM faillock lockout check.
+///
+/// AC-7 is a FedRAMP Moderate (Rev 5) baseline member (GSA rev5 baseline);
+/// the lockout arm's AC-7(a) entry mirrors across verbatim under the shared
+/// "Access Control" section — the control's official 800-53 family.
+fn pam_fedramp_unsuccessful_logons() -> ComplianceMapping {
+    pam_mapping(
+        ComplianceFramework::FedRAMP,
+        "AC-7(a)",
+        "Unsuccessful Logon Attempts",
+    )
+}
+
 /// Returns compliance mappings for PAM findings.
 ///
 /// Multi-framework control IDs are sourced from the ComplianceAsCode/SSG rule
@@ -157,7 +198,10 @@ fn pam_nist171_unsuccessful_logons() -> ComplianceMapping {
 /// authentication, "Technological" theme), and SOC 2 CC6.1 (logical access).
 /// NIST SP 800-171 is attached only where an arm carries an 800-53 source
 /// control (IA-5(1) → 3.5.7, AC-7 → 3.1.8); arms with no 800-53 reference
-/// honestly carry no 800-171 mapping.
+/// honestly carry no 800-171 mapping. FedRAMP follows the same rule: IA-5(1)
+/// and AC-7 are both FedRAMP Moderate (Rev 5) baseline members, so their
+/// arms mirror the 800-53 ids verbatim, and arms with no 800-53 reference
+/// carry no FedRAMP mapping either.
 /// Every compliance mapping this plugin can emit, across all PAM/login.defs
 /// directives it assesses. Aggregated into the engine's coverage set.
 pub fn coverage() -> Vec<ComplianceMapping> {
@@ -188,6 +232,8 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
             ),
             // 800-171r3 3.5.7 ← 800-53 IA-5(1) (SP 800-171r3 source-control table).
             pam_nist171_password_mgmt(),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 IA-5(1).
+            pam_fedramp_password_quality(),
             pam_mapping(
                 ComplianceFramework::PCIDSS,
                 "8.2.3",
@@ -217,6 +263,8 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
             ),
             // 800-171r3 3.5.7 ← 800-53 IA-5(1) (SP 800-171r3 source-control table).
             pam_nist171_password_mgmt(),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 IA-5(1).
+            pam_fedramp_password_quality(),
             pam_mapping(
                 ComplianceFramework::PCIDSS,
                 "8.2.3",
@@ -246,6 +294,8 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
             ),
             // 800-171r3 3.5.7 ← 800-53 IA-5(1) (SP 800-171r3 source-control table).
             pam_nist171_password_mgmt(),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 IA-5(1).
+            pam_fedramp_password_quality(),
             pam_mapping(
                 ComplianceFramework::PCIDSS,
                 "8.2.3",
@@ -275,6 +325,8 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
             ),
             // 800-171r3 3.5.7 ← 800-53 IA-5(1) (SP 800-171r3 source-control table).
             pam_nist171_password_mgmt(),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 IA-5(1).
+            pam_fedramp_password_quality(),
             pam_mapping(
                 ComplianceFramework::PCIDSS,
                 "8.2.3",
@@ -304,6 +356,8 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
             ),
             // 800-171r3 3.5.7 ← 800-53 IA-5(1) (SP 800-171r3 source-control table).
             pam_nist171_password_mgmt(),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 IA-5(1).
+            pam_fedramp_password_quality(),
             pam_hipaa_password_mgmt(),
             pam_gdpr_auth(),
             pam_iso_secure_auth(),
@@ -328,6 +382,8 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
             ),
             // 800-171r3 3.5.7 ← 800-53 IA-5(1) (SP 800-171r3 source-control table).
             pam_nist171_password_mgmt(),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 IA-5(1).
+            pam_fedramp_password_quality(),
             pam_hipaa_password_mgmt(),
             pam_gdpr_auth(),
             pam_iso_secure_auth(),
@@ -352,6 +408,8 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
             ),
             // 800-171r3 3.1.8 ← 800-53 AC-7 (SP 800-171r3 source-control table).
             pam_nist171_unsuccessful_logons(),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 AC-7.
+            pam_fedramp_unsuccessful_logons(),
             pam_mapping(
                 ComplianceFramework::PCIDSS,
                 "8.1.6",
@@ -394,6 +452,8 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
             ),
             // 800-171r3 3.5.7 ← 800-53 IA-5(1) (SP 800-171r3 source-control table).
             pam_nist171_password_mgmt(),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 IA-5(1).
+            pam_fedramp_password_ageing(),
             pam_mapping(
                 ComplianceFramework::PCIDSS,
                 "8.2.4",
@@ -423,6 +483,8 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
             ),
             // 800-171r3 3.5.7 ← 800-53 IA-5(1) (SP 800-171r3 source-control table).
             pam_nist171_password_mgmt(),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 IA-5(1).
+            pam_fedramp_password_ageing(),
             pam_hipaa_password_mgmt(),
             pam_gdpr_auth(),
             pam_iso_secure_auth(),
@@ -443,6 +505,8 @@ fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
             ),
             // 800-171r3 3.5.7 ← 800-53 IA-5(1) (SP 800-171r3 source-control table).
             pam_nist171_password_mgmt(),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 IA-5(1).
+            pam_fedramp_password_ageing(),
             pam_mapping(
                 ComplianceFramework::PCIDSS,
                 "8.2.4",
@@ -1466,6 +1530,42 @@ mod tests {
         assert!(
             nist171_for("remember").is_none(),
             "pwhistory has no 800-53 source control and must not claim 800-171"
+        );
+    }
+
+    /// Confirms the FedRAMP derivation: IA-5(1) and AC-7 are both GSA rev5
+    /// Moderate baseline members, so the quality and lockout checks mirror
+    /// their 800-53 ids verbatim; the pwhistory check — whose SSG rule
+    /// carries no 800-53 reference — honestly carries no FedRAMP mapping.
+    #[test]
+    fn pam_checks_map_fedramp_moderate_controls() {
+        let fedramp_for = |check: &str| {
+            get_pam_compliance_mappings(check)
+                .into_iter()
+                .find(|m| m.compliance_framework == ComplianceFramework::FedRAMP)
+        };
+
+        let minlen = fedramp_for("minlen").expect("minlen must carry a FedRAMP mapping");
+        assert_eq!(minlen.compliance_control_id, "IA-5(1)(a)");
+        assert_eq!(
+            minlen.compliance_section.as_deref(),
+            Some("Identification and Authentication")
+        );
+
+        let max_days =
+            fedramp_for("PASS_MAX_DAYS").expect("PASS_MAX_DAYS must carry a FedRAMP mapping");
+        assert_eq!(max_days.compliance_control_id, "IA-5(1)(d)");
+
+        let lockout = fedramp_for("lockout").expect("lockout must carry a FedRAMP mapping");
+        assert_eq!(lockout.compliance_control_id, "AC-7(a)");
+        assert_eq!(
+            lockout.compliance_section.as_deref(),
+            Some("Access Control")
+        );
+
+        assert!(
+            fedramp_for("remember").is_none(),
+            "pwhistory has no 800-53 source control and must not claim FedRAMP"
         );
     }
 

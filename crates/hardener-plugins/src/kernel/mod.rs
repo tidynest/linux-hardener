@@ -274,6 +274,26 @@ fn nist171(id: &str, title: &str) -> ComplianceMapping {
     }
 }
 
+/// Builds a FedRAMP mapping. FedRAMP's control set is NIST 800-53 at the
+/// Moderate (Rev 5) baseline, so `id`/`title` mirror this plugin's 800-53
+/// entries verbatim — each id is checked against the GSA rev5 Moderate
+/// baseline before it is mapped, never invented. The section is the control's
+/// 800-53 family, derived from the id prefix.
+fn fedramp(id: &str, title: &str) -> ComplianceMapping {
+    let family = match id.split('-').next() {
+        Some("AC") => "Access Control",
+        Some("CM") => "Configuration Management",
+        Some("SC") => "System and Communications Protection",
+        _ => "System and Information Integrity",
+    };
+    ComplianceMapping {
+        compliance_framework: ComplianceFramework::FedRAMP,
+        compliance_control_id: id.to_string(),
+        compliance_control_title: title.to_string(),
+        compliance_section: Some(family.to_string()),
+    }
+}
+
 /// Returns compliance mappings for a given kernel parameter.
 ///
 /// CIS entries are the project's existing benchmark mappings. STIG/NIST/PCI-DSS
@@ -334,6 +354,10 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
             // SI-16 carries no 800-171 requirement (tailored out as NCO), so
             // only the configuration-settings intent translates.
             nist171("3.4.2", "Configuration Settings"),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 SI-16.
+            fedramp("SI-16", "Memory Protection"),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 CM-6.
+            fedramp("CM-6", "Configuration Settings"),
         ],
         "kernel.kptr_restrict" => vec![
             ComplianceMapping {
@@ -359,6 +383,8 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
             ),
             // 800-171r3 3.4.2 ← 800-53 CM-6 (SP 800-171r3 source-control table).
             nist171("3.4.2", "Configuration Settings"),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 CM-6.
+            fedramp("CM-6", "Configuration Settings"),
         ],
         "kernel.dmesg_restrict" => vec![
             ComplianceMapping {
@@ -387,6 +413,9 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 "CC6.1",
                 "Logical access security software, infrastructure, and architectures",
             ),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 SI-11
+            // (unlike 800-171r3, the Moderate baseline retains SI-11).
+            fedramp("SI-11", "Error Handling"),
         ],
         "kernel.yama.ptrace_scope" => vec![
             ComplianceMapping {
@@ -416,6 +445,8 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
             ),
             // 800-171r3 3.13.1 ← 800-53 SC-7 (SP 800-171r3 source-control table).
             nist171("3.13.1", "Boundary Protection"),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 SC-7.
+            fedramp("SC-7", "Boundary Protection"),
         ],
         "fs.suid_dumpable" => vec![
             ComplianceMapping {
@@ -440,6 +471,9 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 "CC6.1",
                 "Logical access security software, infrastructure, and architectures",
             ),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 SI-11
+            // (unlike 800-171r3, the Moderate baseline retains SI-11).
+            fedramp("SI-11", "Error Handling"),
         ],
         "fs.protected_hardlinks" | "fs.protected_symlinks" => vec![
             // SSG: sysctl_fs_protected_hardlinks / sysctl_fs_protected_symlinks
@@ -462,6 +496,10 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
             // source-control table).
             nist171("3.4.2", "Configuration Settings"),
             nist171("3.1.5", "Least Privilege"),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 CM-6.
+            fedramp("CM-6", "Configuration Settings"),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 AC-6.
+            fedramp("AC-6", "Least Privilege"),
         ],
         "net.ipv4.conf.all.rp_filter" | "net.ipv4.conf.default.rp_filter" => vec![
             ComplianceMapping {
@@ -503,6 +541,10 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
             // source-control table).
             nist171("3.4.6", "Least Functionality"),
             nist171("3.13.1", "Boundary Protection"),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 CM-7.
+            fedramp("CM-7", "Least Functionality"),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 SC-7.
+            fedramp("SC-7", "Boundary Protection"),
         ],
         "net.ipv4.tcp_syncookies" => vec![
             ComplianceMapping {
@@ -534,6 +576,9 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 "Protect against threats from sources outside system boundaries",
             ),
             // No 800-171 mapping: SC-5 is tailored out of SP 800-171r3 (NCO).
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 SC-5
+            // (the Moderate baseline retains SC-5 even though 800-171r3 does not).
+            fedramp("SC-5", "Denial-of-Service Protection"),
         ],
         "net.ipv4.conf.all.accept_source_route" | "net.ipv4.conf.default.accept_source_route" => {
             vec![
@@ -567,6 +612,10 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
                 // source-control table).
                 nist171("3.4.6", "Least Functionality"),
                 nist171("3.13.1", "Boundary Protection"),
+                // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 CM-7.
+                fedramp("CM-7", "Least Functionality"),
+                // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 SC-7.
+                fedramp("SC-7", "Boundary Protection"),
             ]
         }
         // CIS 3.2.2/3.2.3/3.2.4 — one arm per control covers both the `.all`
@@ -591,6 +640,8 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
             ),
             // 800-171r3 3.14.6 ← 800-53 SI-4 (SP 800-171r3 source-control table).
             nist171("3.14.6", "System Monitoring"),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 SI-4.
+            fedramp("SI-4", "System Monitoring"),
         ],
         n if n.contains("secure_redirects") => vec![
             ComplianceMapping {
@@ -613,6 +664,8 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
             ),
             // 800-171r3 3.14.6 ← 800-53 SI-4 (SP 800-171r3 source-control table).
             nist171("3.14.6", "System Monitoring"),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 SI-4.
+            fedramp("SI-4", "System Monitoring"),
         ],
         n if n.contains("log_martians") => vec![
             ComplianceMapping {
@@ -634,6 +687,8 @@ fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
             ),
             // 800-171r3 3.14.6 ← 800-53 SI-4 (SP 800-171r3 source-control table).
             nist171("3.14.6", "System Monitoring"),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 SI-4.
+            fedramp("SI-4", "System Monitoring"),
         ],
         _ => vec![],
     }
@@ -1110,6 +1165,40 @@ mod tests {
                 "{param} must not over-claim 800-171"
             );
         }
+    }
+
+    /// Confirms the FedRAMP derivation: every mapped id mirrors the
+    /// parameter's existing 800-53 entries verbatim, filtered to the GSA
+    /// rev5 Moderate baseline. Every 800-53 control this plugin cites is a
+    /// baseline member — including SC-5 and SI-11, which 800-171r3 tailors
+    /// out — so no parameter loses its mapping.
+    #[test]
+    fn kernel_params_map_fedramp_moderate_controls() {
+        let ids_for = |param: &str| -> Vec<String> {
+            get_compliance_mappings(param)
+                .into_iter()
+                .filter(|m| m.compliance_framework == ComplianceFramework::FedRAMP)
+                .map(|m| m.compliance_control_id)
+                .collect()
+        };
+
+        // Both SI-16 and CM-6 are Moderate baseline members: ASLR keeps both.
+        assert_eq!(ids_for("kernel.randomize_va_space"), vec!["SI-16", "CM-6"]);
+        assert_eq!(ids_for("net.ipv4.conf.all.rp_filter"), vec!["CM-7", "SC-7"]);
+        // Unlike 800-171r3, the Moderate baseline retains SC-5 and SI-11.
+        assert_eq!(ids_for("net.ipv4.tcp_syncookies"), vec!["SC-5"]);
+        assert_eq!(ids_for("kernel.dmesg_restrict"), vec!["SI-11"]);
+
+        // SI-4, filed under its official 800-53 family name.
+        let monitoring = get_compliance_mappings("net.ipv4.conf.all.log_martians")
+            .into_iter()
+            .find(|m| m.compliance_framework == ComplianceFramework::FedRAMP)
+            .expect("log_martians must carry a FedRAMP mapping");
+        assert_eq!(monitoring.compliance_control_id, "SI-4");
+        assert_eq!(
+            monitoring.compliance_section.as_deref(),
+            Some("System and Information Integrity")
+        );
     }
 
     #[test]

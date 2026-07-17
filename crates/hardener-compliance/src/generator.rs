@@ -322,6 +322,24 @@ mod tests {
     }
 
     #[test]
+    fn fedramp_clean_coverage_renders_pass_controls() {
+        // FedRAMP has no curated catalogue: the derived catalogue IS the
+        // coverage set (baseline-filtered 800-53 ids), so on a clean system
+        // every covered control reports Pass and nothing needs manual review.
+        let coverage = vec![
+            mapping(ComplianceFramework::FedRAMP, "SC-7"),
+            mapping(ComplianceFramework::FedRAMP, "AC-6(1)"),
+        ];
+        let generator = ReportGenerator::new(config_for(ComplianceFramework::FedRAMP), coverage);
+        let report = generator.generate(&[]).pop().unwrap();
+
+        assert_eq!(report.report_framework, ComplianceFramework::FedRAMP);
+        assert_eq!(report.report_summary.summary_total_controls, 2);
+        assert_eq!(report.report_summary.summary_passing, 2);
+        assert_eq!(report.report_summary.summary_manual_review, 0);
+    }
+
+    #[test]
     fn rhel10_finding_reports_translated_stig_id() {
         // A canonical RHEL-08 finding renders under its sourced RHEL-10 id, and
         // the embedded finding copy carries the translated mapping list.

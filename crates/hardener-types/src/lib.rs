@@ -139,6 +139,8 @@ pub enum ComplianceFramework {
     SOC2,
     /// NIST SP 800-171 protection of Controlled Unclassified Information.
     NIST800171,
+    /// FedRAMP Moderate baseline (Rev 5) of NIST SP 800-53 controls.
+    FedRAMP,
 }
 
 impl fmt::Display for ComplianceFramework {
@@ -153,6 +155,7 @@ impl fmt::Display for ComplianceFramework {
             ComplianceFramework::GDPR => write!(f, "GDPR"),
             ComplianceFramework::SOC2 => write!(f, "SOC 2"),
             ComplianceFramework::NIST800171 => write!(f, "NIST 800-171"),
+            ComplianceFramework::FedRAMP => write!(f, "FedRAMP"),
         }
     }
 }
@@ -170,6 +173,7 @@ impl ComplianceFramework {
             ComplianceFramework::GDPR => "GDPR Article 32",
             ComplianceFramework::SOC2 => "SOC 2 Trust Services Criteria",
             ComplianceFramework::NIST800171 => "NIST SP 800-171",
+            ComplianceFramework::FedRAMP => "FedRAMP Moderate Baseline",
         }
     }
 
@@ -192,6 +196,9 @@ impl ComplianceFramework {
             }
             ComplianceFramework::NIST800171 => {
                 "NIST SP 800-171 Revision 3 protection of Controlled Unclassified Information"
+            }
+            ComplianceFramework::FedRAMP => {
+                "FedRAMP Moderate baseline (Rev 5) of NIST SP 800-53 controls for federal cloud authorisation"
             }
         }
     }

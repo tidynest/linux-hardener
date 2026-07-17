@@ -166,3 +166,27 @@ fn ssh_coverage_maps_nist_800_171_crypto_requirements() {
         );
     }
 }
+
+/// Confirms the SSH coverage set carries the FedRAMP crypto controls: SC-13
+/// and SC-8 are both GSA rev5 Moderate baseline members, mirrored verbatim
+/// from the existing 800-53 entries under their official family.
+#[test]
+fn ssh_coverage_maps_fedramp_moderate_crypto_controls() {
+    use hardener_common::types::ComplianceFramework;
+
+    let fedramp: Vec<_> = hardener_plugins::ssh::coverage()
+        .into_iter()
+        .filter(|m| m.compliance_framework == ComplianceFramework::FedRAMP)
+        .collect();
+
+    for id in ["SC-13", "SC-8"] {
+        let mapping = fedramp
+            .iter()
+            .find(|m| m.compliance_control_id == id)
+            .unwrap_or_else(|| panic!("SSH coverage must include FedRAMP {id}"));
+        assert_eq!(
+            mapping.compliance_section.as_deref(),
+            Some("System and Communications Protection")
+        );
+    }
+}

@@ -271,6 +271,20 @@ fn nist171(id: &str, title: &str) -> ComplianceMapping {
     }
 }
 
+/// Builds a FedRAMP mapping. FedRAMP's control set is NIST 800-53 at the
+/// Moderate (Rev 5) baseline, so `id`/`title` mirror this plugin's 800-53
+/// entries verbatim — each id is checked against the GSA rev5 Moderate
+/// baseline before it is mapped, never invented. The section is the control's
+/// 800-53 family.
+fn fedramp(id: &str, title: &str) -> ComplianceMapping {
+    ComplianceMapping {
+        compliance_framework: ComplianceFramework::FedRAMP,
+        compliance_control_id: id.to_string(),
+        compliance_control_title: title.to_string(),
+        compliance_section: Some("Access Control".to_string()),
+    }
+}
+
 fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
     match path {
         // SSG: file_permissions_etc_passwd (nist: AC-6(1),CM-6(a); pcidss: Req-8.7.c)
@@ -321,6 +335,11 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
             ),
             // 800-171r3 3.1.5 ← 800-53 AC-6(1) (SP 800-171r3 source-control table).
             nist171("3.1.5", "Least Privilege"),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 AC-6(1).
+            fedramp(
+                "AC-6(1)",
+                "Least Privilege - Authorize Access to Security Functions",
+            ),
         ],
         // SSG: file_permissions_etc_shadow (nist: AC-6(1),CM-6(a); pcidss: Req-8.7.c)
         "/etc/shadow" => vec![
@@ -370,6 +389,11 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
             ),
             // 800-171r3 3.1.5 ← 800-53 AC-6(1) (SP 800-171r3 source-control table).
             nist171("3.1.5", "Least Privilege"),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 AC-6(1).
+            fedramp(
+                "AC-6(1)",
+                "Least Privilege - Authorize Access to Security Functions",
+            ),
         ],
         // SSG: file_permissions_etc_group (nist: AC-6(1),CM-6(a); pcidss: Req-8.7.c)
         "/etc/group" => vec![
@@ -419,6 +443,11 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
             ),
             // 800-171r3 3.1.5 ← 800-53 AC-6(1) (SP 800-171r3 source-control table).
             nist171("3.1.5", "Least Privilege"),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 AC-6(1).
+            fedramp(
+                "AC-6(1)",
+                "Least Privilege - Authorize Access to Security Functions",
+            ),
         ],
         // SSG: file_permissions_etc_gshadow (nist: AC-6(1),CM-6(a); no pcidss declared)
         "/etc/gshadow" => vec![
@@ -461,6 +490,11 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
             ),
             // 800-171r3 3.1.5 ← 800-53 AC-6(1) (SP 800-171r3 source-control table).
             nist171("3.1.5", "Least Privilege"),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 AC-6(1).
+            fedramp(
+                "AC-6(1)",
+                "Least Privilege - Authorize Access to Security Functions",
+            ),
         ],
         // SSG: directory_permissions_sshd_config_d (nist: AC-17(a),AC-6(1),CM-6(a);
         // no stigid/pcidss declared). This is a live-scanned path; the prior
@@ -499,6 +533,11 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
             ),
             // 800-171r3 3.1.12 ← 800-53 AC-17 (SP 800-171r3 source-control table).
             nist171("3.1.12", "Remote Access"),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 AC-17.
+            fedramp(
+                "AC-17(a)",
+                "Remote Access - Usage Restrictions and Configuration",
+            ),
         ],
         _ => vec![],
     }
@@ -1037,6 +1076,33 @@ mod tests {
 
         let sshd = nist171_for("/etc/ssh");
         assert_eq!(sshd.compliance_control_id, "3.1.12");
+        assert_eq!(sshd.compliance_section.as_deref(), Some("Access Control"));
+    }
+
+    /// Confirms the FedRAMP derivation: AC-6(1) and AC-17 are both GSA rev5
+    /// Moderate baseline members, so the account files and the sshd config
+    /// directory mirror their existing 800-53 ids verbatim under the Access
+    /// Control family.
+    #[test]
+    fn critical_paths_map_fedramp_moderate_controls() {
+        let fedramp_for = |path: &str| {
+            get_permissions_compliance_mappings(path)
+                .into_iter()
+                .find(|m| m.compliance_framework == ComplianceFramework::FedRAMP)
+                .unwrap_or_else(|| panic!("{path} must carry a FedRAMP mapping"))
+        };
+
+        for path in ["/etc/passwd", "/etc/shadow", "/etc/group", "/etc/gshadow"] {
+            let mapping = fedramp_for(path);
+            assert_eq!(mapping.compliance_control_id, "AC-6(1)", "{path}");
+            assert_eq!(
+                mapping.compliance_section.as_deref(),
+                Some("Access Control")
+            );
+        }
+
+        let sshd = fedramp_for("/etc/ssh");
+        assert_eq!(sshd.compliance_control_id, "AC-17(a)");
         assert_eq!(sshd.compliance_section.as_deref(), Some("Access Control"));
     }
 }

@@ -248,6 +248,20 @@ fn nist171(id: &str, title: &str) -> ComplianceMapping {
     }
 }
 
+/// Builds a FedRAMP mapping. FedRAMP's control set is NIST 800-53 at the
+/// Moderate (Rev 5) baseline, so `id`/`title` mirror this plugin's 800-53
+/// entries verbatim — each id is checked against the GSA rev5 Moderate
+/// baseline before it is mapped, never invented. The section is the control's
+/// 800-53 family.
+fn fedramp(id: &str, title: &str) -> ComplianceMapping {
+    ComplianceMapping {
+        compliance_framework: ComplianceFramework::FedRAMP,
+        compliance_control_id: id.to_string(),
+        compliance_control_title: title.to_string(),
+        compliance_section: Some("Access Control".to_string()),
+    }
+}
+
 fn get_mac_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
     match finding_type {
         // SSG: package_apparmor_installed / package_selinux (CIS only); MAC absence
@@ -303,6 +317,8 @@ fn get_mac_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
             ),
             // 800-171r3 3.1.2 ← 800-53 AC-3 (SP 800-171r3 source-control table).
             nist171("3.1.2", "Access Enforcement"),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 AC-3.
+            fedramp("AC-3", "Access Enforcement"),
         ],
         // SSG: selinux_state (nist: AC-3,AC-3(3)(a),AU-9,SC-7(21); stigid@ol8: OL08-00-010170)
         "selinux-not-enforcing" => vec![
@@ -363,6 +379,8 @@ fn get_mac_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
             ),
             // 800-171r3 3.1.2 ← 800-53 AC-3 (SP 800-171r3 source-control table).
             nist171("3.1.2", "Access Enforcement"),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 AC-3.
+            fedramp("AC-3", "Access Enforcement"),
         ],
         // SSG: all_apparmor_profiles_enforced (CIS only). NIST AC-3 access
         // enforcement applies — this is the AppArmor expression of the same
@@ -419,6 +437,8 @@ fn get_mac_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
             ),
             // 800-171r3 3.1.2 ← 800-53 AC-3 (SP 800-171r3 source-control table).
             nist171("3.1.2", "Access Enforcement"),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 AC-3.
+            fedramp("AC-3", "Access Enforcement"),
         ],
         _ => vec![],
     }
@@ -896,6 +916,24 @@ mod tests {
                 .find(|m| m.compliance_framework == ComplianceFramework::NIST800171)
                 .unwrap_or_else(|| panic!("{finding_type} must carry an 800-171 mapping"));
             assert_eq!(mapping.compliance_control_id, "3.1.2");
+            assert_eq!(
+                mapping.compliance_section.as_deref(),
+                Some("Access Control")
+            );
+        }
+    }
+
+    /// Confirms the FedRAMP derivation: AC-3 is a GSA rev5 Moderate baseline
+    /// member, so every MAC finding mirrors its existing 800-53 entry
+    /// verbatim under the Access Control family.
+    #[test]
+    fn mac_findings_map_fedramp_access_enforcement() {
+        for finding_type in MAC_FINDING_TYPES {
+            let mapping = get_mac_compliance_mappings(finding_type)
+                .into_iter()
+                .find(|m| m.compliance_framework == ComplianceFramework::FedRAMP)
+                .unwrap_or_else(|| panic!("{finding_type} must carry a FedRAMP mapping"));
+            assert_eq!(mapping.compliance_control_id, "AC-3");
             assert_eq!(
                 mapping.compliance_section.as_deref(),
                 Some("Access Control")

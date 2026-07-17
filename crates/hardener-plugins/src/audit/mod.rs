@@ -440,6 +440,20 @@ fn nist171(id: &str, title: &str) -> ComplianceMapping {
     }
 }
 
+/// Builds a FedRAMP mapping. FedRAMP's control set is NIST 800-53 at the
+/// Moderate (Rev 5) baseline, so `id`/`title` mirror this plugin's 800-53
+/// entries verbatim — each id is checked against the GSA rev5 Moderate
+/// baseline before it is mapped, never invented. The section is the control's
+/// 800-53 family.
+fn fedramp(id: &str, title: &str) -> ComplianceMapping {
+    ComplianceMapping {
+        compliance_framework: ComplianceFramework::FedRAMP,
+        compliance_control_id: id.to_string(),
+        compliance_control_title: title.to_string(),
+        compliance_section: Some("Audit and Accountability".to_string()),
+    }
+}
+
 fn get_audit_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
     match finding_type {
         // SSG: package_audit_installed
@@ -502,6 +516,8 @@ fn get_audit_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
             ),
             // 800-171r3 3.3.1 ← 800-53 AU-2 (SP 800-171r3 source-control table).
             nist171("3.3.1", "Event Logging"),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 AU-2.
+            fedramp("AU-2(a)", "Event Logging"),
         ],
         // SSG: service_auditd_enabled
         // (nist: AU-3,AU-12(c),...; pcidss: Req-10.1; stigid@ol8: OL08-00-030181)
@@ -565,6 +581,8 @@ fn get_audit_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
             ),
             // 800-171r3 3.3.3 ← 800-53 AU-12 (SP 800-171r3 source-control table).
             nist171("3.3.3", "Audit Record Generation"),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 AU-12.
+            fedramp("AU-12(c)", "Audit Record Generation"),
         ],
         // SSG: audit_rules_* family (e.g. audit_rules_usergroup_modification_*,
         // audit_rules_dac_modification_*, audit_rules_file_deletion_events_*).
@@ -635,6 +653,8 @@ fn get_audit_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
             ),
             // 800-171r3 3.3.3 ← 800-53 AU-12 (SP 800-171r3 source-control table).
             nist171("3.3.3", "Audit Record Generation"),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 AU-12.
+            fedramp("AU-12(c)", "Audit Record Generation"),
         ],
         _ => vec![],
     }
@@ -1198,6 +1218,28 @@ mod tests {
                 .into_iter()
                 .find(|m| m.compliance_framework == ComplianceFramework::NIST800171)
                 .unwrap_or_else(|| panic!("{finding_type} must carry an 800-171 mapping"));
+            assert_eq!(mapping.compliance_control_id, id, "{finding_type}");
+            assert_eq!(
+                mapping.compliance_section.as_deref(),
+                Some("Audit and Accountability")
+            );
+        }
+    }
+
+    /// Confirms the FedRAMP derivation: AU-2 and AU-12 are both GSA rev5
+    /// Moderate baseline members, so each finding mirrors its existing 800-53
+    /// entry verbatim under the Audit and Accountability family.
+    #[test]
+    fn audit_findings_map_fedramp_moderate_controls() {
+        for (finding_type, id) in [
+            ("not_installed", "AU-2(a)"),
+            ("not_running", "AU-12(c)"),
+            ("rules", "AU-12(c)"),
+        ] {
+            let mapping = get_audit_compliance_mappings(finding_type)
+                .into_iter()
+                .find(|m| m.compliance_framework == ComplianceFramework::FedRAMP)
+                .unwrap_or_else(|| panic!("{finding_type} must carry a FedRAMP mapping"));
             assert_eq!(mapping.compliance_control_id, id, "{finding_type}");
             assert_eq!(
                 mapping.compliance_section.as_deref(),

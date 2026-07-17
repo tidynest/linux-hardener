@@ -152,6 +152,25 @@ fn nist171(id: &str, title: &str) -> ComplianceMapping {
     }
 }
 
+/// Builds a FedRAMP mapping. FedRAMP's control set is NIST 800-53 at the
+/// Moderate (Rev 5) baseline, so `id`/`title` mirror this plugin's 800-53
+/// entries verbatim — each id is checked against the GSA rev5 Moderate
+/// baseline before it is mapped, never invented. The section is the control's
+/// 800-53 family, derived from the id prefix.
+fn fedramp(id: &str, title: &str) -> ComplianceMapping {
+    let family = if id.starts_with("SC-") {
+        "System and Communications Protection"
+    } else {
+        "Configuration Management"
+    };
+    ComplianceMapping {
+        compliance_framework: ComplianceFramework::FedRAMP,
+        compliance_control_id: id.to_string(),
+        compliance_control_title: title.to_string(),
+        compliance_section: Some(family.to_string()),
+    }
+}
+
 /// Returns compliance mappings for firewall findings.
 ///
 /// CIS is the project's existing benchmark mapping. STIG/NIST/PCI-DSS entries
@@ -228,6 +247,10 @@ fn get_firewall_compliance_mappings() -> Vec<ComplianceMapping> {
         // source-control table).
         nist171("3.13.1", "Boundary Protection"),
         nist171("3.4.6", "Least Functionality"),
+        // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 SC-7.
+        fedramp("SC-7", "Boundary Protection"),
+        // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 CM-7.
+        fedramp("CM-7", "Least Functionality"),
     ]
 }
 
@@ -729,6 +752,27 @@ mod tests {
             assert!(
                 mappings.contains(&(id.to_string(), Some(family.to_string()))),
                 "firewall must carry 800-171 {id} under {family}"
+            );
+        }
+    }
+
+    /// Confirms the FedRAMP derivation for the host firewall: SC-7 and CM-7
+    /// are both GSA rev5 Moderate baseline members, mirrored verbatim from
+    /// the existing 800-53 entries under their official families.
+    #[test]
+    fn firewall_maps_fedramp_moderate_controls() {
+        let mappings: Vec<_> = get_firewall_compliance_mappings()
+            .into_iter()
+            .filter(|m| m.compliance_framework == ComplianceFramework::FedRAMP)
+            .map(|m| (m.compliance_control_id, m.compliance_section))
+            .collect();
+        for (id, family) in [
+            ("SC-7", "System and Communications Protection"),
+            ("CM-7", "Configuration Management"),
+        ] {
+            assert!(
+                mappings.contains(&(id.to_string(), Some(family.to_string()))),
+                "firewall must carry FedRAMP {id} under {family}"
             );
         }
     }

@@ -76,6 +76,11 @@ const FRAMEWORKS: &[FrameworkInfo] = &[
         name: "NIST 800-171",
         description: "Protection of Controlled Unclassified Information",
     },
+    FrameworkInfo {
+        framework: ComplianceFramework::FedRAMP,
+        name: "FedRAMP",
+        description: "FedRAMP Moderate baseline (Rev 5)",
+    },
 ];
 
 /// Scenario metadata for display.
@@ -99,7 +104,7 @@ const SCENARIOS: &[ScenarioInfo] = &[
     ScenarioInfo {
         name: "Government",
         description: "Government compliance",
-        frameworks: "STIG, NIST 800-53, NIST 800-171",
+        frameworks: "STIG, NIST 800-53, NIST 800-171, FedRAMP",
     },
     ScenarioInfo {
         name: "Healthcare",
@@ -577,6 +582,7 @@ fn framework_icon(framework: &ComplianceFramework) -> &'static str {
         ComplianceFramework::ISO27001 => "🌐",
         ComplianceFramework::SOC2 => "🔏",
         ComplianceFramework::NIST800171 => "🗂️",
+        ComplianceFramework::FedRAMP => "🏛️",
     }
 }
 

@@ -726,6 +726,17 @@ mod tests {
     }
 
     #[test]
+    fn fedramp_is_profile_invariant_under_rhel10() {
+        // FedRAMP renders baseline-filtered 800-53 ids, which are
+        // OS-independent: no profile may rewrite them.
+        let fedramp = mapping(ComplianceFramework::FedRAMP, "SC-7");
+        assert_eq!(
+            translate(ComplianceProfile::Rhel10, &fedramp),
+            vec![fedramp.clone()]
+        );
+    }
+
+    #[test]
     fn unsourced_stig_id_drops_under_rhel10() {
         let unknown = mapping(ComplianceFramework::STIG, "RHEL-08-999999");
         assert!(translate(ComplianceProfile::Rhel10, &unknown).is_empty());
