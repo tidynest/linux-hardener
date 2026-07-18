@@ -60,6 +60,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Packaging inputs moved under `packaging/`: `data/` is now
   `packaging/assets/` and `systemd/` is `packaging/systemd/`. Install
   destinations are unchanged; built packages are identical.
+- The CLI `--framework` flag and the desktop framework parser each
+  hand-maintained their own alias table for legacy framework spellings
+  (`pci`, `iso`, `soc-2` and similar). Both now delegate to a new
+  `ComplianceFramework::from_id`, the single source of truth for framework
+  identifiers; every spelling either parser accepted before still parses,
+  and the two alias sets are merged so `iso-27001` (desktop-only) and `iso`
+  (CLI-only) are both accepted everywhere now.
 
 ### Security
 - Per-command Tauri capability ACLs for the desktop app (SAM-039, issue #22):

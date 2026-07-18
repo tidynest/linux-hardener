@@ -194,6 +194,26 @@ impl ComplianceFramework {
         }
     }
 
+    /// Parses a framework request string into its enum value. Normalises
+    /// case first, then checks the canonical `id()` table, then a small
+    /// alias table for legacy spellings the CLI and desktop command layers
+    /// used to hand-maintain separately. Single source of truth so a third
+    /// parser cannot drift from either.
+    pub fn from_id(s: &str) -> Option<Self> {
+        let lower = s.to_lowercase();
+        if let Some(framework) = ComplianceFramework::ALL.iter().find(|f| f.id() == lower) {
+            return Some(*framework);
+        }
+        match lower.as_str() {
+            "pcidss" | "pci" => Some(ComplianceFramework::PCIDSS),
+            "iso" | "iso-27001" => Some(ComplianceFramework::ISO27001),
+            "soc-2" => Some(ComplianceFramework::SOC2),
+            "nist800171" | "nist-800-171" => Some(ComplianceFramework::NIST800171),
+            "fed-ramp" => Some(ComplianceFramework::FedRAMP),
+            _ => None,
+        }
+    }
+
     /// Returns the full name of the compliance framework.
     pub fn full_name(&self) -> &'static str {
         match self {
@@ -234,6 +254,67 @@ impl ComplianceFramework {
                 "FedRAMP Moderate baseline (Rev 5) of NIST SP 800-53 controls for federal cloud authorisation"
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod compliance_framework_tests {
+    use super::*;
+
+    #[test]
+    fn from_id_accepts_every_canonical_id() {
+        for framework in ComplianceFramework::ALL {
+            assert_eq!(
+                ComplianceFramework::from_id(framework.id()),
+                Some(framework),
+                "canonical id '{}' must parse to its framework",
+                framework.id()
+            );
+        }
+    }
+
+    #[test]
+    fn from_id_is_case_insensitive() {
+        assert_eq!(
+            ComplianceFramework::from_id("CIS"),
+            Some(ComplianceFramework::CIS)
+        );
+        assert_eq!(
+            ComplianceFramework::from_id("Pci-Dss"),
+            Some(ComplianceFramework::PCIDSS)
+        );
+    }
+
+    #[test]
+    fn from_id_accepts_legacy_aliases_from_both_parsers() {
+        // CLI-only spellings (crates/hardener-cli/src/commands/report.rs).
+        for alias in [
+            "pcidss",
+            "pci",
+            "iso",
+            "soc-2",
+            "nist800171",
+            "nist-800-171",
+            "fed-ramp",
+        ] {
+            assert!(
+                ComplianceFramework::from_id(alias).is_some(),
+                "CLI alias '{alias}' must still parse"
+            );
+        }
+        // Desktop-only spelling (src-tauri/src/commands.rs, matched
+        // uppercase there but from_id normalises to lowercase).
+        assert_eq!(
+            ComplianceFramework::from_id("iso-27001"),
+            Some(ComplianceFramework::ISO27001),
+            "desktop alias 'iso-27001' must still parse"
+        );
+    }
+
+    #[test]
+    fn from_id_rejects_unknown() {
+        assert_eq!(ComplianceFramework::from_id("nonsense"), None);
+        assert_eq!(ComplianceFramework::from_id(""), None);
     }
 }
 

@@ -275,22 +275,12 @@ fn parse_scenario(s: &str) -> Result<Scenario> {
 }
 
 fn parse_framework(s: &str) -> Result<ComplianceFramework> {
-    match s.to_lowercase().as_str() {
-        "cis" => Ok(ComplianceFramework::CIS),
-        "stig" => Ok(ComplianceFramework::STIG),
-        "nist" => Ok(ComplianceFramework::NIST),
-        "pcidss" | "pci-dss" | "pci" => Ok(ComplianceFramework::PCIDSS),
-        "hipaa" => Ok(ComplianceFramework::HIPAA),
-        "gdpr" => Ok(ComplianceFramework::GDPR),
-        "iso27001" | "iso" => Ok(ComplianceFramework::ISO27001),
-        "soc2" | "soc-2" => Ok(ComplianceFramework::SOC2),
-        "800-171" | "nist800171" | "nist-800-171" => Ok(ComplianceFramework::NIST800171),
-        "fedramp" | "fed-ramp" => Ok(ComplianceFramework::FedRAMP),
-        _ => Err(anyhow!(
+    ComplianceFramework::from_id(s).ok_or_else(|| {
+        anyhow!(
             "Unknown framework '{}'. Valid options: cis, stig, nist, pcidss, hipaa, gdpr, iso27001, soc2, 800-171, fedramp",
             s
-        )),
-    }
+        )
+    })
 }
 
 /// Parses an explicit `--profile` value. Shared by the single-host `report`
@@ -412,5 +402,34 @@ mod tests {
                 framework.id()
             );
         }
+    }
+
+    #[test]
+    fn parse_framework_accepts_legacy_aliases() {
+        // Every spelling the flag historically accepted must keep working
+        // now that parsing delegates to ComplianceFramework::from_id.
+        for (alias, expected) in [
+            ("pcidss", ComplianceFramework::PCIDSS),
+            ("pci-dss", ComplianceFramework::PCIDSS),
+            ("pci", ComplianceFramework::PCIDSS),
+            ("iso", ComplianceFramework::ISO27001),
+            ("soc-2", ComplianceFramework::SOC2),
+            ("nist800171", ComplianceFramework::NIST800171),
+            ("nist-800-171", ComplianceFramework::NIST800171),
+            ("fed-ramp", ComplianceFramework::FedRAMP),
+            ("PCI-DSS", ComplianceFramework::PCIDSS),
+        ] {
+            assert_eq!(
+                parse_framework(alias).unwrap(),
+                expected,
+                "alias '{alias}' must still parse"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_framework_rejects_unknown() {
+        let err = parse_framework("nonsense").unwrap_err().to_string();
+        assert!(err.contains("Unknown framework 'nonsense'"), "{err}");
     }
 }

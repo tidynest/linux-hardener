@@ -772,22 +772,12 @@ pub async fn delete_checkpoint(checkpoint_id: String) -> Result<bool, String> {
 }
 
 /// Parses framework name strings into `ComplianceFramework` enum values.
+/// Unknown spellings are silently dropped rather than surfaced as errors,
+/// matching the existing GUI contract for these call sites.
 fn parse_frameworks(frameworks: &[String]) -> Vec<ComplianceFramework> {
     frameworks
         .iter()
-        .filter_map(|f| match f.to_uppercase().as_str() {
-            "CIS" => Some(ComplianceFramework::CIS),
-            "STIG" => Some(ComplianceFramework::STIG),
-            "NIST" => Some(ComplianceFramework::NIST),
-            "PCIDSS" | "PCI-DSS" | "PCI" => Some(ComplianceFramework::PCIDSS),
-            "HIPAA" => Some(ComplianceFramework::HIPAA),
-            "GDPR" => Some(ComplianceFramework::GDPR),
-            "ISO27001" | "ISO-27001" => Some(ComplianceFramework::ISO27001),
-            "SOC2" | "SOC-2" => Some(ComplianceFramework::SOC2),
-            "800-171" | "NIST800171" | "NIST-800-171" => Some(ComplianceFramework::NIST800171),
-            "FEDRAMP" | "FED-RAMP" => Some(ComplianceFramework::FedRAMP),
-            _ => None,
-        })
+        .filter_map(|f| ComplianceFramework::from_id(f))
         .collect()
 }
 
@@ -2274,5 +2264,50 @@ mod fleet_tests {
                 framework.id()
             );
         }
+    }
+
+    #[test]
+    fn parse_frameworks_accepts_legacy_aliases() {
+        // Every spelling this command layer historically accepted must keep
+        // working now that parsing delegates to ComplianceFramework::from_id.
+        let aliases = [
+            "PCIDSS",
+            "PCI-DSS",
+            "PCI",
+            "ISO27001",
+            "ISO-27001",
+            "SOC2",
+            "SOC-2",
+            "800-171",
+            "NIST800171",
+            "NIST-800-171",
+            "FEDRAMP",
+            "FED-RAMP",
+        ]
+        .map(String::from);
+        let parsed = parse_frameworks(&aliases);
+        assert_eq!(
+            parsed,
+            vec![
+                ComplianceFramework::PCIDSS,
+                ComplianceFramework::PCIDSS,
+                ComplianceFramework::PCIDSS,
+                ComplianceFramework::ISO27001,
+                ComplianceFramework::ISO27001,
+                ComplianceFramework::SOC2,
+                ComplianceFramework::SOC2,
+                ComplianceFramework::NIST800171,
+                ComplianceFramework::NIST800171,
+                ComplianceFramework::NIST800171,
+                ComplianceFramework::FedRAMP,
+                ComplianceFramework::FedRAMP,
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_frameworks_drops_unknown_silently() {
+        let parsed = parse_frameworks(&["nonsense".to_string(), "CIS".to_string()]);
+        assert_eq!(parsed, vec![ComplianceFramework::CIS]);
     }
 }
