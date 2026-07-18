@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Applying hardening no longer fails on hosts without a MAC system: the
+  mac-hardening plugin treated an absent SELinux/AppArmor as a plugin
+  failure, which aborted every all-plugin apply (CLI and desktop) with
+  "One or more plugins failed to apply". An absent MAC system is now
+  recorded as a successful no-op skip, matching the scan finding and the
+  dry-run preview.
+- The Analysis run-scan handler and the global scan shortcut auto-generated
+  compliance reports for only six frameworks, omitting ISO 27001, SOC 2,
+  NIST 800-171 and FedRAMP. All framework lists (including the report
+  picker) now derive from a single `ComplianceFramework::ALL` source, with
+  a test locking every canonical id to the CLI and desktop parsers.
+
+### Added
+- Build identity in version output: `hardener --version` and a quiet chip
+  beside the desktop wordmark now show the git short SHA and build date
+  alongside the semantic version, so a stale installed build is visible at
+  a glance. Tarball builds without git report `release`;
+  `SOURCE_DATE_EPOCH` is honoured for reproducible packaged builds.
+
+### Changed
+- Desktop layout compacted: the shared spacing scale, card and control
+  paddings, summary tiles and page title sizes all tighten so more content
+  fits above the fold on every page.
+- Documentation restructured into `docs/guide/`, `docs/reference/`,
+  `docs/architecture/`, `docs/contributing/`, `docs/design/` and
+  `docs/security/` (with archived plans and the resolved 2026-02-25
+  internal audit under `archive/`); `ROADMAP.md` and `NEXT.md` moved under
+  `docs/`. All intra-repo links and the doc validators follow the new
+  tree.
+
 ### Security
 - Per-command Tauri capability ACLs for the desktop app (SAM-039, issue #22):
   `src-tauri/build.rs` now declares all 29 IPC commands via
