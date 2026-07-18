@@ -36,7 +36,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/security/` (with archived plans and the resolved 2026-02-25
   internal audit under `archive/`); `ROADMAP.md` and `NEXT.md` moved under
   `docs/`. All intra-repo links and the doc validators follow the new
-  tree.
+  tree. New docs: a documentation index, a getting-started guide, a
+  symptom-organised troubleshooting guide, a full configuration
+  reference and a plugin-authoring guide; the README single-sources
+  usage, configuration and roadmap content to them.
+- Test tooling consolidated: the five per-distribution container
+  scripts became `scripts/containers/create-container.sh <distro>`, the
+  four per-desktop polkit wrappers became
+  `scripts/test/polkit/test-polkit.sh <desktop>`, and the separate
+  parallel runner variants merged behind a `--parallel` flag. Scripts
+  now live in `scripts/{containers,test,validate,release,dev}`
+  subdirectories.
+- Packaging inputs moved under `packaging/`: `data/` is now
+  `packaging/assets/` and `systemd/` is `packaging/systemd/`. Install
+  destinations are unchanged; built packages are identical.
 
 ### Security
 - Per-command Tauri capability ACLs for the desktop app (SAM-039, issue #22):
