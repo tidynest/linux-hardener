@@ -7,8 +7,9 @@ use crate::output;
 use anyhow::Result;
 use hardener_common::types::Severity;
 use hardener_core::{
-    ConfigLoader, Context, HardenerConfig, PluginMetadata, executor::SystemExecutor,
-    plugin::Finding,
+    ConfigLoader, Context, HardenerConfig, PluginMetadata,
+    executor::SystemExecutor,
+    plugin::{Finding, UncheckedCheck},
 };
 use hardener_scheduler::ScanHistoryManager;
 use hardener_scheduler::db::ScanFinding;
@@ -92,7 +93,11 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
                     .filter(|f| f.finding_severity >= min_severity)
                     .cloned()
                     .collect();
-                all_results.push((metadata.clone(), filtered_findings));
+                all_results.push((
+                    metadata.clone(),
+                    filtered_findings,
+                    results.scan_unchecked.clone(),
+                ));
             }
             Err(e) => {
                 output::error(
@@ -114,7 +119,9 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
 
     // Handle exit code flag
     if opts.exit_code {
-        let has_findings = all_results.iter().any(|(_, findings)| !findings.is_empty());
+        let has_findings = all_results
+            .iter()
+            .any(|(_, findings, _)| !findings.is_empty());
         if has_findings {
             std::process::exit(1);
         }
@@ -188,7 +195,7 @@ fn is_valid_plugin_name(name: &str, valid_ids: &[&str]) -> bool {
 ///
 /// Failures are logged but do not propagate; scan output is already displayed,
 /// so history persistence is best-effort.
-async fn persist_scan_session(results: &[(PluginMetadata, Vec<Finding>)]) {
+async fn persist_scan_session(results: &[(PluginMetadata, Vec<Finding>, Vec<UncheckedCheck>)]) {
     let db = match open_history_db().await {
         Ok(db) => db,
         Err(_) => return,
@@ -196,7 +203,7 @@ async fn persist_scan_session(results: &[(PluginMetadata, Vec<Finding>)]) {
 
     let plugins: Vec<String> = results
         .iter()
-        .map(|(m, _)| m.plugin_id.to_string())
+        .map(|(m, _, _)| m.plugin_id.to_string())
         .collect();
     let hostname = std::fs::read_to_string("/etc/hostname")
         .map(|h| h.trim().to_string())
@@ -209,7 +216,7 @@ async fn persist_scan_session(results: &[(PluginMetadata, Vec<Finding>)]) {
 
     let findings: Vec<ScanFinding> = results
         .iter()
-        .flat_map(|(meta, findings): &(PluginMetadata, Vec<Finding>)| {
+        .flat_map(|(meta, findings, _)| {
             findings
                 .iter()
                 .map(move |f| finding_to_scan_finding(meta, f))
@@ -262,5 +269,25 @@ mod tests {
     #[test]
     fn test_invalid_name() {
         assert!(!is_valid_plugin_name("nonexistent", ALL_IDS));
+    }
+
+    #[test]
+    fn scan_json_entry_carries_unchecked_key() {
+        // The renderer contract Task 10's desktop parser depends on.
+        let value = serde_json::json!({
+            "plugin_id": "pam-hardening",
+            "plugin_name": "PAM Hardening",
+            "findings": [],
+            "unchecked": [{
+                "unchecked_check_id": "pam-minlen",
+                "unchecked_title": "PAM setting: minlen",
+                "unchecked_category": "Authentication",
+                "unchecked_reason": "reading /etc/security/pwquality.conf requires root",
+                "unchecked_compliance": []
+            }],
+        });
+        let unchecked: Vec<hardener_core::plugin::UncheckedCheck> =
+            serde_json::from_value(value["unchecked"].clone()).unwrap();
+        assert_eq!(unchecked[0].unchecked_check_id, "pam-minlen");
     }
 }

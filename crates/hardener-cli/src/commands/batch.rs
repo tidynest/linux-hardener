@@ -8,7 +8,7 @@ use crate::ssh_config::SshConnectionConfig;
 use anyhow::{Result, anyhow, bail};
 use hardener_common::types::{ComplianceProfile, PluginId, Severity};
 use hardener_compliance::{ReportConfig, ReportGenerator, Scenario, resolve_profile};
-use hardener_core::plugin::Finding;
+use hardener_core::plugin::{Finding, UncheckedCheck};
 use hardener_core::{ConfigLoader, HardenerConfig};
 use hardener_core::{
     PluginMetadata, SshExecutor,
@@ -569,11 +569,11 @@ async fn open_batch_history() -> Option<Arc<ScanHistoryManager>> {
 async fn persist_host(
     history: &ScanHistoryManager,
     host_key: &str,
-    grouped: &[(PluginMetadata, Vec<Finding>)],
+    grouped: &[(PluginMetadata, Vec<Finding>, Vec<UncheckedCheck>)],
 ) {
     let plugins: Vec<String> = grouped
         .iter()
-        .map(|(m, _)| m.plugin_id.to_string())
+        .map(|(m, _, _)| m.plugin_id.to_string())
         .collect();
     let session_id = match history.create_session("batch", host_key, &plugins).await {
         Ok(id) => id,
@@ -584,7 +584,7 @@ async fn persist_host(
     };
     let findings: Vec<ScanFinding> = grouped
         .iter()
-        .flat_map(|(meta, fs)| fs.iter().map(move |f| finding_to_scan_finding(meta, f)))
+        .flat_map(|(meta, fs, _)| fs.iter().map(move |f| finding_to_scan_finding(meta, f)))
         .collect();
     if let Err(e) = history
         .complete_session(&session_id, &findings, None, None)
@@ -626,7 +626,7 @@ async fn scan_with_executor(
             if let Some(history) = &history {
                 persist_host(history, &host_key, &grouped).await;
             }
-            let findings: Vec<Finding> = grouped.into_iter().flat_map(|(_, f)| f).collect();
+            let findings: Vec<Finding> = grouped.into_iter().flat_map(|(_, f, _)| f).collect();
             let counts = SeverityCounts::from_findings(&findings);
             HostOutcome {
                 name,

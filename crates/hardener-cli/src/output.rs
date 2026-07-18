@@ -2,7 +2,9 @@
 
 use colored::Colorize;
 use hardener_common::types::Severity;
-use hardener_core::{ApplyResult, Finding, PluginMetadata, ValidationReport};
+use hardener_core::{
+    ApplyResult, Finding, PluginMetadata, ValidationReport, plugin::UncheckedCheck,
+};
 use hardener_state::{Checkpoint, FileState, RollbackResult};
 
 use crate::cli::{OutputFormat, ScanMode};
@@ -43,18 +45,19 @@ pub fn warning(format: &OutputFormat, message: &str) {
 
 pub fn scan_results(
     format: &OutputFormat,
-    results: &[(PluginMetadata, Vec<Finding>)],
+    results: &[(PluginMetadata, Vec<Finding>, Vec<UncheckedCheck>)],
     _mode: ScanMode,
 ) {
     match format {
         OutputFormat::Json => {
             let json_results: Vec<_> = results
                 .iter()
-                .map(|(m, f)| {
+                .map(|(m, f, u)| {
                     serde_json::json!({
                         "plugin_id": m.plugin_id.as_str(),
                         "plugin_name": m.plugin_name,
                         "findings": f,
+                        "unchecked": u,
                     })
                 })
                 .collect();
@@ -67,15 +70,15 @@ pub fn scan_results(
             println!("\n{}", "═══ Scan Results ═══".bold());
 
             let mut total_findings = 0;
-            for (metadata, findings) in results {
-                if findings.is_empty() {
+            for (metadata, findings, unchecked) in results {
+                if findings.is_empty() && unchecked.is_empty() {
                     println!(
                         "{} {} - {}",
                         "✓".green(),
                         metadata.plugin_name,
                         "No issues found".dimmed()
                     );
-                } else {
+                } else if !findings.is_empty() {
                     println!(
                         "\n{} {} - {} finding(s)",
                         "!".yellow(),
@@ -97,6 +100,26 @@ pub fn scan_results(
                     }
                     total_findings += findings.len();
                 }
+
+                if !unchecked.is_empty() {
+                    println!(
+                        "  {} {}",
+                        "?".dimmed(),
+                        format!(
+                            "{} check(s) could not be verified without root",
+                            unchecked.len()
+                        )
+                        .dimmed()
+                    );
+                    for entry in unchecked {
+                        println!(
+                            "    {} {} - {}",
+                            "·".dimmed(),
+                            entry.unchecked_title.dimmed(),
+                            entry.unchecked_reason.dimmed()
+                        );
+                    }
+                }
             }
 
             println!("\n{}", "═══════════════════".dimmed());
@@ -105,6 +128,18 @@ pub fn scan_results(
                 total_findings,
                 results.len()
             );
+
+            let total_unchecked: usize = results.iter().map(|(_, _, u)| u.len()).sum();
+            if total_unchecked > 0 {
+                println!(
+                    "{}",
+                    format!(
+                        "{} check(s) require root; run with sudo for a full scan",
+                        total_unchecked
+                    )
+                    .dimmed()
+                );
+            }
         }
     }
 }

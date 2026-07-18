@@ -8,7 +8,9 @@ use hardener_compliance::{
     JsonFormatter, OutputFormat, ReportConfig, ReportFormatter, ReportGenerator, Scenario,
     TextFormatter, profile_label,
 };
-use hardener_core::{Context, Finding, PluginMetadata, executor::SystemExecutor};
+use hardener_core::{
+    Context, Finding, PluginMetadata, executor::SystemExecutor, plugin::UncheckedCheck,
+};
 use hardener_plugins::create_plugin_registry;
 use hardener_scheduler::db::ScanFinding;
 use std::{fs, io, io::Write, sync::Arc};
@@ -140,14 +142,15 @@ pub async fn run(
 
 /// Scans every plugin and returns findings grouped by their source plugin.
 ///
-/// Keeping the `(PluginMetadata, Vec<Finding>)` pairs preserves `plugin_id`,
-/// which history persistence needs. `run_scan` flattens this for callers that
-/// only want the findings.
+/// Keeping the `(PluginMetadata, Vec<Finding>, Vec<UncheckedCheck>)` triples
+/// preserves `plugin_id`, which history persistence needs, and the unchecked
+/// entries the desktop deep-scan flow consumes. `run_scan` flattens this for
+/// callers that only want the findings.
 pub async fn scan_grouped(
     quiet: bool,
     executor: Arc<dyn SystemExecutor>,
     cli_format: &CliOutputFormat,
-) -> Result<Vec<(PluginMetadata, Vec<Finding>)>> {
+) -> Result<Vec<(PluginMetadata, Vec<Finding>, Vec<UncheckedCheck>)>> {
     let registry = create_plugin_registry();
     let ctx = Context::with_executor(executor);
 
@@ -181,7 +184,11 @@ pub async fn scan_grouped(
                         result.scan_findings.len()
                     );
                 }
-                grouped.push((metadata.clone(), result.scan_findings));
+                grouped.push((
+                    metadata.clone(),
+                    result.scan_findings,
+                    result.scan_unchecked,
+                ));
             }
             Err(e) => {
                 if show_progress {
@@ -203,7 +210,7 @@ pub async fn run_scan(
     Ok(scan_grouped(quiet, executor, cli_format)
         .await?
         .into_iter()
-        .flat_map(|(_, findings)| findings)
+        .flat_map(|(_, findings, _)| findings)
         .collect())
 }
 
@@ -380,12 +387,12 @@ mod tests {
             .await
             .unwrap();
         // Every group carries its plugin metadata (so plugin_id is preserved).
-        for (meta, _findings) in &grouped {
+        for (meta, _findings, _unchecked) in &grouped {
             assert!(!meta.plugin_id.as_str().is_empty(), "group has a plugin id");
         }
         // run_scan returns the same findings, flattened.
         let flat = run_scan(true, exec, &CliOutputFormat::Json).await.unwrap();
-        let grouped_total: usize = grouped.iter().map(|(_, f)| f.len()).sum();
+        let grouped_total: usize = grouped.iter().map(|(_, f, _)| f.len()).sum();
         assert_eq!(flat.len(), grouped_total, "run_scan flattens scan_grouped");
     }
 
