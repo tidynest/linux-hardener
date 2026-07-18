@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- The PKGBUILD now pins `CARGO_TARGET_DIR` inside the build root, so a
+  user-level cargo configuration with a global `[build] target-dir` no
+  longer relocates the artifacts that `package()` installs from relative
+  `target/` paths (published to AUR as 1.3.0-2).
+
 ## [1.3.0] - 2026-07-18
 
 ### Fixed
