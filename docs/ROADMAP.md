@@ -486,6 +486,21 @@ User clicks "Apply"
 
 ---
 
+### v1.2.0: Multi-host & Compliance Depth ✅ (Released)
+
+- [x] Multi-host batch CLI: `batch scan` / `report` / `apply` / `rollback` (concurrent, per-host isolated, tiered exit codes)
+- [x] Per-host scan history, trends, and regression detection (`history trends/regressions --host`)
+- [x] Scheduler regression alerts (`notify_mode`: findings / regression / both)
+- [x] Remote-correct checkpoints (capture/restore through the executor; host-keyed; cross-host restore refused)
+- [x] ISO/IEC 27001:2022 framework + multi-framework finding mappings (STIG/NIST/PCI-DSS/HIPAA/GDPR)
+- [x] CIS coverage completion: 11 CIS controls now genuinely assessed (Pass/Fail); `report --framework cis` shows 6 ManualReview, down from 17
+- [x] PAM/permissions assessment improvements: faillock/pwhistory use threshold comparison; shadow/gshadow use allowed-bits mask (never loosens stricter settings)
+- [x] Desktop **Fleet** view: read-only multi-host scan posture with CIS compliance scores and per-framework breakdown
+- [x] Fleet apply/rollback in the GUI: shells out to the audited `batch apply/rollback`; mandatory dry-run + confirm modal before any change
+- [x] Polkit desktop-environment test tooling (`scripts/test/polkit/detect-polkit-agent.sh`, `test-polkit-matrix.sh`, DE-specific wrappers, `docs/guide/desktop-environment-compatibility.md`)
+
+---
+
 ## Future Enhancements
 
 Features planned for post-v1.0.0 releases.
@@ -689,4 +704,4 @@ When working on new features:
 
 ---
 
-**Last Updated**: 2026-07-01
+**Last Updated**: 2026-07-18

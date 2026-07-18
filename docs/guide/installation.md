@@ -1,6 +1,6 @@
 # Installation Guide
 
-**Last Updated**: 2026-07-17
+**Last Updated**: 2026-07-18
 
 ## Requirements
 
@@ -91,26 +91,78 @@ sudo install -Dm644 data/config.toml.example /etc/linux-hardener/config.toml
 
 ## Run with Docker (Scan and Report Only)
 
-A minimal image (`FROM scratch`, single static musl binary) supports read-only
-auditing of the host:
+A minimal container image supports read-only auditing of the host. The image
+is built `FROM scratch` and contains a single file: the statically linked
+musl `hardener` binary. No shell, no libraries, no package manager.
+
+### Build
+
+From the repository root (the build context must be the repository root,
+where `.dockerignore` lives):
 
 ```bash
-# Build from the repository root
 docker build -f packaging/docker/Dockerfile -t linux-system-hardener .
+```
 
+`--build-arg BUILD_JOBS=<n>` caps rustc parallelism on thermally constrained
+hosts; unset, the build uses all cores.
+
+### Usage
+
+```bash
 # Read-only scan of the host's config surface
 docker run --rm --pid=host \
   -v /etc:/etc:ro -v /var/log:/var/log:ro -v /usr/lib:/usr/lib:ro \
   linux-system-hardener scan --format json
 ```
 
-Scan and report run read-only against the mounted host state.
-`systemctl`/D-Bus-dependent checks (services, parts of audit/MAC/firewall)
-degrade to tool-unavailable findings rather than lying. `apply` is unsupported
-in a container by design (it would require `--privileged` plus host
-namespaces, defeating the isolation), so install natively to apply hardening.
-Full usage and the capability boundary:
-[`packaging/docker/README.md`](../../packaging/docker/README.md).
+Compliance reports work the same way:
+
+```bash
+docker run --rm --pid=host \
+  -v /etc:/etc:ro -v /var/log:/var/log:ro -v /usr/lib:/usr/lib:ro \
+  linux-system-hardener report --framework cis
+```
+
+### Why these flags
+
+- `--pid=host`: the container shares the host's PID namespace, so `/proc/sys`
+  exposes the host's global sysctls (`kernel.*`, `fs.*`, `vm.*`) and the
+  kernel plugin reads real values. Network sysctls (`net.*`) are read from
+  the container's own network namespace; add `--network=host` if those
+  checks should reflect the host's tuning rather than namespace defaults.
+- `-v /etc:/etc:ro`: SSH, PAM, permissions and distro-detection checks read
+  the host's real configuration and cannot write to it.
+- `-v /var/log:/var/log:ro`: log-file permission checks.
+- `-v /usr/lib:/usr/lib:ro`: vendor systemd unit and library permission
+  checks.
+
+Filesystem checks only evaluate paths visible inside the container; anything
+outside the mounts is silently absent from the results. Widen coverage with
+further read-only mounts, e.g. `-v /boot:/boot:ro -v /root:/root:ro` for the
+permissions plugin's boot- and root-directory checks.
+
+### Capability boundary
+
+In a container the hardener can meaningfully run **scan and report,
+read-only, against mounted host state**. `systemctl`/D-Bus-dependent checks
+(services and parts of the audit/MAC/firewall plugins) degrade: they report
+tool-unavailable findings rather than lying. For example, on a host with
+auditd running, the in-container scan reports `audit_not_installed` because
+it cannot see the host's service manager: treat such findings as
+*unverifiable in-container*, not as host truth.
+
+**`apply` is unsupported in a container by design.** Writing host state would
+require `--privileged` plus host namespaces, which defeats the isolation
+that justifies the container in the first place. Use a native install
+(package, static binary, or source) to apply hardening.
+
+Remote (`--ssh`) operations are also unavailable: the image ships no `ssh`
+client binary.
+
+The Docker section of
+[distribution-validation.md](../reference/distribution-validation.md)
+records exactly what has been validated with this image.
 
 ---
 
@@ -285,43 +337,6 @@ sudo rm -rf /var/log/linux-hardener
 
 ## Troubleshooting
 
-### GUI fails to launch
-
-Ensure GTK 3 and WebKit2GTK 4.1 are installed:
-
-```bash
-# Arch
-pacman -Q gtk3 webkit2gtk-4.1
-
-# Fedora
-rpm -q gtk3 webkit2gtk4.1
-
-# Debian/Ubuntu
-dpkg -l libgtk-3-0t64 libwebkit2gtk-4.1-0
-```
-
-### GUI "Apply" button shows authentication error
-
-A polkit authentication agent must be running. Most desktop environments provide one. For window managers (Hyprland, Sway, i3):
-
-```bash
-# Install and run a standalone polkit agent
-# Arch
-sudo pacman -S polkit-gnome
-/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1 &
-```
-
-### Systemd timer not running
-
-```bash
-systemctl status linux-hardener.timer
-journalctl -u linux-hardener.service --since today
-```
-
-### Permission denied on scan
-
-Scanning runs as a regular user for most checks. Some plugins (audit rules, service status) may return partial results without root. For full results:
-
-```bash
-sudo hardener scan
-```
+Moved to the [troubleshooting guide](troubleshooting.md), which covers GUI
+launch failures, polkit authentication errors, timer issues, and partial
+scan results, organised by symptom.

@@ -693,6 +693,7 @@ purpose-named directories.
 | `CONTRIBUTING.md` | Contribution guidelines |
 | `SECURITY.md` | Security policy |
 | `LICENSE` | Apache-2.0 licence |
+| `docs/README.md` | Documentation index (map of everything under `docs/`) |
 | `docs/ROADMAP.md` | Development roadmap |
 | `docs/NEXT.md` | Session handoff and current state |
 
@@ -700,7 +701,9 @@ purpose-named directories.
 
 | File | Purpose |
 |------|---------|
-| `docs/guide/installation.md` | Installation guide for all supported distros |
+| `docs/guide/getting-started.md` | First scan to first compliance report, task by task |
+| `docs/guide/installation.md` | Installation guide for all supported distros (incl. Docker) |
+| `docs/guide/troubleshooting.md` | Symptom-organised fixes (GUI launch, polkit, timer, partial scans) |
 | `docs/guide/ssh-remote-scanning.md` | SSH remote scanning user guide |
 | `docs/guide/desktop-environment-compatibility.md` | Polkit agent matrix per desktop environment |
 
@@ -709,6 +712,7 @@ purpose-named directories.
 | File | Purpose |
 |------|---------|
 | `docs/reference/cli.md` | CLI command reference |
+| `docs/reference/configuration.md` | Configuration reference (config.toml, scheduler, hosts.toml) |
 | `docs/reference/naming-conventions.md` | Naming standards |
 | `docs/reference/file-map.md` | This file |
 | `docs/reference/data-flow.md` | Data flow diagrams |
@@ -726,6 +730,7 @@ purpose-named directories.
 |------|---------|
 | `docs/contributing/building.md` | Build commands and workflow |
 | `docs/contributing/testing.md` | Test commands and container suites |
+| `docs/contributing/plugin-authoring.md` | How to write a hardening plugin |
 | `docs/contributing/documentation.md` | Documentation validation and update commands |
 | `docs/contributing/releasing.md` | Versioning and release process |
 

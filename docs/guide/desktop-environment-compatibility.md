@@ -75,13 +75,8 @@ authenticate once when applying multiple operations in quick succession.
 
 ## Error Handling
 
-| Scenario | pkexec Exit Code | Tauri Error Message |
-|----------|-----------------|---------------------|
-| Auth success | 0 | (none -- operation proceeds) |
-| User cancels dialog | 126 | "Authentication cancelled. Root privileges are required for this operation." |
-| No agent running | 127 | "No Polkit authentication agent found..." with install instructions |
-| Binary not found | 127 | "Command failed: ..." |
-| Permission denied | non-zero | "Command failed: ..." (sanitised) |
+Moved to the [troubleshooting guide](troubleshooting.md), which maps each
+pkexec exit code to the error message the app shows and the fix.
 
 ## Known Quirks
 

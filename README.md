@@ -17,6 +17,9 @@
 
 A comprehensive Linux security automation tool with multi-distribution support, built in Rust. Provides automated security scanning, hardening, and compliance reporting with full rollback capabilities.
 
+> New here? Start with the [getting started guide](docs/guide/getting-started.md).
+> The full documentation index lives at [docs/README.md](docs/README.md).
+
 ---
 
 ## Screenshots
@@ -359,237 +362,46 @@ sudo hardener rollback <checkpoint-id>  # Roll back to a checkpoint
 hardener history list                   # Recent scan sessions
 ```
 
-Every verb in detail:
-
-<details>
-<summary><code>hardener plugins</code>: list available security plugins</summary>
+The remaining surface at a glance (every command and flag is documented in
+the [CLI reference](docs/reference/cli.md)):
 
 ```bash
-# List available security plugins
-hardener plugins
-```
-
-</details>
-
-<details>
-<summary><code>hardener scan</code>: scan the system for security issues</summary>
-
-```bash
-# Scan system for security issues
-hardener scan
-
-# Scan with severity filter (critical, high, medium, low, info)
-hardener scan --severity high
-
-# Scan specific plugins only (full ID or short name)
-hardener scan --plugin kernel-hardening --plugin ssh-hardening
-hardener scan --plugin kernel --plugin ssh  # Short names also work
-
-# Output as JSON
-hardener scan --format json
-
-# Use custom config file
-hardener scan --config /path/to/config.toml
-
-# Audit mode - ignore all config, pure security assessment
-hardener scan --audit
-
-# Compliance mode - only show policy violations (no valid exception)
-hardener scan --compliance
-
-# CI/CD mode - exit with code 1 if findings exist
-hardener scan --compliance --exit-code
-```
-
-</details>
-
-<details>
-<summary><code>hardener apply</code>: apply hardening recommendations (dry-run available)</summary>
-
-```bash
-# Dry-run: see what would be changed without applying
-sudo hardener apply --dry-run --all
-
-# Apply all recommended hardening
-sudo hardener apply --all
-
-# Apply specific plugin
-sudo hardener apply --plugin kernel-hardening
-```
-
-</details>
-
-<details>
-<summary><code>hardener rollback</code>: restore a previous checkpoint</summary>
-
-```bash
-# Rollback to a previous checkpoint
-sudo hardener rollback <checkpoint-id>
-```
-
-</details>
-
-<details>
-<summary><code>hardener report</code>: compliance reports against 10 frameworks</summary>
-
-```bash
-# Interactive report wizard
-hardener report --interactive
-
-# Generate report in different formats
-hardener report --framework cis --report-format html --output report.html
-hardener report --framework cis --report-format csv --output report.csv
-
-# Force a compliance ID profile (auto-detected from the scanned system otherwise)
-hardener report --framework stig --profile rhel10
-```
-
-</details>
-
-<details>
-<summary><code>hardener checkpoint</code>: create and inspect state snapshots</summary>
-
-```bash
-# Create a checkpoint before making changes
+# Checkpoints: create, inspect, prune
 sudo hardener checkpoint create "before-hardening"
-
-# List all checkpoints
-hardener checkpoint list
-
-# Show checkpoint details
 hardener checkpoint show <checkpoint-id>
-
-# Delete a checkpoint by id
 hardener checkpoint delete <checkpoint-id>
-```
 
-</details>
-
-<details>
-<summary><code>hardener history</code>: browse and export past scan sessions</summary>
-
-```bash
-# View scan history (list recent sessions)
-hardener history list
-
-# View history with filters
-hardener history list --limit 50 --status completed
-hardener history list --host server1
-
-# Show details of a specific scan session
+# History: sessions, per-host trends, CI regression gate
 hardener history show <session-id>
+hardener history export <session-id> --output export.json
+hardener history trends --host web-01
+hardener history regressions            # Exit 1 when any host got worse
+hardener --quiet history regressions    # Script-friendly quiet output
 
-# Export scan session to JSON file
-hardener history export <session-id>
-hardener history export <session-id> --output /path/to/export.json
-
-# Per-host security score trends over time
-hardener history trends --host web-01 --limit 10
-
-# Detect regressions since the previous scan (CI gate across all hosts)
-hardener history regressions
-
-# Quiet output for scripts (global --quiet flag suppresses non-essential text)
-hardener --quiet history regressions
-```
-
-</details>
-
-<details>
-<summary><code>hardener daemon</code>: run the scheduled scanning daemon</summary>
-
-```bash
-# Start the scheduled scanning daemon
-hardener daemon start
-
-# Run a single scan immediately (without scheduler)
+# Scheduled scanning: daemon and systemd timer
+hardener daemon start                   # Blocks; run-once and status also available
 hardener daemon run-once
-
-# Show scheduler status and scan history
-hardener daemon status --limit 10
-```
-
-</details>
-
-<details>
-<summary><code>hardener systemd</code>: generate and manage systemd timers</summary>
-
-```bash
-# Generate systemd unit files (outputs to stdout)
-hardener systemd generate
-
-# Generate with custom schedule (cron or systemd calendar format)
-hardener systemd generate --schedule "0 2 * * *"
-
-# Install systemd timer (requires root for system, or use --user)
-sudo hardener systemd install
-hardener systemd install --user
-
-# Check systemd timer status
+hardener daemon status
+hardener systemd generate               # Print unit files
+sudo hardener systemd install           # Daily timer (or --user)
 hardener systemd status
-
-# Remove systemd timer
 sudo hardener systemd uninstall
-```
 
-</details>
-
-### SSH Remote Scanning
-
-```bash
-# Scan a remote host
-hardener --ssh user@hostname scan
-
-# Scan with specific SSH key
-hardener --ssh admin@192.168.1.100 --ssh-key ~/.ssh/id_ed25519 scan
-
-# Apply hardening remotely
-sudo hardener --ssh root@server apply --all
-
-# Generate compliance report from remote host
-hardener --ssh root@server report --framework cis --report-format pdf
-```
-
-See [docs/guide/ssh-remote-scanning.md](docs/guide/ssh-remote-scanning.md) for complete SSH documentation.
-
-### Multi-host / Fleet Commands
-
-Batch subcommands run against many hosts concurrently using the inventory
-(`~/.config/linux-hardener/hosts.toml`) or ad-hoc `--ssh` targets.
-
-```bash
-# Scan all inventory hosts and emit JSON for CI
-hardener --format json batch scan --all
-
-# Scan two named hosts with higher parallelism
-hardener batch scan --host web-01,db-02 --concurrency 16
-
-# Assess the entire fleet against CIS and print a posture table
+# Remote and fleet operations over SSH
+hardener --ssh admin@server --ssh-key ~/.ssh/id_ed25519 scan
+hardener --config /etc/linux-hardener/config.toml scan
+hardener batch scan --all               # Every inventory host, concurrently
 hardener batch report --all --framework cis
-
-# Preview hardening across the fleet (dry-run, no changes made)
-hardener batch apply --all
-
-# Apply to two hosts, four at a time
-sudo hardener batch apply --host web-01,web-02 --execute --concurrency 4
-
-# Preview a fleet-wide rollback of the SSH hardening (dry-run)
-hardener batch rollback --all --plugin ssh
-
-# Roll the SSH change back on two hosts
+hardener batch apply --all              # Dry-run by default; add --execute
 sudo hardener batch rollback --host web-01,web-02 --plugin ssh --execute
 ```
 
-`batch apply` is **dry-run by default**: it validates each host and reports what
-would change without making any modifications. Pass `--execute` to perform real
-changes. Each host is privilege-probed before executing; a host without uid 0 or
-passwordless `sudo` is isolated as failed while the rest proceed unaffected.
-
-`batch rollback` restores each host to the latest per-plugin checkpoint that
-`batch apply` captured. It is **dry-run by default** too: bare `batch rollback`
-previews which checkpoint(s) would be restored per host; `--execute` performs the
-restore. Restores are host-keyed (a host's checkpoint is never applied to another
-host) and privilege-gated on `--execute`.
+`batch apply` and `batch rollback` are **dry-run by default**: they validate
+and preview without changing anything until `--execute` is given, and every
+host is privilege-probed first so an unprivileged host fails in isolation.
+Remote details: [SSH remote scanning](docs/guide/ssh-remote-scanning.md).
+Fleet host inventory: `~/.config/linux-hardener/hosts.toml`
+([configuration reference](docs/reference/configuration.md)).
 
 ### Desktop Application
 
@@ -620,8 +432,6 @@ reached from the navigation bar and have no dedicated shortcut yet.
 
 ## Configuration
 
-### Config File Locations
-
 Configuration is loaded from multiple sources (later overrides earlier):
 
 1. **System config**: `/etc/linux-hardener/config.toml`
@@ -629,50 +439,28 @@ Configuration is loaded from multiple sources (later overrides earlier):
 3. **CLI config**: `--config /path/to/file.toml`
 4. **Environment**: `HARDENER_*` variables
 
-### Basic Configuration
-
 ```toml
 # ~/.config/linux-hardener/config.toml
 
 [global]
-# Plugins to explicitly disable
-disabled_plugins = ["mac"]
+disabled_plugins = ["mac-hardening"]
 
-[ssh]
-enabled = true
-
-[kernel]
-enabled = true
-```
-
-### Policy Exceptions
-
-Document deviations from secure baseline with audit metadata:
-
-```toml
+# Document accepted deviations with an audit trail
 [ssh.exceptions.PasswordAuthentication]
 value = "yes"
 allowed = true
 reason = "Legacy LDAP integration until Q2 2027 migration"
-approved_by = "security-team@company.com"
-approved_date = "2026-11-01"
-ticket = "SEC-1234"
 expires = "2027-06-30"
 ```
 
-### Scan Modes
+Three scan modes interact with the config: default (`hardener scan`,
+findings with policy annotations), audit (`hardener scan --audit`, config
+ignored), and compliance (`hardener scan --compliance`, only violations
+without a valid exception).
 
-- **Default** (`hardener scan`): Shows all findings with policy annotations
-- **Audit** (`hardener scan --audit`): Ignores config, pure security assessment
-- **Compliance** (`hardener scan --compliance`): Only shows policy violations
-
-### Checkpoint Location
-
-Checkpoints are stored in:
-```
-~/.local/share/linux-hardener/checkpoints.db       # regular user
-/var/lib/linux-hardener/checkpoints.db              # when running as root
-```
+Every section, key, default, and the scheduler/inventory files are
+documented in the
+[configuration reference](docs/reference/configuration.md).
 
 ---
 
@@ -716,101 +504,8 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 
 ## Roadmap
 
-See [docs/ROADMAP.md](docs/ROADMAP.md) for detailed implementation plans for upcoming features.
-
-<details>
-<summary><b>Release history: v0.2.0 → v1.0.0</b> (click to expand)</summary>
-
-### ✅ v0.2.0
-- [x] Config file support (`~/.config/linux-hardener/`)
-- [x] CLI flags: `--config`, `--audit`, `--compliance`, `--exit-code`
-- [x] Policy exception system with audit trail
-- [x] Interactive report wizard (`hardener report --interactive`)
-- [x] CSV and HTML format support in CLI
-- [x] PDF report formatter with automatic timestamped filenames and colour-coded badges
-- [x] GUI compliance report page
-
-### ✅ v0.3.0
-- [x] SystemExecutor abstraction layer for local/remote operations
-- [x] Remote scanning via SSH
-- [x] SSH CLI flags: `--ssh`, `--ssh-key`, `--port`, `--ssh-timeout`, `--ssh-no-verify`
-- [x] MockExecutor for unit testing
-- [x] All plugins converted to async
-- [x] SSH remote scanning documentation
-- [x] Scheduled scanning daemon with tokio-cron-scheduler
-- [x] CLI daemon commands: `start`, `run-once`, `status`
-- [x] Notifications (email via SMTP, webhooks for Slack/Discord/generic)
-- [x] Systemd timer generation (`hardener systemd generate/install/uninstall/status`)
-- [x] History CLI commands (`hardener history list/show/export`)
-- [x] WASM compilation fix (hardener-types crate for WASM-safe dependencies)
-- [x] GUI dark terminal theme with CSS styling
-- [x] Browser mode support (Web UI works without Tauri desktop wrapper)
-- [x] CI/CD GitHub Actions integration
-
-### ✅ v0.3.1 - GUI Polish & Testing
-- [x] Fix "Loading..." text persistence
-- [x] GUI dark terminal theme with CSS Variables
-- [x] Security score shows "--/100" before scan
-- [x] Fix View Findings button styling
-- [x] State persistence via SQLite storage
-- [x] Browser mode fix (Tauri availability check)
-- [x] Timestamp formatting on Checkpoints page
-- [x] Background colour personalisation (5 security-focused themes)
-- [x] Responsive layout for varying screen resolutions
-- [x] Navigation restructure (5 pages: Dashboard, Analysis, Hardening, Remote, Scheduler)
-- [x] GUI functional testing
-- [x] CLI functional testing (97 tests: 31 unit + 66 functional)
-- [x] Safe testing environment (systemd-nspawn container)
-
-### ✅ v0.3.2 - GUI Major Redesign
-- [x] Page redesign (Dashboard, Analysis, Hardening restructured with new layout and accessibility)
-- [x] Session 1: Overflow fixes, skip link, tab ARIA accessibility
-- [x] Session 2: CSS utility classes (flex/grid/gap), responsive testing (320-1920px)
-- [x] Session 2: Card component standardisation
-- [x] Session 3: Colour contrast audit (WCAG AA), theme switching UI
-- [x] Session 4: Empty states, CSS transitions, hover animations, E2E tests
-- [x] Backend integration (Tauri commands connected)
-- [x] Root privilege escalation via pkexec
-- [x] Bug fixes: Security score calculation, false positives, validate() stubs, kernel rollback
-
-### ✅ v0.3.3 - Distribution Validation
-- [x] Arch Linux validation (123/123 tests pass) - covers Manjaro, EndeavourOS, Garuda
-- [x] Debian 12 validation (123/123 tests pass) - covers Ubuntu, Linux Mint, Pop!_OS, elementary
-- [x] Fedora 41 validation (123/123 tests pass) - covers RHEL, CentOS, AlmaLinux, Oracle Linux
-- [x] Rocky Linux 9 validation (123/123 tests pass) - covers RHEL family
-- [x] openSUSE Leap 15.6 validation (123/123 tests pass) - covers SLES
-
-> **Note on family coverage:** Each distribution covers its entire family. All distributions in a family map to the same `DistroFamily` enum and use identical hardener code paths.
-
-### ✅ v0.4.0 - GUI/CLI Parity & UI Polish
-- [x] GUI/CLI feature parity (scan filtering, checkpoint CRUD, report export, scan history, audit/compliance modes)
-- [x] Scheduler UI (schedule config, notification config, email/webhook, test notification)
-- [x] Config file picker in desktop app
-- [x] UI polish pass (side-by-side layouts, card standardisation, responsive fixes)
-- [x] Severity filter in scan results
-- [x] Multi-host management from single UI: **Fleet** scan view, compliance scores, **Fleet Apply** (apply/rollback), ad-hoc SSH targets, live scan progress, and per-host history
-- [~] Historical security trends: CLI `history trends` shipped (per-host; see v1.2.0); desktop trends visualisation deferred
-- [ ] Test on GNOME, KDE, XFCE desktop environments (pkexec/polkit agents): deferred (human-run; CI validates headless nspawn containers only)
-
-### ✅ v1.0.0 - Production Release
-- [x] Security audit completed
-- [x] Package distribution (AUR)
-- [x] Comprehensive user documentation
-- [x] Performance optimisation
-
-</details>
-
-### v1.2.0 - Multi-host & Compliance Depth (Released)
-- [x] Multi-host batch CLI: `batch scan` / `report` / `apply` / `rollback` (concurrent, per-host isolated, tiered exit codes)
-- [x] Per-host scan history, trends, and regression detection (`history trends/regressions --host`)
-- [x] Scheduler regression alerts (`notify_mode`: findings / regression / both)
-- [x] Remote-correct checkpoints (capture/restore through the executor; host-keyed; cross-host restore refused)
-- [x] ISO/IEC 27001:2022 framework + multi-framework finding mappings (STIG/NIST/PCI-DSS/HIPAA/GDPR)
-- [x] CIS coverage completion: 11 CIS controls now genuinely assessed (Pass/Fail); `report --framework cis` shows 6 ManualReview, down from 17
-- [x] PAM/permissions assessment improvements: faillock/pwhistory use threshold comparison; shadow/gshadow use allowed-bits mask (never loosens stricter settings)
-- [x] Desktop **Fleet** view: read-only multi-host scan posture with CIS compliance scores and per-framework breakdown
-- [x] Fleet apply/rollback in the GUI: shells out to the audited `batch apply/rollback`; mandatory dry-run + confirm modal before any change
-- [x] Polkit desktop-environment test tooling (`scripts/test/polkit/detect-polkit-agent.sh`, `test-polkit-matrix.sh`, DE-specific wrappers, `docs/guide/desktop-environment-compatibility.md`)
+Milestones, both completed (v0.2.0 through v1.2.0) and planned, live in
+[docs/ROADMAP.md](docs/ROADMAP.md).
 
 ---
 
@@ -833,4 +528,4 @@ This project draws inspiration from established security tools including:
 **Contact**: tidynest@proton.me
 **Repository**: https://github.com/tidynest/linux-system-hardener
 
-**Last Updated**: 2026-07-17
+**Last Updated**: 2026-07-18
