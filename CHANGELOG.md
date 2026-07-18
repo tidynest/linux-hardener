@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Dark-theme select dropdowns rendered unreadable popup lists on the
+  Schedule page, Notifications page and Compliance export control: the
+  `<option>` entries fell back to the browser's native white popup with
+  pale text because only `.theme-select` (theme toggle) and
+  `.severity-filter select` (findings filter) carried the appearance
+  reset, custom arrow and forced option colours needed for a themed
+  popup. `.form-select` and `.format-select` are now part of the same
+  shared rule group, so every select in the app (theme toggle, findings
+  severity filter, schedule, notifications, compliance export) gets
+  matching hover, focus and daywatch light-theme treatment from one
+  definition instead of a partial or missing copy. As a side effect,
+  `.format-select` also picks up a real border and focus colour again;
+  it previously referenced two custom properties (`--border-default`,
+  `--accent-primary`) that are not defined anywhere in the stylesheet,
+  so its border and focus outline were silently dropped.
+
 ## [1.3.2] - 2026-07-18
 
 ### Fixed

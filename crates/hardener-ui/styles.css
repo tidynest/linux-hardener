@@ -502,7 +502,14 @@ body {
     margin-left: auto;
 }
 
-.theme-select {
+/* Themed select controls (theme toggle, findings severity filter, schedule
+   and notification forms, compliance export). One definition so opened
+   dropdown popups always inherit dark/daywatch colours instead of falling
+   back to a native white popup with pale text. */
+.theme-select,
+.severity-filter select,
+.form-select,
+.format-select {
     /* Reset native appearance for consistent cross-browser styling */
     -webkit-appearance: none;
     -moz-appearance: none;
@@ -522,29 +529,43 @@ body {
     transition: border-color var(--transition-fast);
 }
 
-.theme-select:hover {
+.theme-select:hover,
+.severity-filter select:hover,
+.form-select:hover,
+.format-select:hover {
     border-color: var(--color-accent);
 }
 
-.theme-select:focus-visible {
+.theme-select:focus-visible,
+.severity-filter select:focus-visible,
+.form-select:focus-visible,
+.format-select:focus-visible {
     outline: 0.125rem solid var(--color-accent);
     outline-offset: 0.125rem;
 }
 
-.theme-select option {
+.theme-select option,
+.severity-filter select option,
+.form-select option,
+.format-select option {
     background: var(--bg-secondary);
     background-color: var(--bg-secondary) !important;
     color: var(--text-primary) !important;
 }
 
-/* Daywatch light theme needs explicit option styling */
-[data-theme="daywatch"] .theme-select {
+/* Daywatch light theme needs an explicit arrow colour; option colours above
+   already resolve through the per-theme custom properties. */
+[data-theme="daywatch"] .theme-select,
+[data-theme="daywatch"] .severity-filter select,
+[data-theme="daywatch"] .form-select,
+[data-theme="daywatch"] .format-select {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%231c1917' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
 }
 
-[data-theme="daywatch"] .theme-select option {
-    background-color: var(--bg-secondary) !important;
-    color: var(--text-primary) !important;
+/* Schedule and notification selects sit alongside .form-input; cap width to
+   match the surrounding form layout. */
+.form-select {
+    max-width: 400px;
 }
 
 /* ============================================================
@@ -1090,44 +1111,9 @@ tbody tr:hover {
     color: var(--text-secondary);
 }
 
-.severity-filter select {
-    /* Reset native appearance for consistent cross-browser styling */
-    -webkit-appearance: none;
-    -moz-appearance: none;
-    appearance: none;
-    background: var(--bg-secondary);
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23a8b8c8' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right var(--space-2) center;
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--border-radius);
-    padding: var(--space-1) var(--space-2);
-    padding-right: 1.75rem;
-    font-size: 0.85rem;
-    cursor: pointer;
-    transition: border-color var(--transition-fast);
-}
-
-.severity-filter select:hover {
-    border-color: var(--color-accent);
-}
-
-.severity-filter select:focus-visible {
-    outline: 0.125rem solid var(--color-accent);
-    outline-offset: 0.125rem;
-}
-
-.severity-filter select option {
-    background: var(--bg-secondary);
-    background-color: var(--bg-secondary) !important;
-    color: var(--text-primary) !important;
-}
-
-/* Daywatch light theme needs explicit option styling */
-[data-theme="daywatch"] .severity-filter select {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%231c1917' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
-}
+/* Themed select rules for .severity-filter select live with the other three
+   select families near the top of this file (search "Themed select
+   controls"). */
 
 /* Finding detail panel */
 .finding-detail {
@@ -1689,22 +1675,8 @@ tbody tr:hover {
   gap: var(--space-xs);
 }
 
-.format-select {
-  padding: var(--space-xs) var(--space-sm);
-  font-size: 0.85rem;
-  font-family: inherit;
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  border: 1px solid var(--border-default);
-  border-radius: 4px;
-  cursor: pointer;
-  outline: none;
-  transition: border-color 0.15s ease;
-}
-
-.format-select:focus {
-  border-color: var(--accent-primary);
-}
+/* Themed select rules for .format-select live with the other three select
+   families near the top of this file (search "Themed select controls"). */
 
 .status-message {
   font-size: 0.875rem;
@@ -2608,8 +2580,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
   color: var(--text-secondary);
 }
 
-.form-input,
-.form-select {
+.form-input {
   padding: 0.5rem 0.75rem;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
@@ -2620,12 +2591,15 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
   max-width: 400px;
 }
 
-.form-input:focus,
-.form-select:focus {
+.form-input:focus {
   outline: none;
   border-color: var(--color-good);
   box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.25);
 }
+
+/* .form-select themed rules (option popup, appearance, focus outline) live
+   with the other three select families near the top of this file (search
+   "Themed select controls"); max-width lives there too. */
 
 .form-hint {
   font-size: 0.75rem;
