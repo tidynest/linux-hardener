@@ -12,9 +12,13 @@
 
 set -uo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="/project"
 BINARY="$PROJECT_DIR/target/x86_64-unknown-linux-musl/release/hardener"
 [[ -x "$BINARY" ]] || BINARY="$PROJECT_DIR/target/release/hardener"
+
+# shellcheck source=../lib/common.sh
+source "$SCRIPT_DIR/../lib/common.sh"
 
 # Test counters
 TESTS_TOTAL=0
@@ -24,16 +28,6 @@ TESTS_SKIPPED=0
 FAILED_TESTS=()
 
 DO_APPLY=false
-
-# Colours
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-MAGENTA='\033[0;35m'
-BOLD='\033[1m'
-NC='\033[0m'
 
 # =============================================================================
 # Helpers (same format as full-test-suite.sh)

@@ -21,31 +21,15 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 RESULTS_DIR="$PROJECT_DIR/test-results/gui"
 
-# Distro name -> container name mapping
-declare -A CONTAINERS=(
-    [arch]="hardener-test"
-    [debian]="hardener-test-debian"
-    [fedora]="hardener-test-fedora"
-    [rhel]="hardener-test-rhel"
-    [opensuse]="hardener-test-opensuse"
-)
-
-DISTRO_ORDER=(arch debian fedora rhel opensuse)
+# shellcheck source=../../lib/common.sh
+source "$SCRIPT_DIR/../../lib/common.sh"
+# shellcheck source=../../lib/parallel.sh
+source "$SCRIPT_DIR/../../lib/parallel.sh"
 
 # Options
 SINGLE_DISTRO=""
 PARALLEL=false
 MAX_JOBS=5
-
-# Colours
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-MAGENTA='\033[0;35m'
-BOLD='\033[1m'
-DIM='\033[2m'
-NC='\033[0m'
 
 # =============================================================================
 # Argument parsing
@@ -127,14 +111,6 @@ fi
 declare -A RESULT_EXIT
 
 BOX_W=74
-print_boxline() {
-    local content="$1"
-    local visible_len=${#content}
-    local pad=$((BOX_W - visible_len))
-    local spaces=""
-    for ((i=0; i<pad; i++)); do spaces+=" "; done
-    echo -e "${MAGENTA}║${NC}${content}${spaces}${MAGENTA}║${NC}"
-}
 
 # The nspawn invocation shared by both execution modes.
 nspawn_gui_tests() {
@@ -163,58 +139,54 @@ echo ""
 # Run tests per distro (serial or parallel)
 # =============================================================================
 
-if [[ "$PARALLEL" == "true" ]]; then
-    declare -a PIDS
-    declare -a PID_DISTROS
+# Defined once, used by both serial (foreground, tees to the terminal) and
+# parallel (backgrounded, redirects only -- concurrent tees would interleave
+# raw output) execution.
+run_single_distro() {
+    local distro="$1"
+    local container="${CONTAINERS[$distro]}"
+    local container_path="/var/lib/machines/$container"
+    local logfile="$RESULTS_DIR/${distro}-webui.log"
 
-    run_single_distro() {
-        local distro="$1"
-        local container="${CONTAINERS[$distro]}"
-        local container_path="/var/lib/machines/$container"
-        local logfile="$RESULTS_DIR/${distro}-webui.log"
+    [[ "$PARALLEL" != "true" ]] && echo -e "${CYAN}━━━ Web UI Testing: $distro ($container) ━━━${NC}"
 
-        if [[ ! -d "$container_path" ]]; then
-            echo -e "[$distro] ${YELLOW}SKIP${NC}: container not found"
-            echo "CONTAINER NOT FOUND: $container_path" > "$logfile"
-            return 99
-        fi
+    if [[ ! -d "$container_path" ]]; then
+        echo -e "  ${YELLOW}[SKIP]${NC} Container not found: $container_path"
+        echo "CONTAINER NOT FOUND: $container_path" > "$logfile"
+        return 99
+    fi
 
+    local exit_code
+    if [[ "$PARALLEL" == "true" ]]; then
         echo -e "[$distro] ${CYAN}Starting...${NC}"
-
         nspawn_gui_tests "$container_path" > "$logfile" 2>&1
-        local exit_code=$?
-
+        exit_code=$?
         if [[ $exit_code -eq 0 ]]; then
             echo -e "[$distro] ${GREEN}PASS${NC}"
         else
             echo -e "[$distro] ${RED}FAIL${NC} (exit: $exit_code)"
         fi
+    else
+        echo -e "  ${CYAN}[RUN]${NC}  systemd-nspawn --pipe -> gui-test-inner.sh"
+        echo -e "  ${CYAN}[LOG]${NC}  $logfile"
+        nspawn_gui_tests "$container_path" 2>&1 | tee "$logfile"
+        exit_code=${PIPESTATUS[0]}
+        if [[ $exit_code -eq 0 ]]; then
+            echo -e "  ${GREEN}[PASS]${NC} All Playwright tests passed"
+        else
+            echo -e "  ${RED}[FAIL]${NC} Tests failed (exit code: $exit_code)"
+        fi
+        echo ""
+    fi
 
-        return $exit_code
-    }
+    return "$exit_code"
+}
 
+if [[ "$PARALLEL" == "true" ]]; then
     echo -e "${CYAN}Launching parallel test jobs...${NC}"
     echo ""
 
-    running=0
-    for distro in "${DISTROS[@]}"; do
-        while [[ $running -ge $MAX_JOBS ]]; do
-            wait -n 2>/dev/null || true
-            ((running--)) || true
-        done
-
-        run_single_distro "$distro" &
-        PIDS+=($!)
-        PID_DISTROS+=("$distro")
-        ((running++))
-        echo -e "${DIM}  Started job for $distro (PID: ${PIDS[-1]})${NC}"
-        # Stagger starts to reduce peak load
-        sleep 10
-    done
-
-    echo ""
-    echo -e "${CYAN}Waiting for all jobs to complete...${NC}"
-    echo ""
+    launch_job_pool "$MAX_JOBS" DISTROS 10
 
     for i in "${!PIDS[@]}"; do
         pid="${PIDS[$i]}"
@@ -224,31 +196,8 @@ if [[ "$PARALLEL" == "true" ]]; then
     done
 else
     for distro in "${DISTROS[@]}"; do
-        container="${CONTAINERS[$distro]}"
-        container_path="/var/lib/machines/$container"
-        logfile="$RESULTS_DIR/${distro}-webui.log"
-
-        echo -e "${CYAN}━━━ Web UI Testing: $distro ($container) ━━━${NC}"
-
-        if [[ ! -d "$container_path" ]]; then
-            echo -e "  ${YELLOW}[SKIP]${NC} Container not found: $container_path"
-            RESULT_EXIT[$distro]=99
-            echo "CONTAINER NOT FOUND: $container_path" > "$logfile"
-            continue
-        fi
-
-        echo -e "  ${CYAN}[RUN]${NC}  systemd-nspawn --pipe -> gui-test-inner.sh"
-        echo -e "  ${CYAN}[LOG]${NC}  $logfile"
-
-        nspawn_gui_tests "$container_path" 2>&1 | tee "$logfile"
-        RESULT_EXIT[$distro]=${PIPESTATUS[0]}
-
-        if [[ "${RESULT_EXIT[$distro]}" -eq 0 ]]; then
-            echo -e "  ${GREEN}[PASS]${NC} All Playwright tests passed"
-        else
-            echo -e "  ${RED}[FAIL]${NC} Tests failed (exit code: ${RESULT_EXIT[$distro]})"
-        fi
-        echo ""
+        run_single_distro "$distro"
+        RESULT_EXIT[$distro]=$?
     done
 fi
 

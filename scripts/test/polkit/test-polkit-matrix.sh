@@ -26,36 +26,9 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
+# shellcheck source=../../lib/common.sh
+source "$SCRIPT_DIR/../../lib/common.sh"
 source "$SCRIPT_DIR/detect-polkit-agent.sh"
-
-# Cargo may redirect build output away from ./target (CARGO_TARGET_DIR or a
-# [build] target-dir in ~/.cargo/config.toml); probe candidates for "$@".
-resolve_target_dir() {
-    local dir probe home
-    if [[ -n "${CARGO_TARGET_DIR:-}" ]]; then
-        echo "$CARGO_TARGET_DIR"
-        return
-    fi
-    dir=""
-    if command -v cargo &>/dev/null; then
-        dir=$(cargo metadata --format-version 1 --no-deps \
-            --manifest-path "$PROJECT_DIR/Cargo.toml" 2>/dev/null |
-            sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')
-    fi
-    [[ -n "$dir" ]] || dir="$PROJECT_DIR/target"
-    for probe in "$@"; do
-        [[ -e "$dir/$probe" ]] && { echo "$dir"; return; }
-    done
-    for home in "${SUDO_USER:+$(getent passwd "$SUDO_USER" | cut -d: -f6)}" "$HOME"; do
-        for probe in "$@"; do
-            if [[ -n "$home" && -e "$home/.cache/cargo-target/$probe" ]]; then
-                echo "$home/.cache/cargo-target"
-                return
-            fi
-        done
-    done
-    echo "$dir"
-}
 
 TARGET_DIR="$(resolve_target_dir \
     "x86_64-unknown-linux-musl/release/hardener" "release/hardener" "debug/hardener")"
@@ -66,14 +39,6 @@ INTERACTIVE=false
 # Test counters
 TOTAL=0; PASSED=0; FAILED=0; SKIPPED=0
 FAILED_TESTS=()
-
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-MAGENTA='\033[0;35m'
-BOLD='\033[1m'
-NC='\033[0m'
 
 pass() { echo -e "  ${GREEN}[PASS]${NC} $1"; ((PASSED++)); ((TOTAL++)); }
 fail() { echo -e "  ${RED}[FAIL]${NC} $1"; ((FAILED++)); ((TOTAL++)); FAILED_TESTS+=("$1"); }

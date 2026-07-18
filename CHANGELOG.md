@@ -60,6 +60,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Packaging inputs moved under `packaging/`: `data/` is now
   `packaging/assets/` and `systemd/` is `packaging/systemd/`. Install
   destinations are unchanged; built packages are identical.
+- Test tooling deduplicated: the six copies of `resolve_target_dir`, the
+  three `CONTAINERS`/`DISTRO_ORDER` distro tables (plus the same names
+  hardcoded in `create-container.sh`), the colour/box-banner preambles, and
+  the parallel job-pool frame duplicated across the cross-distro and Web UI
+  GUI runners now live in `scripts/lib/common.sh` and
+  `scripts/lib/parallel.sh`. Each runner's serial and `--parallel` code
+  paths share one `run_single_distro` instead of carrying two near-identical
+  bodies, and the cross-distro parallel runner reads its pass/fail/skip
+  counts back from the persisted per-distro logfile instead of a
+  `.passed`/`.failed`/`.skipped`/`.total` temp-file relay. `create-container.sh`'s
+  Fedora and Rocky (RHEL) bootstraps, identical bar the image and one
+  package name, are now one parameterised `bootstrap_dnf_family` (openSUSE's
+  zypper bootstrap stayed separate; its user/group setup diverges enough
+  that folding it in would cost more clarity than it would save). No CLI
+  flag, invocation path or output file changed.
 - The CLI `--framework` flag and the desktop framework parser each
   hand-maintained their own alias table for legacy framework spellings
   (`pci`, `iso`, `soc-2` and similar). Both now delegate to a new

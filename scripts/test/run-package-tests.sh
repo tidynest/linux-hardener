@@ -23,62 +23,16 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 RESULTS_DIR="$PROJECT_DIR/test-results"
 
-# Cargo may redirect build output away from ./target (CARGO_TARGET_DIR or a
-# [build] target-dir in ~/.cargo/config.toml); probe candidates for "$@".
-resolve_target_dir() {
-    local dir probe home
-    if [[ -n "${CARGO_TARGET_DIR:-}" ]]; then
-        echo "$CARGO_TARGET_DIR"
-        return
-    fi
-    dir=""
-    if command -v cargo &>/dev/null; then
-        dir=$(cargo metadata --format-version 1 --no-deps \
-            --manifest-path "$PROJECT_DIR/Cargo.toml" 2>/dev/null |
-            sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')
-    fi
-    [[ -n "$dir" ]] || dir="$PROJECT_DIR/target"
-    for probe in "$@"; do
-        [[ -e "$dir/$probe" ]] && { echo "$dir"; return; }
-    done
-    for home in "${SUDO_USER:+$(getent passwd "$SUDO_USER" | cut -d: -f6)}" "$HOME"; do
-        for probe in "$@"; do
-            if [[ -n "$home" && -e "$home/.cache/cargo-target/$probe" ]]; then
-                echo "$home/.cache/cargo-target"
-                return
-            fi
-        done
-    done
-    echo "$dir"
-}
+# shellcheck source=../lib/common.sh
+source "$SCRIPT_DIR/../lib/common.sh"
 
 TARGET_DIR="$(resolve_target_dir "x86_64-unknown-linux-musl/release/hardener" "release/hardener")"
 MUSL_BINARY="$TARGET_DIR/x86_64-unknown-linux-musl/release/hardener"
-
-# Distro name -> container name mapping (same as run-cross-distro-tests.sh)
-declare -A CONTAINERS=(
-    [arch]="hardener-test"
-    [debian]="hardener-test-debian"
-    [fedora]="hardener-test-fedora"
-    [rhel]="hardener-test-rhel"
-    [opensuse]="hardener-test-opensuse"
-)
-
-DISTRO_ORDER=(arch debian fedora rhel opensuse)
 
 # Options
 DO_APPLY=false
 SINGLE_DISTRO=""
 DO_REBUILD=false
-
-# Colours
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-MAGENTA='\033[0;35m'
-BOLD='\033[1m'
-NC='\033[0m'
 
 # =============================================================================
 # Argument parsing
@@ -182,14 +136,6 @@ APPLY_FLAG=""
 
 echo ""
 BOX_W=74
-print_boxline() {
-    local content="$1"
-    local visible_len=${#content}
-    local pad=$((BOX_W - visible_len))
-    local spaces=""
-    for ((i=0; i<pad; i++)); do spaces+=" "; done
-    echo -e "${MAGENTA}║${NC}${content}${spaces}${MAGENTA}║${NC}"
-}
 echo -e "${MAGENTA}╔$(printf '═%.0s' $(seq 1 $BOX_W))╗${NC}"
 print_boxline ""
 print_boxline "   PACKAGE INSTALL TEST RUNNER"

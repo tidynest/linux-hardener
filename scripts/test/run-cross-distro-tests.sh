@@ -25,48 +25,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 RESULTS_DIR="$PROJECT_DIR/test-results"
 
-# Cargo may redirect build output away from ./target (CARGO_TARGET_DIR or a
-# [build] target-dir in ~/.cargo/config.toml); probe candidates for "$@".
-resolve_target_dir() {
-    local dir probe home
-    if [[ -n "${CARGO_TARGET_DIR:-}" ]]; then
-        echo "$CARGO_TARGET_DIR"
-        return
-    fi
-    dir=""
-    if command -v cargo &>/dev/null; then
-        dir=$(cargo metadata --format-version 1 --no-deps \
-            --manifest-path "$PROJECT_DIR/Cargo.toml" 2>/dev/null |
-            sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')
-    fi
-    [[ -n "$dir" ]] || dir="$PROJECT_DIR/target"
-    for probe in "$@"; do
-        [[ -e "$dir/$probe" ]] && { echo "$dir"; return; }
-    done
-    for home in "${SUDO_USER:+$(getent passwd "$SUDO_USER" | cut -d: -f6)}" "$HOME"; do
-        for probe in "$@"; do
-            if [[ -n "$home" && -e "$home/.cache/cargo-target/$probe" ]]; then
-                echo "$home/.cache/cargo-target"
-                return
-            fi
-        done
-    done
-    echo "$dir"
-}
+# shellcheck source=../lib/common.sh
+source "$SCRIPT_DIR/../lib/common.sh"
+# shellcheck source=../lib/parallel.sh
+source "$SCRIPT_DIR/../lib/parallel.sh"
 
 TARGET_DIR="$(resolve_target_dir "x86_64-unknown-linux-musl/release/hardener" "release/hardener")"
 MUSL_BINARY="$TARGET_DIR/x86_64-unknown-linux-musl/release/hardener"
-
-# Distro name -> container name mapping
-declare -A CONTAINERS=(
-    [arch]="hardener-test"
-    [debian]="hardener-test-debian"
-    [fedora]="hardener-test-fedora"
-    [rhel]="hardener-test-rhel"
-    [opensuse]="hardener-test-opensuse"
-)
-
-DISTRO_ORDER=(arch debian fedora rhel opensuse)
 
 # Options
 DO_APPLY=false
@@ -75,16 +40,6 @@ DO_GUI=false
 DO_REBUILD=false
 PARALLEL=false
 MAX_JOBS=3
-
-# Colours
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-MAGENTA='\033[0;35m'
-BOLD='\033[1m'
-DIM='\033[2m'
-NC='\033[0m'
 
 # =============================================================================
 # Argument parsing
@@ -227,14 +182,6 @@ parse_log_counts() {
 
 echo ""
 BOX_W=74
-print_boxline() {
-    local content="$1"
-    local visible_len=${#content}
-    local pad=$((BOX_W - visible_len))
-    local spaces=""
-    for ((i=0; i<pad; i++)); do spaces+=" "; done
-    echo -e "${MAGENTA}║${NC}${content}${spaces}${MAGENTA}║${NC}"
-}
 echo -e "${MAGENTA}╔$(printf '═%.0s' $(seq 1 $BOX_W))╗${NC}"
 print_boxline ""
 if [[ "$PARALLEL" == "true" ]]; then
@@ -248,30 +195,42 @@ print_boxline ""
 echo -e "${MAGENTA}╚$(printf '═%.0s' $(seq 1 $BOX_W))╝${NC}"
 echo ""
 
-if [[ "$PARALLEL" == "true" ]]; then
-    declare -a PIDS
-    declare -a PID_DISTROS
+# Defined once, used by both serial (foreground) and parallel (backgrounded)
+# execution. Runs full-test-suite.sh for one distro and prints an immediate
+# one-line result. Result-array bookkeeping happens in the caller afterwards
+# (a backgrounded run_single_distro cannot mutate the parent's associative
+# arrays, so both modes re-derive counts from the persisted logfile there).
+run_single_distro() {
+    local distro="$1"
+    local container="${CONTAINERS[$distro]}"
+    local container_path="/var/lib/machines/$container"
+    local logfile="$RESULTS_DIR/${distro}.log"
 
-    run_single_distro() {
-        local distro="$1"
-        local container="${CONTAINERS[$distro]}"
-        local container_path="/var/lib/machines/$container"
-        local logfile="$RESULTS_DIR/${distro}.log"
+    [[ "$PARALLEL" != "true" ]] && echo -e "${CYAN}━━━ Testing: $distro ($container) ━━━${NC}"
 
-        if [[ ! -d "$container_path" ]]; then
+    if [[ ! -d "$container_path" ]]; then
+        if [[ "$PARALLEL" == "true" ]]; then
             echo -e "[$distro] ${YELLOW}SKIP${NC}: container not found"
-            echo "CONTAINER NOT FOUND: $container_path" > "$logfile"
-            return 99
+        else
+            echo -e "  ${RED}[SKIP]${NC} Container not found: $container_path"
         fi
+        echo "CONTAINER NOT FOUND: $container_path" > "$logfile"
+        return 99
+    fi
 
+    if [[ "$PARALLEL" == "true" ]]; then
         echo -e "[$distro] ${CYAN}Starting...${NC}"
+    else
+        echo -e "  ${CYAN}[RUN]${NC}  systemd-nspawn --pipe -> full-test-suite.sh $APPLY_FLAG"
+    fi
 
-        nspawn_full_suite "$container_path" > "$logfile" 2>&1
-        local exit_code=$?
+    nspawn_full_suite "$container_path" > "$logfile" 2>&1
+    local exit_code=$?
 
-        local passed failed skipped total
-        read -r passed failed skipped total <<< "$(parse_log_counts "$logfile")"
+    local passed failed skipped total
+    read -r passed failed skipped total <<< "$(parse_log_counts "$logfile")"
 
+    if [[ "$PARALLEL" == "true" ]]; then
         if [[ $exit_code -eq 0 ]] && [[ "$total" -gt 0 ]]; then
             echo -e "[$distro] ${GREEN}PASS${NC}: $passed/$total passed, $skipped skipped"
         elif [[ "$total" -eq 0 ]]; then
@@ -279,89 +238,50 @@ if [[ "$PARALLEL" == "true" ]]; then
         else
             echo -e "[$distro] ${RED}FAIL${NC}: $failed failed (exit: $exit_code)"
         fi
+    else
+        if [[ $exit_code -eq 0 ]] && [[ "$total" -gt 0 ]]; then
+            echo -e "  ${GREEN}[DONE]${NC} $passed/$total passed, $skipped skipped"
+        elif [[ "$total" -eq 0 ]]; then
+            echo -e "  ${RED}[ERR]${NC}  No test results parsed (exit code: $exit_code)"
+        else
+            echo -e "  ${RED}[FAIL]${NC} $passed/$total passed, $failed failed, $skipped skipped"
+        fi
+        echo ""
+    fi
 
-        echo "$passed" > "$RESULTS_DIR/.${distro}.passed"
-        echo "$failed" > "$RESULTS_DIR/.${distro}.failed"
-        echo "$skipped" > "$RESULTS_DIR/.${distro}.skipped"
-        echo "$total" > "$RESULTS_DIR/.${distro}.total"
+    return "$exit_code"
+}
 
-        return $exit_code
-    }
+# Record RESULT_* for one distro by re-parsing its persisted logfile. Shared
+# by both execution modes so a distro's counts are always derived the same
+# way, whether run_single_distro ran in the foreground or in a background job.
+record_distro_result() {
+    local distro="$1" exit_code="$2"
+    RESULT_EXIT[$distro]=$exit_code
+    local passed failed skipped total
+    read -r passed failed skipped total <<< "$(parse_log_counts "$RESULTS_DIR/${distro}.log")"
+    RESULT_PASSED[$distro]=$passed
+    RESULT_FAILED[$distro]=$failed
+    RESULT_SKIPPED[$distro]=$skipped
+    RESULT_TOTAL[$distro]=$total
+}
 
+if [[ "$PARALLEL" == "true" ]]; then
     echo -e "${CYAN}Launching parallel test jobs...${NC}"
     echo ""
 
-    running=0
-    for distro in "${DISTROS[@]}"; do
-        while [[ $running -ge $MAX_JOBS ]]; do
-            wait -n 2>/dev/null || true
-            ((running--)) || true
-        done
-
-        run_single_distro "$distro" &
-        PIDS+=($!)
-        PID_DISTROS+=("$distro")
-        ((running++))
-        echo -e "${DIM}  Started job for $distro (PID: ${PIDS[-1]})${NC}"
-    done
-
-    echo ""
-    echo -e "${CYAN}Waiting for all jobs to complete...${NC}"
-    echo ""
+    launch_job_pool "$MAX_JOBS" DISTROS
 
     for i in "${!PIDS[@]}"; do
         pid="${PIDS[$i]}"
         distro="${PID_DISTROS[$i]}"
         wait "$pid" 2>/dev/null
-        RESULT_EXIT[$distro]=$?
-        RESULT_PASSED[$distro]=$(cat "$RESULTS_DIR/.${distro}.passed" 2>/dev/null || echo "0")
-        RESULT_FAILED[$distro]=$(cat "$RESULTS_DIR/.${distro}.failed" 2>/dev/null || echo "0")
-        RESULT_SKIPPED[$distro]=$(cat "$RESULTS_DIR/.${distro}.skipped" 2>/dev/null || echo "0")
-        RESULT_TOTAL[$distro]=$(cat "$RESULTS_DIR/.${distro}.total" 2>/dev/null || echo "0")
-        rm -f "$RESULTS_DIR/.${distro}."*
+        record_distro_result "$distro" "$?"
     done
 else
     for distro in "${DISTROS[@]}"; do
-        container="${CONTAINERS[$distro]}"
-        container_path="/var/lib/machines/$container"
-        logfile="$RESULTS_DIR/${distro}.log"
-
-        echo -e "${CYAN}━━━ Testing: $distro ($container) ━━━${NC}"
-
-        # Check container exists
-        if [[ ! -d "$container_path" ]]; then
-            echo -e "  ${RED}[SKIP]${NC} Container not found: $container_path"
-            RESULT_PASSED[$distro]=0
-            RESULT_FAILED[$distro]=0
-            RESULT_SKIPPED[$distro]=0
-            RESULT_TOTAL[$distro]=0
-            RESULT_EXIT[$distro]=99
-            echo "CONTAINER NOT FOUND: $container_path" > "$logfile"
-            continue
-        fi
-
-        # Run full-test-suite.sh inside the container via systemd-nspawn --pipe
-        echo -e "  ${CYAN}[RUN]${NC}  systemd-nspawn --pipe -> full-test-suite.sh $APPLY_FLAG"
-
-        nspawn_full_suite "$container_path" > "$logfile" 2>&1
-        local_exit=$?
-        RESULT_EXIT[$distro]=$local_exit
-
-        read -r passed failed skipped total <<< "$(parse_log_counts "$logfile")"
-        RESULT_PASSED[$distro]=$passed
-        RESULT_FAILED[$distro]=$failed
-        RESULT_SKIPPED[$distro]=$skipped
-        RESULT_TOTAL[$distro]=$total
-
-        # Print quick summary for this distro
-        if [[ "${RESULT_FAILED[$distro]}" -eq 0 ]] && [[ "${RESULT_TOTAL[$distro]}" -gt 0 ]]; then
-            echo -e "  ${GREEN}[DONE]${NC} ${RESULT_PASSED[$distro]}/${RESULT_TOTAL[$distro]} passed, ${RESULT_SKIPPED[$distro]} skipped"
-        elif [[ "${RESULT_TOTAL[$distro]}" -eq 0 ]]; then
-            echo -e "  ${RED}[ERR]${NC}  No test results parsed (exit code: $local_exit)"
-        else
-            echo -e "  ${RED}[FAIL]${NC} ${RESULT_PASSED[$distro]}/${RESULT_TOTAL[$distro]} passed, ${RESULT_FAILED[$distro]} failed, ${RESULT_SKIPPED[$distro]} skipped"
-        fi
-        echo ""
+        run_single_distro "$distro"
+        record_distro_result "$distro" "$?"
     done
 fi
 

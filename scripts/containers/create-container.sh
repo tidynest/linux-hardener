@@ -17,13 +17,11 @@
 
 set -euo pipefail
 
-PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# Colours for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Colour
+# shellcheck source=../lib/common.sh
+source "$SCRIPT_DIR/../lib/common.sh"
 
 log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
@@ -85,7 +83,7 @@ VERB="${2:-}"
 
 case "$DISTRO" in
     arch)
-        CONTAINER_NAME="hardener-test"
+        CONTAINER_NAME="${CONTAINERS[arch]}"
         DISTRO_LABEL="Arch Linux"
         EXIT_HINT="Exit with 'exit' or Ctrl+D"
         DEPS=("pacstrap:arch-install-scripts" "systemd-nspawn:systemd")
@@ -93,7 +91,7 @@ case "$DISTRO" in
         ;;
     debian)
         DEBIAN_RELEASE="trixie"  # Debian 13
-        CONTAINER_NAME="hardener-test-debian"
+        CONTAINER_NAME="${CONTAINERS[debian]}"
         DISTRO_LABEL="Debian ${DEBIAN_RELEASE}"
         EXIT_HINT="Exit with 'poweroff' or Ctrl+]]]"
         DEPS=("debootstrap:debootstrap" "systemd-nspawn:systemd-container")
@@ -103,7 +101,7 @@ case "$DISTRO" in
         FEDORA_VERSION="44"
         # Official Fedora container image, pulled and exported via podman.
         FEDORA_IMAGE="docker.io/library/fedora:${FEDORA_VERSION}"
-        CONTAINER_NAME="hardener-test-fedora"
+        CONTAINER_NAME="${CONTAINERS[fedora]}"
         DISTRO_LABEL="Fedora ${FEDORA_VERSION}"
         EXIT_HINT="Exit with 'poweroff' or Ctrl+]]]"
         DEPS=("podman:podman" "systemd-nspawn:systemd-container" "tar:tar")
@@ -114,7 +112,7 @@ case "$DISTRO" in
         # Official Rocky Linux container image, pulled and exported via podman.
         # Rocky Linux is a 1:1 binary-compatible RHEL rebuild.
         ROCKY_IMAGE="docker.io/rockylinux/rockylinux:${ROCKY_VERSION}"
-        CONTAINER_NAME="hardener-test-rhel"
+        CONTAINER_NAME="${CONTAINERS[rhel]}"
         DISTRO_LABEL="Rocky Linux ${ROCKY_VERSION} (RHEL)"
         EXIT_HINT="Exit with 'poweroff' or Ctrl+]]]"
         DEPS=("podman:podman" "systemd-nspawn:systemd-container" "tar:tar")
@@ -125,7 +123,7 @@ Note: Rocky Linux (RHEL) uses SELinux (limited in container)"
         OPENSUSE_VERSION="16.0"
         # Official openSUSE Leap container image, pulled and exported via podman.
         OPENSUSE_IMAGE="docker.io/opensuse/leap:${OPENSUSE_VERSION}"
-        CONTAINER_NAME="hardener-test-opensuse"
+        CONTAINER_NAME="${CONTAINERS[opensuse]}"
         DISTRO_LABEL="openSUSE Leap ${OPENSUSE_VERSION}"
         EXIT_HINT="Exit with 'poweroff' or Ctrl+]]]"
         DEPS=("systemd-nspawn:systemd-container" "podman:podman" "tar:tar")
@@ -298,12 +296,18 @@ bootstrap_debian() {
     chroot "$CONTAINER_PATH" apt-get clean
 }
 
-bootstrap_fedora() {
-    log_info "Pulling official Fedora image via podman..."
+# Shared by the dnf-family distros (Fedora, Rocky/RHEL): both bootstrap from
+# an official podman-exported image, install systemd + base tooling, create
+# the test user, then install the same package set bar the iptables variant
+# (Fedora ships plain iptables; Rocky 10 dropped it in favour of iptables-nft).
+bootstrap_dnf_family() {
+    local label="$1" image="$2" export_prefix="$3" iptables_pkg="$4"
+
+    log_info "Pulling official $label image via podman..."
 
     # Pull + export the official image. Nothing rpm-related runs on the host,
     # so the Arch %_pkgverify_level=all policy never applies.
-    podman_export_rootfs "$FEDORA_IMAGE" "hardener-fedora-export-$$"
+    podman_export_rootfs "$image" "hardener-${export_prefix}-export-$$"
 
     # The image ships minimal; install systemd and base tooling so it can boot
     # and so the config steps below (useradd/chpasswd) have their binaries.
@@ -337,7 +341,7 @@ bootstrap_fedora() {
         audit \
         firewalld \
         nftables \
-        iptables \
+        "$iptables_pkg" \
         polkit \
         procps-ng \
         iproute
@@ -354,60 +358,12 @@ bootstrap_fedora() {
     systemd-nspawn --quiet --directory="$CONTAINER_PATH" dnf clean all 2>/dev/null || true
 }
 
+bootstrap_fedora() {
+    bootstrap_dnf_family "Fedora" "$FEDORA_IMAGE" "fedora" "iptables"
+}
+
 bootstrap_rhel() {
-    log_info "Pulling official Rocky Linux image via podman..."
-
-    # Pull + export the official image. Nothing rpm-related runs on the host,
-    # so the Arch %_pkgverify_level=all policy never applies.
-    podman_export_rootfs "$ROCKY_IMAGE" "hardener-rhel-export-$$"
-
-    # The image ships minimal; install systemd and base tooling so it can boot
-    # and so the config steps below (useradd/chpasswd) have their binaries.
-    # Native dnf, native keys: GPG verification works.
-    cp /etc/resolv.conf "$CONTAINER_PATH/etc/resolv.conf" 2>/dev/null || true
-    log_info "Installing systemd and base tooling..."
-    systemd-nspawn --quiet --directory="$CONTAINER_PATH" \
-        dnf -y install systemd sudo passwd shadow-utils util-linux \
-        || log_warn "base package install returned non-zero"
-
-    # Set up container
-    log_info "Configuring container..."
-
-    # Copy DNS configuration for network access in chroot
-    cp /etc/resolv.conf "$CONTAINER_PATH/etc/resolv.conf"
-
-    # Set root password to 'test' (container only!)
-    echo "root:test" | chroot "$CONTAINER_PATH" /usr/sbin/chpasswd
-
-    # Create test user
-    chroot "$CONTAINER_PATH" /usr/sbin/useradd -m -s /bin/bash testuser 2>/dev/null || true
-    echo "testuser:test" | chroot "$CONTAINER_PATH" /usr/sbin/chpasswd
-    chroot "$CONTAINER_PATH" /usr/sbin/usermod -aG wheel testuser 2>/dev/null || true
-
-    # Install required packages for hardener testing
-    # Use systemd-nspawn for proper /proc /sys mounts that dnf requires
-    log_info "Installing test dependencies..."
-    systemd-nspawn --quiet --directory="$CONTAINER_PATH" \
-        dnf -y install \
-        openssh-server \
-        audit \
-        firewalld \
-        nftables \
-        iptables-nft \
-        polkit \
-        procps-ng \
-        iproute
-
-    # Allow sudo without password for testuser (wheel group)
-    mkdir -p "$CONTAINER_PATH/etc/sudoers.d"
-    echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > "$CONTAINER_PATH/etc/sudoers.d/wheel-nopasswd"
-    chmod 440 "$CONTAINER_PATH/etc/sudoers.d/wheel-nopasswd"
-
-    # Enable services that hardener tests
-    chroot "$CONTAINER_PATH" systemctl enable sshd auditd 2>/dev/null || true
-
-    # Clean up dnf cache to save space
-    systemd-nspawn --quiet --directory="$CONTAINER_PATH" dnf clean all 2>/dev/null || true
+    bootstrap_dnf_family "Rocky Linux" "$ROCKY_IMAGE" "rhel" "iptables-nft"
 }
 
 bootstrap_opensuse() {
