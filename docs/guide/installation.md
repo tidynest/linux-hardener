@@ -84,7 +84,7 @@ sudo install -dm755 /var/lib/linux-hardener
 sudo install -dm700 /var/log/linux-hardener
 
 # Optional: install default config
-sudo install -Dm644 data/config.toml.example /etc/linux-hardener/config.toml
+sudo install -Dm644 packaging/assets/config.toml.example /etc/linux-hardener/config.toml
 ```
 
 ---
@@ -242,14 +242,14 @@ sudo hardener systemd status
 Required for GUI privilege escalation. Packages install this automatically:
 
 ```bash
-sudo install -Dm644 data/com.tidynest.linux-hardener.policy \
+sudo install -Dm644 packaging/assets/com.tidynest.linux-hardener.policy \
     /usr/share/polkit-1/actions/com.tidynest.linux-hardener.policy
 ```
 
 ### Optional: Install Desktop Entry
 
 ```bash
-sudo install -Dm644 data/linux-hardener.desktop \
+sudo install -Dm644 packaging/assets/linux-hardener.desktop \
     /usr/share/applications/linux-hardener.desktop
 ```
 

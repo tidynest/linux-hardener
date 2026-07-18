@@ -35,7 +35,7 @@ DE test tooling. `cargo test --workspace` = **660 passed / 0 failed / 38 ignored
 - **Packaging infrastructure** (2026-02-25): AUR PKGBUILD, RPM spec, Debian packaging, systemd units, polkit policy
 - **Test quality pass** (2026-02-25): 178+ assertion messages, 80+ println removed, net -422 lines
 - **High Contrast theme** (2026-02-25): WCAG AAA accessibility theme (7:1+ contrast ratios)
-- **Man page** (2026-02-25): `data/hardener.1` troff man page for all commands
+- **Man page** (2026-02-25): `packaging/assets/hardener.1` troff man page for all commands
 - **Security remediation** (2026-02-26): all 53 security findings resolved (see `docs/security/archive/2026-02-25-internal-audit/REMEDIATION_TRACKER.md`)
 - **Code quality pass** (2026-02-27): 27 code quality findings fixed, shared helper extraction, 10 packaging fixes
 - **Documentation** (2026-02-27): SECURITY.md updated, docs/guide/installation.md created for 5 distro families

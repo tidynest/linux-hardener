@@ -28,21 +28,21 @@ override_dh_auto_install:
 	echo 'exec /usr/lib/linux-hardener/linux-hardener-desktop "$$@"' >> debian/linux-system-hardener/usr/bin/linux-hardener-desktop
 	chmod 755 debian/linux-system-hardener/usr/bin/linux-hardener-desktop
 	# Systemd units
-	install -Dm644 systemd/linux-hardener.service \
+	install -Dm644 packaging/systemd/linux-hardener.service \
 	    debian/linux-system-hardener/usr/lib/systemd/system/linux-hardener.service
-	install -Dm644 systemd/linux-hardener.timer \
+	install -Dm644 packaging/systemd/linux-hardener.timer \
 	    debian/linux-system-hardener/usr/lib/systemd/system/linux-hardener.timer
 	# Desktop entry
-	install -Dm644 data/linux-hardener.desktop \
+	install -Dm644 packaging/assets/linux-hardener.desktop \
 	    debian/linux-system-hardener/usr/share/applications/linux-hardener.desktop
 	# Man page
-	install -Dm644 data/hardener.1 \
+	install -Dm644 packaging/assets/hardener.1 \
 	    debian/linux-system-hardener/usr/share/man/man1/hardener.1
 	# Polkit policy
-	install -Dm644 data/com.tidynest.linux-hardener.policy \
+	install -Dm644 packaging/assets/com.tidynest.linux-hardener.policy \
 	    debian/linux-system-hardener/usr/share/polkit-1/actions/com.tidynest.linux-hardener.policy
 	# Config
-	install -Dm644 data/config.toml.example \
+	install -Dm644 packaging/assets/config.toml.example \
 	    debian/linux-system-hardener/etc/linux-hardener/config.toml
 	# Directories
 	install -dm755 debian/linux-system-hardener/etc/linux-hardener

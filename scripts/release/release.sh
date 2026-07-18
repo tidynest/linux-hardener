@@ -6,7 +6,7 @@
 set -euo pipefail
 
 # Resolve the repository root (this script lives in scripts/release/) and run
-# from there: every path below (Cargo.toml, docs/, data/, git adds) is
+# from there: every path below (Cargo.toml, docs/, packaging/assets/, git adds) is
 # repo-relative.
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
@@ -44,13 +44,13 @@ verify_versions() {
         fi
     fi
 
-    # Check data/hardener.1 (.TH header)
-    if [[ -f "data/hardener.1" ]]; then
+    # Check packaging/assets/hardener.1 (.TH header)
+    if [[ -f "packaging/assets/hardener.1" ]]; then
         local man_version
-        man_version=$(grep '^\.\s*TH' data/hardener.1 | sed 's/.*"\([0-9]\+\.[0-9]\+\.[0-9]\+\)".*/\1/' || echo "NOT_FOUND")
+        man_version=$(grep '^\.\s*TH' packaging/assets/hardener.1 | sed 's/.*"\([0-9]\+\.[0-9]\+\.[0-9]\+\)".*/\1/' || echo "NOT_FOUND")
         if [[ "$man_version" != "$cargo_version" ]]; then
             all_match=false
-            mismatches+=("data/hardener.1: $man_version")
+            mismatches+=("packaging/assets/hardener.1: $man_version")
         fi
     fi
 
@@ -69,7 +69,7 @@ verify_versions() {
 
     if $all_match; then
         echo -e "  architecture.md:        ${GREEN}${cargo_version}${NC}"
-        echo -e "  data/hardener.1:        ${GREEN}${cargo_version}${NC}"
+        echo -e "  packaging/assets/hardener.1:        ${GREEN}${cargo_version}${NC}"
         echo -e "  tauri.conf.json:        ${GREEN}${cargo_version}${NC}"
         echo -e "\n${GREEN}✓ All version references match${NC}"
         return 0
@@ -262,12 +262,12 @@ for doc_file in "${DOC_FILES[@]}"; do
 done
 
 # Update man page version in .TH header
-if [[ -f "data/hardener.1" ]]; then
+if [[ -f "packaging/assets/hardener.1" ]]; then
     if $DRY_RUN; then
-        echo "Would update version in data/hardener.1"
+        echo "Would update version in packaging/assets/hardener.1"
     else
-        sed -i "s/^\(\.TH HARDENER 1 \"[^\"]*\" \"\)[0-9]\+\.[0-9]\+\.[0-9]\+/\1${NEW_VERSION}/" "data/hardener.1"
-        echo "  Updated data/hardener.1"
+        sed -i "s/^\(\.TH HARDENER 1 \"[^\"]*\" \"\)[0-9]\+\.[0-9]\+\.[0-9]\+/\1${NEW_VERSION}/" "packaging/assets/hardener.1"
+        echo "  Updated packaging/assets/hardener.1"
     fi
 fi
 
@@ -322,7 +322,7 @@ else
     git add Cargo.toml Cargo.lock CHANGELOG.md README.md
     git add docs/ 2>/dev/null || true
     git add scripts/README.md 2>/dev/null || true
-    git add data/hardener.1 2>/dev/null || true
+    git add packaging/assets/hardener.1 2>/dev/null || true
     git add src-tauri/tauri.conf.json 2>/dev/null || true
     git commit -m "chore(release): bump version to ${NEW_VERSION}"
 fi

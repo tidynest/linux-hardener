@@ -51,23 +51,23 @@ exec /usr/lib/linux-hardener/linux-hardener-desktop "$@"
 WRAPPER
 chmod 755 %{buildroot}%{_bindir}/linux-hardener-desktop
 
-install -Dm644 systemd/linux-hardener.service \
+install -Dm644 packaging/systemd/linux-hardener.service \
     %{buildroot}%{_unitdir}/linux-hardener.service
-install -Dm644 systemd/linux-hardener.timer \
+install -Dm644 packaging/systemd/linux-hardener.timer \
     %{buildroot}%{_unitdir}/linux-hardener.timer
 
-install -Dm644 data/linux-hardener.desktop \
+install -Dm644 packaging/assets/linux-hardener.desktop \
     %{buildroot}%{_datadir}/applications/linux-hardener.desktop
 
-install -Dm644 data/hardener.1 \
+install -Dm644 packaging/assets/hardener.1 \
     %{buildroot}%{_mandir}/man1/hardener.1
 
-install -Dm644 data/com.tidynest.linux-hardener.policy \
+install -Dm644 packaging/assets/com.tidynest.linux-hardener.policy \
     %{buildroot}%{_datadir}/polkit-1/actions/com.tidynest.linux-hardener.policy
 
-install -Dm644 data/config.toml.example \
+install -Dm644 packaging/assets/config.toml.example \
     %{buildroot}%{_docdir}/%{name}/config.toml.example
-install -Dm644 data/config.toml.example \
+install -Dm644 packaging/assets/config.toml.example \
     %{buildroot}%{_sysconfdir}/linux-hardener/config.toml
 
 install -d -m 755 %{buildroot}%{_sysconfdir}/linux-hardener

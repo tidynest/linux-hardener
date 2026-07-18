@@ -17,7 +17,7 @@ There are three separate files:
 |------|---------|
 | `config.toml` | Plugin behaviour, policy exceptions, and the `[scheduler]` section |
 | `~/.config/linux-hardener/hosts.toml` | Saved remote-host inventory for `batch` and the desktop Fleet pages |
-| `data/config.toml.example` (in the repository) | Annotated example installed by packages to `/etc/linux-hardener/config.toml` |
+| `packaging/assets/config.toml.example` (in the repository) | Annotated example installed by packages to `/etc/linux-hardener/config.toml` |
 
 ---
 

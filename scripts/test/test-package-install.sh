@@ -130,30 +130,30 @@ else
 fi
 
 # Systemd units
-install -Dm644 "$PROJECT_DIR/systemd/linux-hardener.service" \
+install -Dm644 "$PROJECT_DIR/packaging/systemd/linux-hardener.service" \
     /usr/lib/systemd/system/linux-hardener.service
-install -Dm644 "$PROJECT_DIR/systemd/linux-hardener.timer" \
+install -Dm644 "$PROJECT_DIR/packaging/systemd/linux-hardener.timer" \
     /usr/lib/systemd/system/linux-hardener.timer
 log_pass "Installed systemd units"
 
 # Desktop entry
-install -Dm644 "$PROJECT_DIR/data/linux-hardener.desktop" \
+install -Dm644 "$PROJECT_DIR/packaging/assets/linux-hardener.desktop" \
     /usr/share/applications/linux-hardener.desktop
 log_pass "Installed desktop entry"
 
 # Man page
-install -Dm644 "$PROJECT_DIR/data/hardener.1" \
+install -Dm644 "$PROJECT_DIR/packaging/assets/hardener.1" \
     /usr/share/man/man1/hardener.1
 log_pass "Installed man page"
 
 # Polkit policy
-install -Dm644 "$PROJECT_DIR/data/com.tidynest.linux-hardener.policy" \
+install -Dm644 "$PROJECT_DIR/packaging/assets/com.tidynest.linux-hardener.policy" \
     /usr/share/polkit-1/actions/com.tidynest.linux-hardener.policy
 log_pass "Installed polkit policy"
 
 # Config
 install -dm755 /etc/linux-hardener
-install -Dm644 "$PROJECT_DIR/data/config.toml.example" \
+install -Dm644 "$PROJECT_DIR/packaging/assets/config.toml.example" \
     /etc/linux-hardener/config.toml
 log_pass "Installed config.toml"
 

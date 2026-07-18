@@ -616,18 +616,19 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 
 | File | Purpose |
 |------|---------|
-| `systemd/linux-hardener.service` | Oneshot service for scheduled security scans |
-| `systemd/linux-hardener.timer` | Timer unit triggering daily scans at 02:00 |
+| `packaging/systemd/linux-hardener.service` | Oneshot service for scheduled security scans |
+| `packaging/systemd/linux-hardener.timer` | Timer unit triggering daily scans at 02:00 |
 
 ---
 
-## Data Files
+## Packaging Assets
 
 | File | Purpose |
 |------|---------|
-| `data/linux-hardener.desktop` | XDG desktop entry for the GUI application |
-| `data/config.toml.example` | Commented example configuration with all 8 plugin sections |
-| `data/hardener.1` | Unix man page (troff) for the `hardener` CLI |
+| `packaging/assets/linux-hardener.desktop` | XDG desktop entry for the GUI application |
+| `packaging/assets/config.toml.example` | Commented example configuration with all 8 plugin sections |
+| `packaging/assets/hardener.1` | Unix man page (troff) for the `hardener` CLI |
+| `packaging/assets/com.tidynest.linux-hardener.policy` | Polkit policy for privileged desktop operations |
 
 ---
 

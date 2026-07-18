@@ -20,7 +20,7 @@ eyes.
 ## In scope
 
 - **The privilege boundary:** pkexec/polkit policy
-  (`data/com.tidynest.linux-hardener.policy`), Tauri IPC surface (28 commands,
+  (`packaging/assets/com.tidynest.linux-hardener.policy`), Tauri IPC surface (28 commands,
   `src-tauri/src/commands.rs`, `PrivilegedOpGuard`), CLI-as-root paths
   (`apply`, `rollback`, `checkpoint`).
 - **SSH executor and batch paths:** remote command construction and quoting
