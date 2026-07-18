@@ -20,7 +20,7 @@ use hardener_common::{
 use hardener_core::{
     ApplyResult, Change, ChangeType, Checkpoint, PluginConfig, ValidationIssue, ValidationReport,
     context::Context,
-    plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult},
+    plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedCheck},
 };
 use std::{path::Path, time::Instant};
 use tracing::{info, warn};
@@ -744,6 +744,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
     async fn scan(&self, ctx: &Context) -> Result<ScanResult> {
         let start = Instant::now();
         let mut findings = Vec::new();
+        let mut unchecked = Vec::new();
 
         // Check if auditd is installed
         if !is_auditd_installed(ctx).await.unwrap_or(false) {
@@ -859,15 +860,28 @@ impl HardeningPlugin for AuditHardeningPlugin {
                 }
             }
             AuditRulesResult::PermissionDenied => {
-                // Cannot verify rules - log warning, don't create false findings.
-                warn!("Cannot verify audit rules: permission denied (requires root)");
+                // Cannot verify rules without root: report each expected rule
+                // as unchecked rather than silently skipping the whole check.
+                for rule in AUDIT_RULES {
+                    unchecked.push(UncheckedCheck {
+                        unchecked_check_id: format!(
+                            "audit_rule_{}",
+                            rule.audit_rule_category.replace('-', "_")
+                        ),
+                        unchecked_title: format!("Audit rule: {}", rule.audit_rule_category),
+                        unchecked_category: FindingCategory::Audit,
+                        unchecked_reason: "listing loaded audit rules (auditctl -l) requires root"
+                            .to_string(),
+                        unchecked_compliance: get_audit_compliance_mappings("rules"),
+                    });
+                }
             }
         }
         Ok(ScanResult {
             scan_duration_us: start.elapsed().as_micros() as u64,
             scan_error: None,
             scan_findings: findings,
-            scan_unchecked: vec![],
+            scan_unchecked: unchecked,
             scan_plugin_id: self.metadata().plugin_id,
             scan_success: true,
         })
@@ -1331,5 +1345,63 @@ mod tests {
                 Some("Audit and Accountability")
             );
         }
+    }
+
+    /// When auditctl requires root to list rules, the scan must report each
+    /// expected audit rule as unchecked rather than creating false missing-rule
+    /// findings.
+    #[tokio::test]
+    async fn scan_reports_rules_unchecked_when_auditctl_needs_root() {
+        use hardener_core::{CommandOutput, MockExecutor};
+
+        // Mock all commands needed for the scan: auditd is present and running,
+        // but auditctl requires root to list rules. The audit_rule_* unchecked
+        // entries must appear without false missing-rule findings.
+        let mock = MockExecutor::new()
+            .with_command_exists("auditd", true)
+            .with_command(
+                "systemctl",
+                &["is-enabled", "auditd"],
+                CommandOutput {
+                    stdout: "enabled\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            )
+            .with_command(
+                "systemctl",
+                &["is-active", "auditd"],
+                CommandOutput {
+                    stdout: "active\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            )
+            .with_command(
+                "auditctl",
+                &["-l"],
+                CommandOutput {
+                    stdout: String::new(),
+                    stderr: "You must be root to run this program.".to_string(),
+                    exit_code: 4,
+                },
+            );
+        let ctx = Context::with_executor(std::sync::Arc::new(mock));
+        let result = AuditHardeningPlugin::new().scan(&ctx).await.unwrap();
+
+        assert!(
+            !result
+                .scan_findings
+                .iter()
+                .any(|f| f.finding_id.starts_with("audit_rule_")),
+            "no false missing-rule findings"
+        );
+        assert_eq!(result.scan_unchecked.len(), AUDIT_RULES.len());
+        assert!(
+            result
+                .scan_unchecked
+                .iter()
+                .all(|u| u.unchecked_check_id.starts_with("audit_rule_"))
+        );
     }
 }
