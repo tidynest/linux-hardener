@@ -191,7 +191,15 @@ preflight_checks() {
     fi
 
     local version
-    version=$("$BINARY" --version 2>&1)
+    if ! version=$("$BINARY" --version 2>&1); then
+        log "${RED}ERROR: Binary cannot execute: $BINARY${NC}"
+        log "  $version"
+        if [[ "$version" == *GLIBC_* ]]; then
+            log "  The binary was built against a newer glibc than this container provides."
+            log "  Rebuild against an older glibc or use the musl static binary."
+        fi
+        exit 1
+    fi
     log_check "Version: $version"
 
     mkdir -p "$REPORT_DIR"

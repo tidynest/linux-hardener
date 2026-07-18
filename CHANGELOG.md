@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- The container test suite now aborts its pre-flight when the hardener
+  binary cannot execute (for example a glibc version mismatch between the
+  build host and the container), printing the loader error instead of
+  reporting a passing version check and then failing every test.
 - Applying hardening no longer fails on hosts without a MAC system: the
   mac-hardening plugin treated an absent SELinux/AppArmor as a plugin
   failure, which aborted every all-plugin apply (CLI and desktop) with
