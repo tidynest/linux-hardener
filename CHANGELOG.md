@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-07-18
+
 ### Fixed
 - Local sysctl apply no longer fails on every runtime write: `LocalExecutor`
   wrote all files through a temp-file-plus-rename, but `/proc` and `/sys`
