@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   NIST 800-171 and FedRAMP. All framework lists (including the report
   picker) now derive from a single `ComplianceFramework::ALL` source, with
   a test locking every canonical id to the CLI and desktop parsers.
+- The no-MAC-system no-op apply was recorded as a fabricated `ConfigFile`
+  change, so a host without SELinux or AppArmor read as "1 change(s)
+  applied" in the CLI and "1 changes made" on the desktop, and the audit
+  log showed Apply/Success where nothing was touched. A new
+  `ChangeType::Skipped` variant (matching the existing
+  `ControlStatus::NotApplicable` and `FileRestoreAction::Skipped` idioms)
+  marks no-op changes distinctly; the CLI and desktop renderers now count
+  only real changes towards "N change(s) applied" and list skips
+  separately. Applies to the no-MAC-system skip and the SELinux/AppArmor
+  policy-exception skips alike.
 
 ### Added
 - Build identity in version output: `hardener --version` and a quiet chip

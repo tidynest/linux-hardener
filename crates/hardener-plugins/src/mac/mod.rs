@@ -617,7 +617,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                             "SELinux enforcement: skipped (exception: {})",
                             exception.reason
                         ),
-                        change_type: ChangeType::ConfigFile,
+                        change_type: ChangeType::Skipped,
                         change_success: true,
                         change_error: None,
                     });
@@ -654,7 +654,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                             "AppArmor enforcement: skipped (exception: {})",
                             exception.reason
                         ),
-                        change_type: ChangeType::ConfigFile,
+                        change_type: ChangeType::Skipped,
                         change_success: true,
                         change_error: None,
                     });
@@ -675,7 +675,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                 apply_changes.push(Change {
                     change_description: "No MAC system detected - nothing to configure (skipped)"
                         .to_string(),
-                    change_type: ChangeType::ConfigFile,
+                    change_type: ChangeType::Skipped,
                     change_success: true,
                     change_error: None,
                 });
@@ -780,6 +780,10 @@ impl HardeningPlugin for MacHardeningPlugin {
                     }
                 }
             }
+            // The suggested collapse into a match guard breaks exhaustiveness
+            // here (guarded arms do not count as covering their pattern), so
+            // the nested `if` stays.
+            #[allow(clippy::collapsible_match)]
             Some(MacSystem::AppArmor) => {
                 // Skip if AppArmor enforcement is excepted
                 if config.has_valid_exception("apparmor-enforce").is_none()
@@ -795,8 +799,9 @@ impl HardeningPlugin for MacHardeningPlugin {
                 }
             }
             None => {
-                // No MAC system - this is expected on some distributions
-                estimated_changes.push("No MAC system to configure".to_string());
+                // No MAC system - this is expected on some distributions.
+                // Apply will record a skip, not a change, so the preview
+                // must not list it as one either (see ChangeType::Skipped).
             }
         }
 

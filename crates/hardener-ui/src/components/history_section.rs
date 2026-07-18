@@ -8,7 +8,7 @@ use crate::tauri_bindings::{
     invoke_create_checkpoint, invoke_delete_checkpoint, invoke_get_checkpoint_detail,
     invoke_get_checkpoints, invoke_rollback,
 };
-use crate::types::{CheckpointDetail, CheckpointInfo, FileRestoreAction};
+use crate::types::{ChangeType, CheckpointDetail, CheckpointInfo, FileRestoreAction};
 use leptos::prelude::*;
 
 /// Formats a `FileRestoreAction` variant for display.
@@ -165,9 +165,13 @@ pub fn HistorySection() -> impl IntoView {
                         let results = app_state.apply_results.get();
                         let result = results.last().expect("guarded by Show when=");
                         let success = result.apply_success;
-                        let changes_count = result.apply_changes.len();
-                        let checkpoint_id = result.apply_checkpoint_id.clone();
                         let changes = result.apply_changes.clone();
+                        let applied_count = changes
+                            .iter()
+                            .filter(|c| !matches!(c.change_type, ChangeType::Skipped))
+                            .count();
+                        let skipped_count = changes.len() - applied_count;
+                        let checkpoint_id = result.apply_checkpoint_id.clone();
 
                         view! {
                             <div class="result-summary-card">
@@ -175,7 +179,11 @@ pub fn HistorySection() -> impl IntoView {
                                     {if success { "Success" } else { "Failed" }}
                                 </div>
                                 <div class="result-changes">
-                                    {format!("{} changes made", changes_count)}
+                                    {if skipped_count > 0 {
+                                        format!("{applied_count} changes made, {skipped_count} skipped")
+                                    } else {
+                                        format!("{applied_count} changes made")
+                                    }}
                                 </div>
                                 {checkpoint_id.map(|id| view! {
                                     <div class="result-checkpoint">
@@ -187,9 +195,15 @@ pub fn HistorySection() -> impl IntoView {
                                     <ol class="changes-list">
                                         {changes.iter().map(|change| {
                                             let desc = change.change_description.clone();
-                                            let success = change.change_success;
+                                            let class = if matches!(change.change_type, ChangeType::Skipped) {
+                                                "change-skipped"
+                                            } else if change.change_success {
+                                                "change-success"
+                                            } else {
+                                                "change-failure"
+                                            };
                                             view! {
-                                                <li class=if success { "change-success" } else { "change-failure" }>
+                                                <li class=class>
                                                     {desc}
                                                 </li>
                                             }

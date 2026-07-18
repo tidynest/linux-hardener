@@ -434,6 +434,10 @@ pub enum ChangeType {
     Permissions,
     /// Service state change (enable/disable/mask).
     Service,
+    /// No action was taken; nothing applicable on this host (e.g. no MAC
+    /// system present, or the target excepted by policy). Distinct from a
+    /// real change so renderers do not count it as one applied.
+    Skipped,
 }
 
 impl fmt::Display for ChangeType {
@@ -445,6 +449,7 @@ impl fmt::Display for ChangeType {
             ChangeType::Package => write!(f, "Package"),
             ChangeType::Permissions => write!(f, "Permissions"),
             ChangeType::Service => write!(f, "Service"),
+            ChangeType::Skipped => write!(f, "Skipped"),
         }
     }
 }

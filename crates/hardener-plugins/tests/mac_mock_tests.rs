@@ -4,7 +4,7 @@
 
 use hardener_common::types::{PluginId, Severity};
 use hardener_core::{
-    CommandOutput, Context, FileMetadata, MockExecutor, PluginConfig, PolicyException,
+    ChangeType, CommandOutput, Context, FileMetadata, MockExecutor, PluginConfig, PolicyException,
     SystemExecutor, plugin::HardeningPlugin,
 };
 use hardener_plugins::MacHardeningPlugin;
@@ -542,11 +542,49 @@ async fn test_mac_apply_no_mac_system_is_graceful_skip() {
         result.apply_error
     );
     assert!(result.apply_error.is_none());
-    assert!(
-        result
-            .apply_changes
-            .iter()
-            .any(|c| c.change_success && c.change_description.contains("No MAC system")),
-        "should record an explanatory no-op change"
+    let skip = result
+        .apply_changes
+        .iter()
+        .find(|c| c.change_description.contains("No MAC system"))
+        .expect("should record an explanatory no-op change");
+    assert!(skip.change_success);
+    assert_eq!(
+        skip.change_type,
+        ChangeType::Skipped,
+        "a no-op skip must not carry a real ChangeType, or renderers will \
+         count it as an applied change"
     );
+}
+
+#[tokio::test]
+async fn test_mac_apply_exception_skips_carry_skipped_change_type() {
+    // Policy-exception skips (SELinux/AppArmor) are semantically the same as
+    // the no-MAC-system skip: nothing was touched on the host, so they must
+    // not be counted as applied changes either.
+    let executor = selinux_permissive_executor();
+    let mut ctx = Context::with_executor(Arc::new(executor));
+    let plugin = MacHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "selinux-enforcing".to_string(),
+        PolicyException {
+            value: "Permissive".to_string(),
+            allowed: true,
+            reason: "Development environment".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    let skip = result
+        .apply_changes
+        .iter()
+        .find(|c| c.change_description.contains("skipped"))
+        .expect("should have a skipped change for SELinux");
+    assert_eq!(skip.change_type, ChangeType::Skipped);
 }

@@ -4,6 +4,7 @@
 
 use crate::components::{Card, HeadingLevel};
 use crate::state::AppState;
+use crate::types::ChangeType;
 use leptos::prelude::*;
 
 /// Recent activity summary for the Dashboard.
@@ -38,13 +39,19 @@ pub fn RecentActivity() -> impl IntoView {
             .map(|r| r.apply_success)
     };
 
-    // Get last apply change count
+    // Get last apply change count, excluding skips (no MAC system, etc.)
+    // that never touched the host.
     let last_apply_changes = move || {
         app_state
             .apply_results
             .get()
             .last()
-            .map(|r| r.apply_changes.len())
+            .map(|r| {
+                r.apply_changes
+                    .iter()
+                    .filter(|c| !matches!(c.change_type, ChangeType::Skipped))
+                    .count()
+            })
             .unwrap_or(0)
     };
 

@@ -1790,6 +1790,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 .changes-list ol { padding-left: var(--space-6); }
 .change-success { color: var(--color-good-bright); }
 .change-failure { color: var(--color-critical-bright); }
+.change-skipped { color: var(--color-warning-bright); }
 
 .checkpoint-info {
   background-color: var(--bg-tertiary);

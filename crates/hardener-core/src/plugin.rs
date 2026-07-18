@@ -89,5 +89,6 @@ mod tests {
         assert_eq!(ChangeType::ConfigFile.to_string(), "Config File");
         assert_eq!(ChangeType::FirewallRule.to_string(), "Firewall Rule");
         assert_eq!(ChangeType::KernelParameter.to_string(), "Kernel Parameter");
+        assert_eq!(ChangeType::Skipped.to_string(), "Skipped");
     }
 }
