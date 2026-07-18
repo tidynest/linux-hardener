@@ -9,6 +9,19 @@ use std::{
 };
 use tokio::process::Command;
 
+/// Returns true for paths under the kernel-interface pseudo-filesystems
+/// (`/proc`, `/sys`).
+///
+/// procfs and sysfs forbid creating new files (no `O_CREAT`) and their
+/// entries cannot be replaced by a rename, so the usual atomic
+/// temp-file-plus-rename write is impossible there. It is also unnecessary:
+/// a write to an existing kernel-interface entry is a single syscall and is
+/// therefore already atomic, with no risk of the partial-write states the
+/// temp-file dance guards against on ordinary filesystems.
+fn is_kernel_interface_path(path: &Path) -> bool {
+    path.starts_with("/proc") || path.starts_with("/sys")
+}
+
 /// Local system executor that operates on the current machine.
 #[derive(Clone, Debug, Default)]
 pub struct LocalExecutor;
@@ -43,8 +56,13 @@ impl SystemExecutor for LocalExecutor {
     }
 
     async fn write_file(&self, path: &Path, content: &str) -> Result<()> {
-        hardener_common::file_utils::update_file_atomically(path, content)
-            .with_context(|| format!("Failed to write file {}", path.display()))
+        if is_kernel_interface_path(path) {
+            std::fs::write(path, content)
+                .with_context(|| format!("Failed to write file {}", path.display()))
+        } else {
+            hardener_common::file_utils::update_file_atomically(path, content)
+                .with_context(|| format!("Failed to write file {}", path.display()))
+        }
     }
 
     async fn path_exists(&self, path: &Path) -> Result<bool> {
@@ -123,6 +141,53 @@ impl SystemExecutor for LocalExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kernel_interface_path_matches_proc_and_sys() {
+        assert!(is_kernel_interface_path(Path::new(
+            "/proc/sys/net/ipv4/ip_forward"
+        )));
+        assert!(is_kernel_interface_path(Path::new(
+            "/sys/kernel/mm/transparent_hugepage/enabled"
+        )));
+    }
+
+    #[test]
+    fn kernel_interface_path_rejects_ordinary_and_lookalike_paths() {
+        assert!(!is_kernel_interface_path(Path::new(
+            "/etc/sysctl.d/99-hardening.conf"
+        )));
+        assert!(!is_kernel_interface_path(Path::new("/etc/procmail.conf")));
+        assert!(!is_kernel_interface_path(Path::new("/etc/sysprep.conf")));
+        assert!(!is_kernel_interface_path(Path::new(
+            "/home/user/proc/notes"
+        )));
+        assert!(!is_kernel_interface_path(Path::new("relative/proc/path")));
+    }
+
+    #[tokio::test]
+    async fn write_file_to_ordinary_path_still_round_trips_atomically() {
+        // A real /proc write needs root and cannot be exercised here, so
+        // this test instead pins down the non-kernel-interface branch:
+        // ordinary paths (the vast majority of writes, e.g. /etc/sysctl.d
+        // drop-ins) must keep going through update_file_atomically after
+        // the dispatch is introduced, preserving existing permissions and
+        // surviving a mid-write crash without truncating the target.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("99-hardening.conf");
+        std::fs::write(&path, "old\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        let exec = LocalExecutor::new();
+        exec.write_file(&path, "new\n").await.unwrap();
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new\n");
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o644,
+            "atomic write must preserve original permissions"
+        );
+    }
 
     #[tokio::test]
     async fn local_read_dir_lists_immediate_children_only() {

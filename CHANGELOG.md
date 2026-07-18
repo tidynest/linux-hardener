@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Local sysctl apply no longer fails on every runtime write: `LocalExecutor`
+  wrote all files through a temp-file-plus-rename, but `/proc` and `/sys`
+  reject file creation and cannot be renamed onto, so every live
+  `/proc/sys/...` write failed outright. Kernel-interface paths now write
+  directly (already atomic as a single syscall); persistent config paths
+  such as `/etc/sysctl.d` keep the atomic-rename path unchanged.
 - The dashboard's recent-activity card now appends ", N skipped" to its
   apply summary when skips occurred, matching the history section's
   wording; previously it showed only the applied-change count.
