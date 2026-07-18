@@ -5,7 +5,8 @@
 
 use hardener_common::types::{PluginId, Severity};
 use hardener_core::{
-    CommandOutput, Context, MockExecutor, PluginConfig, PolicyException, plugin::HardeningPlugin,
+    ChangeType, CommandOutput, Context, MockExecutor, PluginConfig, PolicyException,
+    plugin::HardeningPlugin,
 };
 use hardener_plugins::FirewallHardeningPlugin;
 use std::sync::Arc;
@@ -253,6 +254,12 @@ async fn test_firewall_scan_duration_recorded() {
 
 /// Helper: UFW active + all baseline rule commands registered.
 /// Accepts an optional port override for the SSH rule (default "22").
+///
+/// Deliberately does NOT register a bare `ufw allow` response: that was the
+/// old, wrong mapping for "established and related" (ufw is stateful by
+/// default and needs no rule for it at all). If the plugin regresses and
+/// tries to run it, the mock returns "command not registered" and the
+/// apply fails loudly instead of silently applying nothing.
 fn ufw_apply_executor(ssh_port: &str) -> MockExecutor {
     let ok = CommandOutput {
         stdout: "Rule added\n".to_string(),
@@ -275,13 +282,12 @@ fn ufw_apply_executor(ssh_port: &str) -> MockExecutor {
         )
         // Baseline rule commands (UFW build_ufw_rule_args output)
         .with_command("ufw", &["allow", "from", "127.0.0.1/8"], ok.clone())
-        .with_command("ufw", &["allow"], ok.clone())
         .with_command(
             "ufw",
             &["allow", "to", "any", "port", ssh_port, "proto", "tcp"],
             ok.clone(),
         )
-        .with_command("ufw", &["deny"], ok)
+        .with_command("ufw", &["default", "deny", "incoming"], ok)
 }
 
 #[tokio::test]
@@ -343,9 +349,8 @@ async fn test_firewall_apply_skips_exceptions() {
             },
         )
         .with_command("ufw", &["allow", "from", "127.0.0.1/8"], ok.clone())
-        .with_command("ufw", &["allow"], ok.clone())
         // No SSH rule registered: if the plugin tries to call it, the mock errors
-        .with_command("ufw", &["deny"], ok);
+        .with_command("ufw", &["default", "deny", "incoming"], ok);
 
     let mut ctx = Context::with_executor(Arc::new(executor.clone()));
     let plugin = FirewallHardeningPlugin::new();
@@ -452,4 +457,262 @@ fn test_zone_name_validation() {
     assert!(validate_zone_name("zone; rm -rf /").is_err());
     assert!(validate_zone_name(&"a".repeat(65)).is_err());
     assert!(validate_zone_name("zone\nnewline").is_err());
+}
+
+// --- Backend selection: prefer the ACTIVE backend, not merely the first
+// installed one (reproduces the maintainer's Arch host: ufw installed but
+// inactive, nftables installed and active). ---
+
+/// Mock executor mirroring the maintainer's Arch host: ufw is installed but
+/// inactive, nftables is installed and active. Selection must prefer the
+/// active backend, not the first one found by mere presence.
+fn ufw_inactive_nftables_active_executor() -> MockExecutor {
+    MockExecutor::new()
+        .with_command_exists("ufw", true)
+        .with_command_exists("firewall-cmd", false)
+        .with_command_exists("nft", true)
+        .with_command(
+            "systemctl",
+            &["is-active", "ufw"],
+            CommandOutput {
+                stdout: "inactive\n".to_string(),
+                stderr: String::new(),
+                exit_code: 3,
+            },
+        )
+        .with_command(
+            "nft",
+            &["list", "ruleset"],
+            CommandOutput {
+                stdout: "table inet filter {\n}\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+}
+
+#[tokio::test]
+async fn test_backend_selection_prefers_active_nftables_over_inactive_ufw() {
+    let executor = ufw_inactive_nftables_active_executor();
+    let ctx = Context::with_executor(Arc::new(executor.clone()));
+    let plugin = FirewallHardeningPlugin::new();
+
+    let result = plugin.scan(&ctx).await.unwrap();
+
+    assert!(result.scan_success, "scan should succeed");
+    let disabled_findings: Vec<_> = result
+        .scan_findings
+        .iter()
+        .filter(|f| f.finding_title.to_lowercase().contains("disabled"))
+        .collect();
+    assert!(
+        disabled_findings.is_empty(),
+        "the active nftables backend should be selected over the installed-but-inactive \
+         ufw backend, but got findings: {:?}",
+        disabled_findings
+            .iter()
+            .map(|f| &f.finding_id)
+            .collect::<Vec<_>>()
+    );
+
+    // Confirm nftables, not just ufw, was actually probed for its ruleset.
+    let log = executor.log();
+    assert!(
+        log.commands_executed
+            .iter()
+            .any(|(cmd, args)| cmd == "nft" && args == &["list".to_string(), "ruleset".to_string()]),
+        "nftables should have been probed for an active ruleset, commands: {:?}",
+        log.commands_executed
+    );
+}
+
+/// Both ufw and nftables are installed and would report active if probed;
+/// the existing priority order (firewalld > ufw > nftables) must still
+/// decide the winner once an active backend is found, without probing the
+/// lower-priority candidates.
+fn ufw_active_nftables_also_present_executor() -> MockExecutor {
+    MockExecutor::new()
+        .with_command_exists("ufw", true)
+        .with_command_exists("firewall-cmd", false)
+        .with_command_exists("nft", true)
+        .with_command(
+            "systemctl",
+            &["is-active", "ufw"],
+            CommandOutput {
+                stdout: "active\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "nft",
+            &["list", "ruleset"],
+            CommandOutput {
+                stdout: "table inet filter {\n}\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+}
+
+#[tokio::test]
+async fn test_backend_selection_keeps_priority_order_when_ufw_active() {
+    let executor = ufw_active_nftables_also_present_executor();
+    let ctx = Context::with_executor(Arc::new(executor.clone()));
+    let plugin = FirewallHardeningPlugin::new();
+
+    let result = plugin.scan(&ctx).await.unwrap();
+    assert!(result.scan_success, "scan should succeed");
+
+    let log = executor.log();
+    assert!(
+        log.commands_executed
+            .iter()
+            .any(|(cmd, args)| cmd == "systemctl"
+                && args == &["is-active".to_string(), "ufw".to_string()]),
+        "ufw should be probed first per the existing priority order"
+    );
+    assert!(
+        !log.commands_executed.iter().any(|(cmd, _)| cmd == "nft"),
+        "nftables should not be probed once the higher-priority ufw backend is found active, \
+         commands: {:?}",
+        log.commands_executed
+    );
+}
+
+/// Neither ufw nor nftables is active. Selection must fall back to the
+/// existing installed-order behaviour (first detected in priority order),
+/// which is ufw here since firewalld is absent.
+fn ufw_inactive_nftables_inactive_executor() -> MockExecutor {
+    MockExecutor::new()
+        .with_command_exists("ufw", true)
+        .with_command_exists("firewall-cmd", false)
+        .with_command_exists("nft", true)
+        .with_command(
+            "systemctl",
+            &["is-active", "ufw"],
+            CommandOutput {
+                stdout: "inactive\n".to_string(),
+                stderr: String::new(),
+                exit_code: 3,
+            },
+        )
+        .with_command(
+            "nft",
+            &["list", "ruleset"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+}
+
+#[tokio::test]
+async fn test_backend_selection_falls_back_to_first_installed_when_none_active() {
+    let executor = ufw_inactive_nftables_inactive_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = FirewallHardeningPlugin::new();
+
+    let result = plugin.scan(&ctx).await.unwrap();
+    assert!(result.scan_success, "scan should succeed");
+
+    let disabled = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_title.to_lowercase().contains("disabled"))
+        .expect("should report a disabled finding when nothing is active");
+    assert_eq!(
+        disabled.finding_id, "ufw-disabled",
+        "with nothing active, fallback should keep the existing installed-order priority \
+         (ufw before nftables)"
+    );
+}
+
+// --- ufw rule mapping fixes: "established and related" is a stateful no-op
+// for ufw, and the default-deny rule uses ufw's real syntax. ---
+
+#[tokio::test]
+async fn test_ufw_established_rule_is_skipped_not_executed() {
+    let executor = ufw_apply_executor("22");
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    let plugin = FirewallHardeningPlugin::new();
+    let config = PluginConfig::default();
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    assert!(
+        result.apply_success,
+        "apply should succeed, errors: {:?}",
+        result
+            .apply_changes
+            .iter()
+            .filter(|c| !c.change_success)
+            .collect::<Vec<_>>()
+    );
+
+    let skipped = result
+        .apply_changes
+        .iter()
+        .find(|c| c.change_type == ChangeType::Skipped)
+        .expect("established/related rule should be recorded as a Skipped change for ufw");
+    assert!(
+        skipped.change_success,
+        "a stateful no-op is not an apply failure"
+    );
+    assert!(
+        skipped
+            .change_description
+            .to_lowercase()
+            .contains("connection state"),
+        "skipped change should explain ufw tracks connection state implicitly, got: {}",
+        skipped.change_description
+    );
+
+    // The mock has no response registered for a bare `ufw allow` (the old,
+    // wrong mapping for this rule). If the plugin regressed and still tried
+    // to run it, apply_success would already be false above; double-check
+    // no such command was issued at all.
+    let log = executor.log();
+    assert!(
+        !log.commands_executed
+            .iter()
+            .any(|(cmd, args)| cmd == "ufw" && args == &["allow".to_string()]),
+        "ufw should never receive a bare 'allow' for the established/related rule, commands: {:?}",
+        log.commands_executed
+    );
+}
+
+#[tokio::test]
+async fn test_ufw_drop_default_rule_uses_default_deny_incoming() {
+    let executor = ufw_apply_executor("22");
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    let plugin = FirewallHardeningPlugin::new();
+    let config = PluginConfig::default();
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+    assert!(
+        result.apply_success,
+        "apply should succeed, errors: {:?}",
+        result
+            .apply_changes
+            .iter()
+            .filter(|c| !c.change_success)
+            .collect::<Vec<_>>()
+    );
+
+    let log = executor.log();
+    assert!(
+        log.commands_executed.iter().any(|(cmd, args)| {
+            cmd == "ufw"
+                && args
+                    == &[
+                        "default".to_string(),
+                        "deny".to_string(),
+                        "incoming".to_string(),
+                    ]
+        }),
+        "the default-deny-inbound rule should map to `ufw default deny incoming`, commands: {:?}",
+        log.commands_executed
+    );
 }

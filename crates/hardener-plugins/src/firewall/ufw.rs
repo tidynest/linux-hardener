@@ -88,7 +88,19 @@ impl UfwBackend {
     ///
     /// Converts backend-agnostic Rule into UFW command syntax:
     /// e.g., `ufw allow from 192.168.1.0/24 to any port 22 proto tcp`
+    ///
+    /// The baseline's "drop all other inbound by default" rule is not a
+    /// `ufw add`-style rule; ufw's own default-policy switch is
+    /// `ufw default deny incoming`.
     fn build_ufw_rule_args(&self, rule: &Rule) -> Vec<String> {
+        if rule.rule_description == "Drop all other inbound traffic by default" {
+            return vec![
+                "default".to_string(),
+                "deny".to_string(),
+                "incoming".to_string(),
+            ];
+        }
+
         let mut args = Vec::new();
 
         // Action: allow, deny, reject.
@@ -227,6 +239,28 @@ impl FirewallBackend for UfwBackend {
         let mut changes = Vec::new();
 
         for rule in rules {
+            // ufw is stateful by default: it tracks connection state
+            // implicitly, so there is no ufw command for "allow established
+            // and related connections" at all. Recording it as a normal
+            // FirewallRule change previously ran `ufw allow` with no
+            // criteria, which ufw rejects as invalid syntax.
+            if rule.rule_description == "Allow established and related connections" {
+                info!(
+                    "Skipping ufw rule '{}': ufw tracks connection state implicitly",
+                    rule.rule_description
+                );
+                changes.push(Change {
+                    change_description: format!(
+                        "{}: not applicable to ufw (ufw tracks connection state implicitly)",
+                        rule.rule_description
+                    ),
+                    change_type: ChangeType::Skipped,
+                    change_success: true,
+                    change_error: None,
+                });
+                continue;
+            }
+
             let ufw_args = self.build_ufw_rule_args(rule);
 
             let args_refs: Vec<&str> = ufw_args.iter().map(|s| s.as_str()).collect();

@@ -17,6 +17,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The dashboard's recent-activity card now appends ", N skipped" to its
   apply summary when skips occurred, matching the history section's
   wording; previously it showed only the applied-change count.
+- Firewall backend selection now prefers the ACTIVE backend over the
+  first one merely installed: on a host with ufw installed but disabled
+  and nftables actually running the firewall (a common Arch setup),
+  hardening previously drove the inactive ufw and left nftables
+  untouched. Backends are now probed in the existing priority order
+  (firewalld, ufw, nftables) and the first one reporting itself enabled
+  wins; if none are active, selection falls back to the prior
+  installed-order behaviour.
+- ufw rule mapping no longer sends two baseline rules through the wrong
+  syntax: "allow established and related connections" is not a ufw rule
+  at all (ufw tracks connection state implicitly) and is now recorded as
+  a no-op instead of running `ufw allow` with no criteria, which ufw
+  rejected as invalid syntax; "drop all other inbound by default" now
+  runs ufw's real default-policy command, `ufw default deny incoming`,
+  instead of the invalid `ufw deny` with no criteria.
 
 ## [1.3.1] - 2026-07-18
 

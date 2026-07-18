@@ -350,39 +350,68 @@ impl FirewallHardeningPlugin {
 
     /// Detects and returns the appropriate firewall backend for this system.
     ///
-    /// Detection order:
+    /// Detection order (used as an installed-order tie-breaker, see below):
     /// 1. firewalld (RHEL/Fedora/CentOS)
     /// 2. ufw (Ubuntu/Debian)
     /// 3. nftables (modern systems, direct control)
     ///
+    /// A host can have more than one backend installed without all of them
+    /// being the one actually managing traffic (e.g. ufw installed but
+    /// never enabled on an Arch host that runs nftables directly). Among the
+    /// backends actually present, the first one that reports itself as
+    /// ACTIVE (`is_enabled`) wins, regardless of installed-order; this stops
+    /// hardening from driving an inactive firewall while the real one goes
+    /// untouched. If none of the installed backends are active, selection
+    /// falls back to the installed-order above (first detected), matching
+    /// prior behaviour.
+    ///
     /// # Returns
     /// A boxed backend implementation, or an error if no backend is available.
     async fn detect_backend(&self, ctx: &Context) -> Result<Box<dyn FirewallBackend>> {
-        // Try firewalld first (RHEL/Fedora/CentOS).
-        let firewalld = firewalld::FirewalldBackend::new();
-        if firewalld.detect(ctx).await? {
-            info!("Detected firewalld firewall backend");
-            return Ok(Box::new(firewalld));
+        let candidates: Vec<Box<dyn FirewallBackend>> = vec![
+            Box::new(firewalld::FirewalldBackend::new()),
+            Box::new(ufw::UfwBackend::new()),
+            Box::new(nftables::NftablesBackend::new()),
+        ];
+
+        let mut installed = Vec::with_capacity(candidates.len());
+        for backend in candidates {
+            if backend.detect(ctx).await? {
+                installed.push(backend);
+            }
         }
 
-        // Try UFW second (Ubuntu/Debian).
-        let ufw = ufw::UfwBackend::new();
-        if ufw.detect(ctx).await? {
-            info!("Detected UFW firewall backend");
-            return Ok(Box::new(ufw));
+        if installed.is_empty() {
+            return Err(hardener_common::error::HardeningError::Plugin(
+                "No supported firewall backend found (checked: firewalld, ufw, nftables)"
+                    .to_string(),
+            ));
         }
 
-        // Try nftables third (modern systems, Arch, Debian 10+, Ubuntu 20.04+).
-        let nftables = nftables::NftablesBackend::new();
-        if nftables.detect(ctx).await? {
-            info!("Detected nftables firewall backend");
-            return Ok(Box::new(nftables));
+        let mut active_index = None;
+        for (index, backend) in installed.iter().enumerate() {
+            if backend.is_enabled(ctx).await.is_ok() {
+                active_index = Some(index);
+                break;
+            }
         }
 
-        // No backend found.
-        Err(hardener_common::error::HardeningError::Plugin(
-            "No supported firewall backend found (checked: firewalld, ufw, nftables)".to_string(),
-        ))
+        let winner_index = active_index.unwrap_or(0);
+        let winner = installed.remove(winner_index);
+        match active_index {
+            Some(_) => info!(
+                "Selected {} firewall backend (active among {} installed)",
+                winner.backend_name(),
+                installed.len() + 1
+            ),
+            None => info!(
+                "No active firewall backend among {} installed; falling back to {} \
+                 (first in installed-order)",
+                installed.len() + 1,
+                winner.backend_name()
+            ),
+        }
+        Ok(winner)
     }
 }
 
