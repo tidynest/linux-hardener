@@ -291,6 +291,12 @@
           "markdownDescription": "Enables the run_apply_dry_run command without any pre-configured scope."
         },
         {
+          "description": "Enables the run_deep_scan command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-run-deep-scan",
+          "markdownDescription": "Enables the run_deep_scan command without any pre-configured scope."
+        },
+        {
           "description": "Enables the run_fleet_apply command without any pre-configured scope.",
           "type": "string",
           "const": "allow-run-fleet-apply",
@@ -463,6 +469,12 @@
           "type": "string",
           "const": "deny-run-apply-dry-run",
           "markdownDescription": "Denies the run_apply_dry_run command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the run_deep_scan command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-run-deep-scan",
+          "markdownDescription": "Denies the run_deep_scan command without any pre-configured scope."
         },
         {
           "description": "Denies the run_fleet_apply command without any pre-configured scope.",

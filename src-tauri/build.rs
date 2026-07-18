@@ -22,6 +22,7 @@ const COMMANDS: &[&str] = &[
     "pick_config_file",
     "run_apply",
     "run_apply_dry_run",
+    "run_deep_scan",
     "run_fleet_apply",
     "run_fleet_rollback",
     "run_fleet_scan",

@@ -17,7 +17,7 @@ use hardener_state::{
     ScanHistoryManager, ScanSession, ScanSessionId, ScanStatus, init_db,
 };
 use hardener_types::{
-    ApplyOutcome, ConfigSummary, FleetFrameworkPosture, FleetHostScan, FleetHostStatus,
+    ApplyOutcome, ConfigSummary, FleetFrameworkPosture, FleetHostScan, FleetHostStatus, PluginId,
     RollbackOutcome, SeverityTallies,
     remote::{
         FLEET_PROGRESS_EVENT, FleetProgress, HostSessionInfo, HostsConfig, RemoteConnectionInfo,
@@ -468,6 +468,40 @@ async fn create_scan_history_manager() -> Result<ScanHistoryManager, String> {
     Ok(ScanHistoryManager::new(pool))
 }
 
+/// Persists a completed scan's results into an already-started history
+/// session.
+///
+/// Storage and completion failures are logged rather than propagated: by
+/// the time this runs the scan itself has already succeeded, and a fully
+/// executed result should not be discarded over a persistence hiccup
+/// unrelated to the scan. Session creation (`create_scan_history_manager`,
+/// `start_session`) stays fallible in each caller so a genuinely unavailable
+/// history database is still reported rather than silently swallowed.
+async fn persist_scan_results(
+    history_manager: &ScanHistoryManager,
+    session_id: &ScanSessionId,
+    results: &[ScanResult],
+) {
+    let total_findings: i32 = results.iter().map(|r| r.scan_findings.len() as i32).sum();
+    let total_plugins = results.len() as i32;
+
+    if let Err(e) = history_manager.store_results(session_id, results).await {
+        error!("Failed to persist scan results: {}", e);
+    }
+
+    if let Err(e) = history_manager
+        .complete_session(
+            session_id,
+            ScanStatus::Completed,
+            total_findings,
+            total_plugins,
+        )
+        .await
+    {
+        error!("Failed to complete scan session: {}", e);
+    }
+}
+
 /// Executes a security scan across all enabled plugins.
 ///
 /// Persists results to the database for GUI state restoration.
@@ -534,30 +568,84 @@ pub async fn run_scan(
         }
     }
 
-    // Calculate totals for the session
-    let total_findings: i32 = results.iter().map(|r| r.scan_findings.len() as i32).sum();
-    let total_plugins = results.len() as i32;
-
-    // Persist results to database
-    if let Err(e) = history_manager.store_results(&session_id, &results).await {
-        error!("Failed to persist scan results: {}", e);
-        // Continue anyway - return results even if persistence fails
-    }
-
-    // Complete the session
-    if let Err(e) = history_manager
-        .complete_session(
-            &session_id,
-            ScanStatus::Completed,
-            total_findings,
-            total_plugins,
-        )
-        .await
-    {
-        error!("Failed to complete scan session: {}", e);
-    }
+    persist_scan_results(&history_manager, &session_id, &results).await;
 
     Ok(results)
+}
+
+/// Executes a security scan with root privileges via pkexec.
+///
+/// Shells out to the CLI exactly like `run_apply`, so the results match
+/// `sudo hardener scan`. Persists results as a new session so restored
+/// state reflects the deep scan.
+#[tauri::command]
+pub async fn run_deep_scan(
+    plugin_ids: Option<Vec<String>>,
+    config_path: Option<String>,
+) -> Result<Vec<ScanResult>, String> {
+    let _guard = PrivilegedOpGuard::acquire()?;
+    if let Some(ref ids) = plugin_ids {
+        validate_plugin_ids(ids)?;
+    }
+    if let Some(ref path) = config_path {
+        validate_privileged_config_path(path)?;
+    }
+
+    let mut args: Vec<&str> = vec!["scan", "--format", "json"];
+    let plugin_args: Vec<String> = plugin_ids
+        .iter()
+        .flatten()
+        .flat_map(|id| vec!["--plugin".to_string(), id.clone()])
+        .collect();
+    let plugin_refs: Vec<&str> = plugin_args.iter().map(|s| s.as_str()).collect();
+    args.extend(plugin_refs);
+    let config_flag;
+    if let Some(ref path) = config_path {
+        config_flag = path.clone();
+        args.push("--config");
+        args.push(&config_flag);
+    }
+
+    let raw = run_privileged(&args).await.map_err(safe_err)?;
+    let entries: Vec<CliScanEntry> = accept_json_output(&raw).map_err(safe_err)?;
+    let results: Vec<ScanResult> = entries
+        .into_iter()
+        .map(CliScanEntry::into_scan_result)
+        .collect();
+
+    // Same fallible session-creation contract as run_scan: an unavailable
+    // history database is reported to the caller rather than silently
+    // dropped, so a missing session after a deep scan is never a surprise.
+    let history_manager = create_scan_history_manager().await?;
+    let session_id = history_manager.start_session().await.map_err(safe_err)?;
+    persist_scan_results(&history_manager, &session_id, &results).await;
+
+    Ok(results)
+}
+
+/// One per-plugin entry of the CLI's `scan --format json` output.
+#[derive(serde::Deserialize)]
+struct CliScanEntry {
+    plugin_id: String,
+    #[serde(default)]
+    findings: Vec<Finding>,
+    #[serde(default)]
+    unchecked: Vec<UncheckedCheck>,
+}
+
+impl CliScanEntry {
+    /// The CLI shape omits duration and per-plugin errors; a parsed entry is
+    /// a successful scan by construction.
+    fn into_scan_result(self) -> ScanResult {
+        ScanResult {
+            scan_plugin_id: PluginId::new(self.plugin_id),
+            scan_success: true,
+            scan_findings: self.findings,
+            scan_unchecked: self.unchecked,
+            scan_duration_us: 0,
+            scan_error: None,
+        }
+    }
 }
 
 /// Applies hardening changes for the specified plugins.
@@ -2428,5 +2516,28 @@ mod fleet_tests {
     fn parse_frameworks_drops_unknown_silently() {
         let parsed = parse_frameworks(&["nonsense".to_string(), "CIS".to_string()]);
         assert_eq!(parsed, vec![ComplianceFramework::CIS]);
+    }
+
+    #[test]
+    fn cli_scan_entries_parse_into_scan_results() {
+        let json = r#"[{
+            "plugin_id": "pam-hardening",
+            "plugin_name": "PAM Hardening",
+            "findings": [],
+            "unchecked": [{
+                "unchecked_check_id": "pam-minlen",
+                "unchecked_title": "PAM setting: minlen",
+                "unchecked_category": "Authentication",
+                "unchecked_reason": "reading /etc/security/pwquality.conf requires root",
+                "unchecked_compliance": []
+            }]
+        }]"#;
+        let entries: Vec<CliScanEntry> = serde_json::from_str(json).unwrap();
+        let results: Vec<ScanResult> = entries
+            .into_iter()
+            .map(CliScanEntry::into_scan_result)
+            .collect();
+        assert_eq!(results[0].scan_unchecked.len(), 1);
+        assert!(results[0].scan_success);
     }
 }
