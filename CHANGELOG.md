@@ -32,6 +32,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rejected as invalid syntax; "drop all other inbound by default" now
   runs ufw's real default-policy command, `ufw default deny incoming`,
   instead of the invalid `ufw deny` with no criteria.
+- Applying audit rules no longer fails outright when the kernel audit
+  configuration is immutable (`-e 2`, locked until reboot): both reload
+  legs (`augenrules --load` and the `systemctl restart auditd` fallback)
+  are expected to fail in that state, and on Arch the fallback is always
+  refused anyway (the auditd unit ships `RefuseManualStop=yes`). The
+  plugin now probes `auditctl -s` after a reload failure; if it reports
+  the immutable state, the rules file is recorded as written with a
+  reboot required to load it (a skipped change, not a failure) instead of
+  failing the whole apply. A genuinely broken reload (immutability probe
+  says otherwise) still fails as before.
 
 ## [1.3.1] - 2026-07-18
 

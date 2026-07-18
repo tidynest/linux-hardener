@@ -603,6 +603,224 @@ async fn test_audit_apply_skips_exceptions() {
     );
 }
 
+/// Builds a mock executor for the reload-failure scenarios: auditd is
+/// installed, enabled and running, the rules file writes fine, but both
+/// `augenrules --load` and the `systemctl restart auditd` fallback fail
+/// (mirroring Arch, where the auditd unit ships `RefuseManualStop=yes` so
+/// the systemctl leg is always refused). `auditctl -s` output is supplied
+/// by the caller to select the immutable vs. non-immutable case.
+fn reload_fails_executor(auditctl_status: CommandOutput) -> MockExecutor {
+    let ok = CommandOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    MockExecutor::new()
+        .with_command_exists("auditd", true)
+        .with_command_exists("augenrules", true)
+        .with_command(
+            "systemctl",
+            &["is-enabled", "auditd"],
+            CommandOutput {
+                stdout: "enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-active", "auditd"],
+            CommandOutput {
+                stdout: "active\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command("mkdir", &["-p", "/etc/audit/rules.d"], ok.clone())
+        .with_command(
+            "augenrules",
+            &["--load"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: "augenrules: failed to load rules\n".to_string(),
+                exit_code: 1,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["restart", "auditd"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: "Failed to restart auditd.service: Operation refused, unit auditd.service may be requested by dependency only (it is configured to refuse manual start/stop).\n".to_string(),
+                exit_code: 1,
+            },
+        )
+        .with_command("auditctl", &["-s"], auditctl_status)
+}
+
+#[tokio::test]
+async fn test_audit_apply_reload_immutable_becomes_skip() {
+    // auditctl -s reports the kernel audit config is locked (-e 2): both
+    // reload legs are dead until reboot, but this is not a plugin failure.
+    let executor = reload_fails_executor(CommandOutput {
+        stdout: "enabled 2\nfailure 1\npid 0\nrate_limit 0\n".to_string(),
+        stderr: String::new(),
+        exit_code: 0,
+    });
+    let mut ctx = Context::with_executor(Arc::new(executor));
+    let plugin = AuditHardeningPlugin::new();
+    let config = PluginConfig::default();
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    assert!(
+        result.apply_success,
+        "reload failure explained by immutable audit config must not fail the apply"
+    );
+
+    let reload_change = result
+        .apply_changes
+        .iter()
+        .find(|c| c.change_description.to_lowercase().contains("reboot"))
+        .expect("should record a reboot-required change");
+    assert!(reload_change.is_skipped(), "must be a Skipped change");
+    assert!(
+        reload_change.change_success,
+        "the skipped change itself must report success"
+    );
+    assert!(
+        reload_change.change_description.contains("-e 2")
+            || reload_change.change_description.contains("locked"),
+        "description should explain the immutable audit config, got: {}",
+        reload_change.change_description
+    );
+}
+
+#[tokio::test]
+async fn test_audit_apply_reload_failure_not_immutable_stays_failed() {
+    // auditctl -s reports normal (non-immutable) enabled state: both reload
+    // legs genuinely failed, so this must remain a real failure.
+    let executor = reload_fails_executor(CommandOutput {
+        stdout: "enabled 1\nfailure 1\npid 0\nrate_limit 0\n".to_string(),
+        stderr: String::new(),
+        exit_code: 0,
+    });
+    let mut ctx = Context::with_executor(Arc::new(executor));
+    let plugin = AuditHardeningPlugin::new();
+    let config = PluginConfig::default();
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    assert!(
+        !result.apply_success,
+        "a genuinely broken reload (not immutable) must still fail the apply"
+    );
+
+    let reload_change = result
+        .apply_changes
+        .iter()
+        .find(|c| {
+            c.change_description
+                .contains("Failed to reload audit rules")
+        })
+        .expect("should still record the reload failure");
+    assert!(!reload_change.change_success);
+    assert!(!reload_change.is_skipped());
+}
+
+#[tokio::test]
+async fn test_audit_apply_reload_failure_probe_exit_nonzero_stays_failed() {
+    // The immutability probe itself fails (non-zero exit) but emits partial
+    // stdout that happens to contain "enabled 2": untrusted output from a
+    // failed probe must never downgrade a genuine reload failure to a skip.
+    let executor = reload_fails_executor(CommandOutput {
+        stdout: "enabled 2\n".to_string(),
+        stderr: "auditctl: Operation not permitted\n".to_string(),
+        exit_code: 1,
+    });
+    let mut ctx = Context::with_executor(Arc::new(executor));
+    let plugin = AuditHardeningPlugin::new();
+    let config = PluginConfig::default();
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    assert!(
+        !result.apply_success,
+        "a failed probe must not be trusted, even if its stdout says enabled 2"
+    );
+
+    let reload_change = result
+        .apply_changes
+        .iter()
+        .find(|c| {
+            c.change_description
+                .contains("Failed to reload audit rules")
+        })
+        .expect("should still record the reload failure");
+    assert!(!reload_change.change_success);
+    assert!(!reload_change.is_skipped());
+}
+
+#[tokio::test]
+async fn test_audit_apply_reload_success_unaffected() {
+    // Happy path: augenrules succeeds, so the immutability probe must never
+    // run and the existing success change is unchanged.
+    let ok = CommandOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    let executor = MockExecutor::new()
+        .with_command_exists("auditd", true)
+        .with_command_exists("augenrules", true)
+        .with_command(
+            "systemctl",
+            &["is-enabled", "auditd"],
+            CommandOutput {
+                stdout: "enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-active", "auditd"],
+            CommandOutput {
+                stdout: "active\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command("mkdir", &["-p", "/etc/audit/rules.d"], ok.clone())
+        .with_command("augenrules", &["--load"], ok);
+
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    let plugin = AuditHardeningPlugin::new();
+    let config = PluginConfig::default();
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    assert!(result.apply_success);
+    let reload_change = result
+        .apply_changes
+        .iter()
+        .find(|c| {
+            c.change_description
+                .contains("Loaded audit rules into running daemon")
+        })
+        .expect("should record the successful reload");
+    assert!(reload_change.change_success);
+    assert!(!reload_change.is_skipped());
+
+    let log = executor.log();
+    assert!(
+        !log.commands_executed
+            .iter()
+            .any(|(cmd, args)| cmd == "auditctl" && args == &["-s".to_string()]),
+        "the immutability probe must not run when reload succeeds"
+    );
+}
+
 #[tokio::test]
 async fn test_audit_validate_skips_exceptions() {
     // Partial rules (only identity); normally many missing.

@@ -381,6 +381,28 @@ async fn reload_audit_rules(ctx: &Context) -> Result<()> {
     Ok(())
 }
 
+/// Probes whether the kernel audit configuration is immutable (`-e 2`),
+/// which locks it until the next reboot and makes both reload legs fail by
+/// design rather than through a broken audit setup. Detected from
+/// `auditctl -s`, whose status report includes an `enabled 2` line under
+/// immutable mode. A failed probe (missing binary, no permission, etc.) is
+/// treated as "not immutable" so a genuinely broken reload is never
+/// silently downgraded to a skip.
+///
+/// The token match recognises the modern multi-line `auditctl -s` format
+/// only; the legacy single-line `AUDIT_STATUS: enabled=2` format will not
+/// match and fails safe to the hard-failure path.
+async fn is_audit_config_immutable(ctx: &Context) -> bool {
+    let Ok(output) = ctx.executor().execute_command("auditctl", &["-s"]).await else {
+        return false;
+    };
+    output.success()
+        && output
+            .stdout
+            .lines()
+            .any(|line| line.split_whitespace().eq(["enabled", "2"]))
+}
+
 /// Returns compliance mappings for audit findings.
 ///
 /// Multi-framework mappings are sourced from ComplianceAsCode/SSG rule
@@ -969,7 +991,16 @@ impl HardeningPlugin for AuditHardeningPlugin {
             }
         }
 
-        // Reload audit rules into running daemon
+        // Reload audit rules into running daemon.
+        //
+        // On Arch the systemd auditd unit ships `RefuseManualStop=yes`, so
+        // the `systemctl restart` fallback inside reload_audit_rules can
+        // never succeed there and augenrules is the only viable leg. When
+        // both legs fail it is not necessarily a broken audit setup: the
+        // kernel audit config may be immutable (-e 2) until the next
+        // reboot, in which case the rules file is already written and
+        // correct, it just cannot be loaded live. Probe for that before
+        // deciding whether this is a genuine failure.
         match reload_audit_rules(ctx).await {
             Ok(_) => {
                 changes.push(Change {
@@ -980,12 +1011,24 @@ impl HardeningPlugin for AuditHardeningPlugin {
                 });
             }
             Err(e) => {
-                changes.push(Change {
-                    change_type: ChangeType::Service,
-                    change_description: "Failed to reload audit rules".to_string(),
-                    change_error: Some(e.to_string()),
-                    change_success: false,
-                });
+                let change = if is_audit_config_immutable(ctx).await {
+                    Change {
+                        change_type: ChangeType::Skipped,
+                        change_description: "Audit rules written; reboot required to load \
+                             them - audit config is locked (-e 2)"
+                            .to_string(),
+                        change_error: None,
+                        change_success: true,
+                    }
+                } else {
+                    Change {
+                        change_type: ChangeType::Service,
+                        change_description: "Failed to reload audit rules".to_string(),
+                        change_error: Some(e.to_string()),
+                        change_success: false,
+                    }
+                };
+                changes.push(change);
             }
         }
 
