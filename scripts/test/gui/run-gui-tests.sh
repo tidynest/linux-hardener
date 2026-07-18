@@ -174,20 +174,20 @@ if [[ "$PARALLEL" == "true" ]]; then
         local logfile="$RESULTS_DIR/${distro}-webui.log"
 
         if [[ ! -d "$container_path" ]]; then
-            echo "[$distro] ${YELLOW}SKIP${NC}: container not found"
+            echo -e "[$distro] ${YELLOW}SKIP${NC}: container not found"
             echo "CONTAINER NOT FOUND: $container_path" > "$logfile"
             return 99
         fi
 
-        echo "[$distro] ${CYAN}Starting...${NC}"
+        echo -e "[$distro] ${CYAN}Starting...${NC}"
 
         nspawn_gui_tests "$container_path" > "$logfile" 2>&1
         local exit_code=$?
 
         if [[ $exit_code -eq 0 ]]; then
-            echo "[$distro] ${GREEN}PASS${NC}"
+            echo -e "[$distro] ${GREEN}PASS${NC}"
         else
-            echo "[$distro] ${RED}FAIL${NC} (exit: $exit_code)"
+            echo -e "[$distro] ${RED}FAIL${NC} (exit: $exit_code)"
         fi
 
         return $exit_code

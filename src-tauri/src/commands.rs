@@ -2259,4 +2259,20 @@ mod fleet_tests {
         let parsed: Result<Vec<ApplyOutcome>, String> = parse_outcomes("usage error: no hosts");
         assert!(parsed.is_err());
     }
+
+    #[test]
+    fn every_canonical_framework_id_parses() {
+        // The UI builds pickers and auto-report requests from
+        // ComplianceFramework::ALL; every canonical id must stay accepted by
+        // this command layer or a framework silently drops from GUI reports.
+        for framework in ComplianceFramework::ALL {
+            let parsed = parse_frameworks(&[framework.id().to_string()]);
+            assert_eq!(
+                parsed,
+                vec![framework],
+                "canonical id '{}' must parse to its framework",
+                framework.id()
+            );
+        }
+    }
 }

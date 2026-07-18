@@ -259,12 +259,12 @@ if [[ "$PARALLEL" == "true" ]]; then
         local logfile="$RESULTS_DIR/${distro}.log"
 
         if [[ ! -d "$container_path" ]]; then
-            echo "[$distro] ${YELLOW}SKIP${NC}: container not found"
+            echo -e "[$distro] ${YELLOW}SKIP${NC}: container not found"
             echo "CONTAINER NOT FOUND: $container_path" > "$logfile"
             return 99
         fi
 
-        echo "[$distro] ${CYAN}Starting...${NC}"
+        echo -e "[$distro] ${CYAN}Starting...${NC}"
 
         nspawn_full_suite "$container_path" > "$logfile" 2>&1
         local exit_code=$?
@@ -273,11 +273,11 @@ if [[ "$PARALLEL" == "true" ]]; then
         read -r passed failed skipped total <<< "$(parse_log_counts "$logfile")"
 
         if [[ $exit_code -eq 0 ]] && [[ "$total" -gt 0 ]]; then
-            echo "[$distro] ${GREEN}PASS${NC}: $passed/$total passed, $skipped skipped"
+            echo -e "[$distro] ${GREEN}PASS${NC}: $passed/$total passed, $skipped skipped"
         elif [[ "$total" -eq 0 ]]; then
-            echo "[$distro] ${RED}ERR${NC}: no results (exit: $exit_code)"
+            echo -e "[$distro] ${RED}ERR${NC}: no results (exit: $exit_code)"
         else
-            echo "[$distro] ${RED}FAIL${NC}: $failed failed (exit: $exit_code)"
+            echo -e "[$distro] ${RED}FAIL${NC}: $failed failed (exit: $exit_code)"
         fi
 
         echo "$passed" > "$RESULTS_DIR/.${distro}.passed"

@@ -27,14 +27,10 @@ pub fn QuickActions() -> impl IntoView {
 
                     // Generate compliance reports for all frameworks after scan.
                     // This populates the data needed for the Security Score calculation.
-                    let frameworks = vec![
-                        "CIS".to_string(),
-                        "STIG".to_string(),
-                        "NIST".to_string(),
-                        "PCIDSS".to_string(),
-                        "HIPAA".to_string(),
-                        "GDPR".to_string(),
-                    ];
+                    let frameworks = hardener_types::ComplianceFramework::ALL
+                        .iter()
+                        .map(|f| f.id().to_string())
+                        .collect();
                     match invoke_generate_report(frameworks).await {
                         Ok(reports) => {
                             app_state.compliance_reports.set(reports);

@@ -87,7 +87,7 @@ systemctl daemon-reload || true
 %files
 %license LICENSE
 %doc README.md
-%doc data/config.toml.example
+%doc packaging/assets/config.toml.example
 %{_bindir}/hardener
 %{_bindir}/linux-hardener-desktop
 %{_libdir}/linux-hardener/linux-hardener-desktop

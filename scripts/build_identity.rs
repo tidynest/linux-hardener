@@ -37,8 +37,16 @@ fn main() {
     };
 
     println!("cargo:rustc-env=HARDENER_BUILD_IDENTITY={identity}");
-    // Re-run when the checked-out commit moves; harmless no-ops elsewhere.
-    println!("cargo:rerun-if-changed=../../.git/HEAD");
-    println!("cargo:rerun-if-changed=../../.git/index");
+    // Re-run when the checked-out commit moves. Resolve the real git dir so
+    // the paths hold in linked worktrees too (where .git is a pointer file);
+    // a hardcoded ../../.git/HEAD would not exist there and cargo treats a
+    // missing watched path as always-dirty. logs/HEAD is appended on every
+    // commit and checkout, which plain HEAD (a stable "ref: ..." line on a
+    // fixed branch) does not capture. Tarball builds emit no watch paths and
+    // keep the "release" identity without rerun churn.
+    if let Some(git_dir) = command_line("git", &["rev-parse", "--absolute-git-dir"]) {
+        println!("cargo:rerun-if-changed={git_dir}/HEAD");
+        println!("cargo:rerun-if-changed={git_dir}/logs/HEAD");
+    }
     println!("cargo:rerun-if-env-changed=SOURCE_DATE_EPOCH");
 }

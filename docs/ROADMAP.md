@@ -396,7 +396,7 @@ User clicks "Apply"
 - [x] Package manager integration must work correctly per distro
 - [x] Service management must use correct init system commands
 
-**Test Environment**: systemd-nspawn containers with bind-mounted project directory. Container scripts in `scripts/create-*-container.sh`.
+**Test Environment**: systemd-nspawn containers with bind-mounted project directory. Container creation via `scripts/containers/create-container.sh <distro>`.
 
 **GUI Test Validation**: 84 Playwright Web UI tests pass on all 5 distros (Arch, Debian, Fedora, Rocky 9, openSUSE). Covers dashboard, findings, compliance, configure, history, themes, and error handling. Run via `sudo ./scripts/test/gui/run-gui-tests.sh` or `run-cross-distro-tests.sh --gui`.
 

@@ -55,7 +55,7 @@ security-relevant OSS, a credible funding route given the tool's nature.
 - `docs/architecture/architecture.md` + `docs/reference/data-flow.md`
 - This scope document (threat model above)
 - Runbooks: `docs/guide/installation.md`, `docs/contributing/testing.md`, container fixtures
-  (`scripts/create-*-container.sh`, `scripts/containers/boot-ssh-test-container.sh`)
+  (`scripts/containers/create-container.sh <distro>`, `scripts/containers/boot-ssh-test-container.sh`)
 
 ## Logistics decisions (owner: maintainer)
 

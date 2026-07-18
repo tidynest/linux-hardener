@@ -12,7 +12,7 @@ Two deliberately different identifier namespaces exist:
 
 - **Polkit action ids:** `com.tidynest.linux-hardener.apply` /
   `com.tidynest.linux-hardener.rollback`, declared in
-  `data/com.tidynest.linux-hardener.policy`, installed by every package to
+  `packaging/assets/com.tidynest.linux-hardener.policy`, installed by every package to
   `/usr/share/polkit-1/actions/com.tidynest.linux-hardener.policy`
   (PKGBUILD line ~103; rpm spec and debian rules mirror it).
   `scripts/test/polkit/detect-polkit-agent.sh` checks exactly this id and path, and they

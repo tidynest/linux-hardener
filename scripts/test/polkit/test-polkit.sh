@@ -334,10 +334,11 @@ run_no_agent_test() {
 
     echo -e "${CYAN}Test 1: pkexec exit code without agent${NC}"
 
-    set +e
+    # Deliberately no errexit toggling: the script runs under `set -uo
+    # pipefail` (no -e), and enabling -e here would abort on the counter
+    # arithmetic in pass()/fail() and skip the agent restart below.
     pkexec_output=$(/usr/bin/pkexec "$HARDENER_BIN" scan --format json 2>&1)
     pkexec_exit=$?
-    set -e
 
     echo -e "  Exit code: $pkexec_exit"
 
