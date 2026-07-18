@@ -42,6 +42,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reboot required to load it (a skipped change, not a failure) instead of
   failing the whole apply. A genuinely broken reload (immutability probe
   says otherwise) still fails as before.
+- A partial-failure apply no longer hides which plugins failed and why.
+  The desktop app discarded the CLI's per-plugin JSON whenever `apply` or
+  `rollback` exited 1 (both print their result before failing on a
+  partial failure), so the GUI could only show the generic "One or more
+  plugins failed to apply" banner; it now parses that payload on exit 1
+  the same way Fleet Apply already did, so failed plugins render with
+  their real per-change status. `apply --dry-run` had the identical gap
+  and is fixed the same way. The CLI's human-readable table also printed
+  a bare cross mark for a failed change with no indication why; it now
+  prints the change's error message, indented and dimmed, underneath.
 
 ## [1.3.1] - 2026-07-18
 

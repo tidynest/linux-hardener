@@ -307,8 +307,6 @@ enum PrivilegedCommandError {
     AuthCancelled,
     /// Command execution failed.
     ExecutionFailed(String),
-    /// Failed to parse command output.
-    ParseError(String),
 }
 
 impl std::fmt::Display for PrivilegedCommandError {
@@ -329,16 +327,24 @@ impl std::fmt::Display for PrivilegedCommandError {
                 "Authentication cancelled. Root privileges are required for this operation."
             ),
             Self::ExecutionFailed(msg) => write!(f, "Command failed: {}", sanitise_error(msg)),
-            Self::ParseError(msg) => write!(f, "Failed to parse output: {}", sanitise_error(msg)),
         }
     }
 }
 
-/// Executes a command with root privileges via pkexec.
-///
-/// Resolves the hardener binary to a canonical absolute path, validates
-/// ownership and permissions, then invokes pkexec with the absolute path.
-async fn run_privileged_command(args: &[&str]) -> Result<String, PrivilegedCommandError> {
+/// Raw result of a pkexec-invoked hardener CLI call, before the caller
+/// interprets what a non-auth-related exit code means for that verb.
+struct PrivilegedOutput {
+    stdout: String,
+    stderr: String,
+    exit_code: Option<i32>,
+}
+
+/// Runs the hardener CLI under pkexec, resolving the auth-specific outcomes
+/// (no polkit agent, user cancelled) but deferring interpretation of every
+/// other exit code to the caller. Some verbs (`apply`, `rollback`) print a
+/// partial-result JSON payload to stdout before exiting 1 on partial failure,
+/// so "non-zero exit" alone cannot mean "no usable output" for them.
+async fn run_privileged(args: &[&str]) -> Result<PrivilegedOutput, PrivilegedCommandError> {
     let binary = get_hardener_binary_path().map_err(PrivilegedCommandError::ExecutionFailed)?;
     validate_binary_path(&binary).map_err(PrivilegedCommandError::ExecutionFailed)?;
 
@@ -351,13 +357,7 @@ async fn run_privileged_command(args: &[&str]) -> Result<String, PrivilegedComma
         .await
         .map_err(|e| PrivilegedCommandError::ExecutionFailed(e.to_string()))?;
 
-    // Check exit codes
     match output.status.code() {
-        Some(0) => {
-            // Success
-            String::from_utf8(output.stdout)
-                .map_err(|e| PrivilegedCommandError::ParseError(e.to_string()))
-        }
         Some(126) => {
             // pkexec: not authorised or auth dialogue dismissed
             Err(PrivilegedCommandError::AuthCancelled)
@@ -371,11 +371,45 @@ async fn run_privileged_command(args: &[&str]) -> Result<String, PrivilegedComma
                 Err(PrivilegedCommandError::ExecutionFailed(stderr.to_string()))
             }
         }
-        _ => {
-            // Other error
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            Err(PrivilegedCommandError::ExecutionFailed(stderr.to_string()))
-        }
+        exit_code => Ok(PrivilegedOutput {
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            exit_code,
+        }),
+    }
+}
+
+/// True for exit codes this project's JSON-emitting CLI verbs may legitimately
+/// pair with a valid payload: 0 for full success, 1 for verbs that print a
+/// partial-result payload before `bail!`ing on partial failure (see `apply`,
+/// `rollback` in `hardener-cli`). Any other code never carries a payload.
+fn exit_code_may_carry_json(exit_code: Option<i32>) -> bool {
+    matches!(exit_code, Some(0) | Some(1))
+}
+
+/// Interprets a privileged JSON-emitting command's raw output: accepts the
+/// payload on exit 0 always, and on exit 1 only when stdout still parses as
+/// `T` (a partial-failure payload). Anything else is a genuine error carrying
+/// stderr, sanitised by `PrivilegedCommandError`'s `Display` impl.
+fn accept_json_output<T: serde::de::DeserializeOwned>(
+    raw: &PrivilegedOutput,
+) -> Result<T, PrivilegedCommandError> {
+    if exit_code_may_carry_json(raw.exit_code)
+        && let Ok(parsed) = serde_json::from_str(&raw.stdout)
+    {
+        return Ok(parsed);
+    }
+    Err(PrivilegedCommandError::ExecutionFailed(raw.stderr.clone()))
+}
+
+/// Executes a command with root privileges via pkexec, treating anything but
+/// exit 0 as failure. Used by verbs whose stdout carries no payload worth
+/// recovering on a non-zero exit (checkpoint create/delete).
+async fn run_privileged_command(args: &[&str]) -> Result<String, PrivilegedCommandError> {
+    let raw = run_privileged(args).await?;
+    match raw.exit_code {
+        Some(0) => Ok(raw.stdout),
+        _ => Err(PrivilegedCommandError::ExecutionFailed(raw.stderr)),
     }
 }
 
@@ -553,12 +587,11 @@ pub async fn run_apply(
         args.push(&config_flag);
     }
 
-    // Execute with root privileges
-    let output = run_privileged_command(&args).await.map_err(safe_err)?;
-
-    // Parse JSON output from CLI
-    let parsed: Vec<(PluginMetadata, ApplyResult)> = serde_json::from_str(&output)
-        .map_err(|e| safe_err(format!("Failed to parse apply results: {}", e)))?;
+    // Execute with root privileges. Exit 1 with a parseable payload is a
+    // partial-failure result, not a transport error: the CLI already printed
+    // per-plugin JSON before `bail!`ing, and the UI renders per-change status.
+    let raw = run_privileged(&args).await.map_err(safe_err)?;
+    let parsed: Vec<(PluginMetadata, ApplyResult)> = accept_json_output(&raw).map_err(safe_err)?;
     let results: Vec<ApplyResult> = parsed.into_iter().map(|(_, r)| r).collect();
 
     Ok(results)
@@ -609,23 +642,22 @@ pub async fn run_apply_dry_run(
         .await
         .map_err(|e| safe_err(format!("Failed to execute dry-run: {}", e)))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(sanitise_error(&format!("Dry-run failed: {}", stderr)));
-    }
-
     let stdout = String::from_utf8(output.stdout)
         .map_err(|e| safe_err(format!("Invalid UTF-8 in output: {}", e)))?;
 
-    // Find the JSON array in output (skip any info lines)
-    let json_start = stdout.find('[').ok_or("No JSON array found in output")?;
-    let json_str = &stdout[json_start..];
+    // Exit 1 with a parseable report array is a partial-failure result, not a
+    // transport error: `apply --dry-run` prints the array (skipping any
+    // leading info lines, e.g. `{"info": "Dry run..."}`) before `bail!`ing
+    // when a plugin's validation errors.
+    if exit_code_may_carry_json(output.status.code())
+        && let Some(json_start) = stdout.find('[')
+        && let Ok(results) = serde_json::from_str::<Vec<ValidationReport>>(&stdout[json_start..])
+    {
+        return Ok(results);
+    }
 
-    // Parse JSON array
-    let results: Vec<ValidationReport> = serde_json::from_str(json_str)
-        .map_err(|e| safe_err(format!("Failed to parse dry-run results: {}", e)))?;
-
-    Ok(results)
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    Err(sanitise_error(&format!("Dry-run failed: {}", stderr)))
 }
 
 /// Rolls back to a previous checkpoint.
@@ -653,10 +685,11 @@ pub async fn run_rollback(
         args.push(&config_flag);
     }
 
-    let output = run_privileged_command(&args).await.map_err(safe_err)?;
-
-    serde_json::from_str(&output)
-        .map_err(|e| safe_err(format!("Failed to parse rollback result: {}", e)))
+    // Exit 1 with a parseable result is a partial-failure rollback, not a
+    // transport error: the CLI prints the result before `bail!`ing when any
+    // file failed to restore.
+    let raw = run_privileged(&args).await.map_err(safe_err)?;
+    accept_json_output(&raw).map_err(safe_err)
 }
 
 /// Retrieves a list of all available checkpoints from both user and system databases.
@@ -1993,6 +2026,58 @@ fn parse_outcomes<T: serde::de::DeserializeOwned>(stdout: &str) -> Result<Vec<T>
 #[cfg(test)]
 mod fleet_tests {
     use super::*;
+
+    fn privileged_output(exit_code: Option<i32>, stdout: &str, stderr: &str) -> PrivilegedOutput {
+        PrivilegedOutput {
+            stdout: stdout.to_string(),
+            stderr: stderr.to_string(),
+            exit_code,
+        }
+    }
+
+    #[test]
+    fn exit_code_may_carry_json_accepts_only_zero_and_one() {
+        assert!(exit_code_may_carry_json(Some(0)));
+        assert!(exit_code_may_carry_json(Some(1)));
+        assert!(!exit_code_may_carry_json(Some(2)));
+        assert!(!exit_code_may_carry_json(Some(126)));
+        assert!(!exit_code_may_carry_json(None));
+    }
+
+    #[test]
+    fn accept_json_output_parses_exit_zero() {
+        let raw = privileged_output(Some(0), r#"{"a":1}"#, "");
+        let parsed: serde_json::Value = accept_json_output(&raw).expect("exit 0 must parse");
+        assert_eq!(parsed["a"], 1);
+    }
+
+    #[test]
+    fn accept_json_output_parses_exit_one_with_a_partial_failure_payload() {
+        // Mirrors `apply`/`rollback`: the CLI prints per-plugin JSON, then
+        // `bail!`s with exit 1 because one plugin failed.
+        let raw = privileged_output(Some(1), r#"[{"apply_success":false}]"#, "plugin error");
+        let parsed: serde_json::Value =
+            accept_json_output(&raw).expect("exit 1 with JSON must parse");
+        assert_eq!(parsed[0]["apply_success"], false);
+    }
+
+    #[test]
+    fn accept_json_output_rejects_exit_one_with_unparseable_stdout() {
+        let raw = privileged_output(Some(1), "", "root privileges required");
+        let err = accept_json_output::<serde_json::Value>(&raw).unwrap_err();
+        assert!(
+            matches!(err, PrivilegedCommandError::ExecutionFailed(msg) if msg == "root privileges required")
+        );
+    }
+
+    #[test]
+    fn accept_json_output_rejects_other_exit_codes_even_with_valid_json() {
+        let raw = privileged_output(Some(2), r#"{"a":1}"#, "unexpected failure");
+        let err = accept_json_output::<serde_json::Value>(&raw).unwrap_err();
+        assert!(
+            matches!(err, PrivilegedCommandError::ExecutionFailed(msg) if msg == "unexpected failure")
+        );
+    }
 
     #[test]
     fn posture_for_findings_returns_one_per_framework() {

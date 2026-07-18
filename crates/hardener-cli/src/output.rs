@@ -180,10 +180,22 @@ pub fn apply_results(format: &OutputFormat, results: &[(PluginMetadata, ApplyRes
                         "✗".red()
                     };
                     println!("  {} {}", status, change.change_description);
+
+                    if !change.change_success
+                        && let Some(err) = &change.change_error
+                    {
+                        println!("{}", format_change_error(err));
+                    }
                 }
             }
         }
     }
+}
+
+/// Formats the indented, dimmed detail line printed under a failed change so
+/// a terminal user sees why it failed, not just that it did.
+fn format_change_error(error: &str) -> String {
+    format!("    {}", error.dimmed())
 }
 
 pub fn plugin_list(format: &OutputFormat, plugins: &[PluginMetadata]) {
@@ -416,5 +428,12 @@ mod tests {
     fn test_format_severity_info() {
         let formatted = format_severity(&Severity::Info);
         assert!(formatted.to_string().contains("INFO"));
+    }
+
+    #[test]
+    fn format_change_error_indents_and_carries_the_message() {
+        let line = format_change_error("permission denied writing /etc/sysctl.d/99-hardening.conf");
+        assert!(line.starts_with("    "));
+        assert!(line.contains("permission denied writing /etc/sysctl.d/99-hardening.conf"));
     }
 }
