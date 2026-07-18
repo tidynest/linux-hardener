@@ -645,6 +645,7 @@ impl HardeningPlugin for PamHardeningPlugin {
             scan_plugin_id: self.metadata().plugin_id,
             scan_success: true,
             scan_findings: findings,
+            scan_unchecked: vec![],
             scan_duration_us: duration_us,
             scan_error: None,
         })

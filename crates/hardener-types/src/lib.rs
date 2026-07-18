@@ -430,6 +430,26 @@ pub struct PluginMetadata {
     pub plugin_version: String,
 }
 
+/// A check the scanner could not evaluate at its current privilege level.
+///
+/// Unchecked entries are not findings: they carry no severity, never enter
+/// the security score, and map to `ManualReview` in compliance reports.
+/// `unchecked_check_id` equals the `finding_id` the check would produce if it
+/// failed, so consumers can correlate the two.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct UncheckedCheck {
+    /// Stable id, identical to the finding_id the check would produce.
+    pub unchecked_check_id: String,
+    /// Short human title of the check, e.g. "PAM setting: minlen".
+    pub unchecked_title: String,
+    /// Category, same domain as Finding.
+    pub unchecked_category: FindingCategory,
+    /// Why it could not be checked, e.g. "reading /etc/security/pwquality.conf requires root".
+    pub unchecked_reason: String,
+    /// Compliance mappings the check covers (drives ManualReview).
+    pub unchecked_compliance: Vec<ComplianceMapping>,
+}
+
 /// Result of a scan operation.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ScanResult {
@@ -439,6 +459,9 @@ pub struct ScanResult {
     pub scan_success: bool,
     /// List of security findings discovered.
     pub scan_findings: Vec<Finding>,
+    /// Checks that could not be evaluated at the current privilege level.
+    #[serde(default)]
+    pub scan_unchecked: Vec<UncheckedCheck>,
     /// Duration of the scan in microseconds.
     pub scan_duration_us: u64,
     /// Optional error message if scan failed.
@@ -951,6 +974,7 @@ mod fleet_tests {
             scan_plugin_id: PluginId::new("test"),
             scan_success: true,
             scan_findings: findings,
+            scan_unchecked: vec![],
             scan_duration_us: 0,
             scan_error: None,
         }
@@ -1024,5 +1048,37 @@ mod compliance_profile_tests {
         assert!(err.contains("centos"));
         assert!(err.contains("generic"));
         assert!(err.contains("rhel10"));
+    }
+}
+
+#[cfg(test)]
+mod serde_compatibility_tests {
+    use super::*;
+
+    #[test]
+    fn scan_result_deserialises_without_unchecked_field() {
+        let old_json = r#"{
+            "scan_plugin_id": "kernel-hardening",
+            "scan_success": true,
+            "scan_findings": [],
+            "scan_duration_us": 42,
+            "scan_error": null
+        }"#;
+        let result: ScanResult = serde_json::from_str(old_json).expect("old JSON must parse");
+        assert!(result.scan_unchecked.is_empty());
+    }
+
+    #[test]
+    fn unchecked_check_round_trips() {
+        let check = UncheckedCheck {
+            unchecked_check_id: "pam-minlen".to_string(),
+            unchecked_title: "PAM setting: minlen".to_string(),
+            unchecked_category: FindingCategory::Authentication,
+            unchecked_reason: "reading /etc/security/pwquality.conf requires root".to_string(),
+            unchecked_compliance: vec![],
+        };
+        let json = serde_json::to_string(&check).unwrap();
+        let back: UncheckedCheck = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.unchecked_check_id, check.unchecked_check_id);
     }
 }

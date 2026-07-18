@@ -113,6 +113,7 @@ impl HardeningPlugin for MockPlugin {
             scan_plugin_id: PluginId::new(&self.plugin_id),
             scan_success: true,
             scan_findings: vec![],
+            scan_unchecked: vec![],
             scan_duration_us: 10,
             scan_error: None,
         })

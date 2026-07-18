@@ -576,6 +576,7 @@ impl HardeningPlugin for MacHardeningPlugin {
             scan_plugin_id: plugin_id,
             scan_success: true,
             scan_findings: findings,
+            scan_unchecked: vec![],
             scan_duration_us: duration_us,
             scan_error: None,
         })

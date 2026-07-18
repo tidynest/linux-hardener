@@ -871,6 +871,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                     scan_plugin_id: plugin_id,
                     scan_success: false,
                     scan_findings: vec![],
+                    scan_unchecked: vec![],
                     scan_duration_us: duration_us,
                     scan_error: Some(format!("Failed to read /etc/ssh/sshd_config: {}", e)),
                 });
@@ -971,6 +972,7 @@ impl HardeningPlugin for SshHardeningPlugin {
             scan_plugin_id: plugin_id,
             scan_success: true,
             scan_findings: findings,
+            scan_unchecked: vec![],
             scan_duration_us: duration_us,
             scan_error: None,
         })

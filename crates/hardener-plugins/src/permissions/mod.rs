@@ -729,6 +729,7 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
             scan_duration_us: start_time.elapsed().as_micros() as u64,
             scan_error: None,
             scan_findings: findings,
+            scan_unchecked: vec![],
             scan_plugin_id: PluginId::new("permissions-hardening"),
             scan_success: true,
         })

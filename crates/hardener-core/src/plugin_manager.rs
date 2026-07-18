@@ -221,6 +221,7 @@ impl PluginManager {
                         scan_plugin_id: plugin_id.clone(),
                         scan_success: false,
                         scan_findings: vec![],
+                        scan_unchecked: vec![],
                         scan_duration_us: 0,
                         scan_error: Some(e.to_string()),
                     });

@@ -763,6 +763,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
             scan_plugin_id: self.metadata().plugin_id,
             scan_success: true,
             scan_findings: findings,
+            scan_unchecked: vec![],
             scan_duration_us: start_time.elapsed().as_micros() as u64,
             scan_error: None,
         })

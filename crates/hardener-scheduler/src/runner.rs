@@ -474,6 +474,7 @@ mod tests {
             } else {
                 Some("Test error".to_string())
             },
+            scan_unchecked: vec![],
         }
     }
 

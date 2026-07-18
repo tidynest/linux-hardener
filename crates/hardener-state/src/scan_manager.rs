@@ -213,6 +213,7 @@ impl ScanHistoryManager {
                 scan_plugin_id: PluginId::new(row.get::<String, _>("plugin_id")),
                 scan_success: row.get("success"),
                 scan_findings: findings,
+                scan_unchecked: vec![],
                 scan_duration_us: row.get::<i64, _>("duration_us") as u64,
                 scan_error: row.get("error_message"),
             });

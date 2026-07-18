@@ -30,6 +30,7 @@ fn sample_results() -> Vec<ScanResult> {
         }],
         scan_duration_us: 1000,
         scan_error: None,
+        scan_unchecked: vec![],
     }]
 }
 

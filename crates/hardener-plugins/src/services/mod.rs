@@ -593,6 +593,7 @@ impl HardeningPlugin for ServicesHardeningPlugin {
             scan_duration_us: start.elapsed().as_micros() as u64,
             scan_error: None,
             scan_findings: findings,
+            scan_unchecked: vec![],
             scan_plugin_id: self.metadata().plugin_id,
             scan_success: true,
         })
