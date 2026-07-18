@@ -451,6 +451,17 @@ body {
   white-space: nowrap;
 }
 
+/* Build identity next to the wordmark: legible but visually quiet, so a
+   stale installed build is spottable without competing with the title. */
+.app-version {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  align-self: center;
+  margin-right: auto;
+}
+
 .nav-links {
   display: flex;
   align-items: center;

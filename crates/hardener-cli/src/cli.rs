@@ -7,7 +7,12 @@ pub(crate) use hardener_compliance::OutputFormat;
 #[command(
     name = "hardener",
     author = "Eric Jingryd <tidynest@proton.me>",
-    version,
+    version = concat!(
+        env!("CARGO_PKG_VERSION"),
+        " (",
+        env!("HARDENER_BUILD_IDENTITY"),
+        ")"
+    ),
     about = "Linux System Hardener - Security automation tool",
     long_about = "A comprehensive Linux security automation tool with \
     multi-distribution support.\n\n\

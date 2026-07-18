@@ -3,6 +3,7 @@ name = "hardener-ui"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+build = "../../scripts/build_identity.rs"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

@@ -61,6 +61,15 @@ pub fn App() -> impl IntoView {
             <header class="nav-header">
                 <nav class="navigation" aria-label="Main navigation">
                     <h1>"Linux System Hardener"</h1>
+                    <span class="app-version">
+                        {concat!(
+                            "v",
+                            env!("CARGO_PKG_VERSION"),
+                            " (",
+                            env!("HARDENER_BUILD_IDENTITY"),
+                            ")"
+                        )}
+                    </span>
                     <ul class="nav-links">
                         <li><A href="/">"Dashboard"</A></li>
                         <li><A href="/analysis">"Analysis"</A></li>
