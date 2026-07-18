@@ -52,6 +52,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and is fixed the same way. The CLI's human-readable table also printed
   a bare cross mark for a failed change with no indication why; it now
   prints the change's error message, indented and dimmed, underneath.
+- The findings tab's "Min severity" and "View" dropdowns rendered
+  legibly when closed but showed native white option lists with pale
+  text once opened, because a themed `<select>`'s colour and background
+  are not automatically inherited by its `<option>` entries. They now
+  force option background and text colour explicitly, get a themed
+  custom arrow in place of the native one, and pick up the same
+  hover/focus treatment already used for the colour-theme picker.
 
 ## [1.3.1] - 2026-07-18
 

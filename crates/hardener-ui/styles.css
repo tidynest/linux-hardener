@@ -1091,12 +1091,42 @@ tbody tr:hover {
 }
 
 .severity-filter select {
+    /* Reset native appearance for consistent cross-browser styling */
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
     background: var(--bg-secondary);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23a8b8c8' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right var(--space-2) center;
     color: var(--text-primary);
     border: 1px solid var(--border-color);
     border-radius: var(--border-radius);
     padding: var(--space-1) var(--space-2);
+    padding-right: 1.75rem;
     font-size: 0.85rem;
+    cursor: pointer;
+    transition: border-color var(--transition-fast);
+}
+
+.severity-filter select:hover {
+    border-color: var(--color-accent);
+}
+
+.severity-filter select:focus-visible {
+    outline: 0.125rem solid var(--color-accent);
+    outline-offset: 0.125rem;
+}
+
+.severity-filter select option {
+    background: var(--bg-secondary);
+    background-color: var(--bg-secondary) !important;
+    color: var(--text-primary) !important;
+}
+
+/* Daywatch light theme needs explicit option styling */
+[data-theme="daywatch"] .severity-filter select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%231c1917' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
 }
 
 /* Finding detail panel */
