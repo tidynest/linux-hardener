@@ -1,6 +1,6 @@
 # Distribution Validation Results
 
-**Last Updated**: 2026-07-17
+**Last Updated**: 2026-07-18
 
 This document tracks validation testing across supported Linux distributions.
 
@@ -674,11 +674,11 @@ Pass Rate:    100%
 
 To reproduce the full cross-distro validation from scratch:
 
-1. **Set up containers** -- Each distro has a creation script under `scripts/`:
-   - `scripts/create-debian-container.sh`
-   - `scripts/create-fedora-container.sh`
-   - `scripts/create-opensuse-container.sh`
-   - `scripts/create-rhel-container.sh` (Rocky Linux 9 via podman export)
+1. **Set up containers** -- `scripts/create-container.sh <distro>` creates each one:
+   - `sudo ./scripts/create-container.sh debian`
+   - `sudo ./scripts/create-container.sh fedora`
+   - `sudo ./scripts/create-container.sh opensuse`
+   - `sudo ./scripts/create-container.sh rhel` (Rocky Linux via podman export)
 
 2. **Build the musl static binary**:
    ```bash
@@ -768,4 +768,4 @@ test-results/gui/
 
 ---
 
-**Last Updated**: 2026-07-17
+**Last Updated**: 2026-07-18

@@ -175,8 +175,8 @@ run_cli_tests() {
     local logfile="$RESULTS_DIR/cli-tests.log"
     echo -e "${CYAN}[CLI] Running parallel cross-distro tests...${NC}"
     
-    "$SCRIPT_DIR/run-cross-distro-tests-parallel.sh" \
-        --jobs "$MAX_JOBS" $APPLY_FLAG \
+    "$SCRIPT_DIR/run-cross-distro-tests.sh" \
+        --parallel --jobs "$MAX_JOBS" $APPLY_FLAG \
         > "$logfile" 2>&1
     local exit_code=$?
     
@@ -193,8 +193,8 @@ run_gui_tests() {
     local logfile="$RESULTS_DIR/gui-tests.log"
     echo -e "${CYAN}[GUI] Running parallel web UI tests...${NC}"
     
-    "$SCRIPT_DIR/run-gui-tests-parallel.sh" \
-        --jobs "$MAX_JOBS" \
+    "$SCRIPT_DIR/run-gui-tests.sh" \
+        --parallel --jobs "$MAX_JOBS" \
         > "$logfile" 2>&1
     local exit_code=$?
     
@@ -295,13 +295,13 @@ if [[ "$USE_KITTY" == "true" ]]; then
     
     if [[ "$DO_CLI" == "true" ]]; then
         run_in_kitty "CLI Tests" \
-            "$SCRIPT_DIR/run-cross-distro-tests-parallel.sh --jobs $MAX_JOBS $APPLY_FLAG" \
+            "$SCRIPT_DIR/run-cross-distro-tests.sh --parallel --jobs $MAX_JOBS $APPLY_FLAG" \
             "$RESULTS_DIR/cli-tests.log"
     fi
     
     if [[ "$DO_GUI" == "true" ]]; then
         run_in_kitty "GUI Tests" \
-            "$SCRIPT_DIR/run-gui-tests-parallel.sh --jobs $MAX_JOBS" \
+            "$SCRIPT_DIR/run-gui-tests.sh --parallel --jobs $MAX_JOBS" \
             "$RESULTS_DIR/gui-tests.log"
     fi
     

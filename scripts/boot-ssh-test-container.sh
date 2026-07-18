@@ -11,7 +11,7 @@
 # with the machine.
 #
 # Usage: sudo ./scripts/boot-ssh-test-container.sh [machine-name]
-#   machine-name defaults to hardener-test (see create-test-container.sh).
+#   machine-name defaults to hardener-test (see create-container.sh arch).
 set -euo pipefail
 
 MACHINE="${1:-hardener-test}"
@@ -24,7 +24,7 @@ HOME_DIR="$(getent passwd "${SUDO_USER:-$USER}" | cut -d: -f6)"
 KEY="${SSH_TEST_KEY:-$HOME_DIR/.ssh/hardener_test_ed25519}"
 
 [[ -d "$ROOT" ]] || {
-    echo "container $ROOT missing: run create-test-container.sh first" >&2
+    echo "container $ROOT missing: run create-container.sh arch first" >&2
     exit 1
 }
 if [[ ! -f "$KEY" ]]; then

@@ -3,11 +3,15 @@
 # WEB UI GUI TEST ORCHESTRATOR: Linux System Hardener
 # =============================================================================
 # Runs Playwright GUI tests inside systemd-nspawn containers.
+# Serial by default; --parallel tests multiple distros simultaneously with
+# background processes (~5x faster when testing all 5 distros).
 #
 # Usage: sudo ./scripts/run-gui-tests.sh [OPTIONS]
 #
 # Options:
 #   --distro NAME     Run only one distro (arch|debian|fedora|rhel|opensuse)
+#   --parallel        Run distros in parallel instead of serially
+#   --jobs N          Max parallel jobs (with --parallel; default: 5)
 #   --help            Show usage
 # =============================================================================
 
@@ -30,6 +34,8 @@ DISTRO_ORDER=(arch debian fedora rhel opensuse)
 
 # Options
 SINGLE_DISTRO=""
+PARALLEL=false
+MAX_JOBS=5
 
 # Colours
 RED='\033[0;31m'
@@ -38,6 +44,7 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 MAGENTA='\033[0;35m'
 BOLD='\033[1m'
+DIM='\033[2m'
 NC='\033[0m'
 
 # =============================================================================
@@ -55,6 +62,14 @@ while [[ $# -gt 0 ]]; do
             fi
             shift 2
             ;;
+        --parallel)
+            PARALLEL=true
+            shift
+            ;;
+        --jobs)
+            MAX_JOBS="$2"
+            shift 2
+            ;;
         --help|-h)
             cat << 'EOF'
 Web UI GUI Test Orchestrator for Linux System Hardener
@@ -63,6 +78,8 @@ Usage: sudo ./scripts/run-gui-tests.sh [OPTIONS]
 
 Options:
   --distro NAME     Run only one distro (arch|debian|fedora|rhel|opensuse)
+  --parallel        Run distros in parallel instead of serially (~5x speedup)
+  --jobs N          Max parallel jobs (with --parallel; default: 5)
   --help            Show usage
 
 Runs Playwright tests against the WASM frontend served with a Tauri IPC mock
@@ -101,10 +118,6 @@ fi
 
 mkdir -p "$RESULTS_DIR/screenshots/webui"
 
-# =============================================================================
-# Run tests per distro
-# =============================================================================
-
 if [[ -n "$SINGLE_DISTRO" ]]; then
     DISTROS=("$SINGLE_DISTRO")
 else
@@ -123,46 +136,121 @@ print_boxline() {
     echo -e "${MAGENTA}║${NC}${content}${spaces}${MAGENTA}║${NC}"
 }
 
+# The nspawn invocation shared by both execution modes.
+nspawn_gui_tests() {
+    local container_path="$1"
+    timeout 600 systemd-nspawn -D "$container_path" \
+        --bind="$PROJECT_DIR:/project" \
+        --pipe \
+        /bin/bash /project/scripts/gui-test-inner.sh
+}
+
 echo ""
 echo -e "${MAGENTA}╔$(printf '═%.0s' $(seq 1 $BOX_W))╗${NC}"
 print_boxline ""
-print_boxline "   WEB UI GUI TEST RUNNER (Playwright)"
-print_boxline "   Distros: ${#DISTROS[@]}"
+if [[ "$PARALLEL" == "true" ]]; then
+    print_boxline "   PARALLEL WEB UI GUI TEST RUNNER"
+    print_boxline "   Distros: ${#DISTROS[@]}  |  Max jobs: $MAX_JOBS"
+else
+    print_boxline "   WEB UI GUI TEST RUNNER (Playwright)"
+    print_boxline "   Distros: ${#DISTROS[@]}"
+fi
 print_boxline ""
 echo -e "${MAGENTA}╚$(printf '═%.0s' $(seq 1 $BOX_W))╝${NC}"
 echo ""
 
-for distro in "${DISTROS[@]}"; do
-    container="${CONTAINERS[$distro]}"
-    container_path="/var/lib/machines/$container"
-    logfile="$RESULTS_DIR/${distro}-webui.log"
+# =============================================================================
+# Run tests per distro (serial or parallel)
+# =============================================================================
 
-    echo -e "${CYAN}━━━ Web UI Testing: $distro ($container) ━━━${NC}"
+if [[ "$PARALLEL" == "true" ]]; then
+    declare -a PIDS
+    declare -a PID_DISTROS
 
-    if [[ ! -d "$container_path" ]]; then
-        echo -e "  ${YELLOW}[SKIP]${NC} Container not found: $container_path"
-        RESULT_EXIT[$distro]=99
-        echo "CONTAINER NOT FOUND: $container_path" > "$logfile"
-        continue
-    fi
+    run_single_distro() {
+        local distro="$1"
+        local container="${CONTAINERS[$distro]}"
+        local container_path="/var/lib/machines/$container"
+        local logfile="$RESULTS_DIR/${distro}-webui.log"
 
-    echo -e "  ${CYAN}[RUN]${NC}  systemd-nspawn --pipe -> gui-test-inner.sh"
-    echo -e "  ${CYAN}[LOG]${NC}  $logfile"
+        if [[ ! -d "$container_path" ]]; then
+            echo "[$distro] ${YELLOW}SKIP${NC}: container not found"
+            echo "CONTAINER NOT FOUND: $container_path" > "$logfile"
+            return 99
+        fi
 
-    timeout 600 systemd-nspawn -D "$container_path" \
-        --bind="$PROJECT_DIR:/project" \
-        --pipe \
-        /bin/bash /project/scripts/gui-test-inner.sh \
-        2>&1 | tee "$logfile"
-    RESULT_EXIT[$distro]=${PIPESTATUS[0]}
+        echo "[$distro] ${CYAN}Starting...${NC}"
 
-    if [[ "${RESULT_EXIT[$distro]}" -eq 0 ]]; then
-        echo -e "  ${GREEN}[PASS]${NC} All Playwright tests passed"
-    else
-        echo -e "  ${RED}[FAIL]${NC} Tests failed (exit code: ${RESULT_EXIT[$distro]})"
-    fi
+        nspawn_gui_tests "$container_path" > "$logfile" 2>&1
+        local exit_code=$?
+
+        if [[ $exit_code -eq 0 ]]; then
+            echo "[$distro] ${GREEN}PASS${NC}"
+        else
+            echo "[$distro] ${RED}FAIL${NC} (exit: $exit_code)"
+        fi
+
+        return $exit_code
+    }
+
+    echo -e "${CYAN}Launching parallel test jobs...${NC}"
     echo ""
-done
+
+    running=0
+    for distro in "${DISTROS[@]}"; do
+        while [[ $running -ge $MAX_JOBS ]]; do
+            wait -n 2>/dev/null || true
+            ((running--)) || true
+        done
+
+        run_single_distro "$distro" &
+        PIDS+=($!)
+        PID_DISTROS+=("$distro")
+        ((running++))
+        echo -e "${DIM}  Started job for $distro (PID: ${PIDS[-1]})${NC}"
+        # Stagger starts to reduce peak load
+        sleep 10
+    done
+
+    echo ""
+    echo -e "${CYAN}Waiting for all jobs to complete...${NC}"
+    echo ""
+
+    for i in "${!PIDS[@]}"; do
+        pid="${PIDS[$i]}"
+        distro="${PID_DISTROS[$i]}"
+        wait "$pid" 2>/dev/null
+        RESULT_EXIT[$distro]=$?
+    done
+else
+    for distro in "${DISTROS[@]}"; do
+        container="${CONTAINERS[$distro]}"
+        container_path="/var/lib/machines/$container"
+        logfile="$RESULTS_DIR/${distro}-webui.log"
+
+        echo -e "${CYAN}━━━ Web UI Testing: $distro ($container) ━━━${NC}"
+
+        if [[ ! -d "$container_path" ]]; then
+            echo -e "  ${YELLOW}[SKIP]${NC} Container not found: $container_path"
+            RESULT_EXIT[$distro]=99
+            echo "CONTAINER NOT FOUND: $container_path" > "$logfile"
+            continue
+        fi
+
+        echo -e "  ${CYAN}[RUN]${NC}  systemd-nspawn --pipe -> gui-test-inner.sh"
+        echo -e "  ${CYAN}[LOG]${NC}  $logfile"
+
+        nspawn_gui_tests "$container_path" 2>&1 | tee "$logfile"
+        RESULT_EXIT[$distro]=${PIPESTATUS[0]}
+
+        if [[ "${RESULT_EXIT[$distro]}" -eq 0 ]]; then
+            echo -e "  ${GREEN}[PASS]${NC} All Playwright tests passed"
+        else
+            echo -e "  ${RED}[FAIL]${NC} Tests failed (exit code: ${RESULT_EXIT[$distro]})"
+        fi
+        echo ""
+    done
+fi
 
 # =============================================================================
 # Generate summary
@@ -171,15 +259,22 @@ done
 SUMMARY_FILE="$RESULTS_DIR/gui-summary.txt"
 
 {
-    echo "Web UI GUI Test Results"
-    echo "======================"
-    echo "Date: $(date)"
+    if [[ "$PARALLEL" == "true" ]]; then
+        echo "Parallel Web UI GUI Test Results"
+        echo "================================="
+        echo "Date: $(date)"
+        echo "Max parallel jobs: $MAX_JOBS"
+    else
+        echo "Web UI GUI Test Results"
+        echo "======================"
+        echo "Date: $(date)"
+    fi
     echo ""
     printf "%-12s %8s\n" "Distro" "Status"
     printf "%-12s %8s\n" "--------" "------"
 
     for distro in "${DISTROS[@]}"; do
-        exit_code="${RESULT_EXIT[$distro]}"
+        exit_code="${RESULT_EXIT[$distro]:-1}"
         if [[ "$exit_code" -eq 0 ]]; then
             status="PASS"
         elif [[ "$exit_code" -eq 99 ]]; then
@@ -197,7 +292,11 @@ SUMMARY_FILE="$RESULTS_DIR/gui-summary.txt"
 
 # Print summary
 echo -e "${MAGENTA}╔$(printf '═%.0s' $(seq 1 $BOX_W))╗${NC}"
-print_boxline "   WEB UI TEST SUMMARY"
+if [[ "$PARALLEL" == "true" ]]; then
+    print_boxline "   PARALLEL WEB UI TEST SUMMARY"
+else
+    print_boxline "   WEB UI TEST SUMMARY"
+fi
 echo -e "${MAGENTA}╚$(printf '═%.0s' $(seq 1 $BOX_W))╝${NC}"
 echo ""
 printf "  ${BOLD}%-12s %8s${NC}\n" "Distro" "Status"
@@ -205,7 +304,7 @@ printf "  %-12s %8s\n" "--------" "------"
 
 overall_exit=0
 for distro in "${DISTROS[@]}"; do
-    exit_code="${RESULT_EXIT[$distro]}"
+    exit_code="${RESULT_EXIT[$distro]:-1}"
     if [[ "$exit_code" -eq 0 ]]; then
         colour="$GREEN"; status="PASS"
     elif [[ "$exit_code" -eq 99 ]]; then

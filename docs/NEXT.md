@@ -39,7 +39,7 @@ DE test tooling. `cargo test --workspace` = **660 passed / 0 failed / 38 ignored
 - **Security remediation** (2026-02-26): all 53 security findings resolved (see `docs/security/archive/2026-02-25-internal-audit/REMEDIATION_TRACKER.md`)
 - **Code quality pass** (2026-02-27): 27 code quality findings fixed, shared helper extraction, 10 packaging fixes
 - **Documentation** (2026-02-27): SECURITY.md updated, docs/guide/installation.md created for 5 distro families
-- **v1.0.3 parallel test runners** (2026-02-28): `run-gui-tests-parallel.sh`, `run-cross-distro-tests-parallel.sh`, `run-desktop-tests.sh`, `run-all-tests-parallel.sh`
+- **v1.0.3 parallel test runners** (2026-02-28): parallel variants of the GUI and cross-distro runners (since merged into `--parallel` flags on the base scripts, 2026-07-18), `run-desktop-tests.sh`, `run-all-tests-parallel.sh`
 - **v1.0.2 merged branches** (2026-02-28): `cli-ux-perfection` (CLI crash fixes, stderr routing, idempotent dirs, user-mode systemd) + `feature/desktop-testing-ux` (keyboard nav, ARIA, clipboard, TabBar migration, 95 desktop tests)
 - **Desktop tests**: 49 UX tests + 46 functional tests + 21 Node.js tests all passing
 - **660 unit/integration tests pass**, clippy clean, native + WASM builds clean

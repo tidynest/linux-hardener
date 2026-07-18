@@ -284,10 +284,10 @@ The hardener modifies critical system files. For safe testing with root privileg
 
 ```bash
 # 1. Create isolated Arch Linux container (systemd-nspawn)
-sudo ./scripts/create-test-container.sh
+sudo ./scripts/create-container.sh arch
 
 # 2. Enter container (project mounted at /project)
-sudo ./scripts/create-test-container.sh enter
+sudo ./scripts/create-container.sh arch enter
 
 # 3. Inside container: build and run tests
 cd /project
@@ -301,7 +301,7 @@ sudo ./scripts/root-test-suite.sh --apply
 
 # 4. Exit and clean up
 poweroff                                       # Exit container
-sudo ./scripts/create-test-container.sh clean  # Remove container
+sudo ./scripts/create-container.sh arch clean  # Remove container
 ```
 
 **Why two test modes?**

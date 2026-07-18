@@ -1,6 +1,6 @@
 # Desktop Environment Compatibility
 
-**Last Updated**: 2026-07-17
+**Last Updated**: 2026-07-18
 
 Linux System Hardener uses `pkexec` (polkit) for privilege escalation when
 applying hardening rules or rolling back checkpoints. This requires a running
@@ -129,8 +129,8 @@ Run with interactive auth dialog tests:
 Run DE-specific tests:
 
 ```bash
-./scripts/test-polkit-gnome.sh --interactive   # GNOME session
-./scripts/test-polkit-kde.sh --interactive     # KDE session
-./scripts/test-polkit-xfce.sh --interactive    # XFCE session
-./scripts/test-polkit-no-agent.sh              # No-agent fallback
+./scripts/test-polkit.sh gnome --interactive   # GNOME session
+./scripts/test-polkit.sh kde --interactive     # KDE session
+./scripts/test-polkit.sh xfce --interactive    # XFCE session
+./scripts/test-polkit.sh no-agent              # No-agent fallback
 ```

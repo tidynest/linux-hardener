@@ -146,11 +146,13 @@ New docs to fill gaps:
 
 **De-duplication candidates in scripts/ (investigate, do not blindly merge):**
 - Five near-identical `create-*-container.sh` could collapse to one
-  `create-container.sh <distro>`.
+  `create-container.sh <distro>`. (executed 2026-07-18)
 - Six per-desktop `test-polkit-*.sh` could become one parametrised script driven
-  by the existing matrix runner.
+  by the existing matrix runner. (executed 2026-07-18 as `test-polkit.sh
+  <desktop>`; the matrix driver and agent detector stay separate)
 - The serial/parallel pairs (`run-gui-tests` / `-parallel`, `run-cross-distro`
   / `-parallel`) duplicate setup and could become a `--parallel` flag.
+  (executed 2026-07-18)
 - `gui-test-inner.sh` and `tauri-gui-test-inner.sh` likely share a large body
   worth factoring. Confirm the web-UI GUI runner is not legacy now that the
   product is Tauri-first.

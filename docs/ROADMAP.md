@@ -201,7 +201,7 @@ This document tracks the development progress and planned features for Linux Sys
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/create-test-container.sh` | Create/manage Arch Linux container |
+| `scripts/create-container.sh` | Create/manage test containers (arch/debian/fedora/rhel/opensuse) |
 | `scripts/root-test-suite.sh` | Comprehensive root test suite |
 | `scripts/run-gui-tests.sh` | Web UI Playwright test orchestrator (5 distros) |
 | `scripts/gui-test-inner.sh` | Container inner script (Xvfb + HTTP + Playwright; dynamically generates index.html from dist/) |
@@ -211,8 +211,8 @@ This document tracks the development progress and planned features for Linux Sys
 **Usage**:
 
 ```bash
-sudo ./scripts/create-test-container.sh        # Create container
-sudo ./scripts/create-test-container.sh enter  # Enter container
+sudo ./scripts/create-container.sh arch        # Create container
+sudo ./scripts/create-container.sh arch enter  # Enter container
 # Inside container (binary built on host is bind-mounted):
 cd /project
 sudo ./scripts/root-test-suite.sh              # Safe tests (read-only)

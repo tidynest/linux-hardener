@@ -1,6 +1,6 @@
 # Linux System Hardener - File Map
 
-**Last Updated:** 2026-07-17
+**Last Updated:** 2026-07-18
 
 This document lists all source files with their purpose and key exports.
 
@@ -676,11 +676,7 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 | `scripts/run-cross-distro-tests.sh` | Non-interactive cross-distro test orchestrator |
 | `scripts/root-test-suite.sh` | 36 root-level privilege tests |
 | `scripts/manual-verification-test.sh` | Interactive verification tests |
-| `scripts/create-test-container.sh` | Arch Linux systemd-nspawn container |
-| `scripts/create-debian-container.sh` | Debian 12 test container |
-| `scripts/create-fedora-container.sh` | Fedora 41 test container |
-| `scripts/create-opensuse-container.sh` | openSUSE Leap test container |
-| `scripts/create-rhel-container.sh` | Rocky Linux 9 / RHEL container for cross-distro testing |
+| `scripts/create-container.sh` | systemd-nspawn test containers for all five distros (`arch`, `debian`, `fedora`, `rhel`, `opensuse`) |
 | `scripts/verify-rollback.sh` | Rollback verification tests (5 tests, 10 assertions) for nspawn containers |
 
 ---
@@ -821,4 +817,4 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | `hardener-common/src/types.rs` | Added `FindingPolicyException` struct |
 | `hardener-cli/src/cli.rs` | Added `--config`, `--audit`, `--compliance`, `--exit-code` flags, `ScanMode` enum |
 
-**Last Updated**: 2026-07-17
+**Last Updated**: 2026-07-18

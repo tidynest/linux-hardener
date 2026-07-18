@@ -56,47 +56,21 @@ Some tests require root privileges and are marked `#[ignore]`. These test operat
 
 All root-level and destructive tests run inside `systemd-nspawn` containers, never on the host. Each script creates a minimal container under `/var/lib/machines/`.
 
-### Arch Linux (primary)
+All five containers are created by one script, `create-container.sh`, which takes the distro as its first argument:
 
 ```bash
-sudo ./scripts/create-test-container.sh              # Create container
-sudo ./scripts/create-test-container.sh enter         # Enter existing container interactively
-sudo ./scripts/create-test-container.sh clean         # Remove container completely
+sudo ./scripts/create-container.sh arch              # Create container
+sudo ./scripts/create-container.sh arch enter         # Enter existing container interactively
+sudo ./scripts/create-container.sh arch clean         # Remove container completely
 ```
 
-Container name: `hardener-test`
-
-### Debian
-
-```bash
-sudo ./scripts/create-debian-container.sh
-```
-
-Container name: `hardener-test-debian`
-
-### Fedora
-
-```bash
-sudo ./scripts/create-fedora-container.sh
-```
-
-Container name: `hardener-test-fedora`
-
-### Rocky Linux 9 (RHEL-compatible)
-
-```bash
-sudo ./scripts/create-rhel-container.sh
-```
-
-Container name: `hardener-test-rhel`
-
-### openSUSE
-
-```bash
-sudo ./scripts/create-opensuse-container.sh
-```
-
-Container name: `hardener-test-opensuse`
+| Distro argument | Container name |
+|-----------------|----------------|
+| `arch` (primary) | `hardener-test` |
+| `debian` | `hardener-test-debian` |
+| `fedora` | `hardener-test-fedora` |
+| `rhel` (Rocky Linux, RHEL-compatible) | `hardener-test-rhel` |
+| `opensuse` | `hardener-test-opensuse` |
 
 ### SSH integration fixture (booted container)
 
@@ -122,7 +96,7 @@ rollback run as dry-runs). Without `SSH_TEST_HOST` they skip.
 
 ## Root Test Suites (Inside Containers)
 
-These scripts must be run inside a container (`create-test-container.sh enter`), not on the host.
+These scripts must be run inside a container (`create-container.sh arch enter`), not on the host.
 
 ### Root test suite (focused)
 
@@ -293,4 +267,4 @@ cargo build --release --target aarch64-unknown-linux-gnu -p hardener-cli
 
 Produces three release tarballs and creates a GitHub release.
 
-**Last Updated**: 2026-07-17
+**Last Updated**: 2026-07-18

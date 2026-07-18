@@ -1,6 +1,6 @@
 # Project Scripts
 
-**Last Updated**: 2026-07-17
+**Last Updated**: 2026-07-18
 
 This directory contains utility scripts for the Linux Hardening Tool project.
 
@@ -16,12 +16,12 @@ This directory contains utility scripts for the Linux Hardening Tool project.
 | **Verify versions** | `./scripts/release.sh --verify` |
 | **Dry-run release** | `./scripts/release.sh patch --dry-run` |
 | **Actual release** | `./scripts/release.sh patch` |
-| **Create test container** | `sudo ./scripts/create-test-container.sh` |
-| **Enter test container** | `sudo ./scripts/create-test-container.sh enter` |
-| **Create Debian container** | `sudo ./scripts/create-debian-container.sh` |
-| **Create Fedora container** | `sudo ./scripts/create-fedora-container.sh` |
-| **Create openSUSE container** | `sudo ./scripts/create-opensuse-container.sh` |
-| **Create Rocky 9 container** | `sudo ./scripts/create-rhel-container.sh` |
+| **Create test container (Arch)** | `sudo ./scripts/create-container.sh arch` |
+| **Enter test container** | `sudo ./scripts/create-container.sh arch enter` |
+| **Create Debian container** | `sudo ./scripts/create-container.sh debian` |
+| **Create Fedora container** | `sudo ./scripts/create-container.sh fedora` |
+| **Create openSUSE container** | `sudo ./scripts/create-container.sh opensuse` |
+| **Create Rocky 10 container** | `sudo ./scripts/create-container.sh rhel` |
 | **Verify rollback** | `sudo ./scripts/verify-rollback.sh` |
 | **Run root tests** | `sudo ./scripts/root-test-suite.sh` |
 | **Run root tests (full)** | `sudo ./scripts/root-test-suite.sh --apply` |
@@ -36,8 +36,8 @@ This directory contains utility scripts for the Linux Hardening Tool project.
 | **PARALLEL: All tests** | `sudo ./scripts/run-all-tests-parallel.sh --apply` |
 | **PARALLEL: All + desktop** | `sudo ./scripts/run-all-tests-parallel.sh --apply --desktop` |
 | **PARALLEL: All + kitty** | `sudo ./scripts/run-all-tests-parallel.sh --apply --kitty` |
-| **PARALLEL: CLI only** | `sudo ./scripts/run-cross-distro-tests-parallel.sh --apply` |
-| **PARALLEL: GUI only** | `sudo ./scripts/run-gui-tests-parallel.sh` |
+| **PARALLEL: CLI only** | `sudo ./scripts/run-cross-distro-tests.sh --parallel --apply` |
+| **PARALLEL: GUI only** | `sudo ./scripts/run-gui-tests.sh --parallel` |
 | **Package install tests** | `sudo ./scripts/run-package-tests.sh` |
 | **Single distro pkg test** | `sudo ./scripts/run-package-tests.sh --distro arch` |
 
@@ -45,9 +45,9 @@ This directory contains utility scripts for the Linux Hardening Tool project.
 
 ## Cargo Target Directory Resolution
 
-The host-side runners (`run-cross-distro-tests*.sh`, `run-package-tests.sh`,
+The host-side runners (`run-cross-distro-tests.sh`, `run-package-tests.sh`,
 `run-tauri-gui-tests.sh`, `run-desktop-tests.sh`, `test-polkit-matrix.sh`,
-`test-polkit-no-agent.sh`) do not assume binaries live under `./target`. Each
+`test-polkit.sh` in no-agent mode) do not assume binaries live under `./target`. Each
 carries an identical self-contained `resolve_target_dir` function (no sourced
 helper, since several scripts travel into containers where a host include would not
 exist) that resolves, in order:
@@ -833,20 +833,20 @@ The hardener modifies critical system files (`/etc/sysctl.conf`, `/etc/ssh/sshd_
 
 ### Test Container Creator
 
-**Script**: `create-test-container.sh`
+**Script**: `create-container.sh`
 
-**Purpose**: Creates and manages an isolated Arch Linux systemd-nspawn container for safe root testing.
+**Purpose**: Creates and manages the isolated systemd-nspawn test containers for all five supported distributions. The distro is the first argument; the Arch container is the primary one used by most suites.
 
 **Usage**:
 ```bash
-# Create container (one-time, ~2-3 minutes)
-sudo ./scripts/create-test-container.sh
+# Create Arch container (one-time, ~2-3 minutes)
+sudo ./scripts/create-container.sh arch
 
 # Enter existing container
-sudo ./scripts/create-test-container.sh enter
+sudo ./scripts/create-container.sh arch enter
 
 # Clean up container
-sudo ./scripts/create-test-container.sh clean
+sudo ./scripts/create-container.sh arch clean
 ```
 
 **What It Does**:
@@ -875,28 +875,28 @@ sudo ./scripts/create-test-container.sh clean
 
 ---
 
-### Distribution Container Scripts
+### Distribution Containers
 
-In addition to the Arch Linux container, there are distribution-specific container scripts for cross-distribution validation:
+`create-container.sh` covers all five distributions used for cross-distribution validation; the per-distro bootstrap mechanics differ:
 
-| Script | Distribution | Package Manager |
-|--------|--------------|-----------------|
-| `create-test-container.sh` | Arch Linux | pacman |
-| `create-debian-container.sh` | Debian 13 (Trixie) | apt/debootstrap |
-| `create-fedora-container.sh` | Fedora 44 | podman export |
-| `create-rhel-container.sh` | Rocky Linux 10 | podman export |
-| `create-opensuse-container.sh` | openSUSE Leap 16.0 | podman export |
+| Distro argument | Distribution | Package Manager |
+|-----------------|--------------|-----------------|
+| `arch` | Arch Linux | pacman (pacstrap) |
+| `debian` | Debian 13 (Trixie) | apt/debootstrap |
+| `fedora` | Fedora 44 | podman export |
+| `rhel` | Rocky Linux 10 | podman export |
+| `opensuse` | openSUSE Leap 16.0 | podman export |
 
 **Usage** (same pattern for all):
 ```bash
 # Create container
-sudo ./scripts/create-<distro>-container.sh
+sudo ./scripts/create-container.sh <distro>
 
 # Enter container
-sudo ./scripts/create-<distro>-container.sh enter
+sudo ./scripts/create-container.sh <distro> enter
 
 # Clean up
-sudo ./scripts/create-<distro>-container.sh clean
+sudo ./scripts/create-container.sh <distro> clean
 ```
 
 **Container Locations**:
@@ -926,22 +926,22 @@ All containers:
 
 ---
 
-### Rocky Linux Container Creator
+### Rocky Linux Container
 
-**Script**: `create-rhel-container.sh`
+**Script**: `create-container.sh rhel`
 
 **Purpose**: Creates a Rocky Linux 10 container for cross-distro testing. Uses `podman export` from the official `rockylinux/rockylinux:10` image to produce a rootfs at `/var/lib/machines/hardener-test-rhel`.
 
 **Usage**:
 ```bash
 # Create container (requires podman)
-sudo ./scripts/create-rhel-container.sh
+sudo ./scripts/create-container.sh rhel
 
 # Enter container
-sudo ./scripts/create-rhel-container.sh enter
+sudo ./scripts/create-container.sh rhel enter
 
 # Clean up
-sudo ./scripts/create-rhel-container.sh clean
+sudo ./scripts/create-container.sh rhel clean
 ```
 
 **How It Works**:
@@ -1196,6 +1196,8 @@ sudo ./scripts/run-cross-distro-tests.sh
 | `--apply` | Enable destructive tests (apply + rollback) inside containers |
 | `--gui` | Run Playwright GUI tests after CLI tests (requires WASM build in `dist/`) |
 | `--distro NAME` | Test single distro: `arch`, `debian`, `fedora`, `rhel`, `opensuse` |
+| `--parallel` | Run distros in parallel instead of serially (~5x speedup) |
+| `--jobs N` | Max parallel jobs (with `--parallel`; default: 3) |
 | `--rebuild` | Build musl static binary before testing |
 | `--help` | Show usage |
 
@@ -1270,64 +1272,32 @@ All distros passed.
 
 ---
 
-### Parallel Cross-Distro Test Runner
+### Parallel Mode (`--parallel`)
 
-**Script**: `run-cross-distro-tests-parallel.sh`
-
-**Purpose**: Same as `run-cross-distro-tests.sh` but runs all distros **in parallel** using background processes. ~5x faster when testing all 5 distros.
+Both `run-cross-distro-tests.sh` and `run-gui-tests.sh` accept `--parallel` to run all distros **in parallel** using background processes instead of serially. Each container has its own network namespace, so no port conflicts.
 
 **Usage**:
 ```bash
 # Run all distros in parallel with apply tests
-sudo ./scripts/run-cross-distro-tests-parallel.sh --apply
-
-# Limit parallel jobs (default: auto-detect from CPU cores)
-sudo ./scripts/run-cross-distro-tests-parallel.sh --apply --jobs 3
-
-# Single distro (same as sequential, but uses same script)
-sudo ./scripts/run-cross-distro-tests-parallel.sh --distro arch --apply
-```
-
-**Options**:
-| Flag | Description |
-|------|-------------|
-| `--apply` | Enable destructive tests (apply + rollback) inside containers |
-| `--distro NAME` | Test single distro: `arch`, `debian`, `fedora`, `rhel`, `opensuse` |
-| `--jobs N` | Max parallel jobs (default: auto-detect from `nproc`) |
-| `--rebuild` | Build musl static binary before testing |
-| `--help` | Show usage |
-
-**Speed Comparison** (5 distros, with `--apply`):
-| Runner | Time | Speedup |
-|--------|------|---------|
-| Sequential | ~15 min | 1x |
-| Parallel (8 cores) | ~3 min | 5x |
-
-**Output**: Same as sequential runner: logs in `test-results/<distro>.log`
-
----
-
-### Parallel Web UI Test Runner
-
-**Script**: `run-gui-tests-parallel.sh`
-
-**Purpose**: Same as `run-gui-tests.sh` but runs all distros **in parallel**. Each container has its own network namespace, so no port conflicts.
-
-**Usage**:
-```bash
-# Run all distros in parallel
-sudo ./scripts/run-gui-tests-parallel.sh
+sudo ./scripts/run-cross-distro-tests.sh --parallel --apply
 
 # Limit parallel jobs
-sudo ./scripts/run-gui-tests-parallel.sh --jobs 2
+sudo ./scripts/run-cross-distro-tests.sh --parallel --apply --jobs 3
+
+# Web UI tests in parallel
+sudo ./scripts/run-gui-tests.sh --parallel
+
+# Limit parallel jobs
+sudo ./scripts/run-gui-tests.sh --parallel --jobs 2
 ```
 
-**Options**:
-| Flag | Description |
-|------|-------------|
-| `--distro NAME` | Test single distro |
-| `--jobs N` | Max parallel jobs (default: auto-detect) |
-| `--help` | Show usage |
+**Speed Comparison** (5 distros, with `--apply`):
+| Mode | Time | Speedup |
+|------|------|---------|
+| Serial (default) | ~15 min | 1x |
+| Parallel (8 cores) | ~3 min | 5x |
+
+**Output**: Same files as serial mode (`test-results/<distro>.log`, `test-results/gui/<distro>-webui.log`).
 
 ---
 
@@ -1474,6 +1444,9 @@ Four scripts orchestrate Playwright-based GUI testing of the Web UI inside nspaw
 ```bash
 # Run GUI tests on all 5 distros
 sudo ./scripts/run-gui-tests.sh
+
+# Run distros in parallel
+sudo ./scripts/run-gui-tests.sh --parallel
 
 # Or via the cross-distro runner
 sudo ./scripts/run-cross-distro-tests.sh --gui

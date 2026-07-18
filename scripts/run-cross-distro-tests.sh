@@ -4,6 +4,8 @@
 # =============================================================================
 # Runs full-test-suite.sh across all supported distributions using
 # systemd-nspawn --pipe (non-interactive, no boot/login needed).
+# Serial by default; --parallel tests multiple distros simultaneously with
+# background processes (~5x faster when testing all 5 distros).
 #
 # Usage: sudo ./scripts/run-cross-distro-tests.sh [OPTIONS]
 #
@@ -11,6 +13,8 @@
 #   --apply           Enable destructive tests (apply + rollback)
 #   --distro NAME     Run only one distro (arch|debian|fedora|rhel|opensuse)
 #   --gui             Run GUI tests (Playwright Web UI) after CLI tests
+#   --parallel        Run distros in parallel instead of serially
+#   --jobs N          Max parallel jobs (with --parallel; default: 3)
 #   --rebuild         Build musl binary before testing
 #   --help            Show usage
 # =============================================================================
@@ -69,6 +73,8 @@ DO_APPLY=false
 SINGLE_DISTRO=""
 DO_GUI=false
 DO_REBUILD=false
+PARALLEL=false
+MAX_JOBS=3
 
 # Colours
 RED='\033[0;31m'
@@ -77,6 +83,7 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 MAGENTA='\033[0;35m'
 BOLD='\033[1m'
+DIM='\033[2m'
 NC='\033[0m'
 
 # =============================================================================
@@ -102,6 +109,14 @@ while [[ $# -gt 0 ]]; do
             DO_GUI=true
             shift
             ;;
+        --parallel)
+            PARALLEL=true
+            shift
+            ;;
+        --jobs)
+            MAX_JOBS="$2"
+            shift 2
+            ;;
         --rebuild)
             DO_REBUILD=true
             shift
@@ -116,6 +131,8 @@ Options:
   --apply           Enable destructive tests (apply + rollback)
   --distro NAME     Run only one distro (arch|debian|fedora|rhel|opensuse)
   --gui             Run GUI tests (Playwright Web UI) after CLI tests
+  --parallel        Run distros in parallel instead of serially (~5x speedup)
+  --jobs N          Max parallel jobs (with --parallel; default: 3)
   --rebuild         Build musl binary before testing
   --help            Show usage
 
@@ -185,6 +202,29 @@ declare -A RESULT_PASSED RESULT_FAILED RESULT_SKIPPED RESULT_TOTAL RESULT_EXIT
 APPLY_FLAG=""
 [[ "$DO_APPLY" == "true" ]] && APPLY_FLAG="--apply"
 
+# The nspawn invocation shared by both execution modes.
+nspawn_full_suite() {
+    local container_path="$1"
+    systemd-nspawn -D "$container_path" \
+        --bind="$PROJECT_DIR:/project" \
+        "${TARGET_BIND[@]}" \
+        --pipe \
+        /bin/bash /project/scripts/full-test-suite.sh $APPLY_FLAG
+}
+
+# Parse pass/fail/skip/total counts from a log (strips ANSI escape codes);
+# echoes "passed failed skipped total" on one line.
+parse_log_counts() {
+    local stripped
+    stripped=$(sed 's/\x1b\[[0-9;]*m//g' "$1")
+    local passed failed skipped total
+    passed=$(echo "$stripped" | grep -oP 'Passed:\s+\K\d+' 2>/dev/null || echo "0")
+    failed=$(echo "$stripped" | grep -oP 'Failed:\s+\K\d+' 2>/dev/null || echo "0")
+    skipped=$(echo "$stripped" | grep -oP 'Skipped:\s+\K\d+' 2>/dev/null || echo "0")
+    total=$(echo "$stripped" | grep -oP 'Total Tests:\s+\K\d+' 2>/dev/null || echo "0")
+    echo "$passed $failed $skipped $total"
+}
+
 echo ""
 BOX_W=74
 print_boxline() {
@@ -197,60 +237,133 @@ print_boxline() {
 }
 echo -e "${MAGENTA}╔$(printf '═%.0s' $(seq 1 $BOX_W))╗${NC}"
 print_boxline ""
-print_boxline "   CROSS-DISTRO TEST RUNNER"
-print_boxline "   Distros: ${#DISTROS[@]}  |  Apply: $DO_APPLY  |  GUI: $DO_GUI"
+if [[ "$PARALLEL" == "true" ]]; then
+    print_boxline "   PARALLEL CROSS-DISTRO TEST RUNNER"
+    print_boxline "   Distros: ${#DISTROS[@]}  |  Apply: $DO_APPLY  |  Max jobs: $MAX_JOBS"
+else
+    print_boxline "   CROSS-DISTRO TEST RUNNER"
+    print_boxline "   Distros: ${#DISTROS[@]}  |  Apply: $DO_APPLY  |  GUI: $DO_GUI"
+fi
 print_boxline ""
 echo -e "${MAGENTA}╚$(printf '═%.0s' $(seq 1 $BOX_W))╝${NC}"
 echo ""
 
-for distro in "${DISTROS[@]}"; do
-    container="${CONTAINERS[$distro]}"
-    container_path="/var/lib/machines/$container"
-    logfile="$RESULTS_DIR/${distro}.log"
+if [[ "$PARALLEL" == "true" ]]; then
+    declare -a PIDS
+    declare -a PID_DISTROS
 
-    echo -e "${CYAN}━━━ Testing: $distro ($container) ━━━${NC}"
+    run_single_distro() {
+        local distro="$1"
+        local container="${CONTAINERS[$distro]}"
+        local container_path="/var/lib/machines/$container"
+        local logfile="$RESULTS_DIR/${distro}.log"
 
-    # Check container exists
-    if [[ ! -d "$container_path" ]]; then
-        echo -e "  ${RED}[SKIP]${NC} Container not found: $container_path"
-        RESULT_PASSED[$distro]=0
-        RESULT_FAILED[$distro]=0
-        RESULT_SKIPPED[$distro]=0
-        RESULT_TOTAL[$distro]=0
-        RESULT_EXIT[$distro]=99
-        echo "CONTAINER NOT FOUND: $container_path" > "$logfile"
-        continue
-    fi
+        if [[ ! -d "$container_path" ]]; then
+            echo "[$distro] ${YELLOW}SKIP${NC}: container not found"
+            echo "CONTAINER NOT FOUND: $container_path" > "$logfile"
+            return 99
+        fi
 
-    # Run full-test-suite.sh inside the container via systemd-nspawn --pipe
-    echo -e "  ${CYAN}[RUN]${NC}  systemd-nspawn --pipe -> full-test-suite.sh $APPLY_FLAG"
+        echo "[$distro] ${CYAN}Starting...${NC}"
 
-    systemd-nspawn -D "$container_path" \
-        --bind="$PROJECT_DIR:/project" \
-        "${TARGET_BIND[@]}" \
-        --pipe \
-        /bin/bash /project/scripts/full-test-suite.sh $APPLY_FLAG \
-        > "$logfile" 2>&1
-    local_exit=$?
-    RESULT_EXIT[$distro]=$local_exit
+        nspawn_full_suite "$container_path" > "$logfile" 2>&1
+        local exit_code=$?
 
-    # Parse results from log (strip ANSI escape codes first)
-    stripped=$(sed 's/\x1b\[[0-9;]*m//g' "$logfile")
-    RESULT_PASSED[$distro]=$(echo "$stripped" | grep -oP 'Passed:\s+\K\d+' 2>/dev/null || echo "0")
-    RESULT_FAILED[$distro]=$(echo "$stripped" | grep -oP 'Failed:\s+\K\d+' 2>/dev/null || echo "0")
-    RESULT_SKIPPED[$distro]=$(echo "$stripped" | grep -oP 'Skipped:\s+\K\d+' 2>/dev/null || echo "0")
-    RESULT_TOTAL[$distro]=$(echo "$stripped" | grep -oP 'Total Tests:\s+\K\d+' 2>/dev/null || echo "0")
+        local passed failed skipped total
+        read -r passed failed skipped total <<< "$(parse_log_counts "$logfile")"
 
-    # Print quick summary for this distro
-    if [[ "${RESULT_FAILED[$distro]}" -eq 0 ]] && [[ "${RESULT_TOTAL[$distro]}" -gt 0 ]]; then
-        echo -e "  ${GREEN}[DONE]${NC} ${RESULT_PASSED[$distro]}/${RESULT_TOTAL[$distro]} passed, ${RESULT_SKIPPED[$distro]} skipped"
-    elif [[ "${RESULT_TOTAL[$distro]}" -eq 0 ]]; then
-        echo -e "  ${RED}[ERR]${NC}  No test results parsed (exit code: $local_exit)"
-    else
-        echo -e "  ${RED}[FAIL]${NC} ${RESULT_PASSED[$distro]}/${RESULT_TOTAL[$distro]} passed, ${RESULT_FAILED[$distro]} failed, ${RESULT_SKIPPED[$distro]} skipped"
-    fi
+        if [[ $exit_code -eq 0 ]] && [[ "$total" -gt 0 ]]; then
+            echo "[$distro] ${GREEN}PASS${NC}: $passed/$total passed, $skipped skipped"
+        elif [[ "$total" -eq 0 ]]; then
+            echo "[$distro] ${RED}ERR${NC}: no results (exit: $exit_code)"
+        else
+            echo "[$distro] ${RED}FAIL${NC}: $failed failed (exit: $exit_code)"
+        fi
+
+        echo "$passed" > "$RESULTS_DIR/.${distro}.passed"
+        echo "$failed" > "$RESULTS_DIR/.${distro}.failed"
+        echo "$skipped" > "$RESULTS_DIR/.${distro}.skipped"
+        echo "$total" > "$RESULTS_DIR/.${distro}.total"
+
+        return $exit_code
+    }
+
+    echo -e "${CYAN}Launching parallel test jobs...${NC}"
     echo ""
-done
+
+    running=0
+    for distro in "${DISTROS[@]}"; do
+        while [[ $running -ge $MAX_JOBS ]]; do
+            wait -n 2>/dev/null || true
+            ((running--)) || true
+        done
+
+        run_single_distro "$distro" &
+        PIDS+=($!)
+        PID_DISTROS+=("$distro")
+        ((running++))
+        echo -e "${DIM}  Started job for $distro (PID: ${PIDS[-1]})${NC}"
+    done
+
+    echo ""
+    echo -e "${CYAN}Waiting for all jobs to complete...${NC}"
+    echo ""
+
+    for i in "${!PIDS[@]}"; do
+        pid="${PIDS[$i]}"
+        distro="${PID_DISTROS[$i]}"
+        wait "$pid" 2>/dev/null
+        RESULT_EXIT[$distro]=$?
+        RESULT_PASSED[$distro]=$(cat "$RESULTS_DIR/.${distro}.passed" 2>/dev/null || echo "0")
+        RESULT_FAILED[$distro]=$(cat "$RESULTS_DIR/.${distro}.failed" 2>/dev/null || echo "0")
+        RESULT_SKIPPED[$distro]=$(cat "$RESULTS_DIR/.${distro}.skipped" 2>/dev/null || echo "0")
+        RESULT_TOTAL[$distro]=$(cat "$RESULTS_DIR/.${distro}.total" 2>/dev/null || echo "0")
+        rm -f "$RESULTS_DIR/.${distro}."*
+    done
+else
+    for distro in "${DISTROS[@]}"; do
+        container="${CONTAINERS[$distro]}"
+        container_path="/var/lib/machines/$container"
+        logfile="$RESULTS_DIR/${distro}.log"
+
+        echo -e "${CYAN}━━━ Testing: $distro ($container) ━━━${NC}"
+
+        # Check container exists
+        if [[ ! -d "$container_path" ]]; then
+            echo -e "  ${RED}[SKIP]${NC} Container not found: $container_path"
+            RESULT_PASSED[$distro]=0
+            RESULT_FAILED[$distro]=0
+            RESULT_SKIPPED[$distro]=0
+            RESULT_TOTAL[$distro]=0
+            RESULT_EXIT[$distro]=99
+            echo "CONTAINER NOT FOUND: $container_path" > "$logfile"
+            continue
+        fi
+
+        # Run full-test-suite.sh inside the container via systemd-nspawn --pipe
+        echo -e "  ${CYAN}[RUN]${NC}  systemd-nspawn --pipe -> full-test-suite.sh $APPLY_FLAG"
+
+        nspawn_full_suite "$container_path" > "$logfile" 2>&1
+        local_exit=$?
+        RESULT_EXIT[$distro]=$local_exit
+
+        read -r passed failed skipped total <<< "$(parse_log_counts "$logfile")"
+        RESULT_PASSED[$distro]=$passed
+        RESULT_FAILED[$distro]=$failed
+        RESULT_SKIPPED[$distro]=$skipped
+        RESULT_TOTAL[$distro]=$total
+
+        # Print quick summary for this distro
+        if [[ "${RESULT_FAILED[$distro]}" -eq 0 ]] && [[ "${RESULT_TOTAL[$distro]}" -gt 0 ]]; then
+            echo -e "  ${GREEN}[DONE]${NC} ${RESULT_PASSED[$distro]}/${RESULT_TOTAL[$distro]} passed, ${RESULT_SKIPPED[$distro]} skipped"
+        elif [[ "${RESULT_TOTAL[$distro]}" -eq 0 ]]; then
+            echo -e "  ${RED}[ERR]${NC}  No test results parsed (exit code: $local_exit)"
+        else
+            echo -e "  ${RED}[FAIL]${NC} ${RESULT_PASSED[$distro]}/${RESULT_TOTAL[$distro]} passed, ${RESULT_FAILED[$distro]} failed, ${RESULT_SKIPPED[$distro]} skipped"
+        fi
+        echo ""
+    done
+fi
 
 # =============================================================================
 # Generate summary
@@ -259,30 +372,35 @@ done
 SUMMARY_FILE="$RESULTS_DIR/summary.txt"
 
 {
-    echo "Cross-Distro Test Results"
-    echo "========================"
-    echo "Date: $(date)"
-    echo "Apply mode: $DO_APPLY"
+    if [[ "$PARALLEL" == "true" ]]; then
+        echo "Parallel Cross-Distro Test Results"
+        echo "==================================="
+        echo "Date: $(date)"
+        echo "Apply mode: $DO_APPLY"
+        echo "Max parallel jobs: $MAX_JOBS"
+    else
+        echo "Cross-Distro Test Results"
+        echo "========================"
+        echo "Date: $(date)"
+        echo "Apply mode: $DO_APPLY"
+    fi
     echo ""
     printf "%-12s %6s %6s %6s %7s %5s %8s\n" "Distro" "Total" "Pass" "Fail" "Skip" "Exit" "Status"
     printf "%-12s %6s %6s %6s %7s %5s %8s\n" "--------" "-----" "----" "----" "----" "----" "------"
 
-    any_failed=false
     for distro in "${DISTROS[@]}"; do
-        total="${RESULT_TOTAL[$distro]}"
-        passed="${RESULT_PASSED[$distro]}"
-        failed="${RESULT_FAILED[$distro]}"
-        skipped="${RESULT_SKIPPED[$distro]}"
-        exit_code="${RESULT_EXIT[$distro]}"
+        total="${RESULT_TOTAL[$distro]:-0}"
+        passed="${RESULT_PASSED[$distro]:-0}"
+        failed="${RESULT_FAILED[$distro]:-0}"
+        skipped="${RESULT_SKIPPED[$distro]:-0}"
+        exit_code="${RESULT_EXIT[$distro]:-1}"
 
         if [[ "$exit_code" -eq 99 ]]; then
             status="MISSING"
-            any_failed=true
         elif [[ "$failed" -eq 0 ]] && [[ "$total" -gt 0 ]]; then
             status="PASS"
         else
             status="FAIL"
-            any_failed=true
         fi
 
         printf "%-12s %6s %6s %6s %7s %5s %8s\n" "$distro" "$total" "$passed" "$failed" "$skipped" "$exit_code" "$status"
@@ -294,7 +412,11 @@ SUMMARY_FILE="$RESULTS_DIR/summary.txt"
 
 # Print summary to stdout with colour
 echo -e "${MAGENTA}╔$(printf '═%.0s' $(seq 1 $BOX_W))╗${NC}"
-print_boxline "   CROSS-DISTRO SUMMARY"
+if [[ "$PARALLEL" == "true" ]]; then
+    print_boxline "   PARALLEL CROSS-DISTRO SUMMARY"
+else
+    print_boxline "   CROSS-DISTRO SUMMARY"
+fi
 echo -e "${MAGENTA}╚$(printf '═%.0s' $(seq 1 $BOX_W))╝${NC}"
 echo ""
 printf "  ${BOLD}%-12s %6s %6s %6s %7s %8s${NC}\n" "Distro" "Total" "Pass" "Fail" "Skip" "Status"
@@ -302,11 +424,11 @@ printf "  %-12s %6s %6s %6s %7s %8s\n" "--------" "-----" "----" "----" "----" "
 
 overall_exit=0
 for distro in "${DISTROS[@]}"; do
-    total="${RESULT_TOTAL[$distro]}"
-    passed="${RESULT_PASSED[$distro]}"
-    failed="${RESULT_FAILED[$distro]}"
-    skipped="${RESULT_SKIPPED[$distro]}"
-    exit_code="${RESULT_EXIT[$distro]}"
+    total="${RESULT_TOTAL[$distro]:-0}"
+    passed="${RESULT_PASSED[$distro]:-0}"
+    failed="${RESULT_FAILED[$distro]:-0}"
+    skipped="${RESULT_SKIPPED[$distro]:-0}"
+    exit_code="${RESULT_EXIT[$distro]:-1}"
 
     if [[ "$exit_code" -eq 99 ]]; then
         colour="$YELLOW"
@@ -350,6 +472,7 @@ if [[ "$DO_GUI" == "true" ]]; then
 
     gui_args=()
     [[ -n "$SINGLE_DISTRO" ]] && gui_args+=(--distro "$SINGLE_DISTRO")
+    [[ "$PARALLEL" == "true" ]] && gui_args+=(--parallel --jobs "$MAX_JOBS")
 
     if "$SCRIPT_DIR/run-gui-tests.sh" "${gui_args[@]}"; then
         echo -e "${GREEN}GUI tests passed.${NC}"
