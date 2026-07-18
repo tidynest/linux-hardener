@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- The dashboard's recent-activity card now appends ", N skipped" to its
+  apply summary when skips occurred, matching the history section's
+  wording; previously it showed only the applied-change count.
+
 ## [1.3.1] - 2026-07-18
 
 ### Fixed

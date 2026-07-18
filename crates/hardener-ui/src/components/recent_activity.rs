@@ -48,6 +48,14 @@ pub fn RecentActivity() -> impl IntoView {
             .map(|r| r.applied_change_count())
             .unwrap_or(0)
     };
+    let last_apply_skipped = move || {
+        app_state
+            .apply_results
+            .get()
+            .last()
+            .map(|r| r.apply_changes.len() - r.applied_change_count())
+            .unwrap_or(0)
+    };
 
     view! {
         <Card title="Recent Activity" title_level=HeadingLevel::H2 class="recent-activity">
@@ -86,7 +94,14 @@ pub fn RecentActivity() -> impl IntoView {
                                     }}
                                 </div>
                                 <div class="activity-meta">
-                                    {move || format!("{} changes made", last_apply_changes())}
+                                    {move || {
+                                        let skipped = last_apply_skipped();
+                                        if skipped > 0 {
+                                            format!("{} changes made, {} skipped", last_apply_changes(), skipped)
+                                        } else {
+                                            format!("{} changes made", last_apply_changes())
+                                        }
+                                    }}
                                 </div>
                             </div>
                         </div>
