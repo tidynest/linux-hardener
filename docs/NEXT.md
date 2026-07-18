@@ -2,14 +2,21 @@
 
 ---
 
-## Current State (as of 2026-07-02)
+## Current State (as of 2026-07-18)
+
+**v1.3.0 released** (2026-07-18) to GitHub + GitLab: RHEL 10 compliance
+profiles, three new frameworks (SOC 2, NIST 800-171 r3, FedRAMP Moderate),
+concurrent scan execution with a services false-PASS fix, the no-MAC apply
+fix with a first-class skipped state, per-command Tauri ACLs, a static musl
+Docker image, build identity in --version, and the docs/scripts/packaging
+restructure. AUR bump follows the tag.
 
 **v1.2.2 released** (2026-07-02) to GitHub + GitLab: a rollback data-loss fix
 (0000-perm files like `/etc/shadow` could be deleted on rollback; account-database
 paths were missing from the rollback allowlist) plus a cross-distro container
 refresh (Debian 13 / Fedora 44 / Rocky 10 / openSUSE Leap 16.0 via podman-export,
-validated 5/5 × 127). Repo packaging + AUR bump to 1.2.2 still pending. Public
-line: 1.0.5 → 1.2.0 → 1.2.1 → 1.2.2 (1.1.0 was cut in-tree but never published).
+validated 5/5 × 127). Public line: 1.0.5 → 1.2.0 → 1.2.1 → 1.2.2 → 1.3.0
+(1.1.0 was cut in-tree but never published).
 
 v1.2.0 shipped: multi-host batch CLI (`batch scan/report/apply/rollback`),
 per-host history/trends/regression detection, scheduler regression alerts,
@@ -320,9 +327,9 @@ See `docs/plans/archive/2026-02-24-gui-cli-parity.md`: all 6 phases complete.
 
 - **11 Crates** (10 core + 1 Tauri app)
 - **8 Security Plugins**: Kernel, SSH, Firewall, PAM, Services, Audit, Permissions, MAC
-- **667 Passing Tests**
+- **770 Passing Tests**
 - **Multi-Distribution Support**: Debian, Red Hat, Arch, SUSE families
-- **Current Version**: 1.2.2 (code + tag on GitHub, GitLab; packaging/AUR bump pending)
+- **Current Version**: 1.3.0 (code, tag and repo packaging; AUR bump follows the tag)
 - **WASM Support**: GUI frontend compiles to `wasm32-unknown-unknown`
 
 For version history and detailed feature tracking, see [ROADMAP.md](ROADMAP.md).

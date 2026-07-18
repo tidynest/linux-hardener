@@ -1,5 +1,5 @@
 Name:           linux-system-hardener
-Version:        1.2.2
+Version:        1.3.0
 Release:        1%{?dist}
 Summary:        Linux security automation: scanning, hardening, and rollback
 License:        Apache-2.0
@@ -103,6 +103,18 @@ systemctl daemon-reload || true
 %dir %{_libdir}/linux-hardener
 
 %changelog
+* Sat Jul 18 2026 Eric Jingryd <tidynest@proton.me> - 1.3.0-1
+- RHEL 10 compliance profiles: report-time STIG/CIS identifier translation (--profile override)
+- New frameworks: SOC 2, NIST 800-171 r3, FedRAMP Moderate (10 frameworks total)
+- Scan performance: concurrent plugin execution (~25ms to ~10ms local), scan --timings flag
+- Fix: services existence probe matched nothing, causing false PASS on CIS 2.2.3/2.2.4
+- Fix: apply no longer fails, or reports a fabricated change, on hosts without SELinux/AppArmor
+- New ChangeType::Skipped: no-op applies report as skips, not applied changes
+- Per-command Tauri ACLs: build.rs declares the command allow-list, granted by risk tier
+- Docker image (scratch, static musl CLI); build identity (git SHA + date) in --version
+- Docs restructured under docs/{guide,reference,architecture,contributing,design,security}
+- Scripts consolidated under scripts/ with a shared helper library
+
 * Thu Jul 02 2026 Eric Jingryd <tidynest@proton.me> - 1.2.2-1
 - Fix: checkpoint rollback could delete 0000-permission files (e.g. /etc/shadow, /etc/gshadow)
 - Fix: permissions apply/rollback aborted when account-database paths were not allow-listed

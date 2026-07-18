@@ -1,3 +1,16 @@
+linux-system-hardener (1.3.0-1) unstable; urgency=medium
+
+  * RHEL 10 compliance profiles with report-time identifier translation.
+  * New frameworks: SOC 2, NIST 800-171 r3, FedRAMP Moderate (10 total).
+  * Scan performance: concurrent plugin execution; scan --timings flag.
+  * Fix: services probe false PASS on CIS 2.2.3/2.2.4.
+  * Fix: apply failure and fabricated change on hosts without a MAC system;
+    no-op applies now report as skips (ChangeType::Skipped).
+  * Per-command Tauri ACLs; Docker image; build identity in --version.
+  * Docs and scripts restructured; packaging inputs moved under packaging/.
+
+ -- Eric Jingryd <tidynest@proton.me>  Sat, 18 Jul 2026 20:00:00 +0000
+
 linux-system-hardener (1.2.2-1) unstable; urgency=medium
 
   * Fix: checkpoint rollback could delete 0000-permission files (e.g. /etc/shadow).
