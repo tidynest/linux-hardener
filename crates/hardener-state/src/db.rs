@@ -53,6 +53,7 @@ const SCHEMA: &str = r#"
         success INTEGER NOT NULL,
         duration_us INTEGER NOT NULL,
         error_message TEXT,
+        unchecked_json TEXT,
         FOREIGN KEY(session_id) REFERENCES scan_sessions(id) ON DELETE CASCADE
     );
 
@@ -131,6 +132,21 @@ pub async fn init_db(db_path: Option<&Path>) -> Result<SqlitePool> {
         > 0;
     if !has_host_key {
         sqlx::query("ALTER TABLE checkpoints ADD COLUMN host_key TEXT NOT NULL DEFAULT 'local'")
+            .execute(&pool)
+            .await
+            .map_err(|e| HardeningError::Database(e.to_string()))?;
+    }
+
+    // Migrate pre-unchecked_json scan_results tables in place (idempotent).
+    let has_unchecked: bool = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM pragma_table_info('scan_results') WHERE name = 'unchecked_json'",
+    )
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| HardeningError::Database(e.to_string()))?
+        > 0;
+    if !has_unchecked {
+        sqlx::query("ALTER TABLE scan_results ADD COLUMN unchecked_json TEXT")
             .execute(&pool)
             .await
             .map_err(|e| HardeningError::Database(e.to_string()))?;

@@ -1,5 +1,5 @@
 use hardener_state::{ScanHistoryManager, ScanStatus, init_db};
-use hardener_types::{Finding, FindingCategory, PluginId, ScanResult, Severity};
+use hardener_types::{Finding, FindingCategory, PluginId, ScanResult, Severity, UncheckedCheck};
 use tempfile::tempdir;
 
 async fn create_test_manager() -> (ScanHistoryManager, tempfile::TempDir) {
@@ -138,5 +138,32 @@ async fn test_corrupted_policy_exception_json_surfaces_error() {
     assert!(
         err.to_string().contains("Corrupted policy_exception"),
         "error names the corrupted column: {err}"
+    );
+}
+
+#[tokio::test]
+async fn unchecked_checks_survive_store_and_restore() {
+    let (manager, _dir) = create_test_manager().await;
+    let session_id = manager.start_session().await.unwrap();
+    let result = ScanResult {
+        scan_plugin_id: PluginId::new("pam-hardening"),
+        scan_success: true,
+        scan_findings: vec![],
+        scan_unchecked: vec![UncheckedCheck {
+            unchecked_check_id: "pam-minlen".to_string(),
+            unchecked_title: "PAM setting: minlen".to_string(),
+            unchecked_category: FindingCategory::Authentication,
+            unchecked_reason: "reading /etc/security/pwquality.conf requires root".to_string(),
+            unchecked_compliance: vec![],
+        }],
+        scan_duration_us: 1,
+        scan_error: None,
+    };
+    manager.store_results(&session_id, &[result]).await.unwrap();
+    let restored = manager.get_session_results(&session_id).await.unwrap();
+    assert_eq!(restored[0].scan_unchecked.len(), 1);
+    assert_eq!(
+        restored[0].scan_unchecked[0].unchecked_check_id,
+        "pam-minlen"
     );
 }

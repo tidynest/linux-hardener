@@ -7,7 +7,7 @@ use crate::scan_history::{ScanSession, ScanSessionId, ScanStatus};
 use hardener_common::error::{HardeningError, Result};
 use hardener_types::{
     ComplianceMapping, Finding, FindingCategory, FindingPolicyException, PluginId, ScanResult,
-    Severity,
+    Severity, UncheckedCheck,
 };
 use sqlx::{Row, SqlitePool};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -64,9 +64,15 @@ impl ScanHistoryManager {
 
         for result in results {
             // Insert scan_results row
+            let unchecked_json = if result.scan_unchecked.is_empty() {
+                None
+            } else {
+                serde_json::to_string(&result.scan_unchecked).ok()
+            };
+
             let result_row = sqlx::query(
-                "INSERT INTO scan_results (session_id, plugin_id, success, duration_us, error_message)
-                 VALUES (?, ?, ?, ?, ?)
+                "INSERT INTO scan_results (session_id, plugin_id, success, duration_us, error_message, unchecked_json)
+                 VALUES (?, ?, ?, ?, ?, ?)
                  RETURNING id",
             )
             .bind(session_id.as_str())
@@ -74,6 +80,7 @@ impl ScanHistoryManager {
             .bind(result.scan_success)
             .bind(result.scan_duration_us as i64)
             .bind(&result.scan_error)
+            .bind(unchecked_json)
             .fetch_one(&mut *tx)
             .await
             .map_err(|e| HardeningError::Database(e.to_string()))?;
@@ -194,7 +201,7 @@ impl ScanHistoryManager {
     /// Retrieves all scan results for a given session.
     pub async fn get_session_results(&self, session_id: &ScanSessionId) -> Result<Vec<ScanResult>> {
         let result_rows = sqlx::query(
-            "SELECT id, plugin_id, success, duration_us, error_message
+            "SELECT id, plugin_id, success, duration_us, error_message, unchecked_json
              FROM scan_results
              WHERE session_id = ?",
         )
@@ -209,11 +216,23 @@ impl ScanHistoryManager {
             let result_id: i64 = row.get("id");
             let findings = self.get_result_findings(result_id).await?;
 
+            let unchecked: Vec<UncheckedCheck> = row
+                .get::<Option<String>, _>("unchecked_json")
+                .as_deref()
+                .map(serde_json::from_str)
+                .transpose()
+                .map_err(|e| {
+                    HardeningError::Database(format!(
+                        "Corrupted unchecked_json for result {result_id}: {e}"
+                    ))
+                })?
+                .unwrap_or_default();
+
             results.push(ScanResult {
                 scan_plugin_id: PluginId::new(row.get::<String, _>("plugin_id")),
                 scan_success: row.get("success"),
                 scan_findings: findings,
-                scan_unchecked: vec![],
+                scan_unchecked: unchecked,
                 scan_duration_us: row.get::<i64, _>("duration_us") as u64,
                 scan_error: row.get("error_message"),
             });
