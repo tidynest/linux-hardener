@@ -319,7 +319,7 @@ if $DRY_RUN; then
     echo "Would commit with message: chore(release): bump version to ${NEW_VERSION}"
 else
     # Add all potentially modified documentation files
-    git add Cargo.toml Cargo.lock CHANGELOG.md README.md
+    git add Cargo.toml Cargo.lock CHANGELOG.md README.md SECURITY.md CONTRIBUTING.md
     git add docs/ 2>/dev/null || true
     git add scripts/README.md 2>/dev/null || true
     git add packaging/assets/hardener.1 2>/dev/null || true
