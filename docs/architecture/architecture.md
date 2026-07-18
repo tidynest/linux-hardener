@@ -1,7 +1,7 @@
 # Linux System Hardener - Architecture Documentation
 
 **Last Updated:** 2026-07-17
-**Version:** 1.2.2
+**Version:** 1.3.0
 
 ---
 
@@ -436,7 +436,7 @@ CREATE TABLE file_states (
 
 | Framework | Controls | Description |
 |-----------|----------|-------------|
-| CIS | 38 | Center for Internet Security Benchmarks |
+| CIS | 41 | Center for Internet Security Benchmarks |
 | STIG | 20 | DISA Security Technical Implementation Guides |
 | NIST 800-53 | 20 | US Federal security controls |
 | PCI-DSS | 22 | Payment Card Industry standards |

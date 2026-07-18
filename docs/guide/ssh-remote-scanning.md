@@ -384,4 +384,4 @@ Planned for future releases:
 - Remote checkpoint storage option
 - Live per-host progress feedback during fleet scans
 
-**Last Updated**: 2026-06-28
+**Last Updated**: 2026-07-18

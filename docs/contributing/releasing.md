@@ -365,4 +365,4 @@ For release issues:
 3. Consult this document
 4. Open an issue if needed
 
-**Last Updated**: 2026-05-24
+**Last Updated**: 2026-07-18

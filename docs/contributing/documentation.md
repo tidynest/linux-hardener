@@ -126,4 +126,4 @@ Counts the control mappings in each compliance framework implementation and comp
 
 Checks that the version in `Cargo.toml` matches `tauri.conf.json` and all documentation references. Also invoked by `validate_all.py`.
 
-**Last Updated**: 2026-02-26
+**Last Updated**: 2026-07-18

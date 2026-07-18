@@ -336,4 +336,4 @@ Complete list of CSS variables used in themes:
 
 ---
 
-**Last Updated**: 2026-02-27
+**Last Updated**: 2026-07-18
