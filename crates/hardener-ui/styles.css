@@ -2955,3 +2955,85 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
   border-radius: 8px;
   max-width: 40rem;
 }
+
+/* ============================================================
+   26. UNCHECKED CHECKS (PRIVILEGED DEEP SCAN)
+   ============================================================ */
+
+/* Requires-privileges presentation: always muted, never severity-coloured -
+   these are unverifiable checks, not findings. */
+.unchecked-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-6);
+  border: 1px dashed var(--border-color);
+  border-radius: var(--border-radius);
+  color: var(--text-muted);
+  margin-bottom: var(--space-6);
+}
+
+.unchecked-banner-text {
+  flex: 1;
+}
+
+.unchecked-banner-button {
+  background-color: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+.unchecked-banner-button:hover:not(:disabled) {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.unchecked-banner-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.unchecked-section {
+  margin-top: var(--space-6);
+}
+
+.unchecked-heading {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: var(--space-2);
+}
+
+.score-unchecked,
+.unchecked-reason {
+  color: var(--text-muted);
+}
+
+.score-unchecked {
+  font-size: 0.8125rem;
+  margin-top: var(--space-1);
+}
+
+.unchecked-list {
+  list-style: none;
+  padding: 0;
+}
+
+.unchecked-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-6);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-muted);
+}
+
+.unchecked-row:last-child {
+  border-bottom: none;
+}

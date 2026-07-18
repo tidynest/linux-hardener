@@ -6,6 +6,14 @@ use hardener_types::ValidationReport;
 use hardener_types::remote::{RemoteConnectionInfo, RemoteHostProfile};
 use leptos::prelude::*;
 
+/// Total number of unchecked (requires-privileges) checks across scan
+/// results. Raw, undeduplicated sum: the banner and score badge report this
+/// as the honest count of unverified checks. Shared by UncheckedBanner and
+/// SecurityScore, which call it inside their reactive closures.
+pub fn total_unchecked(results: &[ScanResult]) -> usize {
+    results.iter().map(|r| r.scan_unchecked.len()).sum()
+}
+
 /// Application state container holding all reactive signals for the UI.
 ///
 /// This struct uses Leptos signals to provide reactive update throughout

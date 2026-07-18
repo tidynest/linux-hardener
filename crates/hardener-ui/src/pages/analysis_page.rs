@@ -4,6 +4,7 @@
 
 use crate::components::{
     ComplianceTab, FindingsTab, MiniSecurityScore, ScanHistoryTab, TabBar, TabDef, TabPanel,
+    UncheckedBanner,
 };
 use crate::state::AppState;
 use crate::tauri_bindings::{invoke_generate_report, invoke_scan};
@@ -115,6 +116,8 @@ pub fn AnalysisPage() -> impl IntoView {
                     </button>
                 </div>
             </header>
+
+            <UncheckedBanner/>
 
             <TabBar tabs=tabs() active_tab=active_tab aria_label="Analysis options" />
 

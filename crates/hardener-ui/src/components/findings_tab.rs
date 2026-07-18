@@ -79,6 +79,31 @@ pub fn FindingsTab() -> impl IntoView {
         findings
     });
 
+    // All unchecked checks flattened from scan results. Kept undeduplicated
+    // here: the banner and score badge sum this raw length as the honest
+    // count of unverified checks.
+    let all_unchecked = move || {
+        app_state
+            .scan_results
+            .get()
+            .iter()
+            .flat_map(|r| r.scan_unchecked.clone())
+            .collect::<Vec<_>>()
+    };
+
+    // The audit plugin emits one unchecked entry per underlying rule, and
+    // several rules share an unchecked_check_id/title (25 rules over 7
+    // categories), so rendering all_unchecked() verbatim would repeat, e.g.,
+    // "Audit rule: time-change" four times over. Dedupe by unchecked_check_id
+    // for THIS list view only; the raw count above is left untouched.
+    let unique_unchecked = move || {
+        let mut seen = std::collections::HashSet::new();
+        all_unchecked()
+            .into_iter()
+            .filter(|check| seen.insert(check.unchecked_check_id.clone()))
+            .collect::<Vec<_>>()
+    };
+
     let total_count = move || all_findings().len();
     let filtered_count = move || filtered_findings.get().len();
     let has_findings = move || !all_findings().is_empty();
@@ -154,6 +179,20 @@ pub fn FindingsTab() -> impl IntoView {
                     <FindingsGrid findings=filtered_findings />
                     <FindingDetail />
                 </div>
+            </Show>
+
+            <Show when=move || !all_unchecked().is_empty()>
+                <section class="unchecked-section">
+                    <h3 class="unchecked-heading">"Not verifiable without privileges"</h3>
+                    <ul class="unchecked-list">
+                        {move || unique_unchecked().into_iter().map(|entry| view! {
+                            <li class="unchecked-row">
+                                <span class="unchecked-title">{entry.unchecked_title}</span>
+                                <span class="unchecked-reason">{entry.unchecked_reason}</span>
+                            </li>
+                        }).collect::<Vec<_>>()}
+                    </ul>
+                </section>
             </Show>
         </div>
     }

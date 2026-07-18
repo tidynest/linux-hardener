@@ -24,6 +24,7 @@ mod security_score;
 mod severity_badge;
 mod tabs;
 mod theme_toggle;
+mod unchecked_banner;
 
 pub use adhoc_host_input::AdhocHostInput;
 #[allow(unused_imports)]
@@ -52,3 +53,4 @@ pub use security_score::{SecurityScore, calculate_all_scores};
 pub use severity_badge::SeverityBadge;
 pub use tabs::{TabBar, TabDef, TabPanel};
 pub use theme_toggle::ThemeToggle;
+pub use unchecked_banner::UncheckedBanner;

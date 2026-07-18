@@ -3,7 +3,7 @@
 //! Computes weighted scores per framework and an overall average.
 
 use crate::components::{Card, HeadingLevel};
-use crate::state::AppState;
+use crate::state::{AppState, total_unchecked};
 use crate::types::{ComplianceReport, ControlStatus, Severity};
 use leptos::prelude::*;
 use std::cmp::Ordering;
@@ -119,6 +119,8 @@ pub fn SecurityScore() -> impl IntoView {
 
     let has_compliance_data = move || !app_state.compliance_reports.get().is_empty();
 
+    let unchecked_count = move || total_unchecked(&app_state.scan_results.get());
+
     // Calculate score from compliance reports with severity weighting
     let scores = move || {
         let reports = app_state.compliance_reports.get();
@@ -172,6 +174,12 @@ pub fn SecurityScore() -> impl IntoView {
                 }}
             </output>
             <p class="score-status">{score_status}</p>
+
+            <Show when=move || unchecked_count() != 0>
+                <p class="score-unchecked">
+                    {move || format!("{} check(s) not verified (needs privileges)", unchecked_count())}
+                </p>
+            </Show>
 
             // Framework breakdown - only shown when we have data
             {move || {

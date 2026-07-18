@@ -121,6 +121,24 @@ pub async fn invoke_scan(
         .map_err(|e| format!("Failed to deserialise scan result: {}", e))
 }
 
+/// Invokes the run_deep_scan Tauri command: a pkexec-elevated scan whose
+/// results match `sudo hardener scan`. One polkit prompt per invocation.
+pub async fn invoke_deep_scan(
+    plugin_ids: Vec<String>,
+    config_path: Option<String>,
+) -> Result<Vec<ScanResult>, String> {
+    let args = serde_wasm_bindgen::to_value(&serde_json::json!({
+        "pluginIds": if plugin_ids.is_empty() { None } else { Some(plugin_ids) },
+        "configPath": config_path,
+    }))
+    .map_err(|e| format!("Failed to serialise arguments: {}", e))?;
+
+    let result = invoke_command("run_deep_scan", args).await?;
+
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to deserialise scan result: {}", e))
+}
+
 /// Invokes the run_apply Tauri command.
 ///
 /// Applies hardening changes for the specified plugins.

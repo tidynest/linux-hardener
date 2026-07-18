@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 
-use crate::components::{QuickActions, RecentActivity, SecurityScore};
+use crate::components::{QuickActions, RecentActivity, SecurityScore, UncheckedBanner};
 
 /// Dashboard page showing system security overview.
 ///
@@ -17,6 +17,8 @@ pub fn DashboardPage() -> impl IntoView {
             <p class="dashboard-intro">
                 "Monitor your system's security posture and take quick actions to improve it."
             </p>
+
+            <UncheckedBanner/>
 
             <section class="dashboard-grid">
                 <SecurityScore/>
