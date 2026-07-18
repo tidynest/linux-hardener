@@ -11,8 +11,8 @@ Exit codes:
 
 Checks:
     - README.md plugin table
-    - ROADMAP.md plugin checklist
-    - docs/architecture/ARCHITECTURE.md plugin table
+    - docs/ROADMAP.md plugin checklist
+    - docs/architecture/architecture.md plugin table
 """
 
 import re
@@ -117,8 +117,8 @@ def parse_plugins_from_readme(root: Path) -> dict[str, str]:
 
 
 def parse_plugins_from_architecture(root: Path) -> dict[str, dict]:
-    """Parse plugin info from ARCHITECTURE.md plugin table."""
-    arch_file = root / "docs" / "architecture" / "ARCHITECTURE.md"
+    """Parse plugin info from architecture.md plugin table."""
+    arch_file = root / "docs" / "architecture" / "architecture.md"
     content = arch_file.read_text()
 
     plugins = {}
@@ -180,8 +180,8 @@ def main():
         print(f"  {GREEN}✓ All {len(readme_names)} plugins documented{NC}")
     print()
 
-    # Check 2: All source plugins are in ARCHITECTURE.md
-    print(f"{BLUE}Checking docs/architecture/ARCHITECTURE.md...{NC}")
+    # Check 2: All source plugins are in architecture.md
+    print(f"{BLUE}Checking docs/architecture/architecture.md...{NC}")
     # Architecture uses struct names like "AuditHardeningPlugin"
     arch_names = set(arch_plugins.keys())
 
@@ -205,13 +205,13 @@ def main():
 
     if missing_in_arch:
         has_errors = True
-        print(f"  {RED}Missing from ARCHITECTURE.md:{NC}")
+        print(f"  {RED}Missing from architecture.md:{NC}")
         for name in sorted(missing_in_arch):
             print(f"    - {name}")
 
     if extra_in_arch:
         has_errors = True
-        print(f"  {RED}Extra in ARCHITECTURE.md (not in source):{NC}")
+        print(f"  {RED}Extra in architecture.md (not in source):{NC}")
         for name in sorted(extra_in_arch):
             print(f"    - {name}")
 

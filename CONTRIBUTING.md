@@ -65,7 +65,7 @@ See [scripts/README.md](scripts/README.md) for complete documentation of all scr
 
 ### Naming Conventions
 
-Please follow the naming conventions documented in [docs/NAMING_CONVENTIONS.md](docs/NAMING_CONVENTIONS.md). Key points:
+Please follow the naming conventions documented in [docs/reference/naming-conventions.md](docs/reference/naming-conventions.md). Key points:
 
 - **Structs/Enums/Traits**: PascalCase
 - **Functions/Methods**: snake_case
@@ -128,7 +128,7 @@ fix(plugins): correct SSH directive parsing for comments
 docs(readme): update installation instructions
 ```
 
-For details, see [docs/RELEASING.md](docs/RELEASING.md).
+For details, see [docs/contributing/releasing.md](docs/contributing/releasing.md).
 
 ## Pull Request Checklist
 
@@ -230,7 +230,7 @@ linux-system-hardener/
 
 ## Releasing
 
-See [docs/RELEASING.md](docs/RELEASING.md) for the complete release process, including:
+See [docs/contributing/releasing.md](docs/contributing/releasing.md) for the complete release process, including:
 
 - Semantic versioning strategy
 - Conventional commits format

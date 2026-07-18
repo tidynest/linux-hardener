@@ -91,11 +91,12 @@ def find_markdown_files(root: Path) -> list[Path]:
     for md in root.glob("*.md"):
         files.append(md)
 
-    # docs/ directory
+    # docs/ directory (recursive; skip gitignored local notes)
     docs_dir = root / "docs"
     if docs_dir.exists():
-        for md in docs_dir.glob("*.md"):
-            files.append(md)
+        for md in docs_dir.rglob("*.md"):
+            if "superpowers" not in md.parts:
+                files.append(md)
 
     # scripts/README.md
     scripts_readme = root / "scripts" / "README.md"

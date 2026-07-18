@@ -65,7 +65,7 @@ not as host truth.
 **`apply` is unsupported in a container by design.** Writing host state would
 require `--privileged` plus host namespaces, which defeats the isolation that
 justifies the container in the first place. Use a native install (package,
-static binary or source, see [`docs/INSTALL.md`](../../docs/INSTALL.md)) to
+static binary or source, see [`docs/guide/installation.md`](../../docs/guide/installation.md)) to
 apply hardening.
 
 Remote (`--ssh`) operations are also unavailable: the image ships no `ssh`
@@ -74,5 +74,5 @@ client binary.
 ## Validation
 
 The Docker section of
-[`docs/DISTRIBUTION_VALIDATION.md`](../../docs/DISTRIBUTION_VALIDATION.md)
+[`docs/reference/distribution-validation.md`](../../docs/reference/distribution-validation.md)
 records exactly what has been validated with this image.

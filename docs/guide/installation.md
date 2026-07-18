@@ -110,7 +110,7 @@ degrade to tool-unavailable findings rather than lying. `apply` is unsupported
 in a container by design (it would require `--privileged` plus host
 namespaces, defeating the isolation), so install natively to apply hardening.
 Full usage and the capability boundary:
-[`packaging/docker/README.md`](../packaging/docker/README.md).
+[`packaging/docker/README.md`](../../packaging/docker/README.md).
 
 ---
 

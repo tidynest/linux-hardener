@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Validates that docs/FILE_MAP.md accurately reflects all Rust source files.
+Validates that docs/reference/file-map.md accurately reflects all Rust source files.
 
 Usage:
     ./scripts/validate_file_map.py [--fix]
@@ -30,8 +30,8 @@ EXCLUDE_PATTERNS = [
     r"\.#",                # Editor temp files
 ]
 
-# Path to FILE_MAP.md relative to project root
-FILE_MAP_PATH = "docs/FILE_MAP.md"
+# Path to file-map.md relative to project root
+FILE_MAP_PATH = "docs/reference/file-map.md"
 
 # ANSI colour codes
 RED = "\033[0;31m"
@@ -79,7 +79,7 @@ def find_rust_files(root: Path) -> set[str]:
 
 
 def parse_file_map(root: Path) -> set[str]:
-    """Parse FILE_MAP.md and extract documented file paths."""
+    """Parse file-map.md and extract documented file paths."""
     file_map_path = root / FILE_MAP_PATH
 
     if not file_map_path.exists():
@@ -123,15 +123,15 @@ def generate_stub_entry(file_path: str) -> str:
 def main():
     fix_mode = "--fix" in sys.argv
 
-    print(f"{BLUE}Validating FILE_MAP.md completeness...{NC}\n")
+    print(f"{BLUE}Validating file-map.md completeness...{NC}\n")
 
     root = find_project_root()
 
     # Find actual files and documented files
     actual_files = find_rust_files(root)
 
-    # Parse FILE_MAP.md with section context to build full paths
-    # FILE_MAP.md uses paths like `src/lib.rs` within crate sections
+    # Parse file-map.md with section context to build full paths
+    # file-map.md uses paths like `src/lib.rs` within crate sections
     # We need to match these against full paths like `crates/hardener-core/src/lib.rs`
 
     # Build a mapping of short paths to full paths for documented files
@@ -169,7 +169,7 @@ def main():
     # Report missing files
     if missing_from_docs:
         has_errors = True
-        print(f"{YELLOW}Files missing from FILE_MAP.md ({len(missing_from_docs)}):{NC}\n")
+        print(f"{YELLOW}Files missing from file-map.md ({len(missing_from_docs)}):{NC}\n")
 
         # Group by crate
         by_crate: dict[str, list[str]] = {}
@@ -196,19 +196,19 @@ def main():
     # Report extra files (documented but deleted)
     if extra_in_docs:
         has_errors = True
-        print(f"{RED}Files in FILE_MAP.md but not in codebase ({len(extra_in_docs)}):{NC}\n")
+        print(f"{RED}Files in file-map.md but not in codebase ({len(extra_in_docs)}):{NC}\n")
         for f in sorted(extra_in_docs):
             print(f"  - {f}")
         print()
-        print(f"  {YELLOW}These entries should be removed from FILE_MAP.md{NC}\n")
+        print(f"  {YELLOW}These entries should be removed from file-map.md{NC}\n")
 
     # Summary
     if has_errors:
-        print(f"{RED}FILE_MAP.md validation failed{NC}")
+        print(f"{RED}file-map.md validation failed{NC}")
         print(f"\nRun with --fix to generate stub entries for missing files.")
         sys.exit(1)
     else:
-        print(f"{GREEN}FILE_MAP.md is complete and accurate{NC}")
+        print(f"{GREEN}file-map.md is complete and accurate{NC}")
         print(f"  Documented: {len(documented_full_paths)} files")
         print(f"  Actual: {len(actual_files)} source files (excluding tests)")
         sys.exit(0)

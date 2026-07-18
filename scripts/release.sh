@@ -28,13 +28,13 @@ verify_versions() {
     local all_match=true
     local mismatches=()
 
-    # Check docs/architecture/ARCHITECTURE.md
-    if [[ -f "docs/architecture/ARCHITECTURE.md" ]]; then
+    # Check docs/architecture/architecture.md
+    if [[ -f "docs/architecture/architecture.md" ]]; then
         local arch_version
-        arch_version=$(grep '^\*\*Version:\*\*' docs/architecture/ARCHITECTURE.md | sed 's/.*\*\* \([0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/' || echo "NOT_FOUND")
+        arch_version=$(grep '^\*\*Version:\*\*' docs/architecture/architecture.md | sed 's/.*\*\* \([0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/' || echo "NOT_FOUND")
         if [[ "$arch_version" != "$cargo_version" ]]; then
             all_match=false
-            mismatches+=("docs/architecture/ARCHITECTURE.md: $arch_version")
+            mismatches+=("docs/architecture/architecture.md: $arch_version")
         fi
     fi
 
@@ -62,7 +62,7 @@ verify_versions() {
     echo -e "  Cargo.toml (workspace): ${GREEN}${cargo_version}${NC}"
 
     if $all_match; then
-        echo -e "  ARCHITECTURE.md:        ${GREEN}${cargo_version}${NC}"
+        echo -e "  architecture.md:        ${GREEN}${cargo_version}${NC}"
         echo -e "  data/hardener.1:        ${GREEN}${cargo_version}${NC}"
         echo -e "  tauri.conf.json:        ${GREEN}${cargo_version}${NC}"
         echo -e "\n${GREEN}✓ All version references match${NC}"
@@ -241,7 +241,7 @@ fi
 # Step 3b: Update version in documentation files
 echo -e "\n${BLUE}Step 3b: Updating version in documentation...${NC}"
 DOC_FILES=(
-    "docs/architecture/ARCHITECTURE.md"
+    "docs/architecture/architecture.md"
 )
 for doc_file in "${DOC_FILES[@]}"; do
     if [[ -f "$doc_file" ]]; then
@@ -314,7 +314,7 @@ if $DRY_RUN; then
 else
     # Add all potentially modified documentation files
     git add Cargo.toml Cargo.lock CHANGELOG.md README.md
-    git add docs/*.md 2>/dev/null || true
+    git add docs/ 2>/dev/null || true
     git add scripts/README.md 2>/dev/null || true
     git add data/hardener.1 2>/dev/null || true
     git add src-tauri/tauri.conf.json 2>/dev/null || true

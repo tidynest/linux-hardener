@@ -188,7 +188,7 @@ This document tracks the development progress and planned features for Linux Sys
 - [x] Root functional test results: 35/36 tests pass (1 skip is test script pattern matching)
 - [x] Bug M fixed: Scheduler database now uses user path for non-root users
 
-> **Test Results**: See [docs/DISTRIBUTION_VALIDATION.md](docs/DISTRIBUTION_VALIDATION.md)
+> **Test Results**: See [docs/reference/distribution-validation.md](reference/distribution-validation.md)
 
 **Root Test Highlights**:
 - 47 findings as root (vs 11 as non-root): plugins now have full access
@@ -225,7 +225,7 @@ sudo ./scripts/root-test-suite.sh --apply      # Full tests (apply + rollback)
 
 ### v0.3.2: Frontend Layout & Accessibility ✅
 
-> **Implementation Guide**: See [docs/FRONTEND_LAYOUT_PLAN.md](docs/archive/FRONTEND_LAYOUT_PLAN.md)
+> **Implementation Guide**: See [docs/archive/FRONTEND_LAYOUT_PLAN.md](archive/FRONTEND_LAYOUT_PLAN.md)
 
 | Feature | Description | Priority | Status |
 |---------|-------------|----------|--------|
@@ -282,14 +282,14 @@ sudo ./scripts/root-test-suite.sh --apply      # Full tests (apply + rollback)
 - [x] Filter select: focus ring with accent colour
 - [x] E2E tests: TC-11 to TC-14 all passed
 
-> **Test Plan**: See `docs/GUI_V031_TEST_PLAN.md`
+> **Test Plan**: See `docs/archive/GUI_V031_TEST_PLAN.md`
 
 #### E. Final Polish (Session 5) ✅
 
 - [x] Tab animation reduced from 250ms to 120ms for snappier switching
 - [x] Tab transform reduced from 8px to 4px for subtler motion
 - [x] Navigation title now uses `--color-accent` (adapts to each theme's identity colour)
-- [x] Created `docs/THEME_DESIGN_GUIDE.md` with comprehensive theme creation documentation
+- [x] Created `docs/design/theming.md` with comprehensive theme creation documentation
 
 #### F. GUI Bug Fixes (Session 6) ✅
 
@@ -400,13 +400,13 @@ User clicks "Apply"
 
 **GUI Test Validation**: 84 Playwright Web UI tests pass on all 5 distros (Arch, Debian, Fedora, Rocky 9, openSUSE). Covers dashboard, findings, compliance, configure, history, themes, and error handling. Run via `sudo ./scripts/run-gui-tests.sh` or `run-cross-distro-tests.sh --gui`.
 
-> **Test Results**: See [docs/DISTRIBUTION_VALIDATION.md](docs/DISTRIBUTION_VALIDATION.md)
+> **Test Results**: See [docs/reference/distribution-validation.md](reference/distribution-validation.md)
 
 ---
 
 ### v0.4.0: GUI/CLI Feature Parity & Web Interface
 
-> **Implementation Guide**: See [docs/GUI_CLI_PARITY_PLAN.md](docs/GUI_CLI_PARITY_PLAN.md)
+> **Implementation Guide**: See [docs/plans/archive/2026-02-24-gui-cli-parity.md](plans/archive/2026-02-24-gui-cli-parity.md)
 
 #### A. GUI/CLI Parity: P0-P1 Features
 
@@ -452,7 +452,7 @@ User clicks "Apply"
 | Multi-host management | Manage multiple systems from one UI | Medium | 🔄 In progress (Fleet scan + compliance scores + apply/rollback GUI shipped; ad-hoc SSH / live progress / GUI history remain) |
 | Historical trends | Track security posture over time | Low | ⬜ Pending (CLI `history trends` done; desktop visualisation deferred) |
 | Alert notifications | Email/webhook on security regressions | Low | ✅ Complete (scheduler `notify_mode` regression alerts) |
-| DE testing | Test pkexec/polkit on GNOME, KDE, XFCE | Low | 🔄 Tooling shipped (`detect-polkit-agent.sh`, `test-polkit-matrix.sh`, DE wrappers, `docs/de-compatibility.md`); real GNOME/KDE/XFCE runs pending (require DE sessions) |
+| DE testing | Test pkexec/polkit on GNOME, KDE, XFCE | Low | 🔄 Tooling shipped (`detect-polkit-agent.sh`, `test-polkit-matrix.sh`, DE wrappers, `docs/guide/desktop-environment-compatibility.md`); real GNOME/KDE/XFCE runs pending (require DE sessions) |
 
 ---
 
@@ -462,7 +462,7 @@ User clicks "Apply"
 |---------|-------------|----------|--------|
 | Security audit (internal) | Internal security review (53/53 findings) | Critical | ✅ Complete |
 | Package distribution | AUR PKGBUILD, RPM spec, Debian packaging | High | ✅ Complete |
-| Comprehensive documentation | Man page, INSTALL.md, SECURITY.md | High | ✅ Complete |
+| Comprehensive documentation | Man page, docs/guide/installation.md, SECURITY.md | High | ✅ Complete |
 | Cross-distro validation | 5 distros, 123/123 tests each | High | ✅ Complete |
 | Package install validation | Simulated installs on all 5 distros | High | ✅ Complete |
 

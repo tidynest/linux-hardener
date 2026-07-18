@@ -10,7 +10,7 @@ Exit codes:
     1: Discrepancies found
 
 Checks:
-    - commands.rs Tauri commands match FILE_MAP.md documentation
+    - commands.rs Tauri commands match file-map.md documentation
     - tauri_bindings.rs invoke calls match actual command names
 """
 
@@ -116,8 +116,8 @@ def parse_tauri_bindings(root: Path) -> dict[str, str]:
 
 
 def parse_documented_commands(root: Path) -> dict[str, dict]:
-    """Parse Tauri command signatures from FILE_MAP.md."""
-    file_map = root / "docs" / "FILE_MAP.md"
+    """Parse Tauri command signatures from file-map.md."""
+    file_map = root / "docs" / "reference" / "file-map.md"
     content = file_map.read_text()
 
     commands = {}
@@ -176,7 +176,7 @@ def main():
     has_errors = False
 
     # Check 1: All source commands are documented
-    print(f"{BLUE}Checking FILE_MAP.md documentation...{NC}")
+    print(f"{BLUE}Checking file-map.md documentation...{NC}")
     source_names = set(source_commands.keys())
     doc_names = set(documented_commands.keys())
 
@@ -185,13 +185,13 @@ def main():
 
     if missing_docs:
         has_errors = True
-        print(f"  {RED}Commands missing from FILE_MAP.md:{NC}")
+        print(f"  {RED}Commands missing from file-map.md:{NC}")
         for name in sorted(missing_docs):
             print(f"    - {name}")
 
     if extra_docs:
         has_errors = True
-        print(f"  {RED}Commands in FILE_MAP.md but not in source:{NC}")
+        print(f"  {RED}Commands in file-map.md but not in source:{NC}")
         for name in sorted(extra_docs):
             print(f"    - {name}")
 

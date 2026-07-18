@@ -1,7 +1,7 @@
 # Documentation and Repository Reorganisation Plan
 
 **Last Updated**: 2026-07-18
-**Status**: Proposal, awaiting approval. Nothing in Phases 1 to 4 has been executed.
+**Status**: Phase 1 and Phase 4 executed 2026-07-18 (branch `chore/docs-reorg-phase1`), with one maintainer override: `ROADMAP.md` and `NEXT.md` moved to `docs/` rather than staying at root. Phases 2 and 3 remain proposals.
 
 This plan is the deliverable of a full audit of every markdown doc and of the
 non-code file structure. It proposes a staged reorganisation of `docs/` and the

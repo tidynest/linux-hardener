@@ -197,7 +197,7 @@ These are lower-priority findings that improve overall security posture without
 addressing immediate vulnerabilities. All are now resolved, including the
 formerly deferred SAM-039. The **Status** column replaces the original scheduling
 hints, reconciled against the §1 Remediation Table (items also tracked there) and
-[remaining-work.md](../plans/remaining-work.md) §2 for the six items unique to this
+[remaining-work.md](../../../plans/archive/remaining-work.md) §2 for the six items unique to this
 section (SAM-061/062/063/070/074/076), then spot-verified in code.
 
 | SAM-ID | Category | Description | Status |

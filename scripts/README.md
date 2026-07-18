@@ -146,7 +146,7 @@ WEBKIT_DISABLE_COMPOSITING_MODE=1 cargo tauri dev
 | Validator | Script | Description |
 |-----------|--------|-------------|
 | Version Synchronisation | `release.sh --verify` | Checks version numbers match |
-| FILE_MAP.md Completeness | `validate_file_map.py` | All source files documented |
+| file-map.md Completeness | `validate_file_map.py` | All source files documented |
 | Plugin Documentation | `validate_plugin_docs.py` | Plugin tables match source |
 | Tauri Commands | `validate_tauri_docs.py` | Tauri commands documented |
 | Last Updated Dates | `validate_last_updated.py` | Dates current with git |
@@ -178,7 +178,7 @@ Running: Version Synchronisation
 ############################################################
 
   ✓ Version Synchronisation: passed
-  ✓ FILE_MAP.md Completeness: passed
+  ✓ file-map.md Completeness: passed
   ✓ Plugin Documentation: passed
   ✓ Tauri Command Documentation: passed
   ✓ Last Updated Dates: passed
@@ -205,7 +205,7 @@ All 7 validations passed!
 
 **Script**: `validate_naming.py`
 
-**Purpose**: Validates that all Rust code follows the naming conventions defined in `docs/NAMING_CONVENTIONS.md`
+**Purpose**: Validates that all Rust code follows the naming conventions defined in `docs/reference/naming-conventions.md`
 
 **Usage**:
 ```bash
@@ -251,7 +251,7 @@ python3 scripts/validate_naming.py
 
 Summary: 2 errors, 1 warnings
 
-Refer to docs/NAMING_CONVENTIONS.md for complete naming standards.
+Refer to docs/reference/naming-conventions.md for complete naming standards.
 ```
 
 **Integration with CI/CD**:
@@ -322,7 +322,7 @@ $ git commit -m "Add PAM plugin"
 Naming convention errors found.
 Please fix the issues above before committing.
 
-Refer to docs/NAMING_CONVENTIONS.md for naming standards.
+Refer to docs/reference/naming-conventions.md for naming standards.
 
 To commit anyway (not recommended), use: git commit --no-verify
 ```
@@ -387,7 +387,7 @@ Edit `.git/hooks/pre-commit` to add more checks.
 - `0`: Release completed successfully
 - `1`: Error (wrong branch, dirty working directory, tests failed)
 
-For complete release documentation, see [docs/RELEASING.md](../docs/RELEASING.md).
+For complete release documentation, see [docs/contributing/releasing.md](../docs/contributing/releasing.md).
 
 ---
 
@@ -395,7 +395,7 @@ For complete release documentation, see [docs/RELEASING.md](../docs/RELEASING.md
 
 **Script**: `validate_file_map.py`
 
-**Purpose**: Validates that `docs/FILE_MAP.md` accurately reflects all Rust source files in the workspace.
+**Purpose**: Validates that `docs/reference/file-map.md` accurately reflects all Rust source files in the workspace.
 
 **Usage**:
 ```bash
@@ -408,18 +408,18 @@ For complete release documentation, see [docs/RELEASING.md](../docs/RELEASING.md
 
 **What It Checks**:
 - All `.rs` files in `crates/` and `src-tauri/src/` are documented
-- No deleted files remain documented in FILE_MAP.md
+- No deleted files remain documented in file-map.md
 - Files are listed under their correct crate sections
 
 **Exit Codes**:
-- `0`: FILE_MAP.md is complete and accurate
+- `0`: file-map.md is complete and accurate
 - `1`: Discrepancies found (missing or extra files)
 
 **Example Output (Discrepancies Found)**:
 ```
-Validating FILE_MAP.md completeness...
+Validating file-map.md completeness...
 
-Files missing from FILE_MAP.md (3):
+Files missing from file-map.md (3):
 
   hardener-state:
     - crates/hardener-state/src/scan_history.rs
@@ -428,7 +428,7 @@ Files missing from FILE_MAP.md (3):
   hardener-ui:
     - crates/hardener-ui/src/components/tabs.rs
 
-FILE_MAP.md validation failed
+file-map.md validation failed
 
 Run with --fix to generate stub entries for missing files.
 ```
@@ -456,7 +456,7 @@ Suggested stub entries:
 
 **Script**: `validate_plugin_docs.py`
 
-**Purpose**: Validates that plugin documentation in README.md and ARCHITECTURE.md matches actual plugin implementations in source code.
+**Purpose**: Validates that plugin documentation in README.md and architecture.md matches actual plugin implementations in source code.
 
 **Usage**:
 ```bash
@@ -466,7 +466,7 @@ Suggested stub entries:
 
 **What It Checks**:
 - All plugins in source code are documented in README.md
-- All plugins in source code are documented in ARCHITECTURE.md
+- All plugins in source code are documented in architecture.md
 - Plugin registry contains all implemented plugins
 - No stale/removed plugins remain in documentation
 
@@ -489,7 +489,7 @@ Checking README.md...
   Extra in README.md (not in source):
     - Deleted Plugin Name
 
-Checking docs/ARCHITECTURE.md...
+Checking docs/architecture/architecture.md...
   ✓ All 8 plugins documented
 
 Checking plugin registry...
@@ -582,8 +582,8 @@ CLI documentation validation failed
 ```
 
 **What It Checks**:
-- Every `ComplianceFramework` enum variant appears in the ARCHITECTURE.md framework table
-- The same for the ROADMAP.md framework table
+- Every `ComplianceFramework` enum variant appears in the architecture.md framework table
+- The same for the docs/ROADMAP.md framework table
 - Per-control *counts* are no longer statically validated: post-rework the control catalogues are split between curated files (`cis.rs`, `iso27001.rs`) and plugin-declared coverage aggregated at runtime, so a static count is not meaningful here
 
 **Exit Codes**:
@@ -596,10 +596,10 @@ Validating compliance framework documentation...
 
 Found 7 frameworks in ComplianceFramework enum: CIS, HIPAA, ISO27001, NIST, PCIDSS, STIG, GDPR
 
-Checking docs/architecture/ARCHITECTURE.md...
+Checking docs/architecture/architecture.md...
   ✓ All 7 frameworks documented
 
-Checking ROADMAP.md...
+Checking docs/ROADMAP.md...
   ✓ All 7 frameworks documented
 
 All compliance documentation is accurate
@@ -618,7 +618,7 @@ All compliance documentation is accurate
 
 **Script**: `validate_tauri_docs.py`
 
-**Purpose**: Validates that Tauri command documentation in FILE_MAP.md matches actual implementations in `commands.rs`, and that frontend bindings call valid commands.
+**Purpose**: Validates that Tauri command documentation in file-map.md matches actual implementations in `commands.rs`, and that frontend bindings call valid commands.
 
 **Usage**:
 ```bash
@@ -627,7 +627,7 @@ All compliance documentation is accurate
 ```
 
 **What It Checks**:
-- All `#[tauri::command]` functions in `src-tauri/src/commands.rs` are documented in FILE_MAP.md
+- All `#[tauri::command]` functions in `src-tauri/src/commands.rs` are documented in file-map.md
 - Command signatures (arguments, return types) match between source and documentation
 - All `invoke_command()` calls in `tauri_bindings.rs` reference valid command names
 
@@ -645,7 +645,7 @@ Found 6 Tauri commands in commands.rs:
   - run_scan() -> Vec<ScanResult>
   ...
 
-Checking FILE_MAP.md documentation...
+Checking file-map.md documentation...
   ✓ All 6 commands documented correctly
 
 Checking tauri_bindings.rs invoke calls...
@@ -656,8 +656,8 @@ All Tauri command documentation is accurate
 
 **Example Output (Discrepancies Found)**:
 ```
-Checking FILE_MAP.md documentation...
-  Commands missing from FILE_MAP.md:
+Checking file-map.md documentation...
+  Commands missing from file-map.md:
     - new_command
   Signature mismatches:
     - run_scan: return type differs (source: Vec<ScanResult>, doc: ScanResult)
@@ -694,7 +694,7 @@ Tauri command validation failed
 | Category | Action |
 |----------|--------|
 | Last Updated dates | Syncs to git commit dates |
-| FILE_MAP.md | Adds stub entries for new source files |
+| file-map.md | Adds stub entries for new source files |
 | Compliance counts | Updates framework control counts |
 | Tauri signatures | Regenerates command signatures |
 | Version references | Syncs to Cargo.toml version |
@@ -729,13 +729,13 @@ If validation fails after auto-update, you'll be prompted to continue or abort.
 Running in preview mode (use --apply to write changes)
 
 Updating Last Updated dates...
-  ✓ Would update: docs/ARCHITECTURE.md: 2025-12-01 → 2025-12-06
+  ✓ Would update: docs/architecture/architecture.md: 2025-12-01 → 2025-12-06
 
-Checking FILE_MAP.md for missing files...
+Checking file-map.md for missing files...
   ✓ Would update: Added stub for crates/hardener-state/src/new_file.rs
 
 Updating compliance framework counts...
-  ✓ Would update: ARCHITECTURE.md: CIS → 38
+  ✓ Would update: architecture.md: CIS → 38
 
 Checking for issues requiring manual attention...
   ! Manual fix needed: Plugin 'New Plugin' missing from README.md
@@ -788,12 +788,12 @@ Validating 'Last Updated' dates in markdown files...
 Found 15 markdown files to check
 
 Current files (2):
-  ✓ docs/NAMING_CONVENTIONS.md: 2025-12-04
+  ✓ docs/reference/naming-conventions.md: 2025-12-04
   ✓ scripts/README.md: 2025-12-06
 
 Files without 'Last Updated' date (13):
   - README.md
-  - ROADMAP.md
+  - docs/ROADMAP.md
   ...
 
 Warning: 13 file(s) missing 'Last Updated' date
@@ -802,7 +802,7 @@ Warning: 13 file(s) missing 'Last Updated' date
 **Example Output (Stale Dates)**:
 ```
 Stale dates found (2):
-  ✗ docs/ARCHITECTURE.md
+  ✗ docs/architecture/architecture.md
       Documented: 2025-11-15
       Git shows:  2025-12-06 (21 days newer)
 

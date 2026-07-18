@@ -18,8 +18,8 @@ Exit codes:
     1: drift between the enum and the docs
 
 Checks:
-    - docs/architecture/ARCHITECTURE.md framework table
-    - ROADMAP.md framework table
+    - docs/architecture/architecture.md framework table
+    - docs/ROADMAP.md framework table
 """
 
 import re
@@ -91,8 +91,8 @@ def main():
     )
 
     files_to_check = [
-        "docs/architecture/ARCHITECTURE.md",
-        "ROADMAP.md",
+        "docs/architecture/architecture.md",
+        "docs/ROADMAP.md",
     ]
 
     has_errors = False

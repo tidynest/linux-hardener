@@ -665,7 +665,7 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 | `scripts/validate_all.py` | Master validation orchestrator |
 | `scripts/validate_cli_docs.py` | CLI command documentation validator |
 | `scripts/validate_compliance_docs.py` | Compliance framework documentation validator |
-| `scripts/validate_file_map.py` | FILE_MAP.md accuracy validator |
+| `scripts/validate_file_map.py` | file-map.md accuracy validator |
 | `scripts/validate_last_updated.py` | Last Updated timestamp validator |
 | `scripts/validate_plugin_docs.py` | Plugin documentation validator |
 | `scripts/validate_tauri_docs.py` | Tauri integration documentation validator |
@@ -687,44 +687,68 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 
 ## Documentation Files
 
+Root files follow GitHub convention; everything else lives under `docs/` in
+purpose-named directories.
+
 | File | Purpose |
 |------|---------|
 | `README.md` | User documentation |
-| `ROADMAP.md` | Development roadmap |
-| `NEXT.md` | Session handoff and current state |
 | `CHANGELOG.md` | Version history |
 | `CONTRIBUTING.md` | Contribution guidelines |
 | `SECURITY.md` | Security policy |
 | `LICENSE` | Apache-2.0 licence |
-| `docs/ARCHITECTURE.md` | Architecture overview |
-| `docs/CONFIG_DESIGN.md` | Config system security design |
-| `docs/DATA_FLOW.md` | Data flow diagrams |
-| `docs/DISTRIBUTION_VALIDATION.md` | Multi-distro validation results |
-| `docs/FILE_MAP.md` | This file |
-| `docs/GUI_CLI_PARITY_PLAN.md` | GUI-CLI feature parity plan |
-| `docs/NAMING_CONVENTIONS.md` | Naming standards |
-| `docs/RELEASING.md` | Versioning and release process |
-| `docs/SSH_REMOTE_SCANNING.md` | SSH remote scanning user guide |
-| `docs/THEME_DESIGN_GUIDE.md` | GUI theming system documentation |
-| `docs/archive/browser-automation.md` | Playwright browser automation setup and troubleshooting (archived) |
-| `docs/css-architecture.md` | CSS architecture and theming implementation details |
-| `docs/FRONTEND_LAYOUT_PLAN.md` | Frontend page layout and component plan |
-| `docs/DOCUMENTATION_AUDIT.md` | Documentation coverage audit results |
-| `docs/GUI_V031_TEST_PLAN.md` | GUI v0.3.1 Playwright test plan |
-| `docs/tauri-plus-leptos-development-on-arch-linux-with-hyprland.md` | Tauri + Leptos development environment setup on Arch/Hyprland |
-| `docs/claude-code-configuration.md` | Development tooling configuration reference |
-| `docs/plans/2026-02-22-trait-refactor.md` | Trait refactor execution log |
-| `docs/plans/2026-02-22-trait-refactor-design.md` | Trait refactor design document |
-| `docs/plans/2026-02-24-severity-filter-design.md` | Severity filter feature design |
-| `docs/plans/2026-02-24-severity-filter.md` | Severity filter implementation plan |
-| `docs/plans/2026-02-24-remote-scanning-ui-design.md` | Remote scanning UI design document |
-| `docs/plans/2026-02-24-remote-scanning-ui.md` | Remote scanning UI implementation plan |
-| `docs/plans/2026-02-24-scheduler-ui-design.md` | Scheduler UI design document |
-| `docs/plans/2026-02-24-scheduler-ui.md` | Scheduler UI implementation plan |
-| `docs/plans/2026-02-24-config-file-picker-design.md` | Config file picker design document |
-| `docs/plans/2026-02-24-config-file-picker.md` | Config file picker implementation plan |
-| `docs/plans/2026-02-24-ui-polish-design.md` | UI polish pass design document |
-| `docs/plans/2026-02-24-ui-polish.md` | UI polish pass implementation plan |
+| `docs/ROADMAP.md` | Development roadmap |
+| `docs/NEXT.md` | Session handoff and current state |
+
+### End-user guide (`docs/guide/`)
+
+| File | Purpose |
+|------|---------|
+| `docs/guide/installation.md` | Installation guide for all supported distros |
+| `docs/guide/ssh-remote-scanning.md` | SSH remote scanning user guide |
+| `docs/guide/desktop-environment-compatibility.md` | Polkit agent matrix per desktop environment |
+
+### Reference (`docs/reference/`)
+
+| File | Purpose |
+|------|---------|
+| `docs/reference/cli.md` | CLI command reference |
+| `docs/reference/naming-conventions.md` | Naming standards |
+| `docs/reference/file-map.md` | This file |
+| `docs/reference/data-flow.md` | Data flow diagrams |
+| `docs/reference/distribution-validation.md` | Multi-distro validation results |
+
+### Architecture (`docs/architecture/`)
+
+| File | Purpose |
+|------|---------|
+| `docs/architecture/architecture.md` | Architecture overview |
+
+### Contributing (`docs/contributing/`)
+
+| File | Purpose |
+|------|---------|
+| `docs/contributing/building.md` | Build commands and workflow |
+| `docs/contributing/testing.md` | Test commands and container suites |
+| `docs/contributing/documentation.md` | Documentation validation and update commands |
+| `docs/contributing/releasing.md` | Versioning and release process |
+
+### Design (`docs/design/`)
+
+| File | Purpose |
+|------|---------|
+| `docs/design/theming.md` | GUI theming system documentation |
+
+### Plans and archives
+
+| Location | Purpose |
+|----------|---------|
+| `docs/plans/` | Active plans (currently the docs-and-repo reorganisation plan) |
+| `docs/plans/archive/` | Completed or superseded plans and design docs |
+| `docs/security/external-audit-scope.md` | External audit scope (forward-looking) |
+| `docs/security/archive/2026-02-25-internal-audit/` | 2026-02-25 internal audit record (report, tracker, threat model, domain notes) |
+| `docs/archive/` | Historical one-off docs (frontend layout plan, GUI test plans, environment setup notes) |
+| `docs/assets/` | Logo and badge artwork |
 
 ---
 

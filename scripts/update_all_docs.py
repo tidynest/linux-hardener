@@ -12,9 +12,9 @@ Exit codes:
 
 Safe auto-fixes:
     - Last Updated dates (from git history)
-    - FILE_MAP.md stub entries for new files
+    - file-map.md stub entries for new files
     - Compliance framework counts
-    - Tauri command signatures in FILE_MAP.md
+    - Tauri command signatures in file-map.md
     - Version references across documentation
 
 Cannot auto-fix (requires human attention):
@@ -75,8 +75,13 @@ class DocumentationUpdater:
         """Update Last Updated dates to match git history."""
         print(f"\n{BLUE}Updating Last Updated dates...{NC}")
 
+        # Recurse docs/, but never rewrite dates on archived records or
+        # gitignored local notes.
         markdown_files = list(self.root.glob("*.md"))
-        markdown_files += list((self.root / "docs").glob("*.md"))
+        markdown_files += [
+            md for md in (self.root / "docs").rglob("*.md")
+            if "superpowers" not in md.parts and "archive" not in md.parts
+        ]
         markdown_files += [self.root / "scripts" / "README.md"]
 
         for filepath in markdown_files:
@@ -122,13 +127,13 @@ class DocumentationUpdater:
         return None
 
     # -------------------------------------------------------------------------
-    # 2. FILE_MAP.md Stub Entries
+    # 2. file-map.md Stub Entries
     # -------------------------------------------------------------------------
     def update_file_map_stubs(self):
-        """Add stub entries for missing files in FILE_MAP.md."""
-        print(f"\n{BLUE}Checking FILE_MAP.md for missing files...{NC}")
+        """Add stub entries for missing files in file-map.md."""
+        print(f"\n{BLUE}Checking file-map.md for missing files...{NC}")
 
-        file_map = self.root / "docs" / "FILE_MAP.md"
+        file_map = self.root / "docs" / "reference" / "file-map.md"
         if not file_map.exists():
             return
 
@@ -230,8 +235,8 @@ class DocumentationUpdater:
                 count = len(re.findall(r'ComplianceMapping\s*\{', content))
                 counts[name] = count
 
-        # Update in ARCHITECTURE.md
-        arch_file = self.root / "docs" / "ARCHITECTURE.md"
+        # Update in architecture.md
+        arch_file = self.root / "docs" / "architecture" / "architecture.md"
         if arch_file.exists():
             content = arch_file.read_text()
             updated = False
@@ -244,7 +249,7 @@ class DocumentationUpdater:
                     if new_content != content:
                         content = new_content
                         updated = True
-                        self.log_update("compliance", f"ARCHITECTURE.md: {framework} → {count}")
+                        self.log_update("compliance", f"architecture.md: {framework} → {count}")
 
             if updated and self.apply:
                 arch_file.write_text(content)
@@ -253,11 +258,11 @@ class DocumentationUpdater:
     # 4. Tauri Command Signatures
     # -------------------------------------------------------------------------
     def update_tauri_signatures(self):
-        """Update Tauri command signatures in FILE_MAP.md."""
+        """Update Tauri command signatures in file-map.md."""
         print(f"\n{BLUE}Updating Tauri command signatures...{NC}")
 
         commands_file = self.root / "src-tauri" / "src" / "commands.rs"
-        file_map = self.root / "docs" / "FILE_MAP.md"
+        file_map = self.root / "docs" / "reference" / "file-map.md"
 
         if not commands_file.exists() or not file_map.exists():
             return
@@ -281,7 +286,7 @@ class DocumentationUpdater:
         new_section += "\n".join(sorted(commands))
         new_section += "\n```"
 
-        # Replace in FILE_MAP.md
+        # Replace in file-map.md
         file_map_content = file_map.read_text()
         old_section = re.search(
             r'### Tauri Commands\s*```rust\s*.*?```',
@@ -295,7 +300,7 @@ class DocumentationUpdater:
                 if self.apply:
                     file_map_content = file_map_content.replace(old_text, new_section)
                     file_map.write_text(file_map_content)
-                self.log_update("tauri", f"Updated {len(commands)} command signatures in FILE_MAP.md")
+                self.log_update("tauri", f"Updated {len(commands)} command signatures in file-map.md")
 
     # -------------------------------------------------------------------------
     # 5. Version References
@@ -315,7 +320,7 @@ class DocumentationUpdater:
 
         # Files and patterns to update
         updates = [
-            ("docs/architecture/ARCHITECTURE.md", r'(\*\*Version\*\*:\s*)\d+\.\d+\.\d+'),
+            ("docs/architecture/architecture.md", r'(\*\*Version\*\*:\s*)\d+\.\d+\.\d+'),
             ("README.md", r'(\*\*Version\*\*:\s*)\d+\.\d+\.\d+'),
         ]
 

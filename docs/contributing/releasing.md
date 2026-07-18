@@ -105,7 +105,7 @@ The release script automatically:
 1. Runs tests and clippy
 2. Auto-updates documentation (`update_all_docs.py --apply`):
    - Syncs "Last Updated" dates to git commit dates
-   - Adds stub entries to FILE_MAP.md for new source files
+   - Adds stub entries to docs/reference/file-map.md for new source files
    - Updates compliance framework control counts
    - Syncs version references to Cargo.toml
 3. Validates documentation (`validate_all.py --quick`)
@@ -117,6 +117,17 @@ The release script automatically:
 9. Pushes the release tag to both remotes
 
 If documentation validation fails, you'll be prompted to continue or abort the release.
+
+### Version Verification Only
+
+```bash
+./scripts/release.sh --verify
+```
+
+Checks that the version string is consistent across all files (`Cargo.toml`,
+`tauri.conf.json`, documentation). No changes are made.
+
+`./scripts/release.sh --help` prints the full option list.
 
 ### Manual Release
 
@@ -216,7 +227,8 @@ When releasing, the script pushes to `main` on both remotes.
 
 ### Automatic Generation
 
-Use `git-cliff` for automated changelog:
+Use `git-cliff` for automated changelog. Conventional Commits parsing is
+configured in `cliff.toml`.
 
 ```bash
 # Install
@@ -230,6 +242,9 @@ git-cliff --unreleased --output CHANGELOG.md
 
 # Preview without writing
 git-cliff --unreleased
+
+# Generate as if the unreleased commits were tagged vX.Y.Z
+git-cliff --tag vX.Y.Z --output CHANGELOG.md
 ```
 
 ### Manual Maintenance

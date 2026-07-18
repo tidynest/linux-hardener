@@ -112,7 +112,7 @@ The tool is designed for system administrators, DevOps engineers, and security p
 > Arch or SUSE families to the same hardening behaviour, so current releases
 > (Debian 13, Ubuntu 26.04, Fedora 44, RHEL 10, openSUSE Leap 16) are covered
 > automatically. openSUSE Leap 15.x reached end-of-life in April 2026; use Leap
-> 16. See [docs/DISTRIBUTION_VALIDATION.md](docs/DISTRIBUTION_VALIDATION.md) for
+> 16. See [docs/reference/distribution-validation.md](docs/reference/distribution-validation.md) for
 > the specific versions last validated end-to-end.
 
 ### User Interface
@@ -236,7 +236,7 @@ makepkg -si
 
 This installs both the `hardener` CLI and the `linux-hardener-desktop` GUI application.
 For Fedora, RHEL, Debian, Ubuntu, and openSUSE packages, a static binary, or an
-install from source, see the [installation guide](docs/INSTALL.md).
+install from source, see the [installation guide](docs/guide/installation.md).
 
 ### Run with Docker (scan and report only)
 
@@ -274,7 +274,7 @@ cargo test                 # workspace test suite
 ```
 
 The complete build, cross-compilation, desktop/GUI, and development-mode
-instructions live in [docs/commands/building.md](docs/commands/building.md).
+instructions live in [docs/contributing/building.md](docs/contributing/building.md).
 Documentation-sync, validation, and release helpers are documented in
 [scripts/README.md](scripts/README.md).
 
@@ -323,7 +323,7 @@ sudo ./scripts/run-gui-tests.sh
 sudo ./scripts/run-cross-distro-tests.sh --apply --gui
 ```
 
-See [docs/DISTRIBUTION_VALIDATION.md](docs/DISTRIBUTION_VALIDATION.md) for full test documentation.
+See [docs/reference/distribution-validation.md](docs/reference/distribution-validation.md) for full test documentation.
 
 #### Web App vs Desktop App
 
@@ -550,7 +550,7 @@ sudo hardener --ssh root@server apply --all
 hardener --ssh root@server report --framework cis --report-format pdf
 ```
 
-See [docs/SSH_REMOTE_SCANNING.md](docs/SSH_REMOTE_SCANNING.md) for complete SSH documentation.
+See [docs/guide/ssh-remote-scanning.md](docs/guide/ssh-remote-scanning.md) for complete SSH documentation.
 
 ### Multi-host / Fleet Commands
 
@@ -707,7 +707,7 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 
 ### Development Standards
 
-- Follow naming conventions in [docs/NAMING_CONVENTIONS.md](docs/NAMING_CONVENTIONS.md)
+- Follow naming conventions in [docs/reference/naming-conventions.md](docs/reference/naming-conventions.md)
 - All code must pass `cargo clippy` without warnings
 - Maintain >90% test coverage for new code
 - Use British English in documentation and user-facing text
@@ -716,7 +716,7 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) for detailed implementation plans for upcoming features.
+See [docs/ROADMAP.md](docs/ROADMAP.md) for detailed implementation plans for upcoming features.
 
 <details>
 <summary><b>Release history: v0.2.0 → v1.0.0</b> (click to expand)</summary>
@@ -810,7 +810,7 @@ See [ROADMAP.md](ROADMAP.md) for detailed implementation plans for upcoming feat
 - [x] PAM/permissions assessment improvements: faillock/pwhistory use threshold comparison; shadow/gshadow use allowed-bits mask (never loosens stricter settings)
 - [x] Desktop **Fleet** view: read-only multi-host scan posture with CIS compliance scores and per-framework breakdown
 - [x] Fleet apply/rollback in the GUI: shells out to the audited `batch apply/rollback`; mandatory dry-run + confirm modal before any change
-- [x] Polkit desktop-environment test tooling (`scripts/detect-polkit-agent.sh`, `test-polkit-matrix.sh`, DE-specific wrappers, `docs/de-compatibility.md`)
+- [x] Polkit desktop-environment test tooling (`scripts/detect-polkit-agent.sh`, `test-polkit-matrix.sh`, DE-specific wrappers, `docs/guide/desktop-environment-compatibility.md`)
 
 ---
 

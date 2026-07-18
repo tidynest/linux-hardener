@@ -2,7 +2,7 @@
 
 **Status:** prepared 2026-07-17, awaiting vendor selection and budget decision
 (issue #19). Internal remediation is complete (53/53 findings resolved, see
-`REMEDIATION_TRACKER.md`), which is precisely the right time to buy outside
+`archive/2026-02-25-internal-audit/REMEDIATION_TRACKER.md`), which is precisely the right time to buy outside
 eyes.
 
 ---
@@ -51,10 +51,10 @@ security-relevant OSS, a credible funding route given the tool's nature.
 
 ## Handover pack (assemble at engagement start)
 
-- Repo access (public), `SECURITY.md`, `REMEDIATION_TRACKER.md`
-- `docs/architecture/ARCHITECTURE.md` + `docs/DATA_FLOW.md`
+- Repo access (public), `SECURITY.md`, `archive/2026-02-25-internal-audit/REMEDIATION_TRACKER.md`
+- `docs/architecture/architecture.md` + `docs/reference/data-flow.md`
 - This scope document (threat model above)
-- Runbooks: `INSTALL.md`, `docs/commands/testing.md`, container fixtures
+- Runbooks: `docs/guide/installation.md`, `docs/contributing/testing.md`, container fixtures
   (`scripts/create-*-container.sh`, `scripts/boot-ssh-test-container.sh`)
 
 ## Logistics decisions (owner: maintainer)
@@ -63,5 +63,5 @@ security-relevant OSS, a credible funding route given the tool's nature.
 - Disclosure: findings land as private GitHub Security Advisories first,
   get fixed, then publish; maintainer triages.
 - After the audit: file each finding (private advisory if exploitable),
-  fix, add an "external audit" section to `REMEDIATION_TRACKER.md`, record
+  fix, add an "external audit" section to `archive/2026-02-25-internal-audit/REMEDIATION_TRACKER.md`, record
   the audit and outcome in `SECURITY.md` and the README.

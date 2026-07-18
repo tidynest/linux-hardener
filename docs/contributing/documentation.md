@@ -44,7 +44,7 @@ Where possible, automatically corrects issues (e.g. outdated "Last Updated" date
 
 Scans all documentation and reports what would be updated, without modifying any files. Shows:
 - "Last Updated" dates that are older than the file's last git commit
-- Missing entries in `FILE_MAP.md` for new source files
+- Missing entries in `docs/reference/file-map.md` for new source files
 - Compliance framework control counts that are out of sync
 - Version references that don't match `Cargo.toml`
 
@@ -68,7 +68,7 @@ Each of these is called by `validate_all.py`, but can be run standalone for targ
 ./scripts/validate_naming.py
 ```
 
-Checks that Rust identifiers follow the naming conventions in `docs/NAMING_CONVENTIONS.md`: PascalCase for types, snake_case for functions, SCREAMING_SNAKE_CASE for constants.
+Checks that Rust identifiers follow the naming conventions in `docs/reference/naming-conventions.md`: PascalCase for types, snake_case for functions, SCREAMING_SNAKE_CASE for constants.
 
 ### File map completeness
 
@@ -76,7 +76,7 @@ Checks that Rust identifiers follow the naming conventions in `docs/NAMING_CONVE
 ./scripts/validate_file_map.py
 ```
 
-Verifies that every source file in the workspace has an entry in `docs/FILE_MAP.md`. Reports missing entries.
+Verifies that every source file in the workspace has an entry in `docs/reference/file-map.md`. Reports missing entries.
 
 ### Plugin documentation
 

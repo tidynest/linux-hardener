@@ -70,7 +70,7 @@ def main():
     # Define all validators
     validators = [
         ("Version Synchronisation", "release.sh", ["--verify"]),
-        ("FILE_MAP.md Completeness", "validate_file_map.py", []),
+        ("file-map.md Completeness", "validate_file_map.py", []),
         ("Plugin Documentation", "validate_plugin_docs.py", []),
         ("Tauri Command Documentation", "validate_tauri_docs.py", []),
         ("Last Updated Dates", "validate_last_updated.py", ["--fix"] if fix_mode else []),

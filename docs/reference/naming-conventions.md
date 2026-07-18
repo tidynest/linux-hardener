@@ -998,8 +998,8 @@ LICENSE
 CONTRIBUTING.md
 CHANGELOG.md
 SECURITY.md
-docs/NAMING_CONVENTIONS.md
-docs/ARCHITECTURE.md
+docs/reference/naming-conventions.md
+docs/architecture/architecture.md
 
 ❌ BAD:
 docs/architecture.md         # Should be uppercase for important docs

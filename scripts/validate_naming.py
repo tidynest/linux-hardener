@@ -3,7 +3,7 @@
 Naming Convention Validator for Linux Hardening Tool
 
 This script scans the Rust codebase and validates that identifiers follow
-the naming conventions defined in docs/NAMING_CONVENTIONS.md
+the naming conventions defined in docs/reference/naming-conventions.md
 
 Author: Eric Jingryd
 """
@@ -57,7 +57,7 @@ class NamingValidator:
 
         # Em-dash and en-dash are forbidden project-wide (they read as an AI
         # tell). The scan covers tracked prose and source; use comma, colon,
-        # parentheses, or a plain hyphen instead. See docs/NAMING_CONVENTIONS.md.
+        # parentheses, or a plain hyphen instead. See docs/reference/naming-conventions.md.
         # Pattern uses unicode escapes (not literal glyphs) so this file does
         # not flag itself. Matches em-dash, en-dash, and their Rust \u escapes.
         _em, _en = chr(0x2014), chr(0x2013)
@@ -483,7 +483,7 @@ class NamingValidator:
 
         # Summary
         print(f"Summary: {len(errors)} errors, {len(non_test_warnings)} production warnings, {len(test_warnings)} test warnings")
-        print(f"\nRefer to docs/NAMING_CONVENTIONS.md for complete naming standards.\n")
+        print(f"\nRefer to docs/reference/naming-conventions.md for complete naming standards.\n")
 
     def _group_warnings(self, warnings: List[ValidationIssue]) -> Dict[str, WarningSummary]:
         """Group warnings by type for cleaner output"""

@@ -36,9 +36,9 @@ DE test tooling. `cargo test --workspace` = **660 passed / 0 failed / 38 ignored
 - **Test quality pass** (2026-02-25): 178+ assertion messages, 80+ println removed, net -422 lines
 - **High Contrast theme** (2026-02-25): WCAG AAA accessibility theme (7:1+ contrast ratios)
 - **Man page** (2026-02-25): `data/hardener.1` troff man page for all commands
-- **Security remediation** (2026-02-26): all 53 security findings resolved (see `docs/security-audit/REMEDIATION_TRACKER.md`)
+- **Security remediation** (2026-02-26): all 53 security findings resolved (see `docs/security/archive/2026-02-25-internal-audit/REMEDIATION_TRACKER.md`)
 - **Code quality pass** (2026-02-27): 27 code quality findings fixed, shared helper extraction, 10 packaging fixes
-- **Documentation** (2026-02-27): SECURITY.md updated, INSTALL.md created for 5 distro families
+- **Documentation** (2026-02-27): SECURITY.md updated, docs/guide/installation.md created for 5 distro families
 - **v1.0.3 parallel test runners** (2026-02-28): `run-gui-tests-parallel.sh`, `run-cross-distro-tests-parallel.sh`, `run-desktop-tests.sh`, `run-all-tests-parallel.sh`
 - **v1.0.2 merged branches** (2026-02-28): `cli-ux-perfection` (CLI crash fixes, stderr routing, idempotent dirs, user-mode systemd) + `feature/desktop-testing-ux` (keyboard nav, ARIA, clipboard, TabBar migration, 95 desktop tests)
 - **Desktop tests**: 49 UX tests + 46 functional tests + 21 Node.js tests all passing
@@ -88,7 +88,7 @@ PCI-DSS, HIPAA, GDPR and ISO 27001:2022 control IDs (sourced from
 ComplianceAsCode/SSG and the project catalogues, cited inline) alongside CIS, so
 every framework fails on insecure systems. Failure mode is safe: a wrong mapping
 causes a false *fail*, never a false pass. Design notes:
-[docs/plans/2026-06-19-compliance-coverage-phase2.md](docs/plans/2026-06-19-compliance-coverage-phase2.md).
+[docs/plans/archive/2026-06-19-compliance-coverage-phase2.md](plans/archive/2026-06-19-compliance-coverage-phase2.md).
 
 **Phase 3 (derive + Option B): Done.** Coverage is now per-control and
 plugin-declared: each plugin exposes `coverage()`, aggregated by
@@ -235,7 +235,7 @@ distro install (user request, 2026-06-29). Reuse the existing
 glibc. Decide on pickup: **scan/report read-only is the safe default**; *apply*
 would need `--privileged` + host namespaces (`--pid=host`, host `/etc`, `/sys`)
 to mutate the real host, which undercuts container isolation, likely document
-as discouraged/unsupported. Add a `docker` row to `DISTRIBUTION_VALIDATION.md`
+as discouraged/unsupported. Add a `docker` row to `docs/reference/distribution-validation.md`
 once it exists.
 
 ### P3: Deferred code cleanups (Done, 2026-07-16)
@@ -251,7 +251,7 @@ test proven red→green).
 
 | Item | Detail | Status |
 |------|--------|--------|
-| Distro validation refresh | v1.1.0 binary **re-validated** on the existing containers 2026-06-28 (CLI suite; analysis in `docs/DISTRIBUTION_VALIDATION.md` §v1.1.0 Re-validation). **Version refresh still pending**: recreate containers for Debian 13, Fedora 44, RHEL 10, openSUSE Leap 16 (Leap 15.6 EOL April 2026). GUI suite re-run green on all 5 distros (2026-06-29, 113 tests). | 🟡 Partial |
+| Distro validation refresh | v1.1.0 binary **re-validated** on the existing containers 2026-06-28 (CLI suite; analysis in `docs/reference/distribution-validation.md` §v1.1.0 Re-validation). **Version refresh still pending**: recreate containers for Debian 13, Fedora 44, RHEL 10, openSUSE Leap 16 (Leap 15.6 EOL April 2026). GUI suite re-run green on all 5 distros (2026-06-29, 113 tests). | 🟡 Partial |
 | Cross-distro JSON-grep flake | **Root cause: the `sed` ANSI-strip in `run_test_output`** (NOT stderr-fold/capture, those fixes did not help). It piped captured output through `sed 's/ANSI//g'` before `grep`; under openSUSE's minimal-container locale that `sed` intermittently emitted nothing, masking fields that were present (proven: direct `grep -ac` matched 8/240/3 while `sed \| grep` missed). Dropped the pointless pre-strip (ANSI never splits matched tokens); now `grep -aqE`s the captured file directly, with a `diag:` line on the fail path. Suite green 125/125 × 5. | ✅ Done (837963b) |
 | `tauri` 2.11.2 → 2.11.3 | Latest patch (2026-06-17); no CVE, routine bump | ✅ Done (lockfile, 2026-06-20) |
 | Desktop crate compile fix | Tauri compliance commands ported to the phase-3 `ReportGenerator::new(config, coverage)` signature; `cargo check -p linux-hardener-desktop` clean | ✅ Done (2026-06-20) |
@@ -282,7 +282,7 @@ All 8 plugins now fully consume `PluginConfig` directives and exceptions. Two fa
 
 ### 2. GUI/CLI Feature Parity (v0.4.0): COMPLETED (2026-02-24)
 
-See `docs/GUI_CLI_PARITY_PLAN.md`: all 6 phases complete.
+See `docs/plans/archive/2026-02-24-gui-cli-parity.md`: all 6 phases complete.
 
 | Phase | Feature | Priority | Status |
 |-------|---------|----------|--------|
@@ -309,7 +309,7 @@ See `docs/GUI_CLI_PARITY_PLAN.md`: all 6 phases complete.
 |------|----------|--------|
 | Security audit (internal: 53/53 complete) | Critical | Done, third-party review pending |
 | Package distribution (deb, rpm, AUR) | High | Specs ready, build scripts created |
-| Comprehensive user documentation | High | Man page + INSTALL.md done |
+| Comprehensive user documentation | High | Man page + docs/guide/installation.md done |
 | Performance optimisation | Medium | Pending |
 
 ---
@@ -326,7 +326,7 @@ See `docs/GUI_CLI_PARITY_PLAN.md`: all 6 phases complete.
 - **WASM Support**: GUI frontend compiles to `wasm32-unknown-unknown`
 
 For version history and detailed feature tracking, see [ROADMAP.md](ROADMAP.md).
-For coding standards, workflow, and conventions, see [CONTRIBUTING.md](CONTRIBUTING.md).
+For coding standards, workflow, and conventions, see [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ---
 

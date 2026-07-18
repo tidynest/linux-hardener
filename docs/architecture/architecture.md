@@ -570,8 +570,8 @@ The `main` branch is kept in sync on GitHub and GitLab. The release script (`scr
 
 ## See Also
 
-- `docs/DATA_FLOW.md` - Detailed data flow diagrams
-- `docs/CONFIG_DESIGN.md` - Configuration system security design
-- `docs/RELEASING.md` - Versioning and release process
-- `ROADMAP.md` - Development roadmap
+- `docs/reference/data-flow.md` - Detailed data flow diagrams
+- `docs/plans/archive/CONFIG_DESIGN.md` - Configuration system security design
+- `docs/contributing/releasing.md` - Versioning and release process
+- `docs/ROADMAP.md` - Development roadmap
 - `README.md` - User documentation

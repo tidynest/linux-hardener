@@ -16,7 +16,7 @@ This document tracks validation testing across supported Linux distributions.
 > recreating the containers. Family-based detection still routes them correctly.
 > **openSUSE Leap 15.x reached end-of-life in April 2026:** re-pin the SUSE
 > container target to Leap 16 when refreshing. The version refresh remains a P3
-> task in `NEXT.md`.
+> task in `docs/NEXT.md`.
 
 ---
 
