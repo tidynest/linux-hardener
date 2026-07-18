@@ -1,5 +1,7 @@
 # Distribution Validation Results
 
+**Last Updated**: 2026-07-17
+
 This document tracks validation testing across supported Linux distributions.
 
 **Last full cross-distro validation:** hardener **1.1.0** (CLI suite, 2026-06-28, see [v1.1.0 Re-validation](#v110-re-validation-2026-06-28))
@@ -766,4 +768,4 @@ test-results/gui/
 
 ---
 
-**Last Updated:** 2026-07-17
+**Last Updated**: 2026-07-17

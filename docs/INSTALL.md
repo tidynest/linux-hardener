@@ -1,5 +1,7 @@
 # Installation Guide
 
+**Last Updated**: 2026-07-17
+
 ## Requirements
 
 - Linux kernel 5.4+

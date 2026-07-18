@@ -1,5 +1,7 @@
 # Desktop Environment Compatibility
 
+**Last Updated**: 2026-07-17
+
 Linux System Hardener uses `pkexec` (polkit) for privilege escalation when
 applying hardening rules or rolling back checkpoints. This requires a running
 polkit authentication agent that presents the password dialog.

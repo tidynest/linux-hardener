@@ -235,6 +235,8 @@ makepkg -si
 ```
 
 This installs both the `hardener` CLI and the `linux-hardener-desktop` GUI application.
+For Fedora, RHEL, Debian, Ubuntu, and openSUSE packages, a static binary, or an
+install from source, see the [installation guide](docs/INSTALL.md).
 
 ### Run with Docker (scan and report only)
 
@@ -258,74 +260,23 @@ unsupported in a container by design: it would need `--privileged` plus host
 namespaces, defeating the isolation. Details in
 [`packaging/docker/README.md`](packaging/docker/README.md).
 
-### Prerequisites (Building from Source)
+### Building from Source
 
-- Rust 1.85+ (with `wasm32-unknown-unknown` and `x86_64-unknown-linux-musl` targets)
-- Linux system (for full functionality)
-- Root access (for applying hardening changes)
-- `musl` toolchain (for static CLI binary)
-
-### Build from Source
+Requires Rust 1.85+ with the `wasm32-unknown-unknown` and
+`x86_64-unknown-linux-musl` targets, plus a `musl` toolchain for the static CLI
+binary. Quick build:
 
 ```bash
-# Clone repository
 git clone https://github.com/tidynest/linux-system-hardener.git
 cd linux-system-hardener
-
-# Build all crates
-cargo build --release
-
-# Run tests
-cargo test
-
-# Build desktop application (requires Tauri CLI)
-cargo install tauri-cli --version "^2"
-cargo tauri build
+cargo build --release      # all crates (CLI plus libraries)
+cargo test                 # workspace test suite
 ```
 
-### Development Setup
-
-```bash
-# Install development dependencies
-rustup target add wasm32-unknown-unknown
-cargo install trunk
-
-# Run desktop app in development mode (requires polkit for privilege escalation)
-cargo tauri dev
-
-# On Wayland (Hyprland, Sway, etc.), use this workaround:
-WEBKIT_DISABLE_COMPOSITING_MODE=1 cargo tauri dev
-
-# Run web UI in development mode (browser - no Tauri required)
-cd crates/hardener-ui && trunk serve --port 1420
-# Open http://127.0.0.1:1420/ in your browser
-
-# Browser automation via Playwright MCP (recommended for UI testing)
-# Configure playwright-brave in .mcp.json, then use mcp__playwright-brave__browser_navigate
-# See MCP_INSTRUCTIONS.md for complete setup instructions
-```
-
-### Development Workflow Commands
-
-```bash
-# Validate documentation is in sync with code
-./scripts/validate_all.py           # Full validation
-./scripts/validate_all.py --quick   # Fast check (skips slow validators)
-
-# Auto-fix documentation (safe, idempotent)
-./scripts/update_all_docs.py        # Preview changes
-./scripts/update_all_docs.py --apply # Apply changes
-
-# Check naming conventions
-./scripts/validate_naming.py
-
-# Release workflow
-./scripts/release.sh --verify       # Check version consistency
-./scripts/release.sh patch --dry-run # Preview release
-./scripts/release.sh patch          # Actual release
-```
-
-See [scripts/README.md](scripts/README.md) for complete script documentation.
+The complete build, cross-compilation, desktop/GUI, and development-mode
+instructions live in [docs/commands/building.md](docs/commands/building.md).
+Documentation-sync, validation, and release helpers are documented in
+[scripts/README.md](scripts/README.md).
 
 ### Safe Root Testing
 
@@ -507,6 +458,9 @@ hardener checkpoint list
 
 # Show checkpoint details
 hardener checkpoint show <checkpoint-id>
+
+# Delete a checkpoint by id
+hardener checkpoint delete <checkpoint-id>
 ```
 
 </details>
@@ -528,6 +482,15 @@ hardener history show <session-id>
 # Export scan session to JSON file
 hardener history export <session-id>
 hardener history export <session-id> --output /path/to/export.json
+
+# Per-host security score trends over time
+hardener history trends --host web-01 --limit 10
+
+# Detect regressions since the previous scan (CI gate across all hosts)
+hardener history regressions
+
+# Quiet output for scripts (global --quiet flag suppresses non-essential text)
+hardener --quiet history regressions
 ```
 
 </details>
