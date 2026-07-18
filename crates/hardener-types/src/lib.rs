@@ -406,6 +406,18 @@ pub struct ApplyResult {
     pub apply_error: Option<String>,
 }
 
+impl ApplyResult {
+    /// Counts changes that represent real work done on the host, excluding
+    /// [`ChangeType::Skipped`] no-ops (e.g. no MAC system present). Renderers
+    /// must use this, not `apply_changes.len()`, for "N change(s) applied".
+    pub fn applied_change_count(&self) -> usize {
+        self.apply_changes
+            .iter()
+            .filter(|c| !c.is_skipped())
+            .count()
+    }
+}
+
 /// Represents a single change made during hardening.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Change {
@@ -417,6 +429,14 @@ pub struct Change {
     pub change_success: bool,
     /// Optional error if change failed.
     pub change_error: Option<String>,
+}
+
+impl Change {
+    /// Whether this entry is a [`ChangeType::Skipped`] no-op rather than a
+    /// real change applied to the host.
+    pub fn is_skipped(&self) -> bool {
+        self.change_type == ChangeType::Skipped
+    }
 }
 
 /// Type of system change.
@@ -730,6 +750,60 @@ pub enum RollbackStatus {
     NothingToDo,
     /// Host-level error (connect / not privileged / selection query / usage).
     Failed { error: String },
+}
+
+#[cfg(test)]
+mod apply_change_tests {
+    use super::*;
+
+    fn change(change_type: ChangeType, description: &str) -> Change {
+        Change {
+            change_description: description.to_string(),
+            change_type,
+            change_success: true,
+            change_error: None,
+        }
+    }
+
+    fn apply_result(changes: Vec<Change>) -> ApplyResult {
+        ApplyResult {
+            apply_plugin_id: PluginId::new("test"),
+            apply_success: true,
+            apply_changes: changes,
+            apply_checkpoint_id: None,
+            apply_error: None,
+        }
+    }
+
+    #[test]
+    fn applied_change_count_excludes_skipped() {
+        let result = apply_result(vec![
+            change(ChangeType::ConfigFile, "wrote sshd_config"),
+            change(ChangeType::Skipped, "no MAC system detected"),
+        ]);
+        assert_eq!(result.applied_change_count(), 1);
+    }
+
+    #[test]
+    fn applied_change_count_all_applied() {
+        let result = apply_result(vec![
+            change(ChangeType::ConfigFile, "wrote sshd_config"),
+            change(ChangeType::Service, "restarted sshd"),
+        ]);
+        assert_eq!(result.applied_change_count(), 2);
+    }
+
+    #[test]
+    fn applied_change_count_all_skipped() {
+        let result = apply_result(vec![change(ChangeType::Skipped, "no MAC system detected")]);
+        assert_eq!(result.applied_change_count(), 0);
+    }
+
+    #[test]
+    fn is_skipped_reflects_change_type() {
+        assert!(change(ChangeType::Skipped, "skip").is_skipped());
+        assert!(!change(ChangeType::ConfigFile, "real").is_skipped());
+    }
 }
 
 #[cfg(test)]

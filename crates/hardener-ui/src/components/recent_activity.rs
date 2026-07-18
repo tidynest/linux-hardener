@@ -4,7 +4,6 @@
 
 use crate::components::{Card, HeadingLevel};
 use crate::state::AppState;
-use crate::types::ChangeType;
 use leptos::prelude::*;
 
 /// Recent activity summary for the Dashboard.
@@ -46,12 +45,7 @@ pub fn RecentActivity() -> impl IntoView {
             .apply_results
             .get()
             .last()
-            .map(|r| {
-                r.apply_changes
-                    .iter()
-                    .filter(|c| !matches!(c.change_type, ChangeType::Skipped))
-                    .count()
-            })
+            .map(|r| r.applied_change_count())
             .unwrap_or(0)
     };
 

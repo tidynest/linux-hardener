@@ -368,6 +368,13 @@ async fn test_mac_validate_no_mac() {
         result.validation_report_is_valid,
         "validation without MAC should still be valid (checks prerequisites only)"
     );
+    // Apply records a no-MAC host as a skip, not a change, so the preview
+    // must not inflate "N item(s) to apply" with a pseudo-change either.
+    assert!(
+        result.validation_report_estimated_changes.is_empty(),
+        "a no-MAC host has nothing to apply; estimated changes must be empty, got: {:?}",
+        result.validation_report_estimated_changes
+    );
 }
 
 #[tokio::test]

@@ -8,7 +8,7 @@ use crate::tauri_bindings::{
     invoke_create_checkpoint, invoke_delete_checkpoint, invoke_get_checkpoint_detail,
     invoke_get_checkpoints, invoke_rollback,
 };
-use crate::types::{ChangeType, CheckpointDetail, CheckpointInfo, FileRestoreAction};
+use crate::types::{CheckpointDetail, CheckpointInfo, FileRestoreAction};
 use leptos::prelude::*;
 
 /// Formats a `FileRestoreAction` variant for display.
@@ -166,10 +166,7 @@ pub fn HistorySection() -> impl IntoView {
                         let result = results.last().expect("guarded by Show when=");
                         let success = result.apply_success;
                         let changes = result.apply_changes.clone();
-                        let applied_count = changes
-                            .iter()
-                            .filter(|c| !matches!(c.change_type, ChangeType::Skipped))
-                            .count();
+                        let applied_count = result.applied_change_count();
                         let skipped_count = changes.len() - applied_count;
                         let checkpoint_id = result.apply_checkpoint_id.clone();
 
@@ -195,7 +192,7 @@ pub fn HistorySection() -> impl IntoView {
                                     <ol class="changes-list">
                                         {changes.iter().map(|change| {
                                             let desc = change.change_description.clone();
-                                            let class = if matches!(change.change_type, ChangeType::Skipped) {
+                                            let class = if change.is_skipped() {
                                                 "change-skipped"
                                             } else if change.change_success {
                                                 "change-success"

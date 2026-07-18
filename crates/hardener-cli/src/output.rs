@@ -2,7 +2,7 @@
 
 use colored::Colorize;
 use hardener_common::types::Severity;
-use hardener_core::{ApplyResult, Change, ChangeType, Finding, PluginMetadata, ValidationReport};
+use hardener_core::{ApplyResult, Finding, PluginMetadata, ValidationReport};
 use hardener_state::{Checkpoint, FileState, RollbackResult};
 
 use crate::cli::{OutputFormat, ScanMode};
@@ -158,7 +158,7 @@ pub fn apply_results(format: &OutputFormat, results: &[(PluginMetadata, ApplyRes
                 if let Some(err) = &result.apply_error {
                     println!("{} {} - {}", icon, metadata.plugin_name, err);
                 } else {
-                    let applied = applied_change_count(&result.apply_changes);
+                    let applied = result.applied_change_count();
                     let skipped = result.apply_changes.len() - applied;
                     let skipped_suffix = if skipped > 0 {
                         format!(", {skipped} skipped")
@@ -172,7 +172,7 @@ pub fn apply_results(format: &OutputFormat, results: &[(PluginMetadata, ApplyRes
                 }
 
                 for change in &result.apply_changes {
-                    let status = if matches!(change.change_type, ChangeType::Skipped) {
+                    let status = if change.is_skipped() {
                         "○".dimmed()
                     } else if change.change_success {
                         "✓".green()
@@ -184,15 +184,6 @@ pub fn apply_results(format: &OutputFormat, results: &[(PluginMetadata, ApplyRes
             }
         }
     }
-}
-
-/// Counts changes that represent real work done on the host, excluding
-/// `ChangeType::Skipped` no-ops (e.g. no MAC system present).
-fn applied_change_count(changes: &[Change]) -> usize {
-    changes
-        .iter()
-        .filter(|c| !matches!(c.change_type, ChangeType::Skipped))
-        .count()
 }
 
 pub fn plugin_list(format: &OutputFormat, plugins: &[PluginMetadata]) {
@@ -396,39 +387,6 @@ fn format_timestamp(timestamp: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn change(change_type: ChangeType, description: &str) -> Change {
-        Change {
-            change_description: description.to_string(),
-            change_type,
-            change_success: true,
-            change_error: None,
-        }
-    }
-
-    #[test]
-    fn test_applied_change_count_excludes_skipped() {
-        let changes = vec![
-            change(ChangeType::ConfigFile, "wrote sshd_config"),
-            change(ChangeType::Skipped, "no MAC system detected"),
-        ];
-        assert_eq!(applied_change_count(&changes), 1);
-    }
-
-    #[test]
-    fn test_applied_change_count_all_applied() {
-        let changes = vec![
-            change(ChangeType::ConfigFile, "wrote sshd_config"),
-            change(ChangeType::Service, "restarted sshd"),
-        ];
-        assert_eq!(applied_change_count(&changes), 2);
-    }
-
-    #[test]
-    fn test_applied_change_count_all_skipped() {
-        let changes = vec![change(ChangeType::Skipped, "no MAC system detected")];
-        assert_eq!(applied_change_count(&changes), 0);
-    }
 
     #[test]
     fn test_format_severity_critical() {
