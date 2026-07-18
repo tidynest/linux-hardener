@@ -217,6 +217,23 @@ the phased proposal above and need no further approval:
 - README CLI examples added for `checkpoint delete`, `history trends`,
   `history regressions`, and the global `--quiet` flag.
 
+## Future consideration: architecture visualisation
+
+The README architecture diagram was restructured into layered subgraphs with the
+`common`/`types` edges thinned into a caption, which is a clear improvement, but
+the two binaries (`hardener-cli` and `linux-hardener-desktop`) each fan out to
+six domain crates, so the Binaries-to-Domain band still reads as a bundle of
+crossing edges. Mermaid's default routing has limited control here. Worth
+evaluating, not urgent:
+- Mermaid's `flowchart-elk` renderer for better edge routing (confirm GitHub and
+  GitLab both render it before committing).
+- A hand-authored SVG diagram (full control over layout and edge routing, at the
+  cost of manual upkeep when the crate graph changes).
+- Splitting into two smaller diagrams (a high-level layer view, plus a detailed
+  per-crate dependency view) rather than one graph carrying every edge.
+- A generated dependency graph (for example `cargo depgraph`) checked in as an
+  image, regenerated on release.
+
 ## Open questions for the maintainer
 
 1. Root planning docs: keep `ROADMAP.md` and `NEXT.md` at root (current plan), or
