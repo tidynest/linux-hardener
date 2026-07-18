@@ -669,14 +669,15 @@ impl HardeningPlugin for MacHardeningPlugin {
                 }
             }
             None => {
-                return Ok(ApplyResult {
-                    apply_plugin_id,
-                    apply_success: false,
-                    apply_changes: vec![],
-                    apply_checkpoint_id: checkpoint_id,
-                    apply_error: Some(
-                        "No MAC system detected - cannot apply hardening".to_string(),
-                    ),
+                // Many distributions ship without SELinux or AppArmor; an
+                // absent MAC system is a normal state, not a plugin failure.
+                info!("No MAC system detected - nothing to apply");
+                apply_changes.push(Change {
+                    change_description: "No MAC system detected - nothing to configure (skipped)"
+                        .to_string(),
+                    change_type: ChangeType::ConfigFile,
+                    change_success: true,
+                    change_error: None,
                 });
             }
         }

@@ -520,3 +520,33 @@ async fn test_mac_validate_skips_exceptions() {
         "excepted SELinux action should not appear in estimated changes"
     );
 }
+
+#[tokio::test]
+async fn test_mac_apply_no_mac_system_is_graceful_skip() {
+    // A host with neither SELinux nor AppArmor is a normal configuration
+    // (many desktop distros ship without a MAC system). Apply must report a
+    // successful no-op skip, not a plugin failure: a failure here makes every
+    // all-plugin apply abort with "One or more plugins failed to apply".
+    let executor = no_mac_executor();
+    let mut ctx = Context::with_executor(Arc::new(executor));
+    let plugin = MacHardeningPlugin::new();
+
+    let result = plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(
+        result.apply_success,
+        "absent MAC system must be a graceful skip, got error: {:?}",
+        result.apply_error
+    );
+    assert!(result.apply_error.is_none());
+    assert!(
+        result
+            .apply_changes
+            .iter()
+            .any(|c| c.change_success && c.change_description.contains("No MAC system")),
+        "should record an explanatory no-op change"
+    );
+}
