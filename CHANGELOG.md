@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-07-18
+
 ### Fixed
 - The build identity no longer picks up an unrelated git repository: a
   tarball extracted inside a foreign checkout (such as yay's AUR package
