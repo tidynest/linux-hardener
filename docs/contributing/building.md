@@ -62,7 +62,7 @@ These require the corresponding rustup targets to be installed (see "Rustup Targ
 ### Development mode (hot-reload)
 
 ```bash
-./scripts/tauri-dev.sh
+./scripts/dev/tauri-dev.sh
 ```
 
 Preferred method. The script auto-detects your session type (Wayland/X11), applies NVIDIA and Hyprland workarounds, checks that required system packages are installed, and then launches `cargo tauri dev`.
@@ -72,7 +72,7 @@ Internally, Tauri runs `trunk serve` (WASM frontend on port 1420) and compiles t
 To pass extra arguments through to `cargo tauri dev`:
 
 ```bash
-./scripts/tauri-dev.sh -- --release
+./scripts/dev/tauri-dev.sh -- --release
 ```
 
 The direct command without the wrapper script:

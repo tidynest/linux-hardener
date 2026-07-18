@@ -87,7 +87,7 @@ Remote `--ssh` operations are unavailable in the image (no ssh client binary).
 ## v1.1.0 Re-validation (2026-06-28)
 
 The v1.1.0 musl static binary (`hardener 1.1.0`, ~13.6 MB, `static-pie`) was run
-through the full CLI suite (`sudo ./scripts/run-cross-distro-tests.sh --apply`)
+through the full CLI suite (`sudo ./scripts/test/run-cross-distro-tests.sh --apply`)
 across all five containers. The GUI/Playwright suite was **subsequently re-run and
 is green on all five distros** (113 tests across 9 specs, 2026-06-29, adds fleet,
 fleet-apply, remote, and scheduler coverage).
@@ -163,7 +163,7 @@ cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli
 cp target/x86_64-unknown-linux-musl/release/hardener target/release/hardener
 
 # Run the full cross-distro validation (requires root for systemd-nspawn)
-sudo ./scripts/run-cross-distro-tests.sh --apply
+sudo ./scripts/test/run-cross-distro-tests.sh --apply
 ```
 
 The `--apply` flag gates destructive tests (sections 13-16, 23) that modify system state inside containers. Without this flag, those sections are skipped entirely.
@@ -674,11 +674,11 @@ Pass Rate:    100%
 
 To reproduce the full cross-distro validation from scratch:
 
-1. **Set up containers** -- `scripts/create-container.sh <distro>` creates each one:
-   - `sudo ./scripts/create-container.sh debian`
-   - `sudo ./scripts/create-container.sh fedora`
-   - `sudo ./scripts/create-container.sh opensuse`
-   - `sudo ./scripts/create-container.sh rhel` (Rocky Linux via podman export)
+1. **Set up containers** -- `scripts/containers/create-container.sh <distro>` creates each one:
+   - `sudo ./scripts/containers/create-container.sh debian`
+   - `sudo ./scripts/containers/create-container.sh fedora`
+   - `sudo ./scripts/containers/create-container.sh opensuse`
+   - `sudo ./scripts/containers/create-container.sh rhel` (Rocky Linux via podman export)
 
 2. **Build the musl static binary**:
    ```bash
@@ -688,7 +688,7 @@ To reproduce the full cross-distro validation from scratch:
 
 3. **Run the cross-distro test suite**:
    ```bash
-   sudo ./scripts/run-cross-distro-tests.sh --apply
+   sudo ./scripts/test/run-cross-distro-tests.sh --apply
    ```
 
 4. **Review results** -- The runner outputs a summary table to stdout and per-distro logs under the project directory.
@@ -713,7 +713,7 @@ In addition to CLI testing, the Web UI is validated with Playwright across all 5
 
 - **Virtual Display**: Xvfb (X virtual framebuffer) provides a headless display inside containers
 - **SPA Server**: `gui-tests/spa-server.py` -- Python HTTP server on port 8787 with client-side routing support (all non-file paths return `index.html`)
-- **Test Index Generation**: `scripts/gui-test-inner.sh` dynamically generates the served `index.html` at test-time by reading `dist/index.html`, stripping SRI `integrity` attributes, and injecting `<script src="/tauri-mock.js"></script>` before the first `<script type="module">` tag
+- **Test Index Generation**: `scripts/test/gui/gui-test-inner.sh` dynamically generates the served `index.html` at test-time by reading `dist/index.html`, stripping SRI `integrity` attributes, and injecting `<script src="/tauri-mock.js"></script>` before the first `<script type="module">` tag
 - **Tauri IPC Mock**: `gui-tests/tauri-mock.js` -- JavaScript mock of `window.__TAURI__` injected before WASM loads, covering 28 IPC commands: `run_scan`, `run_scan_filtered`, `run_scan_with_options`, `get_latest_scan`, `run_apply`, `run_apply_dry_run`, `get_checkpoints`, `create_checkpoint`, `delete_checkpoint`, `run_rollback`, `generate_compliance_report`, `export_report`, `export_compliance_report`, `get_scan_history`, `get_scan_session`, `list_plugins`, `get_checkpoint_detail`, `list_remote_hosts`, `save_remote_host`, `delete_remote_host`, `connect_remote`, `disconnect_remote`, `run_remote_scan`, `get_scheduler_config`, `save_scheduler_config`, `test_notification`, `validate_config`, `pick_config_file`
 - **Browser**: System Chromium auto-detected per distribution (no bundled browser)
 - **Test Runner**: Playwright (npm) with `gui-tests/playwright.config.js`
@@ -747,10 +747,10 @@ In addition to CLI testing, the Web UI is validated with Playwright across all 5
 cd crates/hardener-ui && trunk build --release && cd ../..
 
 # Run GUI tests across all 5 distributions
-sudo ./scripts/run-gui-tests.sh
+sudo ./scripts/test/gui/run-gui-tests.sh
 
 # Or via the cross-distro runner with --gui flag
-sudo ./scripts/run-cross-distro-tests.sh --gui
+sudo ./scripts/test/run-cross-distro-tests.sh --gui
 ```
 
 ### Output Files

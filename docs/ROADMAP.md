@@ -201,22 +201,22 @@ This document tracks the development progress and planned features for Linux Sys
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/create-container.sh` | Create/manage test containers (arch/debian/fedora/rhel/opensuse) |
-| `scripts/root-test-suite.sh` | Comprehensive root test suite |
-| `scripts/run-gui-tests.sh` | Web UI Playwright test orchestrator (5 distros) |
-| `scripts/gui-test-inner.sh` | Container inner script (Xvfb + HTTP + Playwright; dynamically generates index.html from dist/) |
-| `scripts/run-tauri-gui-tests.sh` | Tauri desktop test orchestrator |
-| `scripts/tauri-gui-test-inner.sh` | Container inner script for Tauri desktop tests |
+| `scripts/containers/create-container.sh` | Create/manage test containers (arch/debian/fedora/rhel/opensuse) |
+| `scripts/test/root-test-suite.sh` | Comprehensive root test suite |
+| `scripts/test/gui/run-gui-tests.sh` | Web UI Playwright test orchestrator (5 distros) |
+| `scripts/test/gui/gui-test-inner.sh` | Container inner script (Xvfb + HTTP + Playwright; dynamically generates index.html from dist/) |
+| `scripts/test/gui/run-tauri-gui-tests.sh` | Tauri desktop test orchestrator |
+| `scripts/test/gui/tauri-gui-test-inner.sh` | Container inner script for Tauri desktop tests |
 
 **Usage**:
 
 ```bash
-sudo ./scripts/create-container.sh arch        # Create container
-sudo ./scripts/create-container.sh arch enter  # Enter container
+sudo ./scripts/containers/create-container.sh arch        # Create container
+sudo ./scripts/containers/create-container.sh arch enter  # Enter container
 # Inside container (binary built on host is bind-mounted):
 cd /project
-sudo ./scripts/root-test-suite.sh              # Safe tests (read-only)
-sudo ./scripts/root-test-suite.sh --apply      # Full tests (apply + rollback)
+sudo ./scripts/test/root-test-suite.sh              # Safe tests (read-only)
+sudo ./scripts/test/root-test-suite.sh --apply      # Full tests (apply + rollback)
 ```
 
 > **Note**: Destructive tests (apply hardening, rollback) require explicit `--apply` flag. Inside the container, both modes are completely safe since it's isolated from the host system.
@@ -398,7 +398,7 @@ User clicks "Apply"
 
 **Test Environment**: systemd-nspawn containers with bind-mounted project directory. Container scripts in `scripts/create-*-container.sh`.
 
-**GUI Test Validation**: 84 Playwright Web UI tests pass on all 5 distros (Arch, Debian, Fedora, Rocky 9, openSUSE). Covers dashboard, findings, compliance, configure, history, themes, and error handling. Run via `sudo ./scripts/run-gui-tests.sh` or `run-cross-distro-tests.sh --gui`.
+**GUI Test Validation**: 84 Playwright Web UI tests pass on all 5 distros (Arch, Debian, Fedora, Rocky 9, openSUSE). Covers dashboard, findings, compliance, configure, history, themes, and error handling. Run via `sudo ./scripts/test/gui/run-gui-tests.sh` or `run-cross-distro-tests.sh --gui`.
 
 > **Test Results**: See [docs/reference/distribution-validation.md](reference/distribution-validation.md)
 

@@ -93,12 +93,12 @@ Use the release script:
 
 ```bash
 # Dry run first
-./scripts/release.sh patch --dry-run
+./scripts/release/release.sh patch --dry-run
 
 # Actual release
-./scripts/release.sh patch   # 0.1.0 -> 0.1.1
-./scripts/release.sh minor   # 0.1.1 -> 0.2.0
-./scripts/release.sh major   # 0.2.0 -> 1.0.0
+./scripts/release/release.sh patch   # 0.1.0 -> 0.1.1
+./scripts/release/release.sh minor   # 0.1.1 -> 0.2.0
+./scripts/release/release.sh major   # 0.2.0 -> 1.0.0
 ```
 
 The release script automatically:
@@ -121,13 +121,13 @@ If documentation validation fails, you'll be prompted to continue or abort the r
 ### Version Verification Only
 
 ```bash
-./scripts/release.sh --verify
+./scripts/release/release.sh --verify
 ```
 
 Checks that the version string is consistent across all files (`Cargo.toml`,
 `tauri.conf.json`, documentation). No changes are made.
 
-`./scripts/release.sh --help` prints the full option list.
+`./scripts/release/release.sh --help` prints the full option list.
 
 ### Manual Release
 
@@ -189,7 +189,7 @@ cargo release major --execute
 
 > **Note:** GitHub Actions CI/CD is connected and functional. Workflows trigger on
 > push/PR to the `main` branch for continuous integration. For releases, you can
-> either push a version tag to trigger automated builds or use `./scripts/release.sh`.
+> either push a version tag to trigger automated builds or use `./scripts/release/release.sh`.
 
 ### GitLab CI
 
@@ -304,7 +304,7 @@ vim src/...
 git commit -m "fix(cli): critical bug description"
 
 # 3. Bump patch version
-./scripts/release.sh patch
+./scripts/release/release.sh patch
 
 # 4. Merge back to main
 git checkout main

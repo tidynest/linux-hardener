@@ -661,23 +661,23 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 | File | Purpose |
 |------|---------|
 | `scripts/README.md` | Comprehensive script documentation |
-| `scripts/validate_naming.py` | Naming convention validator |
-| `scripts/validate_all.py` | Master validation orchestrator |
-| `scripts/validate_cli_docs.py` | CLI command documentation validator |
-| `scripts/validate_compliance_docs.py` | Compliance framework documentation validator |
-| `scripts/validate_file_map.py` | file-map.md accuracy validator |
-| `scripts/validate_last_updated.py` | Last Updated timestamp validator |
-| `scripts/validate_plugin_docs.py` | Plugin documentation validator |
-| `scripts/validate_tauri_docs.py` | Tauri integration documentation validator |
-| `scripts/update_all_docs.py` | Batch documentation updater |
-| `scripts/release.sh` | Automated version bumping and release |
-| `scripts/tauri-dev.sh` | Tauri development launcher |
-| `scripts/full-test-suite.sh` | Complete 127-test validation suite (26 sections) |
-| `scripts/run-cross-distro-tests.sh` | Non-interactive cross-distro test orchestrator |
-| `scripts/root-test-suite.sh` | 36 root-level privilege tests |
-| `scripts/manual-verification-test.sh` | Interactive verification tests |
-| `scripts/create-container.sh` | systemd-nspawn test containers for all five distros (`arch`, `debian`, `fedora`, `rhel`, `opensuse`) |
-| `scripts/verify-rollback.sh` | Rollback verification tests (5 tests, 10 assertions) for nspawn containers |
+| `scripts/validate/validate_naming.py` | Naming convention validator |
+| `scripts/validate/validate_all.py` | Master validation orchestrator |
+| `scripts/validate/validate_cli_docs.py` | CLI command documentation validator |
+| `scripts/validate/validate_compliance_docs.py` | Compliance framework documentation validator |
+| `scripts/validate/validate_file_map.py` | file-map.md accuracy validator |
+| `scripts/validate/validate_last_updated.py` | Last Updated timestamp validator |
+| `scripts/validate/validate_plugin_docs.py` | Plugin documentation validator |
+| `scripts/validate/validate_tauri_docs.py` | Tauri integration documentation validator |
+| `scripts/validate/update_all_docs.py` | Batch documentation updater |
+| `scripts/release/release.sh` | Automated version bumping and release |
+| `scripts/dev/tauri-dev.sh` | Tauri development launcher |
+| `scripts/test/full-test-suite.sh` | Complete 127-test validation suite (26 sections) |
+| `scripts/test/run-cross-distro-tests.sh` | Non-interactive cross-distro test orchestrator |
+| `scripts/test/root-test-suite.sh` | 36 root-level privilege tests |
+| `scripts/test/manual-verification-test.sh` | Interactive verification tests |
+| `scripts/containers/create-container.sh` | systemd-nspawn test containers for all five distros (`arch`, `debian`, `fedora`, `rhel`, `opensuse`) |
+| `scripts/test/verify-rollback.sh` | Rollback verification tests (5 tests, 10 assertions) for nspawn containers |
 
 ---
 
@@ -787,8 +787,8 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | `gui-tests/tauri-mock.js` | Tauri IPC mock (`window.__TAURI__`) covering all IPC commands |
 | `gui-tests/spa-server.py` | SPA-aware HTTP server (port 8787, client-side routing) |
 | `gui-tests/run-tests.mjs` | Node.js Playwright test orchestrator (21 tests: keyboard nav, themes, ARIA, clipboard, TabBar) |
-| `gui-tests/tauri-functional-test.sh` | Hyprland-based functional tests (46 tests: scan, apply, checkpoints, scheduler, remote, themes) |
-| `gui-tests/tauri-ux-test.sh` | Hyprland-based UX tests (49 tests: keyboard nav, tab bars, detail panels, fullscreen, skip link) |
+| `scripts/test/gui/tauri-functional-test.sh` | Hyprland-based functional tests (46 tests: scan, apply, checkpoints, scheduler, remote, themes) |
+| `scripts/test/gui/tauri-ux-test.sh` | Hyprland-based UX tests (49 tests: keyboard nav, tab bars, detail panels, fullscreen, skip link) |
 | `gui-tests/debug-tabs.mjs` | Tab system debugging helper |
 | `gui-tests/tests/helpers.js` | Shared test helpers and utilities |
 | `gui-tests/tests/dashboard.spec.js` | T-DASH-01..09 (9 tests): score, scan trigger, navigation, activity |
@@ -801,10 +801,10 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 
 | File | Purpose |
 |------|---------|
-| `scripts/run-gui-tests.sh` | Host orchestrator for Web UI tests across all distros |
-| `scripts/gui-test-inner.sh` | Container inner script (Xvfb + SPA server + Playwright); dynamically generates `index.html` at serve-time by stripping SRI `integrity` attributes and injecting `tauri-mock.js` into the built `dist/index.html` |
-| `scripts/run-tauri-gui-tests.sh` | Host orchestrator for Tauri desktop tests |
-| `scripts/tauri-gui-test-inner.sh` | Container inner script for Tauri desktop tests |
+| `scripts/test/gui/run-gui-tests.sh` | Host orchestrator for Web UI tests across all distros |
+| `scripts/test/gui/gui-test-inner.sh` | Container inner script (Xvfb + SPA server + Playwright); dynamically generates `index.html` at serve-time by stripping SRI `integrity` attributes and injecting `tauri-mock.js` into the built `dist/index.html` |
+| `scripts/test/gui/run-tauri-gui-tests.sh` | Host orchestrator for Tauri desktop tests |
+| `scripts/test/gui/tauri-gui-test-inner.sh` | Container inner script for Tauri desktop tests |
 
 ---
 

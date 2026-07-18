@@ -40,16 +40,16 @@ The `scripts/` directory contains automation tools for development:
 
 ```bash
 # Validate all documentation is in sync with code
-./scripts/validate_all.py
+./scripts/validate/validate_all.py
 
 # Auto-fix documentation (dates, counts, stubs)
-./scripts/update_all_docs.py --apply
+./scripts/validate/update_all_docs.py --apply
 
 # Check naming conventions
-./scripts/validate_naming.py
+./scripts/validate/validate_naming.py
 
 # Release a new version (dry-run first!)
-./scripts/release.sh patch --dry-run
+./scripts/release/release.sh patch --dry-run
 ```
 
 See [scripts/README.md](scripts/README.md) for complete documentation of all scripts.

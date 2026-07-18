@@ -132,7 +132,7 @@ New docs to fill gaps:
   the systemd install command, and the docs that reference `data/...`; treat as
   a coordinated packaging change, verified against a package build.
 
-**scripts/ grouping** (31 files, flat). Proposed subdirectories:
+**scripts/ grouping** (31 files, flat). Proposed subdirectories: (executed 2026-07-18)
 - `scripts/containers/` : the five `create-*-container.sh` plus
   `boot-ssh-test-container.sh`
 - `scripts/test/` : the cross-distro, package, and root/full suites

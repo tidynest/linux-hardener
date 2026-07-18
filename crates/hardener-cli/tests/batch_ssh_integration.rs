@@ -6,7 +6,7 @@
 //! arg parsing, remote execution, JSON rendering, and tiered exit codes for
 //! all four batch verbs.
 //!
-//! Fixture: `scripts/boot-ssh-test-container.sh` (or any key-reachable sshd),
+//! Fixture: `scripts/containers/boot-ssh-test-container.sh` (or any key-reachable sshd),
 //! the key loaded into `ssh-agent`, and:
 //!
 //! ```text
@@ -22,7 +22,7 @@ use std::process::{Command, Output};
 /// Ad-hoc `--ssh` target from the fixture env, or `None` to skip.
 fn target() -> Option<String> {
     let Ok(host) = std::env::var("SSH_TEST_HOST") else {
-        eprintln!("skipping: SSH_TEST_HOST not set (see scripts/boot-ssh-test-container.sh)");
+        eprintln!("skipping: SSH_TEST_HOST not set (see scripts/containers/boot-ssh-test-container.sh)");
         return None;
     };
     let user = std::env::var("SSH_TEST_USER").unwrap_or_else(|_| "root".to_string());

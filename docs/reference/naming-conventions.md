@@ -101,7 +101,7 @@ pub struct ColorScheme { }
 source keeps that source's spelling, even when American. This covers official
 compliance control titles (e.g. NIST SP 800-53 AC-6(1) *"Authorize Access to
 Security Functions"*) and external crate APIs (`printpdf`, `Color::`). These are
-proper nouns, not our own prose, so `scripts/validate_naming.py` allowlists them.
+proper nouns, not our own prose, so `scripts/validate/validate_naming.py` allowlists them.
 
 ---
 

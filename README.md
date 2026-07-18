@@ -284,24 +284,24 @@ The hardener modifies critical system files. For safe testing with root privileg
 
 ```bash
 # 1. Create isolated Arch Linux container (systemd-nspawn)
-sudo ./scripts/create-container.sh arch
+sudo ./scripts/containers/create-container.sh arch
 
 # 2. Enter container (project mounted at /project)
-sudo ./scripts/create-container.sh arch enter
+sudo ./scripts/containers/create-container.sh arch enter
 
 # 3. Inside container: build and run tests
 cd /project
 cargo build --release
 
 # Run safe tests (read-only + dry-run)
-sudo ./scripts/root-test-suite.sh
+sudo ./scripts/test/root-test-suite.sh
 
 # Run full tests INCLUDING apply + rollback
-sudo ./scripts/root-test-suite.sh --apply
+sudo ./scripts/test/root-test-suite.sh --apply
 
 # 4. Exit and clean up
 poweroff                                       # Exit container
-sudo ./scripts/create-container.sh arch clean  # Remove container
+sudo ./scripts/containers/create-container.sh arch clean  # Remove container
 ```
 
 **Why two test modes?**
@@ -317,10 +317,10 @@ The `--apply` flag explicitly enables destructive tests. Without it, only read-o
 
 ```bash
 # Run 113 Playwright Web UI tests across all 5 distros
-sudo ./scripts/run-gui-tests.sh
+sudo ./scripts/test/gui/run-gui-tests.sh
 
 # Or combine with CLI tests using the --gui flag
-sudo ./scripts/run-cross-distro-tests.sh --apply --gui
+sudo ./scripts/test/run-cross-distro-tests.sh --apply --gui
 ```
 
 See [docs/reference/distribution-validation.md](docs/reference/distribution-validation.md) for full test documentation.
@@ -810,7 +810,7 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for detailed implementation plans for upc
 - [x] PAM/permissions assessment improvements: faillock/pwhistory use threshold comparison; shadow/gshadow use allowed-bits mask (never loosens stricter settings)
 - [x] Desktop **Fleet** view: read-only multi-host scan posture with CIS compliance scores and per-framework breakdown
 - [x] Fleet apply/rollback in the GUI: shells out to the audited `batch apply/rollback`; mandatory dry-run + confirm modal before any change
-- [x] Polkit desktop-environment test tooling (`scripts/detect-polkit-agent.sh`, `test-polkit-matrix.sh`, DE-specific wrappers, `docs/guide/desktop-environment-compatibility.md`)
+- [x] Polkit desktop-environment test tooling (`scripts/test/polkit/detect-polkit-agent.sh`, `test-polkit-matrix.sh`, DE-specific wrappers, `docs/guide/desktop-environment-compatibility.md`)
 
 ---
 

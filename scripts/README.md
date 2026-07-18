@@ -4,42 +4,58 @@
 
 This directory contains utility scripts for the Linux Hardening Tool project.
 
+## Directory Layout
+
+| Subdirectory | Contents |
+|--------------|----------|
+| `containers/` | systemd-nspawn container lifecycle: `create-container.sh` (all five distros), `boot-ssh-test-container.sh` (booted SSH fixture) |
+| `test/` | Host-side test suites and orchestrators: cross-distro, package-install, root/full suites, desktop tests, rollback verification, parallel runner |
+| `test/gui/` | GUI test runners and inner scripts (Web UI and Tauri desktop), plus the host desktop UX/functional suites |
+| `test/polkit/` | Polkit authentication matrix tests and agent detection helper |
+| `validate/` | Documentation and naming validators (`validate_*.py`) plus the auto-updater `update_all_docs.py` |
+| `release/` | `release.sh` (version bumping, changelog, release gate) |
+| `dev/` | `tauri-dev.sh` (Tauri development launcher) |
+
+`build_identity.rs` stays at the `scripts/` root: it is referenced as a
+`build =` script by both `crates/hardener-cli/Cargo.toml` and
+`crates/hardener-ui/Cargo.toml`.
+
 ## Quick Reference
 
 | Task | Command |
 |------|---------|
-| **Start Tauri dev** | `./scripts/tauri-dev.sh` |
-| **Validate all docs** | `./scripts/validate_all.py` |
-| **Quick validation** | `./scripts/validate_all.py --quick` |
-| **Auto-fix docs** | `./scripts/update_all_docs.py --apply` |
-| **Check naming** | `./scripts/validate_naming.py` |
-| **Verify versions** | `./scripts/release.sh --verify` |
-| **Dry-run release** | `./scripts/release.sh patch --dry-run` |
-| **Actual release** | `./scripts/release.sh patch` |
-| **Create test container (Arch)** | `sudo ./scripts/create-container.sh arch` |
-| **Enter test container** | `sudo ./scripts/create-container.sh arch enter` |
-| **Create Debian container** | `sudo ./scripts/create-container.sh debian` |
-| **Create Fedora container** | `sudo ./scripts/create-container.sh fedora` |
-| **Create openSUSE container** | `sudo ./scripts/create-container.sh opensuse` |
-| **Create Rocky 10 container** | `sudo ./scripts/create-container.sh rhel` |
-| **Verify rollback** | `sudo ./scripts/verify-rollback.sh` |
-| **Run root tests** | `sudo ./scripts/root-test-suite.sh` |
-| **Run root tests (full)** | `sudo ./scripts/root-test-suite.sh --apply` |
-| **Full test suite** | `sudo ./scripts/full-test-suite.sh` |
-| **Manual verification** | `sudo ./scripts/manual-verification-test.sh` |
-| **Cross-distro tests** | `sudo ./scripts/run-cross-distro-tests.sh --apply` |
-| **Cross-distro + GUI** | `sudo ./scripts/run-cross-distro-tests.sh --apply --gui` |
-| **Single distro test** | `sudo ./scripts/run-cross-distro-tests.sh --distro arch` |
-| **GUI tests (Web UI)** | `sudo ./scripts/run-gui-tests.sh` |
-| **Tauri GUI tests** | `sudo ./scripts/run-tauri-gui-tests.sh` |
-| **Desktop tests (host)** | `./scripts/run-desktop-tests.sh` |
-| **PARALLEL: All tests** | `sudo ./scripts/run-all-tests-parallel.sh --apply` |
-| **PARALLEL: All + desktop** | `sudo ./scripts/run-all-tests-parallel.sh --apply --desktop` |
-| **PARALLEL: All + kitty** | `sudo ./scripts/run-all-tests-parallel.sh --apply --kitty` |
-| **PARALLEL: CLI only** | `sudo ./scripts/run-cross-distro-tests.sh --parallel --apply` |
-| **PARALLEL: GUI only** | `sudo ./scripts/run-gui-tests.sh --parallel` |
-| **Package install tests** | `sudo ./scripts/run-package-tests.sh` |
-| **Single distro pkg test** | `sudo ./scripts/run-package-tests.sh --distro arch` |
+| **Start Tauri dev** | `./scripts/dev/tauri-dev.sh` |
+| **Validate all docs** | `./scripts/validate/validate_all.py` |
+| **Quick validation** | `./scripts/validate/validate_all.py --quick` |
+| **Auto-fix docs** | `./scripts/validate/update_all_docs.py --apply` |
+| **Check naming** | `./scripts/validate/validate_naming.py` |
+| **Verify versions** | `./scripts/release/release.sh --verify` |
+| **Dry-run release** | `./scripts/release/release.sh patch --dry-run` |
+| **Actual release** | `./scripts/release/release.sh patch` |
+| **Create test container (Arch)** | `sudo ./scripts/containers/create-container.sh arch` |
+| **Enter test container** | `sudo ./scripts/containers/create-container.sh arch enter` |
+| **Create Debian container** | `sudo ./scripts/containers/create-container.sh debian` |
+| **Create Fedora container** | `sudo ./scripts/containers/create-container.sh fedora` |
+| **Create openSUSE container** | `sudo ./scripts/containers/create-container.sh opensuse` |
+| **Create Rocky 10 container** | `sudo ./scripts/containers/create-container.sh rhel` |
+| **Verify rollback** | `sudo ./scripts/test/verify-rollback.sh` |
+| **Run root tests** | `sudo ./scripts/test/root-test-suite.sh` |
+| **Run root tests (full)** | `sudo ./scripts/test/root-test-suite.sh --apply` |
+| **Full test suite** | `sudo ./scripts/test/full-test-suite.sh` |
+| **Manual verification** | `sudo ./scripts/test/manual-verification-test.sh` |
+| **Cross-distro tests** | `sudo ./scripts/test/run-cross-distro-tests.sh --apply` |
+| **Cross-distro + GUI** | `sudo ./scripts/test/run-cross-distro-tests.sh --apply --gui` |
+| **Single distro test** | `sudo ./scripts/test/run-cross-distro-tests.sh --distro arch` |
+| **GUI tests (Web UI)** | `sudo ./scripts/test/gui/run-gui-tests.sh` |
+| **Tauri GUI tests** | `sudo ./scripts/test/gui/run-tauri-gui-tests.sh` |
+| **Desktop tests (host)** | `./scripts/test/run-desktop-tests.sh` |
+| **PARALLEL: All tests** | `sudo ./scripts/test/run-all-tests-parallel.sh --apply` |
+| **PARALLEL: All + desktop** | `sudo ./scripts/test/run-all-tests-parallel.sh --apply --desktop` |
+| **PARALLEL: All + kitty** | `sudo ./scripts/test/run-all-tests-parallel.sh --apply --kitty` |
+| **PARALLEL: CLI only** | `sudo ./scripts/test/run-cross-distro-tests.sh --parallel --apply` |
+| **PARALLEL: GUI only** | `sudo ./scripts/test/gui/run-gui-tests.sh --parallel` |
+| **Package install tests** | `sudo ./scripts/test/run-package-tests.sh` |
+| **Single distro pkg test** | `sudo ./scripts/test/run-package-tests.sh --distro arch` |
 
 ---
 
@@ -77,10 +93,10 @@ their documented `/project/target/...` paths unchanged.
 **Usage**:
 ```bash
 # Standard launch
-./scripts/tauri-dev.sh
+./scripts/dev/tauri-dev.sh
 
 # Pass additional arguments to cargo tauri dev
-./scripts/tauri-dev.sh --release
+./scripts/dev/tauri-dev.sh --release
 ```
 
 **What It Does**:
@@ -133,13 +149,13 @@ WEBKIT_DISABLE_COMPOSITING_MODE=1 cargo tauri dev
 **Usage**:
 ```bash
 # Run all validations
-./scripts/validate_all.py
+./scripts/validate/validate_all.py
 
 # Auto-fix issues where possible
-./scripts/validate_all.py --fix
+./scripts/validate/validate_all.py --fix
 
 # Quick mode (skip slower checks)
-./scripts/validate_all.py --quick
+./scripts/validate/validate_all.py --quick
 ```
 
 **What It Runs**:
@@ -191,7 +207,7 @@ All 7 validations passed!
 **Integration with CI/CD**:
 ```yaml
 - name: Validate Documentation
-  run: ./scripts/validate_all.py
+  run: ./scripts/validate/validate_all.py
 ```
 
 **Dependencies**:
@@ -210,10 +226,10 @@ All 7 validations passed!
 **Usage**:
 ```bash
 # Run from project root
-./scripts/validate_naming.py
+./scripts/validate/validate_naming.py
 
 # Or with python3 explicitly
-python3 scripts/validate_naming.py
+python3 scripts/validate/validate_naming.py
 ```
 
 **What It Checks**:
@@ -261,7 +277,7 @@ This script can be added to CI/CD pipeline to enforce naming conventions.
 Example GitHub Actions workflow:
 ```yaml
 - name: Validate Naming Conventions
-  run: ./scripts/validate_naming.py
+  run: ./scripts/validate/validate_naming.py
 ```
 
 **Dependencies**:
@@ -283,7 +299,7 @@ The pre-commit hook is already installed and executable in your repository. It w
 **How It Works**:
 
 1. When you run `git commit`, the hook executes automatically
-2. It runs `./scripts/validate_naming.py` to check naming conventions
+2. It runs `./scripts/validate/validate_naming.py` to check naming conventions
 3. If validation passes (0 errors): commit proceeds ✅
 4. If validation fails (errors found): commit is blocked ❌
 
@@ -365,14 +381,14 @@ Edit `.git/hooks/pre-commit` to add more checks.
 **Usage**:
 ```bash
 # Dry run (shows what would happen without making changes)
-./scripts/release.sh patch --dry-run
-./scripts/release.sh minor --dry-run
-./scripts/release.sh major --dry-run
+./scripts/release/release.sh patch --dry-run
+./scripts/release/release.sh minor --dry-run
+./scripts/release/release.sh major --dry-run
 
 # Actual release
-./scripts/release.sh patch   # 0.1.0 -> 0.1.1
-./scripts/release.sh minor   # 0.1.0 -> 0.2.0
-./scripts/release.sh major   # 0.1.0 -> 1.0.0
+./scripts/release/release.sh patch   # 0.1.0 -> 0.1.1
+./scripts/release/release.sh minor   # 0.1.0 -> 0.2.0
+./scripts/release/release.sh major   # 0.1.0 -> 1.0.0
 ```
 
 **What It Does**:
@@ -400,10 +416,10 @@ For complete release documentation, see [docs/contributing/releasing.md](../docs
 **Usage**:
 ```bash
 # Run from project root
-./scripts/validate_file_map.py
+./scripts/validate/validate_file_map.py
 
 # Generate stub entries for missing files
-./scripts/validate_file_map.py --fix
+./scripts/validate/validate_file_map.py --fix
 ```
 
 **What It Checks**:
@@ -461,7 +477,7 @@ Suggested stub entries:
 **Usage**:
 ```bash
 # Run from project root
-./scripts/validate_plugin_docs.py
+./scripts/validate/validate_plugin_docs.py
 ```
 
 **What It Checks**:
@@ -517,7 +533,7 @@ Plugin documentation validation failed
 **Usage**:
 ```bash
 # Run from project root
-./scripts/validate_cli_docs.py
+./scripts/validate/validate_cli_docs.py
 ```
 
 **What It Checks**:
@@ -578,7 +594,7 @@ CLI documentation validation failed
 **Usage**:
 ```bash
 # Run from project root
-./scripts/validate_compliance_docs.py
+./scripts/validate/validate_compliance_docs.py
 ```
 
 **What It Checks**:
@@ -623,7 +639,7 @@ All compliance documentation is accurate
 **Usage**:
 ```bash
 # Run from project root
-./scripts/validate_tauri_docs.py
+./scripts/validate/validate_tauri_docs.py
 ```
 
 **What It Checks**:
@@ -684,10 +700,10 @@ Tauri command validation failed
 **Usage**:
 ```bash
 # Preview changes (dry-run)
-./scripts/update_all_docs.py
+./scripts/validate/update_all_docs.py
 
 # Apply changes
-./scripts/update_all_docs.py --apply
+./scripts/validate/update_all_docs.py --apply
 ```
 
 **What It Auto-Fixes**:
@@ -758,10 +774,10 @@ Summary: 3 pending updates, 1 manual fix needed
 **Usage**:
 ```bash
 # Check for stale dates
-./scripts/validate_last_updated.py
+./scripts/validate/validate_last_updated.py
 
 # Auto-fix stale dates
-./scripts/validate_last_updated.py --fix
+./scripts/validate/validate_last_updated.py --fix
 ```
 
 **What It Checks**:
@@ -840,13 +856,13 @@ The hardener modifies critical system files (`/etc/sysctl.conf`, `/etc/ssh/sshd_
 **Usage**:
 ```bash
 # Create Arch container (one-time, ~2-3 minutes)
-sudo ./scripts/create-container.sh arch
+sudo ./scripts/containers/create-container.sh arch
 
 # Enter existing container
-sudo ./scripts/create-container.sh arch enter
+sudo ./scripts/containers/create-container.sh arch enter
 
 # Clean up container
-sudo ./scripts/create-container.sh arch clean
+sudo ./scripts/containers/create-container.sh arch clean
 ```
 
 **What It Does**:
@@ -890,13 +906,13 @@ sudo ./scripts/create-container.sh arch clean
 **Usage** (same pattern for all):
 ```bash
 # Create container
-sudo ./scripts/create-container.sh <distro>
+sudo ./scripts/containers/create-container.sh <distro>
 
 # Enter container
-sudo ./scripts/create-container.sh <distro> enter
+sudo ./scripts/containers/create-container.sh <distro> enter
 
 # Clean up
-sudo ./scripts/create-container.sh <distro> clean
+sudo ./scripts/containers/create-container.sh <distro> clean
 ```
 
 **Container Locations**:
@@ -935,13 +951,13 @@ All containers:
 **Usage**:
 ```bash
 # Create container (requires podman)
-sudo ./scripts/create-container.sh rhel
+sudo ./scripts/containers/create-container.sh rhel
 
 # Enter container
-sudo ./scripts/create-container.sh rhel enter
+sudo ./scripts/containers/create-container.sh rhel enter
 
 # Clean up
-sudo ./scripts/create-container.sh rhel clean
+sudo ./scripts/containers/create-container.sh rhel clean
 ```
 
 **How It Works**:
@@ -968,7 +984,7 @@ sudo ./scripts/create-container.sh rhel clean
 **Usage**:
 ```bash
 # Run inside a container (or via nspawn from host)
-sudo ./scripts/verify-rollback.sh
+sudo ./scripts/test/verify-rollback.sh
 ```
 
 **Test Cases**:
@@ -1001,10 +1017,10 @@ sudo ./scripts/verify-rollback.sh
 **Usage**:
 ```bash
 # Inside container: run safe tests (read-only + dry-run)
-sudo ./scripts/root-test-suite.sh
+sudo ./scripts/test/root-test-suite.sh
 
 # Run full tests INCLUDING apply + rollback
-sudo ./scripts/root-test-suite.sh --apply
+sudo ./scripts/test/root-test-suite.sh --apply
 ```
 
 **Test Categories**:
@@ -1070,10 +1086,10 @@ Binary: /project/target/release/hardener v0.3.3
 **Usage**:
 ```bash
 # Inside container: run safe tests (read-only, dry-run, scan)
-sudo ./scripts/full-test-suite.sh
+sudo ./scripts/test/full-test-suite.sh
 
 # Run ALL tests INCLUDING apply + rollback
-sudo ./scripts/full-test-suite.sh --apply
+sudo ./scripts/test/full-test-suite.sh --apply
 ```
 
 **What It Tests** (26 test sections, 127 individual tests):
@@ -1178,16 +1194,16 @@ The `log_check()` function displays a green [PASS] but doesn't increment any cou
 **Usage**:
 ```bash
 # Run all distros with apply tests
-sudo ./scripts/run-cross-distro-tests.sh --apply
+sudo ./scripts/test/run-cross-distro-tests.sh --apply
 
 # Test single distro
-sudo ./scripts/run-cross-distro-tests.sh --distro arch --apply
+sudo ./scripts/test/run-cross-distro-tests.sh --distro arch --apply
 
 # Rebuild musl binary first, then test
-sudo ./scripts/run-cross-distro-tests.sh --rebuild --apply
+sudo ./scripts/test/run-cross-distro-tests.sh --rebuild --apply
 
 # Safe mode (no apply/rollback tests)
-sudo ./scripts/run-cross-distro-tests.sh
+sudo ./scripts/test/run-cross-distro-tests.sh
 ```
 
 **Options**:
@@ -1279,16 +1295,16 @@ Both `run-cross-distro-tests.sh` and `run-gui-tests.sh` accept `--parallel` to r
 **Usage**:
 ```bash
 # Run all distros in parallel with apply tests
-sudo ./scripts/run-cross-distro-tests.sh --parallel --apply
+sudo ./scripts/test/run-cross-distro-tests.sh --parallel --apply
 
 # Limit parallel jobs
-sudo ./scripts/run-cross-distro-tests.sh --parallel --apply --jobs 3
+sudo ./scripts/test/run-cross-distro-tests.sh --parallel --apply --jobs 3
 
 # Web UI tests in parallel
-sudo ./scripts/run-gui-tests.sh --parallel
+sudo ./scripts/test/gui/run-gui-tests.sh --parallel
 
 # Limit parallel jobs
-sudo ./scripts/run-gui-tests.sh --parallel --jobs 2
+sudo ./scripts/test/gui/run-gui-tests.sh --parallel --jobs 2
 ```
 
 **Speed Comparison** (5 distros, with `--apply`):
@@ -1310,19 +1326,19 @@ sudo ./scripts/run-gui-tests.sh --parallel --jobs 2
 **Usage**:
 ```bash
 # Run everything in parallel (fastest full validation)
-sudo ./scripts/run-all-tests-parallel.sh --apply
+sudo ./scripts/test/run-all-tests-parallel.sh --apply
 
 # Run everything including desktop tests
-sudo ./scripts/run-all-tests-parallel.sh --apply --desktop
+sudo ./scripts/test/run-all-tests-parallel.sh --apply --desktop
 
 # Run in separate kitty windows (visual separation)
-sudo ./scripts/run-all-tests-parallel.sh --apply --kitty
+sudo ./scripts/test/run-all-tests-parallel.sh --apply --kitty
 
 # Quick test: unit tests only, skip containers
-sudo ./scripts/run-all-tests-parallel.sh --no-cli --no-gui
+sudo ./scripts/test/run-all-tests-parallel.sh --no-cli --no-gui
 
 # Skip unit tests, just containers
-sudo ./scripts/run-all-tests-parallel.sh --apply --no-unit
+sudo ./scripts/test/run-all-tests-parallel.sh --apply --no-unit
 ```
 
 **Options**:
@@ -1380,7 +1396,7 @@ test-results/
 **Usage**:
 ```bash
 # Inside container
-sudo ./scripts/manual-verification-test.sh
+sudo ./scripts/test/manual-verification-test.sh
 ```
 
 **Test Cycles**:
@@ -1443,13 +1459,13 @@ Four scripts orchestrate Playwright-based GUI testing of the Web UI inside nspaw
 **Usage**:
 ```bash
 # Run GUI tests on all 5 distros
-sudo ./scripts/run-gui-tests.sh
+sudo ./scripts/test/gui/run-gui-tests.sh
 
 # Run distros in parallel
-sudo ./scripts/run-gui-tests.sh --parallel
+sudo ./scripts/test/gui/run-gui-tests.sh --parallel
 
 # Or via the cross-distro runner
-sudo ./scripts/run-cross-distro-tests.sh --gui
+sudo ./scripts/test/run-cross-distro-tests.sh --gui
 ```
 
 **What It Does**:
@@ -1501,7 +1517,7 @@ sudo ./scripts/run-cross-distro-tests.sh --gui
 
 **Usage**:
 ```bash
-sudo ./scripts/run-tauri-gui-tests.sh
+sudo ./scripts/test/gui/run-tauri-gui-tests.sh
 ```
 
 ---
@@ -1515,7 +1531,7 @@ sudo ./scripts/run-tauri-gui-tests.sh
 **Usage**:
 ```bash
 # Called automatically by run-tauri-gui-tests.sh, not invoked directly
-/bin/bash /project/scripts/tauri-gui-test-inner.sh
+/bin/bash /project/scripts/test/gui/tauri-gui-test-inner.sh
 ```
 
 ---
@@ -1529,19 +1545,19 @@ sudo ./scripts/run-tauri-gui-tests.sh
 **Usage**:
 ```bash
 # Run all desktop tests (starts app if not running)
-./scripts/run-desktop-tests.sh
+./scripts/test/run-desktop-tests.sh
 
 # Run only UX tests (keyboard navigation)
-./scripts/run-desktop-tests.sh --ux-only
+./scripts/test/run-desktop-tests.sh --ux-only
 
 # Run only functional tests (scans, reports)
-./scripts/run-desktop-tests.sh --fn-only
+./scripts/test/run-desktop-tests.sh --fn-only
 
 # Run in a new kitty window
-./scripts/run-desktop-tests.sh --kitty
+./scripts/test/run-desktop-tests.sh --kitty
 
 # Keep app running after tests (for debugging)
-./scripts/run-desktop-tests.sh --no-cleanup
+./scripts/test/run-desktop-tests.sh --no-cleanup
 ```
 
 **Options**:
@@ -1578,7 +1594,7 @@ test-results/desktop/    Desktop test screenshots
 **Integration with Master Runner**:
 ```bash
 # Run everything including desktop (desktop runs after containers)
-sudo ./scripts/run-all-tests-parallel.sh --apply --desktop
+sudo ./scripts/test/run-all-tests-parallel.sh --apply --desktop
 ```
 
 **Dependencies**:
@@ -1603,16 +1619,16 @@ Two scripts validate that the distribution packages (AUR, deb, rpm) install corr
 **Usage**:
 ```bash
 # Run on all 5 distros
-sudo ./scripts/run-package-tests.sh
+sudo ./scripts/test/run-package-tests.sh
 
 # Single distro
-sudo ./scripts/run-package-tests.sh --distro arch
+sudo ./scripts/test/run-package-tests.sh --distro arch
 
 # With destructive tests (apply + rollback)
-sudo ./scripts/run-package-tests.sh --apply
+sudo ./scripts/test/run-package-tests.sh --apply
 
 # Rebuild musl binary first
-sudo ./scripts/run-package-tests.sh --rebuild
+sudo ./scripts/test/run-package-tests.sh --rebuild
 ```
 
 **Options**:
@@ -1656,7 +1672,7 @@ test-results/
 **Usage**:
 ```bash
 # Called automatically by run-package-tests.sh, not invoked directly
-/bin/bash /project/scripts/test-package-install.sh [--apply]
+/bin/bash /project/scripts/test/test-package-install.sh [--apply]
 ```
 
 **What It Validates**:

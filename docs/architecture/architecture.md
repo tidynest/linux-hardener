@@ -564,7 +564,7 @@ pub struct PolicyException {
 
 ### Branch Strategy
 
-The `main` branch is kept in sync on GitHub and GitLab. The release script (`scripts/release.sh`) automatically pushes to both remotes.
+The `main` branch is kept in sync on GitHub and GitLab. The release script (`scripts/release/release.sh`) automatically pushes to both remotes.
 
 ---
 

@@ -15,7 +15,7 @@ Two deliberately different identifier namespaces exist:
   `data/com.tidynest.linux-hardener.policy`, installed by every package to
   `/usr/share/polkit-1/actions/com.tidynest.linux-hardener.policy`
   (PKGBUILD line ~103; rpm spec and debian rules mirror it).
-  `scripts/detect-polkit-agent.sh` checks exactly this id and path, and they
+  `scripts/test/polkit/detect-polkit-agent.sh` checks exactly this id and path, and they
   agree with what ships.
 - **Tauri bundle identifier:** `com.ericjingryd.linux-hardener` in
   `src-tauri/tauri.conf.json`. This names the desktop application bundle,
@@ -111,26 +111,26 @@ authenticate once when applying multiple operations in quick succession.
 Run the diagnostic tool to check your system:
 
 ```bash
-./scripts/detect-polkit-agent.sh
+./scripts/test/polkit/detect-polkit-agent.sh
 ```
 
 Run the full automated test matrix:
 
 ```bash
-./scripts/test-polkit-matrix.sh
+./scripts/test/polkit/test-polkit-matrix.sh
 ```
 
 Run with interactive auth dialog tests:
 
 ```bash
-./scripts/test-polkit-matrix.sh --interactive
+./scripts/test/polkit/test-polkit-matrix.sh --interactive
 ```
 
 Run DE-specific tests:
 
 ```bash
-./scripts/test-polkit.sh gnome --interactive   # GNOME session
-./scripts/test-polkit.sh kde --interactive     # KDE session
-./scripts/test-polkit.sh xfce --interactive    # XFCE session
-./scripts/test-polkit.sh no-agent              # No-agent fallback
+./scripts/test/polkit/test-polkit.sh gnome --interactive   # GNOME session
+./scripts/test/polkit/test-polkit.sh kde --interactive     # KDE session
+./scripts/test/polkit/test-polkit.sh xfce --interactive    # XFCE session
+./scripts/test/polkit/test-polkit.sh no-agent              # No-agent fallback
 ```

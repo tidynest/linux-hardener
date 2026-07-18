@@ -11,7 +11,7 @@ All scripts are Python 3 and located in `scripts/`.
 ### Full validation
 
 ```bash
-./scripts/validate_all.py
+./scripts/validate/validate_all.py
 ```
 
 Runs every individual validator listed below in sequence. Exits non-zero if any check fails. Includes slower checks (CLI doc verification, compliance control counts).
@@ -19,7 +19,7 @@ Runs every individual validator listed below in sequence. Exits non-zero if any 
 ### Quick validation
 
 ```bash
-./scripts/validate_all.py --quick
+./scripts/validate/validate_all.py --quick
 ```
 
 Skips the slower validators (`validate_cli_docs.py` and `validate_compliance_docs.py`). Suitable for pre-commit checks where speed matters.
@@ -27,7 +27,7 @@ Skips the slower validators (`validate_cli_docs.py` and `validate_compliance_doc
 ### Auto-fix mode
 
 ```bash
-./scripts/validate_all.py --fix
+./scripts/validate/validate_all.py --fix
 ```
 
 Where possible, automatically corrects issues (e.g. outdated "Last Updated" dates). Not all validators support auto-fix; those that don't will still report errors for manual resolution.
@@ -39,7 +39,7 @@ Where possible, automatically corrects issues (e.g. outdated "Last Updated" date
 ### Preview changes (dry run)
 
 ```bash
-./scripts/update_all_docs.py
+./scripts/validate/update_all_docs.py
 ```
 
 Scans all documentation and reports what would be updated, without modifying any files. Shows:
@@ -51,7 +51,7 @@ Scans all documentation and reports what would be updated, without modifying any
 ### Apply changes
 
 ```bash
-./scripts/update_all_docs.py --apply
+./scripts/validate/update_all_docs.py --apply
 ```
 
 Same scan as above, but writes the fixes. This is what `release.sh` runs during the release process.
@@ -65,7 +65,7 @@ Each of these is called by `validate_all.py`, but can be run standalone for targ
 ### Naming conventions
 
 ```bash
-./scripts/validate_naming.py
+./scripts/validate/validate_naming.py
 ```
 
 Checks that Rust identifiers follow the naming conventions in `docs/reference/naming-conventions.md`: PascalCase for types, snake_case for functions, SCREAMING_SNAKE_CASE for constants.
@@ -73,7 +73,7 @@ Checks that Rust identifiers follow the naming conventions in `docs/reference/na
 ### File map completeness
 
 ```bash
-./scripts/validate_file_map.py
+./scripts/validate/validate_file_map.py
 ```
 
 Verifies that every source file in the workspace has an entry in `docs/reference/file-map.md`. Reports missing entries.
@@ -81,7 +81,7 @@ Verifies that every source file in the workspace has an entry in `docs/reference
 ### Plugin documentation
 
 ```bash
-./scripts/validate_plugin_docs.py
+./scripts/validate/validate_plugin_docs.py
 ```
 
 Checks that each plugin in `crates/hardener-plugins/` has corresponding documentation and that plugin names, descriptions, and scan/apply operations are documented accurately.
@@ -89,7 +89,7 @@ Checks that each plugin in `crates/hardener-plugins/` has corresponding document
 ### Tauri command documentation
 
 ```bash
-./scripts/validate_tauri_docs.py
+./scripts/validate/validate_tauri_docs.py
 ```
 
 Verifies that every `#[tauri::command]` function in `src-tauri/src/commands.rs` is documented and that the IPC command names match between code and documentation.
@@ -97,7 +97,7 @@ Verifies that every `#[tauri::command]` function in `src-tauri/src/commands.rs` 
 ### Last Updated dates
 
 ```bash
-./scripts/validate_last_updated.py
+./scripts/validate/validate_last_updated.py
 ```
 
 Checks that "Last Updated" dates in documentation files match (or are close to) the file's last git modification date. Reports files with stale dates.
@@ -105,7 +105,7 @@ Checks that "Last Updated" dates in documentation files match (or are close to) 
 ### CLI documentation (slower)
 
 ```bash
-./scripts/validate_cli_docs.py
+./scripts/validate/validate_cli_docs.py
 ```
 
 Parses the CLI argument definitions in `crates/hardener-cli/src/cli.rs` and cross-references them against CLI documentation. Reports undocumented flags and subcommands. Slower because it parses Rust source.
@@ -113,7 +113,7 @@ Parses the CLI argument definitions in `crates/hardener-cli/src/cli.rs` and cros
 ### Compliance documentation (slower)
 
 ```bash
-./scripts/validate_compliance_docs.py
+./scripts/validate/validate_compliance_docs.py
 ```
 
 Counts the control mappings in each compliance framework implementation and compares them against the documented counts. Slower because it reads all framework source files.
@@ -121,7 +121,7 @@ Counts the control mappings in each compliance framework implementation and comp
 ### Version consistency
 
 ```bash
-./scripts/release.sh --verify
+./scripts/release/release.sh --verify
 ```
 
 Checks that the version in `Cargo.toml` matches `tauri.conf.json` and all documentation references. Also invoked by `validate_all.py`.

@@ -59,9 +59,9 @@ All root-level and destructive tests run inside `systemd-nspawn` containers, nev
 All five containers are created by one script, `create-container.sh`, which takes the distro as its first argument:
 
 ```bash
-sudo ./scripts/create-container.sh arch              # Create container
-sudo ./scripts/create-container.sh arch enter         # Enter existing container interactively
-sudo ./scripts/create-container.sh arch clean         # Remove container completely
+sudo ./scripts/containers/create-container.sh arch              # Create container
+sudo ./scripts/containers/create-container.sh arch enter         # Enter existing container interactively
+sudo ./scripts/containers/create-container.sh arch clean         # Remove container completely
 ```
 
 | Distro argument | Container name |
@@ -80,7 +80,7 @@ an authorised key instead; the SSH executor is key/agent-auth only, so the
 containers' root password is not usable:
 
 ```bash
-sudo ./scripts/boot-ssh-test-container.sh            # boot hardener-test with --network-veth, inject test key
+sudo ./scripts/containers/boot-ssh-test-container.sh            # boot hardener-test with --network-veth, inject test key
 # then, using the env exports the script prints:
 export SSH_TEST_HOST=<addr> SSH_TEST_USER=root SSH_TEST_PORT=22 SSH_TEST_KEY=~/.ssh/hardener_test_ed25519
 ssh-add "$SSH_TEST_KEY"
@@ -101,8 +101,8 @@ These scripts must be run inside a container (`create-container.sh arch enter`),
 ### Root test suite (focused)
 
 ```bash
-sudo ./scripts/root-test-suite.sh                    # Read-only tests only
-sudo ./scripts/root-test-suite.sh --apply             # Include destructive apply + rollback tests
+sudo ./scripts/test/root-test-suite.sh                    # Read-only tests only
+sudo ./scripts/test/root-test-suite.sh --apply             # Include destructive apply + rollback tests
 ```
 
 Tests hardener operations that require root: scanning as root, checkpoint creation, plugin apply/rollback.
@@ -113,8 +113,8 @@ With `--apply`: also tests applying hardening changes and rolling them back (mod
 ### Full test suite (comprehensive, 26 sections)
 
 ```bash
-sudo ./scripts/full-test-suite.sh                     # Sections 1-12, 17-26 (no apply)
-sudo ./scripts/full-test-suite.sh --apply              # All 26 sections including apply and rollback
+sudo ./scripts/test/full-test-suite.sh                     # Sections 1-12, 17-26 (no apply)
+sudo ./scripts/test/full-test-suite.sh --apply              # All 26 sections including apply and rollback
 ```
 
 More thorough than `root-test-suite.sh`. Covers CLI argument parsing, every plugin's scan output, checkpoint lifecycle, compliance reports, daemon commands, systemd integration, history commands, and per-plugin apply/rollback cycles.
@@ -125,7 +125,7 @@ With `--apply`: runs all 26 sections including destructive per-plugin lifecycle 
 ### Rollback verification
 
 ```bash
-sudo ./scripts/verify-rollback.sh
+sudo ./scripts/test/verify-rollback.sh
 ```
 
 Runs 5 targeted tests that verify checkpoint creation, apply, and rollback produce the expected system state. Must be run inside a container.
@@ -133,7 +133,7 @@ Runs 5 targeted tests that verify checkpoint creation, apply, and rollback produ
 ### Manual verification
 
 ```bash
-sudo ./scripts/manual-verification-test.sh
+sudo ./scripts/test/manual-verification-test.sh
 ```
 
 Interactive step-by-step test with pauses between operations. Designed for manually inspecting system state at each stage. Must be run inside a container.
@@ -164,8 +164,8 @@ bind-mount it read-only at `/project/target`, so the in-container scripts
 ### All distributions
 
 ```bash
-sudo ./scripts/run-cross-distro-tests.sh              # Read-only, all distros
-sudo ./scripts/run-cross-distro-tests.sh --apply       # Destructive, all distros
+sudo ./scripts/test/run-cross-distro-tests.sh              # Read-only, all distros
+sudo ./scripts/test/run-cross-distro-tests.sh --apply       # Destructive, all distros
 ```
 
 Iterates through all 5 container types (Arch, Debian, Fedora, Rocky, openSUSE), copies the musl binary into each, and runs the full test suite.
@@ -173,17 +173,17 @@ Iterates through all 5 container types (Arch, Debian, Fedora, Rocky, openSUSE), 
 ### Single distribution
 
 ```bash
-sudo ./scripts/run-cross-distro-tests.sh --distro arch
-sudo ./scripts/run-cross-distro-tests.sh --distro debian
-sudo ./scripts/run-cross-distro-tests.sh --distro fedora
-sudo ./scripts/run-cross-distro-tests.sh --distro rhel
-sudo ./scripts/run-cross-distro-tests.sh --distro opensuse
+sudo ./scripts/test/run-cross-distro-tests.sh --distro arch
+sudo ./scripts/test/run-cross-distro-tests.sh --distro debian
+sudo ./scripts/test/run-cross-distro-tests.sh --distro fedora
+sudo ./scripts/test/run-cross-distro-tests.sh --distro rhel
+sudo ./scripts/test/run-cross-distro-tests.sh --distro opensuse
 ```
 
 ### With GUI tests
 
 ```bash
-sudo ./scripts/run-cross-distro-tests.sh --apply --gui
+sudo ./scripts/test/run-cross-distro-tests.sh --apply --gui
 ```
 
 Runs CLI tests plus Playwright GUI tests inside each container.
@@ -191,7 +191,7 @@ Runs CLI tests plus Playwright GUI tests inside each container.
 ### Rebuild binary first
 
 ```bash
-sudo ./scripts/run-cross-distro-tests.sh --rebuild
+sudo ./scripts/test/run-cross-distro-tests.sh --rebuild
 ```
 
 Recompiles the musl binary (`x86_64-unknown-linux-musl/release/hardener` under the resolved cargo target directory) before copying it into containers. Use this after code changes.
@@ -205,24 +205,24 @@ Test results are written to `test-results/<distro>.log`.
 ### Web UI tests (Playwright, all distros)
 
 ```bash
-sudo ./scripts/run-gui-tests.sh                       # All distro containers
-sudo ./scripts/run-gui-tests.sh --distro arch          # Arch container only
-sudo ./scripts/run-gui-tests.sh --distro debian        # Debian container only
+sudo ./scripts/test/gui/run-gui-tests.sh                       # All distro containers
+sudo ./scripts/test/gui/run-gui-tests.sh --distro arch          # Arch container only
+sudo ./scripts/test/gui/run-gui-tests.sh --distro debian        # Debian container only
 ```
 
 Orchestrates Playwright tests inside nspawn containers with Xvfb (virtual display). Tests the Leptos web frontend served by Trunk.
 
-Uses `scripts/gui-test-inner.sh` internally (the script that runs inside the container).
+Uses `scripts/test/gui/gui-test-inner.sh` internally (the script that runs inside the container).
 
 ### Tauri desktop GUI tests (Arch only)
 
 ```bash
-sudo ./scripts/run-tauri-gui-tests.sh
+sudo ./scripts/test/gui/run-tauri-gui-tests.sh
 ```
 
 Tests the native Tauri desktop application using xdotool for window interaction. Runs inside the Arch container (`hardener-test`).
 
-Uses `scripts/tauri-gui-test-inner.sh` internally.
+Uses `scripts/test/gui/tauri-gui-test-inner.sh` internally.
 
 ### Direct Playwright commands
 
