@@ -287,7 +287,9 @@ mod compliance_framework_tests {
 
     #[test]
     fn from_id_accepts_legacy_aliases_from_both_parsers() {
-        // CLI-only spellings (crates/hardener-cli/src/commands/report.rs).
+        // Union of legacy alias spellings from both old parsers
+        // (crates/hardener-cli/src/commands/report.rs and
+        // src-tauri/src/commands.rs); of these, only "iso" was CLI-only.
         for alias in [
             "pcidss",
             "pci",

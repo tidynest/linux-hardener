@@ -595,3 +595,38 @@ async fn test_mac_apply_exception_skips_carry_skipped_change_type() {
         .expect("should have a skipped change for SELinux");
     assert_eq!(skip.change_type, ChangeType::Skipped);
 }
+
+#[tokio::test]
+async fn test_mac_apply_apparmor_advisory_is_not_counted_as_applied() {
+    // With AppArmor present and no policy exception, apply only offers
+    // guidance ("use aa-enforce...") -- it does not touch the host. Counting
+    // that advisory as an applied change is the same defect class the
+    // no-MAC-system skip fixed: it must read as a skip, not "1 change(s)
+    // applied".
+    let executor = apparmor_enforcing_executor();
+    let mut ctx = Context::with_executor(Arc::new(executor));
+    let plugin = MacHardeningPlugin::new();
+
+    let result = plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    let advisory = result
+        .apply_changes
+        .iter()
+        .find(|c| c.change_description.contains("aa-enforce"))
+        .expect("should record the AppArmor advisory change");
+    assert_eq!(
+        advisory.change_type,
+        ChangeType::Skipped,
+        "the AppArmor advisory does not modify the host, so it must not \
+         carry a real ChangeType, or renderers will count it as an applied \
+         change"
+    );
+    assert_eq!(
+        result.applied_change_count(),
+        0,
+        "an advisory-only apply must report zero applied changes"
+    );
+}

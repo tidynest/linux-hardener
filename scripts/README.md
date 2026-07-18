@@ -63,10 +63,13 @@ This directory contains utility scripts for the Linux Hardening Tool project.
 
 The host-side runners (`run-cross-distro-tests.sh`, `run-package-tests.sh`,
 `run-tauri-gui-tests.sh`, `run-desktop-tests.sh`, `test-polkit-matrix.sh`,
-`test-polkit.sh` in no-agent mode) do not assume binaries live under `./target`. Each
-carries an identical self-contained `resolve_target_dir` function (no sourced
-helper, since several scripts travel into containers where a host include would not
-exist) that resolves, in order:
+`test-polkit.sh` in no-agent mode) do not assume binaries live under `./target`. All
+of them source the shared `resolve_target_dir` function from `scripts/lib/common.sh`
+(via a `$SCRIPT_DIR`-relative path, `../lib/` or `../../lib/` depending on the
+caller's depth). In-container scripts that also need it (`test-package-install.sh`)
+source it the same way, resolving under the `/project` bind mount, since the
+container runners bind-mount the whole repository there. The function resolves, in
+order:
 
 1. `$CARGO_TARGET_DIR`, if set.
 2. `cargo metadata` → `target_directory` (honours `[build] target-dir` in

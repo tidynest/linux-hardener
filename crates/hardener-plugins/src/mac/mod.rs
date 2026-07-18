@@ -659,10 +659,13 @@ impl HardeningPlugin for MacHardeningPlugin {
                         change_error: None,
                     });
                 } else {
+                    // Advisory only: apply does not touch the host, so this
+                    // must not inflate the "N change(s) applied" count (see
+                    // ChangeType::Skipped).
                     apply_changes.push(Change {
                         change_description: "AppArmor detected - use aa-enforce to set specific profiles to enforce mode"
                             .to_string(),
-                        change_type: ChangeType::ConfigFile,
+                        change_type: ChangeType::Skipped,
                         change_success: true,
                         change_error: None,
                     });

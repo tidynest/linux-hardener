@@ -151,7 +151,11 @@ run_single_distro() {
     [[ "$PARALLEL" != "true" ]] && echo -e "${CYAN}━━━ Web UI Testing: $distro ($container) ━━━${NC}"
 
     if [[ ! -d "$container_path" ]]; then
-        echo -e "  ${YELLOW}[SKIP]${NC} Container not found: $container_path"
+        if [[ "$PARALLEL" == "true" ]]; then
+            echo -e "[$distro] ${YELLOW}SKIP${NC}: container not found"
+        else
+            echo -e "  ${YELLOW}[SKIP]${NC} Container not found: $container_path"
+        fi
         echo "CONTAINER NOT FOUND: $container_path" > "$logfile"
         return 99
     fi

@@ -21,14 +21,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a test locking every canonical id to the CLI and desktop parsers.
 - The no-MAC-system no-op apply was recorded as a fabricated `ConfigFile`
   change, so a host without SELinux or AppArmor read as "1 change(s)
-  applied" in the CLI and "1 changes made" on the desktop, and the audit
-  log showed Apply/Success where nothing was touched. A new
-  `ChangeType::Skipped` variant (matching the existing
-  `ControlStatus::NotApplicable` and `FileRestoreAction::Skipped` idioms)
-  marks no-op changes distinctly; the CLI and desktop renderers now count
-  only real changes towards "N change(s) applied" and list skips
-  separately. Applies to the no-MAC-system skip and the SELinux/AppArmor
-  policy-exception skips alike.
+  applied" in the CLI and "1 changes made" on the desktop; the audit log
+  continues to record the apply action itself. A new `ChangeType::Skipped`
+  variant (matching the existing `ControlStatus::NotApplicable` and
+  `FileRestoreAction::Skipped` idioms) marks no-op changes distinctly; the
+  CLI and desktop renderers now count only real changes towards "N
+  change(s) applied" and list skips separately. Applies to the
+  no-MAC-system skip and the SELinux/AppArmor policy-exception skips alike.
+- The AppArmor advisory that apply emits when AppArmor is present with no policy
+  exception ("AppArmor detected - use aa-enforce...") also inflated the
+  applied-change count despite touching nothing on the host; it now reports
+  as a skip, consistent with the no-MAC-system fix above.
 
 ### Added
 - Build identity in version output: `hardener --version` and a quiet chip
