@@ -12,19 +12,12 @@ use leptos::prelude::*;
 pub fn ComplianceTab() -> impl IntoView {
     let app_state = expect_context::<AppState>();
 
-    // Available compliance frameworks
-    let frameworks = vec![
-        ("cis", "CIS Benchmark"),
-        ("stig", "DISA STIG"),
-        ("nist", "NIST 800-53"),
-        ("pci", "PCI-DSS"),
-        ("hipaa", "HIPAA"),
-        ("gdpr", "GDPR"),
-        ("iso27001", "ISO 27001"),
-        ("soc2", "SOC 2"),
-        ("800-171", "NIST 800-171"),
-        ("fedramp", "FedRAMP"),
-    ];
+    // Available compliance frameworks, derived from the shared enum so the
+    // picker cannot drift when a framework is added.
+    let frameworks: Vec<(&'static str, &'static str)> = hardener_types::ComplianceFramework::ALL
+        .iter()
+        .map(|f| (f.id(), f.full_name()))
+        .collect();
 
     // Track selected frameworks
     let selected_frameworks = RwSignal::new(vec!["cis".to_string()]);

@@ -37,14 +37,10 @@ pub fn AnalysisPage() -> impl IntoView {
                     app_state.scan_results.set(results);
 
                     // Auto-generate compliance reports for all frameworks (consistent with Dashboard)
-                    let frameworks = vec![
-                        "cis".into(),
-                        "stig".into(),
-                        "nist".into(),
-                        "pci-dss".into(),
-                        "hipaa".into(),
-                        "gdpr".into(),
-                    ];
+                    let frameworks = hardener_types::ComplianceFramework::ALL
+                        .iter()
+                        .map(|f| f.id().to_string())
+                        .collect();
                     match invoke_generate_report(frameworks).await {
                         Ok(reports) => app_state.compliance_reports.set(reports),
                         Err(e) => {

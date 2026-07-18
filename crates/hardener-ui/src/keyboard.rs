@@ -179,14 +179,10 @@ fn trigger_global_scan(app_state: AppState) {
             Ok(results) => {
                 app_state.scan_results.set(results);
                 // Auto-generate compliance reports (consistent with Dashboard)
-                let frameworks = vec![
-                    "cis".to_string(),
-                    "stig".to_string(),
-                    "nist".to_string(),
-                    "pci-dss".to_string(),
-                    "hipaa".to_string(),
-                    "gdpr".to_string(),
-                ];
+                let frameworks = hardener_types::ComplianceFramework::ALL
+                    .iter()
+                    .map(|f| f.id().to_string())
+                    .collect();
                 match tauri_bindings::invoke_generate_report(frameworks).await {
                     Ok(reports) => app_state.compliance_reports.set(reports),
                     Err(e) => {

@@ -161,6 +161,39 @@ impl fmt::Display for ComplianceFramework {
 }
 
 impl ComplianceFramework {
+    /// Every supported framework, in canonical display order. Single source
+    /// for UI pickers and auto-report calls so new frameworks cannot be
+    /// silently omitted from hardcoded lists.
+    pub const ALL: [ComplianceFramework; 10] = [
+        ComplianceFramework::CIS,
+        ComplianceFramework::STIG,
+        ComplianceFramework::NIST,
+        ComplianceFramework::PCIDSS,
+        ComplianceFramework::HIPAA,
+        ComplianceFramework::GDPR,
+        ComplianceFramework::ISO27001,
+        ComplianceFramework::SOC2,
+        ComplianceFramework::NIST800171,
+        ComplianceFramework::FedRAMP,
+    ];
+
+    /// Canonical request identifier, as accepted by the CLI `--framework`
+    /// flag and the desktop `parse_frameworks` command layer.
+    pub fn id(&self) -> &'static str {
+        match self {
+            ComplianceFramework::CIS => "cis",
+            ComplianceFramework::HIPAA => "hipaa",
+            ComplianceFramework::ISO27001 => "iso27001",
+            ComplianceFramework::NIST => "nist",
+            ComplianceFramework::PCIDSS => "pci-dss",
+            ComplianceFramework::STIG => "stig",
+            ComplianceFramework::GDPR => "gdpr",
+            ComplianceFramework::SOC2 => "soc2",
+            ComplianceFramework::NIST800171 => "800-171",
+            ComplianceFramework::FedRAMP => "fedramp",
+        }
+    }
+
     /// Returns the full name of the compliance framework.
     pub fn full_name(&self) -> &'static str {
         match self {

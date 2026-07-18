@@ -398,4 +398,19 @@ mod tests {
         let grouped_total: usize = grouped.iter().map(|(_, f)| f.len()).sum();
         assert_eq!(flat.len(), grouped_total, "run_scan flattens scan_grouped");
     }
+
+    #[test]
+    fn every_canonical_framework_id_parses() {
+        // Guards the shared enum ids against drift: the UI builds its picker
+        // and auto-report requests from ComplianceFramework::ALL, so every
+        // canonical id must stay accepted by the CLI parser.
+        for framework in ComplianceFramework::ALL {
+            assert_eq!(
+                parse_framework(framework.id()).unwrap(),
+                framework,
+                "canonical id '{}' must parse to its framework",
+                framework.id()
+            );
+        }
+    }
 }
