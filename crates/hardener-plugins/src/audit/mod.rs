@@ -1014,8 +1014,8 @@ impl HardeningPlugin for AuditHardeningPlugin {
                 let change = if is_audit_config_immutable(ctx).await {
                     Change {
                         change_type: ChangeType::Skipped,
-                        change_description: "Audit rules written; reboot required to load \
-                             them - audit config is locked (-e 2)"
+                        change_description: "Audit rule reload skipped: config is locked \
+                             (-e 2); a reboot is required for rule changes to take effect"
                             .to_string(),
                         change_error: None,
                         change_success: true,

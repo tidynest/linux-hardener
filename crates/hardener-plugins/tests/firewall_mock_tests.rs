@@ -484,7 +484,9 @@ fn ufw_inactive_nftables_active_executor() -> MockExecutor {
             "nft",
             &["list", "ruleset"],
             CommandOutput {
-                stdout: "table inet filter {\n}\n".to_string(),
+                stdout: "table inet filter {\n\tchain input {\n\t\ttype filter hook input \
+                          priority 0; policy drop;\n\t}\n}\n"
+                    .to_string(),
                 stderr: String::new(),
                 exit_code: 0,
             },
@@ -548,7 +550,9 @@ fn ufw_active_nftables_also_present_executor() -> MockExecutor {
             "nft",
             &["list", "ruleset"],
             CommandOutput {
-                stdout: "table inet filter {\n}\n".to_string(),
+                stdout: "table inet filter {\n\tchain input {\n\t\ttype filter hook input \
+                          priority 0; policy drop;\n\t}\n}\n"
+                    .to_string(),
                 stderr: String::new(),
                 exit_code: 0,
             },
@@ -626,6 +630,119 @@ async fn test_backend_selection_falls_back_to_first_installed_when_none_active()
         disabled.finding_id, "ufw-disabled",
         "with nothing active, fallback should keep the existing installed-order priority \
          (ufw before nftables)"
+    );
+}
+
+// --- nftables activity heuristic: a bare `table` is not sufficient evidence
+// of an active packet filter. Docker, libvirt, and iptables-nft all create
+// their own nftables tables (NAT/routing) even when the admin's intended
+// firewall is ufw or firewalld; only a chain that hooks input counts as
+// "enabled". ---
+
+#[tokio::test]
+async fn test_nftables_is_enabled_requires_input_hook_not_bare_table() {
+    use hardener_plugins::firewall::FirewallBackend;
+    use hardener_plugins::firewall::nftables::NftablesBackend;
+
+    // Docker-style NAT table only: no chain hooks input.
+    let executor = MockExecutor::new().with_command(
+        "nft",
+        &["list", "ruleset"],
+        CommandOutput {
+            stdout: "table ip docker0 {\n\tchain POSTROUTING {\n\t\ttype nat hook postrouting \
+                      priority 100;\n\t}\n}\n"
+                .to_string(),
+            stderr: String::new(),
+            exit_code: 0,
+        },
+    );
+    let ctx = Context::with_executor(Arc::new(executor));
+    let backend = NftablesBackend::new();
+
+    assert!(
+        backend.is_enabled(&ctx).await.is_err(),
+        "a docker/libvirt-style NAT table with no input hook must not count as an active \
+         firewall"
+    );
+}
+
+#[tokio::test]
+async fn test_nftables_is_enabled_true_with_input_hook_chain() {
+    use hardener_plugins::firewall::FirewallBackend;
+    use hardener_plugins::firewall::nftables::NftablesBackend;
+
+    let executor = MockExecutor::new().with_command(
+        "nft",
+        &["list", "ruleset"],
+        CommandOutput {
+            stdout: "table inet filter {\n\tchain input {\n\t\ttype filter hook input \
+                      priority 0; policy drop;\n\t}\n}\n"
+                .to_string(),
+            stderr: String::new(),
+            exit_code: 0,
+        },
+    );
+    let ctx = Context::with_executor(Arc::new(executor));
+    let backend = NftablesBackend::new();
+
+    assert!(
+        backend.is_enabled(&ctx).await.is_ok(),
+        "a ruleset with an input-hook chain must count as an active firewall"
+    );
+}
+
+/// ufw is installed but inactive, and nftables owns only a docker-style NAT
+/// table (no input-hook chain). This mirrors a host running Docker with the
+/// admin's intended firewall (ufw) switched off: selection must not mistake
+/// docker's table for an active firewall and must still report ufw disabled.
+fn ufw_inactive_nftables_docker_table_only_executor() -> MockExecutor {
+    MockExecutor::new()
+        .with_command_exists("ufw", true)
+        .with_command_exists("firewall-cmd", false)
+        .with_command_exists("nft", true)
+        .with_command(
+            "systemctl",
+            &["is-active", "ufw"],
+            CommandOutput {
+                stdout: "inactive\n".to_string(),
+                stderr: String::new(),
+                exit_code: 3,
+            },
+        )
+        .with_command(
+            "nft",
+            &["list", "ruleset"],
+            CommandOutput {
+                stdout: "table ip docker0 {\n\tchain POSTROUTING {\n\t\ttype nat hook \
+                          postrouting priority 100;\n\t}\n}\n"
+                    .to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+}
+
+#[tokio::test]
+async fn test_backend_selection_ignores_docker_style_nat_table_falls_back_to_ufw() {
+    let executor = ufw_inactive_nftables_docker_table_only_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = FirewallHardeningPlugin::new();
+
+    let result = plugin.scan(&ctx).await.unwrap();
+    assert!(result.scan_success, "scan should succeed");
+
+    let disabled = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_title.to_lowercase().contains("disabled"))
+        .expect(
+            "a docker-owned NAT table must not suppress the disabled finding; nftables \
+             should not be considered active",
+        );
+    assert_eq!(
+        disabled.finding_id, "ufw-disabled",
+        "with only app-owned nftables tables present, fallback should keep the existing \
+         installed-order priority (ufw before nftables)"
     );
 }
 

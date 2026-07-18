@@ -177,16 +177,23 @@ impl FirewallBackend for NftablesBackend {
     }
 
     async fn is_enabled(&self, ctx: &Context) -> Result<()> {
-        // Check if nftables has any active ruleset.
-        // An empty ruleset means nftables is installed but not configured.
+        // Check if nftables is acting as a packet-filtering firewall.
+        //
+        // A bare `table` in the ruleset is not sufficient evidence: Docker,
+        // libvirt, and iptables-nft all create their own nftables tables
+        // (NAT/routing, not filtering) on hosts whose admin intends a
+        // different backend such as ufw or firewalld. Counting those would
+        // wrongly select nftables here, suppressing the "firewall disabled"
+        // finding and writing rules alongside tables owned by another
+        // subsystem. A packet-filtering firewall is only "active" if some
+        // chain actually hooks input, so require that instead.
         let output = self.execute_nft(ctx, &["list", "ruleset"]).await?;
 
-        // If there are tables defined, nftables is considered "enabled"
-        if output.contains("table") {
+        if output.contains("hook input") {
             Ok(())
         } else {
             Err(HardeningError::Plugin(
-                "Nftables has no active ruleset".to_string(),
+                "Nftables has no active input-hook chain".to_string(),
             ))
         }
     }

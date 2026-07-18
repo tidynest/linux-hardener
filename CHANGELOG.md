@@ -24,7 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   untouched. Backends are now probed in the existing priority order
   (firewalld, ufw, nftables) and the first one reporting itself enabled
   wins; if none are active, selection falls back to the prior
-  installed-order behaviour.
+  installed-order behaviour. The nftables activity check itself was
+  tightened to require an actual input-hook chain in the ruleset rather
+  than a bare `table`, since Docker, libvirt, and iptables-nft create
+  their own nftables tables (NAT/routing, not filtering) that must not
+  be mistaken for an intentional firewall.
 - ufw rule mapping no longer sends two baseline rules through the wrong
   syntax: "allow established and related connections" is not a ufw rule
   at all (ufw tracks connection state implicitly) and is now recorded as

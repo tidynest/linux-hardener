@@ -399,6 +399,15 @@ fn accept_json_output<T: serde::de::DeserializeOwned>(
     {
         return Ok(parsed);
     }
+    if raw.stderr.is_empty() {
+        let code = raw
+            .exit_code
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+        return Err(PrivilegedCommandError::ExecutionFailed(format!(
+            "CLI exited {code} but its output could not be parsed as results"
+        )));
+    }
     Err(PrivilegedCommandError::ExecutionFailed(raw.stderr.clone()))
 }
 
@@ -2067,6 +2076,19 @@ mod fleet_tests {
         let err = accept_json_output::<serde_json::Value>(&raw).unwrap_err();
         assert!(
             matches!(err, PrivilegedCommandError::ExecutionFailed(msg) if msg == "root privileges required")
+        );
+    }
+
+    #[test]
+    fn accept_json_output_falls_back_to_exit_code_message_when_stderr_is_empty() {
+        // Unparseable stdout and no stderr at all must not surface a bare
+        // "Command failed: " with nothing after the colon.
+        let raw = privileged_output(Some(1), "not json", "");
+        let err = accept_json_output::<serde_json::Value>(&raw).unwrap_err();
+        assert!(
+            matches!(&err, PrivilegedCommandError::ExecutionFailed(msg) if msg.contains("CLI exited 1")
+                && msg.contains("could not be parsed as results")),
+            "expected a diagnosable fallback message, got: {err}"
         );
     }
 
