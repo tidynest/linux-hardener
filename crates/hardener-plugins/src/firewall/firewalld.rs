@@ -87,6 +87,10 @@ impl FirewallBackend for FirewalldBackend {
         "firewalld"
     }
 
+    fn systemd_unit(&self) -> &'static str {
+        "firewalld"
+    }
+
     async fn detect(&self, ctx: &Context) -> Result<bool> {
         // Check if firewall-cmd command exists using executor
         ctx.executor()

@@ -168,6 +168,10 @@ impl FirewallBackend for NftablesBackend {
         "nftables"
     }
 
+    fn systemd_unit(&self) -> &'static str {
+        "nftables"
+    }
+
     async fn detect(&self, ctx: &Context) -> Result<bool> {
         // Check if nft command exists using executor.
         ctx.executor()

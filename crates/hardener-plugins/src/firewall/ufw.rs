@@ -147,6 +147,10 @@ impl FirewallBackend for UfwBackend {
         "ufw"
     }
 
+    fn systemd_unit(&self) -> &'static str {
+        "ufw"
+    }
+
     async fn detect(&self, ctx: &Context) -> Result<bool> {
         // Check if ufw command exists using executor.
         ctx.executor()

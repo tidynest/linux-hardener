@@ -18,7 +18,7 @@ use hardener_common::{
 use hardener_core::{
     ApplyResult, Change, ChangeType, Checkpoint, PluginConfig, ValidationReport,
     context::Context,
-    plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult},
+    plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedCheck},
 };
 use std::time::Instant;
 use tracing::{info, warn};
@@ -46,6 +46,10 @@ pub struct Rule {
 pub trait FirewallBackend: Send + Sync {
     /// Returns the name of this backend (e.g., "nftables", "firewalld", "ufw").
     fn backend_name(&self) -> &str;
+
+    /// The systemd unit that runs this backend, used as a root-free
+    /// activity hint when the backend's own probe needs privileges.
+    fn systemd_unit(&self) -> &'static str;
 
     /// Detects if this backend is available on the system.
     ///
@@ -340,6 +344,45 @@ impl Default for FirewallHardeningPlugin {
     }
 }
 
+/// Root-free unit-state probe. Judged by exit code only (locale-immune).
+async fn systemd_unit_active(ctx: &Context, unit: &str) -> bool {
+    ctx.executor()
+        .execute_command("systemctl", &["is-active", unit])
+        .await
+        .map(|output| output.success())
+        .unwrap_or(false)
+}
+
+/// Activity classification for one installed firewall backend.
+enum BackendActivity {
+    /// The backend's own probe confirmed it is managing traffic.
+    Verified,
+    /// The probe needs root, but the backend's systemd unit is active.
+    UnitActiveUnverified,
+    /// The probe needs root and the unit is not active either.
+    Unknown,
+    /// The probe ran and reported the backend inactive.
+    Inactive,
+}
+
+/// Whether a backend is the one actively managing traffic, degrading to the
+/// systemd unit hint when the backend's own probe is blocked by privileges.
+/// Returns the probe outcome so the caller can distinguish "verified active"
+/// from "unit active but ruleset unverifiable without root".
+async fn backend_activity(ctx: &Context, backend: &dyn FirewallBackend) -> BackendActivity {
+    match backend.is_enabled(ctx).await {
+        Ok(()) => BackendActivity::Verified,
+        Err(e) if hardener_common::error::message_indicates_permission_denied(&e.to_string()) => {
+            if systemd_unit_active(ctx, backend.systemd_unit()).await {
+                BackendActivity::UnitActiveUnverified
+            } else {
+                BackendActivity::Unknown
+            }
+        }
+        Err(_) => BackendActivity::Inactive,
+    }
+}
+
 impl FirewallHardeningPlugin {
     /// Create a new firewall plugin instance.
     ///
@@ -390,7 +433,10 @@ impl FirewallHardeningPlugin {
 
         let mut active_index = None;
         for (index, backend) in installed.iter().enumerate() {
-            if backend.is_enabled(ctx).await.is_ok() {
+            if matches!(
+                backend_activity(ctx, backend.as_ref()).await,
+                BackendActivity::Verified | BackendActivity::UnitActiveUnverified
+            ) {
                 active_index = Some(index);
                 break;
             }
@@ -454,21 +500,24 @@ impl HardeningPlugin for FirewallHardeningPlugin {
             }
         };
 
-        // Check if firewall is enabled.
-        if let Err(e) = backend.is_enabled(ctx).await {
-            let error_msg = e.to_string();
-
-            // Distinguish between "disabled" and "permission denied".
-            // Only report "disabled" if we're certain it's actually disabled.
-            if error_msg.contains("permission denied") || error_msg.contains("Permission denied") {
-                // Cannot determine status - log warning but don't create false finding.
-                warn!(
-                    "Cannot verify {} firewall status: {}",
-                    backend.backend_name(),
-                    error_msg
-                );
-            } else {
-                // Firewall is genuinely disabled.
+        // Check if firewall is enabled, degrading to the root-free systemd
+        // unit hint when the backend's own probe needs privileges.
+        let mut unchecked = Vec::new();
+        match backend_activity(ctx, backend.as_ref()).await {
+            BackendActivity::Verified => {}
+            BackendActivity::UnitActiveUnverified | BackendActivity::Unknown => {
+                unchecked.push(UncheckedCheck {
+                    unchecked_check_id: format!("{}-disabled", backend.backend_name()),
+                    unchecked_title: "Active firewall ruleset".to_string(),
+                    unchecked_category: FindingCategory::Network,
+                    unchecked_reason: format!(
+                        "verifying the active {} ruleset requires root",
+                        backend.backend_name()
+                    ),
+                    unchecked_compliance: get_firewall_compliance_mappings(),
+                });
+            }
+            BackendActivity::Inactive => {
                 findings.push(Finding {
                     finding_category: FindingCategory::Network,
                     finding_current_value: "disabled".to_string(),
@@ -498,7 +547,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
             scan_plugin_id: plugin_id,
             scan_success: true,
             scan_findings: findings,
-            scan_unchecked: vec![],
+            scan_unchecked: unchecked,
             scan_duration_us: duration_us,
             scan_error: None,
         })
@@ -675,6 +724,57 @@ impl HardeningPlugin for FirewallHardeningPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hardener_core::{CommandOutput, MockExecutor};
+
+    /// Reproduces the maintainer's hardened-Arch scenario: nftables and ufw
+    /// are both installed, the unprivileged `nft list ruleset` probe fails
+    /// with permission denied, but the nftables systemd unit is active while
+    /// ufw's is not. Selection must prefer nftables via the root-free unit
+    /// hint, and the ruleset check must be reported unchecked rather than
+    /// as a false "Firewall disabled" finding.
+    #[tokio::test]
+    async fn scan_prefers_systemd_active_backend_and_reports_unchecked_when_probe_needs_root() {
+        let mock = MockExecutor::new()
+            .with_command_exists("firewall-cmd", false)
+            .with_command_exists("ufw", true)
+            .with_command_exists("nft", true)
+            .with_command(
+                "nft",
+                &["list", "ruleset"],
+                CommandOutput {
+                    stdout: String::new(),
+                    stderr: "nft: Permission denied".to_string(),
+                    exit_code: 1,
+                },
+            )
+            .with_command(
+                "systemctl",
+                &["is-active", "nftables"],
+                CommandOutput {
+                    stdout: "active\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            )
+            .with_command(
+                "systemctl",
+                &["is-active", "ufw"],
+                CommandOutput {
+                    stdout: "inactive\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 3,
+                },
+            );
+        let ctx = Context::with_executor(std::sync::Arc::new(mock));
+        let result = FirewallHardeningPlugin::new().scan(&ctx).await.unwrap();
+
+        assert!(result.scan_findings.is_empty(), "no false disabled finding");
+        assert_eq!(result.scan_unchecked.len(), 1);
+        assert_eq!(
+            result.scan_unchecked[0].unchecked_check_id,
+            "nftables-disabled"
+        );
+    }
 
     #[test]
     fn coverage_includes_firewall_installed_control() {
