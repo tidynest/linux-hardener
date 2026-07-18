@@ -7,7 +7,7 @@
 
 <p align="center">
   <a href="https://github.com/tidynest/linux-system-hardener/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/tidynest/linux-system-hardener/ci.yml?branch=main&style=flat-square&label=CI&labelColor=134e4a" alt="CI status"></a>
-  <img src="https://img.shields.io/badge/version-1.3.0-0f766e?style=flat-square&labelColor=134e4a" alt="Version 1.3.0">
+  <img src="https://img.shields.io/badge/version-1.3.1-0f766e?style=flat-square&labelColor=134e4a" alt="Version 1.3.1">
   <img src="https://img.shields.io/badge/license-Apache--2.0-0f766e?style=flat-square&labelColor=134e4a" alt="License Apache-2.0">
   <img src="https://img.shields.io/badge/rust-1.85%2B-0f766e?style=flat-square&labelColor=134e4a&logo=rust&logoColor=white" alt="Rust 1.85+">
   <img src="https://img.shields.io/aur/version/linux-system-hardener?style=flat-square&logo=archlinux&logoColor=white&label=AUR&color=0f766e&labelColor=134e4a" alt="AUR package">
@@ -137,7 +137,7 @@ The tool is designed for system administrators, DevOps engineers, and security p
 
 ## Project Status
 
-**Current Phase**: Production Release (v1.3.0)
+**Current Phase**: Production Release (v1.3.1)
 
 ### Test Coverage
 

@@ -1,3 +1,11 @@
+linux-system-hardener (1.3.1-1) unstable; urgency=medium
+
+  * Fix: build identity stamped a foreign repository's commit into --version
+    for tarball builds extracted inside an unrelated git checkout.
+  * Packaging: PKGBUILD pins CARGO_TARGET_DIR inside the build root.
+
+ -- Eric Jingryd <tidynest@proton.me>  Sat, 18 Jul 2026 21:00:00 +0000
+
 linux-system-hardener (1.3.0-1) unstable; urgency=medium
 
   * RHEL 10 compliance profiles with report-time identifier translation.

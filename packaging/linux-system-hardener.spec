@@ -1,5 +1,5 @@
 Name:           linux-system-hardener
-Version:        1.3.0
+Version:        1.3.1
 Release:        1%{?dist}
 Summary:        Linux security automation: scanning, hardening, and rollback
 License:        Apache-2.0
@@ -103,6 +103,11 @@ systemctl daemon-reload || true
 %dir %{_libdir}/linux-hardener
 
 %changelog
+* Sat Jul 18 2026 Eric Jingryd <tidynest@proton.me> - 1.3.1-1
+- Fix: build identity stamped an unrelated repository's commit into --version
+  when the tarball was extracted inside a foreign git checkout
+- Packaging: PKGBUILD pins CARGO_TARGET_DIR inside the build root
+
 * Sat Jul 18 2026 Eric Jingryd <tidynest@proton.me> - 1.3.0-1
 - RHEL 10 compliance profiles: report-time STIG/CIS identifier translation (--profile override)
 - New frameworks: SOC 2, NIST 800-171 r3, FedRAMP Moderate (10 frameworks total)
