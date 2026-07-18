@@ -20,7 +20,19 @@ fn command_line(program: &str, arguments: &[&str]) -> Option<String> {
 
 fn main() {
     // Tarball builds (e.g. AUR) have no .git; fall back to a neutral marker.
-    let commit = command_line("git", &["rev-parse", "--short", "HEAD"])
+    // git walks upwards, so a tarball extracted inside an unrelated repo
+    // (yay's AUR package clone, for one) would resolve to that repo's HEAD.
+    // Only trust a repo whose toplevel contains this very script.
+    let project_git_dir = command_line("git", &["rev-parse", "--show-toplevel"])
+        .filter(|top| {
+            std::path::Path::new(top)
+                .join("scripts/build_identity.rs")
+                .exists()
+        })
+        .and_then(|_| command_line("git", &["rev-parse", "--absolute-git-dir"]));
+    let commit = project_git_dir
+        .as_ref()
+        .and_then(|_| command_line("git", &["rev-parse", "--short", "HEAD"]))
         .unwrap_or_else(|| "release".to_string());
 
     // Honour SOURCE_DATE_EPOCH so packaged builds stay reproducible.
@@ -44,7 +56,7 @@ fn main() {
     // commit and checkout, which plain HEAD (a stable "ref: ..." line on a
     // fixed branch) does not capture. Tarball builds emit no watch paths and
     // keep the "release" identity without rerun churn.
-    if let Some(git_dir) = command_line("git", &["rev-parse", "--absolute-git-dir"]) {
+    if let Some(git_dir) = project_git_dir {
         println!("cargo:rerun-if-changed={git_dir}/HEAD");
         println!("cargo:rerun-if-changed={git_dir}/logs/HEAD");
     }

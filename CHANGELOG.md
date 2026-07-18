@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- The build identity no longer picks up an unrelated git repository: a
+  tarball extracted inside a foreign checkout (such as yay's AUR package
+  clone) stamped that repository's commit into `--version` instead of the
+  `release` marker. The build script now only trusts a git toplevel that
+  contains `scripts/build_identity.rs` itself.
 - The PKGBUILD now pins `CARGO_TARGET_DIR` inside the build root, so a
   user-level cargo configuration with a global `[build] target-dir` no
   longer relocates the artifacts that `package()` installs from relative
