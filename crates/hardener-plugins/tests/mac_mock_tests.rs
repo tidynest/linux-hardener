@@ -2,7 +2,7 @@
 //!
 //! These tests verify plugin behavior without touching real SELinux/AppArmor.
 
-use hardener_common::types::{PluginId, Severity};
+use hardener_common::types::{FindingCategory, PluginId, Severity};
 use hardener_core::{
     ChangeType, CommandOutput, Context, FileMetadata, MockExecutor, PluginConfig, PolicyException,
     SystemExecutor, plugin::HardeningPlugin,
@@ -628,5 +628,72 @@ async fn test_mac_apply_apparmor_advisory_is_not_counted_as_applied() {
         result.applied_change_count(),
         0,
         "an advisory-only apply must report zero applied changes"
+    );
+}
+
+// === Permission-denied honesty (root-only aa-status) ===
+
+/// Creates a mock executor where AppArmor is installed but the current
+/// privilege level cannot read profile state: `aa-status --verbose` exits
+/// non-zero with a stderr naming a privilege failure, as it does on many
+/// hardened hosts for unprivileged callers.
+fn apparmor_permission_denied_executor() -> MockExecutor {
+    MockExecutor::new()
+        .with_file_metadata(
+            "/sys/kernel/security/apparmor",
+            "",
+            FileMetadata {
+                exists: true,
+                is_file: false,
+                is_dir: true,
+                mode: 0o755,
+                size: 0,
+                uid: 0,
+                gid: 0,
+            },
+        )
+        .with_command(
+            "aa-status",
+            &["--verbose"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: "apparmor-status: Permission denied (are you root?)".to_string(),
+                exit_code: 1,
+            },
+        )
+}
+
+/// A root-only `aa-status` must not be reported as "no AppArmor profiles
+/// loaded": that would falsely flag a hardened host as unconfined. The
+/// privilege failure surfaces as an unchecked entry instead.
+#[tokio::test]
+async fn test_mac_scan_apparmor_permission_denied_is_unchecked_not_silent() {
+    let executor = apparmor_permission_denied_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = MacHardeningPlugin::new();
+
+    let result = plugin.scan(&ctx).await.unwrap();
+
+    assert!(
+        result.scan_success,
+        "a permission-denied probe must not fail the scan"
+    );
+    assert!(
+        !result
+            .scan_findings
+            .iter()
+            .any(|f| f.finding_id == "apparmor-no-profiles"),
+        "a permission failure must not masquerade as 'no profiles loaded'"
+    );
+
+    let unchecked = result
+        .scan_unchecked
+        .iter()
+        .find(|u| u.unchecked_check_id == "apparmor-no-profiles")
+        .expect("apparmor-no-profiles must be unchecked when aa-status is root-only");
+    assert_eq!(unchecked.unchecked_category, FindingCategory::Kernel);
+    assert!(
+        !unchecked.unchecked_compliance.is_empty(),
+        "the unchecked entry must carry the same compliance mappings the finding would have"
     );
 }

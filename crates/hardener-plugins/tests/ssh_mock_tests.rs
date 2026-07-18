@@ -620,3 +620,69 @@ fn ssh_stig_crypto_ids_match_the_rhel8_v2r7_benchmark() {
         "Kex must keep its CIS mapping"
     );
 }
+
+// === Permission-denied honesty (root-only sshd_config) ===
+
+/// A root-only sshd_config (unreadable at the current privilege level) must
+/// not be reported as "every directive missing": that would falsely flag a
+/// hardened host as insecure. The permission failure surfaces as unchecked
+/// entries, one per SSH_DIRECTIVES and SSH_CRYPTO_DIRECTIVES element, instead
+/// of findings.
+#[tokio::test]
+async fn scan_reports_directives_unchecked_when_sshd_config_is_root_only() {
+    let mock = MockExecutor::new().with_read_permission_denied("/etc/ssh/sshd_config");
+    let ctx = Context::with_executor(Arc::new(mock));
+    let result = SshHardeningPlugin::new().scan(&ctx).await.unwrap();
+
+    assert!(result.scan_success);
+    assert!(result.scan_findings.is_empty());
+    assert!(
+        result
+            .scan_unchecked
+            .iter()
+            .any(|u| u.unchecked_check_id == "ssh-permitrootlogin")
+    );
+
+    // Every SSH_DIRECTIVES entry and every crypto directive must appear,
+    // matching the finding ids they would otherwise have produced.
+    let unchecked_ids: Vec<&str> = result
+        .scan_unchecked
+        .iter()
+        .map(|u| u.unchecked_check_id.as_str())
+        .collect();
+    for id in [
+        "ssh-permitrootlogin",
+        "ssh-passwordauthentication",
+        "ssh-permitemptypasswords",
+        "ssh-maxauthtries",
+        "ssh-x11forwarding",
+        "ssh-clientaliveinterval",
+        "ssh-clientalivecountmax",
+        "ssh-kexalgorithms",
+        "ssh-ciphers",
+        "ssh-macs",
+    ] {
+        assert!(
+            unchecked_ids.contains(&id),
+            "{id} must be unchecked when sshd_config is root-only, got: {unchecked_ids:?}"
+        );
+    }
+    assert_eq!(
+        unchecked_ids.len(),
+        10,
+        "exactly one unchecked entry per directive/crypto table row, got: {unchecked_ids:?}"
+    );
+
+    // Crypto directive compliance mappings must still be populated (not the
+    // wildcard fallback), proving get_ssh_compliance_mappings resolves crypto
+    // names correctly.
+    let kex_entry = result
+        .scan_unchecked
+        .iter()
+        .find(|u| u.unchecked_check_id == "ssh-kexalgorithms")
+        .expect("KexAlgorithms must be present");
+    assert!(
+        !kex_entry.unchecked_compliance.is_empty(),
+        "crypto directive unchecked entries must carry their real compliance mappings"
+    );
+}

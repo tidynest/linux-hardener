@@ -20,7 +20,7 @@ use hardener_common::{
 use hardener_core::{
     ApplyResult, Change, ChangeType, Checkpoint, PluginConfig, ValidationIssue, ValidationReport,
     context::Context,
-    plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult},
+    plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedCheck},
 };
 use std::{path::Path, time::Instant};
 use tracing::{error, info, warn};
@@ -835,6 +835,33 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
     }
 }
 
+/// Unchecked entries for every sshd_config check when the file itself cannot
+/// be read at the current privilege level. Ids mirror the finding ids.
+fn unchecked_ssh_checks() -> Vec<UncheckedCheck> {
+    SSH_DIRECTIVES
+        .iter()
+        .map(|d| {
+            (
+                d.ssh_directive_name,
+                get_ssh_compliance_mappings(d.ssh_directive_name),
+            )
+        })
+        .chain(SSH_CRYPTO_DIRECTIVES.iter().map(|c| {
+            (
+                c.crypto_directive_name,
+                get_ssh_compliance_mappings(c.crypto_directive_name),
+            )
+        }))
+        .map(|(name, compliance)| UncheckedCheck {
+            unchecked_check_id: format!("ssh-{}", name.to_lowercase()),
+            unchecked_title: format!("SSH setting: {}", name),
+            unchecked_category: FindingCategory::Network,
+            unchecked_reason: "reading /etc/ssh/sshd_config requires root".to_string(),
+            unchecked_compliance: compliance,
+        })
+        .collect()
+}
+
 #[async_trait]
 impl HardeningPlugin for SshHardeningPlugin {
     fn metadata(&self) -> PluginMetadata {
@@ -865,8 +892,20 @@ impl HardeningPlugin for SshHardeningPlugin {
         {
             Ok(content) => content,
             Err(e) => {
-                // If we can't read the config, create a critical finding.
                 let duration_us = start_time.elapsed().as_micros() as u64;
+                // A root-only sshd_config must not read as "every directive
+                // missing": that would falsely flag a hardened host. Surface
+                // the privilege failure as unchecked entries instead.
+                if hardener_common::error::is_permission_denied(&e) {
+                    return Ok(ScanResult {
+                        scan_plugin_id: plugin_id,
+                        scan_success: true,
+                        scan_findings: vec![],
+                        scan_unchecked: unchecked_ssh_checks(),
+                        scan_duration_us: duration_us,
+                        scan_error: None,
+                    });
+                }
                 return Ok(ScanResult {
                     scan_plugin_id: plugin_id,
                     scan_success: false,

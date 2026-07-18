@@ -16,7 +16,7 @@ use hardener_common::{
 use hardener_core::{
     ApplyResult, Change, ChangeType, Checkpoint, PluginConfig, ValidationIssue, ValidationReport,
     context::Context,
-    plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult},
+    plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedCheck},
 };
 use std::path::Path;
 use std::time::Instant;
@@ -139,37 +139,36 @@ impl MacHardeningPlugin {
         }
     }
 
-    /// Checks AppArmor status and returns a summary.
+    /// Probes AppArmor profile status via `aa-status --verbose` and
+    /// classifies the outcome.
     ///
-    /// Uses `aa-status` to get the current state of AppArmor profiles.
-    async fn get_apparmor_status(&self, ctx: &Context) -> Result<String> {
-        let output = ctx
+    /// `aa-status` exits non-zero both when AppArmor is not installed and
+    /// when it is installed but the caller lacks the privilege to read
+    /// profile state, so the raw stderr is classified before either case is
+    /// treated as "no MAC in effect" (see [`ApparmorProbe`]).
+    async fn probe_apparmor(&self, ctx: &Context) -> ApparmorProbe {
+        let output = match ctx
             .executor()
             .execute_command("aa-status", &["--verbose"])
             .await
-            .map_err(|e| HardeningError::Plugin(format!("Failed to execute aa-status: {}", e)))?;
+        {
+            Ok(output) => output,
+            Err(_) => return ApparmorProbe::Unavailable,
+        };
 
         if !output.success() {
-            return Err(HardeningError::Plugin(
-                "aa-status command failed - AppArmor may not be installed".to_string(),
-            ));
+            return if hardener_common::error::message_indicates_permission_denied(&output.stderr) {
+                ApparmorProbe::PermissionDenied
+            } else {
+                ApparmorProbe::Unavailable
+            };
         }
-
-        let status = output.stdout.trim().to_string();
-        Ok(status)
-    }
-
-    /// Counts how many AppArmor profiles are in enforce mode vs. complain mode.
-    ///
-    /// Returns (enforce_count, complain_count, total_loaded)
-    async fn count_apparmor_profiles(&self, ctx: &Context) -> Result<(usize, usize, usize)> {
-        let status = self.get_apparmor_status(ctx).await?;
 
         let mut enforce_count = 0;
         let mut complain_count = 0;
 
         // Parse the aa-status output
-        for line in status.lines() {
+        for line in output.stdout.trim().lines() {
             if line.contains("profiles are in enforce mode") {
                 // Extract number from line like "   37 profiles are in enforce mode."
                 if let Some(num_str) = line.split_whitespace().next() {
@@ -183,8 +182,21 @@ impl MacHardeningPlugin {
         }
 
         let total_loaded = enforce_count + complain_count;
-        Ok((enforce_count, complain_count, total_loaded))
+        ApparmorProbe::Profiles(enforce_count, complain_count, total_loaded)
     }
+}
+
+/// Outcome of [`MacHardeningPlugin::probe_apparmor`].
+enum ApparmorProbe {
+    /// Profile counts: (enforce_count, complain_count, total_loaded).
+    Profiles(usize, usize, usize),
+    /// `aa-status` is present but the current privilege level cannot read
+    /// profile state. Distinct from [`Self::Unavailable`] so a hardened,
+    /// unprivileged scan is never reported as "no AppArmor profiles".
+    PermissionDenied,
+    /// `aa-status` could not be executed, or failed for a reason other than
+    /// privilege (most commonly: AppArmor is not installed).
+    Unavailable,
 }
 
 /// Returns compliance mappings for MAC findings.
@@ -465,6 +477,7 @@ impl HardeningPlugin for MacHardeningPlugin {
         let start_time = Instant::now();
         let plugin_id = PluginId::new("mac-hardening");
         let mut findings = Vec::new();
+        let mut unchecked = Vec::new();
 
         // Detect which MAC system is present
         match self.detect_mac_system(ctx).await {
@@ -499,8 +512,8 @@ impl HardeningPlugin for MacHardeningPlugin {
             }
             Some(MacSystem::AppArmor) => {
                 // Check AppArmor profile status
-                match self.count_apparmor_profiles(ctx).await {
-                    Ok((_enforce_count, complain_count, total_loaded)) => {
+                match self.probe_apparmor(ctx).await {
+                    ApparmorProbe::Profiles(_enforce_count, complain_count, total_loaded) => {
                         if complain_count > 0 {
                             findings.push(Finding {
                                 finding_category: FindingCategory::Kernel,
@@ -545,8 +558,34 @@ impl HardeningPlugin for MacHardeningPlugin {
                             });
                         }
                     }
-                    Err(e) => {
-                        warn!("Failed to check AppArmor status: {}", e);
+                    ApparmorProbe::PermissionDenied => {
+                        warn!(
+                            "aa-status requires elevated privileges to read AppArmor profile state"
+                        );
+                        // aa-status ran and refused for lack of privilege, so
+                        // AppArmor is genuinely installed: a root-only probe
+                        // must not read as "no profiles loaded".
+                        if ctx
+                            .executor()
+                            .command_exists("aa-status")
+                            .await
+                            .unwrap_or(false)
+                        {
+                            unchecked.push(UncheckedCheck {
+                                unchecked_check_id: "apparmor-no-profiles".to_string(),
+                                unchecked_title: "AppArmor profile enforcement".to_string(),
+                                unchecked_category: FindingCategory::Kernel,
+                                unchecked_reason:
+                                    "reading the AppArmor profile set (aa-status) requires root"
+                                        .to_string(),
+                                unchecked_compliance: get_mac_compliance_mappings(
+                                    "apparmor-no-profiles",
+                                ),
+                            });
+                        }
+                    }
+                    ApparmorProbe::Unavailable => {
+                        warn!("Failed to check AppArmor status: aa-status unavailable");
                     }
                 }
             }
@@ -576,7 +615,7 @@ impl HardeningPlugin for MacHardeningPlugin {
             scan_plugin_id: plugin_id,
             scan_success: true,
             scan_findings: findings,
-            scan_unchecked: vec![],
+            scan_unchecked: unchecked,
             scan_duration_us: duration_us,
             scan_error: None,
         })
@@ -791,7 +830,10 @@ impl HardeningPlugin for MacHardeningPlugin {
             Some(MacSystem::AppArmor) => {
                 // Skip if AppArmor enforcement is excepted
                 if config.has_valid_exception("apparmor-enforce").is_none()
-                    && self.get_apparmor_status(ctx).await.is_err()
+                    && matches!(
+                        self.probe_apparmor(ctx).await,
+                        ApparmorProbe::Unavailable | ApparmorProbe::PermissionDenied
+                    )
                 {
                     issues.push(ValidationIssue {
                         validation_issue_severity: Severity::High,
