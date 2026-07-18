@@ -342,12 +342,27 @@ async fn write_audit_rules_file(ctx: &Context, content: &str) -> Result<String> 
 
 /// Reloads audit rules into the running daemon.
 ///
-/// Tries `augenrules --load` first (merges rules and loads them without
-/// restarting auditd). Falls back to `systemctl restart auditd` if
-/// augenrules is unavailable. On many distributions (including Arch),
-/// auditd ignores SIGTERM from systemd so a direct restart will fail;
-/// augenrules is the supported mechanism.
+/// Tries `augenrules --load` first (merges /etc/audit/rules.d/*.rules and
+/// loads them without restarting auditd). If that load fails specifically
+/// with "Rule exists", kernel-resident rules from a previous load are
+/// colliding with the freshly merged set: nothing in a standard setup ever
+/// runs a delete-all first, so without intervention every apply after the
+/// first on a host would fail here. In that one case the kernel rule set
+/// is flushed with a best-effort `auditctl -D` and the load retried once.
+/// The flush is deliberately confined to the duplicate-collision retry: a
+/// load failing for any other reason (bad rules content, kernel refusal)
+/// must leave the previously loaded rules running, and the healthy
+/// first-apply path never flushes at all.
+///
+/// Falls back to `systemctl restart auditd` if augenrules is unavailable
+/// or still failing. On many distributions (including Arch), auditd
+/// ignores SIGTERM from systemd so a direct restart will fail; augenrules
+/// is the supported mechanism. The final error discloses whether a flush
+/// happened, because after one the host may be left with no audit rules
+/// loaded until they are reloaded manually or the host reboots.
 async fn reload_audit_rules(ctx: &Context) -> Result<()> {
+    let mut flushed = false;
+
     // Preferred: augenrules merges /etc/audit/rules.d/*.rules and loads them
     if ctx
         .executor()
@@ -363,6 +378,25 @@ async fn reload_audit_rules(ctx: &Context) -> Result<()> {
         if output.success() {
             return Ok(());
         }
+
+        // "Rule exists" means the only obstacle is duplicate kernel-resident
+        // rules from a previous load: flush them and retry once. The flush's
+        // own exit status is ignored (best-effort): a refusal here means the
+        // kernel config is immutable, which the caller's probe already turns
+        // into a reboot-required skip after the retry fails too.
+        if output.stdout.contains("Rule exists") || output.stderr.contains("Rule exists") {
+            flushed = true;
+            let _ = ctx.executor().execute_command("auditctl", &["-D"]).await;
+
+            let retry = ctx
+                .executor()
+                .execute_command("augenrules", &["--load"])
+                .await?;
+
+            if retry.success() {
+                return Ok(());
+            }
+        }
     }
 
     // Fallback: systemctl restart (works on some distros)
@@ -372,10 +406,16 @@ async fn reload_audit_rules(ctx: &Context) -> Result<()> {
         .await?;
 
     if !output.success() {
-        return Err(hardener_common::error::HardeningError::Plugin(
-            "Failed to reload audit rules (augenrules --load and systemctl restart both failed)"
-                .to_string(),
-        ));
+        let state = if flushed {
+            "; the kernel rule set was flushed before the failed retry, so audit \
+             rules may currently be unloaded: reload them with \
+             `auditctl -R /etc/audit/audit.rules` or reboot"
+        } else {
+            "; previously loaded audit rules are still active"
+        };
+        return Err(hardener_common::error::HardeningError::Plugin(format!(
+            "Failed to reload audit rules (augenrules --load and systemctl restart both failed){state}"
+        )));
     }
 
     Ok(())

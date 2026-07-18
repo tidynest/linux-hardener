@@ -46,6 +46,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reboot required to load it (a skipped change, not a failure) instead of
   failing the whole apply. A genuinely broken reload (immutability probe
   says otherwise) still fails as before.
+- Applying audit rules a second time on the same host no longer fails at
+  reload. `augenrules --load` merges `/etc/audit/rules.d/*.rules` but
+  never clears kernel-resident rules from a prior load, so nothing in a
+  standard setup ever ran the `-D` delete-all first; the second and every
+  later apply collided with the still-loaded rules and augenrules
+  refused with "Rule exists". When (and only when) the load fails with
+  that duplicate collision, the reload now flushes the kernel rule set
+  with a best-effort `auditctl -D` and retries the load once. A load
+  failing for any other reason performs no flush, so the previously
+  loaded rules keep running, and the healthy first-apply path never
+  flushes at all. If the retried load still fails after a flush, the
+  reported error discloses that audit rules may currently be unloaded
+  and names the manual reload (`auditctl -R /etc/audit/audit.rules` or
+  reboot); without a flush it states the previous rules are still
+  active.
 - A partial-failure apply no longer hides which plugins failed and why.
   The desktop app discarded the CLI's per-plugin JSON whenever `apply` or
   `rollback` exited 1 (both print their result before failing on a

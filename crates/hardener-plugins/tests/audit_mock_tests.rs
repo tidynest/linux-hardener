@@ -699,13 +699,15 @@ async fn test_audit_apply_reload_immutable_becomes_skip() {
 #[tokio::test]
 async fn test_audit_apply_reload_failure_not_immutable_stays_failed() {
     // auditctl -s reports normal (non-immutable) enabled state: both reload
-    // legs genuinely failed, so this must remain a real failure.
+    // legs genuinely failed, so this must remain a real failure. The load
+    // failure is NOT a "Rule exists" collision, so no flush may run and the
+    // error must say the previously loaded rules are still active.
     let executor = reload_fails_executor(CommandOutput {
         stdout: "enabled 1\nfailure 1\npid 0\nrate_limit 0\n".to_string(),
         stderr: String::new(),
         exit_code: 0,
     });
-    let mut ctx = Context::with_executor(Arc::new(executor));
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
     let plugin = AuditHardeningPlugin::new();
     let config = PluginConfig::default();
 
@@ -726,6 +728,22 @@ async fn test_audit_apply_reload_failure_not_immutable_stays_failed() {
         .expect("should still record the reload failure");
     assert!(!reload_change.change_success);
     assert!(!reload_change.is_skipped());
+    assert!(
+        reload_change
+            .change_error
+            .as_deref()
+            .is_some_and(|error| error.contains("still active")),
+        "a no-flush failure must say the previous rules are still loaded, got: {:?}",
+        reload_change.change_error
+    );
+
+    let log = executor.log();
+    assert!(
+        !log.commands_executed
+            .iter()
+            .any(|(cmd, args)| cmd == "auditctl" && args == &["-D".to_string()]),
+        "a load failure without 'Rule exists' must never flush the kernel rule set"
+    );
 }
 
 #[tokio::test]
@@ -818,6 +836,221 @@ async fn test_audit_apply_reload_success_unaffected() {
             .iter()
             .any(|(cmd, args)| cmd == "auditctl" && args == &["-s".to_string()]),
         "the immutability probe must not run when reload succeeds"
+    );
+}
+
+/// Common scaffold for the duplicate-collision retry scenarios: auditd
+/// installed, enabled and running, augenrules present, rules directory
+/// creatable. Callers register the `augenrules --load` sequence and the
+/// `auditctl -D` flush outcome themselves.
+fn reload_retry_executor() -> MockExecutor {
+    let ok = CommandOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    MockExecutor::new()
+        .with_command_exists("auditd", true)
+        .with_command_exists("augenrules", true)
+        .with_command(
+            "systemctl",
+            &["is-enabled", "auditd"],
+            CommandOutput {
+                stdout: "enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-active", "auditd"],
+            CommandOutput {
+                stdout: "active\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command("mkdir", &["-p", "/etc/audit/rules.d"], ok)
+}
+
+/// The `augenrules --load` output seen on a re-apply: kernel-resident rules
+/// from the previous load collide with the merged set.
+fn rule_exists_failure() -> CommandOutput {
+    CommandOutput {
+        stdout: String::new(),
+        stderr: "/usr/sbin/augenrules: Error sending add rule data request (Rule exists)\n\
+                 There was an error in line 6 of /etc/audit/audit.rules\n"
+            .to_string(),
+        exit_code: 1,
+    }
+}
+
+#[tokio::test]
+async fn test_audit_apply_rule_exists_flushes_and_retries() {
+    // Re-apply scenario: the first `augenrules --load` collides with the
+    // kernel-resident rules from a previous apply ("Rule exists"). The
+    // plugin must flush with `auditctl -D` and retry the load once, and
+    // only in that order: load, flush, load.
+    let ok = CommandOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    let executor = reload_retry_executor()
+        .with_command_sequence(
+            "augenrules",
+            &["--load"],
+            vec![rule_exists_failure(), ok.clone()],
+        )
+        .with_command("auditctl", &["-D"], ok);
+
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    let plugin = AuditHardeningPlugin::new();
+    let config = PluginConfig::default();
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    assert!(
+        result.apply_success,
+        "re-apply must succeed after the retry"
+    );
+
+    let log = executor.log();
+    let load_indices: Vec<usize> = log
+        .commands_executed
+        .iter()
+        .enumerate()
+        .filter(|(_, (cmd, args))| cmd == "augenrules" && args == &["--load".to_string()])
+        .map(|(index, _)| index)
+        .collect();
+    let flush_index = log
+        .commands_executed
+        .iter()
+        .position(|(cmd, args)| cmd == "auditctl" && args == &["-D".to_string()])
+        .expect("auditctl -D should have run as the flush");
+    assert_eq!(load_indices.len(), 2, "load should run exactly twice");
+    assert!(
+        load_indices[0] < flush_index && flush_index < load_indices[1],
+        "order must be load, flush, load; got loads at {load_indices:?}, flush at {flush_index}"
+    );
+}
+
+#[tokio::test]
+async fn test_audit_apply_rule_exists_flush_failure_still_succeeds() {
+    // The flush is best-effort: if `auditctl -D` itself errors but the
+    // retried load succeeds anyway, the apply must succeed. The flush's
+    // exit status is never allowed to affect the outcome.
+    let ok = CommandOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    let executor = reload_retry_executor()
+        .with_command_sequence("augenrules", &["--load"], vec![rule_exists_failure(), ok])
+        .with_command(
+            "auditctl",
+            &["-D"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: "Error deleting all rules\n".to_string(),
+                exit_code: 1,
+            },
+        );
+
+    let mut ctx = Context::with_executor(Arc::new(executor));
+    let plugin = AuditHardeningPlugin::new();
+    let config = PluginConfig::default();
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    assert!(
+        result.apply_success,
+        "a failed best-effort flush must not fail the apply when the retried load succeeds"
+    );
+    let reload_change = result
+        .apply_changes
+        .iter()
+        .find(|c| {
+            c.change_description
+                .contains("Loaded audit rules into running daemon")
+        })
+        .expect("should still record the successful reload");
+    assert!(reload_change.change_success);
+}
+
+#[tokio::test]
+async fn test_audit_apply_rule_exists_retry_failure_discloses_flush() {
+    // Both loads fail (the first with "Rule exists", so a flush happened in
+    // between) and the systemctl fallback fails on a non-immutable host:
+    // the failure must be preserved and its error must disclose that the
+    // kernel rule set was flushed, naming the manual reload path, because
+    // the host may now be running with no audit rules loaded.
+    let executor = reload_retry_executor()
+        .with_command_sequence(
+            "augenrules",
+            &["--load"],
+            vec![
+                rule_exists_failure(),
+                CommandOutput {
+                    stdout: String::new(),
+                    stderr: "augenrules: failed to load rules\n".to_string(),
+                    exit_code: 1,
+                },
+            ],
+        )
+        .with_command(
+            "auditctl",
+            &["-D"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["restart", "auditd"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: "Failed to restart auditd.service\n".to_string(),
+                exit_code: 1,
+            },
+        )
+        .with_command(
+            "auditctl",
+            &["-s"],
+            CommandOutput {
+                stdout: "enabled 1\nfailure 1\npid 0\nrate_limit 0\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        );
+
+    let mut ctx = Context::with_executor(Arc::new(executor));
+    let plugin = AuditHardeningPlugin::new();
+    let config = PluginConfig::default();
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    assert!(
+        !result.apply_success,
+        "a reload still failing after the flush-and-retry must fail the apply"
+    );
+    let reload_change = result
+        .apply_changes
+        .iter()
+        .find(|c| {
+            c.change_description
+                .contains("Failed to reload audit rules")
+        })
+        .expect("should record the reload failure");
+    let error = reload_change
+        .change_error
+        .as_deref()
+        .expect("the failure must carry an error message");
+    assert!(
+        error.contains("may currently be unloaded") && error.contains("auditctl -R"),
+        "the error must disclose the flush and the manual reload path, got: {error}"
     );
 }
 

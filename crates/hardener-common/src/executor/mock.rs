@@ -3,7 +3,7 @@
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
@@ -14,6 +14,7 @@ use super::{CommandOutput, FileMetadata, SystemExecutor};
 type FileStore = Arc<Mutex<HashMap<PathBuf, String>>>;
 type MetadataStore = Arc<Mutex<HashMap<PathBuf, FileMetadata>>>;
 type CommandStore = Arc<Mutex<HashMap<(String, Vec<String>), CommandOutput>>>;
+type CommandSequenceStore = Arc<Mutex<HashMap<(String, Vec<String>), VecDeque<CommandOutput>>>>;
 type CommandExistsStore = Arc<Mutex<HashMap<String, bool>>>;
 type LogStore = Arc<Mutex<MockExecutorLog>>;
 
@@ -52,6 +53,7 @@ pub struct MockExecutor {
     files: FileStore,
     file_metadata: MetadataStore,
     commands: CommandStore,
+    command_sequences: CommandSequenceStore,
     command_exists: CommandExistsStore,
     log: LogStore,
     is_remote: bool,
@@ -71,6 +73,7 @@ impl MockExecutor {
             files: Arc::new(Mutex::new(HashMap::new())),
             file_metadata: Arc::new(Mutex::new(HashMap::new())),
             commands: Arc::new(Mutex::new(HashMap::new())),
+            command_sequences: Arc::new(Mutex::new(HashMap::new())),
             command_exists: Arc::new(Mutex::new(HashMap::new())),
             log: Arc::new(Mutex::new(MockExecutorLog::default())),
             is_remote: false,
@@ -162,6 +165,27 @@ impl MockExecutor {
             .lock()
             .expect("commands mutex poisoned")
             .insert(key, output);
+        self
+    }
+
+    /// Registers a sequence of responses for repeated invocations of the
+    /// same command: each execution consumes the next output in order.
+    /// Once the sequence is exhausted, lookups fall back to any
+    /// [`with_command`](Self::with_command) registration for the same key.
+    pub fn with_command_sequence(
+        self,
+        program: &str,
+        args: &[&str],
+        outputs: Vec<CommandOutput>,
+    ) -> Self {
+        let key = (
+            program.to_string(),
+            args.iter().map(|s| s.to_string()).collect(),
+        );
+        self.command_sequences
+            .lock()
+            .expect("command_sequences mutex poisoned")
+            .insert(key, outputs.into());
         self
     }
 
@@ -298,6 +322,15 @@ impl SystemExecutor for MockExecutor {
             .push((program.to_string(), args_vec.clone()));
 
         let key = (program.to_string(), args_vec);
+        if let Some(output) = self
+            .command_sequences
+            .lock()
+            .expect("command_sequences mutex poisoned")
+            .get_mut(&key)
+            .and_then(VecDeque::pop_front)
+        {
+            return Ok(output);
+        }
         self.commands
             .lock()
             .expect("commands mutex poisoned")
