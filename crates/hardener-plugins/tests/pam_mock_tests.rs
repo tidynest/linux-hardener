@@ -829,6 +829,125 @@ async fn pam_apply_refuses_inline_pamd_override() {
     );
 }
 
+/// A root-only pwquality.conf must not read as an empty file: that would
+/// falsely flag every directive as "not set" on a hardened, unprivileged
+/// scan. The permission failure surfaces as unchecked instead.
+#[tokio::test]
+async fn scan_reports_unchecked_not_findings_when_pwquality_is_root_only() {
+    let mock = MockExecutor::new()
+        .with_read_permission_denied("/etc/security/pwquality.conf")
+        .with_file("/etc/login.defs", "PASS_MAX_DAYS 365\n");
+    let ctx = Context::with_executor(Arc::new(mock));
+    let result = PamHardeningPlugin::new().scan(&ctx).await.unwrap();
+
+    // No false "not set" findings for pwquality directives.
+    assert!(
+        !result
+            .scan_findings
+            .iter()
+            .any(|f| f.finding_id == "pam-minlen"),
+        "minlen must not be flagged when the file is unreadable"
+    );
+    // Every pwquality directive appears as unchecked instead.
+    let unchecked_ids: Vec<&str> = result
+        .scan_unchecked
+        .iter()
+        .map(|u| u.unchecked_check_id.as_str())
+        .collect();
+    assert!(unchecked_ids.contains(&"pam-minlen"));
+    assert!(unchecked_ids.contains(&"pam-dcredit"));
+    assert!(result.scan_success);
+}
+
+/// Root-only faillock/pwhistory confs with no inline pam.d override must
+/// surface their threshold directives as unchecked, not as "not set" findings.
+#[tokio::test]
+async fn scan_reports_unchecked_when_threshold_confs_are_root_only() {
+    let mock = MockExecutor::new()
+        .with_file(
+            "/etc/security/pwquality.conf",
+            "minlen 14\ndcredit -1\nucredit -1\nlcredit -1\nocredit -1\nmaxrepeat 3\n",
+        )
+        .with_file(
+            "/etc/login.defs",
+            "PASS_MAX_DAYS 90\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n",
+        )
+        .with_read_permission_denied("/etc/security/faillock.conf")
+        .with_read_permission_denied("/etc/security/pwhistory.conf");
+    let ctx = Context::with_executor(Arc::new(mock));
+    let result = PamHardeningPlugin::new().scan(&ctx).await.unwrap();
+
+    let finding_ids: Vec<&str> = result
+        .scan_findings
+        .iter()
+        .map(|f| f.finding_id.as_str())
+        .collect();
+    assert!(
+        !finding_ids.contains(&"pam-deny") && !finding_ids.contains(&"pam-remember"),
+        "root-only threshold confs must not produce 'not set' findings, got: {finding_ids:?}"
+    );
+
+    let unchecked_ids: Vec<&str> = result
+        .scan_unchecked
+        .iter()
+        .map(|u| u.unchecked_check_id.as_str())
+        .collect();
+    assert!(
+        unchecked_ids.contains(&"pam-deny"),
+        "deny must be unchecked, got: {unchecked_ids:?}"
+    );
+    assert!(
+        unchecked_ids.contains(&"pam-remember"),
+        "remember must be unchecked, got: {unchecked_ids:?}"
+    );
+    assert!(result.scan_success);
+}
+
+/// An inline pam.d override wins outright even when the backing
+/// /etc/security conf is root-only: the directive is evaluated from the
+/// inline value (world-readable) and never lands in scan_unchecked.
+#[tokio::test]
+async fn scan_inline_override_wins_over_permission_denied_conf() {
+    // Inline deny=10 (> 5) is non-compliant, so an evaluation from the inline
+    // value must produce a genuine finding with that value, proving the
+    // root-only faillock.conf was never needed.
+    let mock = MockExecutor::new()
+        .with_file(
+            "/etc/security/pwquality.conf",
+            "minlen 14\ndcredit -1\nucredit -1\nlcredit -1\nocredit -1\nmaxrepeat 3\n",
+        )
+        .with_file(
+            "/etc/login.defs",
+            "PASS_MAX_DAYS 90\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n",
+        )
+        .with_file("/etc/security/pwhistory.conf", "remember = 10\n")
+        .with_read_permission_denied("/etc/security/faillock.conf")
+        .with_file(
+            "/etc/pam.d/system-auth",
+            "auth required pam_faillock.so preauth silent deny=10\n",
+        );
+    let ctx = Context::with_executor(Arc::new(mock));
+    let result = PamHardeningPlugin::new().scan(&ctx).await.unwrap();
+
+    let deny_finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "pam-deny")
+        .expect("inline deny=10 (>5) must be evaluated and flagged");
+    assert_eq!(
+        deny_finding.finding_current_value, "10",
+        "finding must carry the inline value"
+    );
+    assert!(
+        !result
+            .scan_unchecked
+            .iter()
+            .any(|u| u.unchecked_check_id == "pam-deny"),
+        "deny must not be unchecked when the inline override supplies its value"
+    );
+    assert!(result.scan_success);
+}
+
 /// Apply honours a stricter per-host override (clamped so it never loosens).
 #[tokio::test]
 async fn pam_apply_honours_stricter_override() {

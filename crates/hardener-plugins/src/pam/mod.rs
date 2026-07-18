@@ -14,8 +14,8 @@ use hardener_common::{
 use hardener_core::{
     Change, ChangeType, Checkpoint, Context, PluginConfig,
     plugin::{
-        ApplyResult, Finding, HardeningPlugin, PluginMetadata, ScanResult, ValidationIssue,
-        ValidationReport,
+        ApplyResult, Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedCheck,
+        ValidationIssue, ValidationReport,
     },
 };
 use std::path::Path;
@@ -554,12 +554,10 @@ impl HardeningPlugin for PamHardeningPlugin {
         info!("Starting PAM authentication hardening scan");
 
         let mut findings = Vec::new();
+        let mut unchecked = Vec::new();
 
         // Read configuration files.
-        let pwquality_content = read_pwquality_config(ctx).await.unwrap_or_else(|e| {
-            warn!("Failed to read pwquality.conf: {}", e);
-            String::new() // Empty content means all directives will be flagged as missing.
-        });
+        let pwquality = read_conf_classified(ctx, "/etc/security/pwquality.conf").await;
 
         let login_defs_content: String = read_login_defs(ctx).await.unwrap_or_else(|e| {
             warn!("Failed to read login.defs: {}", e);
@@ -569,12 +567,21 @@ impl HardeningPlugin for PamHardeningPlugin {
         // Check each PAM directive.
         for directive in PAM_DIRECTIVES {
             let current_value = match directive.pam_config_file {
-                PamConfigFile::PwQuality => parse_config_value(
-                    &pwquality_content,
-                    directive.pam_directive_name,
-                    ConfigFormat::Auto,
-                    true,
-                ),
+                PamConfigFile::PwQuality => match &pwquality {
+                    ConfRead::Content(content) => parse_config_value(
+                        content,
+                        directive.pam_directive_name,
+                        ConfigFormat::Auto,
+                        true,
+                    ),
+                    ConfRead::PermissionDenied => {
+                        unchecked.push(unchecked_pam_directive(
+                            directive,
+                            "/etc/security/pwquality.conf",
+                        ));
+                        continue;
+                    }
+                },
                 PamConfigFile::LoginDefs => parse_config_value(
                     &login_defs_content,
                     directive.pam_directive_name,
@@ -589,7 +596,14 @@ impl HardeningPlugin for PamHardeningPlugin {
                     continue;
                 }
                 PamConfigFile::SecurityConf(path) => {
-                    read_effective_threshold(ctx, directive.pam_directive_name, path).await
+                    match read_effective_threshold(ctx, directive.pam_directive_name, path).await {
+                        ThresholdRead::Value(v) => Some(v),
+                        ThresholdRead::NotSet => None,
+                        ThresholdRead::PermissionDenied => {
+                            unchecked.push(unchecked_pam_directive(directive, path));
+                            continue;
+                        }
+                    }
                 }
             };
 
@@ -645,7 +659,7 @@ impl HardeningPlugin for PamHardeningPlugin {
             scan_plugin_id: self.metadata().plugin_id,
             scan_success: true,
             scan_findings: findings,
-            scan_unchecked: vec![],
+            scan_unchecked: unchecked,
             scan_duration_us: duration_us,
             scan_error: None,
         })
@@ -1110,6 +1124,18 @@ impl HardeningPlugin for PamHardeningPlugin {
     }
 }
 
+/// Builds the unchecked entry for a PAM directive whose config file cannot be
+/// read at the current privilege level. The check id mirrors the finding id.
+fn unchecked_pam_directive(directive: &PamDirective, path: &str) -> UncheckedCheck {
+    UncheckedCheck {
+        unchecked_check_id: format!("pam-{}", directive.pam_directive_name),
+        unchecked_title: format!("PAM setting: {}", directive.pam_directive_name),
+        unchecked_category: FindingCategory::Authentication,
+        unchecked_reason: format!("reading {} requires root", path),
+        unchecked_compliance: get_pam_compliance_mappings(directive.pam_directive_name),
+    }
+}
+
 /// PAM configuration directive with security settings.
 #[derive(Clone, Debug)]
 struct PamDirective {
@@ -1326,21 +1352,55 @@ async fn read_pamd_inline(ctx: &Context, arg: &str) -> Option<String> {
     None
 }
 
-/// Effective value of a threshold directive: an inline PAM-stack override wins
-/// over the `/etc/security/*.conf` value.
-async fn read_effective_threshold(ctx: &Context, arg: &str, conf: &str) -> Option<String> {
-    if let Some(inline) = read_pamd_inline(ctx, arg).await {
-        return Some(inline);
-    }
-    parse_config_value(
-        &read_security_conf(ctx, conf).await,
-        arg,
-        ConfigFormat::KeyValue,
-        true,
-    )
+/// Outcome of reading a scan-relevant config file at the current privilege level.
+enum ConfRead {
+    Content(String),
+    PermissionDenied,
 }
 
-/// Reads a config file's contents, empty string if unreadable.
+/// Reads a config file, distinguishing privilege failures from absence.
+/// A missing file reads as empty content (directives genuinely not set);
+/// a permission failure must not masquerade as "not set".
+async fn read_conf_classified(ctx: &Context, path: &str) -> ConfRead {
+    match ctx.executor().read_file(Path::new(path)).await {
+        Ok(content) => ConfRead::Content(content),
+        Err(e) if hardener_common::error::is_permission_denied(&e) => ConfRead::PermissionDenied,
+        Err(e) => {
+            warn!("Failed to read {}: {}", path, e);
+            ConfRead::Content(String::new())
+        }
+    }
+}
+
+/// Effective value of a threshold directive at the current privilege level.
+enum ThresholdRead {
+    Value(String),
+    NotSet,
+    PermissionDenied,
+}
+
+/// Effective value of a threshold directive: an inline PAM-stack override wins
+/// over the `/etc/security/*.conf` value. A conf file blocked by privileges
+/// surfaces as `PermissionDenied` so the caller reports it unchecked.
+async fn read_effective_threshold(ctx: &Context, arg: &str, conf: &str) -> ThresholdRead {
+    if let Some(inline) = read_pamd_inline(ctx, arg).await {
+        return ThresholdRead::Value(inline);
+    }
+    match read_conf_classified(ctx, conf).await {
+        ConfRead::PermissionDenied => ThresholdRead::PermissionDenied,
+        ConfRead::Content(content) => {
+            match parse_config_value(&content, arg, ConfigFormat::KeyValue, true) {
+                Some(v) => ThresholdRead::Value(v),
+                None => ThresholdRead::NotSet,
+            }
+        }
+    }
+}
+
+/// Lenient config read: the file's contents, or an empty string on any
+/// failure (absence, privileges, or otherwise). Used where permission
+/// classification is not needed: the scan's pam.d inline-override lookups
+/// (world-readable files) and apply's /etc/security conf reads (root context).
 async fn read_security_conf(ctx: &Context, path: &str) -> String {
     ctx.executor()
         .read_file(Path::new(path))
