@@ -1,5 +1,5 @@
 Name:           linux-system-hardener
-Version:        1.3.1
+Version:        1.3.2
 Release:        1%{?dist}
 Summary:        Linux security automation: scanning, hardening, and rollback
 License:        Apache-2.0
@@ -103,6 +103,14 @@ systemctl daemon-reload || true
 %dir %{_libdir}/linux-hardener
 
 %changelog
+* Sat Jul 18 2026 Eric Jingryd <tidynest@proton.me> - 1.3.2-1
+- Fix: runtime sysctl writes failed on every local apply (atomic rename is impossible on procfs)
+- Fix: firewall drove an installed-but-inactive ufw instead of the active nftables backend
+- Fix: audit rule re-apply collided with already-loaded rules (flush and retry on duplicate)
+- Fix: audit reload reports a reboot-required skip when the audit config is immutable (-e 2)
+- Fix: partial-failure applies now surface per-plugin errors in the desktop and CLI output
+- Fix: findings-tab dropdowns and recent-activity skip counts in the desktop app
+
 * Sat Jul 18 2026 Eric Jingryd <tidynest@proton.me> - 1.3.1-1
 - Fix: build identity stamped an unrelated repository's commit into --version
   when the tarball was extracted inside a foreign git checkout

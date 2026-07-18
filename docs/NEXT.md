@@ -4,6 +4,12 @@
 
 ## Current State (as of 2026-07-18)
 
+**v1.3.2 released** (2026-07-18): six fixes surfaced by the first real local
+apply runs - procfs sysctl writes, active-firewall-backend selection with ufw
+rule mapping, idempotent audit rule reload with an immutable-config
+reboot-required skip, per-plugin error surfacing in the desktop and CLI, and
+desktop dropdown/skip-count polish. AUR bump follows the tag.
+
 **v1.3.0 released** (2026-07-18) to GitHub + GitLab: RHEL 10 compliance
 profiles, three new frameworks (SOC 2, NIST 800-171 r3, FedRAMP Moderate),
 concurrent scan execution with a services false-PASS fix, the no-MAC apply
@@ -15,7 +21,7 @@ restructure. AUR bump follows the tag.
 (0000-perm files like `/etc/shadow` could be deleted on rollback; account-database
 paths were missing from the rollback allowlist) plus a cross-distro container
 refresh (Debian 13 / Fedora 44 / Rocky 10 / openSUSE Leap 16.0 via podman-export,
-validated 5/5 × 127). Public line: 1.0.5 → 1.2.0 → 1.2.1 → 1.2.2 → 1.3.0 → 1.3.1
+validated 5/5 × 127). Public line: 1.0.5 → 1.2.0 → 1.2.1 → 1.2.2 → 1.3.0 → 1.3.1 → 1.3.2
 (1.1.0 was cut in-tree but never published).
 
 v1.2.0 shipped: multi-host batch CLI (`batch scan/report/apply/rollback`),
@@ -329,7 +335,7 @@ See `docs/plans/archive/2026-02-24-gui-cli-parity.md`: all 6 phases complete.
 - **8 Security Plugins**: Kernel, SSH, Firewall, PAM, Services, Audit, Permissions, MAC
 - **770 Passing Tests**
 - **Multi-Distribution Support**: Debian, Red Hat, Arch, SUSE families
-- **Current Version**: 1.3.1 (code, tag and repo packaging; AUR bump follows the tag)
+- **Current Version**: 1.3.2 (code, tag and repo packaging; AUR bump follows the tag)
 - **WASM Support**: GUI frontend compiles to `wasm32-unknown-unknown`
 
 For version history and detailed feature tracking, see [ROADMAP.md](ROADMAP.md).
