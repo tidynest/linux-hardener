@@ -399,7 +399,7 @@ pub fn host_report(outcome: HostOutcome, generator: &ReportGenerator) -> HostRep
     match outcome.status {
         HostStatus::Scanned { findings, .. } => {
             let frameworks = generator
-                .generate(&findings)
+                .generate(&findings, &[])
                 .iter()
                 .map(posture_from_report)
                 .collect();

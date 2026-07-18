@@ -7,7 +7,8 @@ use hardener_compliance::{
     resolve_profile,
 };
 use hardener_core::{
-    ApplyResult, ConfigLoader, Context, Finding, PluginMetadata, ScanResult, ValidationReport,
+    ApplyResult, ConfigLoader, Context, Finding, PluginMetadata, ScanResult, UncheckedCheck,
+    ValidationReport,
 };
 use hardener_distro::Distribution;
 use hardener_plugins::create_plugin_registry;
@@ -838,21 +839,25 @@ fn parse_output_format(format: &str) -> Result<OutputFormat, String> {
     }
 }
 
-/// Scans all plugins and collects findings for compliance reporting.
-async fn collect_findings() -> Result<Vec<Finding>, String> {
+/// Scans all plugins and collects findings and unchecked checks for
+/// compliance reporting. A control whose covering check landed in the
+/// unchecked list must never auto-pass on the mere absence of a finding.
+async fn collect_findings() -> Result<(Vec<Finding>, Vec<UncheckedCheck>), String> {
     let ctx = Context::new();
     let registry = create_plugin_registry();
     let plugin_list = registry.list().map_err(safe_err)?;
 
     let mut findings = Vec::new();
+    let mut unchecked = Vec::new();
     for metadata in plugin_list {
         if let Ok(Some(plugin)) = registry.get(&metadata.plugin_id)
             && let Ok(result) = plugin.scan(&ctx).await
         {
             findings.extend(result.scan_findings);
+            unchecked.extend(result.scan_unchecked);
         }
     }
-    Ok(findings)
+    Ok((findings, unchecked))
 }
 
 /// Resolves the compliance profile of the machine this desktop runs on:
@@ -872,7 +877,7 @@ fn local_profile() -> ComplianceProfile {
 pub async fn generate_compliance_report(
     frameworks: Vec<String>,
 ) -> Result<Vec<ComplianceReport>, String> {
-    let all_findings = collect_findings().await?;
+    let (all_findings, unchecked) = collect_findings().await?;
     let parsed_frameworks = parse_frameworks(&frameworks);
 
     let config = ReportConfig {
@@ -883,7 +888,7 @@ pub async fn generate_compliance_report(
     };
 
     let generator = ReportGenerator::new(config, hardener_plugins::compliance_coverage());
-    Ok(generator.generate(&all_findings))
+    Ok(generator.generate(&all_findings, &unchecked))
 }
 
 /// Exports compliance reports to a file in the specified format.
@@ -905,7 +910,7 @@ pub async fn export_compliance_report(
     }
 
     let output_format = parse_output_format(&format)?;
-    let all_findings = collect_findings().await?;
+    let (all_findings, unchecked) = collect_findings().await?;
     let parsed_frameworks = parse_frameworks(&frameworks);
 
     let config = ReportConfig {
@@ -916,7 +921,7 @@ pub async fn export_compliance_report(
     };
 
     let generator = ReportGenerator::new(config, hardener_plugins::compliance_coverage());
-    let reports = generator.generate(&all_findings);
+    let reports = generator.generate(&all_findings, &unchecked);
 
     // Format reports
     let formatted: String = match output_format {
@@ -1403,13 +1408,15 @@ fn fleet_report_generator(
     ReportGenerator::new(config, coverage)
 }
 
-/// Derives slim per-framework posture for one host's findings. In-memory; no SSH.
+/// Derives slim per-framework posture for one host's findings and the checks
+/// its scan could not evaluate (which must not auto-pass). In-memory; no SSH.
 fn posture_for_findings(
     generator: &ReportGenerator,
     findings: &[Finding],
+    unchecked: &[UncheckedCheck],
 ) -> Vec<FleetFrameworkPosture> {
     generator
-        .generate(findings)
+        .generate(findings, unchecked)
         .into_iter()
         .map(|r| FleetFrameworkPosture {
             framework: r.report_framework,
@@ -1528,8 +1535,13 @@ pub async fn run_fleet_scan(
                 .iter()
                 .flat_map(|r| r.scan_findings.iter().cloned())
                 .collect();
+            let unchecked: Vec<UncheckedCheck> = host
+                .scan_results
+                .iter()
+                .flat_map(|r| r.scan_unchecked.iter().cloned())
+                .collect();
             let generator = fleet_report_generator(*profile, coverage.clone());
-            host.compliance = posture_for_findings(&generator, &findings);
+            host.compliance = posture_for_findings(&generator, &findings, &unchecked);
         }
     }
 
@@ -2107,7 +2119,7 @@ mod fleet_tests {
             ComplianceProfile::Generic,
             hardener_plugins::compliance_coverage(),
         );
-        let scores = posture_for_findings(&generator, &[]);
+        let scores = posture_for_findings(&generator, &[], &[]);
         assert_eq!(scores.len(), FLEET_FRAMEWORKS.len());
         assert!(
             scores

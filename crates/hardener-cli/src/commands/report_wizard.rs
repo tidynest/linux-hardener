@@ -2,7 +2,7 @@
 //!
 //! Provides a guided CLI experience for generating compliance reports.
 
-use super::report::run_scan;
+use super::report::run_scan_with_unchecked;
 use crate::cli::OutputFormat as CliOutputFormat;
 use anyhow::{Result, anyhow};
 use chrono::Local;
@@ -161,7 +161,8 @@ pub async fn run(quiet: bool) -> Result<()> {
     // Step 3: Run scan
     println!("\n{}", "Running security scan...".cyan());
     let executor: Arc<dyn SystemExecutor> = Arc::new(LocalExecutor::new());
-    let findings = run_scan(false, executor, &CliOutputFormat::Text).await?;
+    let (findings, unchecked) =
+        run_scan_with_unchecked(false, executor, &CliOutputFormat::Text).await?;
     println!(
         "{}",
         format!(
@@ -187,7 +188,7 @@ pub async fn run(quiet: bool) -> Result<()> {
     };
 
     let generator = ReportGenerator::new(config, hardener_plugins::compliance_coverage());
-    let reports = generator.generate(&findings);
+    let reports = generator.generate(&findings, &unchecked);
 
     // Step 5: Output reports
     output_reports(&reports, &state)?;

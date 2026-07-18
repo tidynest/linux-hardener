@@ -66,7 +66,7 @@ fn report_for(
         },
         coverage,
     )
-    .generate(findings)
+    .generate(findings, &[])
     .into_iter()
     .next()
     .expect("one report")

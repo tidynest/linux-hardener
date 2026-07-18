@@ -9,7 +9,7 @@ use crate::profiles;
 use crate::report::{ComplianceReport, ComplianceSummary, ControlResult};
 use chrono::Utc;
 use hardener_common::types::{ComplianceFramework, ComplianceMapping, ControlStatus};
-use hardener_core::plugin::Finding;
+use hardener_core::plugin::{Finding, UncheckedCheck};
 use std::collections::HashSet;
 
 /// Generates compliance reports from scan findings.
@@ -34,8 +34,16 @@ impl ReportGenerator {
 
     /// Generates compliance reports for all frameworks in the configured scenario.
     ///
+    /// `unchecked` lists checks the scan could not evaluate at its current
+    /// privilege level; the controls they cover must never auto-pass on the
+    /// mere absence of a finding.
+    ///
     /// Returns one report per framework.
-    pub fn generate(&self, findings: &[Finding]) -> Vec<ComplianceReport> {
+    pub fn generate(
+        &self,
+        findings: &[Finding],
+        unchecked: &[UncheckedCheck],
+    ) -> Vec<ComplianceReport> {
         // Rewrite every mapping list once for the active profile so findings,
         // coverage, and catalogue all match on one identifier scheme. These
         // are report-internal copies; the caller's findings stay canonical.
@@ -47,27 +55,47 @@ impl ReportGenerator {
                 ..finding.clone()
             })
             .collect();
+        let unchecked: Vec<UncheckedCheck> = unchecked
+            .iter()
+            .map(|check| UncheckedCheck {
+                unchecked_compliance: profiles::translate_all(profile, &check.unchecked_compliance),
+                ..check.clone()
+            })
+            .collect();
         let coverage = profiles::translate_all(profile, &self.coverage);
 
         self.config
             .scenario
             .frameworks()
             .iter()
-            .map(|framework| self.generate_for_framework(framework, &findings, &coverage))
+            .map(|framework| {
+                self.generate_for_framework(framework, &findings, &unchecked, &coverage)
+            })
             .collect()
     }
 
     /// Generates a compliance report for a single framework from
-    /// profile-translated findings and coverage.
+    /// profile-translated findings, unchecked checks, and coverage.
     fn generate_for_framework(
         &self,
         framework: &ComplianceFramework,
         findings: &[Finding],
+        unchecked: &[UncheckedCheck],
         coverage: &[ComplianceMapping],
     ) -> ComplianceReport {
         // Controls the engine assesses for this framework, from plugin coverage.
         let assessed: HashSet<&str> = coverage
             .iter()
+            .filter(|m| m.compliance_framework == *framework)
+            .map(|m| m.compliance_control_id.as_str())
+            .collect();
+
+        // Controls whose covering check could not run at the current privilege
+        // level: the absence of a finding proves nothing for these, so they
+        // must never auto-pass.
+        let unchecked_ids: HashSet<&str> = unchecked
+            .iter()
+            .flat_map(|u| &u.unchecked_compliance)
             .filter(|m| m.compliance_framework == *framework)
             .map(|m| m.compliance_control_id.as_str())
             .collect();
@@ -94,16 +122,19 @@ impl ReportGenerator {
             }
         }
 
-        // Map each control to a result. A mapped finding always fails the control.
-        // With no finding, the control passes only if the engine actually assesses
-        // it; otherwise the absence of a finding proves nothing, so it requires
-        // manual review rather than a misleading automatic pass.
+        // Map each control to a result. A mapped finding always fails the control,
+        // even one the check could not evaluate this run: Fail still wins over
+        // unchecked. With no finding, an unchecked control cannot auto-pass
+        // either; only a control the engine both assesses and could actually
+        // evaluate this run passes on the mere absence of a finding.
         let mut controls: Vec<ControlResult> = catalogue
             .iter()
             .map(|control| {
                 let related = related_findings(findings, framework, &control.compliance_control_id);
                 let status = if !related.is_empty() {
                     ControlStatus::Fail
+                } else if unchecked_ids.contains(control.compliance_control_id.as_str()) {
+                    ControlStatus::ManualReview
                 } else if assessed.contains(control.compliance_control_id.as_str()) {
                     ControlStatus::Pass
                 } else {
@@ -236,7 +267,7 @@ mod tests {
         // CIS 1.5.1 is in coverage; with no finding it must report Pass (Option B).
         let coverage = vec![mapping(ComplianceFramework::CIS, "1.5.1")];
         let generator = ReportGenerator::new(config_for(ComplianceFramework::CIS), coverage);
-        let report = generator.generate(&[]).pop().unwrap();
+        let report = generator.generate(&[], &[]).pop().unwrap();
 
         let result = report
             .report_controls
@@ -247,10 +278,65 @@ mod tests {
     }
 
     #[test]
+    fn unchecked_control_reports_manual_review_not_pass() {
+        // CIS 1.5.1 is covered (would Pass on a clean system, per the test
+        // above), but this run could not evaluate the check that covers it.
+        // The absence of a finding proves nothing here, so it must not
+        // auto-pass.
+        let coverage = vec![mapping(ComplianceFramework::CIS, "1.5.1")];
+        let generator = ReportGenerator::new(config_for(ComplianceFramework::CIS), coverage);
+        let unchecked = vec![UncheckedCheck {
+            unchecked_check_id: "pam-minlen".to_string(),
+            unchecked_title: "PAM setting: minlen".to_string(),
+            unchecked_category: FindingCategory::Authentication,
+            unchecked_reason: "requires root".to_string(),
+            unchecked_compliance: vec![mapping(ComplianceFramework::CIS, "1.5.1")],
+        }];
+        let report = generator.generate(&[], &unchecked).pop().unwrap();
+
+        let control = report
+            .report_controls
+            .iter()
+            .find(|c| c.control_id == "1.5.1")
+            .unwrap();
+        assert_eq!(control.control_status, ControlStatus::ManualReview);
+    }
+
+    #[test]
+    fn finding_beats_unchecked_for_the_same_control() {
+        // A control can carry both a real finding and an unchecked covering
+        // check (e.g. one of two covering checks ran and failed). The proven
+        // failure outranks the uncertainty: Fail wins over ManualReview.
+        let coverage = vec![mapping(ComplianceFramework::CIS, "1.5.1")];
+        let generator = ReportGenerator::new(config_for(ComplianceFramework::CIS), coverage);
+        let unchecked = vec![UncheckedCheck {
+            unchecked_check_id: "pam-minlen".to_string(),
+            unchecked_title: "PAM setting: minlen".to_string(),
+            unchecked_category: FindingCategory::Authentication,
+            unchecked_reason: "requires root".to_string(),
+            unchecked_compliance: vec![mapping(ComplianceFramework::CIS, "1.5.1")],
+        }];
+        let report = generator
+            .generate(&[cis_finding("1.5.1")], &unchecked)
+            .pop()
+            .unwrap();
+
+        let control = report
+            .report_controls
+            .iter()
+            .find(|c| c.control_id == "1.5.1")
+            .unwrap();
+        assert_eq!(control.control_status, ControlStatus::Fail);
+    }
+
+    #[test]
     fn mapped_finding_fails_its_control() {
         let coverage = vec![mapping(ComplianceFramework::CIS, "1.5.1")];
         let generator = ReportGenerator::new(config_for(ComplianceFramework::CIS), coverage);
-        let report = generator.generate(&[cis_finding("1.5.1")]).pop().unwrap();
+        let report = generator
+            .generate(&[cis_finding("1.5.1")], &[])
+            .pop()
+            .unwrap();
 
         assert!(report.report_summary.summary_failing >= 1);
         let result = report
@@ -265,7 +351,7 @@ mod tests {
     fn uncovered_catalogue_control_is_manual_review() {
         // A curated CIS control with no coverage entry cannot be auto-passed.
         let generator = ReportGenerator::new(config_for(ComplianceFramework::CIS), vec![]);
-        let report = generator.generate(&[]).pop().unwrap();
+        let report = generator.generate(&[], &[]).pop().unwrap();
 
         assert_eq!(report.report_summary.summary_passing, 0);
         assert!(report.report_summary.summary_manual_review >= 1);
@@ -278,7 +364,7 @@ mod tests {
         // so a clean system reports every covered control as Pass, none manual.
         let coverage = vec![mapping(ComplianceFramework::STIG, "RHEL-08-010430")];
         let generator = ReportGenerator::new(config_for(ComplianceFramework::STIG), coverage);
-        let report = generator.generate(&[]).pop().unwrap();
+        let report = generator.generate(&[], &[]).pop().unwrap();
 
         assert_eq!(report.report_summary.summary_total_controls, 1);
         assert_eq!(report.report_summary.summary_passing, 1);
@@ -295,7 +381,7 @@ mod tests {
             mapping(ComplianceFramework::SOC2, "CC7.2"),
         ];
         let generator = ReportGenerator::new(config_for(ComplianceFramework::SOC2), coverage);
-        let report = generator.generate(&[]).pop().unwrap();
+        let report = generator.generate(&[], &[]).pop().unwrap();
 
         assert_eq!(report.report_framework, ComplianceFramework::SOC2);
         assert_eq!(report.report_summary.summary_total_controls, 2);
@@ -313,7 +399,7 @@ mod tests {
             mapping(ComplianceFramework::NIST800171, "3.13.1"),
         ];
         let generator = ReportGenerator::new(config_for(ComplianceFramework::NIST800171), coverage);
-        let report = generator.generate(&[]).pop().unwrap();
+        let report = generator.generate(&[], &[]).pop().unwrap();
 
         assert_eq!(report.report_framework, ComplianceFramework::NIST800171);
         assert_eq!(report.report_summary.summary_total_controls, 2);
@@ -331,7 +417,7 @@ mod tests {
             mapping(ComplianceFramework::FedRAMP, "AC-6(1)"),
         ];
         let generator = ReportGenerator::new(config_for(ComplianceFramework::FedRAMP), coverage);
-        let report = generator.generate(&[]).pop().unwrap();
+        let report = generator.generate(&[], &[]).pop().unwrap();
 
         assert_eq!(report.report_framework, ComplianceFramework::FedRAMP);
         assert_eq!(report.report_summary.summary_total_controls, 2);
@@ -349,7 +435,7 @@ mod tests {
             coverage,
         );
         let report = generator
-            .generate(&[stig_finding("RHEL-08-010430")])
+            .generate(&[stig_finding("RHEL-08-010430")], &[])
             .pop()
             .unwrap();
 
@@ -388,7 +474,7 @@ mod tests {
             config_with_profile(ComplianceFramework::STIG, ComplianceProfile::Rhel10),
             coverage,
         );
-        let report = generator.generate(&[]).pop().unwrap();
+        let report = generator.generate(&[], &[]).pop().unwrap();
 
         assert_eq!(report.report_summary.summary_total_controls, 1);
         let result = report
@@ -410,7 +496,7 @@ mod tests {
             coverage,
         );
         let report = generator
-            .generate(&[stig_finding("RHEL-08-999999")])
+            .generate(&[stig_finding("RHEL-08-999999")], &[])
             .pop()
             .unwrap();
 
@@ -434,7 +520,7 @@ mod tests {
         finding
             .finding_compliance
             .push(mapping(ComplianceFramework::STIG, "RHEL-08-999999"));
-        let report = generator.generate(&[finding]).pop().unwrap();
+        let report = generator.generate(&[finding], &[]).pop().unwrap();
 
         let ids: Vec<&str> = report
             .report_controls
@@ -458,7 +544,7 @@ mod tests {
             .finding_compliance
             .push(mapping(ComplianceFramework::STIG, "OL08-00-999999"));
         let generator = ReportGenerator::new(config_for(ComplianceFramework::STIG), vec![]);
-        let report = generator.generate(&[finding]).pop().unwrap();
+        let report = generator.generate(&[finding], &[]).pop().unwrap();
 
         assert!(
             report.report_controls.iter().any(

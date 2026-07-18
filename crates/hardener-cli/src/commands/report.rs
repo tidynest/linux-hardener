@@ -67,8 +67,9 @@ pub async fn run(
         eprintln!("Running security scan...");
     }
 
-    // Run scan to get findings
-    let findings = run_scan(quiet, executor, &cli_format).await?;
+    // Run scan to get findings and the checks the current privilege level
+    // could not evaluate.
+    let (findings, unchecked) = run_scan_with_unchecked(quiet, executor, &cli_format).await?;
 
     if !quiet {
         eprintln!("Generating compliance report...");
@@ -77,7 +78,7 @@ pub async fn run(
     // Generate reports. The coverage set is what the plugins actually assess,
     // it tells the generator which controls may report Pass/Fail vs ManualReview.
     let generator = ReportGenerator::new(config, hardener_plugins::compliance_coverage());
-    let reports = generator.generate(&findings);
+    let reports = generator.generate(&findings, &unchecked);
 
     // Format output
     let formatted = match output_format {
@@ -144,8 +145,8 @@ pub async fn run(
 ///
 /// Keeping the `(PluginMetadata, Vec<Finding>, Vec<UncheckedCheck>)` triples
 /// preserves `plugin_id`, which history persistence needs, and the unchecked
-/// entries the desktop deep-scan flow consumes. `run_scan` flattens this for
-/// callers that only want the findings.
+/// entries the desktop deep-scan flow consumes. `run_scan_with_unchecked`
+/// flattens this for callers that only want the findings and unchecked lists.
 pub async fn scan_grouped(
     quiet: bool,
     executor: Arc<dyn SystemExecutor>,
@@ -201,17 +202,23 @@ pub async fn scan_grouped(
     Ok(grouped)
 }
 
-/// Scans every plugin and returns all findings, flattened across plugins.
-pub async fn run_scan(
+/// Scans every plugin and returns findings and unchecked checks, each
+/// flattened across plugins. The compliance report generator needs both: a
+/// control whose covering check landed in `unchecked` must never auto-pass
+/// on the mere absence of a finding.
+pub async fn run_scan_with_unchecked(
     quiet: bool,
     executor: Arc<dyn SystemExecutor>,
     cli_format: &CliOutputFormat,
-) -> Result<Vec<Finding>> {
-    Ok(scan_grouped(quiet, executor, cli_format)
-        .await?
-        .into_iter()
-        .flat_map(|(_, findings, _)| findings)
-        .collect())
+) -> Result<(Vec<Finding>, Vec<UncheckedCheck>)> {
+    let grouped = scan_grouped(quiet, executor, cli_format).await?;
+    let mut findings = Vec::new();
+    let mut unchecked = Vec::new();
+    for (_, group_findings, group_unchecked) in grouped {
+        findings.extend(group_findings);
+        unchecked.extend(group_unchecked);
+    }
+    Ok((findings, unchecked))
 }
 
 /// Converts a core `Finding` + plugin metadata into a scheduler `ScanFinding`.
@@ -381,7 +388,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn scan_grouped_keeps_plugin_grouping_and_run_scan_flattens() {
+    async fn scan_grouped_keeps_plugin_grouping_and_flattening_matches() {
         let exec = Arc::new(MockExecutor::new());
         let grouped = scan_grouped(true, exec.clone(), &CliOutputFormat::Json)
             .await
@@ -390,10 +397,15 @@ mod tests {
         for (meta, _findings, _unchecked) in &grouped {
             assert!(!meta.plugin_id.as_str().is_empty(), "group has a plugin id");
         }
-        // run_scan returns the same findings, flattened.
-        let flat = run_scan(true, exec, &CliOutputFormat::Json).await.unwrap();
-        let grouped_total: usize = grouped.iter().map(|(_, f, _)| f.len()).sum();
-        assert_eq!(flat.len(), grouped_total, "run_scan flattens scan_grouped");
+        // run_scan_with_unchecked returns the same findings and unchecked
+        // entries, each flattened across plugins.
+        let (findings, unchecked) = run_scan_with_unchecked(true, exec, &CliOutputFormat::Json)
+            .await
+            .unwrap();
+        let grouped_findings: usize = grouped.iter().map(|(_, f, _)| f.len()).sum();
+        let grouped_unchecked: usize = grouped.iter().map(|(_, _, u)| u.len()).sum();
+        assert_eq!(findings.len(), grouped_findings, "findings flatten");
+        assert_eq!(unchecked.len(), grouped_unchecked, "unchecked flatten");
     }
 
     #[test]
