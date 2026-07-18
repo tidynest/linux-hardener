@@ -3,7 +3,7 @@
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
@@ -17,6 +17,7 @@ type CommandStore = Arc<Mutex<HashMap<(String, Vec<String>), CommandOutput>>>;
 type CommandSequenceStore = Arc<Mutex<HashMap<(String, Vec<String>), VecDeque<CommandOutput>>>>;
 type CommandExistsStore = Arc<Mutex<HashMap<String, bool>>>;
 type LogStore = Arc<Mutex<MockExecutorLog>>;
+type PermissionDeniedStore = Arc<Mutex<HashSet<PathBuf>>>;
 
 /// Records of operations performed on the mock executor.
 #[derive(Clone, Debug, Default)]
@@ -55,6 +56,7 @@ pub struct MockExecutor {
     commands: CommandStore,
     command_sequences: CommandSequenceStore,
     command_exists: CommandExistsStore,
+    read_permission_denied: PermissionDeniedStore,
     log: LogStore,
     is_remote: bool,
     description: String,
@@ -75,6 +77,7 @@ impl MockExecutor {
             commands: Arc::new(Mutex::new(HashMap::new())),
             command_sequences: Arc::new(Mutex::new(HashMap::new())),
             command_exists: Arc::new(Mutex::new(HashMap::new())),
+            read_permission_denied: Arc::new(Mutex::new(HashSet::new())),
             log: Arc::new(Mutex::new(MockExecutorLog::default())),
             is_remote: false,
             description: "mock".to_string(),
@@ -198,6 +201,16 @@ impl MockExecutor {
         self
     }
 
+    /// Marks a path whose read fails with an io PermissionDenied error,
+    /// simulating a root-only file seen by an unprivileged scan.
+    pub fn with_read_permission_denied(self, path: &str) -> Self {
+        self.read_permission_denied
+            .lock()
+            .expect("read_permission_denied mutex poisoned")
+            .insert(PathBuf::from(path));
+        self
+    }
+
     /// Returns the operation log for assertions.
     pub fn log(&self) -> MockExecutorLog {
         self.log.lock().expect("log mutex poisoned").clone()
@@ -230,6 +243,18 @@ impl SystemExecutor for MockExecutor {
             .expect("log mutex poisoned")
             .files_read
             .push(path.to_path_buf());
+
+        if self
+            .read_permission_denied
+            .lock()
+            .expect("read_permission_denied mutex poisoned")
+            .contains(path)
+        {
+            return Err(anyhow::Error::new(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                format!("Mock: permission denied: {}", path.display()),
+            )));
+        }
 
         self.files
             .lock()
@@ -393,5 +418,15 @@ mod tests {
             .await
             .unwrap();
         assert!(got.is_empty());
+    }
+
+    #[tokio::test]
+    async fn read_permission_denied_surfaces_io_kind() {
+        let mock = MockExecutor::new().with_read_permission_denied("/etc/security/pwquality.conf");
+        let err = mock
+            .read_file(std::path::Path::new("/etc/security/pwquality.conf"))
+            .await
+            .unwrap_err();
+        assert!(crate::error::is_permission_denied(&err));
     }
 }

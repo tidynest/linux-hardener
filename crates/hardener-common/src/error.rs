@@ -76,3 +76,67 @@ impl From<anyhow::Error> for HardeningError {
 
 /// Result type alias using HardeningError.
 pub type Result<T> = std::result::Result<T, HardeningError>;
+
+/// True when an error message indicates a privilege failure rather than a
+/// genuine absence or malfunction. Matches the strings the kernel, nft,
+/// auditctl and sshd surface for unprivileged callers.
+pub fn message_indicates_permission_denied(message: &str) -> bool {
+    message.contains("Permission denied")
+        || message.contains("permission denied")
+        || message.contains("Operation not permitted")
+        || message.contains("must be root")
+        || message.contains("requires root")
+}
+
+/// True when the error chain indicates the operation failed for lack of
+/// privileges: an io `PermissionDenied` anywhere in the chain, or a cause
+/// whose message names a privilege failure (command stderr paths).
+pub fn is_permission_denied(err: &anyhow::Error) -> bool {
+    err.chain().any(|cause| {
+        if let Some(io) = cause.downcast_ref::<std::io::Error>()
+            && io.kind() == std::io::ErrorKind::PermissionDenied
+        {
+            return true;
+        }
+        message_indicates_permission_denied(&cause.to_string())
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    #[allow(unused_imports)]
+    use anyhow::Context;
+
+    use super::*;
+
+    #[test]
+    fn detects_io_permission_denied_through_anyhow_chain() {
+        let io = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
+        let err =
+            anyhow::Error::new(io).context("Failed to read file /etc/security/pwquality.conf");
+        assert!(is_permission_denied(&err));
+    }
+
+    #[test]
+    fn detects_permission_strings() {
+        assert!(message_indicates_permission_denied(
+            "nft: Permission denied"
+        ));
+        assert!(message_indicates_permission_denied(
+            "Operation not permitted"
+        ));
+        assert!(message_indicates_permission_denied(
+            "You must be root to run this"
+        ));
+        assert!(!message_indicates_permission_denied(
+            "No such file or directory"
+        ));
+    }
+
+    #[test]
+    fn not_found_is_not_permission_denied() {
+        let io = std::io::Error::new(std::io::ErrorKind::NotFound, "missing");
+        let err = anyhow::Error::new(io).context("Failed to read file /etc/nothing");
+        assert!(!is_permission_denied(&err));
+    }
+}
