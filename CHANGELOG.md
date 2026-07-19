@@ -212,6 +212,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now surfaced as an error message instead of only a console warning,
   so the user knows the displayed score may be stale until the next
   scan.
+- firewall apply is now idempotent on nftables hosts: `nft add rule`
+  always appends a fresh handle, so re-running apply previously stacked
+  a duplicate of every baseline rule each time. Apply now ensures the
+  managed `inet filter` table and `input` chain first (idempotent
+  `nft add table`/`add chain`, fixing an ENOENT when a foreign
+  `hook input` chain made the scan-time heuristic skip `enable()`), then
+  reads the live chain and only adds rules whose canonical form is
+  absent, reporting the rest as skipped. Matching is tolerant of nft's
+  output formatting (quoted interface names, comma-joined state lists)
+  and fails closed, re-adding a rule it cannot match rather than leaving
+  a gap. ufw and firewalld already dedupe rule adds natively and were
+  left unchanged.
+- SSH apply no longer rewrites `sshd_config` or restarts sshd when
+  nothing changed: the plugin now compares the hardened config against
+  what it read and, when byte-identical, skips the backup, the write and
+  the restart entirely (reporting a single skipped change) rather than
+  restarting the very daemon that can drop the admin's own session for
+  no reason. A remote-root PermitRootLogin guard-skip with no other
+  drift is now a full no-op too. A drifting config still backs up,
+  validates with `sshd -t`, writes and restarts exactly as before.
 
 ## [1.3.2] - 2026-07-18
 

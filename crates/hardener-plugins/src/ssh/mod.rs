@@ -1055,68 +1055,13 @@ impl HardeningPlugin for SshHardeningPlugin {
 
     async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult> {
         let plugin_id = PluginId::new("ssh-hardening");
-        let mut changes = Vec::new();
         let config_path = "/etc/ssh/sshd_config";
 
-        // Step 1: Create checkpoint to capture current state before changes.
-        let checkpoint_id = crate::create_checkpoint_for_apply(
-            ctx,
-            "ssh-hardening-pre-apply",
-            &[Path::new(config_path)],
-        )
-        .await?;
-
-        if checkpoint_id.is_some() {
-            changes.push(Change {
-                change_description: "Created checkpoint for rollback".to_string(),
-                change_type: ChangeType::ConfigFile,
-                change_success: true,
-                change_error: None,
-            });
-        }
-
-        // Step 2: Create backup (legacy backup in addition to checkpoint).
-        let backup_path = format!(
-            "{}.backup.{}",
-            config_path,
-            Utc::now().format("%Y%m%d_%H%M%S")
-        );
-        match ctx
-            .executor()
-            .execute_command("cp", &["-p", config_path, &backup_path])
-            .await
-        {
-            Ok(output) if output.success() => {
-                changes.push(Change {
-                    change_description: format!("Created backup: {}", backup_path),
-                    change_type: ChangeType::ConfigFile,
-                    change_success: true,
-                    change_error: None,
-                });
-                info!("SSH config backup created: {}", backup_path);
-            }
-            Ok(output) => {
-                return Ok(ApplyResult {
-                    apply_plugin_id: plugin_id,
-                    apply_success: false,
-                    apply_changes: changes,
-                    apply_checkpoint_id: checkpoint_id,
-                    apply_error: Some(format!("Failed to create backup: {}", output.stderr)),
-                });
-            }
-            Err(e) => {
-                return Ok(ApplyResult {
-                    apply_plugin_id: plugin_id,
-                    apply_success: false,
-                    apply_changes: changes,
-                    apply_checkpoint_id: checkpoint_id,
-                    apply_error: Some(format!("Failed to create backup: {}", e)),
-                });
-            }
-        }
-
-        // Step 3: Acquire advisory lock on config file to prevent concurrent
-        // read-modify-write races with other processes editing sshd_config.
+        // Step 1: Acquire an advisory lock on the config so the whole
+        // read-compute-write cycle is atomic against other processes editing
+        // sshd_config, then read the current content. Reading before any side
+        // effect lets the no-op guard below decide whether a backup, a write,
+        // an sshd restart or even a checkpoint is warranted at all.
         let lock_file = std::fs::File::open(config_path).map_err(|e| {
             hardener_common::error::HardeningError::Plugin(format!(
                 "Failed to open {} for locking: {}",
@@ -1131,8 +1076,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                 ))
             })?;
 
-        // Step 4: Read current configuration while holding the lock.
-        let mut config_content = ctx
+        let original_content = ctx
             .executor()
             .read_file(Path::new(config_path))
             .await
@@ -1143,9 +1087,14 @@ impl HardeningPlugin for SshHardeningPlugin {
                 ))
             })?;
 
-        // Step 5: Apply each directive. Probe the session once up front: on a
-        // remote root session the PermitRootLogin target is downgraded below
-        // so the apply cannot sever its own access.
+        // Step 2: Compute the hardened config from the current content.
+        // Directive changes accumulate in `changes`, but nothing is committed
+        // to disk until the no-op guard below confirms the config actually
+        // differs. Probe the session once up front: on a remote root session
+        // the PermitRootLogin target is downgraded so the apply cannot sever
+        // its own access.
+        let mut config_content = original_content.clone();
+        let mut changes = Vec::new();
         let remote_root_session = is_remote_root_session(ctx.executor().as_ref()).await;
 
         for directive in SSH_DIRECTIVES {
@@ -1355,13 +1304,98 @@ impl HardeningPlugin for SshHardeningPlugin {
             }
         }
 
-        // Step 5c: Validate the candidate config with `sshd -t` BEFORE touching
+        // Step 3: No-op guard. If the hardened config is byte-identical to what
+        // was read, the host is already compliant: skip the checkpoint, the
+        // backup, the write and - critically - the sshd restart, which is the
+        // one operation that can drop the admin's own session. Emit a single
+        // Skipped change so the caller still sees the plugin ran.
+        if config_content == original_content {
+            changes.push(Change {
+                change_description:
+                    "sshd_config already compliant - not rewritten, service not restarted"
+                        .to_string(),
+                change_type: ChangeType::Skipped,
+                change_success: true,
+                change_error: None,
+            });
+            info!("sshd_config already compliant; skipped backup, rewrite and restart");
+            return Ok(ApplyResult {
+                apply_plugin_id: plugin_id,
+                apply_success: true,
+                apply_changes: changes,
+                apply_checkpoint_id: None,
+                apply_error: None,
+            });
+        }
+
+        // Step 4: The config drifts, so commit the change. Create the
+        // checkpoint and the legacy backup now (never on a no-op); they lead
+        // the committed change list, ahead of the directive changes.
+        let mut committed = Vec::new();
+
+        let checkpoint_id = crate::create_checkpoint_for_apply(
+            ctx,
+            "ssh-hardening-pre-apply",
+            &[Path::new(config_path)],
+        )
+        .await?;
+        if checkpoint_id.is_some() {
+            committed.push(Change {
+                change_description: "Created checkpoint for rollback".to_string(),
+                change_type: ChangeType::ConfigFile,
+                change_success: true,
+                change_error: None,
+            });
+        }
+
+        let backup_path = format!(
+            "{}.backup.{}",
+            config_path,
+            Utc::now().format("%Y%m%d_%H%M%S")
+        );
+        match ctx
+            .executor()
+            .execute_command("cp", &["-p", config_path, &backup_path])
+            .await
+        {
+            Ok(output) if output.success() => {
+                committed.push(Change {
+                    change_description: format!("Created backup: {}", backup_path),
+                    change_type: ChangeType::ConfigFile,
+                    change_success: true,
+                    change_error: None,
+                });
+                info!("SSH config backup created: {}", backup_path);
+            }
+            Ok(output) => {
+                return Ok(ApplyResult {
+                    apply_plugin_id: plugin_id,
+                    apply_success: false,
+                    apply_changes: committed,
+                    apply_checkpoint_id: checkpoint_id,
+                    apply_error: Some(format!("Failed to create backup: {}", output.stderr)),
+                });
+            }
+            Err(e) => {
+                return Ok(ApplyResult {
+                    apply_plugin_id: plugin_id,
+                    apply_success: false,
+                    apply_changes: committed,
+                    apply_checkpoint_id: checkpoint_id,
+                    apply_error: Some(format!("Failed to create backup: {}", e)),
+                });
+            }
+        }
+
+        committed.append(&mut changes);
+
+        // Step 5: Validate the candidate config with `sshd -t` BEFORE touching
         // the live file. If sshd would refuse to start, abort here: no write, no
         // restart; the running daemon and its config are left fully intact, so
         // there is no lockout path.
         if let Err(e) = validate_sshd_config(ctx.executor().as_ref(), &config_content).await {
             error!("Candidate sshd_config failed validation, aborting apply: {e}");
-            changes.push(Change {
+            committed.push(Change {
                 change_description: "Candidate sshd_config rejected by `sshd -t`; \
                     no changes written, service not restarted"
                     .to_string(),
@@ -1372,7 +1406,7 @@ impl HardeningPlugin for SshHardeningPlugin {
             return Ok(ApplyResult {
                 apply_plugin_id: plugin_id,
                 apply_success: false,
-                apply_changes: changes,
+                apply_changes: committed,
                 apply_checkpoint_id: checkpoint_id,
                 apply_error: Some(format!("sshd config validation failed: {e}")),
             });
@@ -1385,7 +1419,7 @@ impl HardeningPlugin for SshHardeningPlugin {
             .await
         {
             Ok(_) => {
-                changes.push(Change {
+                committed.push(Change {
                     change_description: format!("Updated {}", config_path),
                     change_type: ChangeType::ConfigFile,
                     change_success: true,
@@ -1394,7 +1428,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                 info!("SSH configuration updated successfully");
             }
             Err(e) => {
-                changes.push(Change {
+                committed.push(Change {
                     change_description: format!("Failed to write {}", config_path),
                     change_type: ChangeType::ConfigFile,
                     change_success: false,
@@ -1408,7 +1442,7 @@ impl HardeningPlugin for SshHardeningPlugin {
         // candidate config passed `sshd -t`, so a restart cannot lock us out.
         match Self::restart_ssh_service(ctx).await {
             Ok(_) => {
-                changes.push(Change {
+                committed.push(Change {
                     change_description: "Restarted SSH service".to_string(),
                     change_type: ChangeType::Service,
                     change_success: true,
@@ -1417,7 +1451,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                 info!("SSH service restarted successfully");
             }
             Err(e) => {
-                changes.push(Change {
+                committed.push(Change {
                     change_description: "Failed to restart SSH service".to_string(),
                     change_type: ChangeType::Service,
                     change_success: false,
@@ -1427,11 +1461,11 @@ impl HardeningPlugin for SshHardeningPlugin {
             }
         }
 
-        let success = changes.iter().all(|c| c.change_success);
+        let success = committed.iter().all(|c| c.change_success);
         Ok(ApplyResult {
             apply_plugin_id: plugin_id,
             apply_success: success,
-            apply_changes: changes,
+            apply_changes: committed,
             apply_checkpoint_id: checkpoint_id,
             apply_error: None,
         })

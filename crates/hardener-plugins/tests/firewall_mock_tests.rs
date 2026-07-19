@@ -833,3 +833,366 @@ async fn test_ufw_drop_default_rule_uses_default_deny_incoming() {
         log.commands_executed
     );
 }
+
+// --- nftables apply idempotency: `nft add rule` always appends a fresh
+// handle, so re-running apply must not stack duplicate baseline rules. The
+// managed table + input chain are ensured unconditionally (idempotent `add`)
+// so a rule add can never fail with ENOENT, and each rule is only added when a
+// presence check against the live chain shows it absent. ---
+
+/// A successful, empty-stdout nft command response.
+fn nft_ok() -> CommandOutput {
+    CommandOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+    }
+}
+
+/// Registers the idempotent table+chain "ensure" commands the nftables apply
+/// path issues before any rule, plus the `list chain` presence probe returning
+/// `chain_body`. Callers additionally register the `add rule` commands they
+/// expect to run; a rule already present in `chain_body` must NOT be re-added.
+fn nft_apply_base(chain_body: &str) -> MockExecutor {
+    MockExecutor::new()
+        .with_command("nft", &["add", "table", "inet", "filter"], nft_ok())
+        .with_command(
+            "nft",
+            &[
+                "add", "chain", "inet", "filter", "input", "{", "type", "filter", "hook", "input",
+                "priority", "0", ";", "policy", "drop", ";", "}",
+            ],
+            nft_ok(),
+        )
+        .with_command(
+            "nft",
+            &["list", "chain", "inet", "filter", "input"],
+            CommandOutput {
+                stdout: chain_body.to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+}
+
+/// An `nft list chain inet filter input` body with no rules (freshly ensured).
+const NFT_EMPTY_CHAIN: &str = "table inet filter {\n\tchain input {\n\t\ttype filter hook input priority 0; policy drop;\n\t}\n}\n";
+
+/// True if the command log contains an `nft add rule ...` invocation.
+fn logged_nft_add_rule(executor: &MockExecutor) -> bool {
+    executor.log().commands_executed.iter().any(|(cmd, args)| {
+        cmd == "nft"
+            && args.first().map(String::as_str) == Some("add")
+            && args.get(1).map(String::as_str) == Some("rule")
+    })
+}
+
+/// True if the command log contains the table + input-chain "ensure" pair.
+fn logged_nft_ensure(executor: &MockExecutor) -> bool {
+    let log = executor.log();
+    let ensured_table = log
+        .commands_executed
+        .iter()
+        .any(|(cmd, args)| cmd == "nft" && *args == ["add", "table", "inet", "filter"]);
+    let ensured_chain = log.commands_executed.iter().any(|(cmd, args)| {
+        cmd == "nft"
+            && args.first().map(String::as_str) == Some("add")
+            && args.get(1).map(String::as_str) == Some("chain")
+    });
+    ensured_table && ensured_chain
+}
+
+#[tokio::test]
+async fn test_nftables_apply_ensures_chain_then_adds_all_rules_when_empty() {
+    use hardener_plugins::firewall::FirewallBackend;
+    use hardener_plugins::firewall::nftables::NftablesBackend;
+
+    let executor = nft_apply_base(NFT_EMPTY_CHAIN)
+        .with_command(
+            "nft",
+            &[
+                "add", "rule", "inet", "filter", "input", "iif", "lo", "accept",
+            ],
+            nft_ok(),
+        )
+        .with_command(
+            "nft",
+            &[
+                "add",
+                "rule",
+                "inet",
+                "filter",
+                "input",
+                "ct",
+                "state",
+                "established,related",
+                "accept",
+            ],
+            nft_ok(),
+        )
+        .with_command(
+            "nft",
+            &[
+                "add", "rule", "inet", "filter", "input", "tcp", "dport", "22", "accept",
+            ],
+            nft_ok(),
+        )
+        .with_command(
+            "nft",
+            &["add", "rule", "inet", "filter", "input", "drop"],
+            nft_ok(),
+        );
+    let ctx = Context::with_executor(Arc::new(executor.clone()));
+    let backend = NftablesBackend::new();
+
+    let changes = backend
+        .apply_rules(&ctx, &backend.get_default_rules())
+        .await
+        .unwrap();
+
+    // Empty chain: all four baseline rules are absent, so all four are added
+    // and nothing is skipped.
+    assert_eq!(
+        changes
+            .iter()
+            .filter(|c| c.change_type == ChangeType::FirewallRule && c.change_success)
+            .count(),
+        4,
+        "every baseline rule should be added against an empty chain, got: {changes:?}"
+    );
+    assert!(
+        changes.iter().all(|c| c.change_type != ChangeType::Skipped),
+        "nothing should be skipped when the chain is empty"
+    );
+
+    // The table + input chain were ensured before any rule was added.
+    assert!(
+        logged_nft_ensure(&executor),
+        "the managed table and input chain must be ensured, commands: {:?}",
+        executor.log().commands_executed
+    );
+}
+
+#[tokio::test]
+async fn test_nftables_apply_skips_all_rules_already_present() {
+    use hardener_plugins::firewall::FirewallBackend;
+    use hardener_plugins::firewall::nftables::NftablesBackend;
+
+    // Canonical nft output: `iif "lo"` is quoted and established uses the
+    // comma-joined state list; the presence check must tolerate both. NO
+    // `add rule` command is registered, so any attempt to add would fail
+    // loudly - proving nothing was re-added.
+    let full_chain = "table inet filter {\n\tchain input {\n\t\t\
+        type filter hook input priority 0; policy drop;\n\t\t\
+        iif \"lo\" accept\n\t\tct state established,related accept\n\t\t\
+        tcp dport 22 accept\n\t\tdrop\n\t}\n}\n";
+    let executor = nft_apply_base(full_chain);
+    let ctx = Context::with_executor(Arc::new(executor.clone()));
+    let backend = NftablesBackend::new();
+
+    let changes = backend
+        .apply_rules(&ctx, &backend.get_default_rules())
+        .await
+        .unwrap();
+
+    assert_eq!(
+        changes
+            .iter()
+            .filter(|c| c.change_type == ChangeType::Skipped)
+            .count(),
+        4,
+        "every already-present rule must be a Skipped change, got: {changes:?}"
+    );
+    assert!(
+        changes.iter().all(|c| c.change_success),
+        "an already-present rule is not an apply failure"
+    );
+    assert!(
+        !logged_nft_add_rule(&executor),
+        "no `nft add rule` may run when every rule is present, commands: {:?}",
+        executor.log().commands_executed
+    );
+}
+
+#[tokio::test]
+async fn test_nftables_apply_adds_only_missing_rules() {
+    use hardener_plugins::firewall::FirewallBackend;
+    use hardener_plugins::firewall::nftables::NftablesBackend;
+
+    // loopback + ssh already present; established + drop are missing.
+    let partial_chain = "table inet filter {\n\tchain input {\n\t\t\
+        type filter hook input priority 0; policy drop;\n\t\t\
+        iif \"lo\" accept\n\t\ttcp dport 22 accept\n\t}\n}\n";
+    let executor = nft_apply_base(partial_chain)
+        .with_command(
+            "nft",
+            &[
+                "add",
+                "rule",
+                "inet",
+                "filter",
+                "input",
+                "ct",
+                "state",
+                "established,related",
+                "accept",
+            ],
+            nft_ok(),
+        )
+        .with_command(
+            "nft",
+            &["add", "rule", "inet", "filter", "input", "drop"],
+            nft_ok(),
+        );
+    let ctx = Context::with_executor(Arc::new(executor.clone()));
+    let backend = NftablesBackend::new();
+
+    let changes = backend
+        .apply_rules(&ctx, &backend.get_default_rules())
+        .await
+        .unwrap();
+
+    assert_eq!(
+        changes
+            .iter()
+            .filter(|c| c.change_type == ChangeType::Skipped)
+            .count(),
+        2,
+        "loopback and ssh are present -> 2 skipped, got: {changes:?}"
+    );
+    assert_eq!(
+        changes
+            .iter()
+            .filter(|c| c.change_type == ChangeType::FirewallRule && c.change_success)
+            .count(),
+        2,
+        "established and drop are missing -> 2 added, got: {changes:?}"
+    );
+
+    // The present loopback rule must not be re-added; the missing drop must be.
+    let log = executor.log();
+    assert!(
+        !log.commands_executed.iter().any(|(cmd, args)| cmd == "nft"
+            && *args
+                == [
+                    "add", "rule", "inet", "filter", "input", "iif", "lo", "accept"
+                ]),
+        "an already-present rule must not be re-added, commands: {:?}",
+        log.commands_executed
+    );
+    assert!(
+        log.commands_executed.iter().any(|(cmd, args)| cmd == "nft"
+            && *args == ["add", "rule", "inet", "filter", "input", "drop"]),
+        "the missing drop rule must be added, commands: {:?}",
+        log.commands_executed
+    );
+}
+
+#[tokio::test]
+async fn test_nftables_plugin_apply_ensures_chain_when_foreign_hook_input_present() {
+    // A foreign table carries a `hook input` chain (e.g. docker, or another
+    // address family), so is_enabled's ruleset grep believes a filter is
+    // already active and the plugin skips enable(). The inet filter chain the
+    // baseline rules target does NOT exist, so before the fix every `add rule`
+    // failed with ENOENT. apply_rules must now ensure the chain itself.
+    let foreign_ruleset = "table ip foreign {\n\tchain input {\n\t\t\
+        type filter hook input priority 0; policy accept;\n\t}\n}\n";
+    let executor = MockExecutor::new()
+        .with_command_exists("firewall-cmd", false)
+        .with_command_exists("ufw", false)
+        .with_command_exists("nft", true)
+        .with_command(
+            "nft",
+            &["list", "ruleset"],
+            CommandOutput {
+                stdout: foreign_ruleset.to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command("nft", &["add", "table", "inet", "filter"], nft_ok())
+        .with_command(
+            "nft",
+            &[
+                "add", "chain", "inet", "filter", "input", "{", "type", "filter", "hook", "input",
+                "priority", "0", ";", "policy", "drop", ";", "}",
+            ],
+            nft_ok(),
+        )
+        .with_command(
+            "nft",
+            &["list", "chain", "inet", "filter", "input"],
+            CommandOutput {
+                stdout: NFT_EMPTY_CHAIN.to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "nft",
+            &[
+                "add", "rule", "inet", "filter", "input", "iif", "lo", "accept",
+            ],
+            nft_ok(),
+        )
+        .with_command(
+            "nft",
+            &[
+                "add",
+                "rule",
+                "inet",
+                "filter",
+                "input",
+                "ct",
+                "state",
+                "established,related",
+                "accept",
+            ],
+            nft_ok(),
+        )
+        .with_command(
+            "nft",
+            &[
+                "add", "rule", "inet", "filter", "input", "tcp", "dport", "22", "accept",
+            ],
+            nft_ok(),
+        )
+        .with_command(
+            "nft",
+            &["add", "rule", "inet", "filter", "input", "drop"],
+            nft_ok(),
+        );
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    let plugin = FirewallHardeningPlugin::new();
+
+    let result = plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(
+        result.apply_success,
+        "apply must succeed once the chain is ensured, failed: {:?}",
+        result
+            .apply_changes
+            .iter()
+            .filter(|c| !c.change_success)
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        logged_nft_ensure(&executor),
+        "the inet filter table + input chain must be ensured despite the foreign hook-input \
+         chain, commands: {:?}",
+        executor.log().commands_executed
+    );
+    assert_eq!(
+        result
+            .apply_changes
+            .iter()
+            .filter(|c| c.change_type == ChangeType::FirewallRule && c.change_success)
+            .count(),
+        4,
+        "all four baseline rules must be added, changes: {:?}",
+        result.apply_changes
+    );
+}

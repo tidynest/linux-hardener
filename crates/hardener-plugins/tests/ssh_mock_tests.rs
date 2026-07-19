@@ -964,3 +964,223 @@ async fn ssh_remote_root_apply_skips_all_safe_or_stricter_values() {
         );
     }
 }
+
+// === No-op safety: apply must not rewrite sshd_config or restart sshd when
+// nothing changed ===
+//
+// Restarting sshd is the one operation that can drop the admin's own session,
+// so doing it for a config that is already compliant is a safety bug (live
+// tour: a scan-clean host still got "Updated sshd_config" + "Restarted SSH
+// service" + a fresh backup on every apply). When the rendered config is
+// byte-identical to what was read, the apply must skip the backup, the write
+// and the restart entirely.
+
+/// A fully hardened sshd_config: every plain directive at its secure value and
+/// every crypto directive holding exactly the algorithms the strong-crypto
+/// executor below reports (so the apply computes no drift for any of them).
+const COMPLIANT_SSHD_CONFIG: &str = "\
+PermitRootLogin no
+PasswordAuthentication no
+PermitEmptyPasswords no
+MaxAuthTries 3
+X11Forwarding no
+ClientAliveInterval 300
+ClientAliveCountMax 2
+KexAlgorithms curve25519-sha256,diffie-hellman-group16-sha512
+Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com
+MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
+";
+
+/// As [`COMPLIANT_SSHD_CONFIG`] but with `PermitRootLogin` already at the
+/// remote-root-safe `prohibit-password`. On a remote root session the lockout
+/// guard skips rewriting this without loosening it, so with everything else
+/// compliant the apply has no drift at all.
+const GUARD_SAFE_COMPLIANT_SSHD_CONFIG: &str = "\
+PermitRootLogin prohibit-password
+PasswordAuthentication no
+PermitEmptyPasswords no
+MaxAuthTries 3
+X11Forwarding no
+ClientAliveInterval 300
+ClientAliveCountMax 2
+KexAlgorithms curve25519-sha256,diffie-hellman-group16-sha512
+Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com
+MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
+";
+
+/// Registers `ssh -Q kex/cipher/mac` so the crypto pass selects exactly the
+/// algorithms present in the compliant configs above (intersection preserves
+/// desired order), leaving those directives unchanged.
+fn with_strong_crypto(executor: MockExecutor) -> MockExecutor {
+    executor
+        .with_command(
+            "ssh",
+            &["-Q", "kex"],
+            ok_output("curve25519-sha256\ndiffie-hellman-group16-sha512\n"),
+        )
+        .with_command(
+            "ssh",
+            &["-Q", "cipher"],
+            ok_output("chacha20-poly1305@openssh.com\naes256-gcm@openssh.com\n"),
+        )
+        .with_command(
+            "ssh",
+            &["-Q", "mac"],
+            ok_output("hmac-sha2-512-etm@openssh.com\nhmac-sha2-256-etm@openssh.com\n"),
+        )
+}
+
+/// A no-op-scenario executor: the compliant config plus strong-crypto `ssh -Q`
+/// responses, but deliberately NO `cp` backup, `sshd -t` or `systemctl restart`
+/// registrations. If the apply wrongly reaches any of those the backup command
+/// is unregistered and the apply fails loudly, so `apply_success` alone guards
+/// the no-op contract.
+fn compliant_noop_executor(config: &str) -> MockExecutor {
+    with_strong_crypto(MockExecutor::new().with_file("/etc/ssh/sshd_config", config))
+}
+
+/// True if the executor's command log contains `systemctl restart sshd`.
+fn restarted_sshd(executor: &MockExecutor) -> bool {
+    executor
+        .log()
+        .commands_executed
+        .iter()
+        .any(|(program, args)| program == "systemctl" && args == &["restart", "sshd"])
+}
+
+/// True if the executor backed up sshd_config via `cp`.
+fn backed_up_config(executor: &MockExecutor) -> bool {
+    executor
+        .log()
+        .commands_executed
+        .iter()
+        .any(|(program, _)| program == "cp")
+}
+
+/// True if the executor wrote sshd_config.
+fn rewrote_config(executor: &MockExecutor) -> bool {
+    executor
+        .log()
+        .files_written
+        .iter()
+        .any(|(path, _)| path == &std::path::PathBuf::from("/etc/ssh/sshd_config"))
+}
+
+#[tokio::test]
+async fn ssh_apply_is_full_noop_when_config_already_compliant() {
+    let executor = compliant_noop_executor(COMPLIANT_SSHD_CONFIG);
+    let result = run_ssh_apply(&executor).await;
+
+    assert!(
+        result.apply_success,
+        "an already-compliant apply must succeed without touching anything: {result:?}"
+    );
+    assert!(
+        !backed_up_config(&executor),
+        "no backup on a no-op, commands: {:?}",
+        executor.log().commands_executed
+    );
+    assert!(
+        !rewrote_config(&executor),
+        "no config rewrite on a no-op, writes: {:?}",
+        executor.log().files_written
+    );
+    assert!(
+        !restarted_sshd(&executor),
+        "no sshd restart on a no-op, commands: {:?}",
+        executor.log().commands_executed
+    );
+
+    // Exactly one change: the already-compliant Skipped indicator.
+    assert_eq!(
+        result.apply_changes.len(),
+        1,
+        "an already-compliant apply must emit a single change, got: {:?}",
+        result.apply_changes
+    );
+    let change = &result.apply_changes[0];
+    assert!(
+        change.is_skipped(),
+        "the no-op change must be Skipped, got: {change:?}"
+    );
+    assert!(
+        change.change_description.contains("already compliant"),
+        "the change must explain the no-op, got: {}",
+        change.change_description
+    );
+}
+
+#[tokio::test]
+async fn ssh_apply_remote_root_guard_skip_with_no_other_drift_is_full_noop() {
+    // PermitRootLogin already at the safe prohibit-password; on a remote root
+    // session the guard skips it, and with everything else compliant the apply
+    // must be a complete no-op (the live tour showed exactly this case doing a
+    // pointless sshd restart).
+    let executor = compliant_noop_executor(GUARD_SAFE_COMPLIANT_SSHD_CONFIG)
+        .remote()
+        .with_command("id", &["-u"], ok_output("0\n"));
+    let result = run_ssh_apply(&executor).await;
+
+    assert!(
+        result.apply_success,
+        "a guard-skip-only apply must succeed as a no-op: {result:?}"
+    );
+    assert!(
+        !backed_up_config(&executor),
+        "no backup on a guard-skip no-op, commands: {:?}",
+        executor.log().commands_executed
+    );
+    assert!(
+        !rewrote_config(&executor),
+        "no config rewrite on a guard-skip no-op, writes: {:?}",
+        executor.log().files_written
+    );
+    assert!(
+        !restarted_sshd(&executor),
+        "no sshd restart on a guard-skip no-op, commands: {:?}",
+        executor.log().commands_executed
+    );
+
+    // The guard-skip stays visible, alongside the already-compliant indicator.
+    assert!(
+        result
+            .apply_changes
+            .iter()
+            .any(|c| c.change_description.starts_with("PermitRootLogin:") && c.is_skipped()),
+        "the guard-skip must still be surfaced, got: {:?}",
+        result.apply_changes
+    );
+    assert!(
+        result
+            .apply_changes
+            .iter()
+            .any(|c| c.is_skipped() && c.change_description.contains("already compliant")),
+        "the already-compliant indicator must be present, got: {:?}",
+        result.apply_changes
+    );
+}
+
+#[tokio::test]
+async fn ssh_apply_still_writes_and_restarts_when_config_drifts() {
+    // Regression guard for the drift path: a config that is not yet compliant
+    // must still back up, write and restart exactly as before.
+    let executor = apply_ready_executor("# minimal config\n");
+    let result = run_ssh_apply(&executor).await;
+
+    assert!(
+        result.apply_success,
+        "a drifting apply must succeed: {result:?}"
+    );
+    assert!(
+        backed_up_config(&executor),
+        "a drifting apply must back up the config"
+    );
+    assert!(
+        rewrote_config(&executor),
+        "a drifting apply must rewrite the config"
+    );
+    assert!(
+        restarted_sshd(&executor),
+        "a drifting apply must restart sshd"
+    );
+}

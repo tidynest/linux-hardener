@@ -154,6 +154,93 @@ impl NftablesBackend {
 
         args
     }
+
+    /// Idempotently ensures the managed `inet filter` table and its base
+    /// `input` chain exist before any rule is added.
+    ///
+    /// `nft add table` / `nft add chain` are no-ops when the object already
+    /// exists (unlike `create`, which errors), so this runs unconditionally at
+    /// the start of every apply. It fixes the ENOENT seen when a foreign
+    /// `hook input` chain (docker, or another address family) made the
+    /// scan-time `is_enabled` heuristic believe a filter was already active:
+    /// the plugin then skipped `enable()` and every `add rule` failed against
+    /// a chain that did not exist. Scoped to exactly the objects `apply_rules`
+    /// writes into, so it stays safe to call when the chain is already
+    /// populated.
+    async fn ensure_managed_chain(&self, ctx: &Context) -> Result<()> {
+        self.execute_nft(ctx, &["add", "table", "inet", "filter"])
+            .await?;
+        self.execute_nft(
+            ctx,
+            &[
+                "add", "chain", "inet", "filter", "input", "{", "type", "filter", "hook", "input",
+                "priority", "0", ";", "policy", "drop", ";", "}",
+            ],
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// Reads the current `input` chain and returns the canonical token list of
+    /// each rule already present, used to skip rules that are already there.
+    ///
+    /// Fails CLOSED: if the chain cannot be read, an empty list is returned so
+    /// every baseline rule is treated as absent and (re-)added. A duplicate is
+    /// harmless; a silently-missing baseline rule (e.g. the default drop) is a
+    /// real security gap.
+    async fn existing_input_rules(&self, ctx: &Context) -> Vec<Vec<String>> {
+        match self
+            .execute_nft(ctx, &["list", "chain", "inet", "filter", "input"])
+            .await
+        {
+            Ok(output) => parse_input_chain_rules(&output),
+            Err(e) => {
+                warn!(
+                    "Could not read nftables input chain ({e}); treating it as empty so \
+                     baseline rules are re-added rather than skipped"
+                );
+                Vec::new()
+            }
+        }
+    }
+}
+
+/// Canonicalises an nftables rule statement into comparable tokens.
+///
+/// A rule we pass to `nft add rule inet filter input <statement>` must compare
+/// equal to the same rule as printed back by `nft list chain`, but nft
+/// rewrites its output: a bare interface name gains quotes (`iif lo` becomes
+/// `iif "lo"`) and, with handles enabled, a trailing `# handle N` comment is
+/// appended. Neither changes the rule's identity, so surrounding double quotes
+/// are stripped and any trailing comment dropped before comparison. Matching
+/// deliberately fails CLOSED: if a present rule fails to canonicalise to the
+/// same tokens, it is treated as absent and re-added.
+fn canonical_rule_tokens<'a>(tokens: impl Iterator<Item = &'a str>) -> Vec<String> {
+    tokens
+        .take_while(|token| !token.starts_with('#'))
+        .map(|token| token.trim_matches('"').to_string())
+        .collect()
+}
+
+/// Extracts the canonical token list of every actual rule line in an
+/// `nft list chain inet filter input` body, skipping the structural lines
+/// (table/chain headers, the base-chain `type ... hook ...` spec, braces and
+/// comments). The result feeds the presence check in [`apply_rules`].
+fn parse_input_chain_rules(chain_output: &str) -> Vec<Vec<String>> {
+    chain_output
+        .lines()
+        .map(str::trim)
+        .filter(|line| {
+            !line.is_empty()
+                && !line.starts_with('#')
+                && !line.starts_with("table")
+                && !line.starts_with("chain")
+                && !line.starts_with("type")
+                && !line.starts_with('{')
+                && !line.starts_with('}')
+        })
+        .map(|line| canonical_rule_tokens(line.split_whitespace()))
+        .collect()
 }
 
 impl Default for NftablesBackend {
@@ -283,8 +370,33 @@ impl FirewallBackend for NftablesBackend {
     async fn apply_rules(&self, ctx: &Context, rules: &[Rule]) -> Result<Vec<Change>> {
         let mut changes = Vec::new();
 
+        // Ensure the managed table + input chain exist first, unconditionally
+        // and idempotently (see `ensure_managed_chain`).
+        self.ensure_managed_chain(ctx).await?;
+
+        // Read the chain once so only genuinely-absent rules are added:
+        // `nft add rule` always appends a fresh handle, so without this check
+        // every apply stacks another duplicate of every baseline rule.
+        let existing = self.existing_input_rules(ctx).await;
+
         for rule in rules {
             let nft_args = self.build_nft_rule_args(rule);
+            // The rule statement is everything after `add rule inet filter input`.
+            let wanted = canonical_rule_tokens(nft_args[5..].iter().map(String::as_str));
+
+            if existing.contains(&wanted) {
+                info!("nftables rule already present: {}", rule.rule_description);
+                changes.push(Change {
+                    change_description: format!(
+                        "Firewall rule already present: {}",
+                        rule.rule_description
+                    ),
+                    change_type: ChangeType::Skipped,
+                    change_success: true,
+                    change_error: None,
+                });
+                continue;
+            }
 
             let args_refs: Vec<&str> = nft_args.iter().map(|s| s.as_str()).collect();
             match self.execute_nft(ctx, &args_refs).await {
