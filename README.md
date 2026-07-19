@@ -6,13 +6,13 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/tidynest/linux-system-hardener/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/tidynest/linux-system-hardener/ci.yml?branch=main&style=flat-square&label=CI&labelColor=134e4a&cacheSeconds=3600" alt="CI status"></a>
-  <img src="https://img.shields.io/badge/version-1.3.2-0f766e?style=flat-square&labelColor=134e4a" alt="Version 1.3.2">
-  <img src="https://img.shields.io/badge/license-Apache--2.0-0f766e?style=flat-square&labelColor=134e4a" alt="License Apache-2.0">
-  <img src="https://img.shields.io/badge/rust-1.85%2B-0f766e?style=flat-square&labelColor=134e4a&logo=rust&logoColor=white" alt="Rust 1.85+">
-  <img src="https://img.shields.io/aur/version/linux-system-hardener?style=flat-square&logo=archlinux&logoColor=white&label=AUR&color=0f766e&labelColor=134e4a&cacheSeconds=3600" alt="AUR package">
-  <img src="https://img.shields.io/badge/platform-Linux-0f766e?style=flat-square&labelColor=134e4a&logo=linux&logoColor=white" alt="Platform Linux">
-  <img src="https://img.shields.io/badge/tests-790%2B%20passing-0d9488?style=flat-square&labelColor=134e4a" alt="790+ tests passing">
+  <a href="https://github.com/tidynest/linux-system-hardener/actions/workflows/ci.yml"><img src="https://github.com/tidynest/linux-system-hardener/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
+  <img src="docs/assets/badges/version.svg" alt="Version 1.3.2">
+  <img src="docs/assets/badges/license.svg" alt="License Apache-2.0">
+  <img src="docs/assets/badges/rust.svg" alt="Rust 1.85+">
+  <a href="https://aur.archlinux.org/packages/linux-system-hardener"><img src="docs/assets/badges/aur.svg" alt="AUR package"></a>
+  <img src="docs/assets/badges/platform.svg" alt="Platform Linux">
+  <img src="docs/assets/badges/tests.svg" alt="790+ tests (750+ passing, 38 ignored)">
 </p>
 
 A comprehensive Linux security automation tool with multi-distribution support, built in Rust. Provides automated security scanning, hardening, and compliance reporting with full rollback capabilities.

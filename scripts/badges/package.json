@@ -1,0 +1,11 @@
+{
+  "name": "hardener-badges",
+  "private": true,
+  "description": "Offline regeneration of README status badges (vendored SVGs)",
+  "scripts": {
+    "build": "node generate.js"
+  },
+  "devDependencies": {
+    "badge-maker": "^3.3.1"
+  }
+}
