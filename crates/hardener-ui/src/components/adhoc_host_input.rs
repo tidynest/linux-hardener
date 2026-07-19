@@ -12,8 +12,8 @@ fn target_error(target: &str, existing: &[String]) -> Option<String> {
         return Some("Enter user@host[:port]".to_string());
     }
     let profile = RemoteHostProfile::from_target(target, 22, None, true);
-    if profile.hostname.is_empty() || profile.hostname.starts_with('-') {
-        return Some(format!("Invalid target '{target}'"));
+    if !RemoteHostProfile::is_valid_hostname(&profile.hostname) {
+        return Some(format!("Invalid target '{target}': invalid hostname"));
     }
     if existing.iter().any(|e| e == target) {
         return Some(format!("'{target}' already added"));
@@ -136,6 +136,14 @@ mod tests {
         assert!(
             target_error("admin@web-01:2222", &[]).is_none(),
             "valid target accepted"
+        );
+        assert!(
+            target_error("root@10.242.117.2", &[]).is_none(),
+            "bare IP target accepted"
+        );
+        assert!(
+            target_error("root@10.242.117.2, scan:22", &[]).is_some(),
+            "comma/space in hostname rejected (the live typo)"
         );
         assert!(
             target_error("web", &["web".to_string()]).is_some(),

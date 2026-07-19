@@ -93,6 +93,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in-process scan the GUI previously paid on every report regeneration.
 
 ### Fixed
+- Ad-hoc SSH targets with invalid hostname characters are now rejected at
+  entry. A mistyped `user@host, note:port` previously parsed the hostname as
+  everything between `@` and the last `:` (e.g. `10.242.117.2, scan`) and
+  failed confusingly at connect time; the ad-hoc input and the Tauri backend
+  now share one conservative hostname check (ASCII letters/digits, `.`, `-`,
+  plus `:` `[` `]` for IPv6 literals), so bad input fails immediately whilst
+  every valid host, IPv6 included, is still accepted.
+- SSH connection failures now report the underlying reason instead of a bare
+  "Failed to connect to <host>". The real ssh cause (connection refused,
+  timeout, name resolution, permission denied, and so on) is folded into the
+  error message so batch and the Fleet view both show it; when the failure is
+  an authentication or agent problem an actionable ssh-agent/key hint is
+  appended, and a genuine network failure never gets that hint.
 - The firewall dry-run preview no longer falsely reports "Enable ufw
   firewall" when the active ruleset cannot be verified without root. The
   validator now shares the scan's backend-activity classification

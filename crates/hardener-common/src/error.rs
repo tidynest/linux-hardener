@@ -88,6 +88,21 @@ pub fn message_indicates_permission_denied(message: &str) -> bool {
         || message.contains("requires root")
 }
 
+/// True when an SSH connect failure names an authentication or agent problem
+/// (bad or absent key, no usable agent) rather than a network fault. Drives the
+/// ssh-agent/key hint shown to the user; a network failure (connection refused,
+/// timeout, no route, name resolution) must never match, so a real network
+/// outage is never mislabelled as an auth issue. Matches the case-insensitive
+/// signatures the ssh client prints to stderr on authentication failure.
+pub fn message_indicates_ssh_auth_failure(message: &str) -> bool {
+    let message = message.to_ascii_lowercase();
+    message.contains("permission denied")
+        || message.contains("publickey")
+        || message.contains("authentication")
+        || message.contains("could not open a connection to your authentication agent")
+        || message.contains("no such identity")
+}
+
 /// True when the error chain indicates the operation failed for lack of
 /// privileges: an io `PermissionDenied` anywhere in the chain, or a cause
 /// whose message names a privilege failure (command stderr paths).
@@ -138,5 +153,43 @@ mod tests {
         let io = std::io::Error::new(std::io::ErrorKind::NotFound, "missing");
         let err = anyhow::Error::new(io).context("Failed to read file /etc/nothing");
         assert!(!is_permission_denied(&err));
+    }
+
+    #[test]
+    fn detects_ssh_auth_failure_signatures() {
+        // The strings ssh prints to stderr when a key/agent is the problem.
+        assert!(message_indicates_ssh_auth_failure(
+            "root@host: Permission denied (publickey)."
+        ));
+        assert!(message_indicates_ssh_auth_failure(
+            "Permission denied (publickey,password)"
+        ));
+        assert!(message_indicates_ssh_auth_failure(
+            "Could not open a connection to your authentication agent."
+        ));
+        assert!(message_indicates_ssh_auth_failure(
+            "Load key \"/x\": no such identity"
+        ));
+        // Case-insensitive.
+        assert!(message_indicates_ssh_auth_failure(
+            "PERMISSION DENIED (PUBLICKEY)"
+        ));
+    }
+
+    #[test]
+    fn network_failures_are_not_ssh_auth_failures() {
+        // A genuine network fault must never be mislabelled as an auth problem.
+        assert!(!message_indicates_ssh_auth_failure(
+            "connect to host 10.0.0.5 port 22: Connection refused"
+        ));
+        assert!(!message_indicates_ssh_auth_failure(
+            "connect to host 10.0.0.5 port 22: Connection timed out"
+        ));
+        assert!(!message_indicates_ssh_auth_failure(
+            "connect to host 10.0.0.5 port 22: No route to host"
+        ));
+        assert!(!message_indicates_ssh_auth_failure(
+            "ssh: Could not resolve hostname bogus: Name or service not known"
+        ));
     }
 }

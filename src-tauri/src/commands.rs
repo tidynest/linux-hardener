@@ -1621,12 +1621,16 @@ fn posture_for_findings(
 }
 
 /// Parses and validates one ad-hoc `user@host[:port]` target. Rejects an empty
-/// hostname and a leading `-` (which ssh would otherwise read as an option).
+/// hostname, a leading `-` (which ssh would otherwise read as an option), and
+/// stray punctuation (space/comma) via `RemoteHostProfile::is_valid_hostname` -
+/// the same predicate the desktop client uses, so both guards stay mirrored.
 fn adhoc_profile(target: &str) -> Result<RemoteHostProfile, String> {
     validate_ipc_string(target, "adhoc_target")?;
     let profile = RemoteHostProfile::from_target(target.trim(), 22, None, true);
-    if profile.hostname.is_empty() || profile.hostname.starts_with('-') {
-        return Err(format!("Invalid ad-hoc target '{target}'"));
+    if !RemoteHostProfile::is_valid_hostname(&profile.hostname) {
+        return Err(format!(
+            "Invalid ad-hoc target '{target}': invalid hostname"
+        ));
     }
     Ok(profile)
 }
@@ -2652,6 +2656,18 @@ mod fleet_tests {
         assert!(
             adhoc_profile("admin@").is_err(),
             "empty hostname after user split rejected"
+        );
+        assert!(
+            adhoc_profile("root@10.242.117.2").is_ok(),
+            "bare IP target accepted"
+        );
+        assert!(
+            adhoc_profile("root@10.242.117.2:22").is_ok(),
+            ":port suffix accepted"
+        );
+        assert!(
+            adhoc_profile("root@10.242.117.2, scan:22").is_err(),
+            "comma/space in hostname rejected (the live typo)"
         );
     }
 

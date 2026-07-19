@@ -63,6 +63,23 @@ impl RemoteHostProfile {
         }
     }
 
+    /// True when `host` is a plausible hostname or IP for an ad-hoc target:
+    /// non-empty, no leading `-` (which ssh would read as an option), and every
+    /// character drawn from a conservative host set: ASCII letters and digits,
+    /// `.`, `-`, plus `:` `[` `]` for IPv6 literals. Rejects the space, comma
+    /// and other punctuation that a mistyped `user@host, note:port` slips past
+    /// [`from_target`](Self::from_target). Run this on the already-parsed
+    /// hostname (post user/port split), never the raw target. Shared by the
+    /// desktop client and the Tauri backend so both guards stay mirrored; std
+    /// only, so it also compiles for the WASM frontend.
+    pub fn is_valid_hostname(host: &str) -> bool {
+        !host.is_empty()
+            && !host.starts_with('-')
+            && host
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | ':' | '[' | ']'))
+    }
+
     /// Canonical `user@host:port` (or `host:port`) target string. This is the
     /// batch history key for ad-hoc hosts, so the GUI and CLI agree on it.
     pub fn target(&self) -> String {
@@ -174,6 +191,40 @@ mod tests {
             serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
         assert_eq!(back.host, p.host);
         assert_eq!((back.done, back.total, back.failed), (2, 5, true));
+    }
+
+    #[test]
+    fn is_valid_hostname_accepts_plain_hosts_and_ips() {
+        assert!(RemoteHostProfile::is_valid_hostname("web-01"));
+        assert!(RemoteHostProfile::is_valid_hostname("10.242.117.2"));
+        assert!(RemoteHostProfile::is_valid_hostname("example.com"));
+    }
+
+    #[test]
+    fn is_valid_hostname_accepts_ipv6_literals() {
+        // IPv6 hostnames carry colons (and brackets when the user wrote them);
+        // a valid target must never be rejected.
+        assert!(RemoteHostProfile::is_valid_hostname("fe80::1"));
+        assert!(RemoteHostProfile::is_valid_hostname("[::1]:22"));
+    }
+
+    #[test]
+    fn is_valid_hostname_rejects_empty_dash_and_stray_punctuation() {
+        assert!(!RemoteHostProfile::is_valid_hostname(""), "empty");
+        assert!(
+            !RemoteHostProfile::is_valid_hostname("-oProxyCommand=x"),
+            "leading dash reads as an ssh option"
+        );
+        // The live typo: `root@10.242.117.2, scan:22` parses to this hostname.
+        assert!(
+            !RemoteHostProfile::is_valid_hostname("10.242.117.2, scan"),
+            "comma and space must be rejected"
+        );
+        assert!(!RemoteHostProfile::is_valid_hostname("a b"), "space");
+        assert!(
+            !RemoteHostProfile::is_valid_hostname("a$b"),
+            "shell metachar"
+        );
     }
 
     #[test]

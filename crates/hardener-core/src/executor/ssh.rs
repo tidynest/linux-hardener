@@ -66,6 +66,27 @@ fn tee_command(path: &Path, content: &str) -> String {
     format!("sudo tee {escaped} > /dev/null << '{delim}'\n{content}{sep}{delim}")
 }
 
+/// ssh-agent / key hint appended when a connect failure names an auth problem.
+const SSH_AUTH_HINT: &str =
+    "no usable SSH key - load one with `ssh-add` or configure a key file for this host";
+
+/// Builds the user-facing connect error from the target `host` and the
+/// underlying ssh failure `detail` (openssh's full chain, rendered `{e:#}`).
+/// The reason always reaches the user; the ssh-agent/key hint is appended only
+/// when `detail` names an authentication/agent failure, never a network one
+/// (connection refused, timeout, no route, name resolution), so a genuine
+/// network outage is never mislabelled as auth. Pure: unit-tested without a
+/// live sshd, since the connect path itself needs one.
+fn connect_error_message(host: &str, detail: &str) -> String {
+    let detail = detail.trim();
+    let base = format!("Failed to connect to {host}: {detail}");
+    if hardener_common::error::message_indicates_ssh_auth_failure(detail) {
+        format!("{base} ({SSH_AUTH_HINT})")
+    } else {
+        base
+    }
+}
+
 /// SSH-based system executor for remote hosts.
 pub struct SshExecutor {
     session: Session,
@@ -92,10 +113,17 @@ impl SshExecutor {
 
         builder.connect_timeout(config.connect_timeout);
 
-        let session = builder
-            .connect(&config.host)
-            .await
-            .with_context(|| format!("Failed to connect to {}", config.host))?;
+        // openssh folds the real ssh reason (auth/agent vs network) into its
+        // `source()` chain - the leaf io error carries "Connection refused",
+        // "Permission denied (publickey)", etc. `openssh::Error`'s own Display
+        // stops at its top line, so wrap it in anyhow first and render `{:#}` to
+        // walk the whole chain, then bake that into the message. Every caller -
+        // batch's `e.to_string()` and the desktop's `safe_err` alike - then
+        // surfaces the reason without reaching for the alternate formatter.
+        let session = builder.connect(&config.host).await.map_err(|e| {
+            let detail = format!("{:#}", anyhow::Error::new(e));
+            anyhow::anyhow!(connect_error_message(&config.host, &detail))
+        })?;
 
         Ok(Self {
             session,
@@ -274,6 +302,35 @@ fn parse_stat_metadata(stdout: &str) -> Option<FileMetadata> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn connect_error_carries_reason_and_no_hint_on_network_failure() {
+        // openssh's `{e:#}` for a closed port; the reason must reach the user
+        // and a genuine network fault must never get the auth hint.
+        let detail = "failed to connect to the remote host: connect to host 10.0.0.5 port 22: Connection refused";
+        let msg = connect_error_message("10.0.0.5", detail);
+        assert!(msg.starts_with("Failed to connect to 10.0.0.5: "));
+        assert!(msg.contains("Connection refused"), "reason surfaced: {msg}");
+        assert!(
+            !msg.contains("ssh-add"),
+            "network failure must not get the auth hint: {msg}"
+        );
+    }
+
+    #[test]
+    fn connect_error_appends_hint_on_auth_failure() {
+        let detail =
+            "failed to connect to the remote host: root@10.0.0.5: Permission denied (publickey).";
+        let msg = connect_error_message("10.0.0.5", detail);
+        assert!(
+            msg.contains("Permission denied (publickey)"),
+            "reason surfaced: {msg}"
+        );
+        assert!(
+            msg.contains("ssh-add"),
+            "auth failure gets the ssh-agent/key hint: {msg}"
+        );
+    }
 
     #[test]
     fn tee_command_round_trips_newline_terminated_content() {
