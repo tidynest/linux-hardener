@@ -45,6 +45,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of this presentation is muted-only, never severity-coloured.
 
 ### Changed
+- Batch text output (`batch scan`/`report`/`apply`/`rollback`) now groups
+  results in per-host sections instead of one compact table: each host
+  gets a coloured header rule naming the inventory name, full
+  `user@host:port` target (and, for `batch report`, the compliance
+  profile), followed by short labelled status/detail lines (green ok,
+  yellow partial or pending, red FAILED; severity counts reuse the scan
+  palette), so an admin hardening several hosts can see at a glance
+  which output belongs to which machine. Scan sections list the
+  unchecked-check count when non-zero, and every verb keeps (apply and
+  rollback: gains) a fleet summary footer after the sections. Colour
+  degrades automatically on pipes and `NO_COLOR`, and files written via
+  `--output` are always colour-free; `--format json` output is
+  byte-identical and exit codes are unchanged.
 - Desktop compliance reports (and the security score derived from them)
   now source findings and unchecked checks from the latest persisted
   completed scan session instead of always re-running a fresh

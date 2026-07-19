@@ -262,7 +262,10 @@ Host selection (common to all four subcommands):
 
 ### batch scan
 
-Scan selected hosts concurrently and print an aggregate findings report.
+Scan selected hosts concurrently and print one clearly-headed section per
+host (name, target, status and severity breakdown) followed by a fleet
+summary. Headers and statuses are lightly coloured on a terminal; colour
+disappears automatically when output is piped or `NO_COLOR` is set.
 
 ```
 hardener batch scan (--all | --host a,b | --ssh user@host) [FLAGS]
@@ -284,10 +287,28 @@ hardener batch scan --ssh ops@10.0.0.5 --ssh ops@10.0.0.6  # Ad-hoc hosts
 hardener --format json batch scan --all --output fleet.json
 ```
 
+**Example output** (all four batch verbs share this per-host section shape):
+
+```
+==== web-01  admin@web-01.local:22 =====================================
+  status:    ok
+  findings:  38 total (7 crit, 13 high, 16 med, 2 low)
+  unchecked: 3 check(s) could not be verified without root
+
+==== db-02  admin@db-02.local:22 =======================================
+  status:    FAILED
+  error:     connection refused
+
+---
+2 hosts: 1 scanned, 1 failed; findings: 7 crit, 13 high, 16 med, 2 low (38 total)
+```
+
 ### batch report
 
-Assess selected hosts against a compliance framework and print a fleet posture
-table (one row per host/framework: score, pass/fail/manual/NA control counts).
+Assess selected hosts against a compliance framework and print one section per
+host (header names the host, target and resolved compliance profile; one line
+per framework with score and pass/fail/manual/NA control counts) plus a fleet
+rollup of failing controls per framework.
 
 ```
 hardener batch report (--all | --host a,b | --ssh user@host) [FLAGS]

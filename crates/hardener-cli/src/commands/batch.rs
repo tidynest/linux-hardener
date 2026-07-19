@@ -7,6 +7,7 @@ use crate::commands::daemon::load_scheduler_config;
 use crate::commands::report::{finding_to_scan_finding, scan_grouped};
 use crate::ssh_config::SshConnectionConfig;
 use anyhow::{Result, anyhow, bail};
+use colored::Colorize;
 use hardener_common::types::{ComplianceProfile, PluginId, Severity};
 use hardener_compliance::{ReportConfig, ReportGenerator, Scenario, resolve_profile};
 use hardener_core::plugin::{Finding, UncheckedCheck};
@@ -301,30 +302,149 @@ impl ReportRollup {
     }
 }
 
-/// Renders the human-readable fleet posture table + rollup.
-pub fn render_report_text(reports: &[HostReport]) -> String {
-    let mut out = String::new();
-    out.push_str("HOST            FRAMEWORK   SCORE   PASS FAIL MANUAL  N/A\n");
-    for report in reports {
-        match &report.status {
-            HostReportStatus::Assessed { frameworks } => {
-                for f in frameworks {
-                    out.push_str(&format!(
-                        "{:<15} {:<11} {:>5.1}% {:>4} {:>4} {:>6} {:>4}\n",
-                        report.name,
-                        f.framework,
-                        f.score,
-                        f.passing,
-                        f.failing,
-                        f.manual_review,
-                        f.not_applicable,
-                    ));
+/// Width of the `=` rule each per-host section header pads to.
+const HOST_RULE_WIDTH: usize = 72;
+
+/// Builds the per-host section header shared by all four batch text
+/// renderers: `==== name  target  [extra] ===...` padded with `=` to a fixed
+/// width. The host name carries the accent colour; the fill is computed from
+/// the plain text so alignment survives non-colour terminals (pipes,
+/// NO_COLOR), where `colored` drops the escapes but not the characters.
+fn host_header(name: &str, target: &str, extra: Option<&str>) -> String {
+    let extra_plain = extra.map(|e| format!("  [{e}]")).unwrap_or_default();
+    let used = 5 + name.len() + 2 + target.len() + extra_plain.len() + 1;
+    let fill = "=".repeat(HOST_RULE_WIDTH.saturating_sub(used).max(4));
+    let extra_shown = if extra_plain.is_empty() {
+        String::new()
+    } else {
+        extra_plain.dimmed().to_string()
+    };
+    format!(
+        "==== {}  {}{} {}\n",
+        name.cyan().bold(),
+        target,
+        extra_shown,
+        fill
+    )
+}
+
+/// Appends one `  label:  value` detail line below a host header, with the
+/// label column aligned identically across all four batch verbs.
+fn push_detail(out: &mut String, label: &str, value: &str) {
+    out.push_str(&format!("  {:<10} {}\n", format!("{label}:"), value));
+}
+
+/// Appends the shared `status: FAILED` + `error: ...` detail pair for a host
+/// that errored before producing any per-verb result.
+fn push_failed(out: &mut String, error: &str) {
+    push_detail(out, "status", &"FAILED".red().bold().to_string());
+    push_detail(out, "error", error);
+}
+
+/// Renders one severity tally as `N total (a crit, b high, c med, d low)`,
+/// colouring each non-zero part with the shared severity palette (see
+/// `output::severity_label`) and dimming zero parts so hotspots stand out.
+fn format_counts(counts: &SeverityCounts) -> String {
+    let part = |n: usize, word: &str, sev: Severity| {
+        let text = format!("{n} {word}");
+        if n == 0 {
+            text.dimmed().to_string()
+        } else {
+            crate::output::severity_label(&text, &sev).to_string()
+        }
+    };
+    format!(
+        "{} total ({}, {}, {}, {})",
+        counts.total(),
+        part(counts.critical, "crit", Severity::Critical),
+        part(counts.high, "high", Severity::High),
+        part(counts.medium, "med", Severity::Medium),
+        part(counts.low, "low", Severity::Low),
+    )
+}
+
+/// Removes ANSI CSI escape sequences (`ESC [ ... <final>`) from a rendered
+/// string. `colored` decides colour on stdout's tty-ness, so a string headed
+/// for a file via `--output` can carry escapes it should not; JSON is
+/// unaffected (serde escapes control bytes, so it never holds a raw ESC).
+fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c != '\x1b' {
+            out.push(c);
+            continue;
+        }
+        if chars.clone().next() == Some('[') {
+            chars.next();
+            // Consume parameter/intermediate bytes up to the final byte
+            // (0x40..=0x7e), which closes the sequence (`m` for colours).
+            for c2 in chars.by_ref() {
+                if ('\x40'..='\x7e').contains(&c2) {
+                    break;
                 }
             }
-            HostReportStatus::Failed { error } => {
-                out.push_str(&format!("{:<15} {:<11} {}\n", report.name, "FAILED", error,))
-            }
         }
+    }
+    out
+}
+
+/// Writes rendered output to `path` for `--output`, colour-free: the escapes
+/// `colored` emitted for a colour-capable stdout are stripped first, so saved
+/// files match what a piped (non-tty) run prints. Shared by all four verbs.
+fn write_output(path: &str, rendered: &str) -> Result<()> {
+    std::fs::write(path, strip_ansi(rendered)).map_err(|e| anyhow!("failed to write {path}: {e}"))
+}
+
+/// Joins the non-zero `count label` parts of a summary footer, e.g.
+/// `2 applied, 1 failed`. All-zero (an empty batch) reads `nothing to do`.
+fn summary_parts(parts: &[(usize, &str)]) -> String {
+    let joined: Vec<String> = parts
+        .iter()
+        .filter(|(n, _)| *n > 0)
+        .map(|(n, label)| format!("{n} {label}"))
+        .collect();
+    if joined.is_empty() {
+        "nothing to do".to_string()
+    } else {
+        joined.join(", ")
+    }
+}
+
+/// Renders the human-readable fleet posture report: one section per host
+/// (header names the host, target and compliance profile) + rollup footer.
+pub fn render_report_text(reports: &[HostReport]) -> String {
+    let mut out = String::new();
+    for report in reports {
+        let profile = format!("{} profile", report.profile);
+        out.push_str(&host_header(&report.name, &report.target, Some(&profile)));
+        match &report.status {
+            HostReportStatus::Assessed { frameworks } => {
+                let status = format!(
+                    "{} ({} framework(s) assessed)",
+                    "ok".green(),
+                    frameworks.len()
+                );
+                push_detail(&mut out, "status", &status);
+                for f in frameworks {
+                    let fail = if f.failing == 0 {
+                        format!("{} fail", f.failing).dimmed().to_string()
+                    } else {
+                        format!("{} fail", f.failing).red().to_string()
+                    };
+                    push_detail(
+                        &mut out,
+                        &f.framework,
+                        &format!(
+                            "{:>5.1}%  {} pass, {}, {} manual, {} n/a",
+                            f.score, f.passing, fail, f.manual_review, f.not_applicable,
+                        ),
+                    );
+                }
+            }
+            HostReportStatus::Failed { error } => push_failed(&mut out, error),
+        }
+        out.push('\n');
     }
     let rollup = ReportRollup::from_reports(reports);
     out.push_str("---\n");
@@ -350,33 +470,38 @@ pub fn render_report_json(reports: &[HostReport]) -> String {
     serde_json::to_string_pretty(&doc).unwrap_or_else(|_| "{}".to_string())
 }
 
-/// Renders the human-readable table + rollup line.
+/// Renders the human-readable scan output: one section per host + rollup.
 pub fn render_text(outcomes: &[HostOutcome]) -> String {
     let mut out = String::new();
-    out.push_str("HOST            TARGET                     STATUS   CRIT HIGH MED LOW TOTAL\n");
     for o in outcomes {
+        out.push_str(&host_header(&o.name, &o.target, None));
         match &o.status {
-            HostStatus::Scanned { counts, .. } => out.push_str(&format!(
-                "{:<15} {:<26} {:<8} {:>4} {:>4} {:>3} {:>3} {:>5}\n",
-                o.name,
-                o.target,
-                "ok",
-                counts.critical,
-                counts.high,
-                counts.medium,
-                counts.low,
-                counts.total(),
-            )),
-            HostStatus::Failed { error } => out.push_str(&format!(
-                "{:<15} {:<26} {:<8} {}\n",
-                o.name, o.target, "FAILED", error,
-            )),
+            HostStatus::Scanned {
+                counts, unchecked, ..
+            } => {
+                push_detail(&mut out, "status", &"ok".green().to_string());
+                let findings = if counts.total() == 0 {
+                    "none".green().to_string()
+                } else {
+                    format_counts(counts)
+                };
+                push_detail(&mut out, "findings", &findings);
+                if !unchecked.is_empty() {
+                    let note = format!(
+                        "{} check(s) could not be verified without root",
+                        unchecked.len()
+                    );
+                    push_detail(&mut out, "unchecked", &note.dimmed().to_string());
+                }
+            }
+            HostStatus::Failed { error } => push_failed(&mut out, error),
         }
+        out.push('\n');
     }
     let s = BatchSummary::from_outcomes(outcomes);
     out.push_str("---\n");
     out.push_str(&format!(
-        "{} hosts: {} scanned, {} failed · findings: {} crit, {} high, {} med, {} low ({} total)\n",
+        "{} hosts: {} scanned, {} failed; findings: {} crit, {} high, {} med, {} low ({} total)\n",
         s.hosts_total,
         s.hosts_scanned,
         s.hosts_failed,
@@ -526,9 +651,7 @@ pub async fn run_report(opts: BatchReportOptions) -> anyhow::Result<()> {
         _ => render_report_text(&reports),
     };
     match opts.output {
-        Some(path) => {
-            std::fs::write(&path, &rendered).map_err(|e| anyhow!("failed to write {path}: {e}"))?
-        }
+        Some(path) => write_output(&path, &rendered)?,
         None => println!("{rendered}"),
     }
 
@@ -912,24 +1035,60 @@ fn status_from_result(execute: bool, result: &super::apply::ApplyHostResult) -> 
 }
 
 fn render_apply_text(outcomes: &[ApplyOutcome]) -> String {
-    let mut out = String::from("Host                          Result\n");
-    out.push_str("------------------------------------------------\n");
+    let mut out = String::new();
+    let (mut applied, mut validated, mut failed_hosts) = (0, 0, 0);
     for o in outcomes {
-        let line = match &o.status {
+        out.push_str(&host_header(&o.name, &o.target, None));
+        match &o.status {
             ApplyStatus::Validated {
                 plugins,
                 would_change,
                 failed,
             } => {
-                format!(
-                    "validated {plugins} plugin(s), {would_change} change(s) pending, {failed} failed"
-                )
+                validated += 1;
+                let status = if *failed > 0 {
+                    "validated (with failures)".yellow()
+                } else if *would_change > 0 {
+                    "validated (changes pending)".yellow()
+                } else {
+                    "validated (no changes needed)".green()
+                };
+                push_detail(&mut out, "status", &status.to_string());
+                push_detail(
+                    &mut out,
+                    "result",
+                    &format!(
+                        "{plugins} plugin(s) checked, {would_change} change(s) pending, {failed} failed"
+                    ),
+                );
             }
-            ApplyStatus::Applied { ok, failed } => format!("applied {ok} ok, {failed} failed"),
-            ApplyStatus::Failed { error } => format!("ERROR: {error}"),
-        };
-        out.push_str(&format!("{:<30}{}\n", o.target, line));
+            ApplyStatus::Applied { ok, failed } => {
+                applied += 1;
+                let status = if *failed > 0 {
+                    "partially applied".yellow()
+                } else {
+                    "applied".green()
+                };
+                push_detail(&mut out, "status", &status.to_string());
+                push_detail(&mut out, "result", &format!("{ok} ok, {failed} failed"));
+            }
+            ApplyStatus::Failed { error } => {
+                failed_hosts += 1;
+                push_failed(&mut out, error);
+            }
+        }
+        out.push('\n');
     }
+    out.push_str("---\n");
+    out.push_str(&format!(
+        "{} host(s): {}\n",
+        outcomes.len(),
+        summary_parts(&[
+            (applied, "applied"),
+            (validated, "validated"),
+            (failed_hosts, "failed"),
+        ]),
+    ));
     out
 }
 
@@ -953,21 +1112,57 @@ pub fn rollback_exit_code(outcomes: &[RollbackOutcome]) -> i32 {
 }
 
 fn render_rollback_text(outcomes: &[RollbackOutcome]) -> String {
-    let mut out = String::from("Host                          Result\n");
-    out.push_str("------------------------------------------------\n");
+    let mut out = String::new();
+    let (mut rolled_back, mut previewed, mut nothing, mut failed_hosts) = (0, 0, 0, 0);
     for o in outcomes {
-        let line = match &o.status {
+        out.push_str(&host_header(&o.name, &o.target, None));
+        match &o.status {
             RollbackStatus::Previewed { checkpoints } => {
-                format!("would restore {checkpoints} checkpoint(s)")
+                previewed += 1;
+                push_detail(&mut out, "status", &"previewed".yellow().to_string());
+                push_detail(
+                    &mut out,
+                    "result",
+                    &format!("would restore {checkpoints} checkpoint(s)"),
+                );
             }
             RollbackStatus::RolledBack { restored, failed } => {
-                format!("rolled back {restored} ok, {failed} failed")
+                rolled_back += 1;
+                let status = if *failed > 0 {
+                    "partially rolled back".yellow()
+                } else {
+                    "rolled back".green()
+                };
+                push_detail(&mut out, "status", &status.to_string());
+                push_detail(
+                    &mut out,
+                    "result",
+                    &format!("{restored} restored, {failed} failed"),
+                );
             }
-            RollbackStatus::NothingToDo => "nothing to roll back".to_string(),
-            RollbackStatus::Failed { error } => format!("ERROR: {error}"),
-        };
-        out.push_str(&format!("{:<30}{}\n", o.target, line));
+            RollbackStatus::NothingToDo => {
+                nothing += 1;
+                push_detail(&mut out, "status", &"ok".green().to_string());
+                push_detail(&mut out, "result", "nothing to roll back");
+            }
+            RollbackStatus::Failed { error } => {
+                failed_hosts += 1;
+                push_failed(&mut out, error);
+            }
+        }
+        out.push('\n');
     }
+    out.push_str("---\n");
+    out.push_str(&format!(
+        "{} host(s): {}\n",
+        outcomes.len(),
+        summary_parts(&[
+            (rolled_back, "rolled back"),
+            (previewed, "previewed"),
+            (nothing, "nothing to do"),
+            (failed_hosts, "failed"),
+        ]),
+    ));
     out
 }
 
@@ -1205,9 +1400,7 @@ pub async fn run_apply(opts: BatchApplyOptions) -> anyhow::Result<()> {
         _ => render_apply_text(&outcomes),
     };
     match opts.output {
-        Some(path) => {
-            std::fs::write(&path, &rendered).map_err(|e| anyhow!("failed to write {path}: {e}"))?
-        }
+        Some(path) => write_output(&path, &rendered)?,
         None => println!("{rendered}"),
     }
     std::process::exit(apply_exit_code(&outcomes));
@@ -1298,9 +1491,7 @@ pub async fn run_rollback(opts: BatchRollbackOptions) -> anyhow::Result<()> {
         _ => render_rollback_text(&outcomes),
     };
     match opts.output {
-        Some(path) => {
-            std::fs::write(&path, &rendered).map_err(|e| anyhow!("failed to write {path}: {e}"))?
-        }
+        Some(path) => write_output(&path, &rendered)?,
         None => println!("{rendered}"),
     }
     std::process::exit(rollback_exit_code(&outcomes));
@@ -1326,9 +1517,7 @@ pub async fn run(opts: BatchOptions) -> anyhow::Result<()> {
         _ => render_text(&outcomes),
     };
     match opts.output {
-        Some(path) => {
-            std::fs::write(&path, &rendered).map_err(|e| anyhow!("failed to write {path}: {e}"))?
-        }
+        Some(path) => write_output(&path, &rendered)?,
         None => println!("{rendered}"),
     }
 
@@ -1343,12 +1532,87 @@ mod tests {
     };
     use hardener_compliance::Scenario;
 
+    #[test]
+    #[ignore = "visual eyeball helper, run with --ignored --nocapture"]
+    fn eyeball_render_all_verbs() {
+        colored::control::set_override(true);
+        let scan = render_text(&[
+            scanned_named(
+                "web-01",
+                SeverityCounts {
+                    critical: 7,
+                    high: 13,
+                    medium: 16,
+                    low: 2,
+                },
+            ),
+            failed_named("cache"),
+        ]);
+        let report = render_report_text(&[
+            assessed_report("web-01", vec![posture(18), posture(0)]),
+            failed_report("cache"),
+        ]);
+        let mk = |name: &str, status| ApplyOutcome {
+            name: name.into(),
+            target: format!("root@{name}:22"),
+            status,
+        };
+        let apply = render_apply_text(&[
+            mk("web-01", ApplyStatus::Applied { ok: 5, failed: 0 }),
+            mk("db-02", ApplyStatus::Applied { ok: 3, failed: 2 }),
+            mk(
+                "cache",
+                ApplyStatus::Failed {
+                    error: "connection refused".into(),
+                },
+            ),
+        ]);
+        let rollback = render_rollback_text(&[
+            ro(RollbackStatus::Previewed { checkpoints: 2 }),
+            ro(RollbackStatus::NothingToDo),
+        ]);
+        println!(
+            "--- scan ---\n{scan}\n--- report ---\n{report}\n--- apply ---\n{apply}\n--- rollback ---\n{rollback}"
+        );
+        colored::control::unset_override();
+    }
+
     fn ro(status: RollbackStatus) -> RollbackOutcome {
         RollbackOutcome {
             name: "n".to_string(),
             target: "t".to_string(),
             status,
         }
+    }
+
+    #[test]
+    fn strip_ansi_removes_colour_escapes_and_keeps_text() {
+        // Bold-cyan + reset around the name, multi-parameter and plain runs.
+        let coloured =
+            "==== \x1b[1;36mweb-01\x1b[0m  u@web-01:22 ====\n  status:    \x1b[32mok\x1b[0m\n";
+        let plain = strip_ansi(coloured);
+        assert_eq!(
+            plain, "==== web-01  u@web-01:22 ====\n  status:    ok\n",
+            "escapes stripped, text and layout intact"
+        );
+        assert!(!plain.contains('\x1b'), "no ESC bytes remain");
+        // A string with no escapes passes through byte-identical (JSON path).
+        let json = "{\n  \"hosts\": []\n}";
+        assert_eq!(strip_ansi(json), json);
+    }
+
+    #[test]
+    fn write_output_saves_colour_free_file() {
+        use tempfile::TempDir;
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("fleet.txt");
+        let path = path.to_str().unwrap();
+        write_output(path, "\x1b[1;36mweb-01\x1b[0m  \x1b[31mFAILED\x1b[0m\n").unwrap();
+        let saved = std::fs::read_to_string(path).unwrap();
+        assert_eq!(
+            saved, "web-01  FAILED\n",
+            "--output files carry no ANSI escapes"
+        );
     }
 
     #[test]
@@ -1393,15 +1657,58 @@ mod tests {
     }
 
     #[test]
-    fn render_rollback_text_lists_each_host() {
+    fn render_rollback_text_sections_and_summary() {
+        colored::control::set_override(false);
         let text = render_rollback_text(&[
             ro(RollbackStatus::Previewed { checkpoints: 2 }),
             ro(RollbackStatus::Failed {
                 error: "down".to_string(),
             }),
         ]);
-        assert!(text.contains("would restore 2"), "preview line: {text}");
-        assert!(text.contains("ERROR: down"), "error line: {text}");
+        assert!(
+            text.contains("==== n"),
+            "host header names the host: {text}"
+        );
+        assert!(text.contains("  t "), "header carries the target: {text}");
+        assert!(
+            text.contains("status:    previewed"),
+            "preview status line: {text}"
+        );
+        assert!(
+            text.contains("would restore 2 checkpoint(s)"),
+            "preview result: {text}"
+        );
+        assert!(text.contains("status:    FAILED"), "failed status: {text}");
+        assert!(text.contains("error:     down"), "error line: {text}");
+        assert!(
+            text.contains("---\n2 host(s): 1 previewed, 1 failed"),
+            "summary footer omits zero categories: {text}"
+        );
+    }
+
+    #[test]
+    fn render_rollback_text_partial_and_nothing_to_do() {
+        colored::control::set_override(false);
+        let text = render_rollback_text(&[
+            ro(RollbackStatus::RolledBack {
+                restored: 1,
+                failed: 1,
+            }),
+            ro(RollbackStatus::NothingToDo),
+        ]);
+        assert!(
+            text.contains("status:    partially rolled back"),
+            "partial restore is flagged: {text}"
+        );
+        assert!(text.contains("1 restored, 1 failed"), "counts: {text}");
+        assert!(
+            text.contains("nothing to roll back"),
+            "nothing-to-do host says so: {text}"
+        );
+        assert!(
+            text.contains("2 host(s): 1 rolled back, 1 nothing to do"),
+            "summary footer: {text}"
+        );
     }
 
     #[test]
@@ -1642,15 +1949,33 @@ mod tests {
     }
 
     #[test]
-    fn report_text_render_has_rows_and_rollup() {
+    fn report_text_render_has_sections_and_rollup() {
+        colored::control::set_override(false);
         let text = render_report_text(&[
             assessed_report("web-01", vec![posture(18)]),
             failed_report("cache"),
         ]);
-        assert!(text.contains("web-01"));
-        assert!(text.contains("CIS"));
-        assert!(text.contains("FAILED"));
-        assert!(text.contains("refused"), "failed row surfaces the error");
+        assert!(
+            text.contains("==== web-01  u@web-01:22  [generic profile] "),
+            "header carries name, target and profile: {text}"
+        );
+        assert!(
+            text.contains("status:    ok (1 framework(s) assessed)"),
+            "assessed status line: {text}"
+        );
+        assert!(
+            text.contains("CIS:        90.0%  10 pass, 18 fail, 2 manual, 0 n/a"),
+            "per-framework posture line: {text}"
+        );
+        assert!(text.contains("status:    FAILED"), "failed status: {text}");
+        assert!(
+            text.contains("error:     refused"),
+            "failed section surfaces the error: {text}"
+        );
+        assert!(
+            text.contains("---\n1 of 2 hosts assessed, 1 failed"),
+            "rollup footer kept: {text}"
+        );
         assert!(text.contains("CIS: 18 failing controls"));
     }
 
@@ -2054,7 +2379,8 @@ mod tests {
     }
 
     #[test]
-    fn text_render_scanned_row_shows_counts() {
+    fn text_render_scanned_section_shows_counts() {
+        colored::control::set_override(false);
         let text = render_text(&[scanned_named(
             "web-01",
             SeverityCounts {
@@ -2062,13 +2388,53 @@ mod tests {
                 ..Default::default()
             },
         )]);
-        assert!(text.contains("web-01"));
-        // The scanned row carries the high count and the row total (both 2 here).
-        let row = text
-            .lines()
-            .find(|l| l.contains("web-01"))
-            .expect("scanned row present");
-        assert!(row.contains('2'), "row should show the count: {row}");
+        assert!(
+            text.contains("==== web-01  u@web-01:22 "),
+            "header carries name and target: {text}"
+        );
+        assert!(text.contains("status:    ok"), "status line: {text}");
+        assert!(
+            text.contains("findings:  2 total (0 crit, 2 high, 0 med, 0 low)"),
+            "findings line breaks down severities: {text}"
+        );
+    }
+
+    #[test]
+    fn text_render_unchecked_line_only_when_nonzero() {
+        colored::control::set_override(false);
+        use hardener_common::types::FindingCategory;
+        let unchecked = vec![UncheckedCheck {
+            unchecked_check_id: "pam-minlen".into(),
+            unchecked_title: "PAM setting: minlen".into(),
+            unchecked_category: FindingCategory::Authentication,
+            unchecked_reason: "requires root".into(),
+            unchecked_compliance: vec![],
+        }];
+        let with = render_text(&[HostOutcome {
+            name: "web-01".into(),
+            target: "u@web-01:22".into(),
+            profile: ComplianceProfile::Generic,
+            status: HostStatus::Scanned {
+                counts: SeverityCounts::default(),
+                findings: vec![],
+                unchecked,
+            },
+        }]);
+        assert!(
+            with.contains("unchecked: 1 check(s) could not be verified without root"),
+            "non-zero unchecked is listed: {with}"
+        );
+
+        let without = render_text(&[scanned_named("web-01", SeverityCounts::default())]);
+        assert!(
+            !without.contains("unchecked"),
+            "zero unchecked prints no line: {without}"
+        );
+        assert!(
+            without.contains("findings:  none"),
+            "clean host reads none: {without}"
+        );
+        assert!(without.contains("---\n"), "summary footer kept: {without}");
     }
 
     #[test]
@@ -2292,6 +2658,92 @@ mod tests {
                 }),
             ]),
             2
+        );
+    }
+
+    #[test]
+    fn render_apply_text_sections_and_summary() {
+        colored::control::set_override(false);
+        let mk = |name: &str, status| ApplyOutcome {
+            name: name.into(),
+            target: format!("root@{name}:22"),
+            status,
+        };
+        let text = render_apply_text(&[
+            mk("web-01", ApplyStatus::Applied { ok: 5, failed: 0 }),
+            mk("db-02", ApplyStatus::Applied { ok: 3, failed: 2 }),
+            mk(
+                "cache",
+                ApplyStatus::Failed {
+                    error: "connection refused".into(),
+                },
+            ),
+        ]);
+        assert!(
+            text.contains("==== web-01  root@web-01:22 "),
+            "header carries name and target: {text}"
+        );
+        assert!(
+            text.contains("status:    applied"),
+            "clean apply is green ok: {text}"
+        );
+        assert!(text.contains("result:    5 ok, 0 failed"), "counts: {text}");
+        assert!(
+            text.contains("status:    partially applied"),
+            "partial apply is flagged: {text}"
+        );
+        assert!(text.contains("status:    FAILED"), "failed status: {text}");
+        assert!(
+            text.contains("error:     connection refused"),
+            "error surfaces: {text}"
+        );
+        assert!(
+            text.contains("---\n3 host(s): 2 applied, 1 failed"),
+            "summary footer: {text}"
+        );
+    }
+
+    #[test]
+    fn render_apply_text_validation_states() {
+        colored::control::set_override(false);
+        let mk = |name: &str, status| ApplyOutcome {
+            name: name.into(),
+            target: format!("root@{name}:22"),
+            status,
+        };
+        let text = render_apply_text(&[
+            mk(
+                "web-01",
+                ApplyStatus::Validated {
+                    plugins: 8,
+                    would_change: 4,
+                    failed: 0,
+                },
+            ),
+            mk(
+                "db-02",
+                ApplyStatus::Validated {
+                    plugins: 8,
+                    would_change: 0,
+                    failed: 0,
+                },
+            ),
+        ]);
+        assert!(
+            text.contains("status:    validated (changes pending)"),
+            "pending validation is flagged: {text}"
+        );
+        assert!(
+            text.contains("status:    validated (no changes needed)"),
+            "clean validation reads clean: {text}"
+        );
+        assert!(
+            text.contains("8 plugin(s) checked, 4 change(s) pending, 0 failed"),
+            "validation detail: {text}"
+        );
+        assert!(
+            text.contains("---\n2 host(s): 2 validated"),
+            "summary footer: {text}"
         );
     }
 

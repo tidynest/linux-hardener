@@ -408,14 +408,28 @@ pub fn validation_reports(format: &OutputFormat, reports: &[ValidationReport]) {
     }
 }
 
-fn format_severity(severity: &Severity) -> colored::ColoredString {
+/// Applies the shared severity colour scheme to an arbitrary label so other
+/// renderers (the batch per-host sections) colour severity words identically
+/// to the single-host output without duplicating the palette.
+pub(crate) fn severity_label(text: &str, severity: &Severity) -> colored::ColoredString {
     match severity {
-        Severity::Critical => "CRIT".red().bold(),
-        Severity::High => "HIGH".red(),
-        Severity::Medium => "MED ".yellow(),
-        Severity::Low => "LOW ".blue(),
-        Severity::Info => "INFO".dimmed(),
+        Severity::Critical => text.red().bold(),
+        Severity::High => text.red(),
+        Severity::Medium => text.yellow(),
+        Severity::Low => text.blue(),
+        Severity::Info => text.dimmed(),
     }
+}
+
+fn format_severity(severity: &Severity) -> colored::ColoredString {
+    let label = match severity {
+        Severity::Critical => "CRIT",
+        Severity::High => "HIGH",
+        Severity::Medium => "MED ",
+        Severity::Low => "LOW ",
+        Severity::Info => "INFO",
+    };
+    severity_label(label, severity)
 }
 
 fn format_timestamp(timestamp: i64) -> String {
