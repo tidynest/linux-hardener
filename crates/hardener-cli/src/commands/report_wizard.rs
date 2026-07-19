@@ -380,7 +380,39 @@ fn select_output_path() -> Result<Option<PathBuf>> {
         .interact_text()?;
 
     println!();
-    Ok(Some(PathBuf::from(input)))
+    Ok(Some(resolve_output_path(&input)))
+}
+
+/// Expands a leading `~` or `~/` to the user's home directory.
+///
+/// Falls back to the `HOME` environment variable if `dirs::home_dir()` is
+/// unavailable, and leaves the input untouched if neither source resolves.
+fn expand_tilde(input: &str) -> PathBuf {
+    let home_relative = input.strip_prefix("~/");
+    if input != "~" && home_relative.is_none() {
+        return PathBuf::from(input);
+    }
+
+    let home = dirs::home_dir().or_else(|| std::env::var_os("HOME").map(PathBuf::from));
+    match (home, home_relative) {
+        (Some(home), Some(rest)) => home.join(rest),
+        (Some(home), None) => home,
+        (None, _) => PathBuf::from(input),
+    }
+}
+
+/// Resolves the wizard's raw output-path input into a base file path.
+///
+/// Expands a leading `~`, then treats the result as a directory (joining a
+/// default `compliance-report` filename) when the raw input ends with `/`
+/// or the expanded path is an existing directory. Otherwise the expanded
+/// path is returned unchanged, ready for the caller's own extension logic.
+fn resolve_output_path(input: &str) -> PathBuf {
+    let expanded = expand_tilde(input);
+    if input.ends_with('/') || expanded.is_dir() {
+        return expanded.join("compliance-report");
+    }
+    expanded
 }
 
 fn confirm_selections(state: &WizardState) -> Result<bool> {
@@ -553,16 +585,17 @@ fn print_summary(
             0.0
         };
 
+        let score_text = format_score(score);
         let score_color = if score >= 80.0 {
-            score.to_string().green()
+            score_text.green()
         } else if score >= 60.0 {
-            score.to_string().yellow()
+            score_text.yellow()
         } else {
-            score.to_string().red()
+            score_text.red()
         };
 
         println!(
-            "  {} {}: {:.1}% ({}/{} controls passing)",
+            "  {} {}: {}% ({}/{} controls passing)",
             framework_icon(&report.report_framework),
             framework_display_name(&report.report_framework),
             score_color,
@@ -611,6 +644,15 @@ fn framework_display_name(framework: &ComplianceFramework) -> &'static str {
     framework.full_name()
 }
 
+/// Renders a compliance score to one decimal place before colouring.
+///
+/// Colouring a string with `colored` and then applying `{:.1}` in a
+/// `println!` template truncates the coloured string to one character wide
+/// instead of formatting the number, so the number must be formatted first.
+fn format_score(score: f64) -> String {
+    format!("{score:.1}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -631,5 +673,48 @@ mod tests {
             listed.contains(&ComplianceFramework::ISO27001),
             "ISO 27001 missing from the picker table"
         );
+    }
+
+    /// Regression guard: colouring the score string before formatting it
+    /// with `{:.1}` truncated "75.0" down to "7" (precision on a Display
+    /// applies as a max-width truncation, not decimal rounding).
+    #[test]
+    fn format_score_renders_full_number() {
+        assert_eq!(format_score(75.0), "75.0");
+        assert_eq!(format_score(68.18181818), "68.2");
+        assert_eq!(format_score(16.666), "16.7");
+        assert_eq!(format_score(0.0), "0.0");
+        assert_eq!(format_score(100.0), "100.0");
+    }
+
+    /// Regression guard: `~/` with no further input used to save a literal
+    /// file named `~.txt` in the current directory instead of expanding to
+    /// the home directory.
+    #[test]
+    fn resolve_output_path_expands_home_dir() {
+        let home = dirs::home_dir().expect("test host must have a home directory");
+        let resolved = resolve_output_path("~/");
+        assert_eq!(resolved, home.join("compliance-report"));
+    }
+
+    #[test]
+    fn resolve_output_path_expands_tilde_in_nested_file_path() {
+        let home = dirs::home_dir().expect("test host must have a home directory");
+        let resolved = resolve_output_path("~/reports/out");
+        assert_eq!(resolved, home.join("reports/out"));
+    }
+
+    #[test]
+    fn resolve_output_path_joins_default_name_for_existing_directory() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let input = dir.path().to_str().expect("utf8 tempdir path");
+        let resolved = resolve_output_path(input);
+        assert_eq!(resolved, dir.path().join("compliance-report"));
+    }
+
+    #[test]
+    fn resolve_output_path_leaves_plain_file_path_unchanged() {
+        let resolved = resolve_output_path("/tmp/some/report.json");
+        assert_eq!(resolved, PathBuf::from("/tmp/some/report.json"));
     }
 }

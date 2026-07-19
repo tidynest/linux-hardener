@@ -501,7 +501,7 @@ pub fn render_text(outcomes: &[HostOutcome]) -> String {
     let s = BatchSummary::from_outcomes(outcomes);
     out.push_str("---\n");
     out.push_str(&format!(
-        "{} hosts: {} scanned, {} failed; findings: {} crit, {} high, {} med, {} low ({} total)\n",
+        "{} host(s): {} scanned, {} failed; findings: {} crit, {} high, {} med, {} low ({} total)\n",
         s.hosts_total,
         s.hosts_scanned,
         s.hosts_failed,
@@ -2231,7 +2231,7 @@ mod tests {
     fn text_render_has_rollup() {
         let text = render_text(&[scanned(1), failed()]);
         assert!(text.contains("FAILED"));
-        assert!(text.contains("2 hosts: 1 scanned, 1 failed"));
+        assert!(text.contains("2 host(s): 1 scanned, 1 failed"));
     }
 
     #[test]

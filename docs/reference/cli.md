@@ -277,6 +277,9 @@ hardener batch scan (--all | --host a,b | --ssh user@host) [FLAGS]
 | `--output <FILE>` | Write report to a file instead of stdout | stdout |
 
 Tiered exit codes: `0` = no findings; `1` = findings present; `2` = one or more host errors.
+Since `1` is returned even on a successful scan whenever findings exist, a
+following `&&` in a shell chain will short-circuit; use `;` instead, or
+inspect the `--output` file.
 
 **Examples:**
 
@@ -300,7 +303,7 @@ hardener --format json batch scan --all --output fleet.json
   error:     connection refused
 
 ---
-2 hosts: 1 scanned, 1 failed; findings: 7 crit, 13 high, 16 med, 2 low (38 total)
+2 host(s): 1 scanned, 1 failed; findings: 7 crit, 13 high, 16 med, 2 low (38 total)
 ```
 
 ### batch report

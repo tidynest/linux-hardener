@@ -73,6 +73,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in-process scan the GUI previously paid on every report regeneration.
 
 ### Fixed
+- The compliance report wizard's summary no longer shows scores an order of
+  magnitude too small: colouring the score string before applying `{:.1}`
+  in the `println!` template truncated the coloured string to one
+  character wide instead of formatting the number (75.0% rendered as
+  "7%"). The number is now formatted first and the finished string
+  coloured afterwards.
+- The compliance report wizard's output path prompt now expands a leading
+  `~` or `~/` to the user's home directory and treats an existing
+  directory (or input ending in `/`) as a destination folder, joining a
+  default `compliance-report` filename, instead of saving a literal file
+  named `~.txt` in the current directory.
 - "N change(s) applied" no longer counts failed changes: the shared
   `ApplyResult` count helpers now treat only successful non-skipped
   changes as applied, with failures counted separately, so a partial

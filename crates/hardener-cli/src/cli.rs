@@ -182,7 +182,9 @@ pub enum BatchAction {
         #[arg(long, default_value_t = 8)]
         concurrency: usize,
 
-        /// Write the report to a file instead of stdout.
+        /// Write the report to a file instead of stdout. Note: the command
+        /// still exits 1 when findings exist, even on a successful scan, so
+        /// a following `&&` will short-circuit; use `;` or inspect this file.
         #[arg(long)]
         output: Option<String>,
     },
