@@ -164,10 +164,8 @@ impl ScanHistoryManager {
 
     /// Marks a session as failed.
     ///
-    /// Convenience for abort paths: a session that never produced results
-    /// carries zeroed totals, so this forwards to `complete_session` with
-    /// `ScanStatus::Failed` and `0, 0` rather than making every caller
-    /// repeat those defaults.
+    /// A failed session always carries zeroed totals: forwards to
+    /// `complete_session` with `ScanStatus::Failed` and `0, 0`.
     pub async fn fail_session(&self, session_id: &ScanSessionId) -> Result<()> {
         self.complete_session(session_id, ScanStatus::Failed, 0, 0)
             .await
@@ -182,7 +180,7 @@ impl ScanHistoryManager {
             "SELECT id, started_at, completed_at, total_findings, total_plugins, status
              FROM scan_sessions
              WHERE status = 'completed'
-             ORDER BY started_at DESC
+             ORDER BY started_at DESC, rowid DESC
              LIMIT 1",
         )
         .fetch_optional(&self.db_pool)

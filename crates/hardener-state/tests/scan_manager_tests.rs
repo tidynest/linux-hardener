@@ -230,6 +230,30 @@ async fn failed_session_is_excluded_from_latest_scan_but_a_later_completed_one_i
 }
 
 #[tokio::test]
+async fn get_latest_scan_breaks_a_same_second_tie_by_insertion_order() {
+    // start_session records started_at at second resolution, so two
+    // sessions completed back-to-back in a fast test run (or on a real
+    // host that races two scans) commonly land on the same second. The
+    // later-inserted session must still win the "latest" pick.
+    let (manager, _dir) = create_test_manager().await;
+
+    let first_id = manager.start_session().await.unwrap();
+    manager
+        .complete_session(&first_id, ScanStatus::Completed, 0, 1)
+        .await
+        .unwrap();
+
+    let second_id = manager.start_session().await.unwrap();
+    manager
+        .complete_session(&second_id, ScanStatus::Completed, 0, 1)
+        .await
+        .unwrap();
+
+    let (session, _) = manager.get_latest_scan().await.unwrap().unwrap();
+    assert_eq!(session.session_id, second_id);
+}
+
+#[tokio::test]
 async fn unchecked_checks_survive_store_and_restore() {
     let (manager, _dir) = create_test_manager().await;
     let session_id = manager.start_session().await.unwrap();

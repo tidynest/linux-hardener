@@ -1006,12 +1006,33 @@ fn flatten_scan_results(results: Vec<ScanResult>) -> (Vec<Finding>, Vec<Unchecke
     (findings, unchecked)
 }
 
+/// Decides whether a persisted scan session's results should stand as the
+/// report source.
+///
+/// `None` covers both "no completed session exists" and "a completed
+/// session exists but carries zero results" - the latter happens when
+/// `persist_scan_results` logs a `store_results` failure but still marks
+/// the session Completed (see its doc comment), so the session row exists
+/// while `scan_results` is empty. Even a clean host produces one
+/// `ScanResult` per plugin, so an empty result set is never a legitimate
+/// full scan; treating it as "no session" sends the caller to the fresh-scan
+/// fallback instead of flattening it into a false-green zero-finding report.
+fn persisted_scan_source(
+    persisted: Option<(ScanSession, Vec<ScanResult>)>,
+) -> Option<(Vec<Finding>, Vec<UncheckedCheck>)> {
+    match persisted {
+        Some((_, results)) if !results.is_empty() => Some(flatten_scan_results(results)),
+        Some(_) | None => None,
+    }
+}
+
 /// Sources compliance inputs from the latest persisted completed scan
 /// session, so reports and the score reflect the scan the user actually
 /// ran - including a privileged deep scan's root-only results, which a
 /// fresh in-process scan could never see. Falls back to a fresh
 /// unprivileged scan when no completed session exists (fresh install,
-/// compliance tab opened before any scan) or the history database cannot
+/// compliance tab opened before any scan), a completed session has no
+/// results (see `persisted_scan_source`), or the history database cannot
 /// be read; a read failure is logged, never propagated. Neither path can
 /// trigger a privilege prompt.
 async fn latest_or_fresh_findings() -> Result<(Vec<Finding>, Vec<UncheckedCheck>), String> {
@@ -1020,8 +1041,10 @@ async fn latest_or_fresh_findings() -> Result<(Vec<Finding>, Vec<UncheckedCheck>
         Err(e) => Err(e),
     };
     match persisted {
-        Ok(Some((_, results))) => Ok(flatten_scan_results(results)),
-        Ok(None) => collect_findings().await,
+        Ok(persisted) => match persisted_scan_source(persisted) {
+            Some(findings) => Ok(findings),
+            None => collect_findings().await,
+        },
         Err(e) => {
             error!("Scan history unavailable, compliance report falling back to a fresh scan: {e}");
             collect_findings().await
@@ -2351,6 +2374,43 @@ mod fleet_tests {
         let (findings, unchecked) = flatten_scan_results(vec![]);
         assert!(findings.is_empty());
         assert!(unchecked.is_empty());
+    }
+
+    fn completed_session() -> ScanSession {
+        ScanSession {
+            session_id: ScanSessionId::new("session-1".to_string()),
+            session_started_at: 0,
+            session_completed_at: Some(0),
+            session_total_findings: 0,
+            session_total_plugins: 1,
+            session_status: ScanStatus::Completed,
+        }
+    }
+
+    #[test]
+    fn persisted_scan_source_uses_a_session_with_results() {
+        let results = vec![plugin_result("kernel", vec![finding("K-1")], vec![])];
+        let source = persisted_scan_source(Some((completed_session(), results)));
+
+        let (findings, unchecked) = source.expect("a non-empty session must be used");
+        assert_eq!(findings.len(), 1);
+        assert!(unchecked.is_empty());
+    }
+
+    #[test]
+    fn persisted_scan_source_falls_back_on_an_empty_completed_session() {
+        // A Completed session with zero results happens when
+        // `persist_scan_results` logged a `store_results` failure but still
+        // marked the session Completed. Flattening it would report zero
+        // findings and zero unchecked checks - a false-green score - so it
+        // must be treated the same as "no session".
+        let source = persisted_scan_source(Some((completed_session(), vec![])));
+        assert!(source.is_none());
+    }
+
+    #[test]
+    fn persisted_scan_source_falls_back_when_no_session_exists() {
+        assert!(persisted_scan_source(None).is_none());
     }
 
     #[test]
