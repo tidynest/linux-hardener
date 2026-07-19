@@ -12,7 +12,7 @@
   <img src="docs/assets/badges/rust.svg" alt="Rust 1.85+">
   <a href="https://aur.archlinux.org/packages/linux-system-hardener"><img src="docs/assets/badges/aur.svg" alt="AUR package"></a>
   <img src="docs/assets/badges/platform.svg" alt="Platform Linux">
-  <img src="docs/assets/badges/tests.svg" alt="790+ tests (750+ passing, 38 ignored)">
+  <img src="docs/assets/badges/tests.svg" alt="900+ tests (918 passing, 43 ignored)">
 </p>
 
 A comprehensive Linux security automation tool with multi-distribution support, built in Rust. Provides automated security scanning, hardening, and compliance reporting with full rollback capabilities.
