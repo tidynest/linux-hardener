@@ -45,6 +45,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of this presentation is muted-only, never severity-coloured.
 
 ### Fixed
+- ConfigFormat::Auto now tries KeyValue format before SpaceSeparated
+  when parsing config files, fixing a bug where directives with spaces
+  around the `=` (e.g. `max_retries = 3` in `/etc/security/pwquality.conf`)
+  were parsed with the current value as a literal `=` symbol, causing
+  secure settings to appear insecure when scanned as root.
+- firewall scan now checks all installed backends in a single pass
+  instead of stopping after the first inaccessible probe, fixing a false
+  `Firewall disabled` finding when the selected backend was inactive but
+  another backend was permission-blocked and unknowable; unverifiable
+  backends now report as unchecked instead of a red finding.
 - pam, firewall, audit, ssh and mac no longer report false findings
   when scanned without root on a hardened host. Each previously treated
   a permission-denied read of a privilege-gated source as "value not

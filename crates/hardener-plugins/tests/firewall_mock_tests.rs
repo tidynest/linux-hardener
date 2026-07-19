@@ -577,8 +577,8 @@ async fn test_backend_selection_keeps_priority_order_when_ufw_active() {
         "ufw should be probed first per the existing priority order"
     );
     assert!(
-        !log.commands_executed.iter().any(|(cmd, _)| cmd == "nft"),
-        "nftables should not be probed once the higher-priority ufw backend is found active, \
+        log.commands_executed.iter().any(|(cmd, _)| cmd == "nft"),
+        "nftables should be probed to classify all installed backends, \
          commands: {:?}",
         log.commands_executed
     );
