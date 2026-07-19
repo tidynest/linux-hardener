@@ -16,10 +16,14 @@ pub async fn list(
     format: OutputFormat,
     _quiet: bool,
     executor: Arc<dyn SystemExecutor>,
+    limit: usize,
+    all: bool,
 ) -> Result<()> {
     let manager = get_checkpoint_manager().await?;
     let current_host = host_key_for(executor.as_ref());
 
+    // `list_checkpoints` returns newest-first (ORDER BY timestamp DESC); the
+    // host filter preserves that order, so the renderer's cap keeps the newest.
     let checkpoints: Vec<_> = manager
         .list_checkpoints()
         .await?
@@ -27,7 +31,7 @@ pub async fn list(
         .filter(|c| c.host_key == current_host)
         .collect();
 
-    output::checkpoint_list(&format, &checkpoints);
+    output::checkpoint_list(&format, &checkpoints, limit, all);
     Ok(())
 }
 

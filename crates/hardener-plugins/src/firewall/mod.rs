@@ -647,14 +647,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         let mut rules = Vec::with_capacity(baseline_rules.len());
         let mut apply_changes = Vec::new();
 
-        if checkpoint_id.is_some() {
-            apply_changes.push(Change {
-                change_description: "Created checkpoint for rollback".to_string(),
-                change_type: ChangeType::FirewallRule,
-                change_success: true,
-                change_error: None,
-            });
-        }
+        apply_changes.extend(crate::checkpoint_change(&checkpoint_id));
 
         for rule in baseline_rules {
             let id = rule_id(&rule);
@@ -769,6 +762,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
                 .all(|i| i.validation_issue_severity != Severity::Critical),
             validation_report_issues: issues,
             validation_report_estimated_changes: estimated_changes,
+            validation_report_compliant_count: 0,
         })
     }
 }

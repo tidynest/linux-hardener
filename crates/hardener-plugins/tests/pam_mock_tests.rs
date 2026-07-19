@@ -824,7 +824,7 @@ async fn pam_apply_one_drifted_rewrites_one_file_with_one_backup() {
 }
 
 /// State-aware validate: a fully compliant host lists zero pending directives;
-/// the only line is the compliant-count summary.
+/// every checked directive is tallied in `validation_report_compliant_count`.
 #[tokio::test]
 async fn pam_validate_all_compliant_lists_no_pending_changes() {
     let executor = secure_pam_executor();
@@ -836,17 +836,14 @@ async fn pam_validate_all_compliant_lists_no_pending_changes() {
         .await
         .unwrap();
 
-    assert_eq!(
-        report.validation_report_estimated_changes.len(),
-        1,
-        "expected only the compliant-count summary, got: {:?}",
+    assert!(
+        report.validation_report_estimated_changes.is_empty(),
+        "a fully compliant host has no pending changes, got: {:?}",
         report.validation_report_estimated_changes
     );
-    assert!(
-        report.validation_report_estimated_changes[0].contains("11")
-            && report.validation_report_estimated_changes[0].contains("already compliant"),
-        "summary must count all 11 compliant directives, got: {}",
-        report.validation_report_estimated_changes[0]
+    assert_eq!(
+        report.validation_report_compliant_count, 11,
+        "all 11 directives must be counted as already compliant, not listed as pending"
     );
 }
 
@@ -866,29 +863,20 @@ async fn pam_validate_one_drifted_lists_exactly_that_directive() {
         .await
         .unwrap();
 
-    let pending: Vec<&String> = report
-        .validation_report_estimated_changes
-        .iter()
-        .filter(|c| !c.contains("already compliant"))
-        .collect();
+    let pending = &report.validation_report_estimated_changes;
     assert_eq!(
         pending.len(),
         1,
-        "exactly one directive should be pending, got: {:?}",
-        report.validation_report_estimated_changes
+        "exactly one directive should be pending, got: {pending:?}"
     );
     assert!(
         pending[0].contains("minlen") && pending[0].contains('8') && pending[0].contains("14"),
         "pending line must show current and target, got: {}",
         pending[0]
     );
-    assert!(
-        report
-            .validation_report_estimated_changes
-            .iter()
-            .any(|c| c.contains("10") && c.contains("already compliant")),
-        "the other 10 directives must be summarised, got: {:?}",
-        report.validation_report_estimated_changes
+    assert_eq!(
+        report.validation_report_compliant_count, 10,
+        "the other 10 directives must be counted as already compliant"
     );
 }
 

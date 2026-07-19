@@ -1339,14 +1339,7 @@ impl HardeningPlugin for SshHardeningPlugin {
             &[Path::new(config_path)],
         )
         .await?;
-        if checkpoint_id.is_some() {
-            committed.push(Change {
-                change_description: "Created checkpoint for rollback".to_string(),
-                change_type: ChangeType::ConfigFile,
-                change_success: true,
-                change_error: None,
-            });
-        }
+        committed.extend(crate::checkpoint_change(&checkpoint_id));
 
         let backup_path = format!(
             "{}.backup.{}",
@@ -1584,6 +1577,7 @@ impl HardeningPlugin for SshHardeningPlugin {
             validation_report_is_valid: valid,
             validation_report_issues: issues,
             validation_report_estimated_changes: estimated_changes,
+            validation_report_compliant_count: 0,
         })
     }
 }

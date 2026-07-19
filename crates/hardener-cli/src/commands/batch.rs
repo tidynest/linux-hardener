@@ -1021,6 +1021,11 @@ fn status_from_result(execute: bool, result: &super::apply::ApplyHostResult) -> 
             .iter()
             .map(|r| r.validation_report_estimated_changes.len())
             .sum();
+        let compliant = result
+            .validation_reports
+            .iter()
+            .map(|r| r.validation_report_compliant_count)
+            .sum();
         let failed = result
             .validation_reports
             .iter()
@@ -1029,6 +1034,7 @@ fn status_from_result(execute: bool, result: &super::apply::ApplyHostResult) -> 
         ApplyStatus::Validated {
             plugins,
             would_change,
+            compliant,
             failed,
         }
     }
@@ -1043,6 +1049,7 @@ fn render_apply_text(outcomes: &[ApplyOutcome]) -> String {
             ApplyStatus::Validated {
                 plugins,
                 would_change,
+                compliant,
                 failed,
             } => {
                 validated += 1;
@@ -1058,7 +1065,8 @@ fn render_apply_text(outcomes: &[ApplyOutcome]) -> String {
                     &mut out,
                     "result",
                     &format!(
-                        "{plugins} plugin(s) checked, {would_change} change(s) pending, {failed} failed"
+                        "{plugins} plugin(s) checked, {would_change} change(s) pending, {failed} failed{}",
+                        crate::output::compliant_suffix(*compliant)
                     ),
                 );
             }
@@ -2634,6 +2642,7 @@ mod tests {
             apply_exit_code(&[mk(ApplyStatus::Validated {
                 plugins: 3,
                 would_change: 1,
+                compliant: 0,
                 failed: 0
             })]),
             0
@@ -2646,6 +2655,7 @@ mod tests {
             apply_exit_code(&[mk(ApplyStatus::Validated {
                 plugins: 2,
                 would_change: 0,
+                compliant: 0,
                 failed: 1
             })]),
             1
@@ -2717,6 +2727,7 @@ mod tests {
                 ApplyStatus::Validated {
                     plugins: 8,
                     would_change: 4,
+                    compliant: 14,
                     failed: 0,
                 },
             ),
@@ -2725,6 +2736,7 @@ mod tests {
                 ApplyStatus::Validated {
                     plugins: 8,
                     would_change: 0,
+                    compliant: 18,
                     failed: 0,
                 },
             ),
@@ -2738,8 +2750,14 @@ mod tests {
             "clean validation reads clean: {text}"
         );
         assert!(
-            text.contains("8 plugin(s) checked, 4 change(s) pending, 0 failed"),
-            "validation detail: {text}"
+            text.contains(
+                "8 plugin(s) checked, 4 change(s) pending, 0 failed (14 already compliant)"
+            ),
+            "validation detail carries the compliant count: {text}"
+        );
+        assert!(
+            text.contains("0 change(s) pending, 0 failed (18 already compliant)"),
+            "a fully compliant host reads 0 pending with the compliant tally: {text}"
         );
         assert!(
             text.contains("---\n2 host(s): 2 validated"),

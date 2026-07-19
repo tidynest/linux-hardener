@@ -683,14 +683,7 @@ impl HardeningPlugin for PamHardeningPlugin {
         let checkpoint_id =
             crate::create_checkpoint_for_apply(ctx, "pam-hardening-pre-apply", &pam_paths).await?;
 
-        if checkpoint_id.is_some() {
-            changes.push(Change {
-                change_type: ChangeType::ConfigFile,
-                change_description: "Created checkpoint for rollback".to_string(),
-                change_success: true,
-                change_error: None,
-            });
-        }
+        changes.extend(crate::checkpoint_change(&checkpoint_id));
 
         // Step 1: Read current configuration files. Backups are created later,
         // and only for a file that will actually be rewritten, so a compliant
@@ -994,7 +987,8 @@ impl HardeningPlugin for PamHardeningPlugin {
 
         // Estimate changes state-aware: read the current file values the same
         // way apply does and list only directives that would actually change;
-        // already-compliant directives are summarised in one count line.
+        // already-compliant directives are tallied in compliant_count, not
+        // listed, so estimated_changes holds only real pending changes.
         // Classified reads so a root-only file yields honest requires-root
         // wording, never a false "(currently not set)" claim.
         let pwquality = read_conf_classified(ctx, "/etc/security/pwquality.conf").await;
@@ -1089,13 +1083,6 @@ impl HardeningPlugin for PamHardeningPlugin {
             }
         }
 
-        if compliant_count > 0 {
-            estimated_changes.push(format!(
-                "{} PAM directive(s) already compliant (no change needed)",
-                compliant_count
-            ));
-        }
-
         let is_valid = issues.is_empty();
 
         Ok(ValidationReport {
@@ -1103,6 +1090,7 @@ impl HardeningPlugin for PamHardeningPlugin {
             validation_report_is_valid: is_valid,
             validation_report_issues: issues,
             validation_report_estimated_changes: estimated_changes,
+            validation_report_compliant_count: compliant_count,
         })
     }
 }

@@ -90,8 +90,9 @@ async fn main() -> Result<()> {
                 .await
         }
         Command::Checkpoint { action } => match action {
-            CheckpointAction::List => {
-                commands::checkpoint::list(cli.format, cli.quiet, executor.clone()).await
+            CheckpointAction::List { limit, all } => {
+                commands::checkpoint::list(cli.format, cli.quiet, executor.clone(), limit, all)
+                    .await
             }
             CheckpointAction::Create { name } => {
                 commands::checkpoint::create(&name, cli.format, cli.quiet, executor.clone()).await

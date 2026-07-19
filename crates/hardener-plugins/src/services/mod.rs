@@ -618,14 +618,7 @@ impl HardeningPlugin for ServicesHardeningPlugin {
         )
         .await?;
 
-        if checkpoint_id.is_some() {
-            changes.push(Change {
-                change_type: ChangeType::Service,
-                change_description: "Created checkpoint for rollback".to_string(),
-                change_success: true,
-                change_error: None,
-            });
-        }
+        changes.extend(crate::checkpoint_change(&checkpoint_id));
 
         // Process each service
         for directive in UNNECESSARY_SERVICES {
@@ -838,6 +831,7 @@ impl HardeningPlugin for ServicesHardeningPlugin {
 
         Ok(ValidationReport {
             validation_report_estimated_changes: estimated_changes,
+            validation_report_compliant_count: 0,
             validation_report_is_valid: issues.is_empty(),
             validation_report_issues: issues,
             validation_report_plugin_id: self.metadata().plugin_id,

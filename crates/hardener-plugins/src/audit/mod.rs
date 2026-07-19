@@ -899,14 +899,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
             crate::create_checkpoint_for_apply(ctx, "audit-hardening-pre-apply", &audit_paths)
                 .await?;
 
-        if checkpoint_id.is_some() {
-            changes.push(Change {
-                change_type: ChangeType::ConfigFile,
-                change_description: "Created checkpoint for rollback".to_string(),
-                change_success: true,
-                change_error: None,
-            });
-        }
+        changes.extend(crate::checkpoint_change(&checkpoint_id));
 
         // Check if auditd is installed
         if !is_auditd_installed(ctx).await.unwrap_or(false) {
@@ -1183,6 +1176,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
 
         Ok(ValidationReport {
             validation_report_estimated_changes: estimated_changes,
+            validation_report_compliant_count: 0,
             validation_report_is_valid: issues.is_empty(),
             validation_report_issues: issues,
             validation_report_plugin_id: self.metadata().plugin_id,

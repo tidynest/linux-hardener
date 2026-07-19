@@ -329,8 +329,18 @@ fn render_apply(out: &[ApplyOutcome]) -> String {
                 ApplyStatus::Validated {
                     plugins,
                     would_change,
+                    compliant,
                     failed,
-                } => format!("{plugins} plugins, {would_change} would change, {failed} failed"),
+                } => {
+                    let compliant_note = if *compliant > 0 {
+                        format!(" ({compliant} already compliant)")
+                    } else {
+                        String::new()
+                    };
+                    format!(
+                        "{plugins} plugins, {would_change} would change, {failed} failed{compliant_note}"
+                    )
+                }
                 ApplyStatus::Applied { ok, failed } => format!("applied {ok}, failed {failed}"),
                 ApplyStatus::Failed { error } => format!("ERROR: {error}"),
             };

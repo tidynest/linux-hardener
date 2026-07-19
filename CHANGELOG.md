@@ -43,20 +43,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "Not verifiable without privileges" heading, and the score gauge
   shows a muted "N check(s) not verified (needs privileges)" note. All
   of this presentation is muted-only, never severity-coloured.
+- `hardener checkpoint list` accepts `--limit <N>` (default 20, newest
+  first) and `--all`, and prints a "showing N of M; use --all to see all"
+  footer when the list is capped, so a long-lived host no longer dumps
+  every checkpoint at once. The limit applies to `--format json` too, so
+  scripted output matches the table; pass `--all` for the full set.
 
 ### Changed
 - Dry-run and apply are now state-aware for the kernel and PAM plugins, so
   scan, dry-run and apply tell one coherent story: settings already at their
-  target are reported as such ("N parameter(s) already compliant" in
-  dry-run, Skipped "already set"/"already compliant" entries in apply)
-  instead of being re-applied on every run. Kernel apply writes only drifted
+  target are reported as such (tallied separately in dry-run and never
+  listed among pending changes, Skipped "already set"/"already compliant"
+  entries in apply) instead of being re-applied on every run. Kernel apply
+  writes only drifted
   sysctls and rewrites `/etc/sysctl.d/99-hardener.conf` only when a
   parameter changed or the file's content no longer matches; PAM rewrites
   `pwquality.conf`/`login.defs` only when at least one directive actually
   differs, and creates a backup only when a file will be rewritten (no more
   backup churn in /etc on already-compliant hosts). Already-compliant and
-  policy-exception entries are typed `Skipped`, so "N change(s) applied"
-  counts real work only. The no-loosen threshold semantics for
+  policy-exception entries are typed `Skipped` and the pre-apply rollback
+  checkpoint is typed `Checkpoint`, so "N change(s) applied" counts real
+  hardening work only. The no-loosen threshold semantics for
   faillock/pwhistory are unchanged.
 - Batch text output (`batch scan`/`report`/`apply`/`rollback`) now groups
   results in per-host sections instead of one compact table: each host
@@ -86,6 +93,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in-process scan the GUI previously paid on every report regeneration.
 
 ### Fixed
+- Creating a rollback checkpoint before applying no longer counts as an
+  applied hardening change. The checkpoint entry is typed `Checkpoint` (a
+  new `ChangeType`) and excluded from both the applied and the failed
+  counts, so a plugin whose only action was the checkpoint now reads "no
+  changes needed" with the checkpoint listed beneath it, instead of the
+  misleading "1 change(s) applied". The CLI, batch and desktop apply
+  summaries all inherit the corrected count.
+- A fully compliant host no longer reports phantom pending changes in
+  dry-run. The kernel and PAM validators carry a structured
+  `validation_report_compliant_count` instead of appending an "N already
+  compliant" line to the estimated changes, so the pending count reflects
+  only genuine changes: the CLI shows "0 change(s) to apply (18 already
+  compliant)", and batch and the desktop fleet view append "(N already
+  compliant)" beside a true "0 change(s) pending"/"0 would change" rather
+  than counting the summary line as an item to apply.
 - The compliance report wizard's summary no longer shows scores an order of
   magnitude too small: colouring the score string before applying `{:.1}`
   in the `println!` template truncated the coloured string to one

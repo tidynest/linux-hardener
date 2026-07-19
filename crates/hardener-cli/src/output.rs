@@ -282,7 +282,9 @@ pub fn apply_results(format: &OutputFormat, results: &[(PluginMetadata, ApplyRes
 /// failed the phrase says so numerically ("1 of 5 change(s) applied,
 /// 4 failed") so the number next to "applied" only ever counts successes;
 /// with no failures the plain "N change(s) applied[, M skipped]" wording is
-/// kept.
+/// kept. A plugin that hardened nothing (only a rollback checkpoint, or an
+/// already-compliant host) reads "no changes needed" so a bare checkpoint
+/// never looks like remediation.
 fn apply_summary(result: &ApplyResult) -> String {
     let applied = result.applied_change_count();
     let failed = result.failed_change_count();
@@ -295,6 +297,8 @@ fn apply_summary(result: &ApplyResult) -> String {
     if failed > 0 {
         let attempted = applied + failed;
         format!("{applied} of {attempted} change(s) applied, {failed} failed{skip_suffix}")
+    } else if applied == 0 {
+        format!("no changes needed{skip_suffix}")
     } else {
         format!("{applied} change(s) applied{skip_suffix}")
     }
@@ -328,14 +332,22 @@ pub fn plugin_list(format: &OutputFormat, plugins: &[PluginMetadata]) {
     }
 }
 
-pub fn checkpoint_list(format: &OutputFormat, checkpoints: &[Checkpoint]) {
+/// Renders the checkpoint list. `checkpoints` is newest-first; only the first
+/// `limit` are shown unless `all` is set (both text and JSON honour the cap, so
+/// `--format json` matches what the table shows). A dimmed footer discloses the
+/// total whenever the list is capped.
+pub fn checkpoint_list(format: &OutputFormat, checkpoints: &[Checkpoint], limit: usize, all: bool) {
+    let total = checkpoints.len();
+    let shown = if all { total } else { limit.min(total) };
+    let visible = &checkpoints[..shown];
+
     match format {
-        OutputFormat::Json => match serde_json::to_string_pretty(&checkpoints) {
+        OutputFormat::Json => match serde_json::to_string_pretty(&visible) {
             Ok(json) => println!("{json}"),
             Err(e) => eprintln!("{{\"error\": \"serialisation failed: {e}\"}}"),
         },
         _ => {
-            if checkpoints.is_empty() {
+            if total == 0 {
                 println!("No checkpoints found.");
                 return;
             }
@@ -350,7 +362,7 @@ pub fn checkpoint_list(format: &OutputFormat, checkpoints: &[Checkpoint]) {
                 "CREATED".bold()
             );
             println!("{}", "─".repeat(90));
-            for cp in checkpoints {
+            for cp in visible {
                 println!(
                     "{:<36}  {:<24}  {:<12}  {}",
                     cp.checkpoint_id.as_str().cyan(),
@@ -359,8 +371,18 @@ pub fn checkpoint_list(format: &OutputFormat, checkpoints: &[Checkpoint]) {
                     format_timestamp(cp.checkpoint_timestamp).dimmed()
                 );
             }
+            if let Some(footer) = checkpoint_list_footer(shown, total) {
+                println!("{}", footer.dimmed());
+            }
         }
     }
+}
+
+/// The footer shown beneath a capped checkpoint list, or `None` when every
+/// checkpoint is already visible. Tells the admin how many exist and how to
+/// see them all.
+fn checkpoint_list_footer(shown: usize, total: usize) -> Option<String> {
+    (shown < total).then(|| format!("showing {shown} of {total}; use --all to see all"))
 }
 
 pub fn checkpoint_created(format: &OutputFormat, id: &hardener_state::CheckpointId) {
@@ -468,16 +490,29 @@ pub fn validation_reports(format: &OutputFormat, reports: &[ValidationReport]) {
         _ => {
             for report in reports {
                 println!(
-                    "{} {} - {} item(s) to apply",
+                    "{} {} - {} change(s) to apply{}",
                     "○".blue(),
                     report.validation_report_plugin_id.as_str(),
                     report.validation_report_estimated_changes.len(),
+                    compliant_suffix(report.validation_report_compliant_count),
                 );
                 for item in &report.validation_report_estimated_changes {
                     println!("  {} {}", "•".dimmed(), item);
                 }
             }
         }
+    }
+}
+
+/// The " (N already compliant)" tail appended to dry-run summaries, or an empty
+/// string when nothing was already compliant. Shared by the single-host and
+/// batch renderers so an already-compliant count is surfaced identically and
+/// is never folded into the pending total.
+pub(crate) fn compliant_suffix(compliant: usize) -> String {
+    if compliant > 0 {
+        format!(" ({compliant} already compliant)")
+    } else {
+        String::new()
     }
 }
 
@@ -609,6 +644,42 @@ mod tests {
             change(ChangeType::Skipped, true),
         ]);
         assert_eq!(apply_summary(&with_skip), "1 change(s) applied, 1 skipped");
+    }
+
+    #[test]
+    fn apply_summary_reads_no_changes_when_only_a_checkpoint() {
+        // The sole recorded entry is the rollback checkpoint: nothing was
+        // hardened, so the summary must say so rather than "1 change applied".
+        let checkpoint_only = apply_result(vec![change(ChangeType::Checkpoint, true)]);
+        assert_eq!(apply_summary(&checkpoint_only), "no changes needed");
+    }
+
+    #[test]
+    fn apply_summary_excludes_checkpoint_from_applied_count() {
+        let result = apply_result(vec![
+            change(ChangeType::Checkpoint, true),
+            change(ChangeType::KernelParameter, true),
+            change(ChangeType::KernelParameter, true),
+        ]);
+        assert_eq!(apply_summary(&result), "2 change(s) applied");
+    }
+
+    #[test]
+    fn compliant_suffix_only_appears_when_positive() {
+        assert_eq!(compliant_suffix(0), "");
+        assert_eq!(compliant_suffix(18), " (18 already compliant)");
+    }
+
+    #[test]
+    fn checkpoint_list_footer_discloses_the_cap() {
+        // 25 exist, 20 shown: the footer names both counts and the escape hatch.
+        assert_eq!(
+            checkpoint_list_footer(20, 25),
+            Some("showing 20 of 25; use --all to see all".to_string())
+        );
+        // Nothing hidden (--all, or a list at/under the limit): no footer.
+        assert_eq!(checkpoint_list_footer(25, 25), None);
+        assert_eq!(checkpoint_list_footer(0, 0), None);
     }
 
     fn metadata(name: &str) -> PluginMetadata {

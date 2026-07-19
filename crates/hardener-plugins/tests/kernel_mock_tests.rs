@@ -306,8 +306,9 @@ async fn test_kernel_validate_writable_params() {
 }
 
 /// State-aware validate: a fully compliant host lists ZERO pending parameter
-/// changes; the only estimated-changes line is the compliant-count summary,
-/// so the admin can see all parameters were checked.
+/// changes; every checked parameter is tallied in
+/// `validation_report_compliant_count` instead, so the admin can see they were
+/// checked without the estimated-change count being inflated.
 #[tokio::test]
 async fn kernel_validate_all_compliant_lists_no_pending_changes() {
     let executor = fully_secure_kernel_executor();
@@ -331,17 +332,14 @@ async fn kernel_validate_all_compliant_lists_no_pending_changes() {
         "no parameter should be listed as pending on a compliant host, got: {:?}",
         report.validation_report_estimated_changes
     );
-    assert_eq!(
-        report.validation_report_estimated_changes.len(),
-        1,
-        "expected only the compliant-count summary line, got: {:?}",
+    assert!(
+        report.validation_report_estimated_changes.is_empty(),
+        "a fully compliant host has no pending changes, got: {:?}",
         report.validation_report_estimated_changes
     );
-    assert!(
-        report.validation_report_estimated_changes[0].contains("18")
-            && report.validation_report_estimated_changes[0].contains("already compliant"),
-        "summary must state 18 parameter(s) already compliant, got: {}",
-        report.validation_report_estimated_changes[0]
+    assert_eq!(
+        report.validation_report_compliant_count, 18,
+        "all 18 parameters must be counted as already compliant, not listed as pending"
     );
 }
 
@@ -376,13 +374,15 @@ async fn kernel_validate_one_drifted_lists_exactly_that_parameter() {
         "pending line must show current and target, got: {}",
         pending[0]
     );
-    assert!(
-        report
-            .validation_report_estimated_changes
-            .iter()
-            .any(|c| c.contains("17") && c.contains("already compliant")),
-        "the other 17 parameters must be summarised as compliant, got: {:?}",
+    assert_eq!(
+        report.validation_report_estimated_changes.len(),
+        1,
+        "only the drifted parameter is pending, got: {:?}",
         report.validation_report_estimated_changes
+    );
+    assert_eq!(
+        report.validation_report_compliant_count, 17,
+        "the other 17 parameters must be counted as already compliant"
     );
 }
 

@@ -144,6 +144,7 @@ impl HardeningPlugin for MockPlugin {
             validation_report_is_valid: true,
             validation_report_issues: vec![],
             validation_report_estimated_changes: vec![],
+            validation_report_compliant_count: 0,
         })
     }
 }

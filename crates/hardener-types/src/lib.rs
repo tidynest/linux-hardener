@@ -514,22 +514,24 @@ pub struct ApplyResult {
 
 impl ApplyResult {
     /// Counts changes that were genuinely applied to the host: real work
-    /// (not a [`ChangeType::Skipped`] no-op, e.g. no MAC system present)
-    /// that also succeeded. Renderers must use these count helpers, never
+    /// (not a [`ChangeType::Skipped`] no-op such as no MAC system present, and
+    /// not the [`ChangeType::Checkpoint`] rollback-bookkeeping entry) that also
+    /// succeeded. Renderers must use these count helpers, never
     /// `apply_changes.len()` arithmetic, so "N change(s) applied" can only
-    /// ever mean N successes.
+    /// ever mean N hardening successes.
     pub fn applied_change_count(&self) -> usize {
         self.apply_changes
             .iter()
-            .filter(|c| !c.is_skipped() && c.change_success)
+            .filter(|c| !c.is_skipped() && !c.is_checkpoint() && c.change_success)
             .count()
     }
 
-    /// Counts real (non-skipped) changes that were attempted and failed.
+    /// Counts real (non-skipped, non-checkpoint) changes that were attempted
+    /// and failed.
     pub fn failed_change_count(&self) -> usize {
         self.apply_changes
             .iter()
-            .filter(|c| !c.is_skipped() && !c.change_success)
+            .filter(|c| !c.is_skipped() && !c.is_checkpoint() && !c.change_success)
             .count()
     }
 
@@ -559,6 +561,12 @@ impl Change {
     pub fn is_skipped(&self) -> bool {
         self.change_type == ChangeType::Skipped
     }
+
+    /// Whether this entry records rollback-checkpoint creation rather than a
+    /// hardening change. Excluded from both the applied and the failed counts.
+    pub fn is_checkpoint(&self) -> bool {
+        self.change_type == ChangeType::Checkpoint
+    }
 }
 
 /// Type of system change.
@@ -580,6 +588,12 @@ pub enum ChangeType {
     /// system present, or the target excepted by policy). Distinct from a
     /// real change so renderers do not count it as one applied.
     Skipped,
+    /// A rollback checkpoint was captured before applying. Bookkeeping rather
+    /// than a hardening change: renderers still show it (so the admin knows a
+    /// rollback point exists), but the count helpers exclude it from both the
+    /// applied and the failed totals, so a plugin whose only action was the
+    /// checkpoint reads as having hardened nothing.
+    Checkpoint,
 }
 
 impl fmt::Display for ChangeType {
@@ -592,6 +606,7 @@ impl fmt::Display for ChangeType {
             ChangeType::Permissions => write!(f, "Permissions"),
             ChangeType::Service => write!(f, "Service"),
             ChangeType::Skipped => write!(f, "Skipped"),
+            ChangeType::Checkpoint => write!(f, "Checkpoint"),
         }
     }
 }
@@ -652,8 +667,17 @@ pub struct ValidationReport {
     pub validation_report_is_valid: bool,
     /// List of validation issues found.
     pub validation_report_issues: Vec<ValidationIssue>,
-    /// Estimated changes if this configuration were applied.
+    /// Estimated changes if this configuration were applied. Genuinely pending
+    /// changes only; settings already at their target are not listed here (see
+    /// `validation_report_compliant_count`), so the length is the real
+    /// change count.
     pub validation_report_estimated_changes: Vec<String>,
+    /// Number of settings the plugin checked that were already compliant (no
+    /// change needed). Surfaced separately so renderers can report it without
+    /// counting it among the pending `validation_report_estimated_changes`.
+    /// Plugins with no compliant-count concept leave this 0.
+    #[serde(default)]
+    pub validation_report_compliant_count: usize,
 }
 
 /// A single validation issue.
@@ -840,10 +864,14 @@ pub struct ApplyOutcome {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "lowercase")]
 pub enum ApplyStatus {
-    /// Dry-run: `plugins` validated, `would_change` pending changes, `failed` validation errors.
+    /// Dry-run: `plugins` validated, `would_change` genuinely pending changes,
+    /// `compliant` settings already at target (reported, never folded into
+    /// `would_change`), `failed` validation errors.
     Validated {
         plugins: usize,
         would_change: usize,
+        #[serde(default)]
+        compliant: usize,
         failed: usize,
     },
     /// Execute: `ok` plugins applied, `failed` did not.
@@ -961,6 +989,42 @@ mod apply_change_tests {
         assert!(change(ChangeType::Skipped, "skip").is_skipped());
         assert!(!change(ChangeType::ConfigFile, "real").is_skipped());
     }
+
+    #[test]
+    fn is_checkpoint_reflects_change_type() {
+        let cp = change(ChangeType::Checkpoint, "Created checkpoint for rollback");
+        assert!(cp.is_checkpoint());
+        assert!(!cp.is_skipped());
+        assert!(!change(ChangeType::ConfigFile, "real").is_checkpoint());
+    }
+
+    /// A checkpoint entry is bookkeeping: with 3 successes and 1 failure
+    /// alongside it, applied is 3 and failed is 1, never 4 or 5.
+    #[test]
+    fn counts_exclude_checkpoint_bookkeeping() {
+        let result = apply_result(vec![
+            change(ChangeType::Checkpoint, "Created checkpoint for rollback"),
+            change(ChangeType::KernelParameter, "set kptr_restrict"),
+            change(ChangeType::KernelParameter, "set dmesg_restrict"),
+            change(ChangeType::ConfigFile, "wrote 99-hardening.conf"),
+            failed_change(ChangeType::KernelParameter, "set bpf_hardened"),
+        ]);
+        assert_eq!(result.applied_change_count(), 3);
+        assert_eq!(result.failed_change_count(), 1);
+        assert_eq!(result.skipped_change_count(), 0);
+    }
+
+    /// A plugin whose only recorded action was the checkpoint hardened nothing.
+    #[test]
+    fn checkpoint_only_result_counts_zero_applied() {
+        let result = apply_result(vec![change(
+            ChangeType::Checkpoint,
+            "Created checkpoint for rollback",
+        )]);
+        assert_eq!(result.applied_change_count(), 0);
+        assert_eq!(result.failed_change_count(), 0);
+        assert_eq!(result.skipped_change_count(), 0);
+    }
 }
 
 #[cfg(test)]
@@ -978,6 +1042,7 @@ mod fleet_mutation_tests {
             ApplyStatus::Validated {
                 plugins: 3,
                 would_change: 5,
+                compliant: 0,
                 failed: 0
             }
         ));

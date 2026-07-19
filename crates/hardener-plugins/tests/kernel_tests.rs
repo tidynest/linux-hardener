@@ -61,10 +61,17 @@ async fn test_kernel_validate_checks_parameters() {
         "kernel-hardening"
     );
 
-    // Should have estimated changes for parameters that can be modified
+    // Validate examines every kernel parameter and files each into exactly one
+    // of pending / already-compliant / issues, so their total is non-zero on
+    // any host. (It is not "estimated_changes must be non-empty": a fully
+    // compliant host legitimately has zero pending changes, with every
+    // parameter counted in validation_report_compliant_count instead.)
+    let examined = validation.validation_report_estimated_changes.len()
+        + validation.validation_report_compliant_count
+        + validation.validation_report_issues.len();
     assert!(
-        !validation.validation_report_estimated_changes.is_empty(),
-        "Should estimate at least some changes"
+        examined > 0,
+        "validate should examine the kernel parameters"
     );
 }
 

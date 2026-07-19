@@ -294,8 +294,16 @@ pub enum BatchAction {
 
 #[derive(Subcommand)]
 pub enum CheckpointAction {
-    /// List all checkpoints.
-    List,
+    /// List checkpoints, newest first.
+    List {
+        /// Maximum number of checkpoints to show.
+        #[arg(short, long, default_value = "20")]
+        limit: usize,
+
+        /// Show every checkpoint, ignoring the limit.
+        #[arg(long)]
+        all: bool,
+    },
 
     /// Create a new checkpoint.
     Create { name: String },
@@ -539,9 +547,32 @@ mod tests {
     fn test_cli_parse_checkpoint_list() {
         let cli = Cli::parse_from(["hardener", "checkpoint", "list"]);
         if let Command::Checkpoint { action } = cli.command {
-            assert!(matches!(action, CheckpointAction::List));
+            assert!(
+                matches!(
+                    action,
+                    CheckpointAction::List {
+                        limit: 20,
+                        all: false
+                    }
+                ),
+                "list defaults to a 20-row limit and not --all"
+            );
         } else {
             panic!("Expected Checkpoint command");
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_checkpoint_list_limit_and_all() {
+        let cli = Cli::parse_from(["hardener", "checkpoint", "list", "--limit", "5", "--all"]);
+        if let Command::Checkpoint {
+            action: CheckpointAction::List { limit, all },
+        } = cli.command
+        {
+            assert_eq!(limit, 5);
+            assert!(all);
+        } else {
+            panic!("Expected Checkpoint list with limit and all");
         }
     }
 

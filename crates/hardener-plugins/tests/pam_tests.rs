@@ -72,13 +72,15 @@ async fn test_pam_validate_checks_config_files() {
         "pam-hardening"
     );
 
-    // Check if estimated changes are provided
-    assert!(
-        !validation_report
-            .validation_report_estimated_changes
-            .is_empty(),
-        "Should estimate changes to be made"
-    );
+    // Validate examines every PAM directive and files each into exactly one of
+    // pending / already-compliant / issues, so their total is non-zero on any
+    // host. (It is not "estimated_changes must be non-empty": a fully compliant
+    // host legitimately has zero pending changes, with every directive counted
+    // in validation_report_compliant_count instead.)
+    let examined = validation_report.validation_report_estimated_changes.len()
+        + validation_report.validation_report_compliant_count
+        + validation_report.validation_report_issues.len();
+    assert!(examined > 0, "validate should examine the PAM directives");
 }
 
 #[tokio::test]

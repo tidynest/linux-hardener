@@ -751,14 +751,7 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
         )
         .await?;
 
-        if checkpoint_id.is_some() {
-            changes.push(Change {
-                change_description: "Created checkpoint for rollback".to_string(),
-                change_type: ChangeType::Permissions,
-                change_success: true,
-                change_error: None,
-            });
-        }
+        changes.extend(crate::checkpoint_change(&checkpoint_id));
 
         // Apply permissions to all critical paths
         for directive in CRITICAL_PERMISSIONS {
@@ -894,6 +887,7 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
                 .all(|i| i.validation_issue_severity != Severity::High),
             validation_report_issues: issues,
             validation_report_estimated_changes: estimated_changes,
+            validation_report_compliant_count: 0,
         })
     }
 }

@@ -794,14 +794,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
             crate::create_checkpoint_for_apply(ctx, "kernel-hardening-pre-apply", &sysctl_paths)
                 .await?;
 
-        if checkpoint_id.is_some() {
-            apply_changes.push(Change {
-                change_description: "Created checkpoint for rollback".to_string(),
-                change_type: ChangeType::KernelParameter,
-                change_success: true,
-                change_error: None,
-            });
-        }
+        apply_changes.extend(crate::checkpoint_change(&checkpoint_id));
 
         // Build sysctl.d config file content for persistence.
         let mut sysctl_config_content = String::from(
@@ -1005,8 +998,9 @@ impl HardeningPlugin for KernelHardeningPlugin {
     /// Checks if sysctl parameters exist and are writable without actually
     /// modifying them. State-aware: only parameters whose current value
     /// differs from the target are listed as pending; parameters already at
-    /// their target are summarised in one compliant-count line so the admin
-    /// can see they were checked.
+    /// their target are tallied in `validation_report_compliant_count` rather
+    /// than listed, so the estimated-change list holds only real pending
+    /// changes and a compliant host reports zero.
     ///
     /// # Arguments
     /// * `config` - Plugin configuration with directive overrides and policy exceptions
@@ -1061,13 +1055,6 @@ impl HardeningPlugin for KernelHardeningPlugin {
             }
         }
 
-        if compliant_count > 0 {
-            estimated_changes.push(format!(
-                "{} parameter(s) already compliant (no change needed)",
-                compliant_count
-            ));
-        }
-
         Ok(ValidationReport {
             validation_report_plugin_id: self.metadata().plugin_id,
             validation_report_is_valid: issues
@@ -1075,6 +1062,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
                 .all(|i| i.validation_issue_severity != Severity::High),
             validation_report_issues: issues,
             validation_report_estimated_changes: estimated_changes,
+            validation_report_compliant_count: compliant_count,
         })
     }
 }

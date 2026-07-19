@@ -106,6 +106,24 @@ pub async fn create_checkpoint_metadata_only_for_apply(
     Ok(Some(checkpoint_id.as_str().to_string()))
 }
 
+/// Builds the bookkeeping [`Change`](hardener_core::Change) that records a
+/// rollback checkpoint in an apply result, or `None` when no checkpoint was
+/// created (e.g. no checkpoint manager in context).
+///
+/// Every plugin records the same entry after creating its pre-apply
+/// checkpoint, so this is the single source for it. It is typed
+/// [`ChangeType::Checkpoint`](hardener_core::ChangeType::Checkpoint) so the
+/// `ApplyResult` count helpers never treat checkpoint creation as a hardening
+/// change. Call sites append it with `changes.extend(checkpoint_change(&id))`.
+pub fn checkpoint_change(checkpoint_id: &Option<String>) -> Option<hardener_core::Change> {
+    checkpoint_id.as_ref().map(|_| hardener_core::Change {
+        change_description: "Created checkpoint for rollback".to_string(),
+        change_type: hardener_core::ChangeType::Checkpoint,
+        change_success: true,
+        change_error: None,
+    })
+}
+
 pub use audit::AuditHardeningPlugin;
 pub use firewall::FirewallHardeningPlugin;
 

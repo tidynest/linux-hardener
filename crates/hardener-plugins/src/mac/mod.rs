@@ -634,14 +634,7 @@ impl HardeningPlugin for MacHardeningPlugin {
         let checkpoint_id =
             crate::create_checkpoint_for_apply(ctx, "mac-hardening-pre-apply", &mac_paths).await?;
 
-        if checkpoint_id.is_some() {
-            apply_changes.push(Change {
-                change_description: "Created checkpoint for rollback".to_string(),
-                change_type: ChangeType::ConfigFile,
-                change_success: true,
-                change_error: None,
-            });
-        }
+        apply_changes.extend(crate::checkpoint_change(&checkpoint_id));
 
         // Detect which MAC system is present
         match self.detect_mac_system(ctx).await {
@@ -858,6 +851,7 @@ impl HardeningPlugin for MacHardeningPlugin {
             validation_report_is_valid: is_valid,
             validation_report_issues: issues,
             validation_report_estimated_changes: estimated_changes,
+            validation_report_compliant_count: 0,
         })
     }
 }
