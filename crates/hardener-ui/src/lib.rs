@@ -39,6 +39,26 @@ pub fn App() -> impl IntoView {
         match tauri_bindings::invoke_get_latest_scan().await {
             Ok(Some(results)) => {
                 app_state.scan_results.set(results);
+
+                // Restore the security score too: report generation reads the
+                // same persisted session these results came from, so this is
+                // cheap, unprivileged, and never prompts.
+                let frameworks = hardener_types::ComplianceFramework::ALL
+                    .iter()
+                    .map(|f| f.id().to_string())
+                    .collect();
+                match tauri_bindings::invoke_generate_report(frameworks).await {
+                    Ok(reports) => {
+                        app_state.compliance_reports.set(reports);
+                    }
+                    Err(e) => {
+                        // Startup restore is best-effort: keep the empty score
+                        // rather than greeting the user with an error banner.
+                        web_sys::console::warn_1(
+                            &format!("Failed to restore compliance reports: {}", e).into(),
+                        );
+                    }
+                }
             }
             Ok(None) => {
                 // No persisted scan results - that's fine, leave state empty

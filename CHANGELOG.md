@@ -60,6 +60,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in-process scan the GUI previously paid on every report regeneration.
 
 ### Fixed
+- The desktop security score is restored on launch: the app now
+  regenerates compliance reports from the last persisted scan session
+  when it loads saved results, instead of showing "--" until a new scan
+  is run.
 - ConfigFormat::Auto now tries KeyValue format before SpaceSeparated
   when parsing config files, fixing a bug where directives with spaces
   around the `=` (e.g. `max_retries = 3` in `/etc/security/pwquality.conf`)
