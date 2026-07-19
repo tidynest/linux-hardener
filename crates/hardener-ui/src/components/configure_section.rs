@@ -5,7 +5,7 @@
 use crate::components::{Card, ConfigFileCard, HeadingLevel};
 use crate::state::AppState;
 use crate::tauri_bindings::{invoke_apply, invoke_apply_dry_run};
-use crate::utils::is_auth_cancelled;
+use crate::utils::{annotate_preview, is_auth_cancelled};
 use leptos::prelude::*;
 
 /// Plugin definition with ID and display name.
@@ -272,9 +272,18 @@ pub fn ConfigureSection() -> impl IntoView {
                             if results.is_empty() {
                                 view! { <p class="empty-state">"No changes to preview."</p> }.into_any()
                             } else {
-                                results.iter().map(|report| {
-                                    let plugin_id = report.validation_report_plugin_id.as_str().to_string();
-                                    let changes = report.validation_report_estimated_changes.clone();
+                                // Cross-check each estimate against the latest persisted
+                                // scan: a plugin the last deep scan verified fully
+                                // compliant is shown as "0 changes" rather than listing
+                                // conditional estimates the real apply would skip. This
+                                // is display-only; the privileged apply re-checks
+                                // everything and remains authoritative.
+                                let scan_results = app_state.scan_results.get();
+                                let decisions = annotate_preview(&results, &scan_results);
+                                decisions.into_iter().map(|decision| {
+                                    let plugin_id = decision.plugin_id;
+                                    let compliant = decision.verified_compliant;
+                                    let changes = decision.estimated_changes;
                                     let change_count = changes.len();
 
                                     view! {
@@ -285,11 +294,21 @@ pub fn ConfigureSection() -> impl IntoView {
                                                     {format!("({} change{})", change_count, if change_count == 1 { "" } else { "s" })}
                                                 </span>
                                             </h4>
-                                            <ul class="preview-change-list">
-                                                {changes.iter().map(|change| {
-                                                    view! { <li>{change.clone()}</li> }
-                                                }).collect::<Vec<_>>()}
-                                            </ul>
+                                            {if compliant {
+                                                view! {
+                                                    <p class="preview-compliant-note">
+                                                        "Verified compliant by last deep scan"
+                                                    </p>
+                                                }.into_any()
+                                            } else {
+                                                view! {
+                                                    <ul class="preview-change-list">
+                                                        {changes.iter().map(|change| {
+                                                            view! { <li>{change.clone()}</li> }
+                                                        }).collect::<Vec<_>>()}
+                                                    </ul>
+                                                }.into_any()
+                                            }}
                                         </div>
                                     }
                                 }).collect::<Vec<_>>().into_any()

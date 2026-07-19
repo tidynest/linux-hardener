@@ -429,6 +429,30 @@ fn find_winner(classified: &[(Box<dyn FirewallBackend>, BackendActivity)]) -> Op
     })
 }
 
+/// Appends the "Apply N baseline firewall rules" estimate for `backend`,
+/// counting only rules not waived by a config exception. Shared by the
+/// verified-active and genuinely-disabled arms of `validate`.
+fn push_rule_estimate(backend: &dyn FirewallBackend, config: &PluginConfig, out: &mut Vec<String>) {
+    let rule_count = backend
+        .get_default_rules()
+        .iter()
+        .filter(|r| config.has_valid_exception(&rule_id(r)).is_none())
+        .count();
+    if rule_count > 0 {
+        out.push(format!("Apply {rule_count} baseline firewall rules"));
+    }
+}
+
+/// The Critical validation issue raised when no firewall backend is
+/// installed (or detection itself failed).
+fn no_backend_issue(message: &str) -> hardener_core::ValidationIssue {
+    hardener_core::ValidationIssue {
+        validation_issue_severity: Severity::Critical,
+        validation_issue_message: format!("No firewall backend available: {message}"),
+        validation_issue_config_key: None,
+    }
+}
+
 impl FirewallHardeningPlugin {
     /// Create a new firewall plugin instance.
     ///
@@ -714,45 +738,55 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         let mut issues = Vec::new();
         let mut estimated_changes = Vec::new();
 
-        // Detect backend.
-        match self.detect_backend(ctx).await {
-            Ok(backend) => {
-                // Check if firewall is enabled.
-                if let Err(e) = backend.is_enabled(ctx).await {
-                    let error_msg = e.to_string();
-                    if error_msg.contains("permission denied")
-                        || error_msg.contains("Permission denied")
-                    {
-                        issues.push(hardener_core::ValidationIssue {
-                            validation_issue_severity: Severity::Medium,
-                            validation_issue_message:
-                                "Cannot verify firewall status (permission denied)".to_string(),
-                            validation_issue_config_key: None,
-                        });
-                    } else {
-                        // Firewall is disabled - will be enabled.
+        // Classify every installed backend once, exactly as `scan` does, so
+        // the dry-run preview cannot disagree with the scan about which
+        // backend is in charge or whether the firewall is genuinely
+        // disabled. Without this, an unprivileged preview on a host whose
+        // real ruleset needs root would fall back to an inactive sibling
+        // (e.g. ufw) and falsely report "Enable ufw firewall".
+        match classify_installed(ctx).await {
+            Ok(classified) if !classified.is_empty() => {
+                // Select the same winner `detect_backend` (and the apply
+                // path) would, so a suppressed or estimated change never
+                // names a different backend than the apply drives.
+                let winner_index = find_winner(&classified).unwrap_or(0);
+                let (winner, winner_activity) = &classified[winner_index];
+                let all_inactive = classified
+                    .iter()
+                    .all(|(_, activity)| matches!(activity, BackendActivity::Inactive));
+
+                match winner_activity {
+                    // Confirmed active: no enable needed. Report the
+                    // rule-level pending changes as before.
+                    BackendActivity::Verified => {
+                        push_rule_estimate(winner.as_ref(), config, &mut estimated_changes);
+                    }
+                    // Every installed backend's probe ran and reported
+                    // inactive: the firewall is genuinely disabled, so
+                    // enabling it and applying the baseline rules are real
+                    // pending changes.
+                    BackendActivity::Inactive if all_inactive => {
                         estimated_changes
-                            .push(format!("Enable {} firewall", backend.backend_name()));
+                            .push(format!("Enable {} firewall", winner.backend_name()));
+                        push_rule_estimate(winner.as_ref(), config, &mut estimated_changes);
+                    }
+                    // Unverifiable without root (UnitActiveUnverified, an
+                    // Unknown winner, or an inactive fallback shadowed by an
+                    // Unknown sibling): the live ruleset could not be read,
+                    // so claiming "Enable X" or a concrete rule count would
+                    // be a guess. Report the honest limitation instead; the
+                    // privileged apply re-classifies and does the right thing.
+                    _ => {
+                        estimated_changes.push(
+                            "Firewall ruleset could not be verified without root - \
+                             run with sudo (or a deep scan) for an accurate preview"
+                                .to_string(),
+                        );
                     }
                 }
-
-                // Count rules after config filtering.
-                let rule_count = backend
-                    .get_default_rules()
-                    .iter()
-                    .filter(|r| config.has_valid_exception(&rule_id(r)).is_none())
-                    .count();
-                if rule_count > 0 {
-                    estimated_changes.push(format!("Apply {} baseline firewall rules", rule_count));
-                }
             }
-            Err(e) => {
-                issues.push(hardener_core::ValidationIssue {
-                    validation_issue_severity: Severity::Critical,
-                    validation_issue_message: format!("No firewall backend available: {}", e),
-                    validation_issue_config_key: None,
-                });
-            }
+            Ok(_) => issues.push(no_backend_issue(&no_backend_error().to_string())),
+            Err(e) => issues.push(no_backend_issue(&e.to_string())),
         }
 
         Ok(ValidationReport {
@@ -1018,6 +1052,206 @@ mod tests {
         assert_eq!(
             result.scan_unchecked[0].unchecked_check_id, "nftables-disabled",
             "the unchecked entry must name the winner, not the first unknown sibling"
+        );
+    }
+
+    /// Part A honesty gate for the dry-run preview, the same class of fix
+    /// the scan gained in 62e8c14. On the maintainer's hardened host
+    /// nftables' ruleset is live but its probe needs root and its oneshot
+    /// unit reads inactive (classifies Unknown), while ufw is installed and
+    /// genuinely inactive. Selection falls back to ufw (installed order), but
+    /// validate must NOT claim "Enable ufw": the firewall's true state is
+    /// unverifiable, so it reports the honest limitation instead of a false
+    /// pending change, and never names ufw.
+    #[tokio::test]
+    async fn validate_reports_unverifiable_instead_of_false_enable_when_probe_needs_root() {
+        let mock = MockExecutor::new()
+            .with_command_exists("firewall-cmd", false)
+            .with_command_exists("ufw", true)
+            .with_command_exists("nft", true)
+            .with_command(
+                "nft",
+                &["list", "ruleset"],
+                CommandOutput {
+                    stdout: String::new(),
+                    stderr: "nft: Permission denied".to_string(),
+                    exit_code: 1,
+                },
+            )
+            .with_command(
+                "systemctl",
+                &["is-active", "nftables"],
+                CommandOutput {
+                    stdout: "inactive\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 3,
+                },
+            )
+            .with_command(
+                "systemctl",
+                &["is-active", "ufw"],
+                CommandOutput {
+                    stdout: "inactive\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 3,
+                },
+            );
+        let ctx = Context::with_executor(std::sync::Arc::new(mock));
+        let report = FirewallHardeningPlugin::new()
+            .validate(&ctx, &PluginConfig::default())
+            .await
+            .unwrap();
+
+        let changes = &report.validation_report_estimated_changes;
+        assert!(
+            changes.iter().any(|c| c.contains("could not be verified")),
+            "must report the honest unverifiable line, got {changes:?}"
+        );
+        assert!(
+            !changes.iter().any(|c| c.contains("Enable")),
+            "must NOT claim a false enable for an unverifiable ruleset, got {changes:?}"
+        );
+        assert!(
+            !changes.iter().any(|c| c.to_lowercase().contains("ufw")),
+            "must NOT name ufw when nftables is the live-but-unverifiable winner, got {changes:?}"
+        );
+    }
+
+    /// When the winning backend is active by its systemd unit but its ruleset
+    /// probe needs root (UnitActiveUnverified), validate reports the honest
+    /// limitation rather than guessing at an enable or a rule count.
+    #[tokio::test]
+    async fn validate_reports_unverifiable_when_winner_unit_active_but_probe_blocked() {
+        let mock = MockExecutor::new()
+            .with_command_exists("firewall-cmd", false)
+            .with_command_exists("ufw", true)
+            .with_command_exists("nft", true)
+            .with_command(
+                "nft",
+                &["list", "ruleset"],
+                CommandOutput {
+                    stdout: String::new(),
+                    stderr: "nft: Permission denied".to_string(),
+                    exit_code: 1,
+                },
+            )
+            .with_command(
+                "systemctl",
+                &["is-active", "nftables"],
+                CommandOutput {
+                    stdout: "active\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            )
+            .with_command(
+                "systemctl",
+                &["is-active", "ufw"],
+                CommandOutput {
+                    stdout: "inactive\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 3,
+                },
+            );
+        let ctx = Context::with_executor(std::sync::Arc::new(mock));
+        let report = FirewallHardeningPlugin::new()
+            .validate(&ctx, &PluginConfig::default())
+            .await
+            .unwrap();
+
+        let changes = &report.validation_report_estimated_changes;
+        assert!(
+            changes.iter().any(|c| c.contains("could not be verified")),
+            "unit-active-but-unverifiable winner must report the honest line, got {changes:?}"
+        );
+        assert!(
+            !changes.iter().any(|c| c.contains("Enable")),
+            "must NOT claim an enable for a unit-active winner, got {changes:?}"
+        );
+    }
+
+    /// Negative control: every installed backend's probe ran and reported
+    /// inactive (nftables' ruleset has no input hook, ufw's unit is
+    /// inactive), so the firewall is genuinely disabled. "Enable X" is then a
+    /// real pending change and must be kept, naming the selected backend,
+    /// alongside the baseline rule estimate.
+    #[tokio::test]
+    async fn validate_keeps_enable_when_every_backend_probe_confirms_inactive() {
+        let mock = MockExecutor::new()
+            .with_command_exists("firewall-cmd", false)
+            .with_command_exists("ufw", true)
+            .with_command_exists("nft", true)
+            .with_command(
+                "nft",
+                &["list", "ruleset"],
+                CommandOutput {
+                    stdout: "table inet filter {\n}\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            )
+            .with_command(
+                "systemctl",
+                &["is-active", "ufw"],
+                CommandOutput {
+                    stdout: "inactive\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 3,
+                },
+            );
+        let ctx = Context::with_executor(std::sync::Arc::new(mock));
+        let report = FirewallHardeningPlugin::new()
+            .validate(&ctx, &PluginConfig::default())
+            .await
+            .unwrap();
+
+        let changes = &report.validation_report_estimated_changes;
+        assert!(
+            changes.iter().any(|c| c == "Enable ufw firewall"),
+            "a genuinely disabled firewall keeps the enable line, got {changes:?}"
+        );
+        assert!(
+            changes
+                .iter()
+                .any(|c| c.contains("baseline firewall rules")),
+            "the baseline rule estimate is still reported, got {changes:?}"
+        );
+        assert!(
+            !changes.iter().any(|c| c.contains("could not be verified")),
+            "a positively inactive firewall is not unverifiable, got {changes:?}"
+        );
+    }
+
+    /// Verified-active winner (nftables input-hook chain present): validate
+    /// reports the rule-level pending changes exactly as before and emits
+    /// neither an enable line nor the unverifiable notice.
+    #[tokio::test]
+    async fn validate_reports_rule_changes_when_backend_verified_active() {
+        let mock = MockExecutor::new()
+            .with_command_exists("firewall-cmd", false)
+            .with_command_exists("ufw", false)
+            .with_command_exists("nft", true)
+            .with_command(
+                "nft",
+                &["list", "ruleset"],
+                CommandOutput {
+                    stdout: "table inet filter {\n  chain input {\n    \
+                             type filter hook input priority 0;\n  }\n}\n"
+                        .to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            );
+        let ctx = Context::with_executor(std::sync::Arc::new(mock));
+        let report = FirewallHardeningPlugin::new()
+            .validate(&ctx, &PluginConfig::default())
+            .await
+            .unwrap();
+
+        assert_eq!(
+            report.validation_report_estimated_changes,
+            vec!["Apply 4 baseline firewall rules".to_string()],
+            "a verified-active firewall reports only the rule estimate"
         );
     }
 

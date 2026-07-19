@@ -1434,6 +1434,18 @@ tbody tr:hover {
   font-family: var(--font-mono);
 }
 
+/* Shown in place of the change list when the last deep scan verified a
+   plugin fully compliant: a positive confirmation that no change is
+   pending, rather than the conditional estimates the apply would skip. */
+.preview-compliant-note {
+  font-size: 0.875rem;
+  color: var(--color-good-bright, var(--text-secondary));
+  padding: var(--space-2) var(--space-3);
+  background-color: rgba(16, 185, 129, 0.1);
+  border-left: 3px solid var(--color-good, var(--border-color));
+  border-radius: 4px;
+}
+
 .preview-actions {
   display: flex;
   justify-content: flex-end;

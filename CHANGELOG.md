@@ -93,6 +93,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in-process scan the GUI previously paid on every report regeneration.
 
 ### Fixed
+- The firewall dry-run preview no longer falsely reports "Enable ufw
+  firewall" when the active ruleset cannot be verified without root. The
+  validator now shares the scan's backend-activity classification
+  (Verified / unit-active-but-unverifiable / Unknown / positively
+  inactive) and selects the same winning backend the apply drives, so
+  preview and apply can never disagree: a verified-active firewall reports
+  only its baseline rule estimate, a genuinely disabled firewall keeps the
+  honest "Enable X firewall" line, and an unverifiable ruleset (e.g.
+  nftables loaded in-kernel but root-only on a hardened host) reports
+  "Firewall ruleset could not be verified without root - run with sudo (or
+  a deep scan) for an accurate preview" instead of a guess.
+- The desktop "Preview Changes" dry-run now marks plugins the last deep
+  scan verified fully compliant as "0 changes - Verified compliant by last
+  deep scan" instead of listing conditional estimates the real apply
+  would skip. A plugin is suppressed only when the latest persisted scan
+  holds a matching, successful result with zero findings and zero
+  unchecked checks (only a privileged/deep scan clears the root-only
+  unchecked list); any uncertainty - no matching result, a failed scan, or
+  any finding or unchecked entry - shows the estimate as before. The
+  annotation is display-only and never alters what apply does; the
+  privileged apply re-checks everything and stays authoritative.
 - The permissions plugin no longer reports a false finding or attempts a
   futile chmod for directories on filesystems that cannot hold POSIX
   permissions (e.g. a vfat `/boot` ESP, where chmod exits 0 but the mode
