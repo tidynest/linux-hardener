@@ -172,11 +172,14 @@ pub fn parse_config_value(
                 }
             }
             ConfigFormat::Auto => {
-                // Try space-separated first, then key-value
+                // Try key-value first (it also accepts "key value" with no
+                // "="), then fall back to space-separated. Trying
+                // space-separated first would split "key = value" into
+                // ["key", "="], returning the literal "=" as the value.
                 if let Some(v) = parse_config_value(
                     content,
                     directive_name,
-                    ConfigFormat::SpaceSeparated,
+                    ConfigFormat::KeyValue,
                     case_sensitive,
                 ) {
                     return Some(v);
@@ -184,7 +187,7 @@ pub fn parse_config_value(
                 return parse_config_value(
                     content,
                     directive_name,
-                    ConfigFormat::KeyValue,
+                    ConfigFormat::SpaceSeparated,
                     case_sensitive,
                 );
             }
@@ -421,5 +424,39 @@ where
             })?;
             Err(e)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn auto_parses_key_equals_value_with_spaces() {
+        assert_eq!(
+            parse_config_value("minlen = 14\n", "minlen", ConfigFormat::Auto, true),
+            Some("14".to_string())
+        );
+    }
+
+    #[test]
+    fn auto_still_parses_space_separated() {
+        assert_eq!(
+            parse_config_value(
+                "PASS_MAX_DAYS 99999\n",
+                "PASS_MAX_DAYS",
+                ConfigFormat::Auto,
+                true
+            ),
+            Some("99999".to_string())
+        );
+    }
+
+    #[test]
+    fn auto_parses_key_equals_value_without_spaces() {
+        assert_eq!(
+            parse_config_value("minlen=14\n", "minlen", ConfigFormat::Auto, true),
+            Some("14".to_string())
+        );
     }
 }
