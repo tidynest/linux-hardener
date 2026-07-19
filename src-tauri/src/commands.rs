@@ -950,6 +950,41 @@ async fn collect_findings() -> Result<(Vec<Finding>, Vec<UncheckedCheck>), Strin
     Ok((findings, unchecked))
 }
 
+/// Flattens per-plugin scan results into the flat findings and unchecked
+/// lists the report generator consumes.
+fn flatten_scan_results(results: Vec<ScanResult>) -> (Vec<Finding>, Vec<UncheckedCheck>) {
+    let mut findings = Vec::new();
+    let mut unchecked = Vec::new();
+    for result in results {
+        findings.extend(result.scan_findings);
+        unchecked.extend(result.scan_unchecked);
+    }
+    (findings, unchecked)
+}
+
+/// Sources compliance inputs from the latest persisted completed scan
+/// session, so reports and the score reflect the scan the user actually
+/// ran - including a privileged deep scan's root-only results, which a
+/// fresh in-process scan could never see. Falls back to a fresh
+/// unprivileged scan when no completed session exists (fresh install,
+/// compliance tab opened before any scan) or the history database cannot
+/// be read; a read failure is logged, never propagated. Neither path can
+/// trigger a privilege prompt.
+async fn latest_or_fresh_findings() -> Result<(Vec<Finding>, Vec<UncheckedCheck>), String> {
+    let persisted = match create_scan_history_manager().await {
+        Ok(manager) => manager.get_latest_scan().await.map_err(safe_err),
+        Err(e) => Err(e),
+    };
+    match persisted {
+        Ok(Some((_, results))) => Ok(flatten_scan_results(results)),
+        Ok(None) => collect_findings().await,
+        Err(e) => {
+            error!("Scan history unavailable, compliance report falling back to a fresh scan: {e}");
+            collect_findings().await
+        }
+    }
+}
+
 /// Resolves the compliance profile of the machine this desktop runs on:
 /// the local report commands always assess the local system. Detection
 /// failure falls back to `Generic`, never an error.
@@ -962,12 +997,13 @@ fn local_profile() -> ComplianceProfile {
 
 /// Generates compliance reports for the specified frameworks.
 ///
-/// Takes a list of framework names and returns compliance reports.
+/// Takes a list of framework names and returns compliance reports built
+/// from the latest persisted scan session (fresh-scan fallback).
 #[tauri::command]
 pub async fn generate_compliance_report(
     frameworks: Vec<String>,
 ) -> Result<Vec<ComplianceReport>, String> {
-    let (all_findings, unchecked) = collect_findings().await?;
+    let (all_findings, unchecked) = latest_or_fresh_findings().await?;
     let parsed_frameworks = parse_frameworks(&frameworks);
 
     let config = ReportConfig {
@@ -1000,7 +1036,9 @@ pub async fn export_compliance_report(
     }
 
     let output_format = parse_output_format(&format)?;
-    let (all_findings, unchecked) = collect_findings().await?;
+    // Same sourcing as generate_compliance_report: an exported report must
+    // match the one on screen.
+    let (all_findings, unchecked) = latest_or_fresh_findings().await?;
     let parsed_frameworks = parse_frameworks(&frameworks);
 
     let config = ReportConfig {
@@ -2201,6 +2239,74 @@ mod fleet_tests {
         assert!(
             matches!(err, PrivilegedCommandError::ExecutionFailed(msg) if msg == "unexpected failure")
         );
+    }
+
+    fn plugin_result(
+        plugin: &str,
+        findings: Vec<Finding>,
+        unchecked: Vec<UncheckedCheck>,
+    ) -> ScanResult {
+        ScanResult {
+            scan_plugin_id: PluginId::new(plugin),
+            scan_success: true,
+            scan_findings: findings,
+            scan_unchecked: unchecked,
+            scan_duration_us: 0,
+            scan_error: None,
+        }
+    }
+
+    fn finding(id: &str) -> Finding {
+        Finding {
+            finding_id: id.to_string(),
+            finding_category: hardener_types::FindingCategory::Kernel,
+            finding_severity: hardener_types::Severity::Low,
+            finding_title: String::new(),
+            finding_description: String::new(),
+            finding_explanation: String::new(),
+            finding_impact: String::new(),
+            finding_current_value: String::new(),
+            finding_recommended_value: String::new(),
+            finding_remediation_steps: vec![],
+            finding_compliance: vec![],
+            finding_policy_exception: None,
+        }
+    }
+
+    fn unchecked_check(id: &str) -> UncheckedCheck {
+        UncheckedCheck {
+            unchecked_check_id: id.to_string(),
+            unchecked_title: String::new(),
+            unchecked_category: hardener_types::FindingCategory::Kernel,
+            unchecked_reason: String::new(),
+            unchecked_compliance: vec![],
+        }
+    }
+
+    #[test]
+    fn flatten_scan_results_preserves_findings_and_unchecked_across_plugins() {
+        let results = vec![
+            plugin_result("kernel", vec![finding("K-1"), finding("K-2")], vec![]),
+            plugin_result("pam", vec![finding("P-1")], vec![unchecked_check("P-2")]),
+            plugin_result("firewall", vec![], vec![unchecked_check("F-1")]),
+        ];
+
+        let (findings, unchecked) = flatten_scan_results(results);
+
+        let finding_ids: Vec<&str> = findings.iter().map(|f| f.finding_id.as_str()).collect();
+        assert_eq!(finding_ids, ["K-1", "K-2", "P-1"]);
+        let unchecked_ids: Vec<&str> = unchecked
+            .iter()
+            .map(|u| u.unchecked_check_id.as_str())
+            .collect();
+        assert_eq!(unchecked_ids, ["P-2", "F-1"]);
+    }
+
+    #[test]
+    fn flatten_scan_results_of_nothing_is_empty() {
+        let (findings, unchecked) = flatten_scan_results(vec![]);
+        assert!(findings.is_empty());
+        assert!(unchecked.is_empty());
     }
 
     #[test]

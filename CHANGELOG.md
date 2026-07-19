@@ -34,15 +34,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   session, so restarting the app keeps the privileged results. An
   unchecked-checks banner above the Dashboard and Analysis pages names
   the outstanding count and offers a "Run deep scan" button that also
-  regenerates compliance reports; regeneration refreshes the honest
-  unprivileged compliance view, but covered-but-unchecked controls
-  remain ManualReview until report generation consumes scan state
-  (recorded follow-up). The findings tab lists the unverifiable checks
+  regenerates compliance reports; because report generation reads the
+  persisted scan session (see Changed below), the regenerated report
+  reflects the deep scan's privileged results and the score moves
+  accordingly. The findings tab lists the unverifiable checks
   (deduplicated by check id,
   since the audit plugin emits one entry per underlying rule) under a
   "Not verifiable without privileges" heading, and the score gauge
   shows a muted "N check(s) not verified (needs privileges)" note. All
   of this presentation is muted-only, never severity-coloured.
+
+### Changed
+- Desktop compliance reports (and the security score derived from them)
+  now source findings and unchecked checks from the latest persisted
+  completed scan session instead of always re-running a fresh
+  unprivileged in-process scan. A privileged deep scan's results,
+  including root-only checks, therefore flow into the compliance report
+  and move the score: controls previously stuck at ManualReview for
+  lack of privileges resolve to Pass or Fail once verified. Export uses
+  the same sourcing, so an exported report matches the one on screen.
+  With no completed session yet (fresh install, compliance tab opened
+  before any scan) or an unreadable history database, report generation
+  falls back to the previous fresh in-process scan; both paths stay
+  unprivileged and never prompt. This also removes the double
+  in-process scan the GUI previously paid on every report regeneration.
 
 ### Fixed
 - ConfigFormat::Auto now tries KeyValue format before SpaceSeparated

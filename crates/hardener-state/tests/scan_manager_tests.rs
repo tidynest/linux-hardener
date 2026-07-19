@@ -142,6 +142,50 @@ async fn test_corrupted_policy_exception_json_surfaces_error() {
 }
 
 #[tokio::test]
+async fn latest_scan_round_trips_findings_and_unchecked_together() {
+    // The desktop compliance report reads the latest completed session via
+    // get_latest_scan, so a session holding both findings and unchecked
+    // checks must round-trip both through that exact path.
+    let (manager, _dir) = create_test_manager().await;
+    let session_id = manager.start_session().await.unwrap();
+
+    let mut results = sample_results();
+    results[0].scan_unchecked = vec![UncheckedCheck {
+        unchecked_check_id: "kernel-kptr-restrict".to_string(),
+        unchecked_title: "Kernel setting: kptr_restrict".to_string(),
+        unchecked_category: FindingCategory::Kernel,
+        unchecked_reason: "reading /proc/sys/kernel/kptr_restrict requires root".to_string(),
+        unchecked_compliance: vec![],
+    }];
+
+    manager.store_results(&session_id, &results).await.unwrap();
+    manager
+        .complete_session(&session_id, ScanStatus::Completed, 1, 1)
+        .await
+        .unwrap();
+
+    let (session, restored) = manager.get_latest_scan().await.unwrap().unwrap();
+    assert_eq!(session.session_status, ScanStatus::Completed);
+    assert_eq!(restored.len(), 1);
+
+    let finding = &restored[0].scan_findings[0];
+    assert_eq!(finding.finding_id, "TEST-001");
+    assert_eq!(finding.finding_severity, Severity::High);
+    assert_eq!(finding.finding_current_value, "bad");
+    assert_eq!(
+        finding.finding_remediation_steps,
+        vec!["Step 1".to_string()]
+    );
+
+    let unchecked = &restored[0].scan_unchecked[0];
+    assert_eq!(unchecked.unchecked_check_id, "kernel-kptr-restrict");
+    assert_eq!(
+        unchecked.unchecked_reason,
+        "reading /proc/sys/kernel/kptr_restrict requires root"
+    );
+}
+
+#[tokio::test]
 async fn unchecked_checks_survive_store_and_restore() {
     let (manager, _dir) = create_test_manager().await;
     let session_id = manager.start_session().await.unwrap();

@@ -557,13 +557,19 @@ count. Its "Run deep scan" button calls `invoke_deep_scan`, which invokes
 like `run_apply` does for applies, so results match `sudo hardener scan`.
 The returned `Vec<ScanResult>` replaces `AppState.scan_results` and a
 follow-up `invoke_generate_report` call regenerates compliance reports.
-Regeneration refreshes the honest unprivileged compliance view: the report
-command's `collect_findings()` re-runs a fresh, unprivileged, in-process
-scan rather than consuming the privileged results in `AppState`, so a
-covered-but-unchecked control stays ManualReview instead of reflecting the
-privileged scan (recorded follow-up). Only `run_deep_scan` persists a new
-scan history session, same as `run_scan`; `invoke_generate_report` persists
-nothing.
+Report generation (`generate_compliance_report` and
+`export_compliance_report`) sources findings and unchecked checks from the
+latest persisted completed scan session (`latest_or_fresh_findings` in
+src-tauri/src/commands.rs); both `run_scan` and `run_deep_scan` persist
+their session before returning, so the regenerated report - and the score
+derived from it - reflects the deep scan's privileged results, resolving
+covered-but-unchecked controls to Pass or Fail instead of ManualReview.
+When no completed session exists (fresh install) or the history database
+cannot be read, report generation falls back to a fresh unprivileged
+in-process scan (`collect_findings()`); a read failure is logged, never
+surfaced, and neither path can trigger a privilege prompt. Only `run_scan`
+and `run_deep_scan` persist scan history sessions;
+`invoke_generate_report` persists nothing.
 
 ### Tauri Commands Available
 
