@@ -186,6 +186,50 @@ async fn latest_scan_round_trips_findings_and_unchecked_together() {
 }
 
 #[tokio::test]
+async fn fail_session_marks_status_failed_with_zeroed_totals() {
+    let (manager, _dir) = create_test_manager().await;
+    let session_id = manager.start_session().await.unwrap();
+
+    manager.fail_session(&session_id).await.unwrap();
+
+    let sessions = manager.list_sessions(10).await.unwrap();
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0].session_status, ScanStatus::Failed);
+    assert_eq!(sessions[0].session_total_findings, 0);
+    assert_eq!(sessions[0].session_total_plugins, 0);
+}
+
+#[tokio::test]
+async fn failed_session_is_excluded_from_latest_scan_but_a_later_completed_one_is_returned() {
+    // Mirrors an aborted GUI scan (e.g. a cancelled pkexec prompt): the
+    // orphaned 'running' row gets marked Failed instead, and must stay
+    // invisible to get_latest_scan while a later successful scan is found.
+    let (manager, _dir) = create_test_manager().await;
+
+    let failed_id = manager.start_session().await.unwrap();
+    manager.fail_session(&failed_id).await.unwrap();
+
+    assert!(
+        manager.get_latest_scan().await.unwrap().is_none(),
+        "a session with only a failed run must not be reported as the latest scan"
+    );
+
+    let completed_id = manager.start_session().await.unwrap();
+    manager
+        .store_results(&completed_id, &sample_results())
+        .await
+        .unwrap();
+    manager
+        .complete_session(&completed_id, ScanStatus::Completed, 1, 1)
+        .await
+        .unwrap();
+
+    let (session, _) = manager.get_latest_scan().await.unwrap().unwrap();
+    assert_eq!(session.session_id, completed_id);
+    assert_eq!(session.session_status, ScanStatus::Completed);
+}
+
+#[tokio::test]
 async fn unchecked_checks_survive_store_and_restore() {
     let (manager, _dir) = create_test_manager().await;
     let session_id = manager.start_session().await.unwrap();

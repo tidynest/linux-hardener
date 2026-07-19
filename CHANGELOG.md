@@ -125,6 +125,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wizard's closing summary now prints a "N check(s) could not be
   evaluated without root privileges" hint when the scan left any checks
   unverified.
+- aborted scans (e.g. cancelled authentication) no longer leave running
+  session rows in scan history.
 
 ## [1.3.2] - 2026-07-18
 

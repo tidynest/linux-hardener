@@ -162,6 +162,17 @@ impl ScanHistoryManager {
         Ok(())
     }
 
+    /// Marks a session as failed.
+    ///
+    /// Convenience for abort paths: a session that never produced results
+    /// carries zeroed totals, so this forwards to `complete_session` with
+    /// `ScanStatus::Failed` and `0, 0` rather than making every caller
+    /// repeat those defaults.
+    pub async fn fail_session(&self, session_id: &ScanSessionId) -> Result<()> {
+        self.complete_session(session_id, ScanStatus::Failed, 0, 0)
+            .await
+    }
+
     /// Retrieves the most recent completed scan session with all results.
     ///
     /// Returns None if no completed scans exist.

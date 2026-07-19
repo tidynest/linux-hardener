@@ -502,6 +502,37 @@ async fn persist_scan_results(
     }
 }
 
+/// Runs a fallible scan step, marking `session_id` Failed in history if it
+/// aborts before results ever reach `persist_scan_results`.
+///
+/// Without this, an early `?` between `start_session` and
+/// `persist_scan_results` (a cancelled pkexec prompt, an unreadable config)
+/// orphans the session's 'running' row forever. The original error is
+/// always what gets returned; a failure to persist the Failed status itself
+/// is only logged, never masking the real cause.
+async fn fail_session_on_err<T, Fut>(
+    history_manager: &ScanHistoryManager,
+    session_id: &ScanSessionId,
+    op: Fut,
+) -> Result<T, String>
+where
+    Fut: std::future::Future<Output = Result<T, String>>,
+{
+    match op.await {
+        Ok(value) => Ok(value),
+        Err(err) => {
+            if let Err(fail_err) = history_manager.fail_session(session_id).await {
+                error!(
+                    "Failed to mark scan session {} as failed: {}",
+                    session_id.as_str(),
+                    fail_err
+                );
+            }
+            Err(err)
+        }
+    }
+}
+
 /// Executes a security scan across all enabled plugins.
 ///
 /// Persists results to the database for GUI state restoration.
@@ -524,49 +555,56 @@ pub async fn run_scan(
     // Start a new scan session
     let session_id = history_manager.start_session().await.map_err(safe_err)?;
 
-    // Load config if custom path provided
-    let config = if let Some(ref path) = config_path {
-        ConfigLoader::new()
-            .with_cli_config(std::path::PathBuf::from(path))
-            .load()
-            .map_err(|e| safe_err(format!("Failed to load config: {}", e)))?
-    } else {
-        ConfigLoader::new().load().unwrap_or_default()
-    };
-    let ctx = Context::new();
-    let registry = create_plugin_registry();
+    // Everything fallible from here marks the session Failed on abort
+    // instead of orphaning its 'running' row.
+    let results = fail_session_on_err(&history_manager, &session_id, async {
+        // Load config if custom path provided
+        let config = if let Some(ref path) = config_path {
+            ConfigLoader::new()
+                .with_cli_config(std::path::PathBuf::from(path))
+                .load()
+                .map_err(|e| safe_err(format!("Failed to load config: {}", e)))?
+        } else {
+            ConfigLoader::new().load().unwrap_or_default()
+        };
+        let ctx = Context::new();
+        let registry = create_plugin_registry();
 
-    let mut results = Vec::new();
+        let mut results = Vec::new();
 
-    // Get list of all plugin metadata
-    let plugin_list = registry.list().map_err(safe_err)?;
+        // Get list of all plugin metadata
+        let plugin_list = registry.list().map_err(safe_err)?;
 
-    for metadata in plugin_list {
-        // Skip plugins not in the filter list (if a filter was provided)
-        if let Some(ref ids) = plugin_ids
-            && !ids.is_empty()
-            && !ids.iter().any(|id| {
-                metadata.plugin_id == (*id).clone().into()
-                    || metadata.plugin_id.as_str().starts_with(&format!("{}-", id))
-            })
-        {
-            continue;
-        }
+        for metadata in plugin_list {
+            // Skip plugins not in the filter list (if a filter was provided)
+            if let Some(ref ids) = plugin_ids
+                && !ids.is_empty()
+                && !ids.iter().any(|id| {
+                    metadata.plugin_id == (*id).clone().into()
+                        || metadata.plugin_id.as_str().starts_with(&format!("{}-", id))
+                })
+            {
+                continue;
+            }
 
-        // Skip plugins disabled by config
-        if !config.is_plugin_enabled(metadata.plugin_id.as_str()) {
-            continue;
-        }
-        // Retrieve the actual plugin
-        if let Ok(Some(plugin)) = registry.get(&metadata.plugin_id) {
-            match plugin.scan(&ctx).await {
-                Ok(result) => results.push(result),
-                Err(e) => {
-                    error!("Scan failed for plugin {}: {}", metadata.plugin_id, e);
+            // Skip plugins disabled by config
+            if !config.is_plugin_enabled(metadata.plugin_id.as_str()) {
+                continue;
+            }
+            // Retrieve the actual plugin
+            if let Ok(Some(plugin)) = registry.get(&metadata.plugin_id) {
+                match plugin.scan(&ctx).await {
+                    Ok(result) => results.push(result),
+                    Err(e) => {
+                        error!("Scan failed for plugin {}: {}", metadata.plugin_id, e);
+                    }
                 }
             }
         }
-    }
+
+        Ok(results)
+    })
+    .await?;
 
     persist_scan_results(&history_manager, &session_id, &results).await;
 
@@ -598,27 +636,33 @@ pub async fn run_deep_scan(
     let history_manager = create_scan_history_manager().await?;
     let session_id = history_manager.start_session().await.map_err(safe_err)?;
 
-    let mut args: Vec<&str> = vec!["scan", "--format", "json"];
-    let plugin_args: Vec<String> = plugin_ids
-        .iter()
-        .flatten()
-        .flat_map(|id| vec!["--plugin".to_string(), id.clone()])
-        .collect();
-    let plugin_refs: Vec<&str> = plugin_args.iter().map(|s| s.as_str()).collect();
-    args.extend(plugin_refs);
-    let config_flag;
-    if let Some(ref path) = config_path {
-        config_flag = path.clone();
-        args.push("--config");
-        args.push(&config_flag);
-    }
+    // Everything fallible from here (the pkexec prompt included) marks the
+    // session Failed on abort instead of orphaning its 'running' row.
+    let results = fail_session_on_err(&history_manager, &session_id, async {
+        let mut args: Vec<&str> = vec!["scan", "--format", "json"];
+        let plugin_args: Vec<String> = plugin_ids
+            .iter()
+            .flatten()
+            .flat_map(|id| vec!["--plugin".to_string(), id.clone()])
+            .collect();
+        let plugin_refs: Vec<&str> = plugin_args.iter().map(|s| s.as_str()).collect();
+        args.extend(plugin_refs);
+        let config_flag;
+        if let Some(ref path) = config_path {
+            config_flag = path.clone();
+            args.push("--config");
+            args.push(&config_flag);
+        }
 
-    let raw = run_privileged(&args).await.map_err(safe_err)?;
-    let entries: Vec<CliScanEntry> = accept_json_output(&raw).map_err(safe_err)?;
-    let results: Vec<ScanResult> = entries
-        .into_iter()
-        .map(CliScanEntry::into_scan_result)
-        .collect();
+        let raw = run_privileged(&args).await.map_err(safe_err)?;
+        let entries: Vec<CliScanEntry> = accept_json_output(&raw).map_err(safe_err)?;
+        let results: Vec<ScanResult> = entries
+            .into_iter()
+            .map(CliScanEntry::into_scan_result)
+            .collect();
+        Ok(results)
+    })
+    .await?;
 
     persist_scan_results(&history_manager, &session_id, &results).await;
 
@@ -2647,5 +2691,57 @@ mod fleet_tests {
             .collect();
         assert_eq!(results[0].scan_unchecked.len(), 1);
         assert!(results[0].scan_success);
+    }
+}
+
+/// Tests for `fail_session_on_err`, the helper `run_scan`/`run_deep_scan`
+/// use to mark an aborted scan's history row Failed instead of orphaning
+/// it as 'running' forever. The commands themselves are thin wrappers over
+/// real system state with no test seam, but this helper is the load-bearing
+/// piece, and it is fully exercisable against a real (tempdir-backed) scan
+/// history database.
+#[cfg(test)]
+mod fail_session_on_err_tests {
+    use super::*;
+
+    async fn test_history_manager() -> (ScanHistoryManager, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = init_db(Some(&dir.path().join("test.db"))).await.unwrap();
+        (ScanHistoryManager::new(pool), dir)
+    }
+
+    #[tokio::test]
+    async fn marks_the_session_failed_and_preserves_the_original_error_on_abort() {
+        let (history_manager, _dir) = test_history_manager().await;
+        let session_id = history_manager.start_session().await.unwrap();
+
+        let outcome: Result<(), String> =
+            fail_session_on_err(&history_manager, &session_id, async {
+                Err("cancelled authentication".to_string())
+            })
+            .await;
+
+        assert_eq!(outcome, Err("cancelled authentication".to_string()));
+
+        let sessions = history_manager.list_sessions(10).await.unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].session_status, ScanStatus::Failed);
+    }
+
+    #[tokio::test]
+    async fn leaves_the_session_untouched_on_success() {
+        let (history_manager, _dir) = test_history_manager().await;
+        let session_id = history_manager.start_session().await.unwrap();
+
+        let outcome: Result<i32, String> =
+            fail_session_on_err(&history_manager, &session_id, async { Ok(7) }).await;
+
+        assert_eq!(outcome, Ok(7));
+
+        // The success path completes the session itself elsewhere
+        // (persist_scan_results); the helper must not touch it.
+        let sessions = history_manager.list_sessions(10).await.unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].session_status, ScanStatus::Running);
     }
 }
