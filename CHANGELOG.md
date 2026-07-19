@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-07-19
+
 ### Added
 - `hardener scan` (CLI and desktop) now distinguishes checks it could not
   verify at the current privilege level from checks that ran and found
@@ -1485,4 +1487,4 @@ Configuration file support with layered loading, compliance framework reporting 
 [0.2.0]: https://github.com/tidynest/linux-system-hardener/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tidynest/linux-system-hardener/releases/tag/v0.1.0
 
-**Last Updated**: 2026-07-18
+**Last Updated**: 2026-07-19

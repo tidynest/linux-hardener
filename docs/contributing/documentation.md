@@ -126,4 +126,4 @@ Checks that every framework defined in the `ComplianceFramework` enum (`crates/h
 
 Checks that the version in `Cargo.toml` matches `tauri.conf.json` and all documentation references. Also invoked by `validate_all.py`.
 
-**Last Updated**: 2026-07-18
+**Last Updated**: 2026-07-19
