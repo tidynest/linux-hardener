@@ -383,6 +383,52 @@ async fn backend_activity(ctx: &Context, backend: &dyn FirewallBackend) -> Backe
     }
 }
 
+/// The error raised when none of the supported backends are installed.
+fn no_backend_error() -> hardener_common::error::HardeningError {
+    hardener_common::error::HardeningError::Plugin(
+        "No supported firewall backend found (checked: firewalld, ufw, nftables)".to_string(),
+    )
+}
+
+/// Detects installed backends and classifies each one's activity in a
+/// single pass, so every backend's probe runs exactly once per scan or
+/// apply operation. Order matches the detection order below, which both
+/// `detect_backend` and `scan` rely on for installed-order fallback
+/// semantics (firewalld, ufw, nftables tie-break).
+async fn classify_installed(
+    ctx: &Context,
+) -> Result<Vec<(Box<dyn FirewallBackend>, BackendActivity)>> {
+    let candidates: Vec<Box<dyn FirewallBackend>> = vec![
+        Box::new(firewalld::FirewalldBackend::new()),
+        Box::new(ufw::UfwBackend::new()),
+        Box::new(nftables::NftablesBackend::new()),
+    ];
+
+    let mut classified = Vec::with_capacity(candidates.len());
+    for backend in candidates {
+        if backend.detect(ctx).await? {
+            let activity = backend_activity(ctx, backend.as_ref()).await;
+            classified.push((backend, activity));
+        }
+    }
+
+    Ok(classified)
+}
+
+/// Index of the backend the apply path would drive: the first classified
+/// Verified or UnitActiveUnverified, in installed order. None when no
+/// backend's activity places it in charge. Shared by `detect_backend`
+/// (selection) and `scan` (honesty gate) so the two can never disagree
+/// about who the winner is.
+fn find_winner(classified: &[(Box<dyn FirewallBackend>, BackendActivity)]) -> Option<usize> {
+    classified.iter().position(|(_, activity)| {
+        matches!(
+            activity,
+            BackendActivity::Verified | BackendActivity::UnitActiveUnverified
+        )
+    })
+}
+
 impl FirewallHardeningPlugin {
     /// Create a new firewall plugin instance.
     ///
@@ -411,49 +457,27 @@ impl FirewallHardeningPlugin {
     /// # Returns
     /// A boxed backend implementation, or an error if no backend is available.
     async fn detect_backend(&self, ctx: &Context) -> Result<Box<dyn FirewallBackend>> {
-        let candidates: Vec<Box<dyn FirewallBackend>> = vec![
-            Box::new(firewalld::FirewalldBackend::new()),
-            Box::new(ufw::UfwBackend::new()),
-            Box::new(nftables::NftablesBackend::new()),
-        ];
+        let mut classified = classify_installed(ctx).await?;
 
-        let mut installed = Vec::with_capacity(candidates.len());
-        for backend in candidates {
-            if backend.detect(ctx).await? {
-                installed.push(backend);
-            }
+        if classified.is_empty() {
+            return Err(no_backend_error());
         }
 
-        if installed.is_empty() {
-            return Err(hardener_common::error::HardeningError::Plugin(
-                "No supported firewall backend found (checked: firewalld, ufw, nftables)"
-                    .to_string(),
-            ));
-        }
-
-        let mut active_index = None;
-        for (index, backend) in installed.iter().enumerate() {
-            if matches!(
-                backend_activity(ctx, backend.as_ref()).await,
-                BackendActivity::Verified | BackendActivity::UnitActiveUnverified
-            ) {
-                active_index = Some(index);
-                break;
-            }
-        }
+        let installed_count = classified.len();
+        let active_index = find_winner(&classified);
 
         let winner_index = active_index.unwrap_or(0);
-        let winner = installed.remove(winner_index);
+        let (winner, _) = classified.remove(winner_index);
         match active_index {
             Some(_) => info!(
                 "Selected {} firewall backend (active among {} installed)",
                 winner.backend_name(),
-                installed.len() + 1
+                installed_count
             ),
             None => info!(
                 "No active firewall backend among {} installed; falling back to {} \
                  (first in installed-order)",
-                installed.len() + 1,
+                installed_count,
                 winner.backend_name()
             ),
         }
@@ -483,11 +507,11 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         let start_time = Instant::now();
         let plugin_id = PluginId::new("firewall-hardening");
 
-        let mut findings = Vec::new();
-
-        // Detect backend.
-        let backend = match self.detect_backend(ctx).await {
-            Ok(backend) => backend,
+        // Classify every installed backend once; the honesty check below
+        // and the red "disabled" finding both read from this single pass,
+        // so no backend is ever probed twice.
+        let classified = match classify_installed(ctx).await {
+            Ok(classified) => classified,
             Err(e) => {
                 return Ok(ScanResult {
                     scan_plugin_id: plugin_id,
@@ -500,46 +524,74 @@ impl HardeningPlugin for FirewallHardeningPlugin {
             }
         };
 
-        // Check if firewall is enabled, degrading to the root-free systemd
-        // unit hint when the backend's own probe needs privileges.
+        if classified.is_empty() {
+            return Ok(ScanResult {
+                scan_plugin_id: plugin_id,
+                scan_success: false,
+                scan_findings: vec![],
+                scan_unchecked: vec![],
+                scan_duration_us: start_time.elapsed().as_micros() as u64,
+                scan_error: Some(format!("No firewall backend: {}", no_backend_error())),
+            });
+        }
+
+        let mut findings = Vec::new();
         let mut unchecked = Vec::new();
-        match backend_activity(ctx, backend.as_ref()).await {
-            BackendActivity::Verified => {}
-            BackendActivity::UnitActiveUnverified | BackendActivity::Unknown => {
-                unchecked.push(UncheckedCheck {
-                    unchecked_check_id: format!("{}-disabled", backend.backend_name()),
-                    unchecked_title: "Active firewall ruleset".to_string(),
-                    unchecked_category: FindingCategory::Network,
-                    unchecked_reason: format!(
-                        "verifying the active {} ruleset requires root",
-                        backend.backend_name()
-                    ),
-                    unchecked_compliance: get_firewall_compliance_mappings(),
-                });
-            }
-            BackendActivity::Inactive => {
-                findings.push(Finding {
-                    finding_category: FindingCategory::Network,
-                    finding_current_value: "disabled".to_string(),
-                    finding_description: format!(
-                        "{} firewall is not enabled",
-                        backend.backend_name()
-                    ),
-                    finding_explanation: "A firewall provides essential network protection"
-                        .to_string(),
-                    finding_id: format!("{}-disabled", backend.backend_name()),
-                    finding_impact: "System exposed to network attacks".to_string(),
-                    finding_recommended_value: "enabled".to_string(),
-                    finding_remediation_steps: vec![format!(
-                        "Enable {} firewall",
-                        backend.backend_name()
-                    )],
-                    finding_severity: Severity::High,
-                    finding_title: "Firewall disabled".to_string(),
-                    finding_compliance: get_firewall_compliance_mappings(),
-                    finding_policy_exception: None,
-                });
-            }
+
+        // Honesty gate, judged from the winner outwards. The winner is the
+        // backend the apply path would drive (find_winner, shared with
+        // detect_backend). A Verified winner settles the host-level
+        // question - one confirmed active firewall - so sibling backends'
+        // unknowability is irrelevant and the scan stays silent. A
+        // UnitActiveUnverified winner is itself the backend whose ruleset
+        // could not be seen, so the unchecked entry names the WINNER, not
+        // whichever unverifiable backend comes first in installed order.
+        // Only with no winner at all does the first Unknown backend (in
+        // installed order) name the entry. The red "disabled" finding is
+        // warranted only once every installed backend's probe ran and
+        // confirmed inactive.
+        let blocked = match find_winner(&classified).map(|index| &classified[index]) {
+            Some((_, BackendActivity::Verified)) => None,
+            Some((backend, _)) => Some(backend),
+            None => classified
+                .iter()
+                .find(|(_, activity)| matches!(activity, BackendActivity::Unknown))
+                .map(|(backend, _)| backend),
+        };
+
+        if let Some(backend) = blocked {
+            unchecked.push(UncheckedCheck {
+                unchecked_check_id: format!("{}-disabled", backend.backend_name()),
+                unchecked_title: "Active firewall ruleset".to_string(),
+                unchecked_category: FindingCategory::Network,
+                unchecked_reason: format!(
+                    "verifying the active {} ruleset requires root",
+                    backend.backend_name()
+                ),
+                unchecked_compliance: get_firewall_compliance_mappings(),
+            });
+        } else if classified
+            .iter()
+            .all(|(_, activity)| matches!(activity, BackendActivity::Inactive))
+        {
+            let (backend, _) = &classified[0];
+            findings.push(Finding {
+                finding_category: FindingCategory::Network,
+                finding_current_value: "disabled".to_string(),
+                finding_description: format!("{} firewall is not enabled", backend.backend_name()),
+                finding_explanation: "A firewall provides essential network protection".to_string(),
+                finding_id: format!("{}-disabled", backend.backend_name()),
+                finding_impact: "System exposed to network attacks".to_string(),
+                finding_recommended_value: "enabled".to_string(),
+                finding_remediation_steps: vec![format!(
+                    "Enable {} firewall",
+                    backend.backend_name()
+                )],
+                finding_severity: Severity::High,
+                finding_title: "Firewall disabled".to_string(),
+                finding_compliance: get_firewall_compliance_mappings(),
+                finding_policy_exception: None,
+            });
         }
 
         let duration_us = start_time.elapsed().as_micros() as u64;
@@ -773,6 +825,205 @@ mod tests {
         assert_eq!(
             result.scan_unchecked[0].unchecked_check_id,
             "nftables-disabled"
+        );
+    }
+
+    /// Reproduces the maintainer-host acceptance gap: ufw and nftables are
+    /// both installed, nftables' ruleset is loaded in-kernel but its unit is
+    /// inactive (loaded outside the unit) and the probe is permission
+    /// blocked, so nftables' true state is unknowable. ufw's own probe runs
+    /// cleanly and reports disabled. Reporting the red finding here would be
+    /// a false positive: nftables might well be the active firewall.
+    #[tokio::test]
+    async fn scan_reports_unchecked_when_blocked_backend_might_be_active() {
+        // ufw + nftables installed; nft probe permission-blocked; BOTH units
+        // inactive (ruleset loaded outside the unit). ufw's probe runs and says
+        // disabled - but nftables' state is unknowable, so no red finding.
+        let mock = MockExecutor::new()
+            .with_command_exists("firewall-cmd", false)
+            .with_command_exists("ufw", true)
+            .with_command_exists("nft", true)
+            .with_command(
+                "nft",
+                &["list", "ruleset"],
+                CommandOutput {
+                    stdout: String::new(),
+                    stderr: "Operation not permitted (you must be root)".to_string(),
+                    exit_code: 1,
+                },
+            )
+            .with_command(
+                "systemctl",
+                &["is-active", "nftables"],
+                CommandOutput {
+                    stdout: "inactive\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 3,
+                },
+            )
+            .with_command(
+                "systemctl",
+                &["is-active", "ufw"],
+                CommandOutput {
+                    stdout: "inactive\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 3,
+                },
+            );
+        let ctx = Context::with_executor(std::sync::Arc::new(mock));
+        let result = FirewallHardeningPlugin::new().scan(&ctx).await.unwrap();
+
+        assert!(
+            result.scan_findings.is_empty(),
+            "no red finding while nftables is unknowable"
+        );
+        assert_eq!(result.scan_unchecked.len(), 1);
+        assert_eq!(
+            result.scan_unchecked[0].unchecked_check_id,
+            "nftables-disabled"
+        );
+    }
+
+    /// Negative control for the above: nftables' probe genuinely succeeds
+    /// (not permission-blocked) and finds no active input-hook chain, and
+    /// ufw is genuinely inactive. Every installed backend's probe ran and
+    /// reported inactive, so the red finding is warranted here.
+    #[tokio::test]
+    async fn scan_reports_disabled_when_every_backend_probe_confirms_inactive() {
+        let mock = MockExecutor::new()
+            .with_command_exists("firewall-cmd", false)
+            .with_command_exists("ufw", true)
+            .with_command_exists("nft", true)
+            .with_command(
+                "nft",
+                &["list", "ruleset"],
+                CommandOutput {
+                    stdout: "table inet filter {\n}\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            )
+            .with_command(
+                "systemctl",
+                &["is-active", "ufw"],
+                CommandOutput {
+                    stdout: "inactive\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 3,
+                },
+            );
+        let ctx = Context::with_executor(std::sync::Arc::new(mock));
+        let result = FirewallHardeningPlugin::new().scan(&ctx).await.unwrap();
+
+        assert!(
+            result.scan_unchecked.is_empty(),
+            "every backend probe ran; nothing is unverifiable"
+        );
+        assert_eq!(result.scan_findings.len(), 1);
+        assert_eq!(result.scan_findings[0].finding_id, "ufw-disabled");
+    }
+
+    /// A verified-active winner settles the host-level question: nftables'
+    /// probe confirms an input-hook chain (Verified), while ufw's state is
+    /// unknowable (its systemctl hint errors and its status fallback is
+    /// permission-blocked, classifying Unknown). The scan must stay silent -
+    /// no finding AND no unchecked entry - because one confirmed active
+    /// firewall makes the sibling's unknowability irrelevant.
+    #[tokio::test]
+    async fn scan_stays_silent_when_winner_is_verified_despite_unknown_sibling() {
+        let mock = MockExecutor::new()
+            .with_command_exists("firewall-cmd", false)
+            .with_command_exists("ufw", true)
+            .with_command_exists("nft", true)
+            .with_command(
+                "nft",
+                &["list", "ruleset"],
+                CommandOutput {
+                    stdout: "table inet filter {\n  chain input {\n    \
+                             type filter hook input priority 0;\n  }\n}\n"
+                        .to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            )
+            // `systemctl is-active ufw` deliberately unregistered: the mock
+            // errors, so ufw's is_enabled falls through to its `ufw status`
+            // fallback and the unit hint reads inactive.
+            .with_command(
+                "ufw",
+                &["status"],
+                CommandOutput {
+                    stdout: String::new(),
+                    stderr: "ERROR: You need to be root to run this script".to_string(),
+                    exit_code: 1,
+                },
+            );
+        let ctx = Context::with_executor(std::sync::Arc::new(mock));
+        let result = FirewallHardeningPlugin::new().scan(&ctx).await.unwrap();
+
+        assert!(
+            result.scan_findings.is_empty(),
+            "a verified-active firewall must not raise a finding"
+        );
+        assert!(
+            result.scan_unchecked.is_empty(),
+            "a verified-active winner answers the check; no unchecked entry"
+        );
+    }
+
+    /// The unchecked entry must name the WINNER when the winner classifies
+    /// UnitActiveUnverified, not whichever unverifiable backend happens to
+    /// come first in installed order. Here ufw (earlier in installed order)
+    /// classifies Unknown, while nftables classifies UnitActiveUnverified
+    /// and is therefore the winner the apply path would drive - so the
+    /// entry must read "nftables-disabled", not "ufw-disabled".
+    #[tokio::test]
+    async fn scan_unchecked_names_the_winner_not_the_first_unknown_sibling() {
+        let mock = MockExecutor::new()
+            .with_command_exists("firewall-cmd", false)
+            .with_command_exists("ufw", true)
+            .with_command_exists("nft", true)
+            .with_command(
+                "nft",
+                &["list", "ruleset"],
+                CommandOutput {
+                    stdout: String::new(),
+                    stderr: "nft: Permission denied".to_string(),
+                    exit_code: 1,
+                },
+            )
+            .with_command(
+                "systemctl",
+                &["is-active", "nftables"],
+                CommandOutput {
+                    stdout: "active\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            )
+            // `systemctl is-active ufw` deliberately unregistered: the mock
+            // errors, so ufw's is_enabled falls through to its `ufw status`
+            // fallback and the unit hint reads inactive, classifying Unknown.
+            .with_command(
+                "ufw",
+                &["status"],
+                CommandOutput {
+                    stdout: String::new(),
+                    stderr: "ERROR: You need to be root to run this script".to_string(),
+                    exit_code: 1,
+                },
+            );
+        let ctx = Context::with_executor(std::sync::Arc::new(mock));
+        let result = FirewallHardeningPlugin::new().scan(&ctx).await.unwrap();
+
+        assert!(
+            result.scan_findings.is_empty(),
+            "nothing is confirmed inactive; no red finding"
+        );
+        assert_eq!(result.scan_unchecked.len(), 1);
+        assert_eq!(
+            result.scan_unchecked[0].unchecked_check_id, "nftables-disabled",
+            "the unchecked entry must name the winner, not the first unknown sibling"
         );
     }
 
