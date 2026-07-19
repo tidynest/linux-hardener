@@ -45,6 +45,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of this presentation is muted-only, never severity-coloured.
 
 ### Changed
+- Dry-run and apply are now state-aware for the kernel and PAM plugins, so
+  scan, dry-run and apply tell one coherent story: settings already at their
+  target are reported as such ("N parameter(s) already compliant" in
+  dry-run, Skipped "already set"/"already compliant" entries in apply)
+  instead of being re-applied on every run. Kernel apply writes only drifted
+  sysctls and rewrites `/etc/sysctl.d/99-hardener.conf` only when a
+  parameter changed or the file's content no longer matches; PAM rewrites
+  `pwquality.conf`/`login.defs` only when at least one directive actually
+  differs, and creates a backup only when a file will be rewritten (no more
+  backup churn in /etc on already-compliant hosts). Already-compliant and
+  policy-exception entries are typed `Skipped`, so "N change(s) applied"
+  counts real work only. The no-loosen threshold semantics for
+  faillock/pwhistory are unchanged.
 - Batch text output (`batch scan`/`report`/`apply`/`rollback`) now groups
   results in per-host sections instead of one compact table: each host
   gets a coloured header rule naming the inventory name, full

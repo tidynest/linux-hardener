@@ -810,6 +810,11 @@ impl HardeningPlugin for KernelHardeningPlugin {
         );
 
         // Apply each parameter to runtime AND build config file content.
+        // State-aware: a parameter already at its target is left untouched
+        // and counted, so re-running apply on a compliant host is a no-op.
+        let mut runtime_changed = false;
+        let mut compliant_count = 0usize;
+
         for (param_name, expected_value, param_description, _severity) in KERNEL_PARAMS {
             // Check for a valid exception: skip this parameter if exempted
             if let Some(exception) = config.has_valid_exception(param_name) {
@@ -823,7 +828,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
                         "{}: skipped (exception: {})",
                         param_description, exception.reason
                     ),
-                    change_type: ChangeType::KernelParameter,
+                    change_type: ChangeType::Skipped,
                     change_success: true,
                     change_error: None,
                 });
@@ -845,6 +850,14 @@ impl HardeningPlugin for KernelHardeningPlugin {
                 param_description, param_name, target_value
             ));
 
+            // Already at the target: no runtime write needed.
+            if let Ok(current) = self.read_sysctl(param_name, ctx).await
+                && current == target_value
+            {
+                compliant_count += 1;
+                continue;
+            }
+
             // Apply immediately to runtime.
             match ctx
                 .executor()
@@ -852,6 +865,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
                 .await
             {
                 Ok(_) => {
+                    runtime_changed = true;
                     apply_changes.push(Change {
                         change_description: format!(
                             "{}: set to {}",
@@ -875,30 +889,55 @@ impl HardeningPlugin for KernelHardeningPlugin {
             }
         }
 
-        // Write persistent config file so changes survive reboot AND rollback works.
-        match ctx
-            .executor()
-            .write_file(hardener_sysctl_path, &sysctl_config_content)
-            .await
-        {
-            Ok(_) => {
-                apply_changes.push(Change {
-                    change_description: "Created persistent sysctl config".to_string(),
-                    change_type: ChangeType::ConfigFile,
-                    change_success: true,
-                    change_error: None,
-                });
-                info!("Created {}", hardener_sysctl_path.display());
+        if compliant_count > 0 {
+            apply_changes.push(Change {
+                change_description: format!(
+                    "{} sysctl(s) already compliant - unchanged",
+                    compliant_count
+                ),
+                change_type: ChangeType::Skipped,
+                change_success: true,
+                change_error: None,
+            });
+        }
+
+        // Write persistent config file so changes survive reboot AND rollback
+        // works. The file is the boot-persistence guarantee: rewrite it only
+        // when a parameter actually changed or its content no longer matches
+        // the desired settings.
+        let existing_config = ctx.executor().read_file(hardener_sysctl_path).await.ok();
+        if runtime_changed || existing_config.as_deref() != Some(sysctl_config_content.as_str()) {
+            match ctx
+                .executor()
+                .write_file(hardener_sysctl_path, &sysctl_config_content)
+                .await
+            {
+                Ok(_) => {
+                    apply_changes.push(Change {
+                        change_description: "Created persistent sysctl config".to_string(),
+                        change_type: ChangeType::ConfigFile,
+                        change_success: true,
+                        change_error: None,
+                    });
+                    info!("Created {}", hardener_sysctl_path.display());
+                }
+                Err(e) => {
+                    apply_changes.push(Change {
+                        change_description: "Failed to create persistent sysctl config".to_string(),
+                        change_type: ChangeType::ConfigFile,
+                        change_success: false,
+                        change_error: Some(e.to_string()),
+                    });
+                    warn!("Failed to create {}: {}", hardener_sysctl_path.display(), e);
+                }
             }
-            Err(e) => {
-                apply_changes.push(Change {
-                    change_description: "Failed to create persistent sysctl config".to_string(),
-                    change_type: ChangeType::ConfigFile,
-                    change_success: false,
-                    change_error: Some(e.to_string()),
-                });
-                warn!("Failed to create {}: {}", hardener_sysctl_path.display(), e);
-            }
+        } else {
+            apply_changes.push(Change {
+                change_description: "Persistent sysctl config already up to date".to_string(),
+                change_type: ChangeType::Skipped,
+                change_success: true,
+                change_error: None,
+            });
         }
 
         let apply_success = apply_changes.iter().all(|c| c.change_success);
@@ -963,14 +1002,18 @@ impl HardeningPlugin for KernelHardeningPlugin {
 
     /// Validates that kernel parameters can be applied (dry-run).
     ///
-    /// Checks if sysctl parameters exist and are writable without
-    /// actually modifying them.
+    /// Checks if sysctl parameters exist and are writable without actually
+    /// modifying them. State-aware: only parameters whose current value
+    /// differs from the target are listed as pending; parameters already at
+    /// their target are summarised in one compliant-count line so the admin
+    /// can see they were checked.
     ///
     /// # Arguments
     /// * `config` - Plugin configuration with directive overrides and policy exceptions
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {
         let mut issues = Vec::new();
         let mut estimated_changes = Vec::new();
+        let mut compliant_count = 0usize;
 
         for (param_name, expected_value, _expected_description, _severity) in KERNEL_PARAMS {
             // Skip parameters with valid exceptions
@@ -987,21 +1030,24 @@ impl HardeningPlugin for KernelHardeningPlugin {
 
             let path = format!("/proc/sys/{}", param_name.replace('.', "/"));
 
-            // Check if parameter exists and is readable
+            // Check if parameter exists, is writable, and differs from target
             match ctx.executor().file_metadata(Path::new(&path)).await {
-                Ok(metadata) => {
-                    // Check if writeable (mode has write bit for owner)
-                    if metadata.mode & 0o200 == 0 {
-                        issues.push(ValidationIssue {
-                            validation_issue_severity: Severity::High,
-                            validation_issue_message: format!("{} is read-only", param_name),
-                            validation_issue_config_key: Some(param_name.to_string()),
-                        });
-                    } else {
-                        estimated_changes
-                            .push(format!("{} will be set to {}", param_name, target_value));
-                    }
+                Ok(metadata) if metadata.mode & 0o200 == 0 => {
+                    issues.push(ValidationIssue {
+                        validation_issue_severity: Severity::High,
+                        validation_issue_message: format!("{} is read-only", param_name),
+                        validation_issue_config_key: Some(param_name.to_string()),
+                    });
                 }
+                Ok(_) => match self.read_sysctl(param_name, ctx).await {
+                    Ok(current) if current == target_value => compliant_count += 1,
+                    Ok(current) => estimated_changes.push(format!(
+                        "{} will change: {} -> {}",
+                        param_name, current, target_value
+                    )),
+                    Err(_) => estimated_changes
+                        .push(format!("{} will be set to {}", param_name, target_value)),
+                },
                 Err(_) => {
                     issues.push(ValidationIssue {
                         validation_issue_severity: Severity::Low,
@@ -1013,6 +1059,13 @@ impl HardeningPlugin for KernelHardeningPlugin {
                     });
                 }
             }
+        }
+
+        if compliant_count > 0 {
+            estimated_changes.push(format!(
+                "{} parameter(s) already compliant (no change needed)",
+                compliant_count
+            ));
         }
 
         Ok(ValidationReport {

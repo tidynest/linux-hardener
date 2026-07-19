@@ -692,66 +692,23 @@ impl HardeningPlugin for PamHardeningPlugin {
             });
         }
 
-        // Step 1: Create backups (legacy, in addition to checkpoint)
-        let pwquality_backup = match create_config_backup(ctx, "/etc/security/pwquality.conf").await
-        {
-            Ok(path) => {
-                changes.push(Change {
-                    change_type: ChangeType::ConfigFile,
-                    change_description: format!("Created backup: {}", path),
-                    change_success: true,
-                    change_error: None,
-                });
-                Some(path)
-            }
-            Err(e) => {
-                warn!("Failed to backup pwquality.conf: {}", e);
-                changes.push(Change {
-                    change_type: ChangeType::ConfigFile,
-                    change_description: "Failed to create pwquality.conf backup".to_string(),
-                    change_success: false,
-                    change_error: Some(e.to_string()),
-                });
-                all_success = false;
-                None
-            }
-        };
-
-        let login_defs_backup = match create_config_backup(ctx, "/etc/login.defs").await {
-            Ok(path) => {
-                changes.push(Change {
-                    change_type: ChangeType::ConfigFile,
-                    change_description: format!("Created backup: {}", path),
-                    change_success: true,
-                    change_error: None,
-                });
-                Some(path)
-            }
-            Err(e) => {
-                warn!("Failed to backup login.defs: {}", e);
-                changes.push(Change {
-                    change_type: ChangeType::ConfigFile,
-                    change_description: "Failed to create login.defs".to_string(),
-                    change_success: false,
-                    change_error: Some(e.to_string()),
-                });
-                all_success = false;
-                None
-            }
-        };
-
-        // Step 2: Read current configuration files
+        // Step 1: Read current configuration files. Backups are created later,
+        // and only for a file that will actually be rewritten, so a compliant
+        // host accumulates no backup churn in /etc.
         let mut pwquality_content = read_pwquality_config(ctx).await.unwrap_or_else(|e| {
             warn!("Failed to read pwquality.conf, using empty content: {}", e);
             String::new()
         });
+        let mut pwquality_changed = false;
 
         let mut login_defs_content = read_login_defs(ctx).await.unwrap_or_else(|e| {
             warn!("Failed to read login.defs, using empty content: {}", e);
             String::new()
         });
+        let mut login_defs_changed = false;
 
-        // Step 3: Apply each directive
+        // Step 2: Apply each directive (state-aware: already-correct values
+        // record a Skipped no-op and never trigger a rewrite)
         for directive in PAM_DIRECTIVES {
             // Check for a valid exception: skip this directive if exempted
             if let Some(exception) = config.has_valid_exception(directive.pam_directive_name) {
@@ -760,7 +717,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                     directive.pam_directive_name, exception.reason
                 );
                 changes.push(Change {
-                    change_type: ChangeType::ConfigFile,
+                    change_type: ChangeType::Skipped,
                     change_description: format!(
                         "{}: skipped (exception: {})",
                         directive.pam_directive_name, exception.reason
@@ -779,40 +736,22 @@ impl HardeningPlugin for PamHardeningPlugin {
                 .unwrap_or(directive.pam_secure_value);
 
             match directive.pam_config_file {
-                PamConfigFile::PwQuality => {
-                    pwquality_content = apply_directive_to_content(
-                        &pwquality_content,
-                        directive.pam_directive_name,
-                        target_value,
-                    );
-
-                    changes.push(Change {
-                        change_type: ChangeType::ConfigFile,
-                        change_description: format!(
-                            "Set {} = {} in pwquality.conf",
-                            directive.pam_directive_name, target_value,
-                        ),
-                        change_success: true,
-                        change_error: None,
-                    });
-                }
-                PamConfigFile::LoginDefs => {
-                    login_defs_content = apply_directive_to_content(
-                        &login_defs_content,
-                        directive.pam_directive_name,
-                        target_value,
-                    );
-
-                    changes.push(Change {
-                        change_type: ChangeType::ConfigFile,
-                        change_description: format!(
-                            "Set {} = {} in login.defs",
-                            directive.pam_directive_name, target_value,
-                        ),
-                        change_success: true,
-                        change_error: None,
-                    });
-                }
+                PamConfigFile::PwQuality => apply_exact_directive(
+                    &mut pwquality_content,
+                    &mut pwquality_changed,
+                    &mut changes,
+                    directive.pam_directive_name,
+                    target_value,
+                    "pwquality.conf",
+                ),
+                PamConfigFile::LoginDefs => apply_exact_directive(
+                    &mut login_defs_content,
+                    &mut login_defs_changed,
+                    &mut changes,
+                    directive.pam_directive_name,
+                    target_value,
+                    "login.defs",
+                ),
                 PamConfigFile::PamAuth => {
                     // Skip PAM module for now
                     debug!(
@@ -848,7 +787,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                     // compliant, so touching it could only loosen it.
                     if !breaches_threshold(directive.pam_compare, target, effective.as_deref()) {
                         changes.push(Change {
-                            change_type: ChangeType::ConfigFile,
+                            change_type: ChangeType::Skipped,
                             change_description: format!(
                                 "{} already meets threshold in {}",
                                 directive.pam_directive_name, path,
@@ -932,64 +871,32 @@ impl HardeningPlugin for PamHardeningPlugin {
             }
         }
 
-        // Step 4: Write modified configuration files back to disk atomically
-        if pwquality_backup.is_some() {
-            match ctx
-                .executor()
-                .write_file(
-                    Path::new("/etc/security/pwquality.conf"),
-                    &pwquality_content,
-                )
-                .await
-            {
-                Ok(_) => {
-                    info!("Successfully wrote /etc/security/pwquality.conf");
-                    changes.push(Change {
-                        change_type: ChangeType::ConfigFile,
-                        change_description: "Wrote modified pwquality.conf".to_string(),
-                        change_success: true,
-                        change_error: None,
-                    });
-                }
-                Err(e) => {
-                    warn!("Failed to write pwquality.conf: {}", e);
-                    changes.push(Change {
-                        change_type: ChangeType::ConfigFile,
-                        change_description: "Failed to write pwquality.conf".to_string(),
-                        change_success: false,
-                        change_error: Some(e.to_string()),
-                    });
-                    all_success = false;
-                }
-            }
+        // Step 3: Back up and rewrite only the files that actually changed.
+        // As before, a failed backup blocks the write for that file.
+        if pwquality_changed
+            && !backup_and_write(
+                ctx,
+                "/etc/security/pwquality.conf",
+                "pwquality.conf",
+                &pwquality_content,
+                &mut changes,
+            )
+            .await
+        {
+            all_success = false;
         }
 
-        if login_defs_backup.is_some() {
-            match ctx
-                .executor()
-                .write_file(Path::new("/etc/login.defs"), &login_defs_content)
-                .await
-            {
-                Ok(_) => {
-                    info!("Successfully wrote /etc/login.defs");
-                    changes.push(Change {
-                        change_type: ChangeType::ConfigFile,
-                        change_description: "Wrote modified login.defs".to_string(),
-                        change_success: true,
-                        change_error: None,
-                    });
-                }
-                Err(e) => {
-                    warn!("Failed to write login.defs: {}", e);
-                    changes.push(Change {
-                        change_type: ChangeType::ConfigFile,
-                        change_description: "Failed to write login.defs".to_string(),
-                        change_success: false,
-                        change_error: Some(e.to_string()),
-                    });
-                    all_success = false;
-                }
-            }
+        if login_defs_changed
+            && !backup_and_write(
+                ctx,
+                "/etc/login.defs",
+                "login.defs",
+                &login_defs_content,
+                &mut changes,
+            )
+            .await
+        {
+            all_success = false;
         }
 
         let duration_ms = start.elapsed().as_millis() as u64;
@@ -1085,33 +992,109 @@ impl HardeningPlugin for PamHardeningPlugin {
             }
         }
 
-        // Estimate changes based on non-excepted directives
-        let estimated_changes = PAM_DIRECTIVES
-            .iter()
-            .filter(|d| d.pam_config_file != PamConfigFile::PamAuth)
-            .filter(|d| config.has_valid_exception(d.pam_directive_name).is_none())
-            .map(|d| {
-                let target_value = config
-                    .directives
-                    .get(d.pam_directive_name)
-                    .map(|s| s.as_str())
-                    .unwrap_or(d.pam_secure_value);
-                // Threshold directives apply only when the current value is
-                // looser than the boundary; a stricter value is left untouched,
-                // so the exact-set wording would be misleading here.
-                match d.pam_compare {
-                    PamCompare::Exact => format!("Set {} = {}", d.pam_directive_name, target_value),
-                    PamCompare::AtMost => format!(
-                        "{} ≤ {} (applied only if currently looser)",
-                        d.pam_directive_name, d.pam_secure_value,
-                    ),
-                    PamCompare::AtLeast => format!(
-                        "{} ≥ {} (applied only if currently looser)",
-                        d.pam_directive_name, d.pam_secure_value,
-                    ),
+        // Estimate changes state-aware: read the current file values the same
+        // way apply does and list only directives that would actually change;
+        // already-compliant directives are summarised in one count line.
+        // Classified reads so a root-only file yields honest requires-root
+        // wording, never a false "(currently not set)" claim.
+        let pwquality = read_conf_classified(ctx, "/etc/security/pwquality.conf").await;
+        let login_defs = read_conf_classified(ctx, "/etc/login.defs").await;
+
+        let mut estimated_changes = Vec::new();
+        let mut compliant_count = 0usize;
+
+        for d in PAM_DIRECTIVES {
+            if d.pam_config_file == PamConfigFile::PamAuth
+                || config.has_valid_exception(d.pam_directive_name).is_some()
+            {
+                continue;
+            }
+
+            match &d.pam_config_file {
+                PamConfigFile::PwQuality | PamConfigFile::LoginDefs => {
+                    let read = if d.pam_config_file == PamConfigFile::PwQuality {
+                        &pwquality
+                    } else {
+                        &login_defs
+                    };
+                    let target_value = config
+                        .directives
+                        .get(d.pam_directive_name)
+                        .map(|s| s.as_str())
+                        .unwrap_or(d.pam_secure_value);
+                    let ConfRead::Content(content) = read else {
+                        // Root-only file: never claim "not set" for a value
+                        // that cannot be read at this privilege level.
+                        estimated_changes.push(format!(
+                            "Set {} = {} (current value requires root; applied only if it differs)",
+                            d.pam_directive_name, target_value
+                        ));
+                        continue;
+                    };
+                    match parse_config_value(
+                        content,
+                        d.pam_directive_name,
+                        ConfigFormat::Auto,
+                        true,
+                    ) {
+                        Some(current) if current == target_value => compliant_count += 1,
+                        Some(current) => estimated_changes.push(format!(
+                            "{} will change: {} -> {}",
+                            d.pam_directive_name, current, target_value
+                        )),
+                        None => estimated_changes.push(format!(
+                            "Set {} = {} (currently not set)",
+                            d.pam_directive_name, target_value
+                        )),
+                    }
                 }
-            })
-            .collect();
+                PamConfigFile::SecurityConf(path) => {
+                    // Same clamped target and effective-value resolution as apply.
+                    let secure: i64 = d
+                        .pam_secure_value
+                        .parse()
+                        .expect("pam_secure_value must be a valid integer");
+                    let over = config
+                        .directives
+                        .get(d.pam_directive_name)
+                        .and_then(|s| s.parse::<i64>().ok());
+                    let target = clamp_target(d.pam_compare, secure, over);
+                    match read_effective_threshold(ctx, d.pam_directive_name, path).await {
+                        ThresholdRead::Value(v)
+                            if !breaches_threshold(d.pam_compare, target, Some(&v)) =>
+                        {
+                            compliant_count += 1
+                        }
+                        ThresholdRead::Value(v) => estimated_changes.push(format!(
+                            "{} will change: {} -> {}",
+                            d.pam_directive_name, v, target
+                        )),
+                        ThresholdRead::NotSet => estimated_changes.push(format!(
+                            "Set {} = {} (currently not set)",
+                            d.pam_directive_name, target
+                        )),
+                        ThresholdRead::PermissionDenied => {
+                            let op = match d.pam_compare {
+                                PamCompare::AtMost => "<=",
+                                _ => ">=",
+                            };
+                            estimated_changes.push(format!(
+                                "{} {} {} (current value requires root; applied only if currently looser)",
+                                d.pam_directive_name, op, target
+                            ));
+                        }
+                    }
+                }
+                PamConfigFile::PamAuth => {}
+            }
+        }
+
+        if compliant_count > 0 {
+            estimated_changes.push(format!(
+                "{} PAM directive(s) already compliant (no change needed)",
+                compliant_count
+            ));
+        }
 
         let is_valid = issues.is_empty();
 
@@ -1393,6 +1376,92 @@ async fn read_effective_threshold(ctx: &Context, arg: &str, conf: &str) -> Thres
                 Some(v) => ThresholdRead::Value(v),
                 None => ThresholdRead::NotSet,
             }
+        }
+    }
+}
+
+/// State-aware exact-match apply for a `key = value` config held in memory:
+/// mutates `content` and records a real change only when the file's current
+/// value differs from the target; an already-correct value records a Skipped
+/// no-op instead, leaving the applied count honest.
+fn apply_exact_directive(
+    content: &mut String,
+    changed: &mut bool,
+    changes: &mut Vec<Change>,
+    name: &str,
+    target: &str,
+    file_label: &str,
+) {
+    let current = parse_config_value(content, name, ConfigFormat::Auto, true);
+    if current.as_deref() == Some(target) {
+        changes.push(Change {
+            change_type: ChangeType::Skipped,
+            change_description: format!("{} already set to {} in {}", name, target, file_label),
+            change_success: true,
+            change_error: None,
+        });
+        return;
+    }
+
+    *content = apply_directive_to_content(content, name, target);
+    *changed = true;
+    changes.push(Change {
+        change_type: ChangeType::ConfigFile,
+        change_description: format!("Set {} = {} in {}", name, target, file_label),
+        change_success: true,
+        change_error: None,
+    });
+}
+
+/// Backs up `path` and writes `content` to it, recording both outcomes.
+/// A failed backup blocks the write (never modify a file without a backup).
+/// Returns false when either step failed so the caller can mark the run.
+async fn backup_and_write(
+    ctx: &Context,
+    path: &str,
+    file_label: &str,
+    content: &str,
+    changes: &mut Vec<Change>,
+) -> bool {
+    match create_config_backup(ctx, path).await {
+        Ok(backup) => changes.push(Change {
+            change_type: ChangeType::ConfigFile,
+            change_description: format!("Created backup: {}", backup),
+            change_success: true,
+            change_error: None,
+        }),
+        Err(e) => {
+            warn!("Failed to backup {}: {}", path, e);
+            changes.push(Change {
+                change_type: ChangeType::ConfigFile,
+                change_description: format!("Failed to create {} backup", file_label),
+                change_success: false,
+                change_error: Some(e.to_string()),
+            });
+            return false;
+        }
+    }
+
+    match ctx.executor().write_file(Path::new(path), content).await {
+        Ok(_) => {
+            info!("Successfully wrote {}", path);
+            changes.push(Change {
+                change_type: ChangeType::ConfigFile,
+                change_description: format!("Wrote modified {}", file_label),
+                change_success: true,
+                change_error: None,
+            });
+            true
+        }
+        Err(e) => {
+            warn!("Failed to write {}: {}", path, e);
+            changes.push(Change {
+                change_type: ChangeType::ConfigFile,
+                change_description: format!("Failed to write {}", file_label),
+                change_success: false,
+                change_error: Some(e.to_string()),
+            });
+            false
         }
     }
 }

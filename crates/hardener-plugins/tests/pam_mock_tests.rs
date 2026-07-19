@@ -695,6 +695,245 @@ async fn test_pam_validate_skips_exceptions() {
     );
 }
 
+/// State-aware apply: a fully compliant host gets no file rewrites and no
+/// backups; every directive is reported as an already-set Skipped no-op, so
+/// the applied count is honestly zero.
+#[tokio::test]
+async fn pam_apply_all_compliant_writes_nothing_and_makes_no_backups() {
+    let executor = Arc::new(secure_pam_executor());
+    let mut ctx = Context::with_executor(executor.clone());
+    let plugin = PamHardeningPlugin::new();
+
+    let result = plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(result.apply_success, "compliant apply should succeed");
+
+    let log = executor.log();
+    assert!(
+        log.files_written.is_empty(),
+        "no file should be rewritten on a compliant host, got: {:?}",
+        log.files_written
+    );
+    assert!(
+        !log.commands_executed.iter().any(|(prog, _)| prog == "cp"),
+        "no backup should be created on a compliant host, got: {:?}",
+        log.commands_executed
+    );
+
+    // Every pwquality/login.defs directive reports an already-set Skipped line.
+    for name in ["minlen", "PASS_MAX_DAYS"] {
+        assert!(
+            result.apply_changes.iter().any(|c| c.is_skipped()
+                && c.change_success
+                && c.change_description.contains(name)
+                && c.change_description.contains("already set")),
+            "expected an already-set Skipped change for {name}, got: {:?}",
+            result.apply_changes
+        );
+    }
+    assert_eq!(
+        result.applied_change_count(),
+        0,
+        "a compliant host must count zero applied changes"
+    );
+}
+
+/// State-aware apply: one drifted pwquality directive causes exactly one file
+/// rewrite and exactly one backup; login.defs is left completely untouched.
+#[tokio::test]
+async fn pam_apply_one_drifted_rewrites_one_file_with_one_backup() {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    // minlen drifted to 8; everything else compliant.
+    let mut executor = secure_pam_executor().with_file(
+        "/etc/security/pwquality.conf",
+        "minlen 8\ndcredit -1\nucredit -1\nlcredit -1\nocredit -1\nmaxrepeat 3\n",
+    );
+    // The backup path embeds a unix timestamp; register the cp for a small
+    // clock window (same idiom as the SSH mock tests).
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    for t in now..now + 3 {
+        let backup = format!("/etc/security/pwquality.conf.backup-{t}");
+        executor = executor.with_command(
+            "cp",
+            &["/etc/security/pwquality.conf", &backup],
+            hardener_core::CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        );
+    }
+    let executor = Arc::new(executor);
+    let mut ctx = Context::with_executor(executor.clone());
+    let plugin = PamHardeningPlugin::new();
+
+    let result = plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    let log = executor.log();
+    assert_eq!(
+        log.files_written.len(),
+        1,
+        "exactly one file should be rewritten, got: {:?}",
+        log.files_written
+    );
+    assert_eq!(
+        log.files_written[0].0.to_str().unwrap(),
+        "/etc/security/pwquality.conf"
+    );
+    assert!(
+        log.files_written[0].1.contains("minlen = 14"),
+        "rewrite must fix the drifted directive, got: {}",
+        log.files_written[0].1
+    );
+    assert_eq!(
+        log.commands_executed
+            .iter()
+            .filter(|(prog, _)| prog == "cp")
+            .count(),
+        1,
+        "exactly one backup should be created, got: {:?}",
+        log.commands_executed
+    );
+
+    // The drifted directive is a real change; a compliant one is Skipped.
+    assert!(
+        result
+            .apply_changes
+            .iter()
+            .any(|c| !c.is_skipped() && c.change_description.contains("Set minlen = 14")),
+        "drifted minlen must be a real change, got: {:?}",
+        result.apply_changes
+    );
+    assert!(
+        result.apply_changes.iter().any(|c| c.is_skipped()
+            && c.change_description.contains("dcredit")
+            && c.change_description.contains("already set")),
+        "compliant dcredit must be a Skipped no-op, got: {:?}",
+        result.apply_changes
+    );
+}
+
+/// State-aware validate: a fully compliant host lists zero pending directives;
+/// the only line is the compliant-count summary.
+#[tokio::test]
+async fn pam_validate_all_compliant_lists_no_pending_changes() {
+    let executor = secure_pam_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PamHardeningPlugin::new();
+
+    let report = plugin
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert_eq!(
+        report.validation_report_estimated_changes.len(),
+        1,
+        "expected only the compliant-count summary, got: {:?}",
+        report.validation_report_estimated_changes
+    );
+    assert!(
+        report.validation_report_estimated_changes[0].contains("11")
+            && report.validation_report_estimated_changes[0].contains("already compliant"),
+        "summary must count all 11 compliant directives, got: {}",
+        report.validation_report_estimated_changes[0]
+    );
+}
+
+/// State-aware validate: one drifted directive is listed with its current and
+/// target values; the rest are summarised as compliant.
+#[tokio::test]
+async fn pam_validate_one_drifted_lists_exactly_that_directive() {
+    let executor = secure_pam_executor().with_file(
+        "/etc/security/pwquality.conf",
+        "minlen 8\ndcredit -1\nucredit -1\nlcredit -1\nocredit -1\nmaxrepeat 3\n",
+    );
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PamHardeningPlugin::new();
+
+    let report = plugin
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    let pending: Vec<&String> = report
+        .validation_report_estimated_changes
+        .iter()
+        .filter(|c| !c.contains("already compliant"))
+        .collect();
+    assert_eq!(
+        pending.len(),
+        1,
+        "exactly one directive should be pending, got: {:?}",
+        report.validation_report_estimated_changes
+    );
+    assert!(
+        pending[0].contains("minlen") && pending[0].contains('8') && pending[0].contains("14"),
+        "pending line must show current and target, got: {}",
+        pending[0]
+    );
+    assert!(
+        report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("10") && c.contains("already compliant")),
+        "the other 10 directives must be summarised, got: {:?}",
+        report.validation_report_estimated_changes
+    );
+}
+
+/// State-aware validate must not assert false facts without privileges: a
+/// root-only pwquality.conf (stat succeeds, read denied) must yield
+/// conditional requires-root lines, never a confident "(currently not set)".
+#[tokio::test]
+async fn pam_validate_reports_requires_root_when_pwquality_is_root_only() {
+    let executor = MockExecutor::new()
+        // File exists (stat succeeds) but reading it needs root.
+        .with_file("/etc/security/pwquality.conf", "minlen 14\n")
+        .with_read_permission_denied("/etc/security/pwquality.conf")
+        .with_file(
+            "/etc/login.defs",
+            "PASS_MAX_DAYS 90\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n",
+        )
+        .with_file("/etc/security/faillock.conf", "deny = 3\n")
+        .with_file("/etc/security/pwhistory.conf", "remember = 10\n");
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PamHardeningPlugin::new();
+
+    let report = plugin
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(
+        !report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("(currently not set)")),
+        "an unreadable file must never be claimed 'not set', got: {:?}",
+        report.validation_report_estimated_changes
+    );
+    let minlen_line = report
+        .validation_report_estimated_changes
+        .iter()
+        .find(|c| c.contains("minlen"))
+        .expect("minlen must still be listed");
+    assert!(
+        minlen_line.contains("requires root"),
+        "unreadable pwquality directives must use the requires-root wording, got: {minlen_line}"
+    );
+}
+
 /// Scan reads the effective faillock/pwhistory value from inline pam.d args
 /// when the /etc/security/*.conf file is empty or absent, because inline args
 /// override the .conf at runtime.

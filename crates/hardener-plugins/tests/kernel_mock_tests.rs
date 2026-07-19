@@ -28,6 +28,19 @@ fn secure_kernel_executor() -> MockExecutor {
         .with_file("/proc/sys/net/ipv4/conf/default/accept_source_route", "0")
 }
 
+/// Creates a mock executor with EVERY kernel parameter at its secure value,
+/// covering the full baseline (the `secure_kernel_executor` above omits the
+/// redirect/martian parameters, which state-aware tests must also see).
+fn fully_secure_kernel_executor() -> MockExecutor {
+    secure_kernel_executor()
+        .with_file("/proc/sys/net/ipv4/conf/all/accept_redirects", "0")
+        .with_file("/proc/sys/net/ipv4/conf/default/accept_redirects", "0")
+        .with_file("/proc/sys/net/ipv4/conf/all/secure_redirects", "0")
+        .with_file("/proc/sys/net/ipv4/conf/default/secure_redirects", "0")
+        .with_file("/proc/sys/net/ipv4/conf/all/log_martians", "1")
+        .with_file("/proc/sys/net/ipv4/conf/default/log_martians", "1")
+}
+
 /// Creates a mock executor with insecure kernel parameters.
 fn insecure_kernel_executor() -> MockExecutor {
     MockExecutor::new()
@@ -256,9 +269,13 @@ async fn test_kernel_scan_compliance_mappings() {
 
 #[tokio::test]
 async fn test_kernel_validate_writable_params() {
+    // Deliberately drifted (0, target 2): validate is state-aware, so only a
+    // parameter whose current value differs from the target is listed as
+    // pending. (This test previously used the compliant value "2" and still
+    // expected a pending line; that encoded the old unconditional behaviour.)
     let executor = MockExecutor::new().with_file_metadata(
         "/proc/sys/kernel/randomize_va_space",
-        "2",
+        "0",
         FileMetadata {
             exists: true,
             is_file: true,
@@ -276,15 +293,216 @@ async fn test_kernel_validate_writable_params() {
 
     let result = plugin.validate(&ctx, &config).await.unwrap();
 
-    // Should have estimated change for writable param
+    // Should have estimated change for writable, drifted param
     assert!(
         !result.validation_report_estimated_changes.is_empty(),
-        "writable param should produce estimated changes"
+        "writable drifted param should produce estimated changes"
     );
     assert!(
         result.validation_report_estimated_changes[0].contains("randomize_va_space"),
         "estimated change should mention randomize_va_space, got: {}",
         result.validation_report_estimated_changes[0]
+    );
+}
+
+/// State-aware validate: a fully compliant host lists ZERO pending parameter
+/// changes; the only estimated-changes line is the compliant-count summary,
+/// so the admin can see all parameters were checked.
+#[tokio::test]
+async fn kernel_validate_all_compliant_lists_no_pending_changes() {
+    let executor = fully_secure_kernel_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = KernelHardeningPlugin::new();
+
+    let report = plugin
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(
+        report.validation_report_is_valid,
+        "compliant host should validate cleanly"
+    );
+    assert!(
+        !report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("will change") || c.contains("will be set")),
+        "no parameter should be listed as pending on a compliant host, got: {:?}",
+        report.validation_report_estimated_changes
+    );
+    assert_eq!(
+        report.validation_report_estimated_changes.len(),
+        1,
+        "expected only the compliant-count summary line, got: {:?}",
+        report.validation_report_estimated_changes
+    );
+    assert!(
+        report.validation_report_estimated_changes[0].contains("18")
+            && report.validation_report_estimated_changes[0].contains("already compliant"),
+        "summary must state 18 parameter(s) already compliant, got: {}",
+        report.validation_report_estimated_changes[0]
+    );
+}
+
+/// State-aware validate: with exactly one drifted parameter, exactly that
+/// parameter is listed as "current -> target" and the rest are summarised.
+#[tokio::test]
+async fn kernel_validate_one_drifted_lists_exactly_that_parameter() {
+    let executor = fully_secure_kernel_executor().with_file("/proc/sys/kernel/kptr_restrict", "0");
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = KernelHardeningPlugin::new();
+
+    let report = plugin
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    let pending: Vec<&String> = report
+        .validation_report_estimated_changes
+        .iter()
+        .filter(|c| c.contains("will change"))
+        .collect();
+    assert_eq!(
+        pending.len(),
+        1,
+        "exactly one parameter should be pending, got: {:?}",
+        report.validation_report_estimated_changes
+    );
+    assert!(
+        pending[0].contains("kernel.kptr_restrict")
+            && pending[0].contains('0')
+            && pending[0].contains('2'),
+        "pending line must show current and target, got: {}",
+        pending[0]
+    );
+    assert!(
+        report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("17") && c.contains("already compliant")),
+        "the other 17 parameters must be summarised as compliant, got: {:?}",
+        report.validation_report_estimated_changes
+    );
+}
+
+/// State-aware apply: on a fully compliant host no /proc/sys path is written;
+/// the run reports one Skipped summary and only the persistent config file
+/// (absent in this fixture) is created.
+#[tokio::test]
+async fn kernel_apply_all_compliant_writes_no_runtime_params() {
+    let executor = Arc::new(fully_secure_kernel_executor());
+    let mut ctx = Context::with_executor(executor.clone());
+    let plugin = KernelHardeningPlugin::new();
+
+    let result = plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(result.apply_success, "compliant apply should succeed");
+
+    let log = executor.log();
+    assert!(
+        !log.files_written
+            .iter()
+            .any(|(p, _)| p.starts_with("/proc/sys")),
+        "no runtime sysctl should be written on a compliant host, got: {:?}",
+        log.files_written
+    );
+
+    let skipped = result
+        .apply_changes
+        .iter()
+        .find(|c| c.is_skipped() && c.change_description.contains("already compliant"))
+        .expect("expected a Skipped summary for already-compliant sysctls");
+    assert!(
+        skipped.change_description.contains("18"),
+        "summary should count all 18 compliant sysctls, got: {}",
+        skipped.change_description
+    );
+    assert!(skipped.change_success);
+}
+
+/// A second apply on an unchanged host is a complete no-op: the persistent
+/// config written by the first run already matches, so nothing at all is
+/// written and the config skip is reported honestly.
+#[tokio::test]
+async fn kernel_apply_second_run_writes_nothing_at_all() {
+    let executor = Arc::new(fully_secure_kernel_executor());
+    let mut ctx = Context::with_executor(executor.clone());
+    let plugin = KernelHardeningPlugin::new();
+
+    // First run creates /etc/sysctl.d/99-hardener.conf.
+    plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+    executor.clear_log();
+
+    let result = plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    let log = executor.log();
+    assert!(
+        log.files_written.is_empty(),
+        "second apply on an unchanged host must write nothing, got: {:?}",
+        log.files_written
+    );
+    assert!(
+        result
+            .apply_changes
+            .iter()
+            .any(|c| c.is_skipped() && c.change_description.contains("already up to date")),
+        "persistent config skip must be reported, got: {:?}",
+        result.apply_changes
+    );
+    assert_eq!(
+        result.applied_change_count(),
+        0,
+        "no-op apply must count zero applied changes"
+    );
+}
+
+/// State-aware apply: exactly the drifted parameter is written at runtime.
+#[tokio::test]
+async fn kernel_apply_one_drifted_writes_only_that_parameter() {
+    let executor =
+        Arc::new(fully_secure_kernel_executor().with_file("/proc/sys/kernel/kptr_restrict", "0"));
+    let mut ctx = Context::with_executor(executor.clone());
+    let plugin = KernelHardeningPlugin::new();
+
+    let result = plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    let log = executor.log();
+    let proc_writes: Vec<_> = log
+        .files_written
+        .iter()
+        .filter(|(p, _)| p.starts_with("/proc/sys"))
+        .collect();
+    assert_eq!(
+        proc_writes.len(),
+        1,
+        "only the drifted parameter should be written, got: {proc_writes:?}"
+    );
+    assert_eq!(
+        proc_writes[0].0.to_str().unwrap(),
+        "/proc/sys/kernel/kptr_restrict"
+    );
+    assert_eq!(proc_writes[0].1, "2");
+
+    assert!(
+        result
+            .apply_changes
+            .iter()
+            .any(|c| c.is_skipped() && c.change_description.contains("17")),
+        "the other 17 compliant sysctls must be summarised as skipped, got: {:?}",
+        result.apply_changes
     );
 }
 
