@@ -1,5 +1,5 @@
 Name:           linux-system-hardener
-Version:        1.3.2
+Version:        1.4.0
 Release:        1%{?dist}
 Summary:        Linux security automation: scanning, hardening, and rollback
 License:        Apache-2.0
@@ -103,6 +103,15 @@ systemctl daemon-reload || true
 %dir %{_libdir}/linux-hardener
 
 %changelog
+* Sun Jul 19 2026 Eric Jingryd <tidynest@proton.me> - 1.4.0-1
+- Honest apply counts: "N applied" tallies only real changes; no-op plugins read "no changes needed"; failures surfaced
+- Idempotent, state-aware apply across all 8 plugins (already-compliant settings skipped; no duplicate nftables rules; ssh/audit not rewritten when unchanged)
+- Honest unchecked reporting: privilege-blocked checks render as per-plugin "could not verify" entries, not false findings; /boot on a vfat ESP reports fstab guidance
+- Deep scan moves the score: desktop compliance report and security score derive from the latest persisted scan session
+- Remote/SSH: privilege gate probes the executor session; PermitRootLogin lockout guard over remote root; ad-hoc hostname validation with real connect errors; coloured per-host batch output
+- CLI: checkpoint list --limit/--all; report wizard score display and output-path fix
+- Desktop: rate-limit banner auto-dismisses; shared deep-scan button; pkexec cancel is not an error
+
 * Sat Jul 18 2026 Eric Jingryd <tidynest@proton.me> - 1.3.2-1
 - Fix: runtime sysctl writes failed on every local apply (atomic rename is impossible on procfs)
 - Fix: firewall drove an installed-but-inactive ufw instead of the active nftables backend

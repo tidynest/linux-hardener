@@ -2,7 +2,16 @@
 
 ---
 
-## Current State (as of 2026-07-18)
+## Current State (as of 2026-07-19)
+
+**v1.4.0 released** (2026-07-19) to GitHub + GitLab: the honesty, idempotency
+and coherence arc on top of v1.3.2 - honest apply counts (only real changes
+tallied; no-op reads "no changes needed"), idempotent state-aware apply across
+all 8 plugins, honest unchecked reporting (privilege-blocked checks are per-plugin
+"could not verify" entries, /boot vfat gets fstab guidance), deep scan that moves
+the score, remote/SSH executor-session privilege probing with a PermitRootLogin
+lockout guard and ad-hoc host validation, `checkpoint list --limit/--all`, and a
+full documentation audit. AUR bump follows the tag.
 
 **v1.3.2 released** (2026-07-18): six fixes surfaced by the first real local
 apply runs - procfs sysctl writes, active-firewall-backend selection with ufw
@@ -21,7 +30,7 @@ restructure. AUR bump follows the tag.
 (0000-perm files like `/etc/shadow` could be deleted on rollback; account-database
 paths were missing from the rollback allowlist) plus a cross-distro container
 refresh (Debian 13 / Fedora 44 / Rocky 10 / openSUSE Leap 16.0 via podman-export,
-validated 5/5 × 127). Public line: 1.0.5 → 1.2.0 → 1.2.1 → 1.2.2 → 1.3.0 → 1.3.1 → 1.3.2
+validated 5/5 × 127). Public line: 1.0.5 → 1.2.0 → 1.2.1 → 1.2.2 → 1.3.0 → 1.3.1 → 1.3.2 → 1.4.0
 (1.1.0 was cut in-tree but never published).
 
 v1.2.0 shipped: multi-host batch CLI (`batch scan/report/apply/rollback`),
@@ -336,9 +345,9 @@ See `docs/plans/archive/2026-02-24-gui-cli-parity.md`: all 6 phases complete.
 
 - **11 Crates** (10 core + 1 Tauri app)
 - **8 Security Plugins**: Kernel, SSH, Firewall, PAM, Services, Audit, Permissions, MAC
-- **770 Passing Tests**
+- **918 Passing Tests**
 - **Multi-Distribution Support**: Debian, Red Hat, Arch, SUSE families
-- **Current Version**: 1.3.2 (code, tag and repo packaging; AUR bump follows the tag)
+- **Current Version**: 1.4.0 (code, tag and repo packaging; AUR bump follows the tag)
 - **WASM Support**: GUI frontend compiles to `wasm32-unknown-unknown`
 
 For version history and detailed feature tracking, see [ROADMAP.md](ROADMAP.md).

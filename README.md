@@ -7,7 +7,7 @@
 
 <p align="center">
   <a href="https://github.com/tidynest/linux-system-hardener/actions/workflows/ci.yml"><img src="https://github.com/tidynest/linux-system-hardener/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
-  <img src="docs/assets/badges/version.svg" alt="Version 1.3.2">
+  <img src="docs/assets/badges/version.svg" alt="Version 1.4.0">
   <img src="docs/assets/badges/license.svg" alt="License Apache-2.0">
   <img src="docs/assets/badges/rust.svg" alt="Rust 1.85+">
   <a href="https://aur.archlinux.org/packages/linux-system-hardener"><img src="docs/assets/badges/aur.svg" alt="AUR package"></a>
@@ -137,12 +137,12 @@ The tool is designed for system administrators, DevOps engineers, and security p
 
 ## Project Status
 
-**Current Phase**: Production Release (v1.3.2)
+**Current Phase**: Production Release (v1.4.0)
 
 ### Test Coverage
 
 ```
-Rust workspace:  750+ passed · 0 failed · 38 ignored   (>90% coverage)
+Rust workspace:  918 passed · 0 failed · 43 ignored   (>90% coverage)
 GUI / desktop:   113 Playwright (Web UI, 5 distros) · 95 desktop (UX + functional) · 21 Node.js
 ```
 
