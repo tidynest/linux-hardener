@@ -3,6 +3,7 @@
 
 use crate::state::{AppState, total_unchecked};
 use crate::tauri_bindings::{invoke_deep_scan, invoke_generate_report};
+use crate::utils::is_auth_cancelled;
 use leptos::prelude::*;
 
 /// Shown when the current scan contains unchecked entries: names the count
@@ -10,7 +11,7 @@ use leptos::prelude::*;
 #[component]
 pub fn UncheckedBanner() -> impl IntoView {
     let app_state = expect_context::<AppState>();
-    let running = RwSignal::new(false);
+    let running = app_state.deep_scan_running;
 
     let unchecked_count = move || total_unchecked(&app_state.scan_results.get());
 
@@ -38,8 +39,16 @@ pub fn UncheckedBanner() -> impl IntoView {
                             web_sys::console::warn_1(
                                 &format!("Compliance generation failed: {}", e).into(),
                             );
+                            app_state.error_message.set(Some(format!(
+                                "Deep scan completed, but refreshing the compliance report failed: {}. \
+                                Score may be stale until the next scan.",
+                                e
+                            )));
                         }
                     }
+                }
+                Err(e) if is_auth_cancelled(&e) => {
+                    web_sys::console::info_1(&"Deep scan cancelled by user.".into());
                 }
                 Err(e) => {
                     web_sys::console::error_1(&format!("Deep scan failed: {}", e).into());

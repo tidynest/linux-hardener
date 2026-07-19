@@ -73,6 +73,10 @@ pub struct AppState {
     pub config_path: RwSignal<Option<String>>,
     /// Validation summary for the currently selected config file.
     pub config_summary: RwSignal<Option<ConfigSummary>>,
+    /// Whether a privileged deep scan is currently running. Shared across
+    /// every `UncheckedBanner` instance (Dashboard and Analysis both mount
+    /// one) so the two buttons disable together during a single run.
+    pub deep_scan_running: RwSignal<bool>,
 }
 
 impl Default for AppState {
@@ -101,6 +105,7 @@ impl Default for AppState {
             is_testing_notification: RwSignal::new(false),
             config_path: RwSignal::new(None),
             config_summary: RwSignal::new(None),
+            deep_scan_running: RwSignal::new(false),
         }
     }
 }

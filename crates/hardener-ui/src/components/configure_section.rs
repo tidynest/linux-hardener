@@ -5,6 +5,7 @@
 use crate::components::{Card, ConfigFileCard, HeadingLevel};
 use crate::state::AppState;
 use crate::tauri_bindings::{invoke_apply, invoke_apply_dry_run};
+use crate::utils::is_auth_cancelled;
 use leptos::prelude::*;
 
 /// Plugin definition with ID and display name.
@@ -143,6 +144,9 @@ pub fn ConfigureSection() -> impl IntoView {
                 Ok(results) => {
                     app_state.apply_results.update(|r| r.extend(results));
                     app_state.preview_results.set(Vec::new());
+                }
+                Err(e) if is_auth_cancelled(&e) => {
+                    web_sys::console::info_1(&"Apply cancelled by user.".into());
                 }
                 Err(e) => {
                     web_sys::console::error_1(&format!("Apply failed: {}", e).into());

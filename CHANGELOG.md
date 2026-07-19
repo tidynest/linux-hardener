@@ -127,6 +127,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unverified.
 - aborted scans (e.g. cancelled authentication) no longer leave running
   session rows in scan history.
+- dismissing the polkit authentication prompt during a deep scan or an
+  apply no longer shows a red error toast; cancellation is treated as a
+  non-error and only resets the in-progress UI state.
+- the "Run deep scan" button now shares one running flag across the
+  Dashboard and Analysis pages, so both disable together for the
+  duration of a single deep scan instead of only the page that
+  triggered it.
+- a failed compliance-report refresh after a successful deep scan is
+  now surfaced as an error message instead of only a console warning,
+  so the user knows the displayed score may be stale until the next
+  scan.
 
 ## [1.3.2] - 2026-07-18
 
