@@ -60,6 +60,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in-process scan the GUI previously paid on every report regeneration.
 
 ### Fixed
+- Applying SSH hardening over a remote root session no longer locks the
+  session out of the target host: when the apply itself runs as root
+  through `--ssh`, `PermitRootLogin` is downgraded from `no` to
+  `prohibit-password` (password root login stays blocked, key-based
+  access survives the sshd restart) with an honest change description
+  naming the downgrade. An existing `no` is never loosened, and a value
+  already at `prohibit-password` (or stricter, e.g.
+  `forced-commands-only`) is reported as a skipped change instead of
+  being overwritten. Local applies still write the strict `no`, the
+  scan recommendation stays `no` so a rescan reports the residual gap,
+  and setting `no` remains a deliberate console step.
 - `apply`, `checkpoint create` and `rollback` no longer demand LOCAL root
   when targeting a remote host with `--ssh`: the three commands checked
   the euid of the CLI's own process, so a remote root session was

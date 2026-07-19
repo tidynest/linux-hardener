@@ -259,6 +259,42 @@ pub async fn validate_sshd_config(
     }
 }
 
+/// The directive whose strict value can sever the applying session itself.
+const PERMIT_ROOT_LOGIN: &str = "PermitRootLogin";
+
+/// The strongest `PermitRootLogin` value that can be applied over a root SSH
+/// session without cutting off that session's own future access: password
+/// root login stays blocked while key-based access survives. The scanned
+/// recommendation stays `no`, so a rescan honestly reports the residual gap;
+/// reaching `no` is a deliberate console step.
+const REMOTE_ROOT_SAFE_VALUE: &str = "prohibit-password";
+
+/// `PermitRootLogin` values at least as strict as [`REMOTE_ROOT_SAFE_VALUE`]:
+/// overwriting any of them with it would loosen the host's policy, which is
+/// never allowed. `without-password` is sshd's legacy spelling of
+/// `prohibit-password`; `forced-commands-only` is stricter still. Matched
+/// case-insensitively, because sshd compares values with strcasecmp.
+const REMOTE_ROOT_SAFE_OR_STRICTER: &[&str] = &[
+    REMOTE_ROOT_SAFE_VALUE,
+    "without-password",
+    "forced-commands-only",
+];
+
+/// True when this apply runs as root over a remote executor, i.e. the very
+/// session `PermitRootLogin no` would sever on restart (live-reproduced:
+/// a remote root apply locked itself out of the target host).
+///
+/// Fails safe towards the strict value: any probe error is treated as "not
+/// root", leaving the guard inactive; an unprivileged remote session cannot
+/// restart sshd, so it cannot sever itself either.
+async fn is_remote_root_session(executor: &dyn hardener_core::SystemExecutor) -> bool {
+    executor.is_remote()
+        && matches!(
+            executor.execute_command("id", &["-u"]).await,
+            Ok(out) if out.success() && out.stdout.trim() == "0"
+        )
+}
+
 /// Returns true if a crypto directive's current value contains only strong
 /// algorithms from the desired allow-list. A missing value, or any token not in
 /// the allow-list, is considered insecure (used by `scan`).
@@ -1107,7 +1143,11 @@ impl HardeningPlugin for SshHardeningPlugin {
                 ))
             })?;
 
-        // Step 5: Apply each directive.
+        // Step 5: Apply each directive. Probe the session once up front: on a
+        // remote root session the PermitRootLogin target is downgraded below
+        // so the apply cannot sever its own access.
+        let remote_root_session = is_remote_root_session(ctx.executor().as_ref()).await;
+
         for directive in SSH_DIRECTIVES {
             // Check for a valid exception: skip this directive if exempted
             if let Some(exception) = config.has_valid_exception(directive.ssh_directive_name) {
@@ -1141,9 +1181,69 @@ impl HardeningPlugin for SshHardeningPlugin {
                 false,
             );
 
+            // Compared against the strict target first, so an existing `no`
+            // is "already compliant" and the guard below can never loosen it.
             let needs_change = match &original_value {
                 Some(value) => value != target_value,
                 None => true,
+            };
+
+            // Lockout guard: on a remote root session, never write the
+            // session-severing `no`. A current value already at least as
+            // strict as the safe fallback is left untouched (never loosen);
+            // anything weaker gets the fallback with an honest explanation.
+            let guard_active = remote_root_session
+                && directive.ssh_directive_name == PERMIT_ROOT_LOGIN
+                && target_value == "no";
+
+            // sshd matches directive values case-insensitively (strcasecmp),
+            // so a case variant like `No` is an effective `no`: leave it
+            // completely untouched rather than "normalising" it through the
+            // downgrade branch, which would loosen it to prohibit-password.
+            if guard_active
+                && needs_change
+                && let Some(current) = original_value.as_deref()
+                && current.eq_ignore_ascii_case(target_value)
+            {
+                info!(
+                    "PermitRootLogin already effectively '{}' (case variant); left untouched on remote root session",
+                    target_value
+                );
+                continue;
+            }
+
+            if guard_active
+                && needs_change
+                && let Some(current) = original_value.as_deref()
+                && REMOTE_ROOT_SAFE_OR_STRICTER
+                    .iter()
+                    .any(|safe| safe.eq_ignore_ascii_case(current))
+            {
+                info!(
+                    "PermitRootLogin left at '{}' on remote root session (never loosen)",
+                    current
+                );
+                changes.push(Change {
+                    change_description: format!(
+                        "PermitRootLogin: kept at '{}' (already the strongest value safely \
+                         settable over this root SSH session; set 'no' from a console)",
+                        current
+                    ),
+                    change_type: ChangeType::Skipped,
+                    change_success: true,
+                    change_error: None,
+                });
+                continue;
+            }
+
+            let (target_value, guard_note) = if guard_active && needs_change {
+                (
+                    REMOTE_ROOT_SAFE_VALUE,
+                    " (downgraded from 'no': applying 'no' over this root SSH session \
+                     would sever access; set 'no' from a console)",
+                )
+            } else {
+                (target_value, "")
             };
 
             if needs_change {
@@ -1157,10 +1257,11 @@ impl HardeningPlugin for SshHardeningPlugin {
 
                 changes.push(Change {
                     change_description: format!(
-                        "{}: {} -> {}",
+                        "{}: {} -> {}{}",
                         directive.ssh_directive_name,
                         original_value.unwrap_or_else(|| "not set".to_string()),
-                        target_value
+                        target_value,
+                        guard_note
                     ),
                     change_type: ChangeType::ConfigFile,
                     change_success: true,

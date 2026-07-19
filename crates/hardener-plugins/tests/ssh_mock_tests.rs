@@ -4,7 +4,9 @@
 
 use hardener_common::types::{ComplianceFramework, PluginId, Severity};
 use hardener_core::executor::CommandOutput;
-use hardener_core::{Context, MockExecutor, SystemExecutor, plugin::HardeningPlugin};
+use hardener_core::{
+    ApplyResult, Context, MockExecutor, PluginConfig, SystemExecutor, plugin::HardeningPlugin,
+};
 use hardener_plugins::ssh::{
     SshHardeningPlugin, select_algorithms, supported_algorithms, validate_sshd_config,
 };
@@ -685,4 +687,280 @@ async fn scan_reports_directives_unchecked_when_sshd_config_is_root_only() {
         !kex_entry.unchecked_compliance.is_empty(),
         "crypto directive unchecked entries must carry their real compliance mappings"
     );
+}
+
+// === PermitRootLogin remote-root lockout guard ===
+//
+// Applying `PermitRootLogin no` over the very root SSH session performing the
+// apply severs that session's own future access the moment sshd restarts
+// (live-reproduced 2026-07-19). On a remote root session the plugin therefore
+// downgrades the applied value to `prohibit-password` (key-based root access
+// survives, password root login stays blocked) and never loosens an existing
+// stricter value. The scan recommendation stays `no`, so the residual gap
+// remains visible.
+
+/// Registers everything a full `apply` run needs on the mock: the config
+/// file, the timestamped `cp` backup (registered for a small clock window
+/// around "now" because the backup suffix is generated inside `apply`), the
+/// `sshd -t` validation of the candidate config, and the service restart.
+fn apply_ready_executor(config: &str) -> MockExecutor {
+    let temp = sshd_validate_temp_path();
+    let mut executor = MockExecutor::new()
+        .with_file("/etc/ssh/sshd_config", config)
+        .with_command("sshd", &["-t", "-f", &temp], ok_output(""))
+        .with_command("systemctl", &["restart", "sshd"], ok_output(""));
+    let now = chrono::Utc::now();
+    for offset in -1..=3i64 {
+        let stamp = (now + chrono::Duration::seconds(offset)).format("%Y%m%d_%H%M%S");
+        let backup = format!("/etc/ssh/sshd_config.backup.{stamp}");
+        executor = executor.with_command(
+            "cp",
+            &["-p", "/etc/ssh/sshd_config", &backup],
+            ok_output(""),
+        );
+    }
+    executor
+}
+
+/// Runs a default-config apply against a clone of the mock (clones share
+/// state, so the caller can inspect files and logs afterwards).
+async fn run_ssh_apply(executor: &MockExecutor) -> ApplyResult {
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    SshHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("ssh apply should not error")
+}
+
+/// Returns the sshd_config content the apply left behind in the mock.
+fn written_sshd_config(executor: &MockExecutor) -> String {
+    executor
+        .files()
+        .get(&std::path::PathBuf::from("/etc/ssh/sshd_config"))
+        .cloned()
+        .expect("sshd_config must exist after apply")
+}
+
+/// True if the config contains a `PermitRootLogin <value>` line.
+fn has_permit_root_login(config: &str, value: &str) -> bool {
+    config
+        .lines()
+        .any(|l| l.trim() == format!("PermitRootLogin {value}"))
+}
+
+#[tokio::test]
+async fn ssh_remote_root_apply_downgrades_permitrootlogin_to_prohibit_password() {
+    let executor = apply_ready_executor("# minimal config\n")
+        .remote()
+        .with_command("id", &["-u"], ok_output("0\n"));
+
+    let result = run_ssh_apply(&executor).await;
+
+    assert!(result.apply_success, "apply should succeed: {result:?}");
+    let written = written_sshd_config(&executor);
+    assert!(
+        has_permit_root_login(&written, "prohibit-password"),
+        "remote root apply must write prohibit-password, got:\n{written}"
+    );
+    assert!(
+        !has_permit_root_login(&written, "no"),
+        "remote root apply must not write the session-severing 'no', got:\n{written}"
+    );
+
+    let change = result
+        .apply_changes
+        .iter()
+        .find(|c| c.change_description.starts_with("PermitRootLogin:"))
+        .expect("a PermitRootLogin change must be recorded");
+    assert!(
+        change.change_description.contains("downgraded from 'no'"),
+        "change must explain the downgrade, got: {}",
+        change.change_description
+    );
+    assert!(
+        change.change_description.contains("prohibit-password"),
+        "change must name the applied value, got: {}",
+        change.change_description
+    );
+}
+
+#[tokio::test]
+async fn ssh_remote_root_apply_leaves_existing_permitrootlogin_no_untouched() {
+    let executor = apply_ready_executor("PermitRootLogin no\n")
+        .remote()
+        .with_command("id", &["-u"], ok_output("0\n"));
+
+    let result = run_ssh_apply(&executor).await;
+
+    assert!(result.apply_success, "apply should succeed: {result:?}");
+    let written = written_sshd_config(&executor);
+    assert!(
+        has_permit_root_login(&written, "no"),
+        "an existing 'no' must never be loosened, got:\n{written}"
+    );
+    assert!(
+        !written.contains("prohibit-password"),
+        "an existing 'no' must never be downgraded to prohibit-password, got:\n{written}"
+    );
+    assert!(
+        !result
+            .apply_changes
+            .iter()
+            .any(|c| c.change_description.starts_with("PermitRootLogin:")),
+        "an already-compliant directive must emit no change, got: {:?}",
+        result.apply_changes
+    );
+}
+
+#[tokio::test]
+async fn ssh_remote_root_apply_skips_when_already_prohibit_password() {
+    let executor = apply_ready_executor("PermitRootLogin prohibit-password\n")
+        .remote()
+        .with_command("id", &["-u"], ok_output("0\n"));
+
+    let result = run_ssh_apply(&executor).await;
+
+    assert!(result.apply_success, "apply should succeed: {result:?}");
+    let written = written_sshd_config(&executor);
+    assert!(
+        has_permit_root_login(&written, "prohibit-password"),
+        "prohibit-password must be left in place, got:\n{written}"
+    );
+
+    let change = result
+        .apply_changes
+        .iter()
+        .find(|c| c.change_description.starts_with("PermitRootLogin:"))
+        .expect("a PermitRootLogin skip must be recorded");
+    assert!(
+        change.is_skipped(),
+        "already-safe value must be a Skipped change, got: {change:?}"
+    );
+    assert!(
+        change.change_description.contains("console"),
+        "skip must point at the manual console step, got: {}",
+        change.change_description
+    );
+}
+
+#[tokio::test]
+async fn ssh_local_apply_still_writes_permitrootlogin_no() {
+    // Local session (is_remote = false): the guard must stay inactive and the
+    // strict baseline apply exactly as before.
+    let executor = apply_ready_executor("# minimal config\n");
+
+    let result = run_ssh_apply(&executor).await;
+
+    assert!(result.apply_success, "apply should succeed: {result:?}");
+    let written = written_sshd_config(&executor);
+    assert!(
+        has_permit_root_login(&written, "no"),
+        "local apply must still write the strict 'no', got:\n{written}"
+    );
+    assert!(
+        !executor
+            .log()
+            .commands_executed
+            .iter()
+            .any(|(program, _)| program == "id"),
+        "local apply must not probe the session user"
+    );
+}
+
+#[tokio::test]
+async fn ssh_remote_apply_with_failed_uid_probe_applies_strict_no() {
+    // `id -u` unregistered on the mock -> the probe errors. Fail-safe: treat
+    // as not root, guard inactive, strict value applies (an unprivileged
+    // remote session cannot restart sshd anyway).
+    let executor = apply_ready_executor("# minimal config\n").remote();
+
+    let result = run_ssh_apply(&executor).await;
+
+    assert!(result.apply_success, "apply should succeed: {result:?}");
+    let written = written_sshd_config(&executor);
+    assert!(
+        has_permit_root_login(&written, "no"),
+        "a failed uid probe must fall back to the strict 'no', got:\n{written}"
+    );
+}
+
+#[tokio::test]
+async fn ssh_remote_root_apply_leaves_case_variant_no_untouched() {
+    // sshd matches directive values case-insensitively (strcasecmp), so
+    // `PermitRootLogin No` is an effective `no`: the guard must leave it
+    // completely untouched, never downgrade it to prohibit-password.
+    let executor = apply_ready_executor("PermitRootLogin No\n")
+        .remote()
+        .with_command("id", &["-u"], ok_output("0\n"));
+
+    let result = run_ssh_apply(&executor).await;
+
+    assert!(result.apply_success, "apply should succeed: {result:?}");
+    let written = written_sshd_config(&executor);
+    assert!(
+        has_permit_root_login(&written, "No"),
+        "a case-variant 'No' is an effective 'no' and must stay untouched, got:\n{written}"
+    );
+    assert!(
+        !written.contains("prohibit-password"),
+        "a case-variant 'No' must never be loosened to prohibit-password, got:\n{written}"
+    );
+    assert!(
+        !result
+            .apply_changes
+            .iter()
+            .any(|c| c.change_description.starts_with("PermitRootLogin:")),
+        "an effectively-compliant directive must emit no change, got: {:?}",
+        result.apply_changes
+    );
+}
+
+#[tokio::test]
+async fn ssh_remote_nonroot_apply_applies_strict_no() {
+    // Remote session whose `id -u` succeeds but reports a non-root uid: the
+    // guard must stay inactive and the strict baseline apply as usual.
+    let executor = apply_ready_executor("# minimal config\n")
+        .remote()
+        .with_command("id", &["-u"], ok_output("1000\n"));
+
+    let result = run_ssh_apply(&executor).await;
+
+    assert!(result.apply_success, "apply should succeed: {result:?}");
+    let written = written_sshd_config(&executor);
+    assert!(
+        has_permit_root_login(&written, "no"),
+        "a remote non-root session must still write the strict 'no', got:\n{written}"
+    );
+}
+
+#[tokio::test]
+async fn ssh_remote_root_apply_skips_all_safe_or_stricter_values() {
+    // `without-password` (legacy spelling of prohibit-password) and
+    // `forced-commands-only` (stricter still) must be skipped, not rewritten.
+    for value in ["without-password", "forced-commands-only"] {
+        let executor = apply_ready_executor(&format!("PermitRootLogin {value}\n"))
+            .remote()
+            .with_command("id", &["-u"], ok_output("0\n"));
+
+        let result = run_ssh_apply(&executor).await;
+
+        assert!(
+            result.apply_success,
+            "apply should succeed for {value}: {result:?}"
+        );
+        let written = written_sshd_config(&executor);
+        assert!(
+            has_permit_root_login(&written, value),
+            "'{value}' must be left in place, got:\n{written}"
+        );
+        let change = result
+            .apply_changes
+            .iter()
+            .find(|c| c.change_description.starts_with("PermitRootLogin:"))
+            .unwrap_or_else(|| panic!("a PermitRootLogin skip must be recorded for {value}"));
+        assert!(
+            change.is_skipped(),
+            "'{value}' must be a Skipped change, got: {change:?}"
+        );
+    }
 }
