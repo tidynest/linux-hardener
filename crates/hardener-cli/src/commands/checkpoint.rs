@@ -9,6 +9,7 @@ use hardener_state::{ActionResult, ActionType, CheckpointId};
 use crate::cli::OutputFormat;
 use crate::output;
 
+use super::privilege::is_privileged;
 use super::state::{effective_user, get_audit_logger, get_checkpoint_manager};
 
 pub async fn list(
@@ -36,7 +37,7 @@ pub async fn create(
     quiet: bool,
     executor: Arc<dyn SystemExecutor>,
 ) -> Result<()> {
-    if !nix::unistd::geteuid().is_root() {
+    if !is_privileged(executor.as_ref()).await {
         bail!("Root privileges required to create checkpoints.");
     }
 
@@ -108,7 +109,7 @@ pub async fn rollback(
     quiet: bool,
     executor: Arc<dyn SystemExecutor>,
 ) -> Result<()> {
-    if !nix::unistd::geteuid().is_root() {
+    if !is_privileged(executor.as_ref()).await {
         bail!("Root privileges required to rollback changes.");
     }
 

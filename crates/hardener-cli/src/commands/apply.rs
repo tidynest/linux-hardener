@@ -12,6 +12,7 @@ use hardener_plugins::create_plugin_registry;
 use hardener_state::{ActionResult, ActionType, AuditLogger, CheckpointManager};
 use std::sync::Arc;
 
+use super::privilege::is_privileged;
 use super::state::{get_audit_logger, get_checkpoint_manager};
 
 /// Result of running `apply_host` for one executor target.
@@ -166,9 +167,12 @@ pub async fn run(
     quiet: bool,
     executor: Arc<dyn SystemExecutor>,
 ) -> Result<()> {
-    // Must be root to apply changes
-    if !nix::unistd::geteuid().is_root() && !dry_run {
-        bail!("Root privileges required to apply hardening changes. Use sudo or --dry-run.");
+    // Must be privileged (on the target session, local or remote) to apply changes
+    if !dry_run && !is_privileged(executor.as_ref()).await {
+        bail!(
+            "Root privileges required to apply hardening changes. \
+             Use sudo (or connect as root with --ssh) or --dry-run."
+        );
     }
 
     if plugin_filter.is_empty() && !all {
@@ -231,7 +235,47 @@ pub async fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hardener_common::executor::MockExecutor;
+    use hardener_common::executor::{CommandOutput, MockExecutor};
+
+    /// The gate must ask the executor, not the local process: a non-root
+    /// test process talking to an executor that reports uid 1000 and denies
+    /// passwordless sudo must bail with the privilege message, and that
+    /// message must cover the remote (--ssh) case explicitly.
+    #[tokio::test]
+    async fn run_bails_with_privilege_message_when_executor_lacks_privilege() {
+        let fail = CommandOutput {
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: 1,
+        };
+        let executor = Arc::new(
+            MockExecutor::new()
+                .with_command(
+                    "id",
+                    &["-u"],
+                    CommandOutput {
+                        stdout: "1000\n".into(),
+                        stderr: String::new(),
+                        exit_code: 0,
+                    },
+                )
+                .with_command("sudo", &["-n", "true"], fail),
+        );
+
+        let err = run(&[], true, false, OutputFormat::Json, true, executor)
+            .await
+            .expect_err("non-privileged executor must not be allowed to apply");
+
+        let message = err.to_string();
+        assert!(
+            message.contains("Root privileges required to apply hardening changes"),
+            "unexpected message: {message}"
+        );
+        assert!(
+            message.contains("--ssh"),
+            "message should mention the remote case: {message}"
+        );
+    }
 
     #[tokio::test]
     async fn apply_host_dry_run_validates_without_mutation() {

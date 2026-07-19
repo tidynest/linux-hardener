@@ -60,6 +60,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in-process scan the GUI previously paid on every report regeneration.
 
 ### Fixed
+- `apply`, `checkpoint create` and `rollback` no longer demand LOCAL root
+  when targeting a remote host with `--ssh`: the three commands checked
+  the euid of the CLI's own process, so a remote root session was
+  rejected with "Root privileges required" even though it was fully
+  capable of doing the work through the executor. Privilege is now
+  probed on the target session (`id -u`, falling back to `sudo -n
+  true`), matching the check `batch apply`/`batch rollback` already
+  used; the apply error message now also mentions connecting as root
+  with `--ssh`.
 - The desktop security score is restored on launch: the app now
   regenerates compliance reports from the last persisted scan session
   when it loads saved results, instead of showing "--" until a new scan

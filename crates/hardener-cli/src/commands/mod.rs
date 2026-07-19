@@ -6,6 +6,7 @@ pub mod checkpoint;
 pub mod daemon;
 pub mod history;
 pub mod plugins;
+pub(crate) mod privilege;
 pub mod report;
 pub mod report_wizard;
 pub mod scan;
