@@ -1,6 +1,6 @@
 # Troubleshooting
 
-**Last Updated**: 2026-07-18
+**Last Updated**: 2026-07-19
 
 Symptom-organised fixes for the most common problems. Installation steps live
 in the [installation guide](installation.md); the per-desktop polkit agent
@@ -69,15 +69,32 @@ journalctl -u linux-hardener.service --since today
 If the timer unit is missing, install it: `sudo hardener systemd install`
 followed by `sudo systemctl enable --now linux-hardener.timer`.
 
-## Scan reports "permission denied" or looks incomplete
+## Scan shows dimmed "unchecked" entries or looks incomplete
 
-Scanning runs as a regular user for most checks, but some plugins (audit
-rules, service status) return partial results without root. For the complete
-picture:
+Scanning runs as a regular user, but some checks need root to read protected
+files or query the service manager (PAM, SSH, firewall, audit, MAC and file
+permissions are the usual ones). Rather than guess and raise a false finding,
+the scan lists each privilege-blocked check as a dimmed "unchecked" entry under
+its plugin - deduplicated per plugin - and prints a footer such as
+`3 check(s) require root; run with sudo for a full scan`. With `--format json`
+these arrive in a separate `unchecked` array, never mixed into `findings`.
+
+For the complete picture, re-run as root:
 
 ```bash
 sudo hardener scan
 ```
+
+## Scan flags /boot (or another FAT partition) but apply cannot fix it
+
+When /boot is the EFI System Partition it is normally formatted vfat (FAT32),
+which cannot hold POSIX permission bits. `chmod` there silently no-ops, so the
+scan does not raise a false HIGH "insecure permissions" finding and apply does
+not attempt a futile change: /boot is reported as an "unchecked" entry with
+fstab guidance instead. Harden the mount rather than the mode - add mask
+options to the /boot line in `/etc/fstab`, for example `fmask=0077,dmask=0077`,
+then remount. The same handling covers msdos, exfat, ntfs, iso9660 and udf
+mounts.
 
 ## The scheduled daemon refuses to start
 
@@ -85,11 +102,28 @@ sudo hardener scan
 Set `enabled = true` in the `[scheduler]` section of the config file; see the
 [configuration reference](../reference/configuration.md#scheduler).
 
+## Fleet or batch SSH scans fail to authenticate
+
+Remote hosts authenticate with an SSH key or agent only - there is no password
+path. When a connection fails on authentication the error names the underlying
+reason and appends a hint to load a key, for example
+`(no usable SSH key - load one with ssh-add or configure a key file for this
+host)`; genuine network failures (refused, timeout, no route) keep their own
+reason and never get the key hint.
+
+A desktop app launched from a menu or icon often does not inherit the
+`SSH_AUTH_SOCK` of your login shell, so keys added with `ssh-add` are invisible
+to it even though `ssh host` works in a terminal. Either set an explicit key
+file for the host in the inventory, or start the GUI from a shell where
+`echo $SSH_AUTH_SOCK` is non-empty. Ad-hoc `user@host[:port]` targets with
+spaces or commas are rejected at entry, so a malformed target never reaches the
+connection attempt.
+
 ## Docker scan reports tools as unavailable
 
 Inside the container, `systemctl`/D-Bus-dependent checks (services, parts of
 audit/MAC/firewall) cannot see the host's service manager and report
-tool-unavailable findings instead. Treat those findings as unverifiable
-in-container rather than as host truth. Widen filesystem coverage with more
+tool-unavailable findings or dimmed "unchecked" entries instead. Treat those
+as unverifiable in-container rather than as host truth. Widen filesystem coverage with more
 read-only mounts; `apply` is unsupported in a container by design. See the
 [Docker section of the installation guide](installation.md#run-with-docker-scan-and-report-only).

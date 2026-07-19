@@ -20,11 +20,11 @@ eyes.
 ## In scope
 
 - **The privilege boundary:** pkexec/polkit policy
-  (`packaging/assets/com.tidynest.linux-hardener.policy`), Tauri IPC surface (28 commands,
+  (`packaging/assets/com.tidynest.linux-hardener.policy`), Tauri IPC surface (30 commands,
   `src-tauri/src/commands.rs`, `PrivilegedOpGuard`), CLI-as-root paths
   (`apply`, `rollback`, `checkpoint`).
 - **SSH executor and batch paths:** remote command construction and quoting
-  (`hardener-core/src/executor/ssh.rs`), host-key handling and the
+  (`crates/hardener-core/src/executor/ssh.rs`), host-key handling and the
   fail-closed privilege probe, per-host isolation in `batch`/fleet flows,
   checkpoint capture/restore over the executor (cross-host refusal logic).
 - **Checkpoint & audit-log integrity:** Ed25519 signing, AES-256-GCM key at

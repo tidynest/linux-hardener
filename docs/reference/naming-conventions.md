@@ -103,6 +103,14 @@ compliance control titles (e.g. NIST SP 800-53 AC-6(1) *"Authorize Access to
 Security Functions"*) and external crate APIs (`printpdf`, `Color::`). These are
 proper nouns, not our own prose, so `scripts/validate/validate_naming.py` allowlists them.
 
+### 5. No Em-Dashes or En-Dashes
+
+**Em-dashes and en-dashes are forbidden project-wide** (they read as an AI tell).
+Use a comma, colon, parentheses, or a plain hyphen instead. This applies to all
+tracked prose and source; `scripts/validate/validate_naming.py` scans every
+tracked file (`.md`, `.rs`, `.toml`, `.py`, `.sh`, `.txt`, `.yml`, `.yaml`,
+`.json`) and reports any em-dash or en-dash as an error.
+
 ---
 
 ## File and Directory Names
@@ -209,6 +217,8 @@ throughout the codebase:
 
 - `ctx` -- Standard name for the `Context` parameter passed to all plugin trait methods
 - `cfg` -- Used in `#[cfg()]` attributes (Rust built-in conditional compilation)
+- `cmd` -- Common in CLI and executor contexts (e.g. `execute_command`, `firewall_cmd`)
+- `distro` -- Domain term for a Linux distribution (e.g. `distro_name`, `DistroFamily`, `hardener-distro`)
 
 ---
 
@@ -832,6 +842,7 @@ pub struct ScanResult {
     pub scan_plugin_id: PluginId,
     pub scan_success: bool,
     pub scan_findings: Vec<Finding>,
+    pub scan_unchecked: Vec<UncheckedCheck>,
     pub scan_duration_us: u64,
     pub scan_error: Option<String>,
 }
@@ -1069,6 +1080,7 @@ pub struct ScanResult {
     pub scan_plugin_id: PluginId,
     pub scan_success: bool,
     pub scan_findings: Vec<Finding>,
+    pub scan_unchecked: Vec<UncheckedCheck>,
     pub scan_duration_us: u64,
     pub scan_error: Option<String>,
 }
@@ -1224,7 +1236,7 @@ fn validate_package_name(package_name: &str) -> Result<()> { }
 pub trait FirewallBackend: Send + Sync { }
 
 // Structs:
-pub struct FirewallPlugin { }
+pub struct FirewallHardeningPlugin { }
 pub struct FirewalldBackend { }
 pub struct UfwBackend { }
 pub struct NftablesBackend { }

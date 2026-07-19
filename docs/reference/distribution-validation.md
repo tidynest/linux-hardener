@@ -1,22 +1,24 @@
 # Distribution Validation Results
 
-**Last Updated**: 2026-07-18
+**Last Updated**: 2026-07-19
 
 This document tracks validation testing across supported Linux distributions.
 
-**Last full cross-distro validation:** hardener **1.1.0** (CLI suite, 2026-06-28, see [v1.1.0 Re-validation](#v110-re-validation-2026-06-28))
+**Last documented full cross-distro validation:** hardener **1.1.0** (CLI suite, 2026-06-28, see [v1.1.0 Re-validation](#v110-re-validation-2026-06-28))
 **Baseline validation:** hardener 0.3.3 (2026-02-23, detailed per-distro sections below remain the reference breakdown)
-**Container set:** unchanged since baseline (Arch rolling, Debian 12, Fedora 41, Rocky 9, openSUSE Leap 15.6); distro-version refresh still pending
+**Container set:** recreated for the v1.2.2 cycle - `scripts/containers/create-container.sh` now targets Arch rolling, Debian 13 "Trixie", Fedora 44, Rocky Linux 10 and openSUSE Leap 16.0; the detailed per-distro results below still describe the previous versions (Debian 12, Fedora 41, Rocky 9, openSUSE Leap 15.6) from the v1.1.0 re-validation
 
-> **Currency note (2026-06-28):** the v1.1.0 binary has now been re-validated
-> across all five containers (see [v1.1.0 Re-validation](#v110-re-validation-2026-06-28)).
-> However, the **container distro versions are unchanged** from the baseline run,
-> newer stable releases (**Debian 13 "Trixie", Ubuntu 26.04 LTS, Fedora 44,
-> RHEL 10, openSUSE Leap 16**) have **not** yet been validated, as that requires
-> recreating the containers. Family-based detection still routes them correctly.
-> **openSUSE Leap 15.x reached end-of-life in April 2026:** re-pin the SUSE
-> container target to Leap 16 when refreshing. The version refresh remains a P3
-> task in `docs/NEXT.md`.
+> **Currency note (2026-07-19):** the **container set has since been recreated
+> for the newer distro versions**. `scripts/containers/create-container.sh` now
+> targets **Debian 13 "Trixie", Fedora 44, Rocky Linux 10 (RHEL 10
+> binary-compatible), openSUSE Leap 16.0** and Arch rolling; `docs/NEXT.md`
+> records this refresh as completed and re-validated during the v1.2.2 cycle.
+> The **detailed per-distro results and the v1.1.0 re-validation write-up below
+> still describe the previous container versions** (Debian 12, Fedora 41, Rocky 9,
+> openSUSE Leap 15.6); a full results narrative on the refreshed containers is
+> still to be written. **openSUSE Leap 15.x reached end-of-life in April 2026**,
+> which is why the SUSE target moved to Leap 16.0. Family-based detection routes
+> every release in each family (Debian/Red Hat/Arch/SUSE) identically.
 
 ---
 
@@ -194,6 +196,11 @@ Every distribution skips exactly 6 tests due to inherent container limitations:
 These skips are deterministic and identical across all 5 distributions. They do not indicate any deficiency in the hardener -- these subsystems are simply unavailable inside unprivileged containers.
 
 ### Container Setup
+
+> The versions and creation methods below document the previous (v1.1.0-era)
+> containers. `scripts/containers/create-container.sh` now targets Debian 13,
+> Fedora 44, Rocky Linux 10 and openSUSE Leap 16.0 (Fedora, Rocky and openSUSE
+> via podman image export); see the currency note above.
 
 | Distro | Container Name | Created With | Base Packages |
 |--------|---------------|-------------|---------------|
@@ -714,7 +721,7 @@ In addition to CLI testing, the Web UI is validated with Playwright across all 5
 - **Virtual Display**: Xvfb (X virtual framebuffer) provides a headless display inside containers
 - **SPA Server**: `gui-tests/spa-server.py` -- Python HTTP server on port 8787 with client-side routing support (all non-file paths return `index.html`)
 - **Test Index Generation**: `scripts/test/gui/gui-test-inner.sh` dynamically generates the served `index.html` at test-time by reading `dist/index.html`, stripping SRI `integrity` attributes, and injecting `<script src="/tauri-mock.js"></script>` before the first `<script type="module">` tag
-- **Tauri IPC Mock**: `gui-tests/tauri-mock.js` -- JavaScript mock of `window.__TAURI__` injected before WASM loads, covering 28 IPC commands: `run_scan`, `run_scan_filtered`, `run_scan_with_options`, `get_latest_scan`, `run_apply`, `run_apply_dry_run`, `get_checkpoints`, `create_checkpoint`, `delete_checkpoint`, `run_rollback`, `generate_compliance_report`, `export_report`, `export_compliance_report`, `get_scan_history`, `get_scan_session`, `list_plugins`, `get_checkpoint_detail`, `list_remote_hosts`, `save_remote_host`, `delete_remote_host`, `connect_remote`, `disconnect_remote`, `run_remote_scan`, `get_scheduler_config`, `save_scheduler_config`, `test_notification`, `validate_config`, `pick_config_file`
+- **Tauri IPC Mock**: `gui-tests/tauri-mock.js` -- JavaScript mock of `window.__TAURI__` injected before WASM loads, covering 31 IPC commands: `run_scan`, `run_scan_filtered`, `run_scan_with_options`, `get_latest_scan`, `run_apply`, `run_apply_dry_run`, `get_checkpoints`, `create_checkpoint`, `delete_checkpoint`, `run_rollback`, `generate_compliance_report`, `export_report`, `export_compliance_report`, `get_scan_history`, `get_scan_session`, `list_plugins`, `get_checkpoint_detail`, `list_remote_hosts`, `save_remote_host`, `delete_remote_host`, `connect_remote`, `disconnect_remote`, `run_remote_scan`, `get_scheduler_config`, `save_scheduler_config`, `test_notification`, `run_fleet_scan`, `run_fleet_apply`, `run_fleet_rollback`, `validate_config`, `pick_config_file`
 - **Browser**: System Chromium auto-detected per distribution (no bundled browser)
 - **Test Runner**: Playwright (npm) with `gui-tests/playwright.config.js`
 
@@ -768,4 +775,4 @@ test-results/gui/
 
 ---
 
-**Last Updated**: 2026-07-18
+**Last Updated**: 2026-07-19

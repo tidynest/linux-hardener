@@ -65,7 +65,7 @@ These require the corresponding rustup targets to be installed (see "Rustup Targ
 ./scripts/dev/tauri-dev.sh
 ```
 
-Preferred method. The script auto-detects your session type (Wayland/X11), applies NVIDIA and Hyprland workarounds, checks that required system packages are installed, and then launches `cargo tauri dev`.
+Preferred method. The script auto-detects your session type (Wayland/X11), applies NVIDIA and Hyprland workarounds, checks that required system packages are installed, and then launches `cargo tauri dev`. It also exports `HARDENER_UI_DIR` (the absolute path to `crates/hardener-ui`) so Tauri's `beforeDevCommand` and `beforeBuildCommand` hooks locate the frontend regardless of the working directory they run from.
 
 Internally, Tauri runs `trunk serve` (WASM frontend on port 1420) and compiles the Rust backend. Changes to either trigger a rebuild.
 
@@ -111,7 +111,7 @@ The Leptos frontend in `crates/hardener-ui/` is compiled to WASM via Trunk. You 
 cd crates/hardener-ui && trunk serve
 ```
 
-Starts a development server on `http://127.0.0.1:1420` with file watching and automatic WASM rebuilds. This is what `cargo tauri dev` runs as its `beforeDevCommand`.
+Starts a development server on `http://127.0.0.1:1420` with file watching and automatic WASM rebuilds. This is what `cargo tauri dev` runs as its `beforeDevCommand`; the actual hook is `cd "${HARDENER_UI_DIR:-crates/hardener-ui}" && trunk serve`, so it honours the `HARDENER_UI_DIR` override set by `tauri-dev.sh` and falls back to `crates/hardener-ui` otherwise.
 
 ### Production WASM build
 
@@ -119,7 +119,7 @@ Starts a development server on `http://127.0.0.1:1420` with file watching and au
 cd crates/hardener-ui && trunk build --release
 ```
 
-Compiles optimised WASM into `crates/hardener-ui/dist/`. This is what `cargo tauri build` runs as its `beforeBuildCommand`.
+Compiles optimised WASM into `crates/hardener-ui/dist/`. This is what `cargo tauri build` runs as its `beforeBuildCommand` (the hook is `cd "${HARDENER_UI_DIR:-crates/hardener-ui}" && trunk build --release`).
 
 ### Debug WASM build
 
@@ -207,4 +207,4 @@ rustup target list --installed               # List currently installed targets
 cargo update --workspace                     # Update all dependencies in Cargo.lock
 ```
 
-**Last Updated**: 2026-07-18
+**Last Updated**: 2026-07-19

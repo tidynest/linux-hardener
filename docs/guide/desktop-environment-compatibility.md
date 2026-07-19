@@ -1,6 +1,6 @@
 # Desktop Environment Compatibility
 
-**Last Updated**: 2026-07-18
+**Last Updated**: 2026-07-19
 
 Linux System Hardener uses `pkexec` (polkit) for privilege escalation when
 applying hardening rules or rolling back checkpoints. This requires a running
@@ -14,7 +14,7 @@ Two deliberately different identifier namespaces exist:
   `com.tidynest.linux-hardener.rollback`, declared in
   `packaging/assets/com.tidynest.linux-hardener.policy`, installed by every package to
   `/usr/share/polkit-1/actions/com.tidynest.linux-hardener.policy`
-  (PKGBUILD line ~103; rpm spec and debian rules mirror it).
+  (PKGBUILD line ~108; rpm spec and debian rules mirror it).
   `scripts/test/polkit/detect-polkit-agent.sh` checks exactly this id and path, and they
   agree with what ships.
 - **Tauri bundle identifier:** `com.ericjingryd.linux-hardener` in

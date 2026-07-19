@@ -370,7 +370,7 @@ User clicks "Apply"
 - [x] Create user-friendly error messages for polkit failures
 - [x] Test on Hyprland (with polkit-gnome)
 - [x] Create polkit policy file for nicer dialog text
-- [ ] Add to AUR/deb/rpm package dependencies
+- [x] Add to AUR/deb/rpm package dependencies
 
 > **Tauri 2.x Note**: Frontend argument keys MUST use camelCase (e.g., `pluginIds` not `plugin_ids`) to match Tauri 2.x's default serde configuration.
 
@@ -449,7 +449,7 @@ User clicks "Apply"
 
 | Feature | Description | Priority | Status |
 |---------|-------------|----------|--------|
-| Multi-host management | Manage multiple systems from one UI | Medium | 🔄 In progress (Fleet scan + compliance scores + apply/rollback GUI shipped; ad-hoc SSH / live progress / GUI history remain) |
+| Multi-host management | Manage multiple systems from one UI | Medium | ✅ Complete (Fleet scan + compliance scores + apply/rollback GUI + ad-hoc SSH targets + live per-host progress + per-host history all shipped) |
 | Historical trends | Track security posture over time | Low | ⬜ Pending (CLI `history trends` done; desktop visualisation deferred) |
 | Alert notifications | Email/webhook on security regressions | Low | ✅ Complete (scheduler `notify_mode` regression alerts) |
 | DE testing | Test pkexec/polkit on GNOME, KDE, XFCE | Low | 🔄 Tooling shipped (`detect-polkit-agent.sh`, `test-polkit-matrix.sh`, DE wrappers, `docs/guide/desktop-environment-compatibility.md`); real GNOME/KDE/XFCE runs pending (require DE sessions) |
@@ -516,7 +516,7 @@ Features planned for post-v1.0.0 releases.
 
 ### Compliance Assessment Coverage
 
-All 7 frameworks now emit genuine Pass/Fail results via plugin-declared per-control
+All 10 frameworks now emit genuine Pass/Fail results via plugin-declared per-control
 coverage (`coverage()` per plugin, aggregated by `hardener_plugins::compliance_coverage()`
 and injected into `ReportGenerator`). CIS and ISO 27001:2022 keep curated catalogues
 (full standard; unassessed controls → `ManualReview`). Non-CIS catalogues are derived
@@ -546,8 +546,8 @@ report zero `ManualReview` for covered controls.
 | Feature | Description | Priority | Status |
 |---------|-------------|----------|--------|
 | SSH crypto-algorithm hardening | Harden `KexAlgorithms`/`Ciphers`/`MACs`, incl. post-quantum kex (`mlkem768x25519-sha256`, default in OpenSSH 10). Must detect supported algorithms (`ssh -Q kex`) and run `sshd -t` before restart to avoid lockout | High | ✅ Done |
-| RHEL 10 compliance profiles | DISA RHEL 10 STIG V1R1 (2026-06) and CIS RHEL 10 v1.0.1 now exist | Medium | ⬜ Pending |
-| Multi-host SSH management | Manage/monitor multiple hosts from one UI: host profiles, parallel scanning, trend history, regression alerts | Medium | ✅ Largely done: CLI `batch scan/report/apply/rollback` + `history trends/regressions` + scheduler regression alerts; GUI Fleet scan/compliance/apply/rollback shipped (GUI polish remains) |
+| RHEL 10 compliance profiles | Report-time ID translation to DISA RHEL 10 STIG V1R1 and CIS RHEL 10 v1.0.1, auto-detected on RHEL-family 10 (`hardener-compliance/src/profiles.rs`) | Medium | ✅ Complete |
+| Multi-host SSH management | Manage/monitor multiple hosts from one UI: host profiles, parallel scanning, trend history, regression alerts | Medium | ✅ Complete: CLI `batch scan/report/apply/rollback` + `history trends/regressions` + scheduler regression alerts; GUI Fleet scan/compliance/apply/rollback + ad-hoc SSH targets + live per-host progress + per-host history |
 | Security audit (external) | Third-party security review | Medium | ⬜ Pending |
 | Performance optimisation | Scan speed improvements | Medium | ⬜ Pending |
 | Internationalisation | Multi-language support | Low | ⬜ Pending |
@@ -673,13 +673,13 @@ The compliance module (`hardener-compliance`) is designed for reuse:
 
 The "Controls" column is the size of each framework's control **catalogue**.
 "Assessed" indicates whether plugin findings are mapped to the framework so
-controls genuinely pass/fail. All 7 frameworks are finding-mapped and use
+controls genuinely pass/fail. All 10 frameworks are finding-mapped and use
 plugin-declared per-control coverage (Option B): an assessed control reports
 `Pass` or `Fail`; an unassessed one reports `ManualReview`.
 
 | Framework | Controls | Assessed | Description |
 |-----------|----------|----------|-------------|
-| CIS | 38 | ✅ Yes | Center for Internet Security Benchmarks |
+| CIS | 41 | ✅ Yes | Center for Internet Security Benchmarks |
 | STIG | 20 | ✅ Yes | DISA Security Technical Implementation Guides |
 | NIST 800-53 | 20 | ✅ Yes | US Federal security controls (Rev 5) |
 | PCI-DSS | 22 | ✅ Yes | Payment Card Industry standards (v4.0) |
@@ -704,4 +704,4 @@ When working on new features:
 
 ---
 
-**Last Updated**: 2026-07-18
+**Last Updated**: 2026-07-19

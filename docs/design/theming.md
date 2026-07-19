@@ -135,6 +135,7 @@ Each theme overrides the base variables:
 | **Command** | Military precision | Ice-blue #38bdf8 | Deep navy |
 | **Guardian** | Protective, natural | Emerald #10b981 | Forest black |
 | **Daywatch** | Light, productive | Teal #0d9488 | Warm off-white |
+| **High Contrast** | Maximum contrast, WCAG AAA | Cyan #67e8f9 | Pure black |
 
 ---
 
@@ -203,6 +204,7 @@ const THEMES: &[(&str, &str)] = &[
     ("command", "Command"),
     ("guardian", "Guardian"),
     ("daywatch", "Daywatch"),
+    ("high-contrast", "High Contrast"),
     ("your-theme", "Your Theme Name"),  // Add here
 ];
 ```
@@ -336,4 +338,4 @@ Complete list of CSS variables used in themes:
 
 ---
 
-**Last Updated**: 2026-07-18
+**Last Updated**: 2026-07-19

@@ -43,7 +43,7 @@ pub struct ComplianceSummary { summary_total_controls, summary_passing, summary_
 
 // Fleet scan types
 pub enum FleetHostStatus { Ok, Failed(String) }
-pub struct SeverityTallies { critical, high, medium, low, info: usize }
+pub struct SeverityTallies { critical, high, medium, low, info: u32 }
 pub struct FleetHostScan { host_name: String, status: FleetHostStatus, tallies: SeverityTallies, scan_results: Vec<ScanResult> }
 ```
 
@@ -54,21 +54,22 @@ pub struct FleetHostScan { host_name: String, status: FleetHostStatus, tallies: 
 | File | Purpose | Key Exports/Functions |
 |------|---------|----------------------|
 | `src/main.rs` | Entry point, command routing | `main()` |
-| `src/cli.rs` | Clap argument definitions | `Cli`, `Command`, `DaemonAction`, `HistoryAction`, `SystemdAction`, `OutputFormat` |
-| `src/output.rs` | Output formatting utilities | `status()`, `info()`, `error()`, `scan_results()`, `apply_results()`, `plugin_list()`, `checkpoint_list()`, `checkpoint_created()`, `checkpoint_details()`, `rollback_result()`, `validation_reports()` |
+| `src/cli.rs` | Clap argument definitions | `Cli`, `Command`, `BatchAction`, `CheckpointAction`, `DaemonAction`, `HistoryAction`, `SystemdAction`, `OutputFormat` |
+| `src/output.rs` | Output formatting utilities | `status()`, `info()`, `error()`, `warning()`, `scan_results()`, `scan_timings()`, `apply_results()`, `plugin_list()`, `checkpoint_list()`, `checkpoint_created()`, `checkpoint_details()`, `rollback_result()`, `validation_reports()` |
 | `src/commands/mod.rs` | Command module exports | - |
 | `src/commands/scan.rs` | Scan command implementation | `run()`, `validate_plugin_filter()`, `is_valid_plugin_name()`, `persist_scan_session()` |
 | `src/commands/apply.rs` | Apply command implementation | `run()` |
-| `src/commands/checkpoint.rs` | Checkpoint management | `list()`, `create()`, `show()`, `delete()` |
+| `src/commands/checkpoint.rs` | Checkpoint management | `list()`, `create()`, `show()`, `delete()`, `rollback()` |
 | `src/commands/plugins.rs` | List plugins command | `run()` |
 | `src/commands/report.rs` | Compliance report generation | `run()` |
-| `src/commands/report_wizard.rs` | Interactive report wizard | `run_interactive()` |
+| `src/commands/report_wizard.rs` | Interactive report wizard | `run()` |
 | `src/commands/daemon.rs` | Daemon management commands | `start()`, `run_once()`, `status()` |
 | `src/commands/systemd.rs` | Systemd unit file commands | `generate()`, `install()`, `uninstall()`, `status()` |
 | `src/commands/history.rs` | Scan history commands | `list()`, `show()`, `export()`, `trends()`, `regressions()` |
-| `src/commands/batch.rs` | Multi-host concurrent scan/report/apply/rollback commands | `run_scan()`, `run_report()`, `run_apply()`, `run_rollback()`, `BatchScanOptions`, `BatchReportOptions`, `BatchApplyOptions`, `BatchRollbackOptions`, `resolve_and_scan()`, `run_on_all()` |
+| `src/commands/batch.rs` | Multi-host concurrent scan/report/apply/rollback commands | `run()`, `run_report()`, `run_apply()`, `run_rollback()`, `BatchOptions`, `BatchReportOptions`, `BatchApplyOptions`, `BatchRollbackOptions`, `resolve_and_scan()`, `run_on_all()` |
 | `src/ssh_config.rs` | SSH connection config helper | `SshConnectionConfig` |
 | `src/commands/state.rs` | Shared state initialisation (DB + signing key paths) | `get_checkpoint_manager()`, `get_audit_logger()`, `effective_user()` |
+| `src/commands/privilege.rs` | Shared privilege probe for mutating commands; asks the executor session (`id -u` / `sudo -n`) so `--ssh` targets gate correctly | `is_privileged()` |
 
 ---
 
@@ -127,7 +128,7 @@ pub trait HardeningPlugin: Send + Sync {
 
 | File | Purpose | Plugin Struct |
 |------|---------|---------------|
-| `src/lib.rs` | Module exports, helpers | `create_checkpoint_for_apply()`, `create_checkpoint_metadata_only_for_apply()`, `rollback_files_from_checkpoint()` |
+| `src/lib.rs` | Module exports, helpers | `create_checkpoint_for_apply()`, `create_checkpoint_metadata_only_for_apply()`, `checkpoint_change()` (shared `ChangeType::Checkpoint` bookkeeping change), `rollback_files_from_checkpoint()`, `create_plugin_registry()`, `compliance_coverage()` |
 | `src/macros.rs` | Plugin definition macro | `define_plugin!` |
 
 ### Individual Plugins
@@ -159,10 +160,10 @@ const SSH_DIRECTIVES: &[SshConfigDirective] = &[
 
 **Kernel (kernel/mod.rs):**
 ```rust
-const KERNEL_PARAMS: &[(&str, &str, &str)] = &[
-    ("kernel.randomize_va_space", "2", "Enable ASLR"),
-    ("kernel.kptr_restrict", "2", "Hide kernel pointers"),
-    // ... 12 total
+const KERNEL_PARAMS: &[(&str, &str, &str, Severity)] = &[
+    ("kernel.randomize_va_space", "2", "Enable ASLR", Severity::High),
+    ("kernel.kptr_restrict", "2", "Hide kernel pointers", Severity::Medium),
+    // ... 18 total
 ];
 ```
 
@@ -213,9 +214,9 @@ pub struct FileState {
 | `src/generator.rs` | Report generation | `ReportGenerator` |
 | `src/profiles.rs` | Report-time profile ID translation (sourced RHEL 10 STIG V1R1 / CIS v1.0.1 tables) | `translate()`, `translate_all()`, `profile_label()`, `resolve_profile()` |
 | `src/config.rs` | Report configuration | `ReportConfig` |
-| `src/frameworks/mod.rs` | Framework routing and curated catalogue aggregation | `get_controls()`, `curated_controls()` |
-| `src/frameworks/cis.rs` | CIS Benchmark curated catalogue | CIS control definitions |
-| `src/frameworks/iso27001.rs` | ISO/IEC 27001:2022 Annex A curated catalogue | 93 controls across 4 themes (Organizational, People, Physical, Technological) |
+| `src/frameworks/mod.rs` | Framework routing and curated catalogue aggregation | `curated_controls()` |
+| `src/frameworks/cis.rs` | CIS Benchmark curated catalogue | `get_controls()` (CIS control definitions) |
+| `src/frameworks/iso27001.rs` | ISO/IEC 27001:2022 Annex A curated catalogue | `get_controls()` (93 controls across 4 themes: Organizational, People, Physical, Technological) |
 | `src/output/mod.rs` | Formatter routing | `format_report()` |
 | `src/output/text.rs` | Text formatter | `TextFormatter` |
 | `src/output/json.rs` | JSON formatter | `JsonFormatter` |
@@ -406,10 +407,10 @@ pub struct ScanRunner {
 | `src/lib.rs` | Main App component, WASM entry point; defines route `/fleet` and "Fleet" nav link | `App`, `#[wasm_bindgen(start)] main()` |
 | `src/types.rs` | Re-exports from hardener-types | `pub use hardener_types::*` (ApplyResult, Change, ChangeType, ComplianceFramework, ComplianceMapping, ComplianceReport, ComplianceSummary, ConfigSummary, ControlResult, ControlStatus, FileRestoreAction, FileRestoreResult, Finding, FindingCategory, FindingPolicyException, PluginId, PluginMetadata, RollbackResult, ScanResult, Severity, UncheckedCheck, ValidationIssue, ValidationReport), scheduler re-exports (SchedulerUiConfig, NotificationUiConfig, EmailUiConfig, WebhookUiConfig, TestNotificationResult), `CheckpointInfo`, `ScanSessionInfo`, `CheckpointDetail`, `CheckpointFileInfo` |
 | `src/state/mod.rs` | Reactive state | `AppState` |
-| `src/tauri_bindings.rs` | Tauri command bindings | `tauri_available`, `invoke_scan`, `invoke_deep_scan`, `invoke_apply`, `invoke_apply_dry_run`, `invoke_generate_report`, `invoke_export_report`, `invoke_get_latest_scan`, `invoke_get_checkpoints`, `invoke_create_checkpoint`, `invoke_delete_checkpoint`, `invoke_get_scan_history`, `invoke_get_scan_session`, `invoke_get_checkpoint_detail`, `invoke_rollback`, `invoke_list_remote_hosts`, `invoke_save_remote_host`, `invoke_delete_remote_host`, `invoke_connect_remote`, `invoke_disconnect_remote`, `invoke_remote_scan`, `invoke_fleet_scan`, `invoke_fleet_apply`, `invoke_fleet_rollback`, `invoke_list_plugins`, `invoke_get_scheduler_config`, `invoke_save_scheduler_config`, `invoke_test_notification`, `invoke_validate_config`, `invoke_pick_config_file` |
+| `src/tauri_bindings.rs` | Tauri command bindings | `tauri_available`, `invoke_scan`, `invoke_deep_scan`, `invoke_apply`, `invoke_apply_dry_run`, `invoke_generate_report`, `invoke_export_report`, `invoke_get_latest_scan`, `invoke_get_checkpoints`, `invoke_create_checkpoint`, `invoke_delete_checkpoint`, `invoke_get_scan_history`, `invoke_get_scan_session`, `invoke_get_checkpoint_detail`, `invoke_rollback`, `invoke_list_remote_hosts`, `invoke_save_remote_host`, `invoke_delete_remote_host`, `invoke_connect_remote`, `invoke_disconnect_remote`, `invoke_remote_scan`, `invoke_fleet_scan`, `invoke_fleet_apply`, `invoke_fleet_rollback`, `invoke_get_host_history`, `invoke_list_plugins`, `invoke_get_scheduler_config`, `invoke_save_scheduler_config`, `invoke_test_notification`, `invoke_validate_config`, `invoke_pick_config_file` |
 | `src/keyboard.rs` | Global keyboard event handler | Ctrl+1-5 page nav (pages 1-5 only; Fleet and Fleet Apply pages have no shortcut), Alt+T theme cycle, Escape close, F11 fullscreen |
 | `src/navigation.rs` | Navigation signal helpers | Page routing helpers for keyboard and UI nav |
-| `src/utils/mod.rs` | Utils module exports | Re-exports (mock_data) |
+| `src/utils/mod.rs` | Utils module exports and preview/apply helpers | `annotate_preview()`, `PreviewDecision`, `apply_change_summary()`, `is_auth_cancelled()`, `parse_rate_limit_wait_secs()`; `mock_data` mod |
 | `src/utils/mock_data.rs` | Development mocks | Mock data generators |
 | `src/pages/mod.rs` | Pages module exports | `DashboardPage`, `AnalysisPage`, `HardeningPage`, `RemotePage`, `SchedulerPage`, `FleetPage`, `FleetApplyPage` |
 | `src/components/mod.rs` | Components module exports | All component re-exports, `Card`, `CardVariant`, `HeadingLevel` |
@@ -472,6 +473,7 @@ pub struct ScanRunner {
 | `themes/daywatch.css` | Light mode with warm off-white |
 | `themes/github-dark.css` | GitHub-inspired dark theme |
 | `themes/midnight-teal.css` | Deep teal dark theme |
+| `themes/high-contrast.css` | WCAG AAA maximum-contrast accessibility theme |
 
 **Note**: Active theme definitions are in `styles.css` using `[data-theme="..."]` selectors. Individual theme files serve as reference and documentation.
 
@@ -772,7 +774,7 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | hardener-state | `audit.rs`, `hash_chain.rs`, `signing.rs`, `db.rs` | `checkpoint_system.rs` | 31 |
 | hardener-distro | `adapter.rs`, `package/*.rs` | - | 15 |
 | hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `notification/*.rs` | - | 48 |
-| hardener-cli | `cli.rs`, `output.rs`, `history.rs` | - | 31 |
+| hardener-cli | `cli.rs`, `output.rs`, `history.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`) | 31 |
 | hardener-plugins | - | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs` | 128+ |
 | hardener-core | `config.rs`, `context.rs`, `plugin.rs`, `registry.rs`, `config_loader.rs` | `plugin_manager_tests.rs`, `mock_executor_tests.rs`, `ssh_executor_tests.rs` | 43+ |
 

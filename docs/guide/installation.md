@@ -1,12 +1,12 @@
 # Installation Guide
 
-**Last Updated**: 2026-07-18
+**Last Updated**: 2026-07-19
 
 ## Requirements
 
 - Linux kernel 5.4+
 - x86_64 architecture
-- One of: Arch, Debian 12+, Ubuntu 22.04+, Fedora 39+, RHEL/Rocky 9+, openSUSE Leap 15.5+
+- One of: Arch, Debian 12+, Ubuntu 22.04+, Fedora 40+, RHEL/Rocky 9+, openSUSE Leap 15.6+
 
 ### GUI Requirements (optional)
 

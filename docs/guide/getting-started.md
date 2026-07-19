@@ -1,6 +1,6 @@
 # Getting started
 
-**Last Updated**: 2026-07-18
+**Last Updated**: 2026-07-19
 
 A task-oriented tour of the hardener for new users: scan a system, read the
 findings, preview and apply hardening, roll it back, and produce a first
@@ -103,7 +103,7 @@ Rollback restores the exact file contents captured at apply time.
 ## 6. Manage checkpoints
 
 ```bash
-hardener checkpoint list                       # All checkpoints with IDs and timestamps
+hardener checkpoint list                       # Newest 20 checkpoints (--limit N, or --all for every one)
 sudo hardener checkpoint create "pre-change"   # Manual snapshot before your own edits
 hardener checkpoint show <checkpoint-id>       # What a checkpoint contains
 hardener checkpoint delete <checkpoint-id>     # Remove one you no longer need
@@ -151,14 +151,15 @@ auto-detection.
 
 The desktop app (`linux-hardener-desktop`) wraps the same engine:
 
-1. Launch the app and click **Run Security Scan** on the Dashboard.
+1. Launch the app and click **Run Scan** on the Dashboard.
 2. Review findings by severity on the **Analysis** page; click a finding for
    its detail panel.
-3. Select recommendations on the **Hardening** page and click **Apply
-   Selected**; a polkit dialog asks for your password (root work runs through
-   `pkexec`, see the
+3. On the **Hardening** page (Configure tab) pick a profile and plugins, click
+   **Preview Changes**, then **Confirm & Apply**; a polkit dialog asks for your
+   password (root work runs through `pkexec`, see the
    [desktop environment compatibility guide](desktop-environment-compatibility.md)).
-4. Use the **Checkpoints** section to roll back if needed.
+4. Use the **System Checkpoints** section (Hardening page, History tab) to roll
+   back if needed.
 
 Seven pages in total: Dashboard, Analysis, Hardening, Remote, Scheduler
 (reachable with `Ctrl+1` to `Ctrl+5`), plus **Fleet** (read-only multi-host

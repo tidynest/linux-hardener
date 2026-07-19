@@ -77,9 +77,10 @@ This document describes the data flow for all major operations in the system.
 │  │   • MAC: getenforce/aa-status                             │
 │  ├─ Compare against secure baseline                          │
 │  ├─ Generate Finding for each deviation                      │
-│  └─ A source needing root that is permission-denied at the   │
-│     current privilege level yields UncheckedCheck entries    │
-│     instead of a false Finding (pam/firewall/audit/ssh/mac)  │
+│  └─ A source blocked at the current privilege level, or a    │
+│     check not applicable to this host (e.g. a non-POSIX      │
+│     filesystem), yields UncheckedCheck entries instead of a  │
+│     false Finding (pam/firewall/audit/ssh/mac/permissions)   │
 └────────┬─────────────────────────────────────────────────────┘
          │
          ▼
@@ -89,8 +90,8 @@ This document describes the data flow for all major operations in the system.
 │    scan_plugin_id: "ssh-hardening",                          │
 │    scan_success: true,                                       │
 │    scan_findings: [Finding, Finding, ...],                   │
-│    scan_unchecked: [UncheckedCheck, ...],  // root-only, see │
-│                                             // below         │
+│    scan_unchecked: [UncheckedCheck, ...],  // blocked or     │
+│                                             // N/A, below    │
 │    scan_duration_us: 1234,                                   │
 │    scan_error: None                                          │
 │  }                                                           │
@@ -171,11 +172,12 @@ struct UncheckedCheck {
          ▼
 ┌──────────────────────────────────────────────────────────────┐
 │  hardener-cli/src/commands/apply.rs::run()                   │
-│  ├─ Verify root privileges (geteuid() == 0)                  │
+│  ├─ Verify the executor session is privileged                │
+│  │   (id -u == 0 or passwordless sudo; --ssh aware)          │
 │  ├─ Create PluginRegistry                                    │
 │  ├─ Initialize CheckpointManager                             │
-│  │   └─ Opens/creates SQLite DB at:                          │
-│  │      ~/.local/share/linux-hardener/checkpoints.db         │
+│  │   └─ Opens/creates SQLite DB (root context):              │
+│  │      /var/lib/linux-hardener/checkpoints.db               │
 │  └─ Create Context with checkpoint manager                   │
 └────────┬─────────────────────────────────────────────────────┘
          │
@@ -207,7 +209,8 @@ struct UncheckedCheck {
 │  │   • Firewall: Apply rules via backend                     │
 │  │   • PAM: Update /etc/pam.d/* files                        │
 │  │   • Services: systemctl disable/mask                      │
-│  │   • Permissions: chmod, chown (with post-verify for vfat) │
+│  │   • Permissions: chmod, chown (non-POSIX fs skipped       │
+│  │     with fstab guidance, not chmodded)                    │
 │  │   • Audit: Write audit rules, augenrules --load           │
 │  │   • MAC: setenforce, aa-enforce                           │
 │  ├─ Log each change to audit trail                           │
@@ -221,9 +224,10 @@ struct UncheckedCheck {
 │    apply_plugin_id: "kernel-hardening",                      │
 │    apply_success: true,                                      │
 │    apply_changes: [                                          │
-│      Change { description: "Set kernel.randomize_va_space=2",│
+│      Change { change_description:                            │
+│                 "Set kernel.randomize_va_space=2",           │
 │               change_type: KernelParameter,                  │
-│               success: true }                                │
+│               change_success: true }                         │
 │    ],                                                        │
 │    apply_checkpoint_id: Some("cp_1700000000_abc123"),        │
 │    apply_error: None                                         │
@@ -249,6 +253,18 @@ struct UncheckedCheck {
 │   Output to user │
 └──────────────────┘
 ```
+
+**Apply honesty and idempotency.** Every plugin apply is state-aware: an
+already-compliant setting is recorded as a `ChangeType::Skipped` no-op (config
+files are backed up and rewritten only when their content actually changes,
+services are not restarted when nothing changed, nftables rules are
+presence-checked so they are never duplicated, and SSH/audit rewrites are gated
+on drift). The pre-apply checkpoint is recorded once as a
+`ChangeType::Checkpoint` bookkeeping entry. `ApplyResult::applied_change_count()`
+counts only successful, non-skipped, non-checkpoint changes, so the CLI prints
+"N change(s) applied[, M skipped]", "no changes needed" for a plugin whose only
+entry was the checkpoint, and "N of M change(s) applied, K failed" on failure -
+a checkpoint or a skip is never counted as a hardening change.
 
 ---
 
@@ -302,8 +318,8 @@ struct UncheckedCheck {
 ┌──────────────────────────────────────────────────────────────┐
 │  Sign Checkpoint                                             │
 │  ├─ Serialize checkpoint metadata                            │
-│  ├─ Load Ed25519 private key from:                           │
-│  │   ~/.local/share/linux-hardener/signing.key               │
+│  ├─ Load Ed25519 private key (root context):                 │
+│  │   /etc/linux-hardener/signing.key                         │
 │  └─ Sign with ed25519_dalek                                  │
 └────────┬─────────────────────────────────────────────────────┘
          │
@@ -425,12 +441,13 @@ struct UncheckedCheck {
          ▼
 ┌──────────────────────────────────────────────────────────────┐
 │  Run Full Scan (all plugins)                                 │
-│  └─ Collect all Finding results                              │
+│  └─ Collect Finding + UncheckedCheck results per plugin      │
 └────────┬─────────────────────────────────────────────────────┘
          │
          ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  ReportGenerator::new(config, coverage).generate(findings)   │
+│  ReportGenerator::new(config, coverage)                      │
+│    .generate(findings, unchecked)                            │
 │  coverage = hardener_plugins::compliance_coverage()          │
 │   (union of every plugin's coverage() - the assessed set)    │
 │  ├─ Profile translation (config.profile, default generic):   │
@@ -613,6 +630,7 @@ command is added or removed: `src/main.rs` (`generate_handler!`), `build.rs`
 |---------|------------|---------|
 | `get_scan_history` | `limit: Option<i32>` | `Vec<ScanSessionInfo>` |
 | `get_scan_session` | `session_id: String` | `Vec<ScanResult>` |
+| `get_host_history` | `host: String`, `limit: Option<u32>` | `Vec<HostSessionInfo>` |
 
 **Plugins**
 
@@ -637,9 +655,9 @@ command is added or removed: `src/main.rs` (`generate_handler!`), `build.rs`
 | `connect_remote` | `name: String`, `state: State<RemoteState>` | `RemoteConnectionStatus` |
 | `disconnect_remote` | `state: State<RemoteState>` | `()` |
 | `run_remote_scan` | `plugin_ids: Option<Vec<String>>`, `state: State<RemoteState>` | `Vec<ScanResult>` |
-| `run_fleet_scan` | `host_names: Vec<String>`, `plugin_ids: Vec<String>` | `Vec<FleetHostScan>` |
-| `run_fleet_apply` | `hosts: Vec<String>`, `plugins: Vec<String>`, `execute: bool` | `Vec<ApplyOutcome>` |
-| `run_fleet_rollback` | `hosts: Vec<String>`, `plugins: Vec<String>`, `execute: bool` | `Vec<RollbackOutcome>` |
+| `run_fleet_scan` | `host_names: Vec<String>`, `adhoc: Option<Vec<String>>`, `plugin_ids: Option<Vec<String>>` | `Vec<FleetHostScan>` |
+| `run_fleet_apply` | `hosts: Vec<String>`, `adhoc: Option<Vec<String>>`, `plugins: Vec<String>`, `execute: bool` | `Vec<ApplyOutcome>` |
+| `run_fleet_rollback` | `hosts: Vec<String>`, `adhoc: Option<Vec<String>>`, `plugins: Vec<String>`, `execute: bool` | `Vec<RollbackOutcome>` |
 
 `run_fleet_apply` and `run_fleet_rollback` spawn `hardener batch apply`/`rollback --format json` as a subprocess (no pkexec; remote authentication uses each host's saved SSH profile). The child process output is parsed into `Vec<ApplyOutcome>` / `Vec<RollbackOutcome>` respectively. `execute: false` (the default) is a dry-run preview: it omits `--execute`; the Fleet Apply page enforces a dry-run before showing the confirmation modal. `list_plugins` returns the available plugin metadata and is shared with the Fleet Apply page for its plugin multi-select.
 
@@ -680,6 +698,7 @@ All GUI state lives in `AppState` (`hardener-ui/src/state/mod.rs`). Each field i
 | `is_testing_notification` | `RwSignal<bool>` | Notification test in progress |
 | `config_path` | `RwSignal<Option<String>>` | Selected config file path |
 | `config_summary` | `RwSignal<Option<ConfigSummary>>` | Validated config file summary |
+| `deep_scan_running` | `RwSignal<bool>` | Shared privileged deep-scan button state |
 
 ---
 
@@ -709,8 +728,8 @@ If any entry is modified, the hash chain breaks and tampering is detected.
 
 | Data | Location | Format |
 |------|----------|--------|
-| Checkpoint DB | `~/.local/share/linux-hardener/checkpoints.db` | SQLite |
-| Signing Keys | `~/.local/share/linux-hardener/signing.key` | Ed25519 |
+| Checkpoint DB | root: `/var/lib/linux-hardener/checkpoints.db`; unprivileged: `~/.local/share/linux-hardener/checkpoints.db` | SQLite |
+| Signing Keys | root: `/etc/linux-hardener/signing.key`; unprivileged: `~/.local/share/linux-hardener/signing.key` | Ed25519 |
 | User Config | `~/.config/linux-hardener/config.toml` | TOML |
 | System Config | `/etc/linux-hardener/config.toml` | TOML |
 | WASM Rustflags | `.cargo/config.toml` | TOML |
@@ -1061,8 +1080,8 @@ pub struct Daemon {
 
 | Data | Location | Format |
 |------|----------|--------|
-| Scan History DB | `~/.local/share/linux-hardener/scheduler/history.db` | SQLite |
-| JSON Exports | `~/.local/share/linux-hardener/scheduler/scans/` | JSON with SHA-256 |
+| Scan History DB | `~/.local/share/linux-hardener/scheduler.db` (root: `/var/lib/linux-hardener/scheduler.db`) | SQLite |
+| JSON Exports | `~/.local/share/linux-hardener/scans/` (root: `/var/lib/linux-hardener/scans/`) | JSON with SHA-256 |
 | Scheduler Config | `[scheduler]` section in config.toml | TOML |
 
 ---
@@ -1160,17 +1179,19 @@ pub struct Daemon {
 ┌──────────────────────────────────────────────────────────────┐
 │  hardener-ui/src/pages/fleet_page.rs                         │
 │  ├─ Leptos page-local state (no AppState fields)             │
-│  ├─ Multi-select list of inventory host names                │
-│  └─ On "Scan Fleet": calls invoke_fleet_scan(names, plugins) │
+│  ├─ Multi-select inventory hosts + ad-hoc target input       │
+│  └─ On "Scan Fleet": invoke_fleet_scan(names, adhoc,         │
+│     plugins)                                                 │
 └────────┬─────────────────────────────────────────────────────┘
-         │ IPC via Tauri (camelCase: hostNames, pluginIds)
+         │ IPC via Tauri (camelCase: hostNames, adhoc, pluginIds)
          ▼
 ┌──────────────────────────────────────────────────────────────┐
 │  src-tauri/src/commands.rs::run_fleet_scan()                 │
 │  ├─ #[tauri::command] - registered in main.rs                │
 │  ├─ Validates plugin_ids via validate_plugin_ids()           │
-│  ├─ Validates each host_name via validate_ipc_string()       │
-│  └─ Calls scan_fleet(host_names, plugin_ids)                 │
+│  ├─ Validates host_names + ad-hoc via validate_ipc_string()  │
+│  └─ Resolves ad-hoc profiles, then scan_fleet(inventory      │
+│     + ad-hoc targets)                                        │
 └────────┬─────────────────────────────────────────────────────┘
          │
          ▼
@@ -1320,7 +1341,7 @@ pub enum RollbackStatus {
 | Concurrency | Sequential (one host at a time) | Up to 8 hosts in parallel |
 | State | `AppState` remote signals | Page-local Leptos signals |
 | Checkpoint/Audit | N/A (scan only) | N/A (scan only, structurally) |
-| Ad-hoc hosts | Yes (any saved profile or `--ssh`) | Inventory hosts only |
+| Ad-hoc hosts | Yes (any saved profile or `--ssh`) | Yes (inventory + ad-hoc `user@host[:port]`) |
 | History persistence | No | No (read-only posture view) |
 
 ---

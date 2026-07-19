@@ -97,7 +97,8 @@ hardener --ssh user@server scan              # Scan a remote host via SSH
 
 ## apply
 
-Apply hardening changes to the system. Requires root (unless `--dry-run`).
+Apply hardening changes to the system. Requires root or passwordless sudo on the
+target session (unless `--dry-run`).
 
 Creates a checkpoint automatically before writing any changes, so all modifications can be rolled back.
 
@@ -123,14 +124,14 @@ sudo hardener apply --plugin kernel          # Apply only kernel sysctl hardenin
 ```
 
 **Dry-run vs real apply:**
-- `--dry-run` lists each change with its current and target value, then exits. No files are modified, no checkpoint is created, and root is not required.
-- Without `--dry-run`, root is required. A checkpoint is created before any writes, and each plugin's changes are applied to the live system and persisted to config files.
+- `--dry-run` lists each pending change, with an "N already compliant" tail per plugin for settings that already meet policy, then exits. No files are modified, no checkpoint is created, and no privilege is required.
+- Without `--dry-run`, root or passwordless sudo is required on the target session (local, or the `--ssh` host). A checkpoint is created before any writes, and each plugin's changes are applied to the live system and persisted to config files. Apply is state-aware and idempotent: already-compliant settings are skipped rather than rewritten. The per-plugin summary counts only successful, non-skipped changes ("N change(s) applied"); a plugin that needed nothing reads "no changes needed", and failures are reported as "N failed".
 
 ---
 
 ## rollback
 
-Restore the system to a previous checkpoint snapshot. Requires root.
+Restore the system to a previous checkpoint snapshot. Requires root or passwordless sudo on the target session (local, or the `--ssh` host).
 
 ```
 sudo hardener rollback <CHECKPOINT_ID>
@@ -155,11 +156,18 @@ Manage checkpoint snapshots.
 
 ### checkpoint list
 
-List all stored checkpoints with their IDs, names, and timestamps.
+List stored checkpoints newest first, with their IDs, names, host, and
+timestamps. Capped at `--limit` rows by default; a dimmed footer discloses the
+total when the list is capped.
 
 ```
-hardener checkpoint list
+hardener checkpoint list [FLAGS]
 ```
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-l`, `--limit <N>` | Maximum number of checkpoints to show | `20` |
+| `--all` | Show every checkpoint, ignoring the limit | off |
 
 ### checkpoint create
 
@@ -199,7 +207,7 @@ List all available security plugins with their descriptions.
 hardener plugins
 ```
 
-No flags. Displays the 8 built-in plugins and their status.
+No flags. Displays the 8 built-in plugins with their IDs, names, versions, and descriptions.
 
 ---
 
@@ -422,12 +430,12 @@ sudo hardener daemon run-once
 Show daemon status and recent scan history.
 
 ```
-hardener daemon status <LIMIT>
+hardener daemon status [FLAGS]
 ```
 
-| Argument | Description |
-|----------|-------------|
-| `LIMIT` | Number of recent scan sessions to display |
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-l`, `--limit <N>` | Number of recent scan sessions to display | `10` |
 
 ---
 

@@ -113,13 +113,13 @@ With `--apply`: also tests applying hardening changes and rolling them back (mod
 ### Full test suite (comprehensive, 26 sections)
 
 ```bash
-sudo ./scripts/test/full-test-suite.sh                     # Sections 1-12, 17-26 (no apply)
+sudo ./scripts/test/full-test-suite.sh                     # Sections 1-12, 17-22, 24-26 (no apply)
 sudo ./scripts/test/full-test-suite.sh --apply              # All 26 sections including apply and rollback
 ```
 
 More thorough than `root-test-suite.sh`. Covers CLI argument parsing, every plugin's scan output, checkpoint lifecycle, compliance reports, daemon commands, systemd integration, history commands, and per-plugin apply/rollback cycles.
 
-Without `--apply`: skips sections 13-16 (per-plugin apply and rollback).
+Without `--apply`: skips sections 13-16 (per-plugin apply and rollback) and section 23 (per-plugin lifecycle).
 With `--apply`: runs all 26 sections including destructive per-plugin lifecycle testing.
 
 ### Rollback verification
@@ -256,10 +256,10 @@ cargo build --release --target x86_64-unknown-linux-gnu -p hardener-cli
 cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli
 ```
 
-### release.yml (on tags matching `v*.*.*`)
+### release.yml (on tags matching `v[0-9]+.[0-9]+.[0-9]+`)
 
 ```bash
-cargo test --workspace
+cargo test --workspace --exclude linux-hardener-desktop --exclude hardener-ui
 cargo build --release --target x86_64-unknown-linux-gnu -p hardener-cli
 cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli
 cargo build --release --target aarch64-unknown-linux-gnu -p hardener-cli
@@ -267,4 +267,4 @@ cargo build --release --target aarch64-unknown-linux-gnu -p hardener-cli
 
 Produces three release tarballs and creates a GitHub release.
 
-**Last Updated**: 2026-07-18
+**Last Updated**: 2026-07-19

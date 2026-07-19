@@ -280,6 +280,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now surfaced as an error message instead of only a console warning,
   so the user knows the displayed score may be stale until the next
   scan.
+- the desktop rate-limit notice now clears itself once its cooldown
+  elapses instead of lingering as a red error banner demanding manual
+  dismissal: the privileged-op cooldown is a transient wait, not a
+  genuine failure, so the shared error banner parses the wait time out
+  of the backend message and arms a timer for that wait plus five
+  seconds, clearing the message when it fires - but only while the
+  banner still holds the exact message the timer was armed for, so a
+  later, unrelated error reusing the same banner is never wiped by a
+  stale timer.
 - firewall apply is now idempotent on nftables hosts: `nft add rule`
   always appends a fresh handle, so re-running apply previously stacked
   a duplicate of every baseline rule each time. Apply now ensures the

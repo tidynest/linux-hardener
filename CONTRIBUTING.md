@@ -204,7 +204,7 @@ sudo cargo test -- --ignored
 - Unit tests go in the same file as the code
 - Integration tests go in `tests/` directories
 - Use descriptive test names: `test_kernel_plugin_scan_detects_insecure_aslr`
-- Use `#[tokio::test]` for async tests (all plugin tests are async)
+- Use `#[tokio::test]` for async tests; the plugin `scan`/`apply`/`rollback`/`validate` methods are async, while pure helper tests stay synchronous `#[test]`
 
 ## Project Structure
 
@@ -255,4 +255,4 @@ By contributing, you agree that your contributions will be licensed under the Ap
 
 Thank you for contributing to Linux System Hardener!
 
-**Last Updated**: 2026-07-18
+**Last Updated**: 2026-07-19

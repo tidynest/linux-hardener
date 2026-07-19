@@ -140,10 +140,13 @@ numbers and titles, wired into `frameworks::get_controls`. Plugin findings map t
 the Technological controls (8.24 crypto, 8.5 auth, 8.20 networks, 8.15 logging,
 8.9 config, 8.3 access), so ISO 27001 reports assess real state.
 
-### P2: RHEL 10 compliance profiles
+### P2: RHEL 10 compliance profiles (Done)
 
-DISA RHEL 10 STIG V1R1 (2026-06-02) and CIS RHEL 10 v1.0.1 now exist. Distro
-detection already routes RHEL 10 through the Red Hat family; add the profile data.
+DISA RHEL 10 STIG V1R1 (2026-06-02) and CIS RHEL 10 v1.0.1 profile data now ship
+in `profiles.rs` (`RHEL10_STIG`/`RHEL10_CIS`), keyed by canonical RHEL 8 rule id
+and CIS section and wired into the catalogue via `ComplianceProfile::Rhel10`.
+Distro detection already routes RHEL 10 through the Red Hat family. Shipped in
+v1.3.0.
 
 ### P2: Multi-host SSH management
 
@@ -240,16 +243,16 @@ existing rows: no migration, the only parser of the stored severity string
 is never parsed back, so old Debug-cased rows remain readable; the difference
 is cosmetic in `history show` for pre-fix sessions.
 
-### P3: Docker container image
+### P3: Docker container image (Done)
 
-Ship a `Dockerfile`/image so the hardener runs in containers / CI without a full
-distro install (user request, 2026-06-29). Reuse the existing
-`x86_64-unknown-linux-musl` static binary → a tiny distroless/Alpine image, no
-glibc. Decide on pickup: **scan/report read-only is the safe default**; *apply*
-would need `--privileged` + host namespaces (`--pid=host`, host `/etc`, `/sys`)
-to mutate the real host, which undercuts container isolation, likely document
-as discouraged/unsupported. Add a `docker` row to `docs/reference/distribution-validation.md`
-once it exists.
+Shipped in v1.3.0: `packaging/docker/Dockerfile` builds the existing
+`x86_64-unknown-linux-musl` static binary in a `rust:1.97-alpine` stage and copies
+it into a `FROM scratch` runtime (binary only, no glibc), with usage notes in
+`packaging/docker/README.md`. **scan/report read-only is the safe default**;
+*apply* against the real host would need `--privileged` + host namespaces
+(`--pid=host`, host `/etc`, `/sys`), which undercuts container isolation and is
+documented as discouraged. Validated on the Arch host and recorded in
+`docs/reference/distribution-validation.md` (§Docker Image Validation).
 
 ### P3: Deferred code cleanups (Done, 2026-07-16)
 
@@ -264,7 +267,7 @@ test proven red→green).
 
 | Item | Detail | Status |
 |------|--------|--------|
-| Distro validation refresh | v1.1.0 binary **re-validated** on the existing containers 2026-06-28 (CLI suite; analysis in `docs/reference/distribution-validation.md` §v1.1.0 Re-validation). **Version refresh still pending**: recreate containers for Debian 13, Fedora 44, RHEL 10, openSUSE Leap 16 (Leap 15.6 EOL April 2026). GUI suite re-run green on all 5 distros (2026-06-29, 113 tests). | 🟡 Partial |
+| Distro validation refresh | Container set recreated for the newer distro versions in v1.2.2: `scripts/containers/create-container.sh` now targets Debian 13 (Trixie), Fedora 44, Rocky 10 and openSUSE Leap 16.0 (Leap 15.6 EOL April 2026), validated 5/5. The `docs/reference/distribution-validation.md` results narrative still references the earlier v1.1.0 re-validation on the previous containers and is itself due an update. | ✅ Done |
 | Cross-distro JSON-grep flake | **Root cause: the `sed` ANSI-strip in `run_test_output`** (NOT stderr-fold/capture, those fixes did not help). It piped captured output through `sed 's/ANSI//g'` before `grep`; under openSUSE's minimal-container locale that `sed` intermittently emitted nothing, masking fields that were present (proven: direct `grep -ac` matched 8/240/3 while `sed \| grep` missed). Dropped the pointless pre-strip (ANSI never splits matched tokens); now `grep -aqE`s the captured file directly, with a `diag:` line on the fail path. Suite green 125/125 × 5. | ✅ Done (837963b) |
 | `tauri` 2.11.2 → 2.11.3 | Latest patch (2026-06-17); no CVE, routine bump | ✅ Done (lockfile, 2026-06-20) |
 | Desktop crate compile fix | Tauri compliance commands ported to the phase-3 `ReportGenerator::new(config, coverage)` signature; `cargo check -p linux-hardener-desktop` clean | ✅ Done (2026-06-20) |

@@ -110,13 +110,20 @@ The release script automatically:
    - Syncs version references to Cargo.toml
 3. Validates documentation (`validate_all.py --quick`)
 4. Updates version in `Cargo.toml` and documentation files
-5. Updates test count in `README.md`
-6. Updates `CHANGELOG.md`
+5. Updates `CHANGELOG.md`
+6. Refreshes `Cargo.lock` (`cargo update --workspace`)
 7. Creates git commit and tag
 8. Pushes to `main` on GitHub and GitLab
 9. Pushes the release tag to both remotes
 
 If documentation validation fails, you'll be prompted to continue or abort the release.
+
+> **Note:** The README status badges (version, AUR, test count) are vendored SVGs
+> under `docs/assets/badges/` - they are **not** updated by the release script.
+> When the test count moves, bump the relevant `message` in
+> `scripts/badges/generate.js` and regenerate the SVGs (`cd scripts/badges &&
+> node generate.js`) as a manual prep step before running the release. See
+> `scripts/badges/README.md`.
 
 ### Version Verification Only
 
@@ -365,4 +372,4 @@ For release issues:
 3. Consult this document
 4. Open an issue if needed
 
-**Last Updated**: 2026-07-18
+**Last Updated**: 2026-07-19

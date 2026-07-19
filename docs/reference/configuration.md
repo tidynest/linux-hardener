@@ -1,6 +1,6 @@
 # Configuration reference
 
-**Last Updated**: 2026-07-18
+**Last Updated**: 2026-07-19
 
 Complete reference for the hardener's configuration files. Configuration
 controls which plugins run, tightens directive targets beyond the built-in
@@ -43,7 +43,8 @@ Rules worth knowing:
   same-named earlier keys). The `[global]` plugin lists **replace** rather than
   merge: a non-empty list in a later source wins outright.
 - Size limits: a config file may be at most 1 MiB, with at most 500 directives
-  and 200 exceptions per plugin section.
+  (`directives` and `custom_directives` counted together) and 200 exceptions per
+  plugin section.
 
 ---
 
@@ -115,7 +116,8 @@ A config that fails validation is rejected with every invalid entry listed:
 - No value may contain shell metacharacters (`;`, backtick, `$`, `(`, `)`,
   `{`, `}`, `|`, `&`), newlines, or NUL bytes.
 - Kernel, SSH, firewall, and PAM values must match the expected format for
-  their family (for example sysctl values are numeric or dotted tokens).
+  their family (for example sysctl values must be integers, optionally
+  space-separated).
 - Permission modes may not set SUID/SGID/sticky bits, may not be
   world-writable, and may not be zero.
 

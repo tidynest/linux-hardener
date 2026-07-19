@@ -89,7 +89,7 @@ This tool is designed to harden systems against common attack vectors, but is **
 
 4. **Distribution Detection**: Relies on `/etc/os-release` which could be spoofed on a compromised system.
 
-5. **Compliance Coverage**: All 7 frameworks (CIS, STIG, NIST 800-53, PCI-DSS, HIPAA, GDPR, ISO 27001:2022) emit real Pass/Fail results via plugin-declared per-control coverage. Controls not covered by any plugin are reported as `ManualReview`. Do not treat a `ManualReview` result as compliant.
+5. **Compliance Coverage**: All 10 frameworks (CIS, STIG, NIST 800-53, PCI-DSS, HIPAA, GDPR, ISO 27001:2022, SOC 2, NIST 800-171, FedRAMP) emit real Pass/Fail results via plugin-declared per-control coverage. Controls not covered by any plugin are reported as `ManualReview`. Do not treat a `ManualReview` result as compliant.
 
 ### SSH Remote Scanning Security
 
@@ -97,7 +97,7 @@ The SSH remote scanning feature (`--ssh` flag) has these security considerations
 
 1. **Host Key Verification**: By default, strict host key checking is enforced. The `--ssh-no-verify` flag disables this but should only be used for testing.
 
-2. **Credential Handling**: SSH connections use key-based authentication only (via the `openssh` crate). SSH agent forwarding is supported. Password authentication is not implemented.
+2. **Credential Handling**: SSH connections use key-based authentication only (via the `openssh` crate, which drives the system `ssh` client). Keys held in a running `ssh-agent` are honoured. Password authentication is not implemented.
 
 3. **Privilege Escalation**: Apply/rollback operations on remote hosts require sudo access. Configure passwordless sudo for specific commands if needed.
 
@@ -121,7 +121,7 @@ The Tauri desktop application uses `pkexec` (polkit) for operations that require
 
 3. **Polkit Agent Requirement**: A polkit authentication agent must be running in the desktop session (GNOME, KDE, Hyprland, etc. all provide one).
 
-4. **Per-Command Capability ACLs**: Every application IPC command is declared in `src-tauri/build.rs` (`tauri_build::AppManifest`), which autogenerates an `allow-*`/`deny-*` permission pair per command and enables Tauri's runtime ACL check for application commands. The main-window capability (`src-tauri/capabilities/default.json`) grants each of the 29 commands explicitly, grouped by risk tier; a command whose permission is removed is rejected by the ACL layer before argument deserialisation or handler dispatch. This layers beneath the existing IPC input validation, `PrivilegedOpGuard` rate limiting, and pkexec boundary rather than replacing any of them.
+4. **Per-Command Capability ACLs**: Every application IPC command is declared in `src-tauri/build.rs` (`tauri_build::AppManifest`), which autogenerates an `allow-*`/`deny-*` permission pair per command and enables Tauri's runtime ACL check for application commands. The main-window capability (`src-tauri/capabilities/default.json`) grants each of the 30 commands explicitly, grouped by risk tier; a command whose permission is removed is rejected by the ACL layer before argument deserialisation or handler dispatch. This layers beneath the existing IPC input validation, `PrivilegedOpGuard` rate limiting, and pkexec boundary rather than replacing any of them.
 
 ## Secure Development Practices
 
@@ -179,6 +179,9 @@ This tool maps findings to:
 - HIPAA technical safeguards
 - GDPR Article 32 (security of processing)
 - ISO 27001:2022 Annex A controls
+- SOC 2 Trust Services Criteria
+- NIST SP 800-171 (protection of Controlled Unclassified Information)
+- FedRAMP Moderate baseline
 
 ## Known Security Advisories
 
@@ -205,4 +208,4 @@ For security concerns: **tidynest@proton.me**
 
 For general issues: [GitHub Issues](https://github.com/tidynest/linux-system-hardener/issues)
 
-**Last Updated**: 2026-07-18
+**Last Updated**: 2026-07-19
