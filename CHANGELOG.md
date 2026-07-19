@@ -34,9 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   session, so restarting the app keeps the privileged results. An
   unchecked-checks banner above the Dashboard and Analysis pages names
   the outstanding count and offers a "Run deep scan" button that also
-  regenerates compliance reports, so the security score reflects the
-  privileged results rather than the stale unprivileged ones. The
-  findings tab lists the unverifiable checks (deduplicated by check id,
+  regenerates compliance reports; regeneration refreshes the honest
+  unprivileged compliance view, but covered-but-unchecked controls
+  remain ManualReview until report generation consumes scan state
+  (recorded follow-up). The findings tab lists the unverifiable checks
+  (deduplicated by check id,
   since the audit plugin emits one entry per underlying rule) under a
   "Not verifiable without privileges" heading, and the score gauge
   shows a muted "N check(s) not verified (needs privileges)" note. All

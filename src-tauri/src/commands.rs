@@ -591,6 +591,13 @@ pub async fn run_deep_scan(
         validate_privileged_config_path(path)?;
     }
 
+    // Same fallible session-creation contract as run_scan, and in the same
+    // pre-flight position: an unavailable history database is reported
+    // before the pkexec prompt runs, so a user never pays for a completed
+    // root scan only to have it discarded on a persistence failure.
+    let history_manager = create_scan_history_manager().await?;
+    let session_id = history_manager.start_session().await.map_err(safe_err)?;
+
     let mut args: Vec<&str> = vec!["scan", "--format", "json"];
     let plugin_args: Vec<String> = plugin_ids
         .iter()
@@ -613,11 +620,6 @@ pub async fn run_deep_scan(
         .map(CliScanEntry::into_scan_result)
         .collect();
 
-    // Same fallible session-creation contract as run_scan: an unavailable
-    // history database is reported to the caller rather than silently
-    // dropped, so a missing session after a deep scan is never a surprise.
-    let history_manager = create_scan_history_manager().await?;
-    let session_id = history_manager.start_session().await.map_err(safe_err)?;
     persist_scan_results(&history_manager, &session_id, &results).await;
 
     Ok(results)

@@ -22,9 +22,10 @@ pub fn UncheckedBanner() -> impl IntoView {
                 Ok(results) => {
                     app_state.scan_results.set(results);
 
-                    // Regenerate compliance reports so the security score
-                    // reflects the privileged results, not the stale
-                    // unprivileged scan (consistent with QuickActions).
+                    // Regenerate compliance reports: this refreshes the
+                    // compliance view (still computed at process privilege;
+                    // covered-but-unchecked controls stay ManualReview),
+                    // consistent with QuickActions.
                     let frameworks = hardener_types::ComplianceFramework::ALL
                         .iter()
                         .map(|f| f.id().to_string())

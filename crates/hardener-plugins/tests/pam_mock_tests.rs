@@ -833,7 +833,7 @@ async fn pam_apply_refuses_inline_pamd_override() {
 /// falsely flag every directive as "not set" on a hardened, unprivileged
 /// scan. The permission failure surfaces as unchecked instead.
 #[tokio::test]
-async fn scan_reports_unchecked_not_findings_when_pwquality_is_root_only() {
+async fn pam_scan_reports_unchecked_not_findings_when_pwquality_is_root_only() {
     let mock = MockExecutor::new()
         .with_read_permission_denied("/etc/security/pwquality.conf")
         .with_file("/etc/login.defs", "PASS_MAX_DAYS 365\n");
@@ -862,7 +862,7 @@ async fn scan_reports_unchecked_not_findings_when_pwquality_is_root_only() {
 /// Root-only faillock/pwhistory confs with no inline pam.d override must
 /// surface their threshold directives as unchecked, not as "not set" findings.
 #[tokio::test]
-async fn scan_reports_unchecked_when_threshold_confs_are_root_only() {
+async fn pam_scan_reports_unchecked_when_threshold_confs_are_root_only() {
     let mock = MockExecutor::new()
         .with_file(
             "/etc/security/pwquality.conf",
@@ -907,7 +907,7 @@ async fn scan_reports_unchecked_when_threshold_confs_are_root_only() {
 /// /etc/security conf is root-only: the directive is evaluated from the
 /// inline value (world-readable) and never lands in scan_unchecked.
 #[tokio::test]
-async fn scan_inline_override_wins_over_permission_denied_conf() {
+async fn pam_scan_inline_override_wins_over_permission_denied_conf() {
     // Inline deny=10 (> 5) is non-compliant, so an evaluation from the inline
     // value must produce a genuine finding with that value, proving the
     // root-only faillock.conf was never needed.
