@@ -254,6 +254,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no reason. A remote-root PermitRootLogin guard-skip with no other
   drift is now a full no-op too. A drifting config still backs up,
   validates with `sshd -t`, writes and restarts exactly as before.
+- Audit apply is now idempotent: it compares the rules file it would
+  write against the current `/etc/audit/rules.d/hardening.rules` and,
+  when byte-identical, skips the backup, the rewrite and the daemon
+  reload entirely (reporting a single skipped change) instead of
+  rewriting the file, churning a fresh timestamped backup and reloading
+  auditd on every run. A drifting or absent file still backs up, writes
+  and reloads with the same "Rule exists" flush-and-retry semantics as
+  before; a failed read of the current file fails safe toward rewriting.
+- Every plugin's deliberate no-op skips now carry `ChangeType::Skipped`
+  uniformly: the SSH crypto and directive exception skips, the firewall,
+  services and permissions policy exceptions, the SELinux "already
+  enforcing" path and the audit category exception join the kernel and
+  PAM skips in leaving the "N change(s) applied" count, so a fully
+  compliant host reports zero applied changes across all eight plugins.
 
 ## [1.3.2] - 2026-07-18
 

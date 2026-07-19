@@ -597,6 +597,48 @@ async fn test_mac_apply_exception_skips_carry_skipped_change_type() {
 }
 
 #[tokio::test]
+async fn test_mac_apply_selinux_already_enforcing_is_a_skip() {
+    // SELinux already Enforcing and no exception: apply touches nothing (no
+    // setenforce) and the "already in enforcing mode" entry must be a Skipped
+    // no-op, not a counted ConfigFile change, so a compliant host reports zero
+    // applied changes rather than "1 change(s) applied".
+    let executor = selinux_enforcing_executor();
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    let plugin = MacHardeningPlugin::new();
+
+    let result = plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(
+        result.apply_success,
+        "compliant apply should succeed: {result:?}"
+    );
+    assert_eq!(
+        result.applied_change_count(),
+        0,
+        "an already-enforcing host must count zero applied changes, got: {:?}",
+        result.apply_changes
+    );
+    let already = result
+        .apply_changes
+        .iter()
+        .find(|c| c.change_description.contains("already in enforcing mode"))
+        .expect("should record the already-enforcing entry");
+    assert_eq!(already.change_type, ChangeType::Skipped);
+
+    assert!(
+        !executor
+            .log()
+            .commands_executed
+            .iter()
+            .any(|(cmd, _)| cmd == "setenforce"),
+        "an already-enforcing host must not run setenforce"
+    );
+}
+
+#[tokio::test]
 async fn test_mac_apply_apparmor_advisory_is_not_counted_as_applied() {
     // With AppArmor present and no policy exception, apply only offers
     // guidance ("use aa-enforce...") -- it does not touch the host. Counting

@@ -766,7 +766,7 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
                         "{}: skipped (exception: {})",
                         directive.permission_path, exception.reason
                     ),
-                    change_type: ChangeType::Permissions,
+                    change_type: ChangeType::Skipped,
                     change_success: true,
                     change_error: None,
                 });

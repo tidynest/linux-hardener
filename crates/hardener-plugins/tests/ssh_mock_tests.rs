@@ -5,7 +5,8 @@
 use hardener_common::types::{ComplianceFramework, PluginId, Severity};
 use hardener_core::executor::CommandOutput;
 use hardener_core::{
-    ApplyResult, Context, MockExecutor, PluginConfig, SystemExecutor, plugin::HardeningPlugin,
+    ApplyResult, Context, MockExecutor, PluginConfig, PolicyException, SystemExecutor,
+    plugin::HardeningPlugin,
 };
 use hardener_plugins::ssh::{
     SshHardeningPlugin, select_algorithms, supported_algorithms, validate_sshd_config,
@@ -1182,5 +1183,94 @@ async fn ssh_apply_still_writes_and_restarts_when_config_drifts() {
     assert!(
         restarted_sshd(&executor),
         "a drifting apply must restart sshd"
+    );
+}
+
+#[tokio::test]
+async fn ssh_exception_and_weak_crypto_skips_are_not_counted_as_applied() {
+    // An already-hardened host with a policy exception on one directive and
+    // crypto directives the host advertises no strong algorithm for (no
+    // `ssh -Q` registered). Every resulting entry is a deliberate no-op: the
+    // directive exception, the three "no strong algorithm" crypto skips and
+    // the "already compliant" no-op guard. None may be counted as an applied
+    // change, or a fully compliant host reads "SSH Hardening - N change(s)
+    // applied" describing skips.
+    let hardened = "\
+PermitRootLogin no
+PasswordAuthentication no
+PermitEmptyPasswords no
+MaxAuthTries 3
+X11Forwarding no
+ClientAliveInterval 300
+ClientAliveCountMax 2
+";
+    let executor = apply_ready_executor(hardened);
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "PasswordAuthentication".to_string(),
+        PolicyException {
+            value: "yes".to_string(),
+            allowed: true,
+            reason: "legacy automation account".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = SshHardeningPlugin::new()
+        .apply(&mut ctx, &config)
+        .await
+        .expect("ssh apply should not error");
+
+    assert!(
+        result.apply_success,
+        "compliant apply should succeed: {result:?}"
+    );
+    assert_eq!(
+        result.applied_change_count(),
+        0,
+        "a fully compliant host must count zero applied changes, got: {:?}",
+        result.apply_changes
+    );
+
+    // The directive exception entry is present and is a Skipped no-op.
+    let exception = result
+        .apply_changes
+        .iter()
+        .find(|c| c.change_description.contains("skipped (exception"))
+        .expect("directive exception skip must be recorded");
+    assert!(
+        exception.is_skipped(),
+        "a policy-exception skip must be a Skipped change, got: {exception:?}"
+    );
+
+    // Every "no strong algorithm" crypto entry is a Skipped no-op too.
+    let weak_crypto: Vec<_> = result
+        .apply_changes
+        .iter()
+        .filter(|c| c.change_description.contains("no strong algorithm"))
+        .collect();
+    assert!(
+        !weak_crypto.is_empty(),
+        "the unmocked host must yield weak-crypto skips, got: {:?}",
+        result.apply_changes
+    );
+    assert!(
+        weak_crypto.iter().all(|c| c.is_skipped()),
+        "weak-crypto entries must be Skipped changes, got: {weak_crypto:?}"
+    );
+
+    // Nothing was written and sshd was never restarted on a compliant host.
+    assert!(
+        !rewrote_config(&executor),
+        "a compliant apply must not rewrite sshd_config"
+    );
+    assert!(
+        !restarted_sshd(&executor),
+        "a compliant apply must not restart sshd"
     );
 }

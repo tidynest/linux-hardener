@@ -661,7 +661,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
                         "{}: skipped (exception: {})",
                         rule.rule_description, exception.reason
                     ),
-                    change_type: ChangeType::FirewallRule,
+                    change_type: ChangeType::Skipped,
                     change_success: true,
                     change_error: None,
                 });

@@ -641,7 +641,7 @@ impl HardeningPlugin for ServicesHardeningPlugin {
                         "{}: skipped (exception: {})",
                         directive.service_name, exception.reason
                     ),
-                    change_type: ChangeType::Service,
+                    change_type: ChangeType::Skipped,
                     change_success: true,
                     change_error: None,
                 });

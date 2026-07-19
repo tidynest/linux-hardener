@@ -1109,7 +1109,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                         "{}: skipped (exception: {})",
                         directive.ssh_directive_name, exception.reason
                     ),
-                    change_type: ChangeType::ConfigFile,
+                    change_type: ChangeType::Skipped,
                     change_success: true,
                     change_error: None,
                 });
@@ -1239,7 +1239,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                         "{}: skipped (exception: {})",
                         crypto.crypto_directive_name, exception.reason
                     ),
-                    change_type: ChangeType::ConfigFile,
+                    change_type: ChangeType::Skipped,
                     change_success: true,
                     change_error: None,
                 });
@@ -1263,7 +1263,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                         "{}: skipped (no strong algorithm supported by host)",
                         crypto.crypto_directive_name
                     ),
-                    change_type: ChangeType::ConfigFile,
+                    change_type: ChangeType::Skipped,
                     change_success: true,
                     change_error: None,
                 });

@@ -999,7 +999,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
                         "Audit category {}: skipped (exception: {})",
                         category, exception.reason
                     ),
-                    change_type: ChangeType::ConfigFile,
+                    change_type: ChangeType::Skipped,
                     change_success: true,
                     change_error: None,
                 });
@@ -1017,67 +1017,90 @@ impl HardeningPlugin for AuditHardeningPlugin {
             }
         }
 
-        // Write rules file
-        match write_audit_rules_file(ctx, &rules_content).await {
-            Ok(backup_path) => {
-                changes.push(Change {
-                    change_type: ChangeType::ConfigFile,
-                    change_description: format!(
-                        "Created audit rules file (backup: {})",
-                        backup_path
-                    ),
-                    change_error: None,
-                    change_success: true,
-                });
-            }
-            Err(e) => {
-                changes.push(Change {
-                    change_type: ChangeType::ConfigFile,
-                    change_description: "Failed to write audit rules".to_string(),
-                    change_error: Some(e.to_string()),
-                    change_success: false,
-                });
-            }
-        }
+        // Idempotency guard mirroring the kernel plugin's persistent-config
+        // drift guard: only back up, rewrite and reload when the rules file we
+        // would write differs from what is already on disk. Reading the current
+        // file fails safe toward "differs" (write): a needed rule set is never
+        // skipped because the current state could not be read.
+        let current_rules_file = ctx
+            .executor()
+            .read_file(Path::new(AUDIT_RULES_PATH))
+            .await
+            .ok();
 
-        // Reload audit rules into running daemon.
-        //
-        // On Arch the systemd auditd unit ships `RefuseManualStop=yes`, so
-        // the `systemctl restart` fallback inside reload_audit_rules can
-        // never succeed there and augenrules is the only viable leg. When
-        // both legs fail it is not necessarily a broken audit setup: the
-        // kernel audit config may be immutable (-e 2) until the next
-        // reboot, in which case the rules file is already written and
-        // correct, it just cannot be loaded live. Probe for that before
-        // deciding whether this is a genuine failure.
-        match reload_audit_rules(ctx).await {
-            Ok(_) => {
-                changes.push(Change {
-                    change_type: ChangeType::Service,
-                    change_description: "Loaded audit rules into running daemon".to_string(),
-                    change_error: None,
-                    change_success: true,
-                });
-            }
-            Err(e) => {
-                let change = if is_audit_config_immutable(ctx).await {
-                    Change {
-                        change_type: ChangeType::Skipped,
-                        change_description: "Audit rule reload skipped: config is locked \
-                             (-e 2); a reboot is required for rule changes to take effect"
-                            .to_string(),
+        if current_rules_file.as_deref() == Some(rules_content.as_str()) {
+            info!(
+                "Audit rules file already matches desired content; skipped backup, rewrite and reload"
+            );
+            changes.push(Change {
+                change_type: ChangeType::Skipped,
+                change_description: "Audit rules already up to date - unchanged".to_string(),
+                change_error: None,
+                change_success: true,
+            });
+        } else {
+            // Write rules file
+            match write_audit_rules_file(ctx, &rules_content).await {
+                Ok(backup_path) => {
+                    changes.push(Change {
+                        change_type: ChangeType::ConfigFile,
+                        change_description: format!(
+                            "Created audit rules file (backup: {})",
+                            backup_path
+                        ),
                         change_error: None,
                         change_success: true,
-                    }
-                } else {
-                    Change {
-                        change_type: ChangeType::Service,
-                        change_description: "Failed to reload audit rules".to_string(),
+                    });
+                }
+                Err(e) => {
+                    changes.push(Change {
+                        change_type: ChangeType::ConfigFile,
+                        change_description: "Failed to write audit rules".to_string(),
                         change_error: Some(e.to_string()),
                         change_success: false,
-                    }
-                };
-                changes.push(change);
+                    });
+                }
+            }
+
+            // Reload audit rules into running daemon.
+            //
+            // On Arch the systemd auditd unit ships `RefuseManualStop=yes`, so
+            // the `systemctl restart` fallback inside reload_audit_rules can
+            // never succeed there and augenrules is the only viable leg. When
+            // both legs fail it is not necessarily a broken audit setup: the
+            // kernel audit config may be immutable (-e 2) until the next
+            // reboot, in which case the rules file is already written and
+            // correct, it just cannot be loaded live. Probe for that before
+            // deciding whether this is a genuine failure.
+            match reload_audit_rules(ctx).await {
+                Ok(_) => {
+                    changes.push(Change {
+                        change_type: ChangeType::Service,
+                        change_description: "Loaded audit rules into running daemon".to_string(),
+                        change_error: None,
+                        change_success: true,
+                    });
+                }
+                Err(e) => {
+                    let change = if is_audit_config_immutable(ctx).await {
+                        Change {
+                            change_type: ChangeType::Skipped,
+                            change_description: "Audit rule reload skipped: config is locked \
+                                 (-e 2); a reboot is required for rule changes to take effect"
+                                .to_string(),
+                            change_error: None,
+                            change_success: true,
+                        }
+                    } else {
+                        Change {
+                            change_type: ChangeType::Service,
+                            change_description: "Failed to reload audit rules".to_string(),
+                            change_error: Some(e.to_string()),
+                            change_success: false,
+                        }
+                    };
+                    changes.push(change);
+                }
             }
         }
 

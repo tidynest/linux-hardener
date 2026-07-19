@@ -109,7 +109,7 @@ impl MacHardeningPlugin {
         if current_mode == "Enforcing" {
             return Ok(Change {
                 change_description: "SELinux already in enforcing mode".to_string(),
-                change_type: ChangeType::ConfigFile,
+                change_type: ChangeType::Skipped,
                 change_success: true,
                 change_error: None,
             });

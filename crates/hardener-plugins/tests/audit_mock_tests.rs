@@ -1111,3 +1111,165 @@ async fn test_audit_validate_skips_exceptions() {
         count_without.expect("checked")
     );
 }
+
+#[tokio::test]
+async fn test_audit_apply_is_idempotent_when_rules_file_already_matches() {
+    // Mirrors the kernel persistent-config drift guard: a second apply on a
+    // host whose /etc/audit/rules.d/hardening.rules already equals the desired
+    // content must rewrite nothing, back up nothing and reload nothing, and
+    // record exactly one Skipped "already up to date" change so a compliant
+    // host reports zero applied changes instead of "2 change(s) applied".
+    let ok = CommandOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    let executor = MockExecutor::new()
+        .with_command_exists("auditd", true)
+        .with_command_exists("augenrules", true)
+        .with_command(
+            "systemctl",
+            &["is-enabled", "auditd"],
+            CommandOutput {
+                stdout: "enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-active", "auditd"],
+            CommandOutput {
+                stdout: "active\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command("mkdir", &["-p", "/etc/audit/rules.d"], ok.clone())
+        .with_command("augenrules", &["--load"], ok);
+
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    let plugin = AuditHardeningPlugin::new();
+    let config = PluginConfig::default();
+
+    // First apply writes the rules file and reloads the running daemon.
+    let first = plugin.apply(&mut ctx, &config).await.unwrap();
+    assert!(first.apply_success, "first apply should succeed: {first:?}");
+    assert!(
+        first.applied_change_count() >= 1,
+        "first apply must do real work (write + reload), got: {:?}",
+        first.apply_changes
+    );
+
+    // Isolate the second apply's activity from the first.
+    executor.clear_log();
+
+    // Second apply: the file now matches the desired content byte-for-byte.
+    let second = plugin.apply(&mut ctx, &config).await.unwrap();
+    assert!(
+        second.apply_success,
+        "compliant re-apply should succeed: {second:?}"
+    );
+    assert_eq!(
+        second.applied_change_count(),
+        0,
+        "a compliant re-apply must count zero applied changes, got: {:?}",
+        second.apply_changes
+    );
+
+    // Exactly one Skipped "already up to date" change, nothing else counted.
+    let up_to_date = second
+        .apply_changes
+        .iter()
+        .find(|c| c.change_description.contains("already up to date"))
+        .expect("should record an 'already up to date' skip");
+    assert!(
+        up_to_date.is_skipped(),
+        "the up-to-date entry must be a Skipped change, got: {up_to_date:?}"
+    );
+
+    // No rewrite, no backup, no mkdir, no reload on the compliant re-apply.
+    let log = executor.log();
+    assert!(
+        log.files_written.is_empty(),
+        "no rules file may be rewritten when it already matches, wrote: {:?}",
+        log.files_written
+    );
+    assert!(
+        !log.commands_executed
+            .iter()
+            .any(|(cmd, _)| cmd == "augenrules"),
+        "no reload may run on a compliant re-apply, commands: {:?}",
+        log.commands_executed
+    );
+    assert!(
+        !log.commands_executed.iter().any(|(cmd, _)| cmd == "cp"),
+        "no backup may be created on a compliant re-apply, commands: {:?}",
+        log.commands_executed
+    );
+    assert!(
+        !log.commands_executed.iter().any(|(cmd, _)| cmd == "mkdir"),
+        "no directory creation on a compliant re-apply, commands: {:?}",
+        log.commands_executed
+    );
+}
+
+#[tokio::test]
+async fn test_audit_apply_rewrites_when_rules_file_read_fails() {
+    // Fail-safe: if the current rules file cannot be read (permission/IO), the
+    // apply must treat the content as drifted and write, never skip a needed
+    // audit hardening because the current state was unknowable.
+    let ok = CommandOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    let executor = MockExecutor::new()
+        .with_command_exists("auditd", true)
+        .with_command_exists("augenrules", true)
+        .with_command(
+            "systemctl",
+            &["is-enabled", "auditd"],
+            CommandOutput {
+                stdout: "enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-active", "auditd"],
+            CommandOutput {
+                stdout: "active\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command("mkdir", &["-p", "/etc/audit/rules.d"], ok.clone())
+        .with_command("augenrules", &["--load"], ok)
+        // The rules file exists but cannot be read (root-only, denied).
+        .with_read_permission_denied("/etc/audit/rules.d/hardening.rules");
+
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    let plugin = AuditHardeningPlugin::new();
+    let config = PluginConfig::default();
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    assert!(result.apply_success, "apply should succeed: {result:?}");
+    let log = executor.log();
+    assert!(
+        log.files_written
+            .iter()
+            .any(|(p, _)| p.to_str().unwrap_or_default().contains("hardening.rules")),
+        "an unreadable current file must fail safe toward writing, wrote: {:?}",
+        log.files_written
+    );
+    assert!(
+        log.commands_executed
+            .iter()
+            .any(|(cmd, args)| cmd == "augenrules" && args == &["--load".to_string()]),
+        "a drifting/unknowable file must still reload the daemon, commands: {:?}",
+        log.commands_executed
+    );
+}
