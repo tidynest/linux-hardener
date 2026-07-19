@@ -166,8 +166,7 @@ pub fn HistorySection() -> impl IntoView {
                         let result = results.last().expect("guarded by Show when=");
                         let success = result.apply_success;
                         let changes = result.apply_changes.clone();
-                        let applied_count = result.applied_change_count();
-                        let skipped_count = changes.len() - applied_count;
+                        let change_summary = crate::utils::apply_change_summary(result);
                         let checkpoint_id = result.apply_checkpoint_id.clone();
 
                         view! {
@@ -176,11 +175,7 @@ pub fn HistorySection() -> impl IntoView {
                                     {if success { "Success" } else { "Failed" }}
                                 </div>
                                 <div class="result-changes">
-                                    {if skipped_count > 0 {
-                                        format!("{applied_count} changes made, {skipped_count} skipped")
-                                    } else {
-                                        format!("{applied_count} changes made")
-                                    }}
+                                    {change_summary}
                                 </div>
                                 {checkpoint_id.map(|id| view! {
                                     <div class="result-checkpoint">

@@ -73,6 +73,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in-process scan the GUI previously paid on every report regeneration.
 
 ### Fixed
+- "N change(s) applied" no longer counts failed changes: the shared
+  `ApplyResult` count helpers now treat only successful non-skipped
+  changes as applied, with failures counted separately, so a partial
+  apply reads "1 of 5 change(s) applied, 4 failed" in the CLI and the
+  desktop summaries name failed changes instead of folding them into
+  the applied or skipped totals.
+- Privilege-blocked ("unchecked") checks in CLI scan output are now
+  labelled with their own plugin's header instead of rendering an
+  anonymous block that visually attached to the previous plugin, and
+  duplicate entries sharing an `unchecked_check_id` collapse to a
+  single line with an `(xN)` multiplier (matching the GUI), so an
+  unprivileged audit scan shows 7 labelled lines instead of 25
+  repeating ones while headers keep the honest raw count.
 - Applying SSH hardening over a remote root session no longer locks the
   session out of the target host: when the apply itself runs as root
   through `--ssh`, `PermitRootLogin` is downgraded from `no` to

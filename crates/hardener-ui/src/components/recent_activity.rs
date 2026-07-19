@@ -38,23 +38,15 @@ pub fn RecentActivity() -> impl IntoView {
             .map(|r| r.apply_success)
     };
 
-    // Get last apply change count, excluding skips (no MAC system, etc.)
-    // that never touched the host.
-    let last_apply_changes = move || {
+    // Summarise the last apply honestly: "made" counts only successes,
+    // failures and skips are named separately (shared phrase builder).
+    let last_apply_summary = move || {
         app_state
             .apply_results
             .get()
             .last()
-            .map(|r| r.applied_change_count())
-            .unwrap_or(0)
-    };
-    let last_apply_skipped = move || {
-        app_state
-            .apply_results
-            .get()
-            .last()
-            .map(|r| r.apply_changes.len() - r.applied_change_count())
-            .unwrap_or(0)
+            .map(crate::utils::apply_change_summary)
+            .unwrap_or_default()
     };
 
     view! {
@@ -94,14 +86,7 @@ pub fn RecentActivity() -> impl IntoView {
                                     }}
                                 </div>
                                 <div class="activity-meta">
-                                    {move || {
-                                        let skipped = last_apply_skipped();
-                                        if skipped > 0 {
-                                            format!("{} changes made, {} skipped", last_apply_changes(), skipped)
-                                        } else {
-                                            format!("{} changes made", last_apply_changes())
-                                        }
-                                    }}
+                                    {last_apply_summary}
                                 </div>
                             </div>
                         </div>

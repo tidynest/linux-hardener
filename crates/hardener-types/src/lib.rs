@@ -513,14 +513,30 @@ pub struct ApplyResult {
 }
 
 impl ApplyResult {
-    /// Counts changes that represent real work done on the host, excluding
-    /// [`ChangeType::Skipped`] no-ops (e.g. no MAC system present). Renderers
-    /// must use this, not `apply_changes.len()`, for "N change(s) applied".
+    /// Counts changes that were genuinely applied to the host: real work
+    /// (not a [`ChangeType::Skipped`] no-op, e.g. no MAC system present)
+    /// that also succeeded. Renderers must use these count helpers, never
+    /// `apply_changes.len()` arithmetic, so "N change(s) applied" can only
+    /// ever mean N successes.
     pub fn applied_change_count(&self) -> usize {
         self.apply_changes
             .iter()
-            .filter(|c| !c.is_skipped())
+            .filter(|c| !c.is_skipped() && c.change_success)
             .count()
+    }
+
+    /// Counts real (non-skipped) changes that were attempted and failed.
+    pub fn failed_change_count(&self) -> usize {
+        self.apply_changes
+            .iter()
+            .filter(|c| !c.is_skipped() && !c.change_success)
+            .count()
+    }
+
+    /// Counts [`ChangeType::Skipped`] no-op entries. Renderers must use this
+    /// for "M skipped", not `len - applied`, which would lump failures in.
+    pub fn skipped_change_count(&self) -> usize {
+        self.apply_changes.iter().filter(|c| c.is_skipped()).count()
     }
 }
 
@@ -871,6 +887,26 @@ mod apply_change_tests {
         }
     }
 
+    fn failed_change(change_type: ChangeType, description: &str) -> Change {
+        Change {
+            change_success: false,
+            change_error: Some("nft: command failed".to_string()),
+            ..change(change_type, description)
+        }
+    }
+
+    /// 1 success + 4 failures + 1 skip: the mixed shape the live tour hit.
+    fn mixed_result() -> ApplyResult {
+        apply_result(vec![
+            change(ChangeType::FirewallRule, "set default drop policy"),
+            failed_change(ChangeType::FirewallRule, "add ssh allow rule"),
+            failed_change(ChangeType::FirewallRule, "add loopback rule"),
+            failed_change(ChangeType::FirewallRule, "add established rule"),
+            failed_change(ChangeType::FirewallRule, "add icmp rule"),
+            change(ChangeType::Skipped, "stateful by default"),
+        ])
+    }
+
     fn apply_result(changes: Vec<Change>) -> ApplyResult {
         ApplyResult {
             apply_plugin_id: PluginId::new("test"),
@@ -903,6 +939,21 @@ mod apply_change_tests {
     fn applied_change_count_all_skipped() {
         let result = apply_result(vec![change(ChangeType::Skipped, "no MAC system detected")]);
         assert_eq!(result.applied_change_count(), 0);
+    }
+
+    #[test]
+    fn applied_change_count_excludes_failures() {
+        assert_eq!(mixed_result().applied_change_count(), 1);
+    }
+
+    #[test]
+    fn failed_change_count_excludes_skips_and_successes() {
+        assert_eq!(mixed_result().failed_change_count(), 4);
+    }
+
+    #[test]
+    fn skipped_change_count_counts_only_skips() {
+        assert_eq!(mixed_result().skipped_change_count(), 1);
     }
 
     #[test]

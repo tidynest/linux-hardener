@@ -71,55 +71,10 @@ pub fn scan_results(
 
             let mut total_findings = 0;
             for (metadata, findings, unchecked) in results {
-                if findings.is_empty() && unchecked.is_empty() {
-                    println!(
-                        "{} {} - {}",
-                        "✓".green(),
-                        metadata.plugin_name,
-                        "No issues found".dimmed()
-                    );
-                } else if !findings.is_empty() {
-                    println!(
-                        "\n{} {} - {} finding(s)",
-                        "!".yellow(),
-                        metadata.plugin_name.bold(),
-                        findings.len()
-                    );
-                    for finding in findings {
-                        let severity_str = format_severity(&finding.finding_severity);
-                        println!(
-                            "  {} [{}] {}",
-                            "•".dimmed(),
-                            severity_str,
-                            finding.finding_title
-                        );
-
-                        if !finding.finding_description.is_empty() {
-                            println!("    {}", finding.finding_description.dimmed());
-                        }
-                    }
-                    total_findings += findings.len();
+                for line in scan_plugin_lines(metadata, findings, unchecked) {
+                    println!("{line}");
                 }
-
-                if !unchecked.is_empty() {
-                    println!(
-                        "  {} {}",
-                        "?".dimmed(),
-                        format!(
-                            "{} check(s) could not be verified without root",
-                            unchecked.len()
-                        )
-                        .dimmed()
-                    );
-                    for entry in unchecked {
-                        println!(
-                            "    {} {} - {}",
-                            "·".dimmed(),
-                            entry.unchecked_title.dimmed(),
-                            entry.unchecked_reason.dimmed()
-                        );
-                    }
-                }
+                total_findings += findings.len();
             }
 
             println!("\n{}", "═══════════════════".dimmed());
@@ -142,6 +97,107 @@ pub fn scan_results(
             }
         }
     }
+}
+
+/// Builds the terminal lines for one plugin's scan section, returned as
+/// strings so tests can assert attribution without capturing stdout.
+///
+/// The plugin-name header prints whenever the plugin has findings OR
+/// unchecked entries; an unchecked-only plugin therefore never renders an
+/// anonymous block that visually attaches to the previous plugin's header.
+/// Unchecked entries are deduplicated by `unchecked_check_id` (the audit
+/// plugin emits one entry per underlying rule and several rules share an
+/// id), mirroring the GUI's findings-tab dedupe; headers keep the honest
+/// raw count and collapsed lines carry an `(xN)` multiplier so no check
+/// appears to have vanished.
+fn scan_plugin_lines(
+    metadata: &PluginMetadata,
+    findings: &[Finding],
+    unchecked: &[UncheckedCheck],
+) -> Vec<String> {
+    if findings.is_empty() && unchecked.is_empty() {
+        return vec![format!(
+            "{} {} - {}",
+            "✓".green(),
+            metadata.plugin_name,
+            "No issues found".dimmed()
+        )];
+    }
+
+    let mut lines = Vec::new();
+    let unchecked_note = format!(
+        "{} check(s) could not be verified without root",
+        unchecked.len()
+    );
+
+    // Unchecked entries nest one level deeper when they sit under a
+    // findings sub-header rather than directly under the plugin header.
+    let mut unchecked_indent = "  ";
+    if findings.is_empty() {
+        lines.push(format!(
+            "\n{} {} - {}",
+            "?".dimmed(),
+            metadata.plugin_name.bold(),
+            unchecked_note.dimmed()
+        ));
+    } else {
+        lines.push(format!(
+            "\n{} {} - {} finding(s)",
+            "!".yellow(),
+            metadata.plugin_name.bold(),
+            findings.len()
+        ));
+        for finding in findings {
+            let severity_str = format_severity(&finding.finding_severity);
+            lines.push(format!(
+                "  {} [{}] {}",
+                "•".dimmed(),
+                severity_str,
+                finding.finding_title
+            ));
+            if !finding.finding_description.is_empty() {
+                lines.push(format!("    {}", finding.finding_description.dimmed()));
+            }
+        }
+        if !unchecked.is_empty() {
+            lines.push(format!("  {} {}", "?".dimmed(), unchecked_note.dimmed()));
+            unchecked_indent = "    ";
+        }
+    }
+
+    for (entry, occurrences) in dedupe_unchecked(unchecked) {
+        let multiplier = if occurrences > 1 {
+            format!(" (x{occurrences})")
+        } else {
+            String::new()
+        };
+        lines.push(format!(
+            "{unchecked_indent}{} {}{} - {}",
+            "·".dimmed(),
+            entry.unchecked_title.dimmed(),
+            multiplier.dimmed(),
+            entry.unchecked_reason.dimmed()
+        ));
+    }
+    lines
+}
+
+/// Deduplicates unchecked entries by `unchecked_check_id`, preserving first
+/// appearance order and counting occurrences so renderers can keep the raw
+/// total honest.
+fn dedupe_unchecked(unchecked: &[UncheckedCheck]) -> Vec<(&UncheckedCheck, usize)> {
+    let mut deduped: Vec<(&UncheckedCheck, usize)> = Vec::new();
+    let mut index: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for entry in unchecked {
+        match index.get(entry.unchecked_check_id.as_str()) {
+            Some(&at) => deduped[at].1 += 1,
+            None => {
+                index.insert(entry.unchecked_check_id.as_str(), deduped.len());
+                deduped.push((entry, 1));
+            }
+        }
+    }
+    deduped
 }
 
 /// Prints a per-plugin timing table, sorted slowest first.
@@ -193,16 +249,11 @@ pub fn apply_results(format: &OutputFormat, results: &[(PluginMetadata, ApplyRes
                 if let Some(err) = &result.apply_error {
                     println!("{} {} - {}", icon, metadata.plugin_name, err);
                 } else {
-                    let applied = result.applied_change_count();
-                    let skipped = result.apply_changes.len() - applied;
-                    let skipped_suffix = if skipped > 0 {
-                        format!(", {skipped} skipped")
-                    } else {
-                        String::new()
-                    };
                     println!(
-                        "{} {} - {} change(s) applied{}",
-                        icon, metadata.plugin_name, applied, skipped_suffix
+                        "{} {} - {}",
+                        icon,
+                        metadata.plugin_name,
+                        apply_summary(result)
                     );
                 }
 
@@ -224,6 +275,28 @@ pub fn apply_results(format: &OutputFormat, results: &[(PluginMetadata, ApplyRes
                 }
             }
         }
+    }
+}
+
+/// Builds the per-plugin summary phrase for apply output. When any change
+/// failed the phrase says so numerically ("1 of 5 change(s) applied,
+/// 4 failed") so the number next to "applied" only ever counts successes;
+/// with no failures the plain "N change(s) applied[, M skipped]" wording is
+/// kept.
+fn apply_summary(result: &ApplyResult) -> String {
+    let applied = result.applied_change_count();
+    let failed = result.failed_change_count();
+    let skipped = result.skipped_change_count();
+    let skip_suffix = if skipped > 0 {
+        format!(", {skipped} skipped")
+    } else {
+        String::new()
+    };
+    if failed > 0 {
+        let attempted = applied + failed;
+        format!("{applied} of {attempted} change(s) applied, {failed} failed{skip_suffix}")
+    } else {
+        format!("{applied} change(s) applied{skip_suffix}")
     }
 }
 
@@ -484,5 +557,166 @@ mod tests {
         let line = format_change_error("permission denied writing /etc/sysctl.d/99-hardening.conf");
         assert!(line.starts_with("    "));
         assert!(line.contains("permission denied writing /etc/sysctl.d/99-hardening.conf"));
+    }
+
+    use hardener_core::plugin::{Change, ChangeType, FindingCategory, PluginId};
+
+    fn change(change_type: ChangeType, success: bool) -> Change {
+        Change {
+            change_description: "test change".to_string(),
+            change_type,
+            change_success: success,
+            change_error: (!success).then(|| "nft: command failed".to_string()),
+        }
+    }
+
+    fn apply_result(changes: Vec<Change>) -> ApplyResult {
+        ApplyResult {
+            apply_plugin_id: PluginId::new("firewall-hardening"),
+            apply_success: false,
+            apply_changes: changes,
+            apply_checkpoint_id: None,
+            apply_error: None,
+        }
+    }
+
+    #[test]
+    fn apply_summary_reports_failures_numerically() {
+        let result = apply_result(vec![
+            change(ChangeType::FirewallRule, true),
+            change(ChangeType::FirewallRule, false),
+            change(ChangeType::FirewallRule, false),
+            change(ChangeType::FirewallRule, false),
+            change(ChangeType::FirewallRule, false),
+            change(ChangeType::Skipped, true),
+        ]);
+        assert_eq!(
+            apply_summary(&result),
+            "1 of 5 change(s) applied, 4 failed, 1 skipped"
+        );
+    }
+
+    #[test]
+    fn apply_summary_keeps_plain_wording_when_nothing_failed() {
+        let all_good = apply_result(vec![
+            change(ChangeType::KernelParameter, true),
+            change(ChangeType::KernelParameter, true),
+        ]);
+        assert_eq!(apply_summary(&all_good), "2 change(s) applied");
+
+        let with_skip = apply_result(vec![
+            change(ChangeType::KernelParameter, true),
+            change(ChangeType::Skipped, true),
+        ]);
+        assert_eq!(apply_summary(&with_skip), "1 change(s) applied, 1 skipped");
+    }
+
+    fn metadata(name: &str) -> PluginMetadata {
+        PluginMetadata {
+            plugin_category: FindingCategory::Audit,
+            plugin_description: "test".to_string(),
+            plugin_id: PluginId::new("audit-hardening"),
+            plugin_name: name.to_string(),
+            plugin_version: "0.1.0".to_string(),
+        }
+    }
+
+    fn unchecked(id: &str, title: &str) -> UncheckedCheck {
+        UncheckedCheck {
+            unchecked_check_id: id.to_string(),
+            unchecked_title: title.to_string(),
+            unchecked_category: FindingCategory::Audit,
+            unchecked_reason: "listing loaded audit rules (auditctl -l) requires root".to_string(),
+            unchecked_compliance: vec![],
+        }
+    }
+
+    fn finding(title: &str) -> Finding {
+        Finding {
+            finding_category: FindingCategory::Audit,
+            finding_current_value: "off".to_string(),
+            finding_description: "test description".to_string(),
+            finding_explanation: String::new(),
+            finding_id: "audit-001".to_string(),
+            finding_impact: String::new(),
+            finding_recommended_value: "on".to_string(),
+            finding_remediation_steps: vec![],
+            finding_severity: Severity::Medium,
+            finding_title: title.to_string(),
+            finding_compliance: vec![],
+            finding_policy_exception: None,
+        }
+    }
+
+    #[test]
+    fn unchecked_only_plugin_gets_a_named_header_and_deduped_lines() {
+        let entries = vec![
+            unchecked("audit-time-change", "Audit rule: time-change"),
+            unchecked("audit-time-change", "Audit rule: time-change"),
+            unchecked("audit-time-change", "Audit rule: time-change"),
+            unchecked("audit-time-change", "Audit rule: time-change"),
+            unchecked("audit-identity", "Audit rule: identity"),
+        ];
+        let lines = scan_plugin_lines(&metadata("Audit Rules Hardening"), &[], &entries);
+
+        let header = &lines[0];
+        assert!(
+            header.contains("Audit Rules Hardening"),
+            "header must name the plugin: {header}"
+        );
+        assert!(
+            header.contains("5 check(s) could not be verified without root"),
+            "header must keep the honest raw count: {header}"
+        );
+
+        let time_change: Vec<_> = lines
+            .iter()
+            .filter(|l| l.contains("Audit rule: time-change"))
+            .collect();
+        assert_eq!(time_change.len(), 1, "duplicates must collapse: {lines:?}");
+        assert!(
+            time_change[0].contains("(x4)"),
+            "collapsed line must carry its multiplier: {}",
+            time_change[0]
+        );
+        assert!(
+            lines.iter().any(|l| l.contains("Audit rule: identity")),
+            "unique entries must survive dedupe: {lines:?}"
+        );
+    }
+
+    #[test]
+    fn mixed_plugin_nests_findings_and_unchecked_under_one_header() {
+        let lines = scan_plugin_lines(
+            &metadata("PAM Hardening"),
+            &[finding("Password history not enforced")],
+            &[unchecked("pam-minlen", "PAM setting: minlen")],
+        );
+
+        let named: Vec<_> = lines
+            .iter()
+            .filter(|l| l.contains("PAM Hardening"))
+            .collect();
+        assert_eq!(named.len(), 1, "exactly one plugin header: {lines:?}");
+        assert!(
+            lines[0].contains("PAM Hardening"),
+            "header first: {lines:?}"
+        );
+        assert!(lines[0].contains("1 finding(s)"));
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("1 check(s) could not be verified without root")),
+            "unchecked sub-header nests under the same plugin: {lines:?}"
+        );
+        assert!(lines.iter().any(|l| l.contains("PAM setting: minlen")));
+    }
+
+    #[test]
+    fn clean_plugin_line_is_unchanged() {
+        let lines = scan_plugin_lines(&metadata("SSH Hardening"), &[], &[]);
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("SSH Hardening"));
+        assert!(lines[0].contains("No issues found"));
     }
 }
