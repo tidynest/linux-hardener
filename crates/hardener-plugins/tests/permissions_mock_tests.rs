@@ -423,11 +423,13 @@ async fn test_permissions_scan_with_remote_executor() {
     );
 }
 
-/// Tests that chmod returning success but not actually changing mode is detected.
-///
-/// Simulates vfat/FAT32 behaviour where chmod exits 0 but the filesystem
-/// ignores the request (permissions are governed by mount options).
-/// Uses `.remote()` because MockExecutor cannot support local fchmod.
+/// Tests the reactive fallback: when the filesystem type cannot be positively
+/// identified (neither `findmnt` nor `stat -f` is registered here, mirroring a
+/// host where both are unavailable), the pre-emptive non-POSIX gate stays
+/// silent (fail-safe) and the chmod is attempted. A filesystem that then lies
+/// (chmod exits 0 but the mode is unchanged) is caught reactively by the
+/// post-chmod re-read. Uses `.remote()` because MockExecutor cannot support
+/// local fchmod.
 #[tokio::test]
 async fn test_permissions_apply_detects_vfat_noop() {
     // /boot at 0o755: chmod will "succeed" but mode stays 0o755
@@ -635,5 +637,212 @@ async fn test_permissions_validate_skips_exceptions() {
             .iter()
             .any(|c| c.contains("/boot")),
         "non-excepted paths should still appear"
+    );
+}
+
+/// A metadata record for a directory at a given mode (helper for the
+/// non-POSIX filesystem tests below).
+fn dir_mode(mode: u32) -> FileMetadata {
+    FileMetadata {
+        exists: true,
+        is_file: false,
+        is_dir: true,
+        mode,
+        size: 0,
+        uid: 0,
+        gid: 0,
+    }
+}
+
+/// A registered `findmnt -no FSTYPE <path>` response yielding `fstype`.
+fn findmnt_fstype(executor: MockExecutor, path: &str, fstype: &str) -> MockExecutor {
+    executor.with_command(
+        "findmnt",
+        &["-no", "FSTYPE", path],
+        CommandOutput {
+            stdout: format!("{fstype}\n"),
+            stderr: String::new(),
+            exit_code: 0,
+        },
+    )
+}
+
+/// A violating path on a filesystem that cannot hold POSIX permissions must be
+/// reported as an unchecked check (with fstab guidance), NOT as a finding,
+/// while a violating path on a POSIX filesystem is still flagged normally.
+#[tokio::test]
+async fn test_permissions_scan_nonposix_fs_emits_unchecked_not_finding() {
+    // /boot on vfat at 0o755 (violates exact 0o700); /etc/passwd on ext4 at
+    // 0o666 (violates exact 0o644).
+    let mut executor = MockExecutor::new()
+        .with_file_metadata("/boot", "", dir_mode(0o755))
+        .with_file_metadata(
+            "/etc/passwd",
+            "",
+            FileMetadata {
+                exists: true,
+                is_file: true,
+                is_dir: false,
+                mode: 0o666,
+                size: 100,
+                uid: 0,
+                gid: 0,
+            },
+        );
+    executor = findmnt_fstype(executor, "/boot", "vfat");
+    executor = findmnt_fstype(executor, "/etc/passwd", "ext4");
+
+    let ctx = Context::with_executor(Arc::new(executor));
+    let result = PermissionsHardeningPlugin::new().scan(&ctx).await.unwrap();
+
+    // /boot must not be a finding.
+    assert!(
+        !result
+            .scan_findings
+            .iter()
+            .any(|f| f.finding_id.contains("boot")),
+        "vfat /boot must not be a finding, got: {:?}",
+        result
+            .scan_findings
+            .iter()
+            .map(|f| &f.finding_id)
+            .collect::<Vec<_>>()
+    );
+
+    // /boot must appear once as an unchecked check with fstab guidance, keyed
+    // to the same id the finding would have used.
+    let boot_unchecked: Vec<_> = result
+        .scan_unchecked
+        .iter()
+        .filter(|u| u.unchecked_check_id == "perm--boot")
+        .collect();
+    assert_eq!(
+        boot_unchecked.len(),
+        1,
+        "vfat /boot must yield exactly one unchecked check, got: {:?}",
+        result
+            .scan_unchecked
+            .iter()
+            .map(|u| &u.unchecked_check_id)
+            .collect::<Vec<_>>()
+    );
+    let reason = &boot_unchecked[0].unchecked_reason;
+    assert!(
+        reason.contains("vfat") && reason.contains("fstab"),
+        "reason must name the filesystem and fstab guidance, got: {reason}"
+    );
+
+    // POSIX /etc/passwd is unaffected: still a finding, never unchecked.
+    assert!(
+        result
+            .scan_findings
+            .iter()
+            .any(|f| f.finding_id.contains("etc-passwd")),
+        "POSIX /etc/passwd must still be flagged as a finding"
+    );
+    assert!(
+        !result
+            .scan_unchecked
+            .iter()
+            .any(|u| u.unchecked_check_id.contains("etc-passwd")),
+        "POSIX /etc/passwd must not be reported as unchecked"
+    );
+}
+
+/// FAIL-SAFE: when the filesystem probe is inconclusive (neither findmnt nor
+/// stat registered), a violating path is still emitted as a finding. A real
+/// permissions gap is never hidden by an unknowable filesystem.
+#[tokio::test]
+async fn test_permissions_scan_nonposix_probe_failsafe() {
+    // /boot at 0o755, no findmnt/stat responses registered.
+    let executor = MockExecutor::new().with_file_metadata("/boot", "", dir_mode(0o755));
+    let ctx = Context::with_executor(Arc::new(executor));
+    let result = PermissionsHardeningPlugin::new().scan(&ctx).await.unwrap();
+
+    assert!(
+        result
+            .scan_findings
+            .iter()
+            .any(|f| f.finding_id.contains("boot")),
+        "inconclusive probe must fall back to emitting the finding"
+    );
+    assert!(
+        result.scan_unchecked.is_empty(),
+        "inconclusive probe must not produce an unchecked check, got: {:?}",
+        result
+            .scan_unchecked
+            .iter()
+            .map(|u| &u.unchecked_check_id)
+            .collect::<Vec<_>>()
+    );
+}
+
+/// Apply on a non-POSIX filesystem must skip the chmod entirely (fixing the
+/// silent local-fchmod false success) and record a single Skipped change with
+/// fstab guidance. No chmod/fchmod command may reach the executor.
+#[tokio::test]
+async fn test_permissions_apply_nonposix_fs_skips_chmod() {
+    // `.remote()` keeps the path off the real local fchmod; findmnt says vfat.
+    let mut executor =
+        MockExecutor::new()
+            .remote()
+            .with_file_metadata("/boot", "", dir_mode(0o755));
+    executor = findmnt_fstype(executor, "/boot", "vfat");
+
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    let plugin = PermissionsHardeningPlugin::new();
+    let config = PluginConfig::default();
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    // No real change was applied to the host.
+    assert_eq!(
+        result.applied_change_count(),
+        0,
+        "vfat apply must apply zero real changes"
+    );
+
+    // Exactly one Skipped change for /boot, carrying the guidance.
+    let boot_skip = result
+        .apply_changes
+        .iter()
+        .find(|c| c.is_skipped() && c.change_description.contains("/boot"))
+        .expect("should have a skipped change for /boot");
+    assert!(
+        boot_skip.change_description.contains("fstab")
+            && boot_skip.change_description.contains("vfat"),
+        "skip must carry fstab + filesystem guidance, got: {}",
+        boot_skip.change_description
+    );
+
+    // The chmod must never have been attempted.
+    let log = executor.log();
+    assert!(
+        !log.commands_executed.iter().any(|(cmd, _)| cmd == "chmod"),
+        "chmod must not run on a non-POSIX filesystem, log: {:?}",
+        log.commands_executed
+    );
+}
+
+/// A non-POSIX filesystem path is not a pending change: validate's dry-run must
+/// exclude it from estimated changes.
+#[tokio::test]
+async fn test_permissions_validate_nonposix_fs_not_pending() {
+    let mut executor = MockExecutor::new().with_file_metadata("/boot", "", dir_mode(0o755));
+    executor = findmnt_fstype(executor, "/boot", "vfat");
+
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PermissionsHardeningPlugin::new();
+    let config = PluginConfig::default();
+
+    let report = plugin.validate(&ctx, &config).await.unwrap();
+
+    assert!(
+        !report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("/boot")),
+        "vfat /boot must not be counted as a pending change, got: {:?}",
+        report.validation_report_estimated_changes
     );
 }

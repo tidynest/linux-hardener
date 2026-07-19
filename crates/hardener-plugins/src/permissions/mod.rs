@@ -18,7 +18,7 @@ use hardener_common::{
 use hardener_core::{
     ApplyResult, Change, ChangeType, Checkpoint, PluginConfig, ValidationReport,
     context::Context,
-    plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult},
+    plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedCheck},
 };
 use std::os::unix::fs::OpenOptionsExt;
 use std::{path::Path, time::Instant};
@@ -174,52 +174,162 @@ fn target_mode(directive: &PermissionDirective, current_mode: u32) -> u32 {
     }
 }
 
-/// Checks if a path has the correct permissions, owner, and group.
+/// Filesystem-type tokens that cannot store POSIX permission bits. On these a
+/// `chmod` exits 0 but the mode is fixed by mount options (fmask/dmask), so a
+/// permission finding would be false and a chmod futile. Matched case-insensitively
+/// against the token `findmnt`/`stat -f` reports (findmnt yields e.g. `vfat`,
+/// `exfat`, `ntfs3`; `stat -f -c %T` reports `msdos` for FAT).
+const NON_POSIX_FSTYPES: &[&str] = &["vfat", "msdos", "exfat", "ntfs", "ntfs3", "iso9660", "udf"];
+
+/// Stable id shared by a path's [`Finding`] and its [`UncheckedCheck`], so the
+/// CLI/GUI dedupe and compliance keying stay consistent whichever is emitted.
+fn permission_check_id(path: &str) -> String {
+    format!("perm-{}", path.replace('/', "-"))
+}
+
+/// Probes the filesystem type backing `path`. Tries `findmnt -no FSTYPE <path>`
+/// (mount-aware, exact); if findmnt cannot run (absent on minimal systems) it
+/// falls back to `stat -f -c %T <path>`. Returns the raw reported token, or
+/// `None` when neither probe yields a non-empty answer.
+async fn probe_fstype(ctx: &Context, path: &str) -> Option<String> {
+    if let Ok(output) = ctx
+        .executor()
+        .execute_command("findmnt", &["-no", "FSTYPE", path])
+        .await
+        && output.success()
+        && !output.stdout.trim().is_empty()
+    {
+        return Some(output.stdout.trim().to_string());
+    }
+
+    if let Ok(output) = ctx
+        .executor()
+        .execute_command("stat", &["-f", "-c", "%T", path])
+        .await
+        && output.success()
+        && !output.stdout.trim().is_empty()
+    {
+        return Some(output.stdout.trim().to_string());
+    }
+
+    None
+}
+
+/// THE shared filesystem gate used by scan, apply and validate so they cannot
+/// drift. Returns `Some(fstype)` only when `path` is *positively confirmed* to
+/// live on a filesystem that cannot hold POSIX permissions.
 ///
-/// Returns a Finding if permissions are incorrect, None if correct
-async fn check_path_permissions(ctx: &Context, directive: &PermissionDirective) -> Option<Finding> {
+/// FAIL-SAFE: any probe failure, empty output or unrecognised fstype returns
+/// `None`, so the caller keeps today's behaviour (emit the finding, attempt the
+/// chmod). A real permissions gap is never hidden by an inconclusive probe.
+async fn non_posix_fstype(ctx: &Context, path: &str) -> Option<String> {
+    let token = probe_fstype(ctx, path).await?.trim().to_ascii_lowercase();
+    NON_POSIX_FSTYPES.contains(&token.as_str()).then_some(token)
+}
+
+/// Guidance shared by the scan `UncheckedCheck` and the apply `Skipped` change:
+/// a non-POSIX filesystem ignores chmod, so hardening is done through fstab
+/// mount options instead of permission bits.
+fn non_posix_guidance(path: &str, fstype: &str) -> String {
+    format!(
+        "{path} is on a {fstype} filesystem; POSIX permissions cannot be set with chmod - \
+         harden via fstab mount options (e.g. fmask=0077,dmask=0077)"
+    )
+}
+
+/// The `UncheckedCheck` emitted for a violating path on a non-POSIX filesystem.
+/// Keyed to the same id the finding would have used; compliance mirrors the
+/// path's mapping (empty for paths without one, e.g. /boot).
+fn non_posix_unchecked(directive: &PermissionDirective, fstype: &str) -> UncheckedCheck {
+    UncheckedCheck {
+        unchecked_check_id: permission_check_id(directive.permission_path),
+        unchecked_title: format!("Permissions on {}", directive.permission_path),
+        unchecked_category: FindingCategory::FileSystem,
+        unchecked_reason: non_posix_guidance(directive.permission_path, fstype),
+        unchecked_compliance: get_permissions_compliance_mappings(directive.permission_path),
+    }
+}
+
+/// The `Skipped` change emitted when apply meets a violating path on a non-POSIX
+/// filesystem: no chmod is attempted (which would silently no-op), the fstab
+/// guidance is recorded instead.
+fn non_posix_skip_change(path: &str, fstype: &str) -> Change {
+    Change {
+        change_description: non_posix_guidance(path, fstype),
+        change_type: ChangeType::Skipped,
+        change_success: true,
+        change_error: None,
+    }
+}
+
+/// Outcome of assessing one critical path during a scan.
+enum PermissionCheck {
+    /// Compliant, missing or unreadable: nothing to report.
+    Clear,
+    /// Violates the directive and can be remediated by chmod.
+    Insecure(Box<Finding>),
+    /// Violates, but sits on a filesystem that cannot hold POSIX permissions,
+    /// so chmod cannot fix it: reported as unchecked with fstab guidance.
+    NonPosix(Box<UncheckedCheck>),
+}
+
+/// Assesses one critical path's permissions.
+///
+/// Returns [`PermissionCheck::Insecure`] when the path violates its directive on
+/// a POSIX filesystem, [`PermissionCheck::NonPosix`] when it violates but sits on
+/// a filesystem that cannot hold POSIX permissions (reported as unchecked with
+/// fstab guidance, never a false finding), and [`PermissionCheck::Clear`] when
+/// the path is compliant, missing or unreadable.
+async fn check_path_permissions(ctx: &Context, directive: &PermissionDirective) -> PermissionCheck {
     let path = Path::new(directive.permission_path);
 
     // Skip if path doesn't exist
     if !ctx.executor().path_exists(path).await.unwrap_or(false) {
-        return None;
+        return PermissionCheck::Clear;
     }
 
     // Get file metadata
     let metadata = match ctx.executor().file_metadata(path).await {
         Ok(metadata) => metadata,
-        Err(_) => return None, // Can't read, skip it
+        Err(_) => return PermissionCheck::Clear, // Can't read, skip it
     };
 
     // Get current permissions (only last 9 bits = rwxrwxrwx)
     let current_mode = metadata.mode & 0o777;
 
-    // Check if permissions are incorrect
-    if violates(directive, current_mode) {
-        let target = target_mode(directive, current_mode);
-        return Some(Finding {
-            finding_category: FindingCategory::FileSystem,
-            finding_current_value: format!("{:04o}", current_mode),
-            finding_description: directive.permission_description.to_string(),
-            finding_explanation: format!(
-                "The path {} has permissions {:04o} but should have {:04o} to prevent unauthorised access",
-                directive.permission_path, current_mode, target,
-            ),
-            finding_id: format!("perm-{}", directive.permission_path.replace('/', "-")),
-            finding_impact: "Low - only affects security posture, no functional impact".to_string(),
-            finding_recommended_value: format!("{:04o}", target),
-            finding_remediation_steps: vec![format!(
-                "chmod {:04o} {}",
-                target, directive.permission_path,
-            )],
-            finding_severity: directive.permission_severity,
-            finding_title: format!("Insecure permissions on {}", directive.permission_path),
-            finding_compliance: get_permissions_compliance_mappings(directive.permission_path),
-            finding_policy_exception: None,
-        });
+    // Compliant: nothing to report (and no filesystem probe needed).
+    if !violates(directive, current_mode) {
+        return PermissionCheck::Clear;
     }
 
-    None
+    // A genuine violation. Only now probe the filesystem: if it cannot hold
+    // POSIX permissions, chmod would silently no-op, so report the situation as
+    // unchecked with fstab guidance instead of a false finding.
+    if let Some(fstype) = non_posix_fstype(ctx, directive.permission_path).await {
+        return PermissionCheck::NonPosix(Box::new(non_posix_unchecked(directive, &fstype)));
+    }
+
+    let target = target_mode(directive, current_mode);
+    PermissionCheck::Insecure(Box::new(Finding {
+        finding_category: FindingCategory::FileSystem,
+        finding_current_value: format!("{:04o}", current_mode),
+        finding_description: directive.permission_description.to_string(),
+        finding_explanation: format!(
+            "The path {} has permissions {:04o} but should have {:04o} to prevent unauthorised access",
+            directive.permission_path, current_mode, target,
+        ),
+        finding_id: permission_check_id(directive.permission_path),
+        finding_impact: "Low - only affects security posture, no functional impact".to_string(),
+        finding_recommended_value: format!("{:04o}", target),
+        finding_remediation_steps: vec![format!(
+            "chmod {:04o} {}",
+            target, directive.permission_path,
+        )],
+        finding_severity: directive.permission_severity,
+        finding_title: format!("Insecure permissions on {}", directive.permission_path),
+        finding_compliance: get_permissions_compliance_mappings(directive.permission_path),
+        finding_policy_exception: None,
+    }))
 }
 
 /// Returns compliance mappings for permission findings.
@@ -566,6 +676,15 @@ async fn apply_path_permissions(ctx: &Context, directive: &PermissionDirective) 
         return None;
     }
 
+    // A filesystem that cannot hold POSIX permissions ignores chmod (it exits 0
+    // but the mode is unchanged). Detect it up front and skip with fstab
+    // guidance rather than issue a futile chmod - this also closes the local
+    // fchmod path's silent false "success". Fail-safe: an inconclusive probe
+    // returns None here, so a genuine POSIX violation still gets chmod'd.
+    if let Some(fstype) = non_posix_fstype(ctx, directive.permission_path).await {
+        return Some(non_posix_skip_change(directive.permission_path, &fstype));
+    }
+
     // Use TOCTOU-safe fchmod for local targets, executor for remote
     if !ctx.executor().is_remote() {
         apply_local_fchmod(directive, current_mode)
@@ -717,11 +836,14 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
     async fn scan(&self, ctx: &Context) -> Result<ScanResult> {
         let start_time = Instant::now();
         let mut findings = Vec::new();
+        let mut unchecked = Vec::new();
 
         // Check all critical permissions
         for directive in CRITICAL_PERMISSIONS {
-            if let Some(finding) = check_path_permissions(ctx, directive).await {
-                findings.push(finding);
+            match check_path_permissions(ctx, directive).await {
+                PermissionCheck::Insecure(finding) => findings.push(*finding),
+                PermissionCheck::NonPosix(check) => unchecked.push(*check),
+                PermissionCheck::Clear => {}
             }
         }
 
@@ -729,7 +851,7 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
             scan_duration_us: start_time.elapsed().as_micros() as u64,
             scan_error: None,
             scan_findings: findings,
-            scan_unchecked: vec![],
+            scan_unchecked: unchecked,
             scan_plugin_id: PluginId::new("permissions-hardening"),
             scan_success: true,
         })
@@ -856,8 +978,17 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
                 Ok(metadata) => {
                     let current_mode = metadata.mode & 0o777;
 
-                    // Check if permissions need changing (honours max-mask)
-                    if violates(&effective, current_mode) {
+                    // A pending change requires both a violation and a filesystem
+                    // that chmod can actually change. `&&` short-circuits, so the
+                    // filesystem probe only fires for a violating path; a
+                    // non-POSIX filesystem (probe positively confirmed) is not a
+                    // pending change. Fail-safe: an inconclusive probe returns
+                    // None, so a genuine violation is still counted.
+                    if violates(&effective, current_mode)
+                        && non_posix_fstype(ctx, directive.permission_path)
+                            .await
+                            .is_none()
+                    {
                         estimated_changes.push(format!(
                             "{}: {:04o} → {:04o}",
                             directive.permission_path,

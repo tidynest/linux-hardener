@@ -93,6 +93,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in-process scan the GUI previously paid on every report regeneration.
 
 ### Fixed
+- The permissions plugin no longer reports a false finding or attempts a
+  futile chmod for directories on filesystems that cannot hold POSIX
+  permissions (e.g. a vfat `/boot` ESP, where chmod exits 0 but the mode
+  is fixed by the mount's fmask/dmask); it reports the situation with
+  fstab mount-option guidance instead. Scan, apply and validate share one
+  probe-driven filesystem gate (`findmnt`, falling back to `stat -f`):
+  scan emits an `UncheckedCheck` in place of the finding, apply records a
+  `Skipped` change with the guidance, and validate omits the path from
+  pending changes. The gate is fail-safe: a finding or chmod is only
+  suppressed when a non-POSIX filesystem is positively confirmed, so any
+  probe failure or unrecognised filesystem falls back to today's
+  behaviour and a real permissions gap is never hidden.
 - Creating a rollback checkpoint before applying no longer counts as an
   applied hardening change. The checkpoint entry is typed `Checkpoint` (a
   new `ChangeType`) and excluded from both the applied and the failed
