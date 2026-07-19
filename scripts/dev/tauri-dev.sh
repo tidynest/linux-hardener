@@ -6,6 +6,12 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$PROJECT_ROOT"
 
+# Hand the frontend directory to tauri's beforeDevCommand as an absolute path.
+# tauri-cli runs that hook from a cwd we cannot rely on (it has varied between
+# the project root and src-tauri across cli versions), so a relative `cd` there
+# is fragile; this env var makes it cwd-independent.
+export HARDENER_UI_DIR="$PROJECT_ROOT/crates/hardener-ui"
+
 # ─────────────────────────────────────────────────────────────
 # Session Detection
 # ─────────────────────────────────────────────────────────────

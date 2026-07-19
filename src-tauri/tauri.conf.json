@@ -5,8 +5,8 @@
   "identifier": "com.ericjingryd.linux-hardener",
   "build": {
     "frontendDist": "../crates/hardener-ui/dist",
-    "beforeDevCommand": "cd crates/hardener-ui 2>/dev/null || cd ../crates/hardener-ui && trunk serve",
-    "beforeBuildCommand": "cd crates/hardener-ui 2>/dev/null || cd ../crates/hardener-ui && trunk build --release"
+    "beforeDevCommand": "cd \"${HARDENER_UI_DIR:-crates/hardener-ui}\" && trunk serve",
+    "beforeBuildCommand": "cd \"${HARDENER_UI_DIR:-crates/hardener-ui}\" && trunk build --release"
   },
   "app": {
     "withGlobalTauri": true,
