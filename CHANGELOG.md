@@ -20,9 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   posture scoring all thread unchecked checks into compliance scoring: a
   control covered only by an unchecked check now reports ManualReview
   instead of a false Pass (a real Fail against the same control still
-  wins). Known limitation: the CLI's `batch report` does not yet carry
-  unchecked data per host, so an unprivileged remote assessment there
-  can still auto-pass a control whose covering check never ran.
+  wins). `batch report` now carries unchecked data per host too, so an
+  unprivileged remote fleet assessment gets the same honest ManualReview
+  treatment as a local one.
   Scan history persists unchecked checks (a new `unchecked_json`
   column, added by an idempotent in-place migration; existing rows
   round-trip with an empty list) so restored and exported sessions keep
@@ -102,6 +102,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it previously referenced two custom properties (`--border-default`,
   `--accent-primary`) that are not defined anywhere in the stylesheet,
   so its border and focus outline were silently dropped.
+- `hardener batch report` now threads each host's unchecked checks
+  through to the compliance generator instead of discarding them: a
+  covered control whose only evidence is an unchecked check (root-only
+  read, unprivileged remote scan) reports ManualReview, matching what a
+  local `report` run already did, instead of a false Pass. The report
+  wizard's closing summary now prints a "N check(s) could not be
+  evaluated without root privileges" hint when the scan left any checks
+  unverified.
 
 ## [1.3.2] - 2026-07-18
 

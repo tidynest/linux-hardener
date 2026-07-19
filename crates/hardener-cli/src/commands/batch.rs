@@ -65,6 +65,11 @@ pub enum HostStatus {
         counts: SeverityCounts,
         #[serde(skip_serializing_if = "Vec::is_empty")]
         findings: Vec<Finding>,
+        /// Checks the scan could not evaluate at its current privilege level.
+        /// Additive JSON field: absent when empty, so existing consumers that
+        /// index untyped `serde_json::Value` see no shape change.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        unchecked: Vec<UncheckedCheck>,
     },
     Failed {
         error: String,
@@ -397,9 +402,13 @@ pub fn render_json(outcomes: &[HostOutcome]) -> String {
 /// is shared across the whole fleet.
 pub fn host_report(outcome: HostOutcome, generator: &ReportGenerator) -> HostReport {
     match outcome.status {
-        HostStatus::Scanned { findings, .. } => {
+        HostStatus::Scanned {
+            findings,
+            unchecked,
+            ..
+        } => {
             let frameworks = generator
-                .generate(&findings, &[])
+                .generate(&findings, &unchecked)
                 .iter()
                 .map(posture_from_report)
                 .collect();
@@ -626,13 +635,23 @@ async fn scan_with_executor(
             if let Some(history) = &history {
                 persist_host(history, &host_key, &grouped).await;
             }
-            let findings: Vec<Finding> = grouped.into_iter().flat_map(|(_, f, _)| f).collect();
+            let (findings, unchecked): (Vec<Finding>, Vec<UncheckedCheck>) = grouped
+                .into_iter()
+                .fold((Vec::new(), Vec::new()), |(mut fs, mut us), (_, f, u)| {
+                    fs.extend(f);
+                    us.extend(u);
+                    (fs, us)
+                });
             let counts = SeverityCounts::from_findings(&findings);
             HostOutcome {
                 name,
                 target,
                 profile: detect_host_profile(executor.as_ref()).await,
-                status: HostStatus::Scanned { counts, findings },
+                status: HostStatus::Scanned {
+                    counts,
+                    findings,
+                    unchecked,
+                },
             }
         }
         Err(e) => HostOutcome {
@@ -1336,7 +1355,9 @@ pub async fn run(opts: BatchOptions) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hardener_common::types::{FindingCategory, Severity};
+    use hardener_common::types::{
+        ComplianceFramework, ComplianceMapping, FindingCategory, Severity,
+    };
     use hardener_compliance::Scenario;
 
     fn ro(status: RollbackStatus) -> RollbackOutcome {
@@ -1510,6 +1531,7 @@ mod tests {
             status: HostStatus::Scanned {
                 counts: SeverityCounts::default(),
                 findings: vec![],
+                unchecked: vec![],
             },
         };
         let report = host_report(scanned, &generator);
@@ -1526,6 +1548,69 @@ mod tests {
             }
             HostReportStatus::Failed { .. } => panic!("scanned host should be assessed"),
         }
+    }
+
+    #[test]
+    fn host_report_treats_unchecked_covered_control_as_manual_review_not_pass() {
+        // STIG has no curated catalogue, so with a single-mapping coverage set
+        // the resulting report has exactly one control: whatever the pam-minlen
+        // check covers. This isolates the assertion from the curated CIS/ISO
+        // catalogues, which always carry unrelated ManualReview entries.
+        let stig_mapping = ComplianceMapping {
+            compliance_framework: ComplianceFramework::STIG,
+            compliance_control_id: "RHEL-08-020230".into(),
+            compliance_control_title: "RHEL 8 passwords must have a minimum of 15 characters"
+                .into(),
+            compliance_section: None,
+        };
+        let generator = ReportGenerator::new(
+            ReportConfig {
+                scenario: Scenario::Custom(vec![ComplianceFramework::STIG]),
+                formats: vec![],
+                output_dir: None,
+                profile: ComplianceProfile::Generic,
+            },
+            vec![stig_mapping.clone()],
+        );
+
+        // A host that scanned with zero findings but flagged the minlen check as
+        // unchecked (unreadable pwquality.conf without root) must not silently
+        // report the control it covers as Pass: the absence of a finding proves
+        // nothing when the check never ran.
+        let unchecked = vec![UncheckedCheck {
+            unchecked_check_id: "pam-minlen".into(),
+            unchecked_title: "PAM setting: minlen".into(),
+            unchecked_category: FindingCategory::Authentication,
+            unchecked_reason: "reading /etc/security/pwquality.conf requires root".into(),
+            unchecked_compliance: vec![stig_mapping],
+        }];
+        let outcome = HostOutcome {
+            name: "web-01".into(),
+            target: "u@web-01:22".into(),
+            profile: ComplianceProfile::Generic,
+            status: HostStatus::Scanned {
+                counts: SeverityCounts::default(),
+                findings: vec![],
+                unchecked,
+            },
+        };
+        let report = host_report(outcome, &generator);
+        let HostReportStatus::Assessed { frameworks } = report.status else {
+            panic!("scanned host should be assessed");
+        };
+        let stig = frameworks
+            .iter()
+            .find(|f| f.framework == "STIG")
+            .expect("STIG framework present in the custom scenario");
+        assert_eq!(stig.total, 1, "single-mapping coverage yields one control");
+        assert_eq!(
+            stig.manual_review, 1,
+            "unchecked control must land in manual_review, not silently pass: {stig:?}"
+        );
+        assert_eq!(
+            stig.passing, 0,
+            "must not auto-pass on absence of a finding"
+        );
     }
 
     #[test]
@@ -1672,6 +1757,7 @@ mod tests {
                     ..Default::default()
                 },
                 findings: vec![],
+                unchecked: vec![],
             },
         }
     }
@@ -1695,6 +1781,7 @@ mod tests {
             status: HostStatus::Scanned {
                 counts,
                 findings: vec![],
+                unchecked: vec![],
             },
         }
     }
