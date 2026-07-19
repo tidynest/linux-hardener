@@ -51,9 +51,11 @@ diagnose() {
     journalctl -u "$UNIT" --no-pager -n 25 >&2 || true
 }
 
+# 60s window: a cold-cache first boot can take over 30s to register (observed
+# live 2026-07-19; the old 15x2s loop expired and the script bailed).
 echo "waiting for machine registration..."
 IFACE=""
-for _ in $(seq 1 15); do
+for _ in $(seq 1 30); do
     IFACE="$(machinectl status "$MACHINE" 2>/dev/null | awk '/Iface:/ {print $2; exit}')"
     [[ -n "$IFACE" ]] && break
     sleep 2
