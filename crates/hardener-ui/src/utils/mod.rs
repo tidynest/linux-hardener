@@ -84,6 +84,27 @@ pub fn is_auth_cancelled(err: &str) -> bool {
     err.contains("Authentication cancelled")
 }
 
+/// Literal prefix of the backend's rate-limit error message.
+///
+/// Kept as a constant so the parser and its tests share one source for the
+/// exact text `PrivilegedOpGuard::acquire` in `src-tauri/src/commands.rs`
+/// produces.
+const RATE_LIMIT_PREFIX: &str = "Rate limit: please wait ";
+
+/// Parses the wait time, in seconds, out of a privileged-command error
+/// string, when that string is (or wraps) the backend's rate-limit message.
+///
+/// Setters prepend context such as "Deep scan failed: " before the backend
+/// text, so this searches for `RATE_LIMIT_PREFIX` anywhere in `err` rather
+/// than requiring it at the start, then reads the integer up to the
+/// following `" seconds"`. Returns `None` for any other error text, or if
+/// the integer fails to parse.
+pub fn parse_rate_limit_wait_secs(err: &str) -> Option<u64> {
+    let after_prefix = err.split(RATE_LIMIT_PREFIX).nth(1)?;
+    let digits = after_prefix.split(" seconds").next()?;
+    digits.parse().ok()
+}
+
 /// Builds the "N changes made[, K failed][, M skipped]" phrase the apply
 /// summaries render. Counts come from the `ApplyResult` helpers, so the
 /// number next to "made" only ever counts successes and skips never absorb
@@ -279,5 +300,45 @@ mod tests {
         assert!(!is_auth_cancelled("Command failed: exit status 1"));
         assert!(!is_auth_cancelled("No Polkit authentication agent found."));
         assert!(!is_auth_cancelled(""));
+    }
+
+    #[test]
+    fn parse_rate_limit_wait_secs_reads_wrapped_deep_scan_message() {
+        assert_eq!(
+            parse_rate_limit_wait_secs(
+                "Deep scan failed: Rate limit: please wait 1 seconds before the next \
+                 privileged operation."
+            ),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn parse_rate_limit_wait_secs_reads_a_different_wait_value() {
+        assert_eq!(
+            parse_rate_limit_wait_secs(
+                "Apply failed: Rate limit: please wait 3 seconds before the next \
+                 privileged operation."
+            ),
+            Some(3)
+        );
+    }
+
+    #[test]
+    fn parse_rate_limit_wait_secs_rejects_unrelated_errors() {
+        assert_eq!(
+            parse_rate_limit_wait_secs("Command failed: exit status 1"),
+            None
+        );
+    }
+
+    #[test]
+    fn parse_rate_limit_wait_secs_rejects_auth_cancelled() {
+        assert_eq!(
+            parse_rate_limit_wait_secs(
+                "Authentication cancelled. Root privileges are required for this operation."
+            ),
+            None
+        );
     }
 }

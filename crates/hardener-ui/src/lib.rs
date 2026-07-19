@@ -3,6 +3,7 @@ use leptos_router::{
     StaticSegment,
     components::{A, Route, Router, Routes},
 };
+use wasm_bindgen::closure::Closure;
 
 mod components;
 mod keyboard;
@@ -150,7 +151,46 @@ fn GlobalHooks() -> impl IntoView {
     let app_state = expect_context::<AppState>();
     keyboard::use_global_keyboard(app_state);
     navigation::use_scroll_and_focus_on_navigate();
+    arm_rate_limit_auto_dismiss(app_state);
     // Renders nothing: purely side-effect driven
+}
+
+/// Auto-dismisses the global error banner when it is showing the backend's
+/// privileged-operation rate-limit message, since that is a transient
+/// cooldown rather than a genuine failure the user needs to act on.
+///
+/// Watches `error_message` and, when it holds a rate-limit message with wait
+/// time N seconds, arms a `set_timeout` for `(N + 5)` seconds. The timer's
+/// callback clears the banner only if `error_message` still holds the exact
+/// message it was armed for (compared by value, not just "is a rate-limit
+/// message") - `error_message` is a single signal shared by every privileged
+/// command, so a later, unrelated error that reuses it must never be wiped
+/// by a stale timer. Manual dismissal (the X button or Escape) or a new
+/// error replacing this one both make a pending timer a harmless no-op.
+fn arm_rate_limit_auto_dismiss(app_state: AppState) {
+    Effect::new(move |_| {
+        let Some(armed_for) = app_state.error_message.get() else {
+            return;
+        };
+        let Some(wait_secs) = utils::parse_rate_limit_wait_secs(&armed_for) else {
+            return;
+        };
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+
+        let cb = Closure::once(move || {
+            if app_state.error_message.get_untracked().as_deref() == Some(armed_for.as_str()) {
+                app_state.error_message.set(None);
+            }
+        });
+        let timeout_ms = ((wait_secs + 5) * 1000) as i32;
+        let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+            cb.as_ref().unchecked_ref(),
+            timeout_ms,
+        );
+        cb.forget();
+    });
 }
 
 use wasm_bindgen::JsCast;
