@@ -67,6 +67,19 @@ hardener scan [FLAGS]
 `--audit` and `--compliance` are mutually exclusive. Plugins scan concurrently;
 `--timings` writes to stderr, so `--format json` stdout stays machine-parseable.
 
+**Unprivileged runs and unchecked checks:** some checks (root-only config
+files such as `/etc/security/pwquality.conf` or `/etc/ssh/sshd_config`,
+`auditctl -l`, `aa-status`, the active firewall ruleset) need root to read.
+Running `scan` without root never reports these as failed or missing;
+instead they are reported unchecked, distinct from a genuine finding. Text
+output dims a per-plugin "N check(s) could not be verified without root"
+list with the reason for each, and a closing summary line reads "N
+check(s) require root; run with sudo for a full scan" when any exist.
+`--format json` carries the same information as a per-plugin `unchecked`
+array alongside `findings`, so automation can distinguish "no issue" from
+"not checked". Run `sudo hardener scan` for a fully privileged scan with
+zero unchecked checks (assuming every backend is reachable).
+
 **Examples:**
 
 ```bash
@@ -539,4 +552,4 @@ hardener history export <SESSION_ID> [FLAGS]
 | `SESSION_ID` | UUID of the session to export | |
 | `-o`, `--output <FILE>` | Output file path | `session-<id>.json` |
 
-**Last Updated**: 2026-07-18
+**Last Updated**: 2026-07-19

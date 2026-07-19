@@ -7,7 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `hardener scan` (CLI and desktop) now distinguishes checks it could not
+  verify at the current privilege level from checks that ran and found
+  nothing wrong. Plugins can report `UncheckedCheck` entries (new shared
+  `hardener-types` type, `ScanResult.scan_unchecked`, additive) alongside
+  findings; text output dims a per-plugin "N check(s) could not be
+  verified without root" list with the reason for each, plus a closing
+  "N check(s) require root; run with sudo for a full scan" hint, and
+  `--format json` carries a per-plugin `unchecked` array beside
+  `findings`. `report`, the report wizard and the desktop Fleet view's
+  posture scoring all thread unchecked checks into compliance scoring: a
+  control covered only by an unchecked check now reports ManualReview
+  instead of a false Pass (a real Fail against the same control still
+  wins). Known limitation: the CLI's `batch report` does not yet carry
+  unchecked data per host, so an unprivileged remote assessment there
+  can still auto-pass a control whose covering check never ran.
+  Scan history persists unchecked checks (a new `unchecked_json`
+  column, added by an idempotent in-place migration; existing rows
+  round-trip with an empty list) so restored and exported sessions keep
+  the distinction.
+- Desktop "deep scan": a new `run_deep_scan` command (pkexec, the same
+  privileged-op guard and rate limit as apply) re-runs `hardener scan
+  --format json` as root and replaces the current results, matching
+  what `sudo hardener scan` would report; results persist as a new scan
+  session, so restarting the app keeps the privileged results. An
+  unchecked-checks banner above the Dashboard and Analysis pages names
+  the outstanding count and offers a "Run deep scan" button that also
+  regenerates compliance reports, so the security score reflects the
+  privileged results rather than the stale unprivileged ones. The
+  findings tab lists the unverifiable checks (deduplicated by check id,
+  since the audit plugin emits one entry per underlying rule) under a
+  "Not verifiable without privileges" heading, and the score gauge
+  shows a muted "N check(s) not verified (needs privileges)" note. All
+  of this presentation is muted-only, never severity-coloured.
+
 ### Fixed
+- pam, firewall, audit, ssh and mac no longer report false findings
+  when scanned without root on a hardened host. Each previously treated
+  a permission-denied read of a privilege-gated source as "value not
+  set" or "feature absent" and raised a High/Critical finding for
+  something it never actually inspected; each now classifies the
+  permission failure and reports the affected checks as unchecked
+  instead of a finding:
+  - pam: `/etc/security/pwquality.conf` and the faillock/pwhistory
+    threshold configs are root-only on a hardened host; a denied read
+    no longer produces a "not set" finding per directive.
+  - firewall: probing the live ruleset (nftables/ufw/firewalld) needs
+    root; a denied probe now falls back to a root-free `systemctl
+    is-active <unit>` hint for backend selection and reports the
+    ruleset itself unchecked instead of "disabled".
+  - audit: `auditctl -l` needs root to list loaded rules; a denied
+    listing now reports one unchecked entry per expected rule instead
+    of treating every rule as missing.
+  - ssh: `/etc/ssh/sshd_config` is root-only on a hardened host; a
+    denied read now reports every directive and crypto setting
+    unchecked instead of "not configured".
+  - mac: `aa-status --verbose` needs root; a permission-denied probe
+    with AppArmor actually installed now reports enforcement unchecked
+    instead of "no profiles enforced".
+
+  kernel, services and permissions were audited for the same failure
+  mode and need no change: kernel reads `/proc/sys/*`, world-readable
+  on stock Linux (a scan error there means the sysctl does not exist,
+  not that it is unreadable); the services scan issues two batched
+  listings, `systemctl list-unit-files` and `systemctl list-units`,
+  both unprivileged queries; permissions only needs directory traversal
+  for `stat`, and `/etc/shadow` metadata (not content) reads fine
+  unprivileged.
 - Dark-theme select dropdowns rendered unreadable popup lists on the
   Schedule page, Notifications page and Compliance export control: the
   `<option>` entries fell back to the browser's native white popup with

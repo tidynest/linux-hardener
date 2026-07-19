@@ -1,6 +1,6 @@
 # Linux System Hardener - Data Flow Documentation
 
-**Last Updated:** 2026-07-18
+**Last Updated:** 2026-07-19
 **Version:** 1.3.2
 
 This document describes the data flow for all major operations in the system.
@@ -76,7 +76,10 @@ This document describes the data flow for all major operations in the system.
 │  │   • Audit: /etc/audit/rules.d/*                           │
 │  │   • MAC: getenforce/aa-status                             │
 │  ├─ Compare against secure baseline                          │
-│  └─ Generate Finding for each deviation                      │
+│  ├─ Generate Finding for each deviation                      │
+│  └─ A source needing root that is permission-denied at the   │
+│     current privilege level yields UncheckedCheck entries    │
+│     instead of a false Finding (pam/firewall/audit/ssh/mac)  │
 └────────┬─────────────────────────────────────────────────────┘
          │
          ▼
@@ -86,6 +89,8 @@ This document describes the data flow for all major operations in the system.
 │    scan_plugin_id: "ssh-hardening",                          │
 │    scan_success: true,                                       │
 │    scan_findings: [Finding, Finding, ...],                   │
+│    scan_unchecked: [UncheckedCheck, ...],  // root-only, see │
+│                                             // below         │
 │    scan_duration_us: 1234,                                   │
 │    scan_error: None                                          │
 │  }                                                           │
@@ -101,8 +106,11 @@ This document describes the data flow for all major operations in the system.
          ▼
 ┌──────────────────────────────────────────────────────────────┐
 │  Format Output                                               │
-│  ├─ --format text: Human-readable table                      │
-│  ├─ --format json: JSON array of findings                    │
+│  ├─ --format text: Human-readable table; unchecked checks    │
+│  │   render dimmed, separate from findings, with a "run with │
+│  │   sudo for a full scan" hint when any exist               │
+│  ├─ --format json: per-plugin {plugin_id, plugin_name,       │
+│  │   findings, unchecked}                                    │
 │  └─ --timings: per-plugin timing table on stderr             │
 └────────┬─────────────────────────────────────────────────────┘
          │
@@ -137,6 +145,14 @@ struct Finding {
     finding_remediation_steps: Vec<String>,
     finding_compliance: Vec<ComplianceMapping>,
     finding_policy_exception: Option<FindingPolicyException>,  // Policy annotation
+}
+
+struct UncheckedCheck {
+    unchecked_check_id: String,      // Same id the finding would carry
+    unchecked_title: String,
+    unchecked_category: FindingCategory,
+    unchecked_reason: String,        // e.g. "reading /etc/ssh/sshd_config requires root"
+    unchecked_compliance: Vec<ComplianceMapping>,  // Drives ManualReview, see Section 5
 }
 ```
 
@@ -430,12 +446,16 @@ struct Finding {
 │      ├─ Find related findings via ComplianceMapping          │
 │      │   (finding.finding_compliance contains mappings)      │
 │      ├─ Determine status:                                    │
-│      │   • Fail: has related findings                        │
-│      │   • Pass: no findings AND control in coverage set      │
-│      │     (Option B - true for every framework)             │
-│      │   • ManualReview: no findings, control NOT in coverage │
-│      │     (curated CIS/ISO controls the engine can't assess) │
-│      │   • NotApplicable: not relevant to this system         │
+│      │   • Fail: has related findings (always wins, even if  │
+│      │     the same control is also unchecked elsewhere)     │
+│      │   • ManualReview: no findings, and either the control │
+│      │     is NOT in the coverage set (curated CIS/ISO       │
+│      │     controls the engine can't assess) OR it is only   │
+│      │     covered by an UncheckedCheck (root-only source,   │
+│      │     never auto-Pass on an unprivileged scan)          │
+│      │   • Pass: no findings, control in coverage set, and   │
+│      │     not covered by any UncheckedCheck                 │
+│      │   • NotApplicable: not relevant to this system        │
 │      └─ Create ControlResult                                 │
 │  Safe-failure net: a finding-referenced id absent from the   │
 │  catalogue is appended as Fail (never dropped/false-passed).  │
@@ -509,7 +529,7 @@ struct Finding {
 │  ├─ Create PluginRegistry (same as CLI)                      │
 │  ├─ Create Context                                           │
 │  ├─ Run all plugins.scan()                                   │
-│  └─ Return Vec<ScanResult> as JSON                           │
+│  └─ Return Vec<ScanResult> as JSON, scan_unchecked included  │
 └────────┬─────────────────────────────────────────────────────┘
          │ JSON response
          ▼
@@ -528,6 +548,18 @@ struct Finding {
 └──────────────────┘
 ```
 
+**Deep scan (privileged re-scan):** if `scan_unchecked` is non-empty on any
+plugin, `UncheckedBanner` (components/unchecked_banner.rs) renders above the
+score/findings content on the Dashboard and Analysis pages, naming the
+count. Its "Run deep scan" button calls `invoke_deep_scan`, which invokes
+`run_deep_scan` (src-tauri/src/commands.rs) - a pkexec-elevated sibling of
+`run_scan` that shells out to `hardener scan --format json` as root exactly
+like `run_apply` does for applies, so results match `sudo hardener scan`.
+The returned `Vec<ScanResult>` replaces `AppState.scan_results` and a
+follow-up `invoke_generate_report` call regenerates compliance reports so
+the security score reflects the privileged results; both calls persist a
+new scan history session, same as `run_scan`.
+
 ### Tauri Commands Available
 
 Every command below is gated by a per-command capability ACL (SAM-039): the
@@ -542,6 +574,7 @@ command is added or removed: `src/main.rs` (`generate_handler!`), `build.rs`
 | Command | Parameters | Returns |
 |---------|------------|---------|
 | `run_scan` | `plugin_ids: Option<Vec<String>>`, `config_path: Option<String>` | `Vec<ScanResult>` |
+| `run_deep_scan` | `plugin_ids: Option<Vec<String>>`, `config_path: Option<String>` | `Vec<ScanResult>` (pkexec, privileged) |
 | `get_latest_scan` | None | `Option<Vec<ScanResult>>` |
 | `run_apply` | `plugin_ids: Vec<String>`, `config_path: Option<String>` | `Vec<ApplyResult>` |
 | `run_apply_dry_run` | `plugin_ids: Vec<String>`, `config_path: Option<String>` | `Vec<ValidationReport>` |
@@ -1281,4 +1314,4 @@ pub enum RollbackStatus {
 
 ---
 
-**Last Updated**: 2026-07-18
+**Last Updated**: 2026-07-19

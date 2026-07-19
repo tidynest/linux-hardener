@@ -1,6 +1,6 @@
 # Linux System Hardener - File Map
 
-**Last Updated:** 2026-07-18
+**Last Updated:** 2026-07-19
 
 This document lists all source files with their purpose and key exports.
 
@@ -10,7 +10,7 @@ This document lists all source files with their purpose and key exports.
 
 | File | Purpose | Key Exports |
 |------|---------|-------------|
-| `src/lib.rs` | All shared type definitions | `PluginId`, `Severity`, `FindingCategory`, `ComplianceFramework`, `ComplianceMapping`, `ControlStatus`, `FindingPolicyException`, `PluginMetadata`, `ScanResult`, `Finding`, `ApplyResult`, `Change`, `ChangeType`, `ValidationReport`, `ValidationIssue`, `ComplianceReport`, `ControlResult`, `ComplianceSummary`, `ConfigSummary`, `FleetHostScan`, `FleetHostStatus`, `SeverityTallies` |
+| `src/lib.rs` | All shared type definitions | `PluginId`, `Severity`, `FindingCategory`, `ComplianceFramework`, `ComplianceMapping`, `ControlStatus`, `FindingPolicyException`, `PluginMetadata`, `ScanResult`, `Finding`, `UncheckedCheck`, `ApplyResult`, `Change`, `ChangeType`, `ValidationReport`, `ValidationIssue`, `ComplianceReport`, `ControlResult`, `ComplianceSummary`, `ConfigSummary`, `FleetHostScan`, `FleetHostStatus`, `SeverityTallies` |
 | `src/config_picker.rs` | Config file picker types | `ConfigSummary`, WASM-safe validation results for config file picker |
 | `src/remote.rs` | Remote SSH scanning types | `RemoteHostProfile`, `HostsConfig`, `RemoteConnectionStatus`, `RemoteConnectionInfo` |
 | `src/scheduler.rs` | Scheduler UI types | `SchedulerUiConfig`, `NotificationUiConfig`, `EmailUiConfig`, `WebhookUiConfig`, `TestNotificationResult` |
@@ -31,9 +31,10 @@ pub enum FindingCategory { Audit, Authentication, Cryptography, FileSystem, Kern
 pub enum ComplianceFramework { CIS, HIPAA, ISO27001, NIST, PCIDSS, STIG, GDPR, SOC2, NIST800171, FedRAMP }
 
 // Scan/Apply results
-pub struct ScanResult { scan_plugin_id, scan_success, scan_findings, scan_duration_us, scan_error }
+pub struct ScanResult { scan_plugin_id, scan_success, scan_findings, scan_unchecked, scan_duration_us, scan_error }
 pub struct ApplyResult { apply_plugin_id, apply_success, apply_changes, apply_checkpoint_id, apply_error }
 pub struct Finding { finding_id, finding_title, finding_severity, ... }
+pub struct UncheckedCheck { unchecked_check_id, unchecked_title, unchecked_category, unchecked_reason, unchecked_compliance }
 
 // Compliance report types
 pub struct ComplianceReport { report_framework, report_generated_at, report_controls, report_summary }
@@ -403,9 +404,9 @@ pub struct ScanRunner {
 | `index.html` | Entry HTML with font links | `#app` mount point |
 | `styles.css` | Dark terminal theme CSS | CSS Variables, utility classes (.truncate, .sr-only, .skip-link), tabs, navigation, score gauge, buttons, tables, forms |
 | `src/lib.rs` | Main App component, WASM entry point; defines route `/fleet` and "Fleet" nav link | `App`, `#[wasm_bindgen(start)] main()` |
-| `src/types.rs` | Re-exports from hardener-types | `pub use hardener_types::*` (ApplyResult, Change, ChangeType, ComplianceFramework, ComplianceMapping, ComplianceReport, ComplianceSummary, ConfigSummary, ControlResult, ControlStatus, FileRestoreAction, FileRestoreResult, Finding, FindingCategory, FindingPolicyException, PluginId, PluginMetadata, RollbackResult, ScanResult, Severity, ValidationIssue, ValidationReport), scheduler re-exports (SchedulerUiConfig, NotificationUiConfig, EmailUiConfig, WebhookUiConfig, TestNotificationResult), `CheckpointInfo`, `ScanSessionInfo`, `CheckpointDetail`, `CheckpointFileInfo` |
+| `src/types.rs` | Re-exports from hardener-types | `pub use hardener_types::*` (ApplyResult, Change, ChangeType, ComplianceFramework, ComplianceMapping, ComplianceReport, ComplianceSummary, ConfigSummary, ControlResult, ControlStatus, FileRestoreAction, FileRestoreResult, Finding, FindingCategory, FindingPolicyException, PluginId, PluginMetadata, RollbackResult, ScanResult, Severity, UncheckedCheck, ValidationIssue, ValidationReport), scheduler re-exports (SchedulerUiConfig, NotificationUiConfig, EmailUiConfig, WebhookUiConfig, TestNotificationResult), `CheckpointInfo`, `ScanSessionInfo`, `CheckpointDetail`, `CheckpointFileInfo` |
 | `src/state/mod.rs` | Reactive state | `AppState` |
-| `src/tauri_bindings.rs` | Tauri command bindings | `tauri_available`, `invoke_scan`, `invoke_apply`, `invoke_apply_dry_run`, `invoke_generate_report`, `invoke_export_report`, `invoke_get_latest_scan`, `invoke_get_checkpoints`, `invoke_create_checkpoint`, `invoke_delete_checkpoint`, `invoke_get_scan_history`, `invoke_get_scan_session`, `invoke_get_checkpoint_detail`, `invoke_rollback`, `invoke_list_remote_hosts`, `invoke_save_remote_host`, `invoke_delete_remote_host`, `invoke_connect_remote`, `invoke_disconnect_remote`, `invoke_remote_scan`, `invoke_fleet_scan`, `invoke_fleet_apply`, `invoke_fleet_rollback`, `invoke_list_plugins`, `invoke_get_scheduler_config`, `invoke_save_scheduler_config`, `invoke_test_notification`, `invoke_validate_config`, `invoke_pick_config_file` |
+| `src/tauri_bindings.rs` | Tauri command bindings | `tauri_available`, `invoke_scan`, `invoke_deep_scan`, `invoke_apply`, `invoke_apply_dry_run`, `invoke_generate_report`, `invoke_export_report`, `invoke_get_latest_scan`, `invoke_get_checkpoints`, `invoke_create_checkpoint`, `invoke_delete_checkpoint`, `invoke_get_scan_history`, `invoke_get_scan_session`, `invoke_get_checkpoint_detail`, `invoke_rollback`, `invoke_list_remote_hosts`, `invoke_save_remote_host`, `invoke_delete_remote_host`, `invoke_connect_remote`, `invoke_disconnect_remote`, `invoke_remote_scan`, `invoke_fleet_scan`, `invoke_fleet_apply`, `invoke_fleet_rollback`, `invoke_list_plugins`, `invoke_get_scheduler_config`, `invoke_save_scheduler_config`, `invoke_test_notification`, `invoke_validate_config`, `invoke_pick_config_file` |
 | `src/keyboard.rs` | Global keyboard event handler | Ctrl+1-5 page nav (pages 1-5 only; Fleet and Fleet Apply pages have no shortcut), Alt+T theme cycle, Escape close, F11 fullscreen |
 | `src/navigation.rs` | Navigation signal helpers | Page routing helpers for keyboard and UI nav |
 | `src/utils/mod.rs` | Utils module exports | Re-exports (mock_data) |
@@ -455,6 +456,7 @@ pub struct ScanRunner {
 | `src/components/form_helpers.rs` | Shared JsCast event extraction helpers | `input_value()`, `checkbox_checked()`, `select_value()` |
 | `src/components/fleet_table.rs` | Fleet scan results table: per-host severity tally rows, colour-coded CIS score column, per-framework breakdown in row expander, expandable to FindingsGrid | `FleetTable` |
 | `src/components/adhoc_host_input.rs` | Ad-hoc SSH target entry for fleet scans (host:user@addr rows, add/remove) | `AdhocHostInput` |
+| `src/components/unchecked_banner.rs` | Banner offering a privileged deep scan when unprivileged results contain unverifiable checks | `UncheckedBanner` |
 
 **Note**: This crate depends only on `hardener-types` for shared types to ensure WASM compatibility. External dependencies include Leptos (WASM framework), wasm-bindgen, and web-sys for browser APIs.
 
@@ -490,6 +492,7 @@ pub fn tauri_available() -> bool;
 
 // Core scan/apply/rollback
 pub async fn invoke_scan(plugin_ids: Vec<String>, config_path: Option<String>) -> Result<Vec<ScanResult>, String>;
+pub async fn invoke_deep_scan(plugin_ids: Vec<String>, config_path: Option<String>) -> Result<Vec<ScanResult>, String>;  // pkexec, privileged
 pub async fn invoke_apply(plugin_ids: Vec<String>, config_path: Option<String>) -> Result<Vec<ApplyResult>, String>;
 pub async fn invoke_apply_dry_run(plugin_ids: Vec<String>, config_path: Option<String>) -> Result<Vec<ValidationReport>, String>;
 pub async fn invoke_rollback(checkpoint_id: String, config_path: Option<String>) -> Result<RollbackResult, String>;
@@ -537,7 +540,7 @@ pub async fn invoke_pick_config_file() -> Result<Option<String>, String>;
 | File | Purpose | Key Exports |
 |------|---------|-------------|
 | `src/main.rs` | Tauri app entry | `main()` |
-| `src/commands.rs` | Tauri invoke handlers | `run_scan`, `run_apply`, `run_apply_dry_run`, `run_rollback`, `get_checkpoints`, `create_checkpoint`, `delete_checkpoint`, `get_checkpoint_detail`, `generate_compliance_report`, `export_compliance_report`, `get_scan_history`, `get_scan_session`, `get_host_history`, `list_plugins`, `get_latest_scan`, `list_remote_hosts`, `save_remote_host`, `delete_remote_host`, `connect_remote`, `disconnect_remote`, `run_remote_scan`, `scan_with_executor` (shared scan helper), `scan_fleet` (bounded-concurrent orchestrator), `run_fleet_scan`/`run_fleet_apply`/`run_fleet_rollback` (#[tauri::command]), `run_fleet_mutation`/`build_batch_args`/`parse_outcomes` (fleet-mutation helpers), `get_scheduler_config`, `save_scheduler_config`, `test_notification`, `validate_config`, `pick_config_file` |
+| `src/commands.rs` | Tauri invoke handlers | `run_scan`, `run_deep_scan` (pkexec-elevated sibling of run_scan), `run_apply`, `run_apply_dry_run`, `run_rollback`, `get_checkpoints`, `create_checkpoint`, `delete_checkpoint`, `get_checkpoint_detail`, `generate_compliance_report`, `export_compliance_report`, `get_scan_history`, `get_scan_session`, `get_host_history`, `list_plugins`, `get_latest_scan`, `list_remote_hosts`, `save_remote_host`, `delete_remote_host`, `connect_remote`, `disconnect_remote`, `run_remote_scan`, `scan_with_executor` (shared scan helper), `scan_fleet` (bounded-concurrent orchestrator), `run_fleet_scan`/`run_fleet_apply`/`run_fleet_rollback` (#[tauri::command]), `run_fleet_mutation`/`build_batch_args`/`parse_outcomes` (fleet-mutation helpers), `get_scheduler_config`, `save_scheduler_config`, `test_notification`, `validate_config`, `pick_config_file` |
 | `src/validation.rs` | IPC input validation layer | `validate_ipc_string()`, `validate_plugin_ids()`, `validate_checkpoint_id()`, `validate_checkpoint_name()`, `validate_privileged_config_path()`, `validate_user_config_path()`, `validate_output_path()`, `validate_ssh_key_path()` |
 | `src/acl_tests.rs` | Tests for per-command Tauri ACL scoping (SAM-039) | `#[cfg(test)]` ACL coverage |
 
@@ -568,6 +571,8 @@ pub async fn run_apply(plugin_ids: Vec<String>,
     config_path: Option<String>,) -> Result<Vec<ApplyResult>, String>
 pub async fn run_apply_dry_run(plugin_ids: Vec<String>,
     config_path: Option<String>,) -> Result<Vec<ValidationReport>, String>
+pub async fn run_deep_scan(plugin_ids: Option<Vec<String>>,
+    config_path: Option<String>,) -> Result<Vec<ScanResult>, String>
 pub async fn run_fleet_apply(hosts: Vec<String>,
     adhoc: Option<Vec<String>>,
     plugins: Vec<String>,
@@ -825,4 +830,4 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | `hardener-common/src/types.rs` | Added `FindingPolicyException` struct |
 | `hardener-cli/src/cli.rs` | Added `--config`, `--audit`, `--compliance`, `--exit-code` flags, `ScanMode` enum |
 
-**Last Updated**: 2026-07-18
+**Last Updated**: 2026-07-19
