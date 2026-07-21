@@ -72,6 +72,12 @@
   --space-xl: 24px;
   --space-2xl: 32px;
 
+  /* Density: single default now; a later [data-density] block remaps these */
+  --control-height: 32px;
+  --control-pad-x: 12px;
+  --row-gap: 8px;
+  --section-gap: 16px;
+
   /* Border radius scale */
   --radius-sm: 0.25rem;  /* 4px */
   --radius-md: 0.5rem;   /* 8px */
@@ -615,7 +621,7 @@ body {
    ============================================================ */
 
 .dashboard-page {
-  gap: var(--space-lg);
+  gap: var(--section-gap);
 }
 
 .dashboard-page > h1 {
@@ -815,7 +821,8 @@ body {
   align-items: center;
   justify-content: center;
   gap: var(--space-sm);
-  padding: 9px 18px;
+  height: var(--control-height);
+  padding: 0 var(--control-pad-x);
   font-family: var(--font-sans);
   font-size: var(--font-size-body);
   font-weight: 600;
@@ -864,6 +871,7 @@ body {
 }
 
 .btn-large {
+  height: auto;
   padding: 11px 22px;
   font-size: var(--font-size-sub);
 }
@@ -1617,7 +1625,7 @@ tbody tr:hover {
   display: flex;
   align-items: center;
   gap: var(--space-md);
-  padding: 12px 0;
+  padding: var(--row-gap) 0;
   border-bottom: 1px solid var(--border);
 }
 
@@ -1856,6 +1864,7 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 }
 
 .btn-small {
+  height: auto;
   padding: var(--space-xs) var(--space-sm);
   font-size: var(--font-size-caption);
 }
