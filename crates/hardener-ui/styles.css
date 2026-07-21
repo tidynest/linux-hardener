@@ -80,7 +80,8 @@
 
   /* Borders & Effects */
   --border-radius: 8px;
-  --border-color: var(--bg-elevated);
+  --border: #1e252e;        /* hairline; themed per file */
+  --border-strong: #2a323c; /* emphasis/hover */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.25);
 
@@ -202,7 +203,7 @@
     --color-accent: #0d9488;
     --color-accent-hover: #14b8a6;
     --color-focus: rgba(13, 148, 136, 0.3);
-    --border-color: #d6d3d1;
+    --border: #d6d3d1;
 }
 
 /* High Contrast - WCAG AAA accessibility theme */
@@ -225,7 +226,7 @@
     --color-accent: #67e8f9;
     --color-accent-hover: #a5f3fc;
     --color-focus: rgba(103, 232, 249, 0.6);
-    --border-color: #525252;
+    --border: #525252;
 }
 
 /* ============================================================
@@ -374,7 +375,7 @@ body {
 /* Base card - default variant */
 .card {
     background-color: var(--bg-secondary);
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--border);
     border-radius: var(--border-radius);
     padding: var(--space-lg);
     transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
@@ -429,7 +430,7 @@ body {
   top: 0;
   z-index: 100;
   background-color: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 
@@ -521,7 +522,7 @@ body {
     background-repeat: no-repeat;
     background-position: right 0.5rem center;
     color: var(--text-primary);
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     padding: var(--space-xs) var(--space-sm);
     padding-right: 1.75rem;
@@ -673,7 +674,7 @@ body {
   aspect-ratio: 1;
   margin: 0 auto var(--space-lg);
   border-radius: 50%;
-  border: 4px solid var(--border-color);
+  border: 4px solid var(--border);
   background-color: var(--bg-tertiary);
   transition: border-color var(--transition-slow), box-shadow var(--transition-slow);
 }
@@ -837,7 +838,7 @@ body {
 .btn-secondary {
   background-color: transparent;
   color: var(--text-secondary);
-  border-color: var(--border-color);
+  border-color: var(--border);
 }
 
 .btn-secondary:hover:not(:disabled) {
@@ -931,7 +932,7 @@ button {
    ============================================================ */
 
 fieldset {
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: var(--space-md);
   margin-bottom: var(--space-md);
@@ -971,7 +972,7 @@ table {
 th, td {
   padding: 12px 16px;
   text-align: left;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border);
 }
 
 th {
@@ -1044,7 +1045,7 @@ tbody tr:hover {
   flex-wrap: wrap;
   gap: var(--space-md);
   padding-bottom: var(--space-lg);
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border);
 }
 
 .header-content {
@@ -1078,7 +1079,7 @@ tbody tr:hover {
 
 .scanner-controls {
   background-color: var(--bg-secondary);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: var(--border-radius);
   padding: var(--space-lg);
 }
@@ -1120,7 +1121,7 @@ tbody tr:hover {
 /* Finding detail panel */
 .finding-detail {
   background-color: var(--bg-secondary);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: var(--border-radius);
   padding: var(--space-lg);
   position: sticky;
@@ -1186,7 +1187,7 @@ tbody tr:hover {
 /* Findings grid */
 .findings-grid {
   background-color: var(--bg-secondary);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: var(--border-radius);
   overflow: hidden;
 }
@@ -1196,7 +1197,7 @@ tbody tr:hover {
   justify-content: space-between;
   align-items: center;
   padding: 10px 16px;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border);
 }
 
 .findings-controls {
@@ -1214,7 +1215,7 @@ tbody tr:hover {
 .filter-group select {
   background-color: var(--bg-tertiary);
   color: var(--text-primary);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 8px 12px;
   font-size: var(--font-size-body);
@@ -1240,7 +1241,7 @@ tbody tr:hover {
   padding: 8px 16px;
   background-color: var(--bg-tertiary);
   border-radius: 6px;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
 }
 
 .mini-score-value {
@@ -1292,7 +1293,7 @@ tbody tr:hover {
   padding: 4px;
   background-color: var(--bg-secondary);
   border-radius: var(--border-radius);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   margin-bottom: var(--space-lg);
   max-width: 100%;
   flex-wrap: wrap;
@@ -1397,7 +1398,7 @@ tbody tr:hover {
 
 .preview-plugin {
   background-color: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: var(--space-md);
 }
@@ -1444,7 +1445,7 @@ tbody tr:hover {
   color: var(--color-good-bright, var(--text-secondary));
   padding: var(--space-sm) var(--space-md);
   background-color: rgba(16, 185, 129, 0.1);
-  border-left: 3px solid var(--color-good, var(--border-color));
+  border-left: 3px solid var(--color-good, var(--border));
   border-radius: 4px;
 }
 
@@ -1453,7 +1454,7 @@ tbody tr:hover {
   justify-content: flex-end;
   gap: var(--space-md);
   padding-top: var(--space-md);
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid var(--border);
 }
 
 /* History section */
@@ -1475,7 +1476,7 @@ tbody tr:hover {
 
 .result-summary-card {
   background-color: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: var(--space-md);
 }
@@ -1508,7 +1509,7 @@ tbody tr:hover {
   padding: 4px;
   background: var(--bg-tertiary);
   border-radius: var(--border-radius);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
 }
 
 .tab-button {
@@ -1611,7 +1612,7 @@ tbody tr:hover {
   align-items: center;
   gap: var(--space-md);
   padding: 12px 0;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border);
 }
 
 .activity-item:last-child { border-bottom: none; }
@@ -1711,7 +1712,7 @@ tbody tr:hover {
 /* Report cards */
 .report-card {
   background-color: var(--bg-secondary);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: var(--border-radius);
   padding: var(--space-lg);
   margin-bottom: var(--space-lg);
@@ -1768,7 +1769,7 @@ tbody tr:hover {
 
 /* Expandable sections */
 details {
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: 6px;
   margin-bottom: var(--space-sm);
 }
@@ -1782,7 +1783,7 @@ summary {
 }
 
 summary:hover { background-color: var(--bg-elevated); }
-details[open] summary { border-bottom: 1px solid var(--border-color); }
+details[open] summary { border-bottom: 1px solid var(--border); }
 
 .control-status { font-weight: 600; font-size: var(--font-size-caption); }
 .status-pass { color: var(--color-good-bright); }
@@ -1874,7 +1875,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 
 .detail-expansion-row td {
   padding: 0;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border);
 }
 
 .checkpoint-detail-panel {
@@ -1961,7 +1962,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
   text-align: center;
   padding: var(--space-xl);
   background-color: var(--bg-secondary);
-  border: 1px dashed var(--border-color);
+  border: 1px dashed var(--border);
   border-radius: var(--border-radius);
 }
 
@@ -2316,7 +2317,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 }
 
 .remote-sidebar {
-    border-right: 1px solid var(--border-color);
+    border-right: 1px solid var(--border);
     padding-right: var(--space-md);
 }
 
@@ -2330,7 +2331,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
     }
     .remote-sidebar {
         border-right: none;
-        border-bottom: 1px solid var(--border-color);
+        border-bottom: 1px solid var(--border);
         padding-right: 0;
         padding-bottom: var(--space-md);
     }
@@ -2359,7 +2360,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
     flex-direction: column;
     gap: var(--space-xs);
     padding: var(--space-sm);
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     background: var(--bg-secondary);
     transition: border-color var(--transition-fast);
@@ -2409,7 +2410,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
     flex-direction: column;
     gap: var(--space-sm);
     padding: var(--space-md);
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--border);
     border-radius: var(--radius-sm, 6px);
     background: var(--bg-secondary);
 }
@@ -2579,7 +2580,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
   color: var(--text-primary);
   margin: 0.5rem 0 0;
   padding-top: 0.75rem;
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid var(--border);
 }
 
 .form-row {
@@ -2597,7 +2598,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 .form-input {
   padding: 0.5rem 0.75rem;
   background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text-primary);
   font-size: var(--font-size-body);
@@ -2842,7 +2843,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 /* Host selection fieldset — reuses the global fieldset token for border/radius
    but adds a touch of vertical rhythm between its children. */
 .fleet-host-select {
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: var(--space-sm) var(--space-md);
   margin-bottom: var(--space-md);
@@ -2894,7 +2895,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 .fleet-detail-row td {
   padding: var(--space-sm) var(--space-md);
   background-color: var(--bg-tertiary);
-  border-bottom: 2px solid var(--border-color);
+  border-bottom: 2px solid var(--border);
 }
 
 /* Status cell colour helpers — reuse existing semantic colour tokens. */
@@ -2981,7 +2982,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
   align-items: center;
   gap: var(--space-md);
   padding: var(--space-md) var(--space-lg);
-  border: 1px dashed var(--border-color);
+  border: 1px dashed var(--border);
   border-radius: var(--border-radius);
   color: var(--text-muted);
   margin-bottom: var(--space-lg);
@@ -2994,7 +2995,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 .unchecked-banner-button {
   background-color: transparent;
   color: var(--text-secondary);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 8px 16px;
   font-size: var(--font-size-body);
@@ -3044,7 +3045,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
   justify-content: space-between;
   gap: var(--space-lg);
   padding: var(--space-sm) 0;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border);
   color: var(--text-muted);
 }
 
