@@ -34,6 +34,12 @@
   --color-info: #22d3ee;
   --color-pending: #64748b;
 
+  /* Status tints - badge and calm-box backgrounds */
+  --color-good-bg: rgba(16, 185, 129, .15);
+  --color-warning-bg: rgba(245, 158, 11, .15);
+  --color-critical-bg: rgba(239, 68, 68, .15);
+  --color-accent-bg: rgba(34, 211, 238, .12);
+
   /* Interactive colors - teal accent */
   --color-accent: #22d3ee;
   --color-accent-hover: #67e8f9;
