@@ -43,6 +43,16 @@
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
 
+  /* Type size scale */
+  --font-size-caption: 12px;
+  --font-size-sm: 13px;
+  --font-size-body: 14px;
+  --font-size-sub: 16px;
+  --font-size-head: 18px;
+  --font-size-title: 22px;
+  --leading-ui: 1.4;
+  --leading-prose: 1.6;
+
   /* Layout */
   --header-height: 52px;
   --content-padding: 16px;
@@ -243,7 +253,7 @@ body {
   height: 100%;
   min-height: 100%;
   font-family: var(--font-sans);
-  font-size: 1rem;
+  font-size: var(--font-size-body);
   line-height: 1.5;
   color: var(--text-primary);
   background-color: var(--bg-primary);
@@ -375,7 +385,7 @@ body {
 }
 
 .card-title {
-    font-size: 1.125rem;
+    font-size: var(--font-size-head);
     font-weight: 600;
     color: var(--text-primary);
     margin-bottom: var(--space-md);
@@ -437,7 +447,7 @@ body {
 
 .navigation h1 {
   font-family: var(--font-mono);
-  font-size: 1.125rem;
+  font-size: var(--font-size-head);
   font-weight: 700;
   color: var(--color-accent);
   white-space: nowrap;
@@ -447,7 +457,7 @@ body {
    stale installed build is spottable without competing with the title. */
 .app-version {
   font-family: var(--font-mono);
-  font-size: 0.6875rem;
+  font-size: var(--font-size-caption);
   color: var(--text-secondary);
   white-space: nowrap;
   align-self: center;
@@ -471,7 +481,7 @@ body {
   display: block;
   padding: 6px 12px;
   color: var(--text-secondary);
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   font-weight: 500;
   text-decoration: none;
   border-radius: 6px;
@@ -515,7 +525,7 @@ body {
     border-radius: var(--radius-sm);
     padding: var(--space-xs) var(--space-sm);
     padding-right: 1.75rem;
-    font-size: 0.875rem;
+    font-size: var(--font-size-body);
     font-family: var(--font-sans);
     cursor: pointer;
     transition: border-color var(--transition-fast);
@@ -602,14 +612,14 @@ body {
 }
 
 .dashboard-page > h1 {
-  font-size: 1.25rem;
+  font-size: var(--font-size-title);
   font-weight: 600;
   flex-shrink: 0;
 }
 
 .dashboard-intro {
   color: var(--text-secondary);
-  font-size: 1rem;
+  font-size: var(--font-size-sub);
   max-width: 600px;
   flex-shrink: 0;
 }
@@ -627,7 +637,7 @@ body {
   margin-top: auto;
   padding-top: var(--space-md);
   color: var(--text-muted);
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   flex-shrink: 0;
 }
 
@@ -644,7 +654,7 @@ body {
 }
 
 .security-score h2 {
-  font-size: 0.9375rem;  /* Increased from 0.875rem (14px to 15px) for better readability */
+  font-size: var(--font-size-sub);
   font-weight: 500;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -695,7 +705,7 @@ body {
 .score-good .score-value { color: var(--color-good-bright); }
 
 .score-status {
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   color: var(--text-secondary);
 }
 
@@ -707,7 +717,7 @@ body {
 
 .breakdown-toggle {
   cursor: pointer;
-  font-size: 0.75rem;
+  font-size: var(--font-size-caption);
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -739,7 +749,7 @@ body {
   padding: var(--space-xs) var(--space-sm);
   border-radius: var(--radius-sm);
   background: var(--bg-elevated);
-  font-size: 0.8125rem;
+  font-size: var(--font-size-sm);
 }
 
 .breakdown-name {
@@ -754,7 +764,7 @@ body {
 }
 
 .breakdown-detail {
-  font-size: 0.75rem;
+  font-size: var(--font-size-caption);
   color: var(--text-muted);
 }
 
@@ -773,7 +783,7 @@ body {
 }
 
 .quick-actions h2 {
-  font-size: 0.9375rem;  /* Increased from 0.875rem for consistency */
+  font-size: var(--font-size-sub);
   font-weight: 500;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -800,7 +810,7 @@ body {
   gap: var(--space-sm);
   padding: 9px 18px;
   font-family: var(--font-sans);
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   font-weight: 600;
   border: 1px solid transparent;
   border-radius: 6px;
@@ -848,7 +858,7 @@ body {
 
 .btn-large {
   padding: 11px 22px;
-  font-size: 1rem;
+  font-size: var(--font-size-sub);
 }
 
 button {
@@ -861,7 +871,7 @@ button {
   color: var(--color-critical);
   border: 1px solid var(--color-critical);
   padding: 8px 16px;
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   border-radius: 6px;
   transition: background-color var(--transition-fast), color var(--transition-fast);
 }
@@ -876,7 +886,7 @@ button {
   color: var(--bg-primary);
   border: none;
   padding: 8px 16px;
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   font-weight: 600;
   border-radius: 6px;
   transition: background-color var(--transition-fast), transform var(--transition-fast);
@@ -892,7 +902,7 @@ button {
   color: #ffffff;
   border: none;
   padding: 10px 20px;
-  font-size: 1rem;
+  font-size: var(--font-size-sub);
   font-weight: 600;
   border-radius: 6px;
   transition: background-color var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
@@ -929,7 +939,7 @@ fieldset {
 
 legend {
   padding: 0 var(--space-sm);
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   color: var(--text-muted);
 }
 
@@ -965,7 +975,7 @@ th, td {
 }
 
 th {
-  font-size: 0.75rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -985,7 +995,7 @@ tbody tr:hover {
 
 .value-cell {
   font-family: var(--font-mono);
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   max-width: 300px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -999,7 +1009,7 @@ tbody tr:hover {
 .severity_badge {
   display: inline-block;
   padding: 4px 12px;
-  font-size: 0.75rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -1042,7 +1052,7 @@ tbody tr:hover {
 }
 
 .header-content h1 {
-  font-size: 1.25rem;
+  font-size: var(--font-size-title);
   margin-bottom: var(--space-sm);
 }
 
@@ -1099,7 +1109,7 @@ tbody tr:hover {
 }
 
 .severity-filter label {
-    font-size: 0.85rem;
+    font-size: var(--font-size-body);
     color: var(--text-secondary);
 }
 
@@ -1124,7 +1134,7 @@ tbody tr:hover {
   margin-bottom: var(--space-md);
 }
 
-.detail-header h2 { font-size: 1.125rem; }
+.detail-header h2 { font-size: var(--font-size-head); }
 
 .detail-severity {
   display: flex;
@@ -1134,7 +1144,7 @@ tbody tr:hover {
 }
 
 .detail-category {
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   color: var(--text-muted);
 }
 
@@ -1151,7 +1161,7 @@ tbody tr:hover {
 .detail-impact h3,
 .detail-values h3,
 .detail-remediation h3 {
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
@@ -1164,8 +1174,8 @@ tbody tr:hover {
   gap: 8px 16px;
 }
 
-.detail-values dt { color: var(--text-muted); font-size: 0.875rem; }
-.detail-values dd { font-family: var(--font-mono); font-size: 0.875rem; }
+.detail-values dt { color: var(--text-muted); font-size: var(--font-size-body); }
+.detail-values dd { font-family: var(--font-mono); font-size: var(--font-size-body); }
 
 .value-current { color: var(--color-critical-bright); }
 .value-recommended { color: var(--color-good-bright); }
@@ -1207,7 +1217,7 @@ tbody tr:hover {
   border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 8px 12px;
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   cursor: pointer;
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
@@ -1235,7 +1245,7 @@ tbody tr:hover {
 
 .mini-score-value {
   font-family: var(--font-mono);
-  font-size: 1.125rem;
+  font-size: var(--font-size-head);
   font-weight: 700;
 }
 
@@ -1245,7 +1255,7 @@ tbody tr:hover {
 .mini-score-value.score-pending { color: var(--text-muted); }
 
 .mini-score-label {
-  font-size: 0.75rem;
+  font-size: var(--font-size-caption);
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -1266,7 +1276,7 @@ tbody tr:hover {
 }
 
 .hardening-header h1 {
-  font-size: 1.25rem;
+  font-size: var(--font-size-title);
   margin-bottom: var(--space-sm);
 }
 
@@ -1302,7 +1312,7 @@ tbody tr:hover {
   background: transparent;
   color: var(--text-muted);
   font-family: var(--font-sans);
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   font-weight: 500;
   border: none;
   border-radius: 6px;
@@ -1393,7 +1403,7 @@ tbody tr:hover {
 }
 
 .preview-plugin-name {
-  font-size: 1rem;
+  font-size: var(--font-size-sub);
   font-weight: 600;
   color: var(--text-primary);
   margin-bottom: var(--space-md);
@@ -1403,7 +1413,7 @@ tbody tr:hover {
 }
 
 .preview-change-count {
-  font-size: 0.75rem;
+  font-size: var(--font-size-caption);
   font-weight: 400;
   color: var(--text-tertiary);
 }
@@ -1418,7 +1428,7 @@ tbody tr:hover {
 }
 
 .preview-change-list li {
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   color: var(--text-secondary);
   padding: var(--space-sm) var(--space-md);
   background-color: var(--bg-primary);
@@ -1430,7 +1440,7 @@ tbody tr:hover {
    plugin fully compliant: a positive confirmation that no change is
    pending, rather than the conditional estimates the apply would skip. */
 .preview-compliant-note {
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   color: var(--color-good-bright, var(--text-secondary));
   padding: var(--space-sm) var(--space-md);
   background-color: rgba(16, 185, 129, 0.1);
@@ -1471,7 +1481,7 @@ tbody tr:hover {
 }
 
 .result-status {
-  font-size: 1.125rem;
+  font-size: var(--font-size-head);
   font-weight: 600;
   margin-bottom: 12px;
 }
@@ -1482,7 +1492,7 @@ tbody tr:hover {
 .result-changes,
 .result-checkpoint {
   color: var(--text-secondary);
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   margin-bottom: var(--space-sm);
 }
 
@@ -1511,7 +1521,7 @@ tbody tr:hover {
   background: transparent;
   color: var(--text-secondary);
   font-family: var(--font-sans);
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   font-weight: 500;
   border: none;
   border-radius: 6px;
@@ -1552,7 +1562,7 @@ tbody tr:hover {
   padding: 0 8px;
   background: var(--color-accent);
   color: var(--bg-primary);
-  font-size: 0.75rem;
+  font-size: var(--font-size-caption);
   font-weight: 700;
   border-radius: 9999px;
 }
@@ -1588,7 +1598,7 @@ tbody tr:hover {
 }
 
 .recent-activity h2 {
-  font-size: 0.9375rem;  /* Increased from 0.875rem for consistency */
+  font-size: var(--font-size-sub);
   font-weight: 500;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -1614,7 +1624,7 @@ tbody tr:hover {
   justify-content: center;
   background-color: var(--bg-tertiary);
   border-radius: 6px;
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
 }
 
 .activity-icon.scan { color: var(--color-info); }
@@ -1632,7 +1642,7 @@ tbody tr:hover {
 }
 
 .activity-meta {
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   color: var(--text-muted);
 }
 
@@ -1683,7 +1693,7 @@ tbody tr:hover {
    families near the top of this file (search "Themed select controls"). */
 
 .status-message {
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   padding: var(--space-xs) var(--space-sm);
   border-radius: var(--radius-sm);
 }
@@ -1716,7 +1726,7 @@ tbody tr:hover {
 
 .compliance-score {
   font-family: var(--font-mono);
-  font-size: 1.25rem;
+  font-size: var(--font-size-title);
   font-weight: 700;
 }
 
@@ -1741,7 +1751,7 @@ tbody tr:hover {
 .stat-value {
   display: block;
   font-family: var(--font-mono);
-  font-size: 1.125rem;
+  font-size: var(--font-size-head);
   font-weight: 700;
 }
 
@@ -1751,7 +1761,7 @@ tbody tr:hover {
 .summary-na .stat-value { color: var(--text-muted); }
 
 .stat-label {
-  font-size: 0.75rem;
+  font-size: var(--font-size-caption);
   color: var(--text-muted);
   text-transform: uppercase;
 }
@@ -1774,13 +1784,13 @@ summary {
 summary:hover { background-color: var(--bg-elevated); }
 details[open] summary { border-bottom: 1px solid var(--border-color); }
 
-.control-status { font-weight: 600; font-size: 0.75rem; }
+.control-status { font-weight: 600; font-size: var(--font-size-caption); }
 .status-pass { color: var(--color-good-bright); }
 .status-fail { color: var(--color-critical-bright); }
 .status-manual { color: var(--color-warning-bright); }
 .status-na { color: var(--text-muted); }
 
-.control-id { font-family: var(--font-mono); font-size: 0.875rem; }
+.control-id { font-family: var(--font-mono); font-size: var(--font-size-body); }
 
 /* Apply results */
 .apply-summary dl {
@@ -1789,7 +1799,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 }
 
 .apply-summary dd {
-  font-size: 1.125rem;
+  font-size: var(--font-size-head);
   font-weight: 600;
 }
 
@@ -1820,7 +1830,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 
 .input-text {
   padding: var(--space-xs) var(--space-sm);
-  font-size: 0.85rem;
+  font-size: var(--font-size-body);
   font-family: inherit;
   background: var(--bg-secondary);
   color: var(--text-primary);
@@ -1840,7 +1850,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 
 .btn-small {
   padding: var(--space-xs) var(--space-sm);
-  font-size: 0.75rem;
+  font-size: var(--font-size-caption);
 }
 
 .btn-danger {
@@ -1873,7 +1883,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 }
 
 .detail-file-count {
-  font-size: 0.85rem;
+  font-size: var(--font-size-body);
   color: var(--text-secondary);
   margin-bottom: var(--space-sm);
 }
@@ -1887,7 +1897,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 }
 
 .detail-file-list li {
-  font-size: 0.85rem;
+  font-size: var(--font-size-body);
   color: var(--text-secondary);
   display: flex;
   align-items: center;
@@ -1896,7 +1906,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 
 .detail-file-perms {
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: var(--font-size-caption);
   color: var(--text-muted);
   background: var(--bg-elevated);
   padding: 1px 6px;
@@ -1928,14 +1938,14 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 }
 
 .empty-state-title {
-  font-size: 1.125rem;
+  font-size: var(--font-size-head);
   font-weight: 500;
   color: var(--text-secondary);
   margin-bottom: var(--space-sm);
 }
 
 .empty-state-hint {
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   color: var(--text-muted);
   max-width: 400px;
   margin: 0 auto;
@@ -1967,7 +1977,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
   border-radius: var(--radius-sm);
   margin: var(--space-sm) var(--space-md) 0;
   color: var(--color-critical-bright, #dc3545);
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   animation: slide-down 200ms ease-out;
 }
 
@@ -1982,7 +1992,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
   color: var(--color-critical-bright, #dc3545);
   cursor: pointer;
   padding: var(--space-xs);
-  font-size: 1rem;
+  font-size: var(--font-size-sub);
   line-height: 1;
   opacity: 0.7;
   transition: opacity var(--transition-fast);
@@ -2024,7 +2034,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 .error-page p {
   color: var(--text-secondary);
   margin-bottom: var(--space-lg);
-  font-size: 1.125rem;
+  font-size: var(--font-size-head);
 }
 
 .error-page a {
@@ -2060,7 +2070,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 
 .section-guidance {
   color: var(--text-muted);
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   background-color: var(--bg-secondary);
   border-left: 3px solid var(--color-info);
   padding: 12px 16px;
@@ -2072,7 +2082,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 
 .help-text {
   color: var(--text-muted);
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
 }
 
 /* ============================================================
@@ -2094,7 +2104,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 .status-badge {
   display: inline-block;
   padding: 2px 10px;
-  font-size: 0.75rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
   text-transform: capitalize;
   border-radius: 9999px;
@@ -2220,12 +2230,12 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
   }
 
   .navigation h1 {
-    font-size: 1rem;
+    font-size: var(--font-size-sub);
   }
 
   .nav-links a {
     padding: 6px 10px;
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
   }
 
   .score-display {
@@ -2248,7 +2258,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 
   .btn-large {
     padding: 12px 16px;
-    font-size: 0.875rem;
+    font-size: var(--font-size-body);
   }
 }
 
@@ -2329,7 +2339,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 /* --- Host List Sidebar --- */
 
 .host-list-title {
-    font-size: 1rem;
+    font-size: var(--font-size-sub);
     font-weight: 600;
     margin-bottom: var(--space-sm);
     color: var(--text-primary);
@@ -2371,12 +2381,12 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 
 .host-entry-name {
     font-weight: 600;
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     color: var(--text-primary);
 }
 
 .host-entry-detail {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     font-family: var(--font-mono);
 }
@@ -2406,7 +2416,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 
 .host-form h3 {
     margin: 0 0 var(--space-xs);
-    font-size: 1rem;
+    font-size: var(--font-size-sub);
     color: var(--text-primary);
 }
 
@@ -2417,7 +2427,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 }
 
 .form-field label {
-    font-size: 0.85rem;
+    font-size: var(--font-size-body);
     font-weight: 500;
     color: var(--text-secondary);
 }
@@ -2426,7 +2436,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
     display: flex;
     align-items: center;
     gap: var(--space-xs);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     color: var(--text-primary);
     cursor: pointer;
 }
@@ -2448,7 +2458,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 }
 
 .remote-guide-title {
-    font-size: 1rem;
+    font-size: var(--font-size-sub);
     font-weight: 600;
     color: var(--text-secondary);
     margin: 0;
@@ -2469,7 +2479,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
     display: flex;
     align-items: baseline;
     gap: var(--space-sm);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     line-height: 1.5;
 }
 
@@ -2483,7 +2493,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
     border-radius: 50%;
     background: var(--bg-tertiary);
     color: var(--text-secondary);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     flex-shrink: 0;
 }
@@ -2505,7 +2515,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 }
 
 .remote-connected-label {
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
 }
 
@@ -2525,7 +2535,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 }
 
 .remote-results-title {
-    font-size: 1rem;
+    font-size: var(--font-size-sub);
     font-weight: 600;
     margin-bottom: var(--space-sm);
     color: var(--text-primary);
@@ -2564,7 +2574,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 }
 
 .subsection-title {
-  font-size: 1rem;
+  font-size: var(--font-size-sub);
   font-weight: 600;
   color: var(--text-primary);
   margin: 0.5rem 0 0;
@@ -2579,7 +2589,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 }
 
 .form-label {
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   font-weight: 500;
   color: var(--text-secondary);
 }
@@ -2590,7 +2600,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
   border: 1px solid var(--border-color);
   border-radius: 6px;
   color: var(--text-primary);
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   font-family: inherit;
   max-width: 400px;
 }
@@ -2606,7 +2616,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
    "Themed select controls"); max-width lives there too. */
 
 .form-hint {
-  font-size: 0.75rem;
+  font-size: var(--font-size-caption);
   color: var(--text-muted);
 }
 
@@ -2615,7 +2625,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
   align-items: center;
   gap: 0.5rem;
   cursor: pointer;
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   color: var(--text-primary);
 }
 
@@ -2633,7 +2643,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
   display: flex;
   align-items: center;
   gap: 0.375rem;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
   cursor: pointer;
 }
@@ -2651,7 +2661,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 .test-result {
   padding: 0.5rem 0.75rem;
   border-radius: 6px;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-sm);
 }
 
 .test-result--success {
@@ -2688,7 +2698,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
   border-radius: var(--radius-sm);
   color: var(--text-primary);
   font-family: var(--font-mono);
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   transition: border-color var(--transition-fast);
 }
 
@@ -2717,7 +2727,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 }
 
 .config-status {
-  font-size: 0.8125rem;
+  font-size: var(--font-size-sm);
 }
 
 .config-default {
@@ -2749,7 +2759,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
   border: none;
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-sm);
   padding: 0;
   text-decoration: underline;
   transition: color var(--transition-fast);
@@ -2788,7 +2798,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 }
 
 .confirm-delete-label {
-  font-size: 0.8125rem;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--color-critical, #ef4444);
 }
@@ -2825,7 +2835,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 /* Muted intro paragraph below the card heading. */
 .fleet-intro {
   color: var(--text-secondary);
-  font-size: 0.9375rem;
+  font-size: var(--font-size-sub);
   margin-bottom: var(--space-md);
 }
 
@@ -2987,7 +2997,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
   border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 8px 16px;
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   font-weight: 600;
   transition: background-color var(--transition-fast), color var(--transition-fast);
 }
@@ -3007,7 +3017,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 }
 
 .unchecked-heading {
-  font-size: 0.75rem;
+  font-size: var(--font-size-caption);
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -3020,7 +3030,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 }
 
 .score-unchecked {
-  font-size: 0.8125rem;
+  font-size: var(--font-size-sm);
   margin-top: var(--space-xs);
 }
 
