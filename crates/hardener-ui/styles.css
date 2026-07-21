@@ -127,6 +127,12 @@
     --color-accent: #fbbf24;
     --color-accent-hover: #fcd34d;
     --color-focus: rgba(251, 191, 36, 0.4);
+    --border: #1a2640;
+    --border-strong: #243352;
+    --color-good-bg: rgba(34, 197, 94, .15);
+    --color-warning-bg: rgba(234, 179, 8, .15);
+    --color-critical-bg: rgba(239, 68, 68, .15);
+    --color-accent-bg: rgba(251, 191, 36, .12);
 }
 
 /* Sentinel - Warm charcoal with amber accents */
@@ -149,6 +155,12 @@
     --color-accent: #f59e0b;
     --color-accent-hover: #fbbf24;
     --color-focus: rgba(245, 158, 11, 0.4);
+    --border: #2e2926;
+    --border-strong: #3a3432;
+    --color-good-bg: rgba(34, 197, 94, .15);
+    --color-warning-bg: rgba(245, 158, 11, .15);
+    --color-critical-bg: rgba(239, 68, 68, .15);
+    --color-accent-bg: rgba(245, 158, 11, .12);
 }
 
 /* Command - Deep navy with ice-blue accents */
@@ -171,6 +183,12 @@
     --color-accent: #38bdf8;
     --color-accent-hover: #7dd3fc;
     --color-focus: rgba(56, 189, 248, 0.4);
+    --border: #1a2238;
+    --border-strong: #252e48;
+    --color-good-bg: rgba(16, 185, 129, .15);
+    --color-warning-bg: rgba(245, 158, 11, .15);
+    --color-critical-bg: rgba(239, 68, 68, .15);
+    --color-accent-bg: rgba(56, 189, 248, .12);
 }
 
 /* Guardian - Forest black with emerald accents */
@@ -193,6 +211,12 @@
     --color-accent: #10b981;
     --color-accent-hover: #34d399;
     --color-focus: rgba(16, 185, 129, 0.4);
+    --border: #1a2620;
+    --border-strong: #24332a;
+    --color-good-bg: rgba(16, 185, 129, .15);
+    --color-warning-bg: rgba(234, 179, 8, .15);
+    --color-critical-bg: rgba(239, 68, 68, .15);
+    --color-accent-bg: rgba(16, 185, 129, .12);
 }
 
 /* Daywatch - Light mode with warm off-white */
@@ -216,6 +240,11 @@
     --color-accent-hover: #14b8a6;
     --color-focus: rgba(13, 148, 136, 0.3);
     --border: #d6d3d1;
+    --border-strong: #a8a29e;
+    --color-good-bg: rgba(5, 150, 105, .15);
+    --color-warning-bg: rgba(217, 119, 6, .15);
+    --color-critical-bg: rgba(220, 38, 38, .15);
+    --color-accent-bg: rgba(13, 148, 136, .12);
 }
 
 /* High Contrast - WCAG AAA accessibility theme */
@@ -239,6 +268,11 @@
     --color-accent-hover: #a5f3fc;
     --color-focus: rgba(103, 232, 249, 0.6);
     --border: #525252;
+    --border-strong: #737373;
+    --color-good-bg: rgba(74, 222, 128, .25);
+    --color-warning-bg: rgba(253, 224, 71, .25);
+    --color-critical-bg: rgba(252, 165, 165, .25);
+    --color-accent-bg: rgba(103, 232, 249, .2);
 }
 
 /* ============================================================
