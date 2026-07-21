@@ -343,41 +343,14 @@ impl CheckpointManager {
         checkpoint_name: &str,
         file_paths: &[&Path],
     ) -> Result<CheckpointId> {
-        use std::time::{SystemTime, UNIX_EPOCH};
-
-        let checkpoint_id = Self::generate_checkpoint_id();
-        let checkpoint_timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
-        let checkpoint_username = std::env::var("USER").unwrap_or_else(|_| "unknown".to_string());
-        let host_key = host_key_for(executor);
-
         let mut file_states = Vec::new();
         for file_path in file_paths {
             let states = self.capture_file_state(executor, file_path).await?;
             file_states.extend(states);
         }
 
-        let checkpoint_signature = self.generate_signature(
-            &checkpoint_id,
-            checkpoint_name,
-            checkpoint_timestamp,
-            &checkpoint_username,
-            &file_states,
-        )?;
-
-        let header = CheckpointHeader {
-            id: &checkpoint_id,
-            name: checkpoint_name,
-            timestamp: checkpoint_timestamp,
-            username: &checkpoint_username,
-            signature: &checkpoint_signature,
-            host_key: &host_key,
-        };
-        self.store_checkpoint(header, &file_states).await?;
-
-        Ok(checkpoint_id)
+        self.persist_signed_checkpoint(executor, checkpoint_name, file_states)
+            .await
     }
 
     /// Creates a checkpoint capturing only metadata (permissions/ownership) for each path.
@@ -390,6 +363,77 @@ impl CheckpointManager {
         checkpoint_name: &str,
         file_paths: &[&Path],
     ) -> Result<CheckpointId> {
+        let mut file_states = Vec::new();
+        for file_path in file_paths {
+            file_states.push(self.capture_directory_entry(executor, file_path).await?);
+        }
+
+        self.persist_signed_checkpoint(executor, checkpoint_name, file_states)
+            .await
+    }
+
+    /// Snapshots the current on-disk state of `reference_states`' paths as a new
+    /// signed checkpoint, so a rollback can itself be undone.
+    ///
+    /// Each path mirrors the capture modality of its reference entry: a
+    /// content-captured entry is re-read strictly (an existing but unreadable
+    /// file is a hard error, since storing it as absent would delete it on
+    /// undo), while a metadata-only entry (account databases, directories)
+    /// captures metadata only, preserving the guarantee that no password-file
+    /// content ever enters the checkpoint database.
+    ///
+    /// # Errors
+    /// Fails closed: any capture or store failure returns an error and persists
+    /// nothing, so the caller can abort the rollback before touching the system.
+    async fn snapshot_current_state(
+        &self,
+        executor: &dyn SystemExecutor,
+        checkpoint_name: &str,
+        reference_states: &[FileState],
+    ) -> Result<CheckpointId> {
+        let mut file_states = Vec::with_capacity(reference_states.len());
+        for reference in reference_states {
+            let path = Path::new(&reference.file_path);
+            if reference.file_content.is_some() {
+                let meta = executor
+                    .file_metadata(path)
+                    .await
+                    .map_err(|e| HardeningError::System(std::io::Error::other(e)))?;
+                if meta.exists && meta.is_file {
+                    let content = executor.read_file(path).await.map_err(|e| {
+                        HardeningError::Executor(format!(
+                            "Cannot snapshot current state of {} before rollback: {e}",
+                            reference.file_path
+                        ))
+                    })?;
+                    file_states.push(FileState {
+                        file_path: reference.file_path.clone(),
+                        file_content: Some(content.into_bytes()),
+                        file_permissions: meta.mode,
+                        file_owner_uid: meta.uid,
+                        file_owner_gid: meta.gid,
+                    });
+                } else {
+                    file_states.push(self.capture_directory_entry(executor, path).await?);
+                }
+            } else {
+                file_states.push(self.capture_directory_entry(executor, path).await?);
+            }
+        }
+
+        self.persist_signed_checkpoint(executor, checkpoint_name, file_states)
+            .await
+    }
+
+    /// Signs and stores a fully-captured set of file states as a checkpoint,
+    /// stamping id, timestamp, invoking user, and target host. Shared by every
+    /// checkpoint-creating path.
+    async fn persist_signed_checkpoint(
+        &self,
+        executor: &dyn SystemExecutor,
+        checkpoint_name: &str,
+        file_states: Vec<FileState>,
+    ) -> Result<CheckpointId> {
         use std::time::{SystemTime, UNIX_EPOCH};
 
         let checkpoint_id = Self::generate_checkpoint_id();
@@ -399,11 +443,6 @@ impl CheckpointManager {
             .as_secs() as i64;
         let checkpoint_username = std::env::var("USER").unwrap_or_else(|_| "unknown".to_string());
         let host_key = host_key_for(executor);
-
-        let mut file_states = Vec::new();
-        for file_path in file_paths {
-            file_states.push(self.capture_directory_entry(executor, file_path).await?);
-        }
 
         let checkpoint_signature = self.generate_signature(
             &checkpoint_id,
@@ -886,6 +925,19 @@ impl CheckpointManager {
             }
         }
 
+        // Reversible-rollback guarantee: with every target validated but nothing
+        // yet written, snapshot the current state of the files about to be
+        // overwritten so this rollback can itself be undone. Fail closed: if the
+        // snapshot cannot be taken, refuse the rollback rather than destroy state
+        // we could not back up. Placed after Phase 1 so only allow-listed paths
+        // are read and no orphan checkpoint persists if validation rejects.
+        self.snapshot_current_state(
+            executor,
+            &format!("Before rollback to '{}'", checkpoint.checkpoint_name),
+            &file_states,
+        )
+        .await?;
+
         // Phase 2: Apply all file restores (pre-validated).
         let mut all_ok = true;
         let mut files = Vec::with_capacity(file_states.len());
@@ -1328,5 +1380,235 @@ mod tests {
             .await
             .expect("read_file after rollback");
         assert_eq!(restored, "original\n");
+    }
+
+    /// A helper producing a zero-exit command output for best-effort chmod/chown.
+    fn ok_output() -> hardener_common::executor::CommandOutput {
+        hardener_common::executor::CommandOutput {
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: 0,
+        }
+    }
+
+    #[tokio::test]
+    async fn rollback_snapshots_current_state_before_restoring() {
+        // The reversible-rollback guarantee: before overwriting the live files,
+        // rollback captures their CURRENT content as a new checkpoint named after
+        // the one being restored.
+        let exec = MockExecutor::new()
+            .with_file("/etc/x", "original\n")
+            .with_command("chmod", &["644", "/etc/x"], ok_output())
+            .with_command("chown", &["0:0", "/etc/x"], ok_output());
+        let manager = test_manager_with_etc_x().await;
+        let id = manager
+            .create_checkpoint(&exec, "hardening", &[Path::new("/etc/x")])
+            .await
+            .expect("create_checkpoint");
+
+        // The live state diverges from the checkpoint we will restore.
+        exec.write_file(Path::new("/etc/x"), "changed\n")
+            .await
+            .expect("write_file");
+
+        let before = manager.list_checkpoints().await.expect("list").len();
+        manager.rollback(&exec, &id).await.expect("rollback");
+        let after = manager.list_checkpoints().await.expect("list");
+
+        assert_eq!(
+            after.len(),
+            before + 1,
+            "rollback must create exactly one pre-rollback checkpoint"
+        );
+        let pre = after
+            .iter()
+            .find(|c| c.checkpoint_name == "Before rollback to 'hardening'")
+            .expect("a checkpoint named after the restored one must exist");
+        let (_, states) = manager
+            .get_checkpoint(&pre.checkpoint_id)
+            .await
+            .expect("get_checkpoint");
+        let captured = states
+            .iter()
+            .find(|s| s.file_path == "/etc/x")
+            .expect("the snapshot must include /etc/x");
+        assert_eq!(
+            captured.file_content.as_deref(),
+            Some(b"changed\n".as_ref()),
+            "the snapshot must capture the CURRENT content, not the restored checkpoint's"
+        );
+    }
+
+    #[tokio::test]
+    async fn rollback_snapshot_keeps_account_files_metadata_only() {
+        // Parity with apply-time capture: account databases are snapshot
+        // metadata-only, so no password hashes ever enter the checkpoint DB.
+        use hardener_common::executor::FileMetadata;
+        let shadow = "/etc/shadow";
+        let exec = MockExecutor::new()
+            .with_file_metadata(
+                shadow,
+                "root:$6$secret$hash:19000:0:99999:7:::\n",
+                FileMetadata {
+                    exists: true,
+                    is_file: true,
+                    is_dir: false,
+                    mode: 0o100000,
+                    size: 0,
+                    uid: 0,
+                    gid: 0,
+                },
+            )
+            .with_command("chmod", &["0", shadow], ok_output())
+            .with_command("chown", &["0:0", shadow], ok_output());
+        let manager = test_manager().await; // production allowlist covers /etc/shadow
+        let id = manager
+            .create_checkpoint_metadata_only(&exec, "perm", &[Path::new(shadow)])
+            .await
+            .expect("create_checkpoint_metadata_only");
+
+        manager.rollback(&exec, &id).await.expect("rollback");
+
+        let after = manager.list_checkpoints().await.expect("list");
+        let pre = after
+            .iter()
+            .find(|c| c.checkpoint_name == "Before rollback to 'perm'")
+            .expect("pre-rollback checkpoint");
+        let (_, states) = manager
+            .get_checkpoint(&pre.checkpoint_id)
+            .await
+            .expect("get_checkpoint");
+        let s = states
+            .iter()
+            .find(|s| s.file_path == shadow)
+            .expect("shadow captured");
+        assert!(
+            s.file_content.is_none(),
+            "account files must be snapshot metadata-only: no content may be stored"
+        );
+    }
+
+    #[tokio::test]
+    async fn rollback_is_reversible_via_its_pre_rollback_checkpoint() {
+        // End-to-end undo: after rolling back, restoring the pre-rollback
+        // checkpoint returns the system to the state it was in before rollback.
+        let exec = MockExecutor::new()
+            .with_file("/etc/x", "baseline\n")
+            .with_command("chmod", &["644", "/etc/x"], ok_output())
+            .with_command("chown", &["0:0", "/etc/x"], ok_output());
+        let manager = test_manager_with_etc_x().await;
+        let baseline = manager
+            .create_checkpoint(&exec, "baseline", &[Path::new("/etc/x")])
+            .await
+            .expect("create_checkpoint");
+
+        // Move the live state forward (as an apply would).
+        exec.write_file(Path::new("/etc/x"), "hardened\n")
+            .await
+            .expect("write_file");
+
+        // Roll back to baseline; this must snapshot the "hardened" state first.
+        manager.rollback(&exec, &baseline).await.expect("rollback");
+        assert_eq!(
+            exec.read_file(Path::new("/etc/x")).await.expect("read"),
+            "baseline\n"
+        );
+
+        // Undo the rollback by restoring the pre-rollback checkpoint.
+        let pre = manager
+            .list_checkpoints()
+            .await
+            .expect("list")
+            .into_iter()
+            .find(|c| c.checkpoint_name == "Before rollback to 'baseline'")
+            .expect("pre-rollback checkpoint");
+        manager
+            .rollback(&exec, &pre.checkpoint_id)
+            .await
+            .expect("undo rollback");
+
+        assert_eq!(
+            exec.read_file(Path::new("/etc/x")).await.expect("read"),
+            "hardened\n",
+            "undoing the rollback must restore the pre-rollback state"
+        );
+    }
+
+    #[tokio::test]
+    async fn rollback_fails_closed_when_current_state_cannot_be_captured() {
+        // If the current state cannot be snapshot, rollback must refuse and write
+        // nothing: a rollback we cannot undo is more dangerous than not running.
+        use hardener_common::executor::FileMetadata;
+        let setup = MockExecutor::new()
+            .with_file("/etc/x", "original\n")
+            .with_command("chmod", &["644", "/etc/x"], ok_output())
+            .with_command("chown", &["0:0", "/etc/x"], ok_output());
+        let manager = test_manager_with_etc_x().await;
+        let id = manager
+            .create_checkpoint(&setup, "cp", &[Path::new("/etc/x")])
+            .await
+            .expect("create_checkpoint");
+
+        // Roll back against a host where /etc/x exists but is unreadable.
+        let exec = MockExecutor::new()
+            .with_file_metadata(
+                "/etc/x",
+                "unreadable",
+                FileMetadata {
+                    exists: true,
+                    is_file: true,
+                    is_dir: false,
+                    mode: 0o644,
+                    size: 10,
+                    uid: 0,
+                    gid: 0,
+                },
+            )
+            .with_read_permission_denied("/etc/x")
+            .with_command("chmod", &["644", "/etc/x"], ok_output())
+            .with_command("chown", &["0:0", "/etc/x"], ok_output());
+
+        let before = manager.list_checkpoints().await.expect("list").len();
+        let result = manager.rollback(&exec, &id).await;
+
+        assert!(
+            result.is_err(),
+            "rollback must fail closed when the current state cannot be captured"
+        );
+        assert!(
+            exec.log().files_written.is_empty(),
+            "no file may be written when rollback fails closed"
+        );
+        assert_eq!(
+            manager.list_checkpoints().await.expect("list").len(),
+            before,
+            "no half-committed pre-rollback checkpoint may persist on failure"
+        );
+    }
+
+    #[tokio::test]
+    async fn rollback_leaves_no_snapshot_when_validation_rejects() {
+        // The snapshot runs after Phase 1 validation, so a rollback rejected for
+        // an out-of-allowlist path must not persist an orphan pre-rollback
+        // checkpoint or read that path's content.
+        let exec = MockExecutor::new().with_file("/tmp/evil.conf", "x\n");
+        let manager = test_manager_with_etc_x().await; // allowlist is ["/etc/x"] only
+        let id = manager
+            .create_checkpoint(&exec, "bad", &[Path::new("/tmp/evil.conf")])
+            .await
+            .expect("create_checkpoint");
+
+        let before = manager.list_checkpoints().await.expect("list").len();
+        let result = manager.rollback(&exec, &id).await;
+
+        assert!(
+            result.is_err(),
+            "rollback must reject a path outside the allowlist"
+        );
+        assert_eq!(
+            manager.list_checkpoints().await.expect("list").len(),
+            before,
+            "a rollback rejected by validation must not persist a pre-rollback checkpoint"
+        );
     }
 }

@@ -1,6 +1,6 @@
 # Linux System Hardener - Architecture Documentation
 
-**Last Updated:** 2026-07-19
+**Last Updated:** 2026-07-22
 **Version:** 1.4.0
 
 ---
@@ -552,7 +552,7 @@ pub struct PolicyException {
 2. **Hash Chain Audit Log**: SHA-256 chain makes tampering detectable
 3. **Privilege Separation**: Scan runs unprivileged, apply requires root
 4. **Atomic Operations**: File changes use atomic write patterns
-5. **Rollback Safety**: Full state restoration from any checkpoint (including directory permissions)
+5. **Rollback Safety**: Full state restoration from any checkpoint (including directory permissions). Rollback is itself reversible: it snapshots the current state as a new signed checkpoint before restoring, and fails closed (refuses the rollback, writes nothing) if that snapshot cannot be taken
 6. **Transparent Config**: Configuration cannot hide security findings, only annotate them
 7. **Non-POSIX Filesystem Awareness**: Permissions plugin recognises filesystems that ignore `chmod` (vfat/FAT32, exfat, ntfs, iso9660, udf) - e.g. a vfat `/boot` ESP - and reports an unchecked check with fstab `fmask`/`dmask` guidance instead of a false HIGH finding or a futile `chmod`; apply records these as Skipped, and the remote chmod path still verifies the mode actually changed
 

@@ -131,7 +131,7 @@ sudo hardener apply --plugin kernel          # Apply only kernel sysctl hardenin
 
 ## rollback
 
-Restore the system to a previous checkpoint snapshot. Requires root or passwordless sudo on the target session (local, or the `--ssh` host).
+Restore the system to a previous checkpoint snapshot. Requires root or passwordless sudo on the target session (local, or the `--ssh` host). Rollback is reversible: before restoring, it captures the current state of the affected files as a new checkpoint (named after the one being restored), and fails closed (refuses, writing nothing) if that snapshot cannot be taken.
 
 ```
 sudo hardener rollback <CHECKPOINT_ID>
@@ -584,4 +584,4 @@ hardener history export <SESSION_ID> [FLAGS]
 | `SESSION_ID` | UUID of the session to export | |
 | `-o`, `--output <FILE>` | Output file path | `session-<id>.json` |
 
-**Last Updated**: 2026-07-19
+**Last Updated**: 2026-07-22

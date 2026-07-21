@@ -1,6 +1,6 @@
 # Linux System Hardener - Data Flow Documentation
 
-**Last Updated:** 2026-07-19
+**Last Updated:** 2026-07-22
 **Version:** 1.4.0
 
 This document describes the data flow for all major operations in the system.
@@ -377,6 +377,15 @@ a checkpoint or a skip is never counted as a hardening change.
 │  ├─ Load Ed25519 public key                                  │
 │  ├─ Verify signature against checkpoint data                 │
 │  └─ Fail if signature invalid (tampered)                     │
+└────────┬─────────────────────────────────────────────────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Snapshot Current State (reversible-rollback guarantee)      │
+│  ├─ Capture the live state of the files about to be restored │
+│  │   (mirrors each entry: content vs metadata-only)          │
+│  ├─ Store as a signed checkpoint named after the restored one│
+│  └─ Fail closed: if capture fails, abort before any write    │
 └────────┬─────────────────────────────────────────────────────┘
          │
          ▼ For each FileState
@@ -1346,4 +1355,4 @@ pub enum RollbackStatus {
 
 ---
 
-**Last Updated**: 2026-07-19
+**Last Updated**: 2026-07-22

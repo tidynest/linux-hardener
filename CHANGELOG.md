@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Rollback is now reversible. Before restoring a checkpoint, `hardener rollback`
+  (CLI, desktop, and fleet) first captures the current state of exactly the
+  files it is about to overwrite as a new signed checkpoint, named after the
+  checkpoint being restored, so a rollback can itself be undone from History.
+  Account databases (`/etc/shadow`, `/etc/gshadow`) are captured metadata-only,
+  matching apply-time behaviour, so no password hashes enter the checkpoint
+  database. The snapshot is fail-closed: if the current state cannot be
+  captured, the rollback is refused and nothing is written, rather than running
+  a restore that could not be undone. This closes the asymmetry where apply
+  checkpointed before changing but rollback did not.
+
 ## [1.4.0] - 2026-07-19
 
 ### Added

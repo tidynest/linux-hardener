@@ -1,6 +1,6 @@
 # Getting started
 
-**Last Updated**: 2026-07-19
+**Last Updated**: 2026-07-22
 
 A task-oriented tour of the hardener for new users: scan a system, read the
 findings, preview and apply hardening, roll it back, and produce a first
@@ -99,6 +99,11 @@ sudo hardener rollback <checkpoint-id>   # Restore the captured state
 ```
 
 Rollback restores the exact file contents captured at apply time.
+
+Rollback is reversible too: before it restores, a checkpoint of your current
+state is saved automatically (named after the one you are restoring), so you can
+undo the rollback itself from the checkpoint list. If that safety checkpoint
+cannot be created, the rollback is refused rather than run.
 
 ## 6. Manage checkpoints
 
