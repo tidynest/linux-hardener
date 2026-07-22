@@ -4,8 +4,8 @@
  *
  * HTML Structure (Leptos components):
  *   #app (trunk-injected)
- *     header.nav-header > nav.navigation > h1 + ul.nav-links > li > a
- *     main.main-content > Routes (dashboard-page | analysis-page | hardening-page | remote-page)
+ *     div.app-shell > aside.sidebar (grouped nav + icon rail, see components/sidebar.rs)
+ *       + div.app-content > main.app-main > Routes (dashboard-page | analysis-page | hardening-page | remote-page)
  */
 
 /* ============================================================
@@ -469,90 +469,6 @@ body {
   min-height: 100vh;
 }
 
-/* ============================================================
-   4. NAVIGATION HEADER
-   ============================================================ */
-
-.nav-header {
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  background-color: var(--bg-secondary);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.navigation {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-  width: 100%;
-  min-width: 0;  /* CRITICAL: Allow flex shrinking */
-  min-height: var(--header-height);
-  padding: 8px var(--content-padding);
-}
-
-.navigation h1 {
-  font-family: var(--font-mono);
-  font-size: var(--font-size-head);
-  font-weight: 700;
-  color: var(--color-accent);
-  white-space: nowrap;
-}
-
-/* Build identity next to the wordmark: legible but visually quiet, so a
-   stale installed build is spottable without competing with the title. */
-.app-version {
-  font-family: var(--font-mono);
-  font-size: var(--font-size-caption);
-  color: var(--text-secondary);
-  white-space: nowrap;
-  align-self: center;
-  margin-right: auto;
-}
-
-.nav-links {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px;
-  min-width: 0;  /* Allow shrinking */
-  list-style: none;
-}
-
-.nav-links li {
-  display: block;
-}
-
-.nav-links a {
-  display: block;
-  padding: 6px 12px;
-  color: var(--text-secondary);
-  font-size: var(--font-size-body);
-  font-weight: 500;
-  text-decoration: none;
-  border-radius: 6px;
-  transition: background-color var(--transition-fast), color var(--transition-fast);
-  white-space: nowrap;
-}
-
-.nav-links a:hover {
-  color: var(--text-primary);
-  background-color: var(--bg-tertiary);
-}
-
-.nav-links a.active {
-  color: var(--text-primary);
-  background-color: var(--bg-tertiary);
-}
-
-/* Theme toggle dropdown */
-.theme-toggle {
-    margin-left: auto;
-}
-
 /* Themed select controls (theme toggle, findings severity filter, schedule
    and notification forms, compliance export). One definition so opened
    dropdown popups always inherit dark/daywatch colours instead of falling
@@ -620,10 +536,9 @@ body {
 }
 
 /* ============================================================
-   4b. SIDEBAR SHELL (new; not yet wired into lib.rs)
+   4. SIDEBAR SHELL
    Grouped left navigation (Local / Fleet / Settings) that collapses to a
-   narrow icon rail. Replaces the navigation header above once lib.rs
-   adopts it. See crates/hardener-ui/src/components/sidebar.rs.
+   narrow icon rail. See crates/hardener-ui/src/components/sidebar.rs.
    ============================================================ */
 
 /* Row that holds aside.sidebar and the main content column side by side. */
@@ -900,24 +815,20 @@ body {
 }
 
 /* Build identity at the sidebar foot: legible but visually quiet, so a
-   stale installed build is spottable without competing with the wordmark.
-   Distinct from the existing header .app-version rule above until lib.rs
-   adopts the sidebar and that rule is retired. */
-.sidebar .app-version {
+   stale installed build is spottable without competing with the wordmark. */
+.app-version {
   padding: var(--space-sm) var(--space-lg) 0;
   font-family: var(--font-mono);
   font-size: var(--font-size-caption);
   color: var(--text-muted);
   white-space: nowrap;
-  margin-right: 0;
-  align-self: auto;
 }
 
 /* ============================================================
    5. MAIN CONTENT
    ============================================================ */
 
-.main-content {
+.app-main {
   flex: 1 1 0;
   display: flex;
   flex-direction: column;
@@ -2518,20 +2429,6 @@ details[open] summary { border-bottom: 1px solid var(--border); }
     --content-padding: 16px;
   }
 
-  .navigation {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 8px;
-  }
-
-  .navigation h1 {
-    text-align: center;
-  }
-
-  .nav-links {
-    justify-content: center;
-  }
-
   .report-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2573,15 +2470,6 @@ details[open] summary { border-bottom: 1px solid var(--border); }
     --content-padding: 12px;
   }
 
-  .navigation h1 {
-    font-size: var(--font-size-sub);
-  }
-
-  .nav-links a {
-    padding: 6px 10px;
-    font-size: var(--font-size-sm);
-  }
-
   .score-display {
     width: 140px;
     height: 140px;
@@ -2615,7 +2503,7 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   .btn,
   .tab-button,
   .section-btn,
-  .nav-links a {
+  .sidebar-link {
     min-height: 44px;
   }
 }

@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use leptos_router::{
     StaticSegment,
-    components::{A, Route, Router, Routes},
+    components::{Route, Router, Routes},
 };
 use wasm_bindgen::closure::Closure;
 
@@ -14,7 +14,7 @@ mod tauri_bindings;
 mod types;
 mod utils;
 
-use components::ThemeToggle;
+use components::Sidebar;
 use pages::{
     AnalysisPage, DashboardPage, FleetApplyPage, FleetPage, HardeningPage, RemotePage,
     SchedulerPage,
@@ -27,7 +27,7 @@ pub use types::*;
 /// This sets up:
 /// - Application state (AppState) available to all child components via context
 /// - Router with seven routes: Dashboard, Analysis, Hardening, Remote, Fleet, Scheduler, Fleet Apply
-/// - Navigation bar for moving between pages
+/// - Grouped sidebar (Local / Fleet / Settings) for moving between pages
 /// - Automatic loading of persisted scan results on mount
 #[component]
 pub fn App() -> impl IntoView {
@@ -79,65 +79,46 @@ pub fn App() -> impl IntoView {
             // Skip link for keyboard/screen reader users - appears on focus
             <a href="#main-content" class="skip-link">"Skip to main content"</a>
 
-            <header class="nav-header">
-                <nav class="navigation" aria-label="Main navigation">
-                    <h1>"Linux System Hardener"</h1>
-                    <span class="app-version">
-                        {concat!(
-                            "v",
-                            env!("CARGO_PKG_VERSION"),
-                            " (",
-                            env!("HARDENER_BUILD_IDENTITY"),
-                            ")"
-                        )}
-                    </span>
-                    <ul class="nav-links">
-                        <li><A href="/">"Dashboard"</A></li>
-                        <li><A href="/analysis">"Analysis"</A></li>
-                        <li><A href="/hardening">"Hardening"</A></li>
-                        <li><A href="/remote">"Remote"</A></li>
-                        <li><A href="/fleet">"Fleet"</A></li>
-                        <li><A href="/fleet-apply">"Fleet Apply"</A></li>
-                        <li><A href="/scheduler">"Scheduler"</A></li>
-                    </ul>
-                    <ThemeToggle/>
-                </nav>
-            </header>
+            <div class="app-shell">
+                <Sidebar/>
 
-            // Global error notification banner
-            <Show when=move || app_state.error_message.get().is_some()>
-                <div class="error-banner" role="alert">
-                    <span class="error-banner-message">
-                        {move || app_state.error_message.get().unwrap_or_default()}
-                    </span>
-                    <button
-                        class="error-banner-dismiss"
-                        aria-label="Dismiss error"
-                        on:click=move |_| app_state.error_message.set(None)
-                    >
-                        "✕"
-                    </button>
+                <div class="app-content">
+                    // Global error notification banner
+                    <Show when=move || app_state.error_message.get().is_some()>
+                        <div class="error-banner" role="alert">
+                            <span class="error-banner-message">
+                                {move || app_state.error_message.get().unwrap_or_default()}
+                            </span>
+                            <button
+                                class="error-banner-dismiss"
+                                aria-label="Dismiss error"
+                                on:click=move |_| app_state.error_message.set(None)
+                            >
+                                "✕"
+                            </button>
+                        </div>
+                    </Show>
+
+                    <main id="main-content" class="app-main" tabindex="-1">
+                        <Routes fallback=|| view! {
+                            <article class="error-page">
+                                <div class="error-page-icon">"⚠"</div>
+                                <h1>"404 - Page Not Found"</h1>
+                                <p>"The requested page does not exist."</p>
+                                <a href="/">"← Return to Dashboard"</a>
+                            </article>
+                        }>
+                            <Route path=StaticSegment("") view=DashboardPage/>
+                            <Route path=StaticSegment("analysis") view=AnalysisPage/>
+                            <Route path=StaticSegment("hardening") view=HardeningPage/>
+                            <Route path=StaticSegment("remote") view=RemotePage/>
+                            <Route path=StaticSegment("fleet") view=FleetPage/>
+                            <Route path=StaticSegment("fleet-apply") view=FleetApplyPage/>
+                            <Route path=StaticSegment("scheduler") view=SchedulerPage/>
+                        </Routes>
+                    </main>
                 </div>
-            </Show>
-
-            <main id="main-content" class="main-content" tabindex="-1">
-                <Routes fallback=|| view! {
-                    <article class="error-page">
-                        <div class="error-page-icon">"⚠"</div>
-                        <h1>"404 - Page Not Found"</h1>
-                        <p>"The requested page does not exist."</p>
-                        <a href="/">"← Return to Dashboard"</a>
-                    </article>
-                }>
-                    <Route path=StaticSegment("") view=DashboardPage/>
-                    <Route path=StaticSegment("analysis") view=AnalysisPage/>
-                    <Route path=StaticSegment("hardening") view=HardeningPage/>
-                    <Route path=StaticSegment("remote") view=RemotePage/>
-                    <Route path=StaticSegment("fleet") view=FleetPage/>
-                    <Route path=StaticSegment("fleet-apply") view=FleetApplyPage/>
-                    <Route path=StaticSegment("scheduler") view=SchedulerPage/>
-                </Routes>
-            </main>
+            </div>
         </Router>
     }
 }
