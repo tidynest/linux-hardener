@@ -2,25 +2,15 @@
 //!
 //! Displays apply results and checkpoint management.
 
-use crate::components::{Card, ConfirmDeleteButton, CopyButton, HeadingLevel};
+use crate::components::{ConfirmDeleteButton, CopyButton, RollbackModal};
 use crate::state::AppState;
 use crate::tauri_bindings::{
     invoke_create_checkpoint, invoke_delete_checkpoint, invoke_get_checkpoint_detail,
-    invoke_get_checkpoints, invoke_rollback,
+    invoke_get_checkpoints,
 };
-use crate::types::{CheckpointDetail, CheckpointInfo, FileRestoreAction};
+use crate::types::{CheckpointDetail, CheckpointInfo};
 use crate::utils::{checkpoint_time, group_checkpoints_by_date};
 use leptos::prelude::*;
-
-/// Formats a `FileRestoreAction` variant for display.
-fn format_restore_action(action: FileRestoreAction) -> &'static str {
-    match action {
-        FileRestoreAction::Restored => "Restored",
-        FileRestoreAction::Removed => "Removed",
-        FileRestoreAction::PermissionsRestored => "Permissions Restored",
-        FileRestoreAction::Skipped => "Skipped",
-    }
-}
 
 /// History section with apply results and checkpoints.
 #[component]
@@ -35,6 +25,8 @@ pub fn HistorySection() -> impl IntoView {
     let expanded_detail = RwSignal::new(None::<CheckpointDetail>);
     // Tracks which checkpoint ID has a pending delete confirmation (None = no confirmation shown)
     let pending_delete = RwSignal::new(None::<String>);
+    // Checkpoint currently open in the rollback modal (None = closed).
+    let rollback_target = RwSignal::new(None::<CheckpointInfo>);
 
     // Function to load checkpoints
     let load_checkpoints = move || {
@@ -133,26 +125,6 @@ pub fn HistorySection() -> impl IntoView {
         });
     };
 
-    // Rollback handler
-    let handle_rollback = move |checkpoint_id: String| {
-        leptos::task::spawn_local(async move {
-            match invoke_rollback(checkpoint_id, app_state.config_path.get_untracked()).await {
-                Ok(result) => {
-                    app_state.rollback_result.set(Some(result));
-                    if let Ok(cp) = invoke_get_checkpoints().await {
-                        checkpoints.set(cp);
-                    }
-                }
-                Err(e) => {
-                    web_sys::console::error_1(&format!("Rollback failed: {}", e).into());
-                    app_state
-                        .error_message
-                        .set(Some(format!("Rollback failed: {}", e)));
-                }
-            }
-        });
-    };
-
     view! {
         <div class="history-section">
             <p class="section-guidance">
@@ -192,48 +164,6 @@ pub fn HistorySection() -> impl IntoView {
                 </button>
             </div>
 
-            // Temporary Latest Rollback card - REMOVED in Task 4 when the modal
-            // owns the result. Kept here so rollback stays visible this slice.
-            <Show when=move || app_state.rollback_result.get().is_some()>
-                {move || {
-                    let result = app_state.rollback_result.get().expect("guarded by Show when=");
-                    let success = result.rollback_success;
-                    let files_count = result.rollback_files.len();
-                    let checkpoint_id = result.rollback_checkpoint_id.clone();
-                    let files = result.rollback_files.clone();
-                    view! {
-                        <Card title="Latest Rollback" title_level=HeadingLevel::H2 class="rollback-results-summary">
-                            <div class="result-summary-card">
-                                <div class=format!("result-status {}", if success { "success" } else { "failed" })>
-                                    {if success { "Rollback Successful" } else { "Rollback Failed" }}
-                                </div>
-                                <div class="result-changes">
-                                    {format!("{} files processed", files_count)}
-                                </div>
-                                <div class="result-checkpoint">
-                                    "Checkpoint: "<code>{checkpoint_id}</code>
-                                </div>
-                                <details>
-                                    <summary>"View Restored Files"</summary>
-                                    <ol class="changes-list">
-                                        {files.iter().map(|file| {
-                                            let path = file.restore_path.clone();
-                                            let action = format_restore_action(file.restore_action);
-                                            let ok = file.restore_success;
-                                            view! {
-                                                <li class=if ok { "change-success" } else { "change-failure" }>
-                                                    <code>{path}</code>" - "{action}
-                                                </li>
-                                            }
-                                        }).collect::<Vec<_>>()}
-                                    </ol>
-                                </details>
-                            </div>
-                        </Card>
-                    }
-                }}
-            </Show>
-
             <Show
                 when=move || !checkpoints.get().is_empty()
                 fallback=move || {
@@ -269,7 +199,7 @@ pub fn HistorySection() -> impl IntoView {
                                 let user = cp.checkpoint_user.clone();
                                 let is_latest = mark_id.as_deref() == Some(id.as_str());
                                 let detail_id = id.clone();
-                                let rollback_id = id.clone();
+                                let cp_for_modal = cp.clone();
                                 let delete_id = id.clone();
                                 let row_id = id.clone();
 
@@ -300,7 +230,7 @@ pub fn HistorySection() -> impl IntoView {
                                                 </button>
                                                 <button
                                                     class="btn btn-danger btn-small"
-                                                    on:click=move |_| handle_rollback(rollback_id.clone())
+                                                    on:click=move |_| rollback_target.set(Some(cp_for_modal.clone()))
                                                 >
                                                     "Roll back"
                                                 </button>
@@ -368,6 +298,15 @@ pub fn HistorySection() -> impl IntoView {
                     }}
                 </ol>
             </Show>
+
+            <RollbackModal
+                target=rollback_target
+                on_close=Callback::new(move |ran: bool| {
+                    if ran {
+                        load_checkpoints();
+                    }
+                })
+            />
         </div>
     }
 }
