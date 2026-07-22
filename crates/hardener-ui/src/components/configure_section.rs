@@ -168,10 +168,11 @@ pub fn ConfigureSection() -> impl IntoView {
     let enabled_count =
         move || plugin_states.with_value(|states| states.iter().filter(|(_, s)| s.get()).count());
 
-    // Display names of the enabled areas, in PLUGINS order - feeds the calm
-    // checking view's skeleton rows. Derived from get_enabled_plugins(): a
-    // real reflection of the current selection, not fabricated per-item
-    // progress (there is none to report; see on_preview below).
+    // Display names of the enabled areas, in PLUGINS order - feeds both the
+    // calm checking view's skeleton rows and the applying view's active
+    // rows below. Derived from get_enabled_plugins(): a real reflection of
+    // the current selection, not fabricated per-item progress (there is
+    // none to report for either view; see on_preview and on_confirm_apply).
     let checking_areas = move || {
         get_enabled_plugins()
             .into_iter()
@@ -351,8 +352,14 @@ pub fn ConfigureSection() -> impl IntoView {
             // attention: the selection UI (segmented control, plugin rows,
             // the old "N areas selected" aside) steps aside rather than
             // sitting duplicated above the review's own compact summary
-            // header. [Edit] (below) is the only way back to this.
-            <Show when=move || !app_state.show_preview.get()>
+            // header. [Edit] (below) is the only way back to this. Also
+            // steps aside for the whole real apply (`!is_applying`):
+            // on_confirm_apply sets show_preview false in the same tick it
+            // sets is_applying true, so without this second guard this
+            // selection UI - not the review card, which is already gated on
+            // show_preview alone - would be what reappeared underneath the
+            // applying view below.
+            <Show when=move || !app_state.show_preview.get() && !app_state.is_applying.get()>
             <div class="configure-layout">
                 <div class="configure-main" class:is-disabled=move || app_state.is_previewing.get()>
                     <div
@@ -673,16 +680,18 @@ pub fn ConfigureSection() -> impl IntoView {
                                 }
                                 aria-live="polite"
                             >
+                                // No "Applying..." branch here: on_confirm_apply sets
+                                // show_preview false in the same tick it sets is_applying
+                                // true, so this button (inside the show_preview Show) is
+                                // never visible while is_applying is true - the dedicated
+                                // applying view below is what the user sees instead. The
+                                // disabled check above stays as a defensive guard.
                                 {move || {
-                                    if app_state.is_applying.get() {
-                                        "Applying...".to_string()
+                                    let total = total_estimated_changes(&get_decisions());
+                                    if total == 0 {
+                                        "Nothing to Apply".to_string()
                                     } else {
-                                        let total = total_estimated_changes(&get_decisions());
-                                        if total == 0 {
-                                            "Nothing to Apply".to_string()
-                                        } else {
-                                            format!("Apply {} Change{}", total, if total == 1 { "" } else { "s" })
-                                        }
+                                        format!("Apply {} Change{}", total, if total == 1 { "" } else { "s" })
                                     }
                                 }}
                             </button>
@@ -692,6 +701,51 @@ pub fn ConfigureSection() -> impl IntoView {
                             <p class="review-lockout-hint">"Tick the box above to enable Apply."</p>
                         </Show>
                     </div>
+                </Card>
+            </Show>
+
+            // Applying step - the real apply is running. Flow: choose
+            // (2a.1) -> checking (2a.2) -> review (2a.3) -> applying (here)
+            // -> done/partial (2a.6/2a.7). on_confirm_apply above sets
+            // is_applying true and show_preview false in the same tick, so
+            // both the selection UI (gated on !show_preview && !is_applying)
+            // and the review card (gated on show_preview) are already
+            // hidden here - this is the only one of the three visible while
+            // an apply is in flight.
+            //
+            // Same no-progress-stream reality as the checking view: local
+            // apply is one invoke_apply call with no per-plugin signal, so
+            // this makes no "area X done" claim either - every row keeps
+            // one active, indeterminate indicator for the whole apply,
+            // never a green tick (that is the real applied status, only
+            // knowable once apply_results is read in the done/partial
+            // view). This is also the flow's one destructive "changing
+            // now" moment, so unlike the calm checking view: a checkpoint
+            // reassurance sits up top, the "keep this window open" note is
+            // muted (never amber - amber is reserved for the Manual step
+            // status), and there is no Cancel (apply has no safe mid-write
+            // abort to offer).
+            <Show when=move || app_state.is_applying.get()>
+                <Card title="Applying Changes" title_level=HeadingLevel::H2 class="applying-panel">
+                    <p class="applying-reassurance">
+                        "A checkpoint was saved first, so you can undo everything from History."
+                    </p>
+                    <ul class="checking-skeleton-list" aria-live="polite">
+                        {move || {
+                            checking_areas().into_iter().enumerate().map(|(i, name)| {
+                                view! {
+                                    <li
+                                        class="checking-skeleton-row"
+                                        style=format!("animation-delay: {}ms", i * 70)
+                                    >
+                                        <span class="applying-area-indicator" aria-hidden="true"></span>
+                                        <span class="checking-skeleton-name">{name}</span>
+                                    </li>
+                                }
+                            }).collect::<Vec<_>>()
+                        }}
+                    </ul>
+                    <p class="applying-keep-open">"Keep this window open until this finishes."</p>
                 </Card>
             </Show>
         </div>
