@@ -475,6 +475,7 @@ body {
    back to a native white popup with pale text. */
 .theme-select,
 .severity-filter select,
+.findings-filters select,
 .form-select,
 .format-select {
     /* Reset native appearance for consistent cross-browser styling */
@@ -498,6 +499,7 @@ body {
 
 .theme-select:hover,
 .severity-filter select:hover,
+.findings-filters select:hover,
 .form-select:hover,
 .format-select:hover {
     border-color: var(--color-accent);
@@ -505,6 +507,7 @@ body {
 
 .theme-select:focus-visible,
 .severity-filter select:focus-visible,
+.findings-filters select:focus-visible,
 .form-select:focus-visible,
 .format-select:focus-visible {
     outline: 0.125rem solid var(--color-accent);
@@ -513,6 +516,7 @@ body {
 
 .theme-select option,
 .severity-filter select option,
+.findings-filters select option,
 .form-select option,
 .format-select option {
     background: var(--bg-secondary);
@@ -524,6 +528,7 @@ body {
    already resolve through the per-theme custom properties. */
 [data-theme="daywatch"] .theme-select,
 [data-theme="daywatch"] .severity-filter select,
+[data-theme="daywatch"] .findings-filters select,
 [data-theme="daywatch"] .form-select,
 [data-theme="daywatch"] .format-select {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%231c1917' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
@@ -1368,7 +1373,7 @@ tbody tr:hover {
     color: var(--text-secondary);
 }
 
-/* Themed select rules for .severity-filter select live with the other three
+/* Themed select rules for .severity-filter select live with the other
    select families near the top of this file (search "Themed select
    controls"). */
 
@@ -3014,7 +3019,7 @@ tbody tr:hover {
   gap: var(--space-xs);
 }
 
-/* Themed select rules for .format-select live with the other three select
+/* Themed select rules for .format-select live with the other select
    families near the top of this file (search "Themed select controls"). */
 
 .status-message {
@@ -4598,6 +4603,125 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 
 .dashboard-subtitle {
   margin: var(--space-xs) 0 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+/* ============================================================
+   Analysis - Findings grouped list (Phase 4a)
+   ============================================================ */
+
+.findings-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-md);
+}
+
+.findings-count { font-size: var(--font-size-sm); color: var(--text-secondary); }
+.findings-filters { display: flex; gap: var(--space-sm); }
+
+.findings-groups, .finding-rows { list-style: none; margin: 0; padding: 0; }
+
+.finding-group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-xs);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Reuse the severity colour: severity_* sets `color`; paint the dot with it. */
+.finding-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.finding-group-name { font-size: var(--font-size-sm); font-weight: 600; }
+.finding-group-count { font-size: var(--font-size-caption); color: var(--text-muted); }
+
+.finding-row { border-bottom: 1px solid var(--border); }
+
+.finding-row-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-xs);
+  cursor: pointer;
+}
+
+.finding-row.open .finding-row-head { background: var(--bg-secondary); }
+.finding-title { flex: 1; }
+.finding-tag { font-size: var(--font-size-caption); color: var(--text-muted); }
+.finding-chevron { color: var(--text-muted); font-family: var(--font-mono); }
+
+.finding-detail {
+  padding: 2px var(--space-xs) var(--space-lg);
+  background: var(--bg-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+}
+
+/* Collision guard: the retired sidebar `.finding-detail` panel (still used
+   by the orphaned FindingDetail component until it is deleted) also sets
+   `border`, `border-radius` and `position: sticky` on the same class name.
+   Equal specificity plus source order already wins the properties declared
+   above, but sticky/border/radius are never redeclared there, so they would
+   otherwise leak through unopposed onto this inline expand-in-place block.
+   Scope a higher-specificity reset to the new list context instead of
+   editing the shared/old rule. */
+.finding-row .finding-detail {
+  position: static;
+  border: none;
+  border-radius: 0;
+}
+
+.finding-desc { margin: 0 0 var(--space-sm); color: var(--text-secondary); }
+.finding-explain { margin: 0 0 var(--space-md); color: var(--text-primary); }
+
+.finding-values {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin: 0 0 var(--space-md);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-caption);
+}
+
+.value-current {
+  background: var(--color-critical-bg);
+  color: var(--color-critical-bright);
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.value-arrow { color: var(--text-muted); }
+
+.value-recommended {
+  background: var(--color-good-bg);
+  color: var(--color-good);
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.finding-remediation-label { margin: 0 0 var(--space-xs); color: var(--text-muted); font-size: var(--font-size-caption); }
+.finding-remediation { margin: 0 0 var(--space-md); padding-left: 18px; color: var(--text-secondary); }
+
+.finding-bridge {
+  font-size: var(--font-size-sm);
+  color: var(--color-accent);
+  text-decoration: none;
+}
+.finding-bridge:hover { text-decoration: underline; }
+
+.findings-unchecked {
+  margin: var(--space-md) 0 0;
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--border);
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
 }

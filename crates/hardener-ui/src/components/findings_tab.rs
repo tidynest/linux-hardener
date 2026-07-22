@@ -1,13 +1,16 @@
 //! Findings tab content for the Analysis page.
 //!
-//! Wraps the FindingsGrid and FindingDetail components with severity and
-//! view-mode filtering. View modes: All (audit-style, default), Compliance
-//! (hides policy-excepted findings to show only real violations).
+//! Renders findings as a severity-grouped hairline list with expand-in-place
+//! detail, plus severity and view-mode filtering. View modes: All
+//! (audit-style, default), Compliance (hides policy-excepted findings to
+//! show only real violations).
 
-use crate::components::{FindingDetail, FindingsGrid};
-use crate::state::AppState;
+use crate::state::{total_unchecked, AppState};
+use crate::tauri_bindings::{invoke_deep_scan, invoke_generate_report};
 use crate::types::Severity;
+use crate::utils::{group_findings_by_severity, is_auth_cancelled, severity_class, severity_label};
 use leptos::prelude::*;
+use leptos_router::components::A;
 
 /// Maps a severity level to a numeric rank for comparison.
 fn severity_rank(s: Severity) -> u8 {
@@ -43,9 +46,10 @@ enum ViewMode {
 
 /// Findings tab content displaying the scanner results.
 ///
-/// Contains severity and view-mode filters in the header, the findings grid,
-/// and the detail panel. Both filters are client-side: all findings remain
-/// in memory and the dropdowns instantly adjust which are visible.
+/// Contains severity and view-mode filters in the header, and the findings
+/// themselves as a severity-grouped list where each row expands in place.
+/// Both filters are client-side: all findings remain in memory and the
+/// dropdowns instantly adjust which are visible.
 #[component]
 pub fn FindingsTab() -> impl IntoView {
     let app_state = expect_context::<AppState>();
@@ -123,76 +127,151 @@ pub fn FindingsTab() -> impl IntoView {
         });
     };
 
+    // Which finding is expanded in place (by finding_id). None = all collapsed.
+    let expanded = RwSignal::new(Option::<String>::None);
+
+    // Folded honesty footer: privileged deep scan (mirrors the Dashboard hero).
+    let deep_running = app_state.deep_scan_running;
+    let on_deep_scan = move |_| {
+        deep_running.set(true);
+        leptos::task::spawn_local(async move {
+            match invoke_deep_scan(vec![], app_state.config_path.get_untracked()).await {
+                Ok(results) => {
+                    app_state.scan_results.set(results);
+                    let frameworks = hardener_types::ComplianceFramework::ALL
+                        .iter()
+                        .map(|f| f.id().to_string())
+                        .collect();
+                    if let Ok(reports) = invoke_generate_report(frameworks).await {
+                        app_state.compliance_reports.set(reports);
+                    }
+                }
+                Err(e) if is_auth_cancelled(&e) => {}
+                Err(e) => app_state
+                    .error_message
+                    .set(Some(format!("Deep scan failed: {e}"))),
+            }
+            deep_running.set(false);
+        });
+    };
+
+    // Raw unchecked count for the honesty footer (undeduplicated, honest).
+    let unchecked_count = move || total_unchecked(&app_state.scan_results.get());
+
     view! {
         <div class="findings-tab">
             <Show
                 when=has_findings
                 fallback=|| view! {
                     <div class="empty-state">
-                        <div class="empty-state-icon">"🔍"</div>
                         <p class="empty-state-title">"No findings yet"</p>
                         <p class="empty-state-hint">
-                            "Click 'Run Security Scan' above to analyse your system. "
-                            "Findings are grouped by severity: Critical, High, Medium, and Low."
+                            "Run a Security Scan above to analyse your system. Findings are grouped by severity."
                         </p>
                     </div>
                 }
             >
-                <header class="results-header">
-                    <p>
+                <div class="findings-controls">
+                    <span class="findings-count">
                         {move || if is_filtered() {
                             format!("{} of {} findings", filtered_count(), total_count())
                         } else {
                             format!("{} findings detected", total_count())
                         }}
-                    </p>
-
+                    </span>
                     <div class="findings-filters">
-                        <div class="severity-filter">
-                            <label for="severity-select">"Min severity"</label>
-                            <select
-                                id="severity-select"
-                                on:change=on_severity_change
-                            >
-                                <option value="" selected=true>"All"</option>
-                                <option value="low">"Low"</option>
-                                <option value="medium">"Medium"</option>
-                                <option value="high">"High"</option>
-                                <option value="critical">"Critical"</option>
-                            </select>
-                        </div>
-
-                        <div class="severity-filter">
-                            <label for="view-mode-select">"View"</label>
-                            <select
-                                id="view-mode-select"
-                                on:change=on_view_mode_change
-                            >
-                                <option value="all" selected=true>"All (Audit)"</option>
-                                <option value="compliance">"Compliance Only"</option>
-                            </select>
-                        </div>
+                        <select id="severity-select" on:change=on_severity_change aria-label="Minimum severity">
+                            <option value="" selected=true>"Min severity: All"</option>
+                            <option value="low">"Low and above"</option>
+                            <option value="medium">"Medium and above"</option>
+                            <option value="high">"High and above"</option>
+                            <option value="critical">"Critical only"</option>
+                        </select>
+                        <select id="view-mode-select" on:change=on_view_mode_change aria-label="View mode">
+                            <option value="all" selected=true>"All (Audit)"</option>
+                            <option value="compliance">"Compliance Only"</option>
+                        </select>
                     </div>
-                </header>
-
-                <div class="scanner-layout">
-                    <FindingsGrid findings=filtered_findings />
-                    <FindingDetail />
                 </div>
-            </Show>
 
-            <Show when=move || !all_unchecked().is_empty()>
-                <section class="unchecked-section">
-                    <h3 class="unchecked-heading">"Not verifiable without privileges"</h3>
-                    <ul class="unchecked-list">
-                        {move || unique_unchecked().into_iter().map(|entry| view! {
-                            <li class="unchecked-row">
-                                <span class="unchecked-title">{entry.unchecked_title}</span>
-                                <span class="unchecked-reason">{entry.unchecked_reason}</span>
-                            </li>
-                        }).collect::<Vec<_>>()}
-                    </ul>
-                </section>
+                <ol class="findings-groups">
+                    {move || group_findings_by_severity(&filtered_findings.get())
+                        .into_iter()
+                        .map(|(sev, group)| {
+                            let count = group.len();
+                            view! {
+                                <li class="finding-group">
+                                    <div class="finding-group-head">
+                                        <span class=format!("finding-dot {}", severity_class(sev))></span>
+                                        <span class="finding-group-name">{severity_label(sev)}</span>
+                                        <span class="finding-group-count">{count}</span>
+                                    </div>
+                                    <ul class="finding-rows">
+                                        {group.into_iter().map(|f| {
+                                            let id = f.finding_id.clone();
+                                            let id_for_toggle = id.clone();
+                                            // Copy Signal so `is_open` can be read at all three sites
+                                            // (row class, detail Show, chevron) without moving `id`.
+                                            let is_open = Signal::derive(move || {
+                                                expanded.with(|e| e.as_deref() == Some(id.as_str()))
+                                            });
+                                            let category = f.finding_category.to_string();
+                                            let current = f.finding_current_value.clone();
+                                            let recommended = f.finding_recommended_value.clone();
+                                            let steps = f.finding_remediation_steps.clone();
+                                            view! {
+                                                <li class="finding-row" class:open=move || is_open.get()>
+                                                    <div
+                                                        class="finding-row-head"
+                                                        role="button"
+                                                        tabindex="0"
+                                                        on:click=move |_| expanded.update(|e| {
+                                                            let cur = id_for_toggle.clone();
+                                                            *e = if e.as_deref() == Some(cur.as_str()) { None } else { Some(cur) };
+                                                        })
+                                                    >
+                                                        <span class="finding-title">{f.finding_title.clone()}</span>
+                                                        <span class="finding-tag">{category}</span>
+                                                        <span class="finding-chevron" aria-hidden="true">
+                                                            {move || if is_open.get() { "v" } else { ">" }}
+                                                        </span>
+                                                    </div>
+                                                    <Show when=move || is_open.get()>
+                                                        <div class="finding-detail">
+                                                            <p class="finding-desc">{f.finding_description.clone()}</p>
+                                                            <p class="finding-explain">{f.finding_explanation.clone()}</p>
+                                                            <div class="finding-values">
+                                                                <span class="value-current">{current.clone()}</span>
+                                                                <span class="value-arrow" aria-hidden="true">"->"</span>
+                                                                <span class="value-recommended">{recommended.clone()}</span>
+                                                            </div>
+                                                            {(!steps.is_empty()).then(|| view! {
+                                                                <p class="finding-remediation-label">"Remediation"</p>
+                                                                <ol class="finding-remediation">
+                                                                    {steps.clone().into_iter().map(|s| view! { <li>{s}</li> }).collect::<Vec<_>>()}
+                                                                </ol>
+                                                            })}
+                                                            <A href="/hardening" attr:class="finding-bridge">"Configure Fix in Hardening"</A>
+                                                        </div>
+                                                    </Show>
+                                                </li>
+                                            }
+                                        }).collect::<Vec<_>>()}
+                                    </ul>
+                                </li>
+                            }
+                        })
+                        .collect::<Vec<_>>()}
+                </ol>
+
+                <Show when=move || unchecked_count() != 0>
+                    <p class="findings-unchecked">
+                        {move || format!("{} checks not verifiable without privileges. ", unchecked_count())}
+                        <button class="link-button" on:click=on_deep_scan disabled=move || deep_running.get()>
+                            {move || if deep_running.get() { "Scanning..." } else { "Run with sudo" }}
+                        </button>
+                    </p>
+                </Show>
             </Show>
         </div>
     }
