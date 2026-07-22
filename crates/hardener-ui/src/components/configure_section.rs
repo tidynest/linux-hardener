@@ -196,8 +196,6 @@ pub fn ConfigureSection() -> impl IntoView {
     // when the current decisions include an ssh/firewall (login/network)
     // area.
     let lockout_ack = RwSignal::new(false);
-    // Seeds the admin drawer (Step 5); 2a.4 fills the panel this opens.
-    let drawer_open = RwSignal::new(false);
 
     // Preview handler - runs dry-run and shows preview panel
     let on_preview = move |_| {
@@ -208,7 +206,6 @@ pub fn ConfigureSection() -> impl IntoView {
 
         checking_cancelled.set(false);
         lockout_ack.set(false);
-        drawer_open.set(false);
         app_state.is_previewing.set(true);
         app_state.show_preview.set(false);
 
@@ -248,13 +245,11 @@ pub fn ConfigureSection() -> impl IntoView {
 
     // Cancel preview - hides the review step. Also reused for [Edit] (Step
     // 1), which returns to selection the same way. Clears the lockout tick
-    // and closes the admin drawer stub so neither survives into the next
-    // review pass.
+    // so it does not survive into the next review pass.
     let on_cancel_preview = move |_| {
         app_state.show_preview.set(false);
         app_state.preview_results.set(Vec::new());
         lockout_ack.set(false);
-        drawer_open.set(false);
     };
 
     // Confirm and apply - runs actual apply after preview
@@ -616,7 +611,7 @@ pub fn ConfigureSection() -> impl IntoView {
                                     } else {
                                         view! {
                                             <details class="review-group review-group-details">
-                                                <summary class="review-group-summary">
+                                                <summary>
                                                     <IconCheck class="review-group-check-icon".to_string() />
                                                     <span class="review-group-name">{name}</span>
                                                     {pill.map(|p| view! { <span class="lockout-pill">{p}</span> })}
@@ -636,16 +631,6 @@ pub fn ConfigureSection() -> impl IntoView {
                             }
                         }}
                     </div>
-
-                    // Step 5 seed - trigger + signal only; 2a.4 fills the
-                    // drawer body.
-                    <button
-                        type="button"
-                        class="btn btn-secondary review-detail-trigger"
-                        on:click=move |_| drawer_open.set(true)
-                    >
-                        "View full detail"
-                    </button>
 
                     // Step 3 - the count-named confirm, in a calm accent box
                     // (never red/warning) beside the checkpoint/password
@@ -708,31 +693,6 @@ pub fn ConfigureSection() -> impl IntoView {
                         </Show>
                     </div>
                 </Card>
-
-                // Admin drawer stub - 2a.4 fills this drawer with the
-                // grid-aligned config diff. The backdrop dims the rest of
-                // the page (same pattern as the existing .modal-backdrop)
-                // rather than leaving the review's own Cancel/Apply row
-                // silently unreachable underneath an opaque fixed panel;
-                // clicking it, like Close, dismisses the stub.
-                <Show when=move || drawer_open.get()>
-                    <div class="review-drawer-backdrop" on:click=move |_| drawer_open.set(false)></div>
-                    <aside class="review-drawer" aria-label="Full detail">
-                        <div class="review-drawer-header">
-                            <h3>"Full detail"</h3>
-                            <button
-                                type="button"
-                                class="btn btn-secondary btn-small"
-                                on:click=move |_| drawer_open.set(false)
-                            >
-                                "Close"
-                            </button>
-                        </div>
-                        <p class="review-drawer-placeholder">
-                            "The full change detail view is on its way."
-                        </p>
-                    </aside>
-                </Show>
             </Show>
         </div>
     }

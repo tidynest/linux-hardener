@@ -2041,8 +2041,10 @@ tbody tr:hover {
 }
 
 /* Native <details>/<summary> per group with changes - the lazy correct
-   choice for "expandable"; the custom arrow mirrors
-   .advanced-disclosure-summary's pattern further up this file. */
+   choice for "expandable". The summary::before chevron below reproduces
+   .advanced-disclosure-summary's border-triangle mechanism further up this
+   file (native marker hidden, a border-drawn triangle rotated on [open]),
+   so every theme incl. high-contrast inherits it through the same tokens. */
 .review-group-details > summary {
   list-style: none;
   cursor: pointer;
@@ -2058,6 +2060,20 @@ tbody tr:hover {
 
 .review-group-details > summary::marker {
   content: "";
+}
+
+.review-group-details > summary::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 5px solid var(--text-muted);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform var(--transition-fast);
+}
+
+.review-group-details[open] > summary::before {
+  transform: rotate(90deg);
 }
 
 /* Not "applied" (that stays --color-good elsewhere in the fixed status
@@ -2106,11 +2122,6 @@ tbody tr:hover {
   font-family: var(--font-mono);
 }
 
-/* Step 5 seed - the admin drawer trigger; 2a.4 fills the panel it opens. */
-.review-detail-trigger {
-  align-self: flex-start;
-}
-
 /* Step 3 - the calm accent confirm box (never red/warning), holding the
    checkpoint/password reassurance directly beside the count-named confirm,
    plus Step 4's single lockout tick when it applies. */
@@ -2152,53 +2163,6 @@ tbody tr:hover {
   align-self: flex-end;
   font-size: var(--font-size-caption);
   color: var(--text-muted);
-}
-
-/* Admin drawer stub (Step 5) - 2a.4 fills this with the grid-aligned config
-   diff. A minimal closeable right-side panel only, so the branch never has
-   a dangling trigger. Same backdrop pattern as the existing .modal-backdrop
-   (further down this file): dims and blocks the rest of the page rather
-   than leaving the review's own Cancel/Apply row silently unreachable
-   underneath an opaque fixed panel. */
-.review-drawer-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, .5);
-  z-index: var(--z-modal);
-}
-
-.review-drawer {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: min(420px, 100%);
-  background-color: var(--bg-secondary);
-  border-left: 1px solid var(--border);
-  box-shadow: var(--shadow-md);
-  padding: var(--space-lg);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-md);
-  z-index: calc(var(--z-modal) + 1);
-  overflow-y: auto;
-}
-
-.review-drawer-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.review-drawer-header h3 {
-  margin: 0;
-  font-size: var(--font-size-sub);
-  color: var(--text-primary);
-}
-
-.review-drawer-placeholder {
-  color: var(--text-muted);
-  font-size: var(--font-size-body);
 }
 
 /* History section */
