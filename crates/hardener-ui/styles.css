@@ -3918,7 +3918,7 @@ details[open] summary { border-bottom: 1px solid var(--border); }
    24. FLEET PAGE
    ============================================================ */
 
-/* Page container — mirrors other *-page classes in section 6. */
+/* Page container - mirrors other *-page classes in section 6. */
 .fleet-page {
   flex: 1 1 0;
   display: flex;
@@ -3936,7 +3936,7 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   margin-bottom: var(--space-md);
 }
 
-/* Host selection fieldset — reuses the global fieldset token for border/radius
+/* Host selection fieldset - reuses the global fieldset token for border/radius
    but adds a touch of vertical rhythm between its children. */
 .fleet-host-select {
   border: 1px solid var(--border);
@@ -3963,14 +3963,14 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   color: var(--text-primary);
 }
 
-/* Wrapper around the results <table> — provides top margin only;
+/* Wrapper around the results <table> - provides top margin only;
    the <table> itself reuses .findings-table for its cell/border rules. */
 .fleet-table {
   margin-top: var(--space-md);
   overflow-x: auto;
 }
 
-/* Base result row — no extra decoration; inherits tbody tr hover. */
+/* Base result row - no extra decoration; inherits tbody tr hover. */
 .fleet-row {
   outline: none;
 }
@@ -3987,14 +3987,14 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   outline-offset: -2px;
 }
 
-/* Expanded findings panel — inset background to visually nest under parent row. */
+/* Expanded findings panel - inset background to visually nest under parent row. */
 .fleet-detail-row td {
   padding: var(--space-sm) var(--space-md);
   background-color: var(--bg-tertiary);
   border-bottom: 2px solid var(--border);
 }
 
-/* Status cell colour helpers — reuse existing semantic colour tokens. */
+/* Status cell colour helpers - reuse existing semantic colour tokens. */
 .fleet-ok {
   color: var(--color-good-bright);
   font-weight: 600;
@@ -4005,7 +4005,7 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   font-weight: 600;
 }
 
-/* CIS score cell — colour the percentage text directly. The shared .score-*
+/* CIS score cell - colour the percentage text directly. The shared .score-*
    classes only colour a .score-value child (a bare table cell has none), so
    the fleet table scopes its own colour like .fleet-ok above. */
 .fleet-table td.score-good {
@@ -4023,7 +4023,7 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   font-weight: 600;
 }
 
-/* Per-host framework breakdown inside the expander — separate it from the
+/* Per-host framework breakdown inside the expander - separate it from the
    findings grid rendered below. */
 .fleet-compliance-summary {
   margin-bottom: var(--space-md);
@@ -4040,7 +4040,7 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 /* Action row beneath the selection controls. */
 .fleet-actions { display: flex; gap: var(--space-sm); margin-top: var(--space-md); }
 
-/* Monospace output panels — dry-run preview and live results. */
+/* Monospace output panels - dry-run preview and live results. */
 .fleet-preview,
 .fleet-results {
   background: var(--bg-tertiary);
