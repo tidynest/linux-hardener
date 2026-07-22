@@ -1,4 +1,4 @@
-//! Grouped left sidebar navigation.
+//! Grouped left sidebar navigation with a collapsible icon rail.
 //!
 //! Replaces the old flat top navigation bar. Routes are grouped Local
 //! (Dashboard/Analysis/Hardening) and Fleet (Remote/Fleet/Fleet
@@ -10,23 +10,99 @@
 
 use super::ThemeToggle;
 use super::icons::{
-    IconAnalysis, IconDashboard, IconFleet, IconFleetApply, IconHardening, IconRemote,
-    IconScheduler, IconSettings, IconShieldMark,
+    IconAnalysis, IconChevronCollapse, IconDashboard, IconFleet, IconFleetApply, IconHardening,
+    IconRemote, IconScheduler, IconSettings, IconShieldMark,
 };
 use leptos::prelude::*;
 use leptos_router::components::A;
+use wasm_bindgen::JsCast;
+use wasm_bindgen::closure::Closure;
+
+/// localStorage key for the user's explicit collapse preference. Mirrors
+/// the theme toggle's persistence pattern (`theme_toggle.rs`): read on
+/// init, save on toggle. Stored as an optional choice - absent means "no
+/// explicit preference yet", so the width breakpoint below decides; once
+/// the user acts once, their choice is remembered and wins over the
+/// breakpoint in both directions.
+const COLLAPSE_STORAGE_KEY: &str = "sidebar-collapsed";
+
+/// Viewport width, in CSS pixels, below which the sidebar auto-collapses
+/// for tiled/narrow windows. Tracked in Rust (via `resize`) rather than a
+/// CSS media query so the same single `rail` class also drives the
+/// collapsed-content treatment (hidden labels, tooltip, and so on) with no
+/// duplicated CSS between the auto and explicit-choice paths.
+const AUTO_COLLAPSE_BREAKPOINT: f64 = 900.0;
 
 /// Sidebar shell: wordmark, the two route groups, and the pinned Settings
 /// area. Renders its own `<aside class="sidebar">` root.
 #[component]
 pub fn Sidebar() -> impl IntoView {
+    let (explicit_collapsed, set_explicit_collapsed) = signal(get_stored_collapsed());
+    let (is_narrow, set_is_narrow) = signal(window_width_below_breakpoint());
+
+    if let Some(window) = web_sys::window() {
+        let on_resize = Closure::<dyn Fn()>::new(move || {
+            set_is_narrow.set(window_width_below_breakpoint());
+        });
+        let _ =
+            window.add_event_listener_with_callback("resize", on_resize.as_ref().unchecked_ref());
+        // Lives for the app's lifetime, same as the rate-limit timer in lib.rs.
+        on_resize.forget();
+
+        // A window that is still settling into its configured size when
+        // this component first mounts (window-manager launch animation,
+        // or a slow first layout) can race the synchronous read above with
+        // no resize event to correct it. A one-shot recheck shortly after
+        // mount closes that gap; harmless if the first read was already
+        // right, since setting a signal to its current value is a no-op.
+        let recheck = Closure::once(move || {
+            set_is_narrow.set(window_width_below_breakpoint());
+        });
+        let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+            recheck.as_ref().unchecked_ref(),
+            100,
+        );
+        recheck.forget();
+    }
+
+    // Explicit choice always wins, in both directions; absent one, the
+    // viewport decides.
+    let is_rail = move || explicit_collapsed.get().unwrap_or_else(|| is_narrow.get());
+
+    let toggle_collapse = move |_| {
+        let current = explicit_collapsed
+            .get_untracked()
+            .unwrap_or_else(|| is_narrow.get_untracked());
+        let next = !current;
+        set_explicit_collapsed.set(Some(next));
+        store_collapsed(next);
+    };
+
+    let toggle_label = move || {
+        if is_rail() {
+            "Expand sidebar"
+        } else {
+            "Collapse sidebar"
+        }
+    };
+
     view! {
-        <aside class="sidebar">
+        <aside class="sidebar" class:rail=is_rail>
             <div class="sidebar-header">
                 <span class="sidebar-wordmark">
                     <IconShieldMark class="sidebar-wordmark-icon"/>
                     <span class="sidebar-wordmark-text">"Hardener"</span>
                 </span>
+                <button
+                    type="button"
+                    class="sidebar-collapse-toggle"
+                    title=toggle_label
+                    aria-label=toggle_label
+                    aria-expanded=move || (!is_rail()).to_string()
+                    on:click=toggle_collapse
+                >
+                    <IconChevronCollapse class="sidebar-collapse-icon"/>
+                </button>
             </div>
 
             <nav class="sidebar-nav" aria-label="Main navigation">
@@ -86,9 +162,9 @@ pub fn Sidebar() -> impl IntoView {
     }
 }
 
-/// A group heading ("Local" / "Fleet"). Shares markup with the Settings
-/// heading below so both can collapse identically once the icon rail
-/// lands.
+/// A group heading ("Local" / "Fleet"). Collapses to a plain divider line
+/// in rail mode (the text stays in the DOM for screen readers; only its
+/// visual box shrinks), matching the Settings heading's own label markup.
 #[component]
 fn SidebarGroupLabel(label: &'static str) -> impl IntoView {
     view! {
@@ -99,8 +175,8 @@ fn SidebarGroupLabel(label: &'static str) -> impl IntoView {
 }
 
 /// One nav entry: an icon (children) plus label, wired through `<A>`. The
-/// `title`/`aria-label` pair keeps the accessible name explicit regardless
-/// of how the label text is styled.
+/// `title`/`aria-label` pair keeps the accessible name and the rail's hover
+/// tooltip (CSS `content: attr(title)`) in sync from a single value.
 #[component]
 fn SidebarLink(href: &'static str, label: &'static str, children: Children) -> impl IntoView {
     view! {
@@ -110,5 +186,34 @@ fn SidebarLink(href: &'static str, label: &'static str, children: Children) -> i
                 <span class="sidebar-link-label">{label}</span>
             </A>
         </li>
+    }
+}
+
+/// Reads the user's explicit collapse choice, if any has ever been saved.
+/// `None` means "no explicit preference" - the width breakpoint decides.
+fn get_stored_collapsed() -> Option<bool> {
+    web_sys::window()
+        .and_then(|w| w.local_storage().ok().flatten())
+        .and_then(|storage| storage.get_item(COLLAPSE_STORAGE_KEY).ok().flatten())
+        .map(|v| v == "true")
+}
+
+/// Whether the window is currently narrower than [`AUTO_COLLAPSE_BREAKPOINT`].
+/// Fails open to "wide" (no auto-collapse) if the width cannot be read, so a
+/// lookup failure never traps the sidebar in rail mode.
+fn window_width_below_breakpoint() -> bool {
+    web_sys::window()
+        .and_then(|w| w.inner_width().ok())
+        .and_then(|value| value.as_f64())
+        .is_some_and(|width| width < AUTO_COLLAPSE_BREAKPOINT)
+}
+
+/// Persists the user's explicit collapse choice.
+fn store_collapsed(collapsed: bool) {
+    if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+        let _ = storage.set_item(
+            COLLAPSE_STORAGE_KEY,
+            if collapsed { "true" } else { "false" },
+        );
     }
 }

@@ -63,6 +63,7 @@
   --header-height: 52px;
   --content-padding: 16px;
   --sidebar-width: 220px;
+  --sidebar-rail-width: 56px;
   /* No max-width - content fills available space */
 
   /* Spacing - one 4px scale */
@@ -620,9 +621,9 @@ body {
 
 /* ============================================================
    4b. SIDEBAR SHELL (new; not yet wired into lib.rs)
-   Grouped left navigation (Local / Fleet / Settings). Replaces the
-   navigation header above once lib.rs adopts it. See
-   crates/hardener-ui/src/components/sidebar.rs.
+   Grouped left navigation (Local / Fleet / Settings) that collapses to a
+   narrow icon rail. Replaces the navigation header above once lib.rs
+   adopts it. See crates/hardener-ui/src/components/sidebar.rs.
    ============================================================ */
 
 /* Row that holds aside.sidebar and the main content column side by side. */
@@ -653,6 +654,15 @@ body {
   border-right: 1px solid var(--border);
   overflow-x: hidden;
   overflow-y: auto;
+  transition: width var(--transition-normal);
+}
+
+/* sidebar.rs computes this single class from the user's explicit choice if
+   one is stored, else the live window width (auto-collapse for
+   tiled/narrow windows) - so every collapsed-content rule below keys off
+   this one class regardless of which of those two decided it. */
+.sidebar.rail {
+  width: var(--sidebar-rail-width);
 }
 
 .sidebar-header {
@@ -664,6 +674,11 @@ body {
   padding: var(--space-md) var(--space-lg);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+}
+
+.sidebar.rail .sidebar-header {
+  flex-direction: column;
+  padding: var(--space-md) var(--space-xs);
 }
 
 .sidebar-wordmark {
@@ -688,6 +703,39 @@ body {
   white-space: nowrap;
 }
 
+.sidebar-collapse-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--control-height);
+  height: var(--control-height);
+  padding: 0;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.sidebar-collapse-toggle:hover {
+  color: var(--text-primary);
+  background-color: var(--bg-tertiary);
+  border-color: var(--color-accent);
+}
+
+.sidebar-collapse-icon {
+  font-size: var(--font-size-sub);
+  width: 1em;
+  height: 1em;
+  transition: transform var(--transition-normal);
+}
+
+.sidebar.rail .sidebar-collapse-icon {
+  transform: rotate(180deg);
+}
+
 .sidebar-nav {
   flex: 1 1 auto;
   display: flex;
@@ -700,7 +748,9 @@ body {
   margin-top: var(--space-md);
 }
 
-/* Group heading (Local / Fleet / Settings). */
+/* Group heading (Local / Fleet / Settings). Collapses to a plain divider
+   in rail mode; the text stays in the DOM for screen readers even though
+   its visual box shrinks to a hairline. */
 .sidebar-group-label {
   display: flex;
   align-items: center;
@@ -723,6 +773,22 @@ body {
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+.sidebar.rail .sidebar-group-label {
+  height: 1px;
+  padding: 0;
+  margin: var(--space-sm) var(--space-md);
+  background-color: var(--border);
+  overflow: hidden;
+}
+
+.sidebar.rail .sidebar-group-icon,
+.sidebar.rail .sidebar-group-label-text,
+.sidebar.rail .sidebar-wordmark-text,
+.sidebar.rail .sidebar-link-label,
+.sidebar.rail .app-version {
+  display: none;
 }
 
 .sidebar-group-items {
@@ -773,6 +839,33 @@ body {
   text-overflow: ellipsis;
 }
 
+/* Rail-mode tooltip: reads the same title attribute already required for
+   a11y, so the hover label never drifts out of sync with the accessible
+   name. */
+.sidebar.rail .sidebar-link {
+  position: relative;
+  justify-content: center;
+}
+
+.sidebar.rail .sidebar-link:hover::after,
+.sidebar.rail .sidebar-link:focus-visible::after {
+  content: attr(title);
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-left: var(--space-sm);
+  padding: var(--space-xs) var(--space-sm);
+  background-color: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
+  white-space: nowrap;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  z-index: var(--z-dropdown);
+  pointer-events: none;
+}
+
 .sidebar-settings {
   flex-shrink: 0;
   display: flex;
@@ -785,12 +878,25 @@ body {
   padding: var(--space-xs) var(--space-lg);
 }
 
+.sidebar.rail .sidebar-settings-content {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-xs) var(--space-sm);
+}
+
 .sidebar-settings-content .theme-toggle {
   margin-left: 0;
 }
 
 .sidebar-settings-content .theme-select {
   width: 100%;
+}
+
+.sidebar.rail .theme-select {
+  width: var(--control-height);
+  padding-left: 0;
+  padding-right: var(--space-sm);
+  text-align: center;
 }
 
 /* Build identity at the sidebar foot: legible but visually quiet, so a
