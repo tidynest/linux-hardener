@@ -1603,13 +1603,251 @@ tbody tr:hover {
   max-width: 100%;
 }
 
-/* .profile-selector and .plugin-toggles container styles removed - now using Card component */
-/* Card component provides: bg-secondary, border, border-radius, padding */
-
-.plugin-grid {
+/* Selection state: main column (level, areas, advanced) beside a live
+   summary. One markup; this grid is the wide-window layout, collapsed to a
+   single column below the same breakpoint the dashboard grid uses (see
+   "Large tablets" media query further down). */
+.configure-layout {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));  /* min() prevents overflow */
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
+  align-items: start;
+  gap: var(--space-xl);
+  min-width: 0;
+}
+
+.configure-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  min-width: 0;
+}
+
+.configure-aside {
+  position: sticky;
+  top: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+/* Protection level: a segmented control (role="radiogroup" of role="radio"
+   buttons in configure_section.rs). Replaces the old radio-in-fieldset Card,
+   which drew a border around a border. */
+.segmented-control {
+  display: flex;
+  gap: var(--space-xs);
+  padding: var(--space-xs);
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.segment-btn {
+  flex: 1;
+  padding: var(--space-sm) var(--space-md);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-body);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.segment-btn:hover {
+  color: var(--text-primary);
+  background-color: var(--bg-elevated);
+}
+
+.segment-btn.is-active {
+  background-color: var(--color-accent-bg);
+  border-color: var(--color-accent);
+  color: var(--text-primary);
+}
+
+/* Per-area plugin rows - replaces the old plugin-grid checkbox tiles.
+   Each row is a custom role="checkbox" (see configure_section.rs) so the
+   whole row, not just a small control, toggles the plugin. */
+.plugin-rows {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-secondary);
+  padding: var(--space-xs) 0;
+}
+
+.plugin-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  column-gap: var(--space-sm);
+  row-gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+}
+
+.plugin-row:hover {
+  background-color: var(--bg-tertiary);
+}
+
+.plugin-row + .plugin-row {
+  border-top: 1px solid var(--border);
+}
+
+.plugin-row-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+}
+
+/* Neutral empty ring for the "off" state - never colour alone, the check
+   icon vs. empty ring is the shape difference that carries the meaning. */
+.plugin-row-indicator-empty {
+  width: 0.85em;
+  height: 0.85em;
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--radius-full);
+}
+
+.plugin-row-check-icon {
+  width: 1.15em;
+  height: 1.15em;
+  color: var(--color-good);
+}
+
+.plugin-row-name {
+  font-size: var(--font-size-body);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.plugin-row-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-height);
+  height: var(--control-height);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.plugin-row-help:hover,
+.plugin-row-help[aria-expanded="true"] {
+  color: var(--color-accent);
+  background-color: var(--bg-elevated);
+  border-color: var(--border);
+}
+
+.plugin-row-help-icon {
+  width: 1em;
+  height: 1em;
+}
+
+.plugin-row-detail {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding-left: calc(1.25rem + var(--space-sm));
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+/* Advanced (optional) disclosure - houses the config file picker, collapsed
+   by default. Native <details>/<summary>, same pattern as .score-breakdown. */
+.advanced-disclosure {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-secondary);
+}
+
+.advanced-disclosure-summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  font-size: var(--font-size-body);
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: color var(--transition-fast);
+}
+
+.advanced-disclosure-summary::-webkit-details-marker {
+  display: none;
+}
+
+.advanced-disclosure-summary::marker {
+  content: "";
+}
+
+.advanced-disclosure-summary::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 5px solid var(--text-muted);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform var(--transition-fast);
+}
+
+.advanced-disclosure[open] .advanced-disclosure-summary::before {
+  transform: rotate(90deg);
+}
+
+.advanced-disclosure-summary:hover {
+  color: var(--text-primary);
+}
+
+.advanced-disclosure-body {
+  padding: 0 var(--space-md) var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.advanced-disclosure-hint {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.config-file-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+/* Live "what will change" summary beside the primary Preview action. */
+.apply-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.apply-summary-text {
+  font-size: var(--font-size-sub);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.apply-summary-empty {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.apply-summary-reassurance {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
 }
 
 /* .apply-controls container styles removed - now using Card component */
@@ -2421,6 +2659,17 @@ details[open] summary { border-bottom: 1px solid var(--border); }
     gap: var(--space-md);
   }
 
+  /* Hardening selection: narrow/tiled window stacks to a single calm
+     column (level -> rows -> advanced -> summary+Preview); the live
+     summary only earns a dedicated right pane once the window is wide. */
+  .configure-layout {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .configure-aside {
+    position: static;
+  }
 }
 
 /* Tablets */
@@ -2481,10 +2730,6 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 
   .framework-grid,
   .report-summary {
-    grid-template-columns: 1fr;
-  }
-
-  .plugin-grid {
     grid-template-columns: 1fr;
   }
 
@@ -2910,11 +3155,10 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 
 /* =============================================================
    23. CONFIG FILE PICKER
+   Sits inside .advanced-disclosure-body (configure_section.rs); no card
+   framing of its own, see .config-file-fields near the selection-state
+   rules above.
    ============================================================ */
-
-.config-file-card {
-  margin-bottom: var(--space-md);
-}
 
 .config-file-row {
   display: flex;
@@ -2937,7 +3181,7 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 .config-file-input:focus {
   outline: none;
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 2px rgba(var(--color-accent-rgb, 59, 130, 246), 0.15);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 15%, transparent);
 }
 
 .config-file-input::placeholder {
@@ -2971,7 +3215,7 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 }
 
 .config-valid {
-  color: var(--color-success, #22c55e);
+  color: var(--color-good);
 }
 
 .config-valid .config-status-icon {
@@ -2979,7 +3223,7 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 }
 
 .config-invalid {
-  color: var(--color-error, #ef4444);
+  color: var(--color-critical);
 }
 
 .config-invalid .config-status-icon {

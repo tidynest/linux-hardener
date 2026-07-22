@@ -1,55 +1,79 @@
 //! Configure section for the Hardening page.
 //!
-//! Contains profile selection, plugin toggles, and apply controls.
+//! Selection state: protection-level segmented control, per-area plugin
+//! rows with inline help, an "Advanced (optional)" config-file disclosure,
+//! and a live "what will change" summary beside the Preview action. Apply
+//! and preview handling (the dry-run, the review panel, confirm/cancel)
+//! stay wired to the same `AppState` signals as before; this component only
+//! re-skins the selection UI in front of them.
 
-use crate::components::{Card, ConfigFileCard, HeadingLevel};
+use crate::components::{Card, ConfigFileCard, HeadingLevel, IconCheck, IconInfo};
 use crate::state::AppState;
 use crate::tauri_bindings::{invoke_apply, invoke_apply_dry_run};
 use crate::utils::{annotate_preview, is_auth_cancelled};
 use leptos::prelude::*;
+use wasm_bindgen::JsCast;
 
-/// Plugin definition with ID and display name.
+/// Plugin definition: ID, display name, and the plain-English one-liner
+/// shown when its `(i)` help affordance is opened.
 struct PluginDef {
     id: &'static str,
     name: &'static str,
+    summary: &'static str,
 }
 
 const PLUGINS: &[PluginDef] = &[
     PluginDef {
         id: "kernel",
         name: "Kernel Hardening",
+        summary: "tightens kernel memory and sysctl protections",
     },
     PluginDef {
         id: "ssh",
         name: "SSH Hardening",
+        summary: "enforces stricter SSH authentication and crypto",
     },
     PluginDef {
         id: "firewall",
         name: "Firewall",
+        summary: "sets a default-deny inbound policy",
     },
     PluginDef {
         id: "pam",
         name: "PAM Authentication",
+        summary: "strengthens password quality and lockout policy",
     },
     PluginDef {
         id: "service",
         name: "Service Minimisation",
+        summary: "disables unnecessary background services",
     },
     PluginDef {
         id: "audit",
         name: "Audit Rules",
+        summary: "records security-relevant events with auditd rules",
     },
     PluginDef {
         id: "permissions",
         name: "File Permissions",
+        summary: "corrects permissions on sensitive system files",
     },
     PluginDef {
         id: "mac",
         name: "MAC System",
+        summary: "enables mandatory access control (AppArmor or SELinux)",
     },
 ];
 
-/// Configure section with profiles and plugin toggles.
+/// The four segments of the protection-level control, in display order.
+const PROFILES: &[(&str, &str)] = &[
+    ("baseline", "Baseline"),
+    ("secure", "Secure"),
+    ("high", "High"),
+    ("custom", "Custom"),
+];
+
+/// Configure section with the selection state and apply controls.
 #[component]
 pub fn ConfigureSection() -> impl IntoView {
     let app_state = expect_context::<AppState>();
@@ -95,6 +119,16 @@ pub fn ConfigureSection() -> impl IntoView {
                 .collect::<Vec<_>>()
         })
     };
+
+    // Live count of enabled areas - drives the "N areas selected" summary
+    // and the Preview action's disabled state. Real, not fabricated: this
+    // counts what is actually selected, unlike a settings count, which the
+    // frontend cannot know until the dry-run returns.
+    let enabled_count =
+        move || plugin_states.with_value(|states| states.iter().filter(|(_, s)| s.get()).count());
+
+    // Which plugin row's `(i)` help is open, if any - only one at a time.
+    let help_open = RwSignal::<Option<usize>>::new(None);
 
     // Preview handler - runs dry-run and shows preview panel
     let on_preview = move |_| {
@@ -159,105 +193,202 @@ pub fn ConfigureSection() -> impl IntoView {
         });
     };
 
+    // WAI-ARIA radiogroup keyboard handling for the segmented control:
+    // arrow keys move focus AND selection (mirrors `TabBar`'s pattern).
+    // Native buttons already handle Space/Enter as a click, so only
+    // directional movement needs a handler here.
+    let on_segment_keydown = {
+        let update_profile = update_profile.clone();
+        move |ev: web_sys::KeyboardEvent| {
+            let count = PROFILES.len();
+            let current = PROFILES
+                .iter()
+                .position(|(id, _)| *id == selected_profile.get_untracked())
+                .unwrap_or(0);
+            let next = match ev.key().as_str() {
+                "ArrowRight" | "ArrowDown" => Some((current + 1) % count),
+                "ArrowLeft" | "ArrowUp" => Some(current.checked_sub(1).unwrap_or(count - 1)),
+                "Home" => Some(0),
+                "End" => Some(count - 1),
+                _ => None,
+            };
+
+            if let Some(idx) = next {
+                ev.prevent_default();
+                let (id, _) = PROFILES[idx];
+                if id == "custom" {
+                    selected_profile.set("custom".to_string());
+                } else {
+                    update_profile(id);
+                }
+
+                // Focus by known element ID: avoids a race with the
+                // aria-checked re-render, same as TabBar.
+                if let Some(el) = web_sys::window()
+                    .and_then(|w| w.document())
+                    .and_then(|d| d.get_element_by_id(&format!("segment-{}", id)))
+                    .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
+                {
+                    let _ = el.focus();
+                }
+            }
+        }
+    };
+
     view! {
         <div class="configure-section">
-            <p class="section-guidance">
-                "Select a security profile below, or toggle individual plugins. "
-                "Higher security profiles may affect system usability. "
-                "A checkpoint is created before changes are applied, allowing rollback if needed."
-            </p>
-            <ConfigFileCard />
-            <div class="two-col-row">
-            <Card title="Security Profile" title_level=HeadingLevel::H2 class="profile-selector">
-                <fieldset>
-                    <legend>"Choose a preset configuration"</legend>
-
-                    <label>
-                        <input
-                            type="radio"
-                            name="profile"
-                            value="baseline"
-                            checked=move || selected_profile.get() == "baseline"
-                            on:change={
-                                let update = update_profile.clone();
-                                move |_| update("baseline")
-                            }
-                        />
-                        "Baseline (SSH + Firewall only)"
-                    </label>
-
-                    <label>
-                        <input
-                            type="radio"
-                            name="profile"
-                            value="secure"
-                            checked=move || selected_profile.get() == "secure"
-                            on:change={
-                                let update = update_profile.clone();
-                                move |_| update("secure")
-                            }
-                        />
-                        "Secure (Recommended - 5 plugins)"
-                    </label>
-
-                    <label>
-                        <input
-                            type="radio"
-                            name="profile"
-                            value="high"
-                            checked=move || selected_profile.get() == "high"
-                            on:change={
-                                let update = update_profile.clone();
-                                move |_| update("high")
-                            }
-                        />
-                        "High Security (All 8 plugins)"
-                    </label>
-                </fieldset>
-            </Card>
-
-            <Card title="Plugin Control" title_level=HeadingLevel::H2 class="plugin-toggles">
-                <p id="profile-hint" class="sr-only" aria-live="polite">
-                    {move || format!("Active profile: {}", selected_profile.get())}
-                </p>
-                <div class="plugin-grid" role="group" aria-label="Plugin toggles" aria-describedby="profile-hint">
-                    {plugin_states.with_value(|states| {
-                        states.iter().enumerate().map(|(i, (_, signal))| {
-                            let plugin = &PLUGINS[i];
-                            let name = plugin.name;
-                            let signal = *signal;
+            <div class="configure-layout">
+                <div class="configure-main">
+                    <div
+                        class="segmented-control"
+                        role="radiogroup"
+                        aria-label="Protection level"
+                        on:keydown=on_segment_keydown
+                    >
+                        {PROFILES.iter().map(|(id, label)| {
+                            let id = *id;
+                            let label = *label;
+                            let update = update_profile.clone();
+                            let is_active = move || selected_profile.get() == id;
 
                             view! {
-                                <label class="framework-checkbox">
-                                    <input
-                                        type="checkbox"
-                                        checked=move || signal.get()
-                                        on:change=move |_| {
-                                            signal.update(|v| *v = !*v);
+                                <button
+                                    type="button"
+                                    id=format!("segment-{}", id)
+                                    role="radio"
+                                    aria-checked=move || is_active().to_string()
+                                    tabindex=move || if is_active() { "0" } else { "-1" }
+                                    class="segment-btn"
+                                    class:is-active=is_active
+                                    on:click=move |_| {
+                                        if id == "custom" {
                                             selected_profile.set("custom".to_string());
+                                        } else {
+                                            update(id);
                                         }
-                                    />
-                                    {name}
-                                </label>
+                                    }
+                                >
+                                    {label}
+                                </button>
                             }
-                        }).collect::<Vec<_>>()
-                    })}
-                </div>
-            </Card>
-            </div>
+                        }).collect::<Vec<_>>()}
+                    </div>
 
-            <button
-                class="btn btn-primary btn-large"
-                on:click=on_preview
-                disabled=move || app_state.is_previewing.get() || app_state.is_applying.get()
-                aria-live="polite"
-            >
-                {move || if app_state.is_previewing.get() {
-                    "Generating Preview..."
-                } else {
-                    "Preview Changes"
-                }}
-            </button>
+                    <p id="plugin-profile-hint" class="sr-only" aria-live="polite">
+                        {move || format!("Active profile: {}", selected_profile.get())}
+                    </p>
+                    <div
+                        class="plugin-rows"
+                        role="group"
+                        aria-label="Plugin areas"
+                        aria-describedby="plugin-profile-hint"
+                    >
+                        {plugin_states.with_value(|states| {
+                            states.iter().enumerate().map(|(i, (_, signal))| {
+                                let plugin = &PLUGINS[i];
+                                let name = plugin.name;
+                                let summary = plugin.summary;
+                                let signal = *signal;
+                                let is_help_open = move || help_open.get() == Some(i);
+                                let toggle = move || {
+                                    signal.update(|v| *v = !*v);
+                                    selected_profile.set("custom".to_string());
+                                };
+
+                                view! {
+                                    <div
+                                        class="plugin-row"
+                                        role="checkbox"
+                                        aria-checked=move || signal.get().to_string()
+                                        aria-label=name
+                                        tabindex="0"
+                                        on:click=move |_| toggle()
+                                        on:keydown=move |ev: web_sys::KeyboardEvent| {
+                                            if ev.key() == " " {
+                                                ev.prevent_default();
+                                                toggle();
+                                            }
+                                        }
+                                    >
+                                        <span class="plugin-row-indicator" aria-hidden="true">
+                                            <Show
+                                                when=move || signal.get()
+                                                fallback=|| view! { <span class="plugin-row-indicator-empty"></span> }
+                                            >
+                                                <IconCheck class="plugin-row-check-icon".to_string() />
+                                            </Show>
+                                        </span>
+                                        <span class="plugin-row-name">{name}</span>
+                                        <button
+                                            type="button"
+                                            class="plugin-row-help"
+                                            aria-label=format!("About {}", name)
+                                            aria-expanded=move || is_help_open().to_string()
+                                            on:click=move |ev: web_sys::MouseEvent| {
+                                                ev.stop_propagation();
+                                                help_open.update(|cur| *cur = if *cur == Some(i) { None } else { Some(i) });
+                                            }
+                                            on:keydown=move |ev: web_sys::KeyboardEvent| {
+                                                ev.stop_propagation();
+                                            }
+                                        >
+                                            <IconInfo class="plugin-row-help-icon".to_string() />
+                                        </button>
+                                        <Show when=is_help_open>
+                                            <p class="plugin-row-detail">{summary}</p>
+                                        </Show>
+                                    </div>
+                                }
+                            }).collect::<Vec<_>>()
+                        })}
+                    </div>
+
+                    <details class="advanced-disclosure">
+                        <summary class="advanced-disclosure-summary">"Advanced (optional)"</summary>
+                        <div class="advanced-disclosure-body">
+                            <p class="advanced-disclosure-hint">
+                                "Load your own .toml to override the profile. Most people leave this blank."
+                            </p>
+                            <ConfigFileCard />
+                        </div>
+                    </details>
+                </div>
+
+                <div class="configure-aside">
+                    <div class="apply-summary" aria-live="polite">
+                        {move || {
+                            let n = enabled_count();
+                            if n == 0 {
+                                view! {
+                                    <p class="apply-summary-text apply-summary-empty">"Select at least one area"</p>
+                                }.into_any()
+                            } else {
+                                view! {
+                                    <p class="apply-summary-text">
+                                        {format!("{} area{} selected", n, if n == 1 { "" } else { "s" })}
+                                    </p>
+                                }.into_any()
+                            }
+                        }}
+                        <p class="apply-summary-reassurance">
+                            "A checkpoint is saved before anything changes, so you can undo it all."
+                        </p>
+                    </div>
+
+                    <button
+                        class="btn btn-primary btn-large"
+                        on:click=on_preview
+                        disabled=move || app_state.is_previewing.get() || app_state.is_applying.get() || enabled_count() == 0
+                        aria-live="polite"
+                    >
+                        {move || if app_state.is_previewing.get() {
+                            "Generating Preview..."
+                        } else {
+                            "Preview Changes"
+                        }}
+                    </button>
+                </div>
+            </div>
 
             // Preview panel - shown after dry-run completes
             <Show when=move || app_state.show_preview.get()>

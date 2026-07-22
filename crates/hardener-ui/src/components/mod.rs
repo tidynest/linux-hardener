@@ -55,12 +55,12 @@ pub use schedule_section::ScheduleSection;
 pub use security_score::{SecurityScore, calculate_all_scores};
 pub use severity_badge::SeverityBadge;
 pub use sidebar::Sidebar;
-// Not yet called from any view - the Hardening selection slice imports
-// IconCheck/IconInfo next; the review/drawer/done/partial slices wire up
-// the rest (see status_icons.rs). Defined now so those slices import
-// rather than re-add.
+// IconX/IconWrench/IconMinus/IconArrowRight are not yet called from any
+// view - the review/drawer/done/partial slices wire them up (see
+// status_icons.rs). Defined now so those slices import rather than re-add.
 #[allow(unused_imports)]
-pub use status_icons::{IconArrowRight, IconCheck, IconInfo, IconMinus, IconWrench, IconX};
+pub use status_icons::{IconArrowRight, IconMinus, IconWrench, IconX};
+pub use status_icons::{IconCheck, IconInfo};
 pub use tabs::{TabBar, TabDef, TabPanel};
 pub use theme_toggle::ThemeToggle;
 pub use unchecked_banner::UncheckedBanner;
