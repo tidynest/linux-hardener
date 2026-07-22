@@ -176,6 +176,24 @@ impl ScoreReveal {
             flash: RwSignal::new(false),
         }
     }
+
+    /// Resets every signal to its pre-scan initial state.
+    ///
+    /// Score honesty ("no number until a real scan") must hold not only
+    /// before the first-ever scan but at the start of every subsequent
+    /// apply cycle - without this, a reveal completed after one apply (e.g.
+    /// 88/100) would still be sitting in these signals the next time the
+    /// done view mounts, showing a stale score before the new state has
+    /// been scanned at all. Called from `on_confirm_apply` (so a fresh
+    /// cycle never inherits the previous one's reveal) and from `on_done`
+    /// (tidiness on the way back to the selection view).
+    fn reset(&self) {
+        self.revealing.set(false);
+        self.revealed.set(None);
+        self.displayed.set(0);
+        self.delta_text.set(String::new());
+        self.flash.set(false);
+    }
 }
 
 /// Whether the user's OS/browser preference asks for reduced motion.
@@ -212,8 +230,13 @@ fn prefers_reduced_motion() -> bool {
 /// timer primitive (re-exported from `leptos_dom::helpers`, itself the
 /// `web_sys::Window::set_timeout`/`set_interval` pattern used in
 /// `clipboard.rs`/`sidebar.rs`/`lib.rs`), so no new dependency is needed.
-/// The interval clears itself on its final tick - no leaked timer.
+/// The interval clears itself on its final tick - no leaked timer. Seeds
+/// `displayed` to `from` synchronously, before the interval's first tick,
+/// so the strip never renders the signal's untouched prior value (a bare
+/// "0/100" flash) for the one frame between mount and that first tick.
 fn animate_score_count_up(displayed: RwSignal<i32>, from: i32, to: i32) {
+    displayed.set(from);
+
     let step = Rc::new(Cell::new(0_u32));
     let handle: Rc<Cell<Option<IntervalHandle>>> = Rc::new(Cell::new(None));
     let handle_for_tick = handle.clone();
@@ -284,6 +307,10 @@ fn run_score_reveal(app_state: AppState, reveal: ScoreReveal) {
 
     leptos::task::spawn_local(async move {
         let mut new_score = previous.unwrap_or(0);
+        // Fix 3: only a real, freshly-computed score may be revealed - a
+        // failed scan or report generation must not fall back to showing
+        // `previous` again as if it had just been measured.
+        let mut succeeded = true;
 
         match invoke_scan(vec![], app_state.config_path.get_untracked()).await {
             Ok(results) => {
@@ -302,6 +329,7 @@ fn run_score_reveal(app_state: AppState, reveal: ScoreReveal) {
                         web_sys::console::warn_1(
                             &format!("Compliance generation failed: {}", e).into(),
                         );
+                        succeeded = false;
                     }
                 }
             }
@@ -310,6 +338,7 @@ fn run_score_reveal(app_state: AppState, reveal: ScoreReveal) {
                 app_state
                     .error_message
                     .set(Some(format!("Scan failed: {}", e)));
+                succeeded = false;
             }
         }
 
@@ -319,6 +348,18 @@ fn run_score_reveal(app_state: AppState, reveal: ScoreReveal) {
         set_timeout(
             move || {
                 reveal.revealing.set(false);
+
+                // Error path: let the strip fall back to its
+                // "Run Security Scan" action rather than reveal a number
+                // that was never actually measured this cycle. Whatever
+                // error_message the failure above set (currently only the
+                // invoke_scan arm does) still surfaces via the existing
+                // error banner independently of this signal.
+                if !succeeded {
+                    reveal.revealed.set(None);
+                    return;
+                }
+
                 reveal.revealed.set(Some(new_score));
                 reveal
                     .delta_text
@@ -475,12 +516,23 @@ pub fn ConfigureSection() -> impl IntoView {
         lockout_ack.set(false);
     };
 
+    // Done view (Step 3) - the score-reveal signals, bundled so
+    // `run_score_reveal` can be handed one value. Declared here, ahead of
+    // `on_confirm_apply` below, so that closure can reset it too.
+    let score_reveal = ScoreReveal::new();
+
     // Confirm and apply - runs actual apply after preview
     let on_confirm_apply = move |_| {
         let plugins = get_enabled_plugins();
         if plugins.is_empty() {
             return;
         }
+
+        // Fix: a completed reveal from a PRIOR apply cycle (e.g. 88/100)
+        // must not survive into this one - without this, the done view for
+        // this new apply would show that stale number before any new scan
+        // has run. Score honesty applies per cycle, not just once ever.
+        score_reveal.reset();
 
         app_state.is_applying.set(true);
         app_state.show_preview.set(false);
@@ -574,15 +626,17 @@ pub fn ConfigureSection() -> impl IntoView {
     // History" below no-ops gracefully when absent.
     let hardening_section = use_context::<HardeningSection>();
 
-    // Done view (Step 3) - the score-reveal signals, bundled so
-    // `run_score_reveal` can be handed one value.
-    let score_reveal = ScoreReveal::new();
-
     // "Done" (Step 2): clears apply_results, returning to a fresh
     // selection state (the selection UI's own Show below is gated in part
-    // on apply_results being empty, so this is what brings it back).
+    // on apply_results being empty, so this is what brings it back). Also
+    // resets the score-reveal signals (declared above, by
+    // `on_confirm_apply`) for tidiness on the way back to selection - the
+    // reveal is always reset at the START of a new apply cycle regardless,
+    // so this second reset is a belt-and-braces immediate clear rather than
+    // load-bearing on its own.
     let on_done = move |_| {
         app_state.apply_results.set(Vec::new());
+        score_reveal.reset();
     };
 
     // "View in History" (Step 4): switches HardeningPage to its History
