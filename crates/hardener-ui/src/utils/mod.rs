@@ -108,6 +108,23 @@ pub fn group_checkpoints_by_date(cps: &[CheckpointInfo]) -> Vec<(String, Vec<Che
     groups
 }
 
+/// Groups scan sessions by their `started_at` date, mirroring
+/// [`group_checkpoints_by_date`]: presentation grouping only, assuming the
+/// backend returns sessions newest-first so same-date entries are contiguous.
+/// If that sort ever changes, non-contiguous dates would split into repeated
+/// headings; switch to a find-existing-group merge then.
+pub fn group_sessions_by_date(sessions: &[ScanSessionInfo]) -> Vec<(String, Vec<ScanSessionInfo>)> {
+    let mut groups: Vec<(String, Vec<ScanSessionInfo>)> = Vec::new();
+    for s in sessions {
+        let date = checkpoint_date(&s.started_at).to_string();
+        match groups.last_mut() {
+            Some((d, v)) if *d == date => v.push(s.clone()),
+            _ => groups.push((date, vec![s.clone()])),
+        }
+    }
+    groups
+}
+
 /// Whether an error string returned from a privileged Tauri command
 /// represents the user dismissing the pkexec authentication prompt, rather
 /// than a genuine failure.
@@ -689,6 +706,30 @@ mod tests {
         assert_eq!(groups[0].0, "2026-07-22");
         assert_eq!(groups[0].1.len(), 2);
         assert_eq!(groups[0].1[0].checkpoint_id, "a");
+        assert_eq!(groups[1].0, "2026-07-21");
+        assert_eq!(groups[1].1.len(), 1);
+    }
+
+    #[test]
+    fn group_sessions_by_date_groups_contiguous_dates_in_order() {
+        let mk = |id: &str, started: &str| ScanSessionInfo {
+            session_id: id.to_string(),
+            started_at: started.to_string(),
+            completed_at: None,
+            total_findings: 0,
+            total_plugins: 8,
+            status: "completed".to_string(),
+        };
+        let sessions = vec![
+            mk("a", "2026-07-22 14:00:00 UTC"),
+            mk("b", "2026-07-22 09:00:00 UTC"),
+            mk("c", "2026-07-21 23:00:00 UTC"),
+        ];
+        let groups = group_sessions_by_date(&sessions);
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].0, "2026-07-22");
+        assert_eq!(groups[0].1.len(), 2);
+        assert_eq!(groups[0].1[0].session_id, "a");
         assert_eq!(groups[1].0, "2026-07-21");
         assert_eq!(groups[1].1.len(), 1);
     }
