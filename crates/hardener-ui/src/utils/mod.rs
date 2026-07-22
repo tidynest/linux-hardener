@@ -3,8 +3,8 @@
 mod mock_data;
 
 use crate::types::{
-    ApplyResult, Change, CheckpointInfo, FileRestoreAction, RollbackResult, ScanResult,
-    ScanSessionInfo, ValidationReport,
+    ApplyResult, Change, CheckpointInfo, FileRestoreAction, Finding, RollbackResult, ScanResult,
+    ScanSessionInfo, Severity, ValidationReport,
 };
 
 /// One plugin's dry-run preview decision after cross-checking the estimate
@@ -435,6 +435,51 @@ pub fn last_scanned_label(sessions: &[ScanSessionInfo]) -> String {
     match sessions.first().and_then(|s| s.completed_at.as_deref()) {
         Some(t) => format!("Last scanned {t}"),
         None => "Not scanned yet".to_string(),
+    }
+}
+
+/// Groups findings by severity in Critical -> Info order, dropping empty
+/// buckets. Mirrors `group_checkpoints_by_date`: presentation grouping only.
+pub fn group_findings_by_severity(findings: &[Finding]) -> Vec<(Severity, Vec<Finding>)> {
+    [
+        Severity::Critical,
+        Severity::High,
+        Severity::Medium,
+        Severity::Low,
+        Severity::Info,
+    ]
+    .into_iter()
+    .filter_map(|sev| {
+        let group: Vec<Finding> = findings
+            .iter()
+            .filter(|f| f.finding_severity == sev)
+            .cloned()
+            .collect();
+        (!group.is_empty()).then_some((sev, group))
+    })
+    .collect()
+}
+
+/// Display label for a severity group header.
+pub fn severity_label(sev: Severity) -> &'static str {
+    match sev {
+        Severity::Critical => "Critical",
+        Severity::High => "High",
+        Severity::Medium => "Medium",
+        Severity::Low => "Low",
+        Severity::Info => "Info",
+    }
+}
+
+/// The existing `severity_*` CSS class carrying that severity's colour
+/// (reused for the group-header dot; no new severity colours introduced).
+pub fn severity_class(sev: Severity) -> &'static str {
+    match sev {
+        Severity::Critical => "severity_critical",
+        Severity::High => "severity_high",
+        Severity::Medium => "severity_medium",
+        Severity::Low => "severity_low",
+        Severity::Info => "severity_info",
     }
 }
 
@@ -1006,5 +1051,47 @@ mod tests {
             ],
         };
         assert_eq!(rollback_summary_sentence(&result), "2 of 3 files restored.");
+    }
+
+    // --- Task 1: Severity grouping and label/class helpers ---
+
+    fn finding(id: &str, sev: Severity) -> Finding {
+        Finding {
+            finding_category: crate::types::FindingCategory::Kernel,
+            finding_current_value: "a".to_string(),
+            finding_description: "d".to_string(),
+            finding_explanation: "e".to_string(),
+            finding_id: id.to_string(),
+            finding_impact: "i".to_string(),
+            finding_recommended_value: "b".to_string(),
+            finding_remediation_steps: vec![],
+            finding_severity: sev,
+            finding_title: "t".to_string(),
+            finding_compliance: vec![],
+            finding_policy_exception: None,
+        }
+    }
+
+    #[test]
+    fn groups_by_severity_critical_first_skipping_empty() {
+        let fs = vec![
+            finding("1", Severity::Low),
+            finding("2", Severity::Critical),
+            finding("3", Severity::Low),
+        ];
+        let groups = group_findings_by_severity(&fs);
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].0, Severity::Critical);
+        assert_eq!(groups[0].1.len(), 1);
+        assert_eq!(groups[1].0, Severity::Low);
+        assert_eq!(groups[1].1.len(), 2);
+    }
+
+    #[test]
+    fn severity_label_and_class_map() {
+        assert_eq!(severity_label(Severity::Critical), "Critical");
+        assert_eq!(severity_label(Severity::Info), "Info");
+        assert_eq!(severity_class(Severity::High), "severity_high");
+        assert_eq!(severity_class(Severity::Low), "severity_low");
     }
 }
