@@ -2,7 +2,7 @@
 #[allow(dead_code)]
 mod mock_data;
 
-use crate::types::{ApplyResult, ScanResult, ValidationReport};
+use crate::types::{ApplyResult, Change, ScanResult, ValidationReport};
 
 /// One plugin's dry-run preview decision after cross-checking the estimate
 /// against the latest persisted scan.
@@ -161,6 +161,163 @@ pub fn score_delta_label(previous: Option<i32>, current: i32) -> String {
         Some(_) => "No change".to_string(),
         None => String::new(),
     }
+}
+
+/// Backend error-text marker identifying a FAILED [`Change`] as the one
+/// real "Manual step" the fixed status vocabulary needs, rather than a
+/// genuine failure: PAM refusing to auto-edit the auth stack because an
+/// inline `pam.d` directive already overrides it (see the PAM plugin's
+/// effective-value scan).
+///
+/// ponytail: this hard-couples the UI to a literal backend error string.
+/// If that literal ever drifts, `is_manual_action` silently stops matching
+/// and every such change falls back to rendering as a genuine "Failed" -
+/// the deliberately safe direction, since a manual step mislabelled
+/// Failed is a lesser sin than a real failure mislabelled as the gentler
+/// "needs a manual step".
+const MANUAL_ACTION_MARKERS: &[&str] = &["inline pam.d override present"];
+
+/// Whether `change` is the one real "Manual step" the backend can report: a
+/// FAILED change whose `change_error` exactly matches a known
+/// [`MANUAL_ACTION_MARKERS`] entry. A successful change, or a failed change
+/// with any other error text, is not a manual step - see that constant's
+/// doc comment for the deliberate fallback direction.
+pub fn is_manual_action(change: &Change) -> bool {
+    !change.change_success
+        && change
+            .change_error
+            .as_deref()
+            .is_some_and(|err| MANUAL_ACTION_MARKERS.contains(&err))
+}
+
+/// The partial view's (Task 2a.7) four-way outcome for one `ApplyResult` -
+/// the fixed status vocabulary's structural side, since `ApplyResult`
+/// itself only encodes applied/failed/skipped, never "Manual" directly.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ApplyOutcome {
+    /// At least one real change applied; nothing failed.
+    Applied,
+    /// At least one change failed for a reason OTHER than a known manual
+    /// marker - a genuine failure. Always wins over `ManualStep` (see
+    /// `classify_apply_result`'s precedence).
+    Failed,
+    /// Every failed change matches a known manual-action marker, and none
+    /// is a genuine failure.
+    ManualStep,
+    /// Nothing applied, nothing failed - only skips/compliant no-ops (or no
+    /// changes attempted at all).
+    Skipped,
+}
+
+/// Classifies one `ApplyResult` into the partial view's four-way status,
+/// with a genuine failure always dominating a manual one: an area with both
+/// a real failure and a manual-action failure reports `Failed`, never
+/// `ManualStep`, so a real problem can never hide behind the gentler label.
+///
+/// Precedence:
+/// 1. any failed change that is NOT a manual action -> `Failed`
+/// 2. else any failed change that IS a manual action -> `ManualStep`
+/// 3. else `applied_change_count() > 0` -> `Applied`
+/// 4. else -> `Skipped`
+pub fn classify_apply_result(result: &ApplyResult) -> ApplyOutcome {
+    let mut has_genuine_failure = false;
+    let mut has_manual_step = false;
+
+    for failed in result
+        .apply_changes
+        .iter()
+        .filter(|c| !c.is_skipped() && !c.is_checkpoint() && !c.change_success)
+    {
+        if is_manual_action(failed) {
+            has_manual_step = true;
+        } else {
+            has_genuine_failure = true;
+        }
+    }
+
+    if has_genuine_failure {
+        ApplyOutcome::Failed
+    } else if has_manual_step {
+        ApplyOutcome::ManualStep
+    } else if result.applied_change_count() > 0 {
+        ApplyOutcome::Applied
+    } else {
+        ApplyOutcome::Skipped
+    }
+}
+
+/// Short display label for one of the eight hardening areas, used only by
+/// [`partial_summary_sentence`]'s compact one-line header. Keyed on the
+/// same short id prefix `configure_section.rs`'s `PLUGINS`/
+/// `plugin_display_name` match against (e.g. `"pam-hardening".starts_with
+/// ("pam")`).
+///
+/// ponytail: deliberately a SEPARATE, shorter table from `PLUGINS`'s full
+/// names ("PAM Authentication", "Kernel Hardening", ...) - those are right
+/// for the row list and everywhere else, but do not fit inline in a
+/// compact sentence ("PAM needs a manual step", not "PAM Authentication
+/// needs a manual step"). `utils` must not depend on
+/// `components::configure_section` (the dependency already runs the other
+/// way), so this repeats the eight short ids rather than importing
+/// `PLUGINS`; if a plugin's id prefix ever changes, both tables need
+/// updating together.
+const AREA_LABELS: &[(&str, &str)] = &[
+    ("kernel", "Kernel"),
+    ("ssh", "SSH"),
+    ("firewall", "Firewall"),
+    ("pam", "PAM"),
+    ("service", "Service"),
+    ("audit", "Audit"),
+    ("permissions", "Permissions"),
+    ("mac", "MAC"),
+];
+
+fn area_label(plugin_id: &str) -> &'static str {
+    AREA_LABELS
+        .iter()
+        .find(|(id, _)| plugin_id.starts_with(id))
+        .map(|(_, label)| *label)
+        .unwrap_or("Unknown area")
+}
+
+/// Builds the partial view's (Task 2a.7) header sentence.
+///
+/// `X` = the total settings actually applied (`applied_change_count()`
+/// summed across `results`); `Y` = `X` plus every failed change
+/// (`failed_change_count()` summed) - the total settings that were MEANT to
+/// change, deliberately excluding skips/compliant no-ops. Then names every
+/// non-success area in `results` order: a `Failed` area as "{Name}
+/// failed", a `ManualStep` area as "{Name} needs a manual step", joined
+/// with ", " and closed with a single trailing full stop. An all-success
+/// `results` never reaches this function - that is the done view (2a.6) -
+/// so it is not special-cased here.
+pub fn partial_summary_sentence(results: &[ApplyResult]) -> String {
+    let applied: usize = results.iter().map(|r| r.applied_change_count()).sum();
+    let meant_to_change: usize = applied
+        + results
+            .iter()
+            .map(|r| r.failed_change_count())
+            .sum::<usize>();
+
+    let clauses: Vec<String> = results
+        .iter()
+        .filter_map(|r| {
+            let name = area_label(r.apply_plugin_id.as_str());
+            match classify_apply_result(r) {
+                ApplyOutcome::Failed => Some(format!("{name} failed")),
+                ApplyOutcome::ManualStep => Some(format!("{name} needs a manual step")),
+                ApplyOutcome::Applied | ApplyOutcome::Skipped => None,
+            }
+        })
+        .collect();
+
+    let mut sentence = format!("{applied} of {meant_to_change} settings applied.");
+    if !clauses.is_empty() {
+        sentence.push(' ');
+        sentence.push_str(&clauses.join(", "));
+        sentence.push('.');
+    }
+    sentence
 }
 
 #[cfg(test)]
@@ -463,5 +620,160 @@ mod tests {
     #[test]
     fn score_delta_label_empty_when_no_prior_score() {
         assert_eq!(score_delta_label(None, 87), "");
+    }
+
+    // --- Task 2a.7: apply-outcome classification (RED first) ---
+
+    const PAM_MANUAL_MARKER: &str = "inline pam.d override present";
+
+    fn manual_step_change() -> Change {
+        Change {
+            change_description: "PAM: edit the PAM stack manually to set X to Y".to_string(),
+            change_type: ChangeType::ConfigFile,
+            change_success: false,
+            change_error: Some(PAM_MANUAL_MARKER.to_string()),
+        }
+    }
+
+    fn failed_change(error: &str) -> Change {
+        Change {
+            change_description: "a real change".to_string(),
+            change_type: ChangeType::ConfigFile,
+            change_success: false,
+            change_error: Some(error.to_string()),
+        }
+    }
+
+    fn apply_result_for(plugin_id: &str, changes: Vec<Change>) -> ApplyResult {
+        ApplyResult {
+            apply_plugin_id: PluginId::new(plugin_id),
+            apply_success: true,
+            apply_changes: changes,
+            apply_checkpoint_id: None,
+            apply_error: None,
+        }
+    }
+
+    #[test]
+    fn is_manual_action_true_for_the_pam_manual_marker() {
+        assert!(is_manual_action(&manual_step_change()));
+    }
+
+    #[test]
+    fn is_manual_action_false_for_a_different_failed_error() {
+        assert!(!is_manual_action(&failed_change("permission denied")));
+    }
+
+    #[test]
+    fn is_manual_action_false_for_a_successful_change() {
+        assert!(!is_manual_action(&change(ChangeType::ConfigFile, true)));
+    }
+
+    #[test]
+    fn classify_applied_when_only_successes() {
+        let result = apply_result(vec![change(ChangeType::ConfigFile, true)]);
+        assert_eq!(classify_apply_result(&result), ApplyOutcome::Applied);
+    }
+
+    #[test]
+    fn classify_skipped_when_only_skips() {
+        let result = apply_result(vec![change(ChangeType::Skipped, true)]);
+        assert_eq!(classify_apply_result(&result), ApplyOutcome::Skipped);
+    }
+
+    #[test]
+    fn classify_skipped_when_no_changes_at_all() {
+        let result = apply_result(vec![]);
+        assert_eq!(classify_apply_result(&result), ApplyOutcome::Skipped);
+    }
+
+    #[test]
+    fn classify_manual_step_when_only_a_manual_failure() {
+        let result = apply_result(vec![manual_step_change()]);
+        assert_eq!(classify_apply_result(&result), ApplyOutcome::ManualStep);
+    }
+
+    #[test]
+    fn classify_failed_when_a_genuine_failure_is_present() {
+        let result = apply_result(vec![failed_change("permission denied")]);
+        assert_eq!(classify_apply_result(&result), ApplyOutcome::Failed);
+    }
+
+    #[test]
+    fn classify_manual_step_wins_over_an_applied_change_in_the_same_area() {
+        // Brief: an applied change AND a manual failure in the same area ->
+        // ManualStep (it still needs attention, so Applied cannot mask it).
+        let result = apply_result(vec![
+            change(ChangeType::ConfigFile, true),
+            manual_step_change(),
+        ]);
+        assert_eq!(classify_apply_result(&result), ApplyOutcome::ManualStep);
+    }
+
+    #[test]
+    fn classify_failed_dominates_a_manual_failure_in_the_same_area() {
+        // Brief: a manual failure AND a real failure in the same area ->
+        // Failed - the genuine problem must never hide behind ManualStep.
+        let result = apply_result(vec![
+            manual_step_change(),
+            failed_change("permission denied"),
+        ]);
+        assert_eq!(classify_apply_result(&result), ApplyOutcome::Failed);
+    }
+
+    #[test]
+    fn partial_summary_sentence_matches_the_brief_exact_example() {
+        // 3 + 4 = 7 applied; firewall's 4 real failures + pam's 3 manual
+        // failures = 7 failed; 7 + 7 = 14 settings meant to change.
+        let kernel = apply_result_for(
+            "kernel-hardening",
+            vec![
+                change(ChangeType::KernelParameter, true),
+                change(ChangeType::KernelParameter, true),
+                change(ChangeType::KernelParameter, true),
+            ],
+        );
+        let ssh = apply_result_for(
+            "ssh-hardening",
+            vec![
+                change(ChangeType::ConfigFile, true),
+                change(ChangeType::ConfigFile, true),
+                change(ChangeType::ConfigFile, true),
+                change(ChangeType::ConfigFile, true),
+            ],
+        );
+        let firewall = apply_result_for(
+            "firewall-hardening",
+            vec![
+                failed_change("ufw: command not found"),
+                failed_change("ufw: command not found"),
+                failed_change("ufw: command not found"),
+                failed_change("ufw: command not found"),
+            ],
+        );
+        let pam = apply_result_for(
+            "pam-hardening",
+            vec![
+                manual_step_change(),
+                manual_step_change(),
+                manual_step_change(),
+            ],
+        );
+
+        let results = vec![kernel, ssh, firewall, pam];
+        assert_eq!(
+            partial_summary_sentence(&results),
+            "7 of 14 settings applied. Firewall failed, PAM needs a manual step."
+        );
+    }
+
+    #[test]
+    fn partial_summary_sentence_omits_areas_that_succeeded_or_were_skipped() {
+        let ssh = apply_result_for("ssh-hardening", vec![change(ChangeType::ConfigFile, true)]);
+        let mac = apply_result_for("mac-hardening", vec![change(ChangeType::Skipped, true)]);
+        assert_eq!(
+            partial_summary_sentence(&[ssh, mac]),
+            "1 of 1 settings applied."
+        );
     }
 }
