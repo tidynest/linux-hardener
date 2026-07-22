@@ -4678,6 +4678,9 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   position: static;
   border: none;
   border-radius: 0;
+  /* Only the row head toggles; the old .finding-row cursor:pointer (still live
+     for the FindingsGrid table rows) must not leak the hand cursor here. */
+  cursor: default;
 }
 
 .finding-desc { margin: 0 0 var(--space-sm); color: var(--text-secondary); }

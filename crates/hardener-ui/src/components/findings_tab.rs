@@ -201,6 +201,7 @@ pub fn FindingsTab() -> impl IntoView {
                                                         class="finding-row-head"
                                                         role="button"
                                                         tabindex="0"
+                                                        aria-expanded=move || is_open.get().to_string()
                                                         on:click=move |_| expanded.update(|e| {
                                                             let cur = id_for_toggle.clone();
                                                             *e = if e.as_deref() == Some(cur.as_str()) { None } else { Some(cur) };
