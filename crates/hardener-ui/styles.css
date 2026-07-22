@@ -62,6 +62,7 @@
   /* Layout */
   --header-height: 52px;
   --content-padding: 16px;
+  --sidebar-width: 220px;
   /* No max-width - content fills available space */
 
   /* Spacing - one 4px scale */
@@ -615,6 +616,195 @@ body {
    match the surrounding form layout. */
 .form-select {
     max-width: 400px;
+}
+
+/* ============================================================
+   4b. SIDEBAR SHELL (new; not yet wired into lib.rs)
+   Grouped left navigation (Local / Fleet / Settings). Replaces the
+   navigation header above once lib.rs adopts it. See
+   crates/hardener-ui/src/components/sidebar.rs.
+   ============================================================ */
+
+/* Row that holds aside.sidebar and the main content column side by side. */
+.app-shell {
+  display: flex;
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Column to the right of the sidebar: error banner (when shown) above the
+   routed page. */
+.app-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: var(--sidebar-width);
+  background-color: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  min-height: var(--header-height);
+  padding: var(--space-md) var(--space-lg);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.sidebar-wordmark {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+
+.sidebar-wordmark-icon {
+  font-size: var(--font-size-head);
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+}
+
+.sidebar-wordmark-text {
+  font-size: var(--font-size-head);
+  white-space: nowrap;
+}
+
+.sidebar-nav {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-md) 0;
+  overflow-y: auto;
+}
+
+.sidebar-group + .sidebar-group {
+  margin-top: var(--space-md);
+}
+
+/* Group heading (Local / Fleet / Settings). */
+.sidebar-group-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-lg) var(--space-xs);
+  white-space: nowrap;
+}
+
+.sidebar-group-icon {
+  font-size: var(--font-size-sub);
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.sidebar-group-label-text {
+  font-size: var(--font-size-caption);
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.sidebar-group-items {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: 0 var(--space-sm);
+}
+
+/* Active state keys off the router's own aria-current="page" (set by <A>),
+   never a hand-rolled route comparison. */
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border-left: 3px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: var(--font-size-body);
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.sidebar-link:hover {
+  color: var(--text-primary);
+  background-color: var(--bg-tertiary);
+}
+
+.sidebar-link[aria-current="page"] {
+  color: var(--text-primary);
+  background-color: var(--color-accent-bg);
+  border-left-color: var(--color-accent);
+}
+
+.sidebar-link-icon {
+  font-size: var(--font-size-sub);
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+}
+
+.sidebar-link-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-settings {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+  padding: var(--space-md) 0;
+}
+
+.sidebar-settings-content {
+  padding: var(--space-xs) var(--space-lg);
+}
+
+.sidebar-settings-content .theme-toggle {
+  margin-left: 0;
+}
+
+.sidebar-settings-content .theme-select {
+  width: 100%;
+}
+
+/* Build identity at the sidebar foot: legible but visually quiet, so a
+   stale installed build is spottable without competing with the wordmark.
+   Distinct from the existing header .app-version rule above until lib.rs
+   adopts the sidebar and that rule is retired. */
+.sidebar .app-version {
+  padding: var(--space-sm) var(--space-lg) 0;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
+  white-space: nowrap;
+  margin-right: 0;
+  align-self: auto;
 }
 
 /* ============================================================
