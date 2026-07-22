@@ -4360,3 +4360,146 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 .unchecked-row:last-child {
   border-bottom: none;
 }
+
+/* ============================================================
+   Dashboard - security score hero (Phase 3)
+   ============================================================ */
+
+.score-hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
+}
+
+.score-hero-main {
+  padding: var(--space-lg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+.score-hero-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.score-number {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.score-max {
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-left: 2px;
+}
+
+.score-pill {
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  padding: 2px var(--space-sm);
+  border-radius: var(--radius-sm);
+  border: 1px solid currentColor;
+}
+
+.score-scan-btn {
+  margin-left: auto;
+}
+
+.score-bar {
+  margin-top: var(--space-md);
+  height: 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--bg-tertiary);
+}
+
+.score-bar-fill {
+  height: 100%;
+  transition: width var(--transition-normal);
+}
+
+/* Band colouring - number, pill text, and bar fill share the band. */
+.score-hero-main.score-good .score-number,
+.score-hero-main.score-good .score-pill { color: var(--color-good); }
+.score-hero-main.score-good .score-bar-fill { background: var(--color-good); }
+.score-hero-main.score-warning .score-number,
+.score-hero-main.score-warning .score-pill { color: var(--color-warning); }
+.score-hero-main.score-warning .score-bar-fill { background: var(--color-warning); }
+.score-hero-main.score-critical .score-number,
+.score-hero-main.score-critical .score-pill { color: var(--color-critical); }
+.score-hero-main.score-critical .score-bar-fill { background: var(--color-critical); }
+
+.score-honesty {
+  margin: var(--space-md) 0 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--color-accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.link-button:disabled { color: var(--text-muted); cursor: default; text-decoration: none; }
+
+.score-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+.score-empty-title {
+  margin: 0;
+  font-size: var(--font-size-sub);
+  color: var(--text-secondary);
+}
+
+.compliance-disclosure > summary {
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: var(--space-sm) 0;
+}
+
+.compliance-list {
+  list-style: none;
+  margin: var(--space-sm) 0 0 0;
+  padding: 0;
+}
+
+.compliance-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--font-size-sm);
+}
+
+.compliance-name { flex: 1; }
+.compliance-item.score-good .compliance-score { color: var(--color-good); }
+.compliance-item.score-warning .compliance-score { color: var(--color-warning); }
+.compliance-item.score-critical .compliance-score { color: var(--color-critical); }
+.compliance-detail { color: var(--text-muted); }
+
+@media (prefers-reduced-motion: reduce) {
+  .score-bar-fill { transition: none; }
+}
