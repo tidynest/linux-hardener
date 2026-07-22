@@ -6,6 +6,15 @@ use crate::components::{ConfigureSection, HistorySection, TabBar, TabDef, TabPan
 use crate::state::AppState;
 use leptos::prelude::*;
 
+/// The Hardening page's active-section signal (0 = Configure, 1 =
+/// History), shared via context so `ConfigureSection`'s done view can
+/// switch to the History tab from its "View in History" action without a
+/// prop-drill. A typed newtype rather than a bare `RwSignal<usize>` in
+/// context, so it cannot be mistaken for (or collide with) another page's
+/// own tab-index context.
+#[derive(Clone, Copy)]
+pub struct HardeningSection(pub RwSignal<usize>);
+
 /// Hardening page with Configure and History sections.
 #[component]
 pub fn HardeningPage() -> impl IntoView {
@@ -14,6 +23,7 @@ pub fn HardeningPage() -> impl IntoView {
 
     // Section state: 0 = Configure, 1 = History
     let active_section = RwSignal::new(0_usize);
+    provide_context(HardeningSection(active_section));
 
     // Show indicator only when there are apply results to review
     let has_history = move || !state.apply_results.get().is_empty();

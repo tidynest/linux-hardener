@@ -7,12 +7,24 @@
 //! stay wired to the same `AppState` signals as before; this component only
 //! re-skins the selection UI in front of them.
 
-use crate::components::{Card, ConfigFileCard, HeadingLevel, IconCheck, IconInfo, IconMinus};
+use crate::components::{
+    Card, ConfigFileCard, HeadingLevel, IconCheck, IconInfo, IconMinus, calculate_all_scores,
+};
+use crate::pages::hardening_page::HardeningSection;
 use crate::state::AppState;
-use crate::tauri_bindings::{invoke_apply, invoke_apply_dry_run};
-use crate::utils::{PreviewDecision, annotate_preview, is_auth_cancelled};
+use crate::tauri_bindings::{
+    invoke_apply, invoke_apply_dry_run, invoke_generate_report, invoke_scan,
+};
+use crate::utils::{
+    PreviewDecision, annotate_preview, applied_settings_and_areas, apply_change_summary,
+    apply_fully_successful, is_auth_cancelled, score_delta_label,
+};
 use leptos::prelude::*;
+use std::cell::Cell;
+use std::rc::Rc;
+use std::time::Duration;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::JsValue;
 
 /// Plugin definition: ID, display name, and the plain-English one-liner
 /// shown when its `(i)` help affordance is opened.
@@ -112,6 +124,216 @@ fn lockout_class(plugin_id: &str) -> Option<&'static str> {
 /// as if it were a pending change.
 fn total_estimated_changes(decisions: &[PreviewDecision]) -> usize {
     decisions.iter().map(|d| d.estimated_changes.len()).sum()
+}
+
+/// Number of steps in the score count-up animation, and the delay between
+/// them - together the animated duration, matched to `SCORE_REVEAL_MIN_MS`
+/// so the number finishes counting roughly when the reveal beat ends.
+const SCORE_COUNT_UP_STEPS: u32 = 16;
+const SCORE_COUNT_UP_STEP: Duration = Duration::from_millis(50);
+
+/// Minimum time the score-reveal strip spends showing "Scanning..." (Step
+/// 3), even when the scan+report+score round trip resolves faster - long
+/// enough for the beat to read as deliberate rather than a flicker.
+const SCORE_REVEAL_MIN_MS: f64 = 800.0;
+
+/// How long the one-time success-tint flash (Step 3) stays on before the
+/// CSS transition fades it back out.
+const SCORE_FLASH_MS: u64 = 600;
+
+/// Client-side signals driving the one-time security-score reveal beat
+/// shown after a fully successful apply (Step 3). Bundled as one `Copy`
+/// struct - mirroring `HardeningSection`'s newtype pattern below - so the
+/// DONE view here and Task 2a.7's PARTIAL view can each construct their own
+/// instance and drive it through the same [`run_score_reveal`], rather than
+/// duplicating the reveal mechanics.
+#[derive(Clone, Copy)]
+struct ScoreReveal {
+    /// True only while the "Scanning..." beat is in flight.
+    revealing: RwSignal<bool>,
+    /// `Some(score)` once a reveal has completed; `None` before the first
+    /// scan this session (score honesty: no number until a real scan).
+    revealed: RwSignal<Option<i32>>,
+    /// The count-up value actually rendered; animates from the previous
+    /// score (or 0) up to `revealed`'s value, and also drives the sweeping
+    /// bar's width so the two stay in lockstep.
+    displayed: RwSignal<i32>,
+    /// `score_delta_label`'s output for the current reveal ("Up N points",
+    /// "No change", "Down N points", or empty with no prior score).
+    delta_text: RwSignal<String>,
+    /// Toggled true then back false shortly after a reveal completes, to
+    /// drive the one-time success-tint CSS flash.
+    flash: RwSignal<bool>,
+}
+
+impl ScoreReveal {
+    fn new() -> Self {
+        Self {
+            revealing: RwSignal::new(false),
+            revealed: RwSignal::new(None),
+            displayed: RwSignal::new(0),
+            delta_text: RwSignal::new(String::new()),
+            flash: RwSignal::new(false),
+        }
+    }
+}
+
+/// Whether the user's OS/browser preference asks for reduced motion.
+///
+/// `web-sys`'s `MediaQueryList` binding is not among this crate's enabled
+/// features (and Cargo.toml is out of scope for this task - see the task
+/// brief), so this reaches `window.matchMedia` through `js_sys::Reflect`
+/// instead of the typed `Window::match_media` method. Defaults to `false`
+/// (full motion) if `window` or the call is unavailable for any reason,
+/// same fail-open posture as every other best-effort browser feature check
+/// in this crate.
+fn prefers_reduced_motion() -> bool {
+    (|| -> Option<bool> {
+        let window = web_sys::window()?;
+        let window: &JsValue = window.as_ref();
+        let match_media = js_sys::Reflect::get(window, &JsValue::from_str("matchMedia")).ok()?;
+        let match_media = match_media.dyn_ref::<js_sys::Function>()?;
+        let query = match_media
+            .call1(
+                window,
+                &JsValue::from_str("(prefers-reduced-motion: reduce)"),
+            )
+            .ok()?;
+        js_sys::Reflect::get(&query, &JsValue::from_str("matches"))
+            .ok()?
+            .as_bool()
+    })()
+    .unwrap_or(false)
+}
+
+/// Animates `displayed` counting from `from` to `to` over
+/// `SCORE_COUNT_UP_STEPS * SCORE_COUNT_UP_STEP` (Step 3's count-up), via
+/// `leptos::prelude::set_interval_with_handle` - the codebase's established
+/// timer primitive (re-exported from `leptos_dom::helpers`, itself the
+/// `web_sys::Window::set_timeout`/`set_interval` pattern used in
+/// `clipboard.rs`/`sidebar.rs`/`lib.rs`), so no new dependency is needed.
+/// The interval clears itself on its final tick - no leaked timer.
+fn animate_score_count_up(displayed: RwSignal<i32>, from: i32, to: i32) {
+    let step = Rc::new(Cell::new(0_u32));
+    let handle: Rc<Cell<Option<IntervalHandle>>> = Rc::new(Cell::new(None));
+    let handle_for_tick = handle.clone();
+
+    let Ok(interval_handle) = set_interval_with_handle(
+        move || {
+            let n = step.get() + 1;
+            step.set(n);
+            let progress = (f64::from(n) / f64::from(SCORE_COUNT_UP_STEPS)).min(1.0);
+            displayed.set(from + ((to - from) as f64 * progress).round() as i32);
+            if n >= SCORE_COUNT_UP_STEPS
+                && let Some(h) = handle_for_tick.take()
+            {
+                h.clear();
+            }
+        },
+        SCORE_COUNT_UP_STEP,
+    ) else {
+        // set_interval itself failed (no window) - settle immediately
+        // rather than leaving the number stuck at `from`.
+        displayed.set(to);
+        return;
+    };
+    handle.set(Some(interval_handle));
+}
+
+/// Sets `flash` true, then back to false after `SCORE_FLASH_MS` - the
+/// one-time success-tint flash (Step 3). Mirrors `clipboard.rs`'s
+/// set-then-reset status pattern.
+fn flash_once(flash: RwSignal<bool>) {
+    flash.set(true);
+    set_timeout(
+        move || flash.set(false),
+        Duration::from_millis(SCORE_FLASH_MS),
+    );
+}
+
+/// Runs the score-reveal beat (Step 3): captures the previous score (if
+/// any), runs a fresh scan+report+score cycle following `quick_actions.rs`'s
+/// `on_run_scan` pattern exactly, enforces `SCORE_REVEAL_MIN_MS` as a floor
+/// on the "Scanning..." beat, then reveals - animating the count-up (or
+/// jumping straight to the final value under reduced motion) and firing the
+/// one-time flash. An explicit user action only (a button click); never
+/// wired to an effect that could re-fire on a passive re-render. Re-running
+/// while already revealing is a no-op, so a double-click cannot start two
+/// overlapping scans.
+///
+/// Free function, not inlined into the component, and takes its signals as
+/// plain parameters (not a prop) precisely so 2a.7's partial/mixed view can
+/// call it with its own [`ScoreReveal`] instance.
+fn run_score_reveal(app_state: AppState, reveal: ScoreReveal) {
+    if reveal.revealing.get_untracked() {
+        return;
+    }
+    reveal.revealing.set(true);
+    reveal.delta_text.set(String::new());
+
+    let previous = {
+        let reports = app_state.compliance_reports.get_untracked();
+        if reports.is_empty() {
+            None
+        } else {
+            Some(calculate_all_scores(&reports).0)
+        }
+    };
+
+    let start_ms = js_sys::Date::now();
+
+    leptos::task::spawn_local(async move {
+        let mut new_score = previous.unwrap_or(0);
+
+        match invoke_scan(vec![], app_state.config_path.get_untracked()).await {
+            Ok(results) => {
+                app_state.scan_results.set(results);
+
+                let frameworks = hardener_types::ComplianceFramework::ALL
+                    .iter()
+                    .map(|f| f.id().to_string())
+                    .collect();
+                match invoke_generate_report(frameworks).await {
+                    Ok(reports) => {
+                        new_score = calculate_all_scores(&reports).0;
+                        app_state.compliance_reports.set(reports);
+                    }
+                    Err(e) => {
+                        web_sys::console::warn_1(
+                            &format!("Compliance generation failed: {}", e).into(),
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                web_sys::console::error_1(&format!("Scan failed: {}", e).into());
+                app_state
+                    .error_message
+                    .set(Some(format!("Scan failed: {}", e)));
+            }
+        }
+
+        let elapsed_ms = js_sys::Date::now() - start_ms;
+        let remaining_ms = (SCORE_REVEAL_MIN_MS - elapsed_ms).max(0.0) as u64;
+
+        set_timeout(
+            move || {
+                reveal.revealing.set(false);
+                reveal.revealed.set(Some(new_score));
+                reveal
+                    .delta_text
+                    .set(score_delta_label(previous, new_score));
+
+                if prefers_reduced_motion() {
+                    reveal.displayed.set(new_score);
+                } else {
+                    animate_score_count_up(reveal.displayed, previous.unwrap_or(0), new_score);
+                }
+                flash_once(reveal.flash);
+            },
+            Duration::from_millis(remaining_ms),
+        );
+    });
 }
 
 /// Configure section with the selection state and apply controls.
@@ -346,6 +568,36 @@ pub fn ConfigureSection() -> impl IntoView {
         }
     };
 
+    // Done view (Step 4) - the Hardening page's tab-section signal, read
+    // via `use_context` (not `expect_context`) so this component still
+    // works if it is ever mounted outside `HardeningPage`; "View in
+    // History" below no-ops gracefully when absent.
+    let hardening_section = use_context::<HardeningSection>();
+
+    // Done view (Step 3) - the score-reveal signals, bundled so
+    // `run_score_reveal` can be handed one value.
+    let score_reveal = ScoreReveal::new();
+
+    // "Done" (Step 2): clears apply_results, returning to a fresh
+    // selection state (the selection UI's own Show below is gated in part
+    // on apply_results being empty, so this is what brings it back).
+    let on_done = move |_| {
+        app_state.apply_results.set(Vec::new());
+    };
+
+    // "View in History" (Step 4): switches HardeningPage to its History
+    // tab (index 1) via the shared context signal.
+    let on_view_history = move |_| {
+        if let Some(section) = hardening_section {
+            section.0.set(1);
+        }
+    };
+
+    // "Run Security Scan" (Step 3): the score strip's own trigger.
+    let on_run_security_scan = move |_| {
+        run_score_reveal(app_state, score_reveal);
+    };
+
     view! {
         <div class="configure-section">
             // Step 1 - once the review has a result to show, it takes full
@@ -358,8 +610,15 @@ pub fn ConfigureSection() -> impl IntoView {
             // sets is_applying true, so without this second guard this
             // selection UI - not the review card, which is already gated on
             // show_preview alone - would be what reappeared underneath the
-            // applying view below.
-            <Show when=move || !app_state.show_preview.get() && !app_state.is_applying.get()>
+            // applying view below. And steps aside once there is a result to
+            // show (`apply_results` non-empty): the done view below (Step 2)
+            // - or 2a.7's partial view - is what replaces it then, until
+            // "Done" clears apply_results again.
+            <Show when=move || {
+                !app_state.show_preview.get()
+                    && !app_state.is_applying.get()
+                    && app_state.apply_results.get().is_empty()
+            }>
             <div class="configure-layout">
                 <div class="configure-main" class:is-disabled=move || app_state.is_previewing.get()>
                     <div
@@ -746,6 +1005,138 @@ pub fn ConfigureSection() -> impl IntoView {
                         }}
                     </ul>
                     <p class="applying-keep-open">"Keep this window open until this finishes."</p>
+                </Card>
+            </Show>
+
+            // Done view (Step 2) - the SUCCESS state, shown once the apply
+            // has finished and every result came back clean. 2a.7 adds the
+            // sibling PARTIAL/mixed branch directly below this one, gated on
+            // `!apply_fully_successful(&results) && !results.is_empty()` (the
+            // two conditions are mutually exclusive over the same
+            // apply_results signal, so nothing here needs to change for that
+            // slice to land - this is the seam the brief calls for).
+            <Show when=move || {
+                !app_state.is_applying.get() && apply_fully_successful(&app_state.apply_results.get())
+            }>
+                <Card title_level=HeadingLevel::H2 class="done-panel">
+                    <div class="done-heading">
+                        <IconCheck class="done-heading-icon".to_string() />
+                        <h2 class="done-heading-title">"System Hardened"</h2>
+                    </div>
+                    <p class="done-summary-line">
+                        {move || {
+                            let (settings, areas) = applied_settings_and_areas(&app_state.apply_results.get());
+                            format!(
+                                "{} setting{} applied across {} area{}",
+                                settings,
+                                if settings == 1 { "" } else { "s" },
+                                areas,
+                                if areas == 1 { "" } else { "s" },
+                            )
+                        }}
+                    </p>
+
+                    <ul class="done-area-list">
+                        {move || {
+                            app_state.apply_results.get().into_iter().map(|result| {
+                                let name = plugin_display_name(result.apply_plugin_id.as_str());
+                                if result.applied_change_count() == 0 {
+                                    view! {
+                                        <li class="done-area-row done-area-compliant">
+                                            <IconMinus class="done-area-minus-icon".to_string() />
+                                            <span class="done-area-name">{name}</span>
+                                            <span class="done-area-note">"Already compliant, skipped"</span>
+                                        </li>
+                                    }.into_any()
+                                } else {
+                                    let summary = apply_change_summary(&result);
+                                    view! {
+                                        <li class="done-area-row">
+                                            <IconCheck class="done-area-check-icon".to_string() />
+                                            <span class="done-area-name">{name}</span>
+                                            <span class="done-area-summary">{summary}</span>
+                                        </li>
+                                    }.into_any()
+                                }
+                            }).collect::<Vec<_>>()
+                        }}
+                    </ul>
+
+                    <p class="done-checkpoint-reassurance">
+                        "A checkpoint was saved. You can undo everything from History."
+                    </p>
+
+                    <div class="done-actions">
+                        <button type="button" class="btn btn-secondary" on:click=on_view_history>
+                            "View in History"
+                        </button>
+                        <button type="button" class="btn btn-secondary" on:click=on_done>
+                            "Done"
+                        </button>
+                        <button
+                            type="button"
+                            class="btn btn-primary"
+                            on:click=on_run_security_scan
+                            disabled=move || score_reveal.revealing.get()
+                        >
+                            "Run Security Scan"
+                        </button>
+                    </div>
+
+                    // Step 3 - the score-reveal strip. Score honesty: before
+                    // the first scan this renders nothing (the button above
+                    // is the only affordance); while scanning it shows the
+                    // "Scanning..." beat; once revealed it settles into the
+                    // number (a NOTCH above body text, never a hero size),
+                    // the delta copy, and the sweeping bar. The dedicated
+                    // sr-only live region below carries the announcement on
+                    // its own, once per reveal, independent of this markup.
+                    <div class="score-reveal">
+                        {move || {
+                            if score_reveal.revealing.get() {
+                                view! { <p class="score-reveal-status">"Scanning..."</p> }.into_any()
+                            } else if score_reveal.revealed.get().is_some() {
+                                let delta = score_reveal.delta_text.get();
+                                view! {
+                                    <div class="score-reveal-content">
+                                        <div
+                                            class="score-reveal-result"
+                                            class:score-reveal-flash=move || score_reveal.flash.get()
+                                        >
+                                            <span class="score-reveal-value">{move || score_reveal.displayed.get()}</span>
+                                            <span class="score-reveal-max">"/100"</span>
+                                            {(!delta.is_empty()).then(|| view! {
+                                                <span class="score-reveal-delta">{delta.clone()}</span>
+                                            })}
+                                        </div>
+                                        <div class="score-reveal-bar" aria-hidden="true">
+                                            <div
+                                                class="score-reveal-bar-fill"
+                                                style=move || format!(
+                                                    "width: {}%",
+                                                    score_reveal.displayed.get().clamp(0, 100)
+                                                )
+                                            ></div>
+                                        </div>
+                                    </div>
+                                }.into_any()
+                            } else {
+                                view! { <div></div> }.into_any()
+                            }
+                        }}
+                    </div>
+                    <p class="sr-only" aria-live="polite">
+                        {move || {
+                            score_reveal.revealed.get().map(|score| {
+                                let delta = score_reveal.delta_text.get();
+                                if delta.is_empty() {
+                                    format!("Security score {score}.")
+                                } else {
+                                    format!("Security score {score}, {}.", delta.to_lowercase())
+                                }
+                            }).unwrap_or_default()
+                        }}
+                    </p>
                 </Card>
             </Show>
         </div>

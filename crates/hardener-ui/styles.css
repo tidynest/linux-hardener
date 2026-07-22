@@ -1882,10 +1882,11 @@ tbody tr:hover {
   animation: fadeIn var(--transition-normal);
 }
 
-/* Shared with .applying-panel's checkpoint reassurance below - same
-   reassuring tone (safe/tracked), two different messages. */
+/* Shared with .applying-panel's and the done view's checkpoint reassurance
+   below - same reassuring tone (safe/tracked), three different messages. */
 .checking-reassurance,
-.applying-reassurance {
+.applying-reassurance,
+.done-checkpoint-reassurance {
   font-size: var(--font-size-sm);
   font-weight: 500;
   color: var(--color-good-bright, var(--text-secondary));
@@ -1974,6 +1975,16 @@ tbody tr:hover {
   .applying-area-indicator {
     animation: none;
     opacity: 1;
+  }
+
+  /* Done view's score-reveal strip (Step 3): the count-up itself is
+     skipped in Rust (run_score_reveal checks prefers_reduced_motion and
+     jumps `displayed` straight to the final value), so these two rules
+     only need to stop the CSS smoothing between/around that single jump -
+     an instant settle rather than an eased one. */
+  .score-reveal-bar-fill,
+  .score-reveal-result {
+    transition: none;
   }
 }
 
@@ -2264,6 +2275,180 @@ tbody tr:hover {
 }
 
 .result-checkpoint code { color: var(--color-accent); }
+
+/* Done view (Task 2a.6) - the SUCCESS state shown after a fully successful
+   apply. Left-aligned throughout, deliberately no centred hero: the check
+   mark is small, "System Hardened" sits at the same normal title size as
+   any other Card heading (.card-title's 18px/600), and the score-reveal
+   number further down is only a notch above body text - never a big hero
+   number. Status vocabulary stays fixed here too: applied is the green
+   check, Skipped is the muted minus, no amber anywhere in this block. */
+.done-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.done-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.done-heading-icon {
+  width: 1.3em;
+  height: 1.3em;
+  flex-shrink: 0;
+  color: var(--color-good);
+}
+
+/* Same size/weight as .card-title (Card's own title, which this view does
+   not use directly - the icon needs to sit inline with the text). */
+.done-heading-title {
+  margin: 0;
+  font-size: var(--font-size-head);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.done-summary-line {
+  margin: 0;
+  font-size: var(--font-size-body);
+  color: var(--text-secondary);
+}
+
+.done-area-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.done-area-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  background-color: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+}
+
+/* An all-skipped/all-compliant result: shown, never hidden, but visually
+   receded - same dimmed treatment as .review-group-compliant. */
+.done-area-compliant {
+  opacity: 0.7;
+}
+
+.done-area-check-icon {
+  width: 1.1em;
+  height: 1.1em;
+  flex-shrink: 0;
+  color: var(--color-good);
+}
+
+.done-area-minus-icon {
+  width: 1.1em;
+  height: 1.1em;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.done-area-name {
+  font-size: var(--font-size-body);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.done-area-summary,
+.done-area-note {
+  margin-left: auto;
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
+.done-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+}
+
+/* Score-reveal strip (Step 3). Score honesty: before the first scan
+   .score-reveal renders an empty <div> (nothing but the "Run Security
+   Scan" action already in .done-actions above) - there is deliberately no
+   CSS state for "no number yet" beyond simply not rendering anything. */
+.score-reveal-status {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.score-reveal-content {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+/* The success-tint flash target. Background transitions both ways - in
+   instantly when .score-reveal-flash is added, back out over the same
+   duration once it is removed - so one class toggle in Rust (flash_once)
+   is enough for the full flash-then-fade. */
+.score-reveal-result {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-sm);
+  transition: background-color 600ms ease;
+}
+
+.score-reveal-flash {
+  background-color: var(--color-good-bg);
+}
+
+/* Leads by weight and colour, not by size: a notch above body text
+   (--font-size-sub), never the dashboard's big hero .score-value. */
+.score-reveal-value {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sub);
+  font-weight: 700;
+  color: var(--color-good);
+}
+
+.score-reveal-max {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
+}
+
+.score-reveal-delta {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+/* The thin sweeping bar - width is bound to the same `displayed` count-up
+   signal as .score-reveal-value in configure_section.rs, so the two stay
+   in lockstep; the transition below only smooths the steps between the
+   set_interval ticks. High-contrast-safe: --color-good and --border-strong
+   both carry enough contrast against near-black in that theme. */
+.score-reveal-bar {
+  height: 3px;
+  min-width: 80px;
+  flex: 1 1 120px;
+  max-width: 200px;
+  background-color: var(--border-strong);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.score-reveal-bar-fill {
+  height: 100%;
+  width: 0%;
+  background-color: var(--color-good);
+  transition: width var(--transition-fast);
+}
 
 /* ============================================================
    16. TAB COMPONENTS
