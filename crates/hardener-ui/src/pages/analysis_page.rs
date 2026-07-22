@@ -2,12 +2,10 @@
 //!
 //! Provides a tabbed interface for viewing findings and compliance reports.
 
-use crate::components::{
-    ComplianceTab, FindingsTab, MiniSecurityScore, ScanHistoryTab, TabBar, TabDef, TabPanel,
-    UncheckedBanner,
-};
+use crate::components::{ComplianceTab, FindingsTab, ScanHistoryTab, TabBar, TabDef, TabPanel};
 use crate::state::AppState;
-use crate::tauri_bindings::{invoke_generate_report, invoke_scan};
+use crate::tauri_bindings::{invoke_generate_report, invoke_get_scan_history, invoke_scan};
+use crate::utils::last_scanned_label;
 use leptos::prelude::*;
 
 /// Analysis page with tabbed interface for Findings and Compliance.
@@ -17,6 +15,13 @@ pub fn AnalysisPage() -> impl IntoView {
 
     // Tab state: 0 = Findings, 1 = Compliance, 2 = History
     let active_tab = RwSignal::new(0_usize);
+
+    let last_scanned = RwSignal::new(String::from("Not scanned yet"));
+    leptos::task::spawn_local(async move {
+        if let Ok(sessions) = invoke_get_scan_history(Some(1)).await {
+            last_scanned.set(last_scanned_label(&sessions));
+        }
+    });
 
     // Finding count for badge
     let finding_count = move || {
@@ -90,34 +95,18 @@ pub fn AnalysisPage() -> impl IntoView {
         <article class="analysis-page">
             <header class="analysis-header">
                 <div class="header-content">
-                    <h1>"Security Analysis"</h1>
-                    <p class="header-subtitle">
-                        {move || match active_tab.get() {
-                            0 => "Scan findings and security issues",
-                            1 => "Compliance framework reports",
-                            2 => "Past scan sessions",
-                            _ => "",
-                        }}
-                    </p>
+                    <h1>"Analysis"</h1>
+                    <p class="header-subtitle">{move || last_scanned.get()}</p>
                 </div>
-                <div class="header-actions">
-                    <MiniSecurityScore />
-                    <button
-                        class="btn btn-primary"
-                        on:click=on_scan
-                        disabled=move || app_state.is_scanning.get()
-                        aria-live="polite"
-                    >
-                        {move || if app_state.is_scanning.get() {
-                            "Scanning..."
-                        } else {
-                            "Run Security Scan"
-                        }}
-                    </button>
-                </div>
+                <button
+                    class="btn btn-primary"
+                    on:click=on_scan
+                    disabled=move || app_state.is_scanning.get()
+                    aria-live="polite"
+                >
+                    {move || if app_state.is_scanning.get() { "Scanning..." } else { "Run Security Scan" }}
+                </button>
             </header>
-
-            <UncheckedBanner/>
 
             <TabBar tabs=Signal::derive(tabs) active_tab=active_tab aria_label="Analysis options" />
 
