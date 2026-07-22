@@ -57,7 +57,7 @@ pub fn HardeningPage() -> impl IntoView {
                 </p>
             </header>
 
-            <TabBar tabs=tabs() active_tab=active_section aria_label="Hardening sections" />
+            <TabBar tabs=Signal::derive(tabs) active_tab=active_section aria_label="Hardening sections" />
 
             <div class="section-content">
                 <TabPanel id="configure" index=0 active_tab=active_section>

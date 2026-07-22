@@ -119,7 +119,7 @@ pub fn AnalysisPage() -> impl IntoView {
 
             <UncheckedBanner/>
 
-            <TabBar tabs=tabs() active_tab=active_tab aria_label="Analysis options" />
+            <TabBar tabs=Signal::derive(tabs) active_tab=active_tab aria_label="Analysis options" />
 
             <div class="tab-content">
                 <TabPanel id="findings" index=0 active_tab=active_tab>
