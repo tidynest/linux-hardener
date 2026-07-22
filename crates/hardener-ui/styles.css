@@ -1971,67 +1971,133 @@ tbody tr:hover {
   cursor: pointer;
 }
 
-/* Preview panel - dry-run results before apply */
-.preview-panel {
-  border: 2px solid var(--color-warning);
-  background: linear-gradient(
-    to bottom,
-    color-mix(in srgb, var(--color-warning) 8%, var(--bg-secondary)),
-    var(--bg-secondary)
-  );
-}
-
-.preview-warning {
-  color: var(--text-secondary);
-  margin-bottom: var(--space-md);
-  padding: var(--space-md);
-  background-color: color-mix(in srgb, var(--color-warning) 10%, transparent);
-  border-radius: 6px;
-  border-left: 3px solid var(--color-warning);
-}
-
-.preview-changes {
+/* Review step - shown after a successful dry-run. Calm by default (no
+   warning border/tint on the panel itself): risk is signalled narrowly, by
+   the neutral lockout pill and its single tick inside .review-confirm-box,
+   never by colouring the whole step amber/red. */
+.review-panel {
   display: flex;
   flex-direction: column;
+  gap: var(--space-lg);
+}
+
+/* Step 1 - the selection collapses to this summary header + [Edit]. */
+.review-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: var(--space-md);
-  margin-bottom: var(--space-lg);
+}
+
+.review-summary {
+  margin: 0;
+  font-size: var(--font-size-sub);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Step 2 - one group per area, grouped by annotate_preview's decisions. */
+.review-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
   max-height: 400px;
   overflow-y: auto;
 }
 
-.preview-plugin {
-  background-color: var(--bg-tertiary);
+.review-group {
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-tertiary);
 }
 
-.preview-plugin-name {
-  font-size: var(--font-size-sub);
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: var(--space-md);
+/* A verified_compliant group: shown, never hidden, but visually receded -
+   dimmed opacity plus the muted IconMinus rather than the change-bearing
+   IconCheck. */
+.review-group-compliant {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  opacity: 0.7;
 }
 
-.preview-change-count {
-  font-size: var(--font-size-caption);
-  font-weight: 400;
+.review-group-minus-icon {
+  width: 1.1em;
+  height: 1.1em;
+  flex-shrink: 0;
   color: var(--text-muted);
 }
 
-.preview-change-list {
+.review-group-name {
+  font-size: var(--font-size-body);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.review-group-note {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
+/* Native <details>/<summary> per group with changes - the lazy correct
+   choice for "expandable"; the custom arrow mirrors
+   .advanced-disclosure-summary's pattern further up this file. */
+.review-group-details > summary {
   list-style: none;
-  padding: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.review-group-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.review-group-details > summary::marker {
+  content: "";
+}
+
+/* Not "applied" (that stays --color-good elsewhere in the fixed status
+   vocabulary) - this check marks "a real, pending change", so it takes the
+   neutral accent colour instead. */
+.review-group-check-icon {
+  width: 1.1em;
+  height: 1.1em;
+  flex-shrink: 0;
+  color: var(--color-accent);
+}
+
+/* Step 4 - neutral bordered caution pill for ssh ("login") / firewall
+   ("network") groups. Never amber, never a status colour - text carries
+   the meaning, not colour alone. */
+.lockout-pill {
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  padding: 1px var(--space-sm);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+}
+
+.review-group-count {
+  margin-left: auto;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
+}
+
+.review-group-changes {
+  list-style: none;
   margin: 0;
+  padding: 0 var(--space-md) var(--space-md);
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
 }
 
-.preview-change-list li {
+.review-group-changes li {
   font-size: var(--font-size-body);
   color: var(--text-secondary);
   padding: var(--space-sm) var(--space-md);
@@ -2040,24 +2106,99 @@ tbody tr:hover {
   font-family: var(--font-mono);
 }
 
-/* Shown in place of the change list when the last deep scan verified a
-   plugin fully compliant: a positive confirmation that no change is
-   pending, rather than the conditional estimates the apply would skip. */
-.preview-compliant-note {
-  font-size: var(--font-size-body);
-  color: var(--color-good-bright, var(--text-secondary));
-  padding: var(--space-sm) var(--space-md);
-  background-color: rgba(16, 185, 129, 0.1);
-  border-left: 3px solid var(--color-good, var(--border));
-  border-radius: 4px;
+/* Step 5 seed - the admin drawer trigger; 2a.4 fills the panel it opens. */
+.review-detail-trigger {
+  align-self: flex-start;
 }
 
-.preview-actions {
+/* Step 3 - the calm accent confirm box (never red/warning), holding the
+   checkpoint/password reassurance directly beside the count-named confirm,
+   plus Step 4's single lockout tick when it applies. */
+.review-confirm-box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  background-color: var(--color-accent-bg);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-md);
+}
+
+.review-confirm-reassurance {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.review-lockout-tick {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  color: var(--text-primary);
+  font-size: var(--font-size-body);
+  cursor: pointer;
+}
+
+.review-confirm-actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-md);
-  padding-top: var(--space-md);
-  border-top: 1px solid var(--border);
+}
+
+/* Nudge shown while the lockout tick above is required but unchecked -
+   never silent, per the brief's Step 4. */
+.review-lockout-hint {
+  margin: 0;
+  align-self: flex-end;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
+}
+
+/* Admin drawer stub (Step 5) - 2a.4 fills this with the grid-aligned config
+   diff. A minimal closeable right-side panel only, so the branch never has
+   a dangling trigger. Same backdrop pattern as the existing .modal-backdrop
+   (further down this file): dims and blocks the rest of the page rather
+   than leaving the review's own Cancel/Apply row silently unreachable
+   underneath an opaque fixed panel. */
+.review-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .5);
+  z-index: var(--z-modal);
+}
+
+.review-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(420px, 100%);
+  background-color: var(--bg-secondary);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  z-index: calc(var(--z-modal) + 1);
+  overflow-y: auto;
+}
+
+.review-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.review-drawer-header h3 {
+  margin: 0;
+  font-size: var(--font-size-sub);
+  color: var(--text-primary);
+}
+
+.review-drawer-placeholder {
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
 }
 
 /* History section */

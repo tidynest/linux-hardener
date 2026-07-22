@@ -7,10 +7,10 @@
 //! stay wired to the same `AppState` signals as before; this component only
 //! re-skins the selection UI in front of them.
 
-use crate::components::{Card, ConfigFileCard, HeadingLevel, IconCheck, IconInfo};
+use crate::components::{Card, ConfigFileCard, HeadingLevel, IconCheck, IconInfo, IconMinus};
 use crate::state::AppState;
 use crate::tauri_bindings::{invoke_apply, invoke_apply_dry_run};
-use crate::utils::{annotate_preview, is_auth_cancelled};
+use crate::utils::{PreviewDecision, annotate_preview, is_auth_cancelled};
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
@@ -72,6 +72,47 @@ const PROFILES: &[(&str, &str)] = &[
     ("high", "High"),
     ("custom", "Custom"),
 ];
+
+/// Maps a dry-run decision's plugin id to its `PLUGINS` display name.
+///
+/// The backend echoes back the FULL registry id (e.g. `"kernel-hardening"`),
+/// not the short id this file sends it (`"kernel"`) - `src-tauri`'s own
+/// `validate_plugin_ids` documents and relies on the same short-id-is-a-
+/// prefix-of-the-full-id relationship, so matching via `starts_with` here is
+/// the existing convention, not a new one. Falls back to a plain label only
+/// if the backend ever reports a plugin this build does not know about.
+fn plugin_display_name(plugin_id: &str) -> &'static str {
+    PLUGINS
+        .iter()
+        .find(|p| plugin_id.starts_with(p.id))
+        .map(|p| p.name)
+        .unwrap_or("Unknown area")
+}
+
+/// Lockout risk class for a plugin id, if any.
+///
+/// SSH and the firewall are the only two areas that can affect how the user
+/// logs in or reaches the machine at all - the sole two lockout classes for
+/// now (brief Step 4). The label is neutral text, never a status colour.
+fn lockout_class(plugin_id: &str) -> Option<&'static str> {
+    if plugin_id.starts_with("ssh") {
+        Some("login")
+    } else if plugin_id.starts_with("firewall") {
+        Some("network")
+    } else {
+        None
+    }
+}
+
+/// Honest confirm count: the sum of each decision's estimated change count.
+///
+/// A `verified_compliant` decision already has `estimated_changes` emptied
+/// by `annotate_preview`, so it naturally contributes 0. This must never be
+/// swapped for `decisions.len()`, which would count a compliant/skipped area
+/// as if it were a pending change.
+fn total_estimated_changes(decisions: &[PreviewDecision]) -> usize {
+    decisions.iter().map(|d| d.estimated_changes.len()).sum()
+}
 
 /// Configure section with the selection state and apply controls.
 #[component]
@@ -146,6 +187,18 @@ pub fn ConfigureSection() -> impl IntoView {
     // on_preview run. Presentation-only client-side state.
     let checking_cancelled = RwSignal::new(false);
 
+    // Review step (2a.3) - presentation-only client-side state, reset
+    // whenever a fresh review is entered or left (see on_preview and
+    // on_cancel_preview below) so neither can leak into an unrelated
+    // selection.
+    //
+    // The single lockout acknowledgement tick (Step 4): gates Apply only
+    // when the current decisions include an ssh/firewall (login/network)
+    // area.
+    let lockout_ack = RwSignal::new(false);
+    // Seeds the admin drawer (Step 5); 2a.4 fills the panel this opens.
+    let drawer_open = RwSignal::new(false);
+
     // Preview handler - runs dry-run and shows preview panel
     let on_preview = move |_| {
         let plugins = get_enabled_plugins();
@@ -154,6 +207,8 @@ pub fn ConfigureSection() -> impl IntoView {
         }
 
         checking_cancelled.set(false);
+        lockout_ack.set(false);
+        drawer_open.set(false);
         app_state.is_previewing.set(true);
         app_state.show_preview.set(false);
 
@@ -191,10 +246,15 @@ pub fn ConfigureSection() -> impl IntoView {
         checking_cancelled.set(true);
     };
 
-    // Cancel preview - hides preview panel
+    // Cancel preview - hides the review step. Also reused for [Edit] (Step
+    // 1), which returns to selection the same way. Clears the lockout tick
+    // and closes the admin drawer stub so neither survives into the next
+    // review pass.
     let on_cancel_preview = move |_| {
         app_state.show_preview.set(false);
         app_state.preview_results.set(Vec::new());
+        lockout_ack.set(false);
+        drawer_open.set(false);
     };
 
     // Confirm and apply - runs actual apply after preview
@@ -225,6 +285,27 @@ pub fn ConfigureSection() -> impl IntoView {
             }
             app_state.is_applying.set(false);
         });
+    };
+
+    // Cross-checks the dry-run estimate against the latest persisted scan:
+    // a plugin the last deep scan verified fully compliant is shown as
+    // "Already compliant, skipped" rather than listing conditional
+    // estimates the real apply would skip. Display-only; the privileged
+    // apply re-checks everything and remains authoritative. Reused across
+    // the review step's groups list, its honest confirm count, and the
+    // lockout gate below, so this stays one call site rather than three.
+    let get_decisions = move || {
+        let results = app_state.preview_results.get();
+        let scan_results = app_state.scan_results.get();
+        annotate_preview(&results, &scan_results)
+    };
+
+    // Whether the current decisions include an ssh/firewall (login/network)
+    // area - Step 4's single extra confirmation tick is shown only then.
+    let has_lockout = move || {
+        get_decisions()
+            .iter()
+            .any(|d| lockout_class(&d.plugin_id).is_some())
     };
 
     // WAI-ARIA radiogroup keyboard handling for the segmented control:
@@ -271,13 +352,19 @@ pub fn ConfigureSection() -> impl IntoView {
 
     view! {
         <div class="configure-section">
+            // Step 1 - once the review has a result to show, it takes full
+            // attention: the selection UI (segmented control, plugin rows,
+            // the old "N areas selected" aside) steps aside rather than
+            // sitting duplicated above the review's own compact summary
+            // header. [Edit] (below) is the only way back to this.
+            <Show when=move || !app_state.show_preview.get()>
             <div class="configure-layout">
                 <div class="configure-main" class:is-disabled=move || app_state.is_previewing.get()>
                     <div
                         class="segmented-control"
                         role="radiogroup"
                         aria-label="Protection level"
-                        on:keydown=on_segment_keydown
+                        on:keydown=on_segment_keydown.clone()
                     >
                         {PROFILES.iter().map(|(id, label)| {
                             let id = *id;
@@ -472,86 +559,238 @@ pub fn ConfigureSection() -> impl IntoView {
                     </Show>
                 </div>
             </div>
+            </Show>
 
-            // Preview panel - shown after dry-run completes
+            // Review step - shown after a successful dry-run. Flow:
+            // choose (2a.1) -> checking (2a.2) -> review (here) -> applying
+            // -> done/partial.
             <Show when=move || app_state.show_preview.get()>
-                <Card title="Preview Changes" title_level=HeadingLevel::H2 class="preview-panel">
-                    <p class="preview-warning">
-                        "Review the changes below before applying. A checkpoint will be created for rollback."
-                    </p>
+                <Card title_level=HeadingLevel::H2 class="review-panel">
+                    // Step 1 - the selection collapses to a summary header;
+                    // [Edit] returns to it via the same handler as Cancel.
+                    <div class="review-header">
+                        <p class="review-summary">
+                            {move || {
+                                let n = enabled_count();
+                                let profile_label = PROFILES
+                                    .iter()
+                                    .find(|(id, _)| *id == selected_profile.get())
+                                    .map(|(_, label)| *label)
+                                    .unwrap_or("Custom");
+                                format!(
+                                    "{} profile . {} area{}",
+                                    profile_label,
+                                    n,
+                                    if n == 1 { "" } else { "s" }
+                                )
+                            }}
+                        </p>
+                        <button type="button" class="btn btn-secondary btn-small" on:click=on_cancel_preview>
+                            "Edit"
+                        </button>
+                    </div>
 
-                    <div class="preview-changes">
+                    // Step 2 - changes grouped by area. A native
+                    // <details>/<summary> per group with changes (the lazy
+                    // correct choice for "expandable"); a verified_compliant
+                    // group is dimmed and shown, never hidden.
+                    <div class="review-groups">
                         {move || {
-                            let results = app_state.preview_results.get();
-                            if results.is_empty() {
+                            let decisions = get_decisions();
+                            if decisions.is_empty() {
                                 view! { <p class="empty-state">"No changes to preview."</p> }.into_any()
                             } else {
-                                // Cross-check each estimate against the latest persisted
-                                // scan: a plugin the last deep scan verified fully
-                                // compliant is shown as "0 changes" rather than listing
-                                // conditional estimates the real apply would skip. This
-                                // is display-only; the privileged apply re-checks
-                                // everything and remains authoritative.
-                                let scan_results = app_state.scan_results.get();
-                                let decisions = annotate_preview(&results, &scan_results);
                                 decisions.into_iter().map(|decision| {
-                                    let plugin_id = decision.plugin_id;
-                                    let compliant = decision.verified_compliant;
-                                    let changes = decision.estimated_changes;
-                                    let change_count = changes.len();
+                                    let name = plugin_display_name(&decision.plugin_id);
+                                    let pill = lockout_class(&decision.plugin_id);
+                                    let count = decision.estimated_changes.len();
 
-                                    view! {
-                                        <div class="preview-plugin">
-                                            <h4 class="preview-plugin-name">
-                                                {plugin_id}
-                                                <span class="preview-change-count">
-                                                    {format!("({} change{})", change_count, if change_count == 1 { "" } else { "s" })}
-                                                </span>
-                                            </h4>
-                                            {if compliant {
-                                                view! {
-                                                    <p class="preview-compliant-note">
-                                                        "Verified compliant by last deep scan"
-                                                    </p>
-                                                }.into_any()
-                                            } else {
-                                                view! {
-                                                    <ul class="preview-change-list">
-                                                        {changes.iter().map(|change| {
-                                                            view! { <li>{change.clone()}</li> }
-                                                        }).collect::<Vec<_>>()}
-                                                    </ul>
-                                                }.into_any()
-                                            }}
-                                        </div>
+                                    if decision.verified_compliant {
+                                        view! {
+                                            <div class="review-group review-group-compliant">
+                                                <IconMinus class="review-group-minus-icon".to_string() />
+                                                <span class="review-group-name">{name}</span>
+                                                <span class="review-group-note">"Already compliant, skipped"</span>
+                                            </div>
+                                        }.into_any()
+                                    } else {
+                                        view! {
+                                            <details class="review-group review-group-details">
+                                                <summary class="review-group-summary">
+                                                    <IconCheck class="review-group-check-icon".to_string() />
+                                                    <span class="review-group-name">{name}</span>
+                                                    {pill.map(|p| view! { <span class="lockout-pill">{p}</span> })}
+                                                    <span class="review-group-count">
+                                                        {format!("{} change{}", count, if count == 1 { "" } else { "s" })}
+                                                    </span>
+                                                </summary>
+                                                <ul class="review-group-changes">
+                                                    {decision.estimated_changes.iter().map(|change| {
+                                                        view! { <li>{change.clone()}</li> }
+                                                    }).collect::<Vec<_>>()}
+                                                </ul>
+                                            </details>
+                                        }.into_any()
                                     }
                                 }).collect::<Vec<_>>().into_any()
                             }
                         }}
                     </div>
 
-                    <div class="preview-actions">
-                        <button
-                            class="btn btn-secondary"
-                            on:click=on_cancel_preview
-                        >
-                            "Cancel"
-                        </button>
-                        <button
-                            class="btn btn-primary"
-                            on:click=on_confirm_apply
-                            disabled=move || app_state.is_applying.get()
-                            aria-live="polite"
-                        >
-                            {move || if app_state.is_applying.get() {
-                                "Applying..."
-                            } else {
-                                "Confirm & Apply"
-                            }}
-                        </button>
+                    // Step 5 seed - trigger + signal only; 2a.4 fills the
+                    // drawer body.
+                    <button
+                        type="button"
+                        class="btn btn-secondary review-detail-trigger"
+                        on:click=move |_| drawer_open.set(true)
+                    >
+                        "View full detail"
+                    </button>
+
+                    // Step 3 - the count-named confirm, in a calm accent box
+                    // (never red/warning) beside the checkpoint/password
+                    // reassurance. Step 4 - the single lockout tick lives in
+                    // the same box, shown only when the selection includes
+                    // an ssh/firewall area.
+                    <div class="review-confirm-box">
+                        <p class="review-confirm-reassurance">
+                            "A checkpoint is saved first, and you will be asked for your password. You can undo everything from History."
+                        </p>
+
+                        <Show when=has_lockout>
+                            <label class="review-lockout-tick">
+                                <input
+                                    type="checkbox"
+                                    prop:checked=move || lockout_ack.get()
+                                    on:change=move |ev| {
+                                        lockout_ack.set(crate::components::form_helpers::checkbox_checked(&ev));
+                                    }
+                                />
+                                <span>"I understand this can affect how I log in or reach this machine"</span>
+                            </label>
+                        </Show>
+
+                        <div class="review-confirm-actions">
+                            <button
+                                class="btn btn-secondary"
+                                on:click=on_cancel_preview
+                            >
+                                "Cancel"
+                            </button>
+                            <button
+                                class="btn btn-primary"
+                                on:click=on_confirm_apply
+                                disabled=move || {
+                                    let total = total_estimated_changes(&get_decisions());
+                                    app_state.is_applying.get()
+                                        || total == 0
+                                        || (has_lockout() && !lockout_ack.get())
+                                }
+                                aria-live="polite"
+                            >
+                                {move || {
+                                    if app_state.is_applying.get() {
+                                        "Applying...".to_string()
+                                    } else {
+                                        let total = total_estimated_changes(&get_decisions());
+                                        if total == 0 {
+                                            "Nothing to Apply".to_string()
+                                        } else {
+                                            format!("Apply {} Change{}", total, if total == 1 { "" } else { "s" })
+                                        }
+                                    }
+                                }}
+                            </button>
+                        </div>
+
+                        <Show when=move || has_lockout() && !lockout_ack.get()>
+                            <p class="review-lockout-hint">"Tick the box above to enable Apply."</p>
+                        </Show>
                     </div>
                 </Card>
+
+                // Admin drawer stub - 2a.4 fills this drawer with the
+                // grid-aligned config diff. The backdrop dims the rest of
+                // the page (same pattern as the existing .modal-backdrop)
+                // rather than leaving the review's own Cancel/Apply row
+                // silently unreachable underneath an opaque fixed panel;
+                // clicking it, like Close, dismisses the stub.
+                <Show when=move || drawer_open.get()>
+                    <div class="review-drawer-backdrop" on:click=move |_| drawer_open.set(false)></div>
+                    <aside class="review-drawer" aria-label="Full detail">
+                        <div class="review-drawer-header">
+                            <h3>"Full detail"</h3>
+                            <button
+                                type="button"
+                                class="btn btn-secondary btn-small"
+                                on:click=move |_| drawer_open.set(false)
+                            >
+                                "Close"
+                            </button>
+                        </div>
+                        <p class="review-drawer-placeholder">
+                            "The full change detail view is on its way."
+                        </p>
+                    </aside>
+                </Show>
             </Show>
         </div>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn total_estimated_changes_excludes_compliant_groups() {
+        // The task brief's hand example: 2 plugins, one with 3 estimated
+        // changes, one verified_compliant (changes emptied). Honest N is 3,
+        // never `decisions.len()` (which would read 2).
+        let decisions = vec![
+            PreviewDecision {
+                plugin_id: "ssh-hardening".to_string(),
+                verified_compliant: false,
+                estimated_changes: vec!["a".to_string(), "b".to_string(), "c".to_string()],
+            },
+            PreviewDecision {
+                plugin_id: "permissions-hardening".to_string(),
+                verified_compliant: true,
+                estimated_changes: vec![],
+            },
+        ];
+        assert_eq!(total_estimated_changes(&decisions), 3);
+    }
+
+    #[test]
+    fn total_estimated_changes_is_zero_when_everything_compliant() {
+        let decisions = vec![PreviewDecision {
+            plugin_id: "kernel-hardening".to_string(),
+            verified_compliant: true,
+            estimated_changes: vec![],
+        }];
+        assert_eq!(total_estimated_changes(&decisions), 0);
+    }
+
+    #[test]
+    fn plugin_display_name_maps_the_full_backend_id_via_prefix() {
+        // Backend echoes the FULL registry id, not the short id this file
+        // sends it - see plugin_display_name's own doc comment.
+        assert_eq!(plugin_display_name("kernel-hardening"), "Kernel Hardening");
+        assert_eq!(plugin_display_name("ssh-hardening"), "SSH Hardening");
+        assert_eq!(
+            plugin_display_name("service-minimisation"),
+            "Service Minimisation"
+        );
+        assert_eq!(plugin_display_name("mac-hardening"), "MAC System");
+        assert_eq!(plugin_display_name("unknown-plugin"), "Unknown area");
+    }
+
+    #[test]
+    fn lockout_class_flags_only_ssh_and_firewall() {
+        assert_eq!(lockout_class("ssh-hardening"), Some("login"));
+        assert_eq!(lockout_class("firewall-hardening"), Some("network"));
+        assert_eq!(lockout_class("kernel-hardening"), None);
+        assert_eq!(lockout_class("pam-hardening"), None);
     }
 }
