@@ -122,6 +122,47 @@ pub fn apply_change_summary(result: &ApplyResult) -> String {
     summary
 }
 
+/// Whether every result in `results` succeeded outright, with zero failed
+/// changes anywhere - the gate for showing the SUCCESS done view (Task
+/// 2a.6) rather than the partial/mixed view (2a.7). An empty slice is
+/// deliberately not a success: nothing having been applied is not the same
+/// as everything having applied cleanly.
+pub fn apply_fully_successful(results: &[ApplyResult]) -> bool {
+    !results.is_empty()
+        && results
+            .iter()
+            .all(|r| r.apply_success && r.failed_change_count() == 0)
+}
+
+/// Totals the done view's headline line: `(total_applied_settings,
+/// areas_changed)`. The first is the sum of `applied_change_count()`
+/// across every result (never `apply_changes.len()`, which would count
+/// skips and failures too); the second counts only results that actually
+/// changed something, so an all-skipped/all-compliant result contributes 0
+/// to the total and is excluded from the area count.
+pub fn applied_settings_and_areas(results: &[ApplyResult]) -> (usize, usize) {
+    let total = results.iter().map(|r| r.applied_change_count()).sum();
+    let areas = results
+        .iter()
+        .filter(|r| r.applied_change_count() > 0)
+        .count();
+    (total, areas)
+}
+
+/// Copy for the score-reveal delta line, comparing a `previous` score (if
+/// any) to the freshly measured `current` one. `None` - no prior score to
+/// compare against, e.g. the very first scan this session - makes no delta
+/// claim at all, rather than misreporting a missing baseline as "no
+/// change".
+pub fn score_delta_label(previous: Option<i32>, current: i32) -> String {
+    match previous {
+        Some(prev) if current > prev => format!("Up {} points", current - prev),
+        Some(prev) if current < prev => format!("Down {} points", prev - current),
+        Some(_) => "No change".to_string(),
+        None => String::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -340,5 +381,87 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn apply_fully_successful_true_when_all_succeed_with_no_failures() {
+        let results = vec![
+            apply_result(vec![change(ChangeType::ConfigFile, true)]),
+            apply_result(vec![change(ChangeType::KernelParameter, true)]),
+        ];
+        assert!(apply_fully_successful(&results));
+    }
+
+    #[test]
+    fn apply_fully_successful_false_on_any_change_failure() {
+        let results = vec![
+            apply_result(vec![change(ChangeType::ConfigFile, true)]),
+            apply_result(vec![change(ChangeType::KernelParameter, false)]),
+        ];
+        assert!(!apply_fully_successful(&results));
+    }
+
+    #[test]
+    fn apply_fully_successful_false_when_flag_false_despite_no_change_failures() {
+        // apply_success can be false (e.g. a checkpoint-save failure) even
+        // with an empty/all-succeeded changes list - the flag must be
+        // checked independently of failed_change_count().
+        let results = vec![ApplyResult {
+            apply_plugin_id: PluginId::new("test"),
+            apply_success: false,
+            apply_changes: vec![],
+            apply_checkpoint_id: None,
+            apply_error: Some("checkpoint save failed".to_string()),
+        }];
+        assert!(!apply_fully_successful(&results));
+    }
+
+    #[test]
+    fn apply_fully_successful_false_when_empty() {
+        assert!(!apply_fully_successful(&[]));
+    }
+
+    #[test]
+    fn applied_settings_and_areas_counts_only_real_changes() {
+        // Brief's hand example: one result with 3 applied, one with 0
+        // applied + 2 skipped -> (3, 1).
+        let results = vec![
+            apply_result(vec![
+                change(ChangeType::ConfigFile, true),
+                change(ChangeType::KernelParameter, true),
+                change(ChangeType::FirewallRule, true),
+            ]),
+            apply_result(vec![
+                change(ChangeType::Skipped, true),
+                change(ChangeType::Skipped, true),
+            ]),
+        ];
+        assert_eq!(applied_settings_and_areas(&results), (3, 1));
+    }
+
+    #[test]
+    fn applied_settings_and_areas_zero_when_nothing_applied() {
+        let results = vec![apply_result(vec![change(ChangeType::Skipped, true)])];
+        assert_eq!(applied_settings_and_areas(&results), (0, 0));
+    }
+
+    #[test]
+    fn score_delta_label_reports_increase() {
+        assert_eq!(score_delta_label(Some(77), 87), "Up 10 points");
+    }
+
+    #[test]
+    fn score_delta_label_reports_no_change() {
+        assert_eq!(score_delta_label(Some(87), 87), "No change");
+    }
+
+    #[test]
+    fn score_delta_label_reports_decrease() {
+        assert_eq!(score_delta_label(Some(90), 87), "Down 3 points");
+    }
+
+    #[test]
+    fn score_delta_label_empty_when_no_prior_score() {
+        assert_eq!(score_delta_label(None, 87), "");
     }
 }
