@@ -4517,3 +4517,50 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 @media (prefers-reduced-motion: reduce) {
   .score-bar-fill { transition: none; }
 }
+
+/* Dashboard - recent activity rows (Phase 3). */
+.activity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.activity-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.activity-item:last-child { border-bottom: none; }
+
+.activity-icon {
+  width: 20px;
+  height: 20px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.activity-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.activity-title { font-weight: 600; }
+
+.activity-meta {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.activity-link {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.activity-link:hover { text-decoration: underline; }

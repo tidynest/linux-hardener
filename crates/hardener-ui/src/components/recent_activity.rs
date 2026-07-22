@@ -2,9 +2,11 @@
 //!
 //! Displays a summary of the last scan and apply operations.
 
+use super::icons::{IconAnalysis, IconHardening};
 use crate::components::{Card, HeadingLevel};
 use crate::state::AppState;
 use leptos::prelude::*;
+use leptos_router::components::A;
 
 /// Recent activity summary for the Dashboard.
 ///
@@ -55,43 +57,41 @@ pub fn RecentActivity() -> impl IntoView {
                 when=move || has_scan() || has_apply()
                 fallback=|| view! {
                     <div class="empty-state">
-                        <div class="empty-state-icon">"📋"</div>
                         <p class="empty-state-title">"No activity yet"</p>
-                        <p class="empty-state-hint">"Use Quick Actions above to run a scan and see activity here."</p>
+                        <p class="empty-state-hint">"Run a security scan to see activity here."</p>
                     </div>
                 }
             >
-                <div class="activity-list">
+                <ul class="activity-list">
                     <Show when=has_scan>
-                        <div class="activity-item">
-                            <div class="activity-icon scan">"⌕"</div>
+                        <li class="activity-item">
+                            <IconAnalysis class="activity-icon" />
                             <div class="activity-content">
-                                <div class="activity-title">"Security Scan"</div>
-                                <div class="activity-meta">
+                                <span class="activity-title">"Security Scan"</span>
+                                <span class="activity-meta">
                                     {move || format!("{} findings detected", finding_count())}
-                                </div>
+                                </span>
                             </div>
-                        </div>
+                            <A href="/analysis" attr:class="activity-link">"View"</A>
+                        </li>
                     </Show>
-
                     <Show when=has_apply>
-                        <div class="activity-item">
-                            <div class="activity-icon apply">"✓"</div>
+                        <li class="activity-item">
+                            <IconHardening class="activity-icon" />
                             <div class="activity-content">
-                                <div class="activity-title">
+                                <span class="activity-title">
                                     {move || if last_apply_success().unwrap_or(false) {
                                         "Hardening Applied"
                                     } else {
                                         "Hardening Failed"
                                     }}
-                                </div>
-                                <div class="activity-meta">
-                                    {last_apply_summary}
-                                </div>
+                                </span>
+                                <span class="activity-meta">{last_apply_summary}</span>
                             </div>
-                        </div>
+                            <A href="/hardening" attr:class="activity-link">"History"</A>
+                        </li>
                     </Show>
-                </div>
+                </ul>
             </Show>
         </Card>
     }
