@@ -4500,6 +4500,20 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 .compliance-item.score-critical .compliance-score { color: var(--color-critical); }
 .compliance-detail { color: var(--text-muted); }
 
+/* The legacy bare .score-good/.score-warning/.score-critical rules (old circular
+   gauge) carry a 20px glow box-shadow. The hero card and each compliance row also
+   wear those bare band classes, so suppress the inherited glow here. Higher
+   specificity (0,2,0) beats the bare rule (0,1,0); mini-score and fleet-table use
+   their own scoped selectors and are untouched. */
+.score-hero-main.score-good,
+.score-hero-main.score-warning,
+.score-hero-main.score-critical,
+.compliance-item.score-good,
+.compliance-item.score-warning,
+.compliance-item.score-critical {
+  box-shadow: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .score-bar-fill { transition: none; }
 }
