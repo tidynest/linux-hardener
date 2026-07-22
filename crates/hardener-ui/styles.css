@@ -1954,7 +1954,11 @@ tbody tr:hover {
 }
 
 /* Reduced motion: no shimmer sweep, no staggered reveal - the checking
-   view and every row appear fully formed and static immediately. */
+   view and every row appear fully formed and static immediately. Also
+   covers .applying-area-indicator below: a static active state, not a
+   faded-out one - the row is still genuinely in progress, so the
+   indicator stays fully opaque in its neutral tone, it just stops
+   pulsing. */
 @media (prefers-reduced-motion: reduce) {
   .checking-view,
   .checking-skeleton-row {
@@ -1965,6 +1969,11 @@ tbody tr:hover {
   .checking-skeleton-indicator {
     animation: none;
     background: var(--border-strong);
+  }
+
+  .applying-area-indicator {
+    animation: none;
+    opacity: 1;
   }
 }
 
@@ -1978,44 +1987,36 @@ tbody tr:hover {
    tick (--color-good is the real applied status, only knowable once
    apply_results is read in the later done/partial view). Row/list/name
    styling reuses .checking-skeleton-row/-list/-name verbatim (including
-   their reduced-motion rule above) rather than duplicating it - DRY; only
-   the indicator itself reads differently here, in the accent colour the
-   review step already uses for "this is happening, not yet a status"
-   (see .review-group-check-icon), not the shimmer's neutral "not yet
-   known" grey. Amber (--color-warning*) is deliberately never used
-   anywhere in this block - that family is reserved for the "Manual step"
-   status alone. */
+   their reduced-motion rule, merged into the single block above) rather
+   than duplicating it - DRY; only the indicator itself reads differently
+   here, in the neutral --text-secondary tone for "this is happening, not
+   yet a status", never in --color-accent - in the guardian theme
+   --color-accent and --color-good are the same value, so an accent-toned
+   indicator here would wear the exact colour that later means "applied".
+   Amber (--color-warning*) is deliberately never used anywhere in this
+   block - that family is reserved for the "Manual step" status alone. */
 .applying-panel {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
 }
 
-/* Active, not "done": pulses in the neutral accent colour for as long as
-   its row is on screen and never settles into --color-good, so it cannot
-   be misread as this specific area having finished. */
+/* Active, not "done": pulses in the neutral --text-secondary tone for as
+   long as its row is on screen and never settles into --color-good (or
+   any other status colour), so it cannot be misread as this specific area
+   having finished. */
 .applying-area-indicator {
   width: 0.85em;
   height: 0.85em;
   flex-shrink: 0;
   border-radius: var(--radius-full);
-  background-color: var(--color-accent);
+  background-color: var(--text-secondary);
   animation: applying-pulse 1.2s ease-in-out infinite;
 }
 
 @keyframes applying-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
-}
-
-/* Reduced motion: static active state, not a faded-out one - the row is
-   still genuinely in progress, so the indicator stays fully opaque in its
-   accent colour, it just stops pulsing. */
-@media (prefers-reduced-motion: reduce) {
-  .applying-area-indicator {
-    animation: none;
-    opacity: 1;
-  }
 }
 
 /* .apply-controls container styles removed - now using Card component */
