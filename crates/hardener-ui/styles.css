@@ -4540,6 +4540,10 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   height: 20px;
   color: var(--text-secondary);
   flex-shrink: 0;
+  /* Neutralise the legacy .activity-icon badge box (old 32px tile) leaking
+     onto the new bare glyph; the retired rules are swept at epic-final. */
+  background: transparent;
+  border-radius: 0;
 }
 
 .activity-content {
@@ -4549,7 +4553,10 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   min-width: 0;
 }
 
-.activity-title { font-weight: 600; }
+.activity-title {
+  font-weight: 600;
+  margin-bottom: 0;
+}
 
 .activity-meta {
   font-size: var(--font-size-sm);
