@@ -4397,6 +4397,10 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   font-weight: 400;
   color: var(--text-muted);
   margin-left: 2px;
+  /* Override the legacy .score-max (old gauge) mono family + top margin so the
+     "/100" matches the sans score number; the retired rule is swept at epic-final. */
+  font-family: var(--font-sans);
+  margin-top: 0;
 }
 
 .score-pill {
@@ -4495,6 +4499,13 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 }
 
 .compliance-name { flex: 1; }
+/* The legacy .compliance-score (Compliance page) is 22px mono bold; scope a row
+   size here so the framework percentage matches the 13px disclosure row. */
+.compliance-item .compliance-score {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
 .compliance-item.score-good .compliance-score { color: var(--color-good); }
 .compliance-item.score-warning .compliance-score { color: var(--color-warning); }
 .compliance-item.score-critical .compliance-score { color: var(--color-critical); }
@@ -4579,6 +4590,10 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 
 .dashboard-header h1 {
   margin: 0;
+  /* The old .dashboard-page > h1 rule no longer matches (h1 now nests in
+     <header>); restore the app-wide header size to match the other pages. */
+  font-size: var(--font-size-title);
+  font-weight: 600;
 }
 
 .dashboard-subtitle {
