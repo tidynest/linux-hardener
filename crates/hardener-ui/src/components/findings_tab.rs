@@ -5,7 +5,7 @@
 //! (audit-style, default), Compliance (hides policy-excepted findings to
 //! show only real violations).
 
-use crate::state::{total_unchecked, AppState};
+use crate::state::{AppState, total_unchecked};
 use crate::tauri_bindings::{invoke_deep_scan, invoke_generate_report};
 use crate::types::Severity;
 use crate::utils::{group_findings_by_severity, is_auth_cancelled, severity_class, severity_label};
@@ -185,6 +185,7 @@ pub fn FindingsTab() -> impl IntoView {
                                         {group.into_iter().map(|f| {
                                             let id = f.finding_id.clone();
                                             let id_for_toggle = id.clone();
+                                            let id_for_key = id.clone();
                                             // Copy Signal so `is_open` can be read at all three sites
                                             // (row class, detail Show, chevron) without moving `id`.
                                             let is_open = Signal::derive(move || {
@@ -204,6 +205,15 @@ pub fn FindingsTab() -> impl IntoView {
                                                             let cur = id_for_toggle.clone();
                                                             *e = if e.as_deref() == Some(cur.as_str()) { None } else { Some(cur) };
                                                         })
+                                                        on:keydown=move |ev: leptos::ev::KeyboardEvent| {
+                                                            if ev.key() == "Enter" || ev.key() == " " {
+                                                                ev.prevent_default();
+                                                                let cur = id_for_key.clone();
+                                                                expanded.update(|e| {
+                                                                    *e = if e.as_deref() == Some(cur.as_str()) { None } else { Some(cur) };
+                                                                });
+                                                            }
+                                                        }
                                                     >
                                                         <span class="finding-title">{f.finding_title.clone()}</span>
                                                         <span class="finding-tag">{category}</span>
