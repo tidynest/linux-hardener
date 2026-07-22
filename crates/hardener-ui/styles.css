@@ -1463,7 +1463,7 @@ tbody tr:hover {
 .preview-change-count {
   font-size: var(--font-size-caption);
   font-weight: 400;
-  color: var(--text-tertiary);
+  color: var(--text-muted);
 }
 
 .preview-change-list {
@@ -1746,12 +1746,12 @@ tbody tr:hover {
 }
 
 .status-success {
-  color: var(--score-good);
+  color: var(--color-good);
   background-color: rgba(16, 185, 129, 0.1);
 }
 
 .status-error {
-  color: var(--score-critical);
+  color: var(--color-critical);
   background-color: rgba(239, 68, 68, 0.1);
 }
 
@@ -1881,14 +1881,14 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   font-family: inherit;
   background: var(--bg-secondary);
   color: var(--text-primary);
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--border);
   border-radius: 4px;
   outline: none;
   transition: border-color 0.15s ease;
 }
 
 .input-text:focus {
-  border-color: var(--accent-primary);
+  border-color: var(--color-accent);
 }
 
 .input-text::placeholder {
@@ -2741,8 +2741,8 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 .config-file-input {
   flex: 1;
   padding: var(--space-xs) var(--space-sm);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
   font-family: var(--font-mono);
@@ -2758,7 +2758,7 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 
 .config-file-input::placeholder {
   color: var(--text-muted);
-  font-family: var(--font-body);
+  font-family: var(--font-sans);
   font-style: italic;
 }
 
