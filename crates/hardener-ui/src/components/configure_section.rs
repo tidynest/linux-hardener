@@ -8,19 +8,23 @@
 //! re-skins the selection UI in front of them.
 
 use crate::components::{
-    Card, ConfigFileCard, HeadingLevel, IconCheck, IconInfo, IconMinus, calculate_all_scores,
+    Card, ConfigFileCard, HeadingLevel, IconCheck, IconInfo, IconMinus, IconWrench, IconX,
+    calculate_all_scores,
 };
 use crate::pages::hardening_page::HardeningSection;
 use crate::state::AppState;
 use crate::tauri_bindings::{
     invoke_apply, invoke_apply_dry_run, invoke_generate_report, invoke_scan,
 };
+use crate::types::ApplyResult;
 use crate::utils::{
-    PreviewDecision, annotate_preview, applied_settings_and_areas, apply_change_summary,
-    apply_fully_successful, is_auth_cancelled, score_delta_label,
+    ApplyOutcome, PreviewDecision, annotate_preview, applied_settings_and_areas,
+    apply_change_summary, apply_fully_successful, classify_apply_result, is_auth_cancelled,
+    is_manual_action, partial_summary_sentence, score_delta_label,
 };
 use leptos::prelude::*;
 use std::cell::Cell;
+use std::collections::HashSet;
 use std::rc::Rc;
 use std::time::Duration;
 use wasm_bindgen::JsCast;
@@ -124,6 +128,58 @@ fn lockout_class(plugin_id: &str) -> Option<&'static str> {
 /// as if it were a pending change.
 fn total_estimated_changes(decisions: &[PreviewDecision]) -> usize {
     decisions.iter().map(|d| d.estimated_changes.len()).sum()
+}
+
+/// The partial view's (Task 2a.7) real second-line text for a `Failed` row:
+/// the first genuine failure (non-skipped, non-checkpoint, failed, and NOT
+/// a manual action - the same definition `classify_apply_result` uses),
+/// preferring its `change_error` and falling back to `change_description`
+/// if the error text is empty. Mirroring the classifier's own "genuine
+/// failure" filter keeps the row's revealed text pinned to whichever
+/// change actually put it in the Failed bucket.
+fn failure_detail(result: &ApplyResult) -> String {
+    result
+        .apply_changes
+        .iter()
+        .find(|c| {
+            !c.is_skipped() && !c.is_checkpoint() && !c.change_success && !is_manual_action(c)
+        })
+        .map(|c| {
+            c.change_error
+                .clone()
+                .filter(|e| !e.is_empty())
+                .unwrap_or_else(|| c.change_description.clone())
+        })
+        .unwrap_or_default()
+}
+
+/// The partial view's (Task 2a.7) real second-line instruction for a
+/// `ManualStep` row: the first manual-action change's `change_description`,
+/// never `change_error`, which only ever holds the marker literal, not
+/// human-readable guidance.
+fn manual_step_detail(result: &ApplyResult) -> String {
+    result
+        .apply_changes
+        .iter()
+        .find(|c| is_manual_action(c))
+        .map(|c| c.change_description.clone())
+        .unwrap_or_default()
+}
+
+/// The partial view's (Task 2a.7) status text for a `Skipped` row:
+/// "Skipped: {reason}" using the first skip entry's own description as the
+/// human reason, falling back to a bare "Skipped" when that description is
+/// empty (or there is no skip entry at all, e.g. an area with zero
+/// attempted changes).
+fn skipped_status_text(result: &ApplyResult) -> String {
+    result
+        .apply_changes
+        .iter()
+        .find(|c| c.is_skipped())
+        .map(|c| c.change_description.clone())
+        .filter(|d| !d.is_empty())
+        .map(|reason| format!("Skipped: {reason}"))
+        .unwrap_or_else(|| "Skipped".to_string())
 }
 
 /// Number of steps in the score count-up animation, and the delay between
@@ -377,6 +433,117 @@ fn run_score_reveal(app_state: AppState, reveal: ScoreReveal) {
     });
 }
 
+/// The strip Task 2a.6's done view and 2a.7's partial view both render
+/// verbatim beneath their own status-specific content: the three shared
+/// actions (View in History / Done / Run Security Scan) and the
+/// score-reveal beat itself (Step 3 - no number shown until a real scan
+/// runs, then a count-up reveal via [`run_score_reveal`]). Factored into
+/// one place, per the 2a.7 brief, rather than each `Show` branch below
+/// carrying its own copy of this markup.
+///
+/// Takes `app_state`/`score_reveal`/`hardening_section` directly rather
+/// than pre-built closures, so it can construct all three action handlers
+/// itself - each depends on nothing else from either caller's scope. A
+/// bare `<div>` would break the `.done-panel`/`.partial-panel` flex gap
+/// this strip's pieces (`.done-actions`, `.score-reveal`, the `sr-only`
+/// live region) rely on from their parent, so the wrapper is `display:
+/// contents` in CSS - present in the DOM for this function's single
+/// `impl IntoView` return, invisible to layout.
+fn score_strip(
+    app_state: AppState,
+    score_reveal: ScoreReveal,
+    hardening_section: Option<HardeningSection>,
+) -> impl IntoView {
+    let on_view_history = move |_| {
+        if let Some(section) = hardening_section {
+            section.0.set(1);
+        }
+    };
+    let on_done = move |_| {
+        app_state.apply_results.set(Vec::new());
+        score_reveal.reset();
+    };
+    let on_run_security_scan = move |_| {
+        run_score_reveal(app_state, score_reveal);
+    };
+
+    view! {
+        <div class="score-strip">
+            <div class="done-actions">
+                <button type="button" class="btn btn-secondary" on:click=on_view_history>
+                    "View in History"
+                </button>
+                <button type="button" class="btn btn-secondary" on:click=on_done>
+                    "Done"
+                </button>
+                <button
+                    type="button"
+                    class="btn btn-primary"
+                    on:click=on_run_security_scan
+                    disabled=move || score_reveal.revealing.get()
+                >
+                    "Run Security Scan"
+                </button>
+            </div>
+
+            // Step 3 - the score-reveal strip. Score honesty: before the
+            // first scan this renders nothing (the button above is the
+            // only affordance); while scanning it shows the "Scanning..."
+            // beat; once revealed it settles into the number (a NOTCH above
+            // body text, never a hero size), the delta copy, and the
+            // sweeping bar. The dedicated sr-only live region below carries
+            // the announcement on its own, once per reveal, independent of
+            // this markup.
+            <div class="score-reveal">
+                {move || {
+                    if score_reveal.revealing.get() {
+                        view! { <p class="score-reveal-status">"Scanning..."</p> }.into_any()
+                    } else if score_reveal.revealed.get().is_some() {
+                        let delta = score_reveal.delta_text.get();
+                        view! {
+                            <div class="score-reveal-content">
+                                <div
+                                    class="score-reveal-result"
+                                    class:score-reveal-flash=move || score_reveal.flash.get()
+                                >
+                                    <span class="score-reveal-value">{move || score_reveal.displayed.get()}</span>
+                                    <span class="score-reveal-max">"/100"</span>
+                                    {(!delta.is_empty()).then(|| view! {
+                                        <span class="score-reveal-delta">{delta.clone()}</span>
+                                    })}
+                                </div>
+                                <div class="score-reveal-bar" aria-hidden="true">
+                                    <div
+                                        class="score-reveal-bar-fill"
+                                        style=move || format!(
+                                            "width: {}%",
+                                            score_reveal.displayed.get().clamp(0, 100)
+                                        )
+                                    ></div>
+                                </div>
+                            </div>
+                        }.into_any()
+                    } else {
+                        view! { <div></div> }.into_any()
+                    }
+                }}
+            </div>
+            <p class="sr-only" aria-live="polite">
+                {move || {
+                    score_reveal.revealed.get().map(|score| {
+                        let delta = score_reveal.delta_text.get();
+                        if delta.is_empty() {
+                            format!("Security score {score}.")
+                        } else {
+                            format!("Security score {score}, {}.", delta.to_lowercase())
+                        }
+                    }).unwrap_or_default()
+                }}
+            </p>
+        </div>
+    }
+}
+
 /// Configure section with the selection state and apply controls.
 #[component]
 pub fn ConfigureSection() -> impl IntoView {
@@ -623,33 +790,69 @@ pub fn ConfigureSection() -> impl IntoView {
     // Done view (Step 4) - the Hardening page's tab-section signal, read
     // via `use_context` (not `expect_context`) so this component still
     // works if it is ever mounted outside `HardeningPage`; "View in
-    // History" below no-ops gracefully when absent.
+    // History" (built inside `score_strip`, shared by the done and partial
+    // views) no-ops gracefully when absent.
     let hardening_section = use_context::<HardeningSection>();
 
-    // "Done" (Step 2): clears apply_results, returning to a fresh
-    // selection state (the selection UI's own Show below is gated in part
-    // on apply_results being empty, so this is what brings it back). Also
-    // resets the score-reveal signals (declared above, by
-    // `on_confirm_apply`) for tidiness on the way back to selection - the
-    // reveal is always reset at the START of a new apply cycle regardless,
-    // so this second reset is a belt-and-braces immediate clear rather than
-    // load-bearing on its own.
-    let on_done = move |_| {
-        app_state.apply_results.set(Vec::new());
-        score_reveal.reset();
+    // Partial view (Task 2a.7): which rows' "View details"/"How?" toggle
+    // has been opened, keyed by the row's full backend plugin id -
+    // independent per row, client-side only. Reveals text already present
+    // in `apply_results`; never fetches anything new (brief Step 3).
+    let expanded_rows: RwSignal<HashSet<String>> = RwSignal::new(HashSet::new());
+    let toggle_expanded = move |plugin_id: String| {
+        expanded_rows.update(|set| {
+            if !set.remove(&plugin_id) {
+                set.insert(plugin_id);
+            }
+        });
     };
 
-    // "View in History" (Step 4): switches HardeningPage to its History
-    // tab (index 1) via the shared context signal.
-    let on_view_history = move |_| {
-        if let Some(section) = hardening_section {
-            section.0.set(1);
+    // Retry (Task 2a.7): re-applies just the one plugin behind a Failed
+    // row, mirroring `on_confirm_apply`'s success/cancelled/error handling
+    // above. On success REPLACES that plugin's entry in `apply_results` in
+    // place (matched on `apply_plugin_id`) - including when the retried
+    // result is itself still failed - rather than appending a second entry
+    // for the same area. `Some(plugin_id)` while a retry is in flight
+    // disables that row's own Retry button; other rows are unaffected.
+    let retrying_plugin: RwSignal<Option<String>> = RwSignal::new(None);
+    let on_retry = move |plugin_id: String| {
+        if retrying_plugin.get_untracked().is_some() {
+            return;
         }
-    };
+        retrying_plugin.set(Some(plugin_id.clone()));
 
-    // "Run Security Scan" (Step 3): the score strip's own trigger.
-    let on_run_security_scan = move |_| {
-        run_score_reveal(app_state, score_reveal);
+        leptos::task::spawn_local(async move {
+            match invoke_apply(
+                vec![plugin_id.clone()],
+                app_state.config_path.get_untracked(),
+            )
+            .await
+            {
+                Ok(results) => {
+                    if let Some(new_result) = results.into_iter().next() {
+                        app_state.apply_results.update(|all| {
+                            match all
+                                .iter_mut()
+                                .find(|r| r.apply_plugin_id.as_str() == plugin_id)
+                            {
+                                Some(existing) => *existing = new_result,
+                                None => all.push(new_result),
+                            }
+                        });
+                    }
+                }
+                Err(e) if is_auth_cancelled(&e) => {
+                    web_sys::console::info_1(&"Retry cancelled by user.".into());
+                }
+                Err(e) => {
+                    web_sys::console::error_1(&format!("Retry failed: {}", e).into());
+                    app_state
+                        .error_message
+                        .set(Some(format!("Retry failed: {}", e)));
+                }
+            }
+            retrying_plugin.set(None);
+        });
     };
 
     view! {
@@ -1120,77 +1323,151 @@ pub fn ConfigureSection() -> impl IntoView {
                         "A checkpoint was saved. You can undo everything from History."
                     </p>
 
-                    <div class="done-actions">
-                        <button type="button" class="btn btn-secondary" on:click=on_view_history>
-                            "View in History"
-                        </button>
-                        <button type="button" class="btn btn-secondary" on:click=on_done>
-                            "Done"
-                        </button>
-                        <button
-                            type="button"
-                            class="btn btn-primary"
-                            on:click=on_run_security_scan
-                            disabled=move || score_reveal.revealing.get()
-                        >
-                            "Run Security Scan"
-                        </button>
+                    {score_strip(app_state, score_reveal, hardening_section)}
+                </Card>
+            </Show>
+
+            // Partial/mixed view (Task 2a.7) - the honest sad path: shown
+            // once the apply has finished with at least one failed change
+            // anywhere, or with nothing genuinely applied and nothing
+            // failed either (an all-skipped/all-compliant result - see
+            // `apply_fully_successful`'s own doc comment on why an empty or
+            // all-skip outcome is deliberately not a "success"). Mutually
+            // exclusive with the done view immediately above: both read the
+            // same `apply_results`/`is_applying` signals, and this Show's
+            // third condition is exactly `apply_fully_successful`'s
+            // complement, so the two can never both be visible at once -
+            // the seam 2a.6 left, now filled in.
+            //
+            // Layout is the ACCEPTED one from the brief: a small header
+            // (a 28px neutral/amber-tinted circle beside a single summary
+            // sentence, no separate bold title line), then a clean
+            // single-column list with hairline row separators. The two
+            // REJECTED variants - a left-status-column layout, and a headed
+            // two-up grid - do not appear here.
+            <Show when=move || {
+                !app_state.is_applying.get()
+                    && !app_state.apply_results.get().is_empty()
+                    && !apply_fully_successful(&app_state.apply_results.get())
+            }>
+                <Card title_level=HeadingLevel::H2 class="partial-panel">
+                    <div class="partial-heading">
+                        <span class="partial-heading-icon" aria-hidden="true">
+                            <IconInfo class="partial-heading-icon-glyph".to_string() />
+                        </span>
+                        <p class="partial-heading-text">
+                            {move || partial_summary_sentence(&app_state.apply_results.get())}
+                        </p>
                     </div>
 
-                    // Step 3 - the score-reveal strip. Score honesty: before
-                    // the first scan this renders nothing (the button above
-                    // is the only affordance); while scanning it shows the
-                    // "Scanning..." beat; once revealed it settles into the
-                    // number (a NOTCH above body text, never a hero size),
-                    // the delta copy, and the sweeping bar. The dedicated
-                    // sr-only live region below carries the announcement on
-                    // its own, once per reveal, independent of this markup.
-                    <div class="score-reveal">
+                    <ul class="partial-area-list">
                         {move || {
-                            if score_reveal.revealing.get() {
-                                view! { <p class="score-reveal-status">"Scanning..."</p> }.into_any()
-                            } else if score_reveal.revealed.get().is_some() {
-                                let delta = score_reveal.delta_text.get();
-                                view! {
-                                    <div class="score-reveal-content">
-                                        <div
-                                            class="score-reveal-result"
-                                            class:score-reveal-flash=move || score_reveal.flash.get()
-                                        >
-                                            <span class="score-reveal-value">{move || score_reveal.displayed.get()}</span>
-                                            <span class="score-reveal-max">"/100"</span>
-                                            {(!delta.is_empty()).then(|| view! {
-                                                <span class="score-reveal-delta">{delta.clone()}</span>
-                                            })}
-                                        </div>
-                                        <div class="score-reveal-bar" aria-hidden="true">
-                                            <div
-                                                class="score-reveal-bar-fill"
-                                                style=move || format!(
-                                                    "width: {}%",
-                                                    score_reveal.displayed.get().clamp(0, 100)
-                                                )
-                                            ></div>
-                                        </div>
-                                    </div>
-                                }.into_any()
-                            } else {
-                                view! { <div></div> }.into_any()
-                            }
-                        }}
-                    </div>
-                    <p class="sr-only" aria-live="polite">
-                        {move || {
-                            score_reveal.revealed.get().map(|score| {
-                                let delta = score_reveal.delta_text.get();
-                                if delta.is_empty() {
-                                    format!("Security score {score}.")
-                                } else {
-                                    format!("Security score {score}, {}.", delta.to_lowercase())
+                            app_state.apply_results.get().into_iter().map(|result| {
+                                let plugin_id = result.apply_plugin_id.as_str().to_string();
+                                let name = plugin_display_name(&plugin_id);
+                                let outcome = classify_apply_result(&result);
+
+                                match outcome {
+                                    ApplyOutcome::Applied => view! {
+                                        <li class="partial-row">
+                                            <div class="partial-row-main">
+                                                <IconCheck class="partial-row-icon partial-row-icon-applied".to_string() />
+                                                <span class="partial-row-name">{name}</span>
+                                                <span class="partial-row-status">
+                                                    {format!("{} applied", result.applied_change_count())}
+                                                </span>
+                                            </div>
+                                        </li>
+                                    }.into_any(),
+
+                                    ApplyOutcome::Skipped => view! {
+                                        <li class="partial-row">
+                                            <div class="partial-row-main">
+                                                <IconMinus class="partial-row-icon partial-row-icon-skipped".to_string() />
+                                                <span class="partial-row-name">{name}</span>
+                                                <span class="partial-row-status">{skipped_status_text(&result)}</span>
+                                            </div>
+                                        </li>
+                                    }.into_any(),
+
+                                    ApplyOutcome::Failed => {
+                                        let detail = failure_detail(&result);
+                                        let pid_for_show = plugin_id.clone();
+                                        let pid_for_aria = plugin_id.clone();
+                                        let pid_for_toggle = plugin_id.clone();
+                                        let pid_for_disabled = plugin_id.clone();
+                                        let pid_for_label = plugin_id.clone();
+                                        let pid_for_retry = plugin_id.clone();
+                                        view! {
+                                            <li class="partial-row">
+                                                <div class="partial-row-main">
+                                                    <IconX class="partial-row-icon partial-row-icon-failed".to_string() />
+                                                    <span class="partial-row-name">{name}</span>
+                                                    <span class="partial-row-badge partial-row-badge-failed">"Failed"</span>
+                                                    <button
+                                                        type="button"
+                                                        class="btn btn-secondary btn-small"
+                                                        disabled=move || retrying_plugin.get().as_deref() == Some(pid_for_disabled.as_str())
+                                                        on:click=move |_| on_retry(pid_for_retry.clone())
+                                                    >
+                                                        {move || if retrying_plugin.get().as_deref() == Some(pid_for_label.as_str()) {
+                                                            "Retrying..."
+                                                        } else {
+                                                            "Retry"
+                                                        }}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        class="partial-row-toggle"
+                                                        aria-expanded=move || expanded_rows.get().contains(&pid_for_aria).to_string()
+                                                        on:click=move |_| toggle_expanded(pid_for_toggle.clone())
+                                                    >
+                                                        "View details"
+                                                    </button>
+                                                </div>
+                                                <Show when=move || expanded_rows.get().contains(&pid_for_show)>
+                                                    <p class="partial-row-detail">{detail.clone()}</p>
+                                                </Show>
+                                            </li>
+                                        }.into_any()
+                                    }
+
+                                    ApplyOutcome::ManualStep => {
+                                        let detail = manual_step_detail(&result);
+                                        let pid_for_show = plugin_id.clone();
+                                        let pid_for_aria = plugin_id.clone();
+                                        let pid_for_toggle = plugin_id.clone();
+                                        view! {
+                                            <li class="partial-row">
+                                                <div class="partial-row-main">
+                                                    <IconWrench class="partial-row-icon partial-row-icon-manual".to_string() />
+                                                    <span class="partial-row-name">{name}</span>
+                                                    <span class="partial-row-badge partial-row-badge-manual">"Manual step"</span>
+                                                    <button
+                                                        type="button"
+                                                        class="partial-row-toggle"
+                                                        aria-expanded=move || expanded_rows.get().contains(&pid_for_aria).to_string()
+                                                        on:click=move |_| toggle_expanded(pid_for_toggle.clone())
+                                                    >
+                                                        "How?"
+                                                    </button>
+                                                </div>
+                                                <Show when=move || expanded_rows.get().contains(&pid_for_show)>
+                                                    <p class="partial-row-detail partial-row-detail-mono">{detail.clone()}</p>
+                                                </Show>
+                                            </li>
+                                        }.into_any()
+                                    }
                                 }
-                            }).unwrap_or_default()
+                            }).collect::<Vec<_>>()
                         }}
+                    </ul>
+
+                    <p class="done-checkpoint-reassurance">
+                        "Only the applied changes can be rolled back."
                     </p>
+
+                    {score_strip(app_state, score_reveal, hardening_section)}
                 </Card>
             </Show>
         </div>
@@ -1251,5 +1528,106 @@ mod tests {
         assert_eq!(lockout_class("firewall-hardening"), Some("network"));
         assert_eq!(lockout_class("kernel-hardening"), None);
         assert_eq!(lockout_class("pam-hardening"), None);
+    }
+
+    // --- Task 2a.7: partial-row detail-text helpers ---
+
+    use crate::types::{Change, ChangeType, PluginId};
+
+    fn a_result(changes: Vec<Change>) -> ApplyResult {
+        ApplyResult {
+            apply_plugin_id: PluginId::new("pam-hardening"),
+            apply_success: true,
+            apply_changes: changes,
+            apply_checkpoint_id: None,
+            apply_error: None,
+        }
+    }
+
+    fn ok_change() -> Change {
+        Change {
+            change_description: "ok".to_string(),
+            change_type: ChangeType::ConfigFile,
+            change_success: true,
+            change_error: None,
+        }
+    }
+
+    #[test]
+    fn failure_detail_prefers_the_real_error_over_the_description() {
+        let result = a_result(vec![Change {
+            change_description: "Set PermitRootLogin no".to_string(),
+            change_type: ChangeType::ConfigFile,
+            change_success: false,
+            change_error: Some("sshd -t: syntax error".to_string()),
+        }]);
+        assert_eq!(failure_detail(&result), "sshd -t: syntax error");
+    }
+
+    #[test]
+    fn failure_detail_falls_back_to_description_when_error_is_empty() {
+        let result = a_result(vec![Change {
+            change_description: "Set PermitRootLogin no".to_string(),
+            change_type: ChangeType::ConfigFile,
+            change_success: false,
+            change_error: Some(String::new()),
+        }]);
+        assert_eq!(failure_detail(&result), "Set PermitRootLogin no");
+    }
+
+    #[test]
+    fn failure_detail_skips_a_manual_action_to_find_the_genuine_failure() {
+        let result = a_result(vec![
+            Change {
+                change_description: "edit the PAM stack manually".to_string(),
+                change_type: ChangeType::ConfigFile,
+                change_success: false,
+                change_error: Some("inline pam.d override present".to_string()),
+            },
+            Change {
+                change_description: "d".to_string(),
+                change_type: ChangeType::ConfigFile,
+                change_success: false,
+                change_error: Some("permission denied".to_string()),
+            },
+        ]);
+        assert_eq!(failure_detail(&result), "permission denied");
+    }
+
+    #[test]
+    fn manual_step_detail_reads_the_manual_changes_description() {
+        let result = a_result(vec![Change {
+            change_description: "edit the PAM stack manually to set X to Y".to_string(),
+            change_type: ChangeType::ConfigFile,
+            change_success: false,
+            change_error: Some("inline pam.d override present".to_string()),
+        }]);
+        assert_eq!(
+            manual_step_detail(&result),
+            "edit the PAM stack manually to set X to Y"
+        );
+    }
+
+    #[test]
+    fn skipped_status_text_reports_the_skip_reason() {
+        let result = a_result(vec![Change {
+            change_description: "Already minimised".to_string(),
+            change_type: ChangeType::Skipped,
+            change_success: true,
+            change_error: None,
+        }]);
+        assert_eq!(skipped_status_text(&result), "Skipped: Already minimised");
+    }
+
+    #[test]
+    fn skipped_status_text_falls_back_when_no_reason_is_given() {
+        assert_eq!(skipped_status_text(&a_result(vec![])), "Skipped");
+    }
+
+    #[test]
+    fn failure_detail_and_manual_step_detail_are_empty_without_a_match() {
+        let result = a_result(vec![ok_change()]);
+        assert_eq!(failure_detail(&result), "");
+        assert_eq!(manual_step_detail(&result), "");
     }
 }

@@ -2450,6 +2450,168 @@ tbody tr:hover {
   transition: width var(--transition-fast);
 }
 
+/* The shared score-strip wrapper (configure_section.rs's `score_strip`,
+   used verbatim by both the done view above and the partial view below).
+   `display: contents` removes the wrapper's own box so .done-actions/
+   .score-reveal/its sr-only paragraph keep participating directly in
+   whichever parent's flex column (.done-panel/.partial-panel) they are
+   mounted into - laid out exactly as if this function's markup had been
+   copy-pasted inline, without actually duplicating it. */
+.score-strip {
+  display: contents;
+}
+
+/* Partial/mixed view (Task 2a.7) - the honest sad path shown when an apply
+   partly failed or needs a manual step. Sibling of .done-panel above and
+   built the same way: left-aligned, no centred hero, same
+   --space-md-gapped flex column so the shared .score-strip settles in with
+   identical spacing either place it mounts. The header circle is
+   deliberately NOT one of the four fixed status icons below - it summarises
+   a MIX of them, so IconInfo (already this file's neutral/notice glyph,
+   distinct from the applied/Failed/Manual step/Skipped vocabulary) reads
+   correctly where none of the four alone would. */
+.partial-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.partial-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+/* The brief's small warning circle: 28px, amber-tinted, never a big alarm -
+   deliberately far smaller than .done-heading-icon's inline check mark
+   would read at this same visual weight, because a mixed result is not a
+   one-glyph story the way a clean success is. */
+.partial-heading-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background-color: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.partial-heading-icon-glyph {
+  width: 16px;
+  height: 16px;
+}
+
+.partial-heading-text {
+  margin: 0;
+  font-size: var(--font-size-body);
+  color: var(--text-primary);
+}
+
+.partial-area-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* One hairline-separated row per ApplyResult - the accepted single-column
+   layout. The two rejected variants (a left-status-column layout, and a
+   headed two-up grid) do not appear here. */
+.partial-row {
+  padding: var(--space-sm) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.partial-row:last-child {
+  border-bottom: none;
+}
+
+.partial-row-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+/* Base glyph sizing; colour comes from the per-status modifier below, so
+   the fixed icon+colour+word triad always travels together. */
+.partial-row-icon {
+  width: 1.1em;
+  height: 1.1em;
+  flex-shrink: 0;
+}
+
+.partial-row-icon-applied { color: var(--color-good); }
+.partial-row-icon-failed { color: var(--color-critical); }
+.partial-row-icon-manual { color: var(--color-warning); }
+.partial-row-icon-skipped { color: var(--text-muted); }
+
+.partial-row-name {
+  font-size: var(--font-size-body);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+/* Plain right-aligned status text - Applied's "N applied" and Skipped's
+   "Skipped: {reason}". Never the sole signal (both also carry a distinct
+   icon+colour), so text alone stays legible under any theme. */
+.partial-row-status {
+  margin-left: auto;
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
+/* Failed/Manual step's status pill - same shape as .lockout-pill, tinted
+   per status rather than neutral. */
+.partial-row-badge {
+  margin-left: auto;
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  padding: 1px var(--space-sm);
+  border-radius: var(--radius-full);
+}
+
+.partial-row-badge-failed {
+  color: var(--color-critical);
+  background-color: var(--color-critical-bg);
+}
+
+.partial-row-badge-manual {
+  color: var(--color-warning);
+  background-color: var(--color-warning-bg);
+}
+
+/* "View details"/"How?" - a quiet text affordance, not a full button, so it
+   does not visually compete with Retry (a real .btn) on the Failed row. */
+.partial-row-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.partial-row-toggle:hover,
+.partial-row-toggle:focus-visible {
+  color: var(--text-primary);
+}
+
+/* The revealed second line - the real failure text or manual instruction,
+   never fabricated, never fetched fresh (Step 3: it is already present in
+   apply_results, this only toggles its visibility). */
+.partial-row-detail {
+  margin: var(--space-xs) 0 0;
+  padding-left: calc(1.1em + var(--space-sm));
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.partial-row-detail-mono {
+  font-family: var(--font-mono);
+}
+
 /* ============================================================
    16. TAB COMPONENTS
    ============================================================ */
