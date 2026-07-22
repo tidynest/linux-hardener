@@ -4826,3 +4826,23 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   margin-top: var(--space-lg);
   flex-wrap: wrap;
 }
+
+/* Analysis - History timeline reuses the Phase 2b .timeline-* rail; only the
+   failed-node dot and the status label are new. */
+.timeline-dot-failed {
+  border-color: var(--color-critical);
+  background: var(--color-critical);
+}
+
+.timeline-status {
+  margin-left: auto;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
+}
+
+.timeline-status.failed {
+  color: var(--color-critical-bright);
+  border: 1px solid var(--color-critical);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-xs);
+}

@@ -118,7 +118,7 @@ pub fn AnalysisPage() -> impl IntoView {
                     <ComplianceTab />
                 </TabPanel>
                 <TabPanel id="history" index=2 active_tab=active_tab>
-                    <ScanHistoryTab />
+                    <ScanHistoryTab active_tab=active_tab />
                 </TabPanel>
             </div>
         </article>
