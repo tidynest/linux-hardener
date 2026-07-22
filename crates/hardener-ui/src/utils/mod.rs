@@ -2,7 +2,10 @@
 #[allow(dead_code)]
 mod mock_data;
 
-use crate::types::{ApplyResult, Change, CheckpointInfo, ScanResult, ValidationReport};
+use crate::types::{
+    ApplyResult, Change, CheckpointInfo, FileRestoreAction, RollbackResult, ScanResult,
+    ValidationReport,
+};
 
 /// One plugin's dry-run preview decision after cross-checking the estimate
 /// against the latest persisted scan.
@@ -353,10 +356,45 @@ pub fn partial_summary_sentence(results: &[ApplyResult]) -> String {
     sentence
 }
 
+/// Display label for a `FileRestoreAction`. Relocated from
+/// `history_section.rs` so it is unit-testable and shared by the modal.
+pub fn restore_action_label(action: FileRestoreAction) -> &'static str {
+    match action {
+        FileRestoreAction::Restored => "Restored",
+        FileRestoreAction::Removed => "Removed",
+        FileRestoreAction::PermissionsRestored => "Permissions Restored",
+        FileRestoreAction::Skipped => "Skipped",
+    }
+}
+
+/// How a checkpointed file will be restored, from whether its content was
+/// captured. Metadata-only files can only have their permissions restored.
+pub fn restore_kind(has_content: bool) -> &'static str {
+    if has_content {
+        "content + permissions"
+    } else {
+        "permissions only"
+    }
+}
+
+/// One-line rollback summary: successful restores over total files.
+pub fn rollback_summary_sentence(result: &RollbackResult) -> String {
+    let total = result.rollback_files.len();
+    let restored = result
+        .rollback_files
+        .iter()
+        .filter(|f| f.restore_success)
+        .count();
+    format!("{restored} of {total} files restored.")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{Change, ChangeType, CheckpointInfo, Finding, FindingCategory, PluginId, Severity};
+    use crate::types::{
+        Change, ChangeType, CheckpointInfo, FileRestoreAction, FileRestoreResult, Finding,
+        FindingCategory, PluginId, RollbackResult, Severity,
+    };
 
     fn report(plugin_id: &str, changes: &[&str]) -> ValidationReport {
         ValidationReport {
@@ -841,5 +879,51 @@ mod tests {
             partial_summary_sentence(&[ssh, mac]),
             "1 of 1 settings applied."
         );
+    }
+
+    // --- Task 3: Rollback classification helpers ---
+
+    fn restore(action: FileRestoreAction, success: bool) -> FileRestoreResult {
+        FileRestoreResult {
+            restore_path: "/etc/x".to_string(),
+            restore_action: action,
+            restore_success: success,
+            restore_error: None,
+        }
+    }
+
+    #[test]
+    fn restore_kind_reflects_captured_content() {
+        assert_eq!(restore_kind(true), "content + permissions");
+        assert_eq!(restore_kind(false), "permissions only");
+    }
+
+    #[test]
+    fn restore_action_label_covers_all_variants() {
+        assert_eq!(
+            restore_action_label(FileRestoreAction::Restored),
+            "Restored"
+        );
+        assert_eq!(restore_action_label(FileRestoreAction::Removed), "Removed");
+        assert_eq!(
+            restore_action_label(FileRestoreAction::PermissionsRestored),
+            "Permissions Restored"
+        );
+        assert_eq!(restore_action_label(FileRestoreAction::Skipped), "Skipped");
+    }
+
+    #[test]
+    fn rollback_summary_counts_successes_over_total() {
+        let result = RollbackResult {
+            rollback_checkpoint_id: "cp1".to_string(),
+            rollback_checkpoint_name: "before".to_string(),
+            rollback_success: false,
+            rollback_files: vec![
+                restore(FileRestoreAction::Restored, true),
+                restore(FileRestoreAction::Restored, true),
+                restore(FileRestoreAction::Removed, false),
+            ],
+        };
+        assert_eq!(rollback_summary_sentence(&result), "2 of 3 files restored.");
     }
 }
