@@ -2,7 +2,7 @@
 #[allow(dead_code)]
 mod mock_data;
 
-use crate::types::{ApplyResult, Change, ScanResult, ValidationReport};
+use crate::types::{ApplyResult, Change, CheckpointInfo, ScanResult, ValidationReport};
 
 /// One plugin's dry-run preview decision after cross-checking the estimate
 /// against the latest persisted scan.
@@ -70,6 +70,39 @@ pub fn annotate_preview(
             }
         })
         .collect()
+}
+
+/// Splits a checkpoint's `"%Y-%m-%d %H:%M:%S UTC"` timestamp into its date
+/// portion (`"2026-07-22"`). Falls back to the whole string if there is no
+/// space, so a malformed stamp still renders under some heading.
+pub fn checkpoint_date(created: &str) -> &str {
+    created.split_once(' ').map(|(d, _)| d).unwrap_or(created)
+}
+
+/// The time-and-zone remainder of a checkpoint timestamp (`"14:30:05 UTC"`);
+/// empty if there is no space.
+pub fn checkpoint_time(created: &str) -> &str {
+    created.split_once(' ').map(|(_, t)| t).unwrap_or("")
+}
+
+/// Groups checkpoints by their date, preserving input order both within and
+/// across groups.
+///
+/// ponytail: assumes the backend returns checkpoints already sorted by
+/// timestamp, so same-date entries are contiguous and a single-pass
+/// last-group merge suffices. If the sort ever changes, non-contiguous dates
+/// would split into repeated headings; switch to a find-existing-group merge
+/// then.
+pub fn group_checkpoints_by_date(cps: &[CheckpointInfo]) -> Vec<(String, Vec<CheckpointInfo>)> {
+    let mut groups: Vec<(String, Vec<CheckpointInfo>)> = Vec::new();
+    for cp in cps {
+        let date = checkpoint_date(&cp.checkpoint_created).to_string();
+        match groups.last_mut() {
+            Some((d, v)) if *d == date => v.push(cp.clone()),
+            _ => groups.push((date, vec![cp.clone()])),
+        }
+    }
+    groups
 }
 
 /// Whether an error string returned from a privileged Tauri command
@@ -323,7 +356,7 @@ pub fn partial_summary_sentence(results: &[ApplyResult]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{Change, ChangeType, Finding, FindingCategory, PluginId, Severity};
+    use crate::types::{Change, ChangeType, CheckpointInfo, Finding, FindingCategory, PluginId, Severity};
 
     fn report(plugin_id: &str, changes: &[&str]) -> ValidationReport {
         ValidationReport {
@@ -461,6 +494,39 @@ mod tests {
             apply_checkpoint_id: None,
             apply_error: None,
         }
+    }
+
+    fn checkpoint(id: &str, created: &str) -> CheckpointInfo {
+        CheckpointInfo {
+            checkpoint_id: id.to_string(),
+            checkpoint_name: format!("cp-{id}"),
+            checkpoint_created: created.to_string(),
+            checkpoint_user: "root".to_string(),
+        }
+    }
+
+    #[test]
+    fn checkpoint_date_and_time_split_the_stamp() {
+        assert_eq!(checkpoint_date("2026-07-22 14:30:05 UTC"), "2026-07-22");
+        assert_eq!(checkpoint_time("2026-07-22 14:30:05 UTC"), "14:30:05 UTC");
+        assert_eq!(checkpoint_date("weird"), "weird");
+        assert_eq!(checkpoint_time("weird"), "");
+    }
+
+    #[test]
+    fn group_checkpoints_by_date_groups_contiguous_dates_in_order() {
+        let cps = vec![
+            checkpoint("a", "2026-07-22 14:00:00 UTC"),
+            checkpoint("b", "2026-07-22 09:00:00 UTC"),
+            checkpoint("c", "2026-07-21 23:00:00 UTC"),
+        ];
+        let groups = group_checkpoints_by_date(&cps);
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].0, "2026-07-22");
+        assert_eq!(groups[0].1.len(), 2);
+        assert_eq!(groups[0].1[0].checkpoint_id, "a");
+        assert_eq!(groups[1].0, "2026-07-21");
+        assert_eq!(groups[1].1.len(), 1);
     }
 
     #[test]
