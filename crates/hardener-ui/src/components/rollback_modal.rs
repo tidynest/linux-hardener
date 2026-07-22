@@ -52,8 +52,18 @@ pub fn RollbackModal(
             did_rollback.set(false);
             let id = cp.checkpoint_id.clone();
             leptos::task::spawn_local(async move {
-                if let Ok(d) = invoke_get_checkpoint_detail(id).await {
-                    detail.set(Some(d));
+                if let Ok(d) = invoke_get_checkpoint_detail(id.clone()).await {
+                    // Guard a stale response: if the user closed this checkpoint
+                    // and opened a different one while the fetch was in flight,
+                    // drop the result rather than render one checkpoint's files
+                    // under another's confirm (a preview/action mismatch in a
+                    // destructive flow).
+                    let still_current = target
+                        .get_untracked()
+                        .is_some_and(|cp| cp.checkpoint_id == id);
+                    if still_current {
+                        detail.set(Some(d));
+                    }
                 }
             });
         }
@@ -174,7 +184,7 @@ fn confirm_view(
                 let files = d.files.clone();
                 view! {
                     <p class="rollback-body">
-                        {format!("Restores {count} files to their state then and overwrites the current configuration.")}
+                        {format!("Restores {count} files to how they were then, overwriting the current configuration.")}
                     </p>
                     <ul class="rollback-file-list">
                         {files.iter().map(|f| {
