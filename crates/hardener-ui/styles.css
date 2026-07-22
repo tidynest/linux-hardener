@@ -4571,3 +4571,18 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 }
 
 .activity-link:hover { text-decoration: underline; }
+
+/* Dashboard - header (Phase 3). */
+.dashboard-header {
+  margin-bottom: var(--space-lg);
+}
+
+.dashboard-header h1 {
+  margin: 0;
+}
+
+.dashboard-subtitle {
+  margin: var(--space-xs) 0 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
