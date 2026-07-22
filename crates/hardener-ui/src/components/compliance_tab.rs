@@ -137,6 +137,10 @@ pub fn ComplianceTab() -> impl IntoView {
                                     {format!("{total} controls assessed")}
                                 </span>
                             </div>
+                            <div class="compliance-report-score">
+                                {format!("{:.0}", score)}
+                                <span class="compliance-report-max">"/100"</span>
+                            </div>
                             <div class="score-bar">
                                 <div
                                     class="score-bar-fill"

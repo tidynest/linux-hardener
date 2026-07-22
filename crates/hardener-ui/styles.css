@@ -4789,6 +4789,26 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 .compliance-report.score-warning,
 .compliance-report.score-critical { box-shadow: none; }
 
+.compliance-report-score {
+  margin-top: var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-head);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.compliance-report-max {
+  margin-left: 2px;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.compliance-report.score-good .compliance-report-score { color: var(--color-good); }
+.compliance-report.score-warning .compliance-report-score { color: var(--color-warning); }
+.compliance-report.score-critical .compliance-report-score { color: var(--color-critical); }
+
 .compliance-counts {
   display: flex;
   flex-wrap: wrap;
@@ -4829,6 +4849,11 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 
 /* Analysis - History timeline reuses the Phase 2b .timeline-* rail; only the
    failed-node dot and the status label are new. */
+
+/* The History tab has a single Refresh control; the shared .checkpoint-controls
+   uses space-between for the 2b two-child layout, so align right here. */
+.scan-history-tab .checkpoint-controls { justify-content: flex-end; }
+
 .timeline-dot-failed {
   border-color: var(--color-critical);
   background: var(--color-critical);
