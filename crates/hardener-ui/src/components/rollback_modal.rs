@@ -59,9 +59,18 @@ pub fn RollbackModal(
         }
     });
 
-    // Move focus into the dialog every time it mounts (i.e. every time the
-    // modal opens), so Escape and Tab work immediately.
+    // Move focus into the dialog on mount and again on every stage change.
+    // Only the inner content is swapped between Confirm/Restoring/Result -
+    // the dialog div itself stays mounted - so a stage transition that
+    // removes the DOM node currently holding focus (e.g. the "Roll back N
+    // files" button, gone as soon as Restoring replaces Confirm) drops
+    // focus back onto <body>. From there the dialog's keydown handler,
+    // bound only within this subtree, would never see Escape again, so
+    // Escape would silently stop closing the modal once Result renders.
+    // Tracking `stage` (rather than just `dialog_ref`) makes this effect
+    // re-run on every transition and pull focus back in each time.
     Effect::new(move |_| {
+        stage.track();
         if let Some(el) = dialog_ref.get() {
             let _ = el.focus();
         }
@@ -95,7 +104,7 @@ pub fn RollbackModal(
 
     // Escape key: cancel from Confirm, close from Result, inert while Restoring.
     let on_keydown = move |ev: web_sys::KeyboardEvent| {
-        if ev.key() == "Escape" && !matches!(stage.get(), Stage::Restoring) {
+        if ev.key() == "Escape" && !stage.with(|s| matches!(s, Stage::Restoring)) {
             close(did_rollback.get());
         }
     };
@@ -105,7 +114,7 @@ pub fn RollbackModal(
             <div
                 class="modal-backdrop"
                 on:click=move |_| {
-                    if matches!(stage.get(), Stage::Confirm) {
+                    if stage.with(|s| matches!(s, Stage::Confirm)) {
                         close(false);
                     }
                 }
