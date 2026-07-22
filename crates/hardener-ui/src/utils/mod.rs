@@ -4,7 +4,7 @@ mod mock_data;
 
 use crate::types::{
     ApplyResult, Change, CheckpointInfo, FileRestoreAction, RollbackResult, ScanResult,
-    ValidationReport,
+    ScanSessionInfo, ValidationReport,
 };
 
 /// One plugin's dry-run preview decision after cross-checking the estimate
@@ -388,13 +388,94 @@ pub fn rollback_summary_sentence(result: &RollbackResult) -> String {
     format!("{restored} of {total} files restored.")
 }
 
+/// Score band for the security-score visual. Design bands (authoritative):
+/// `>= 70` Good, `40..=69` Warning, `< 40` Critical.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ScoreBand {
+    Good,
+    Warning,
+    Critical,
+}
+
+/// Classifies a 0-100 score into its design band.
+pub fn score_band(score: i32) -> ScoreBand {
+    if score >= 70 {
+        ScoreBand::Good
+    } else if score >= 40 {
+        ScoreBand::Warning
+    } else {
+        ScoreBand::Critical
+    }
+}
+
+/// CSS modifier class for a band (drives colour across all seven themes).
+pub fn score_band_class(band: ScoreBand) -> &'static str {
+    match band {
+        ScoreBand::Good => "score-good",
+        ScoreBand::Warning => "score-warning",
+        ScoreBand::Critical => "score-critical",
+    }
+}
+
+/// Human status label for a band (paired with the colour, never colour alone).
+pub fn score_band_label(band: ScoreBand) -> &'static str {
+    match band {
+        ScoreBand::Good => "Good",
+        ScoreBand::Warning => "Needs attention",
+        ScoreBand::Critical => "Critical",
+    }
+}
+
+/// Header subtitle for the last scan: the most recent session's `completed_at`
+/// shown as-is, or "Not scanned yet" when there is none.
+///
+// ponytail: absolute UTC as-is, no relative "2h ago" - a relative label needs
+// the current clock (js_sys::Date), which a pure, testable helper avoids.
+pub fn last_scanned_label(sessions: &[ScanSessionInfo]) -> String {
+    match sessions.first().and_then(|s| s.completed_at.as_deref()) {
+        Some(t) => format!("Last scanned {t}"),
+        None => "Not scanned yet".to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::types::{
         Change, ChangeType, CheckpointInfo, FileRestoreAction, FileRestoreResult, Finding,
-        FindingCategory, PluginId, RollbackResult, Severity,
+        FindingCategory, PluginId, RollbackResult, ScanSessionInfo, Severity,
     };
+
+    #[test]
+    fn score_band_boundaries() {
+        assert_eq!(score_band(100), ScoreBand::Good);
+        assert_eq!(score_band(70), ScoreBand::Good);
+        assert_eq!(score_band(69), ScoreBand::Warning);
+        assert_eq!(score_band(40), ScoreBand::Warning);
+        assert_eq!(score_band(39), ScoreBand::Critical);
+        assert_eq!(score_band(0), ScoreBand::Critical);
+    }
+
+    fn session(completed: Option<&str>) -> ScanSessionInfo {
+        ScanSessionInfo {
+            session_id: "s1".to_string(),
+            started_at: "2026-07-22 14:00:00 UTC".to_string(),
+            completed_at: completed.map(|s| s.to_string()),
+            total_findings: 0,
+            total_plugins: 8,
+            status: "completed".to_string(),
+        }
+    }
+
+    #[test]
+    fn last_scanned_label_cases() {
+        assert_eq!(last_scanned_label(&[]), "Not scanned yet");
+        assert_eq!(last_scanned_label(&[session(None)]), "Not scanned yet");
+        assert_eq!(
+            last_scanned_label(&[session(Some("2026-07-22 14:05:00 UTC"))]),
+            "Last scanned 2026-07-22 14:05:00 UTC"
+        );
+    }
 
     fn report(plugin_id: &str, changes: &[&str]) -> ValidationReport {
         ValidationReport {
