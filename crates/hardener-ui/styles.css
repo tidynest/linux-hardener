@@ -2243,6 +2243,128 @@ tbody tr:hover {
   max-width: 100%;
 }
 
+/* ============================================================
+   Hardening History - checkpoint timeline (Phase 2b)
+   ============================================================ */
+
+.checkpoint-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
+  flex-wrap: wrap;
+}
+
+.timeline,
+.timeline-nodes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.timeline-group + .timeline-group {
+  margin-top: var(--space-lg);
+}
+
+.timeline-date {
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0 0 var(--space-sm) 0;
+}
+
+/* The rail: a hairline down the node column, dots sit on it. */
+.timeline-nodes {
+  position: relative;
+  padding-left: var(--space-lg);
+}
+
+.timeline-nodes::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 4px;
+  bottom: 4px;
+  width: 1px;
+  background: var(--border);
+}
+
+.timeline-node {
+  position: relative;
+  display: flex;
+  gap: var(--space-md);
+  padding: var(--space-sm) 0 var(--space-md) 0;
+}
+
+.timeline-dot {
+  position: absolute;
+  left: calc(-1 * var(--space-lg) + 1px);
+  top: 7px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--bg-primary);
+  border: 2px solid var(--text-muted);
+  box-sizing: border-box;
+}
+
+.timeline-dot-latest {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+}
+
+.timeline-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.timeline-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.timeline-name {
+  font-size: var(--font-size-sub);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.timeline-latest-pill {
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  color: var(--color-accent);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-xs);
+}
+
+.timeline-meta {
+  display: flex;
+  gap: var(--space-md);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.timeline-actions {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.timeline-detail {
+  margin-top: var(--space-sm);
+  padding: var(--space-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
 /* .apply-results-summary and .checkpoints-section container styles removed - now using Card component */
 /* Keep overflow handling for content */
 .apply-results-summary,
