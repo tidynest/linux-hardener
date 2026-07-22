@@ -120,7 +120,7 @@ pub fn ScanHistoryTab(active_tab: RwSignal<usize>) -> impl IntoView {
                                                     <div class="timeline-body">
                                                         <div class="timeline-head">
                                                             <span class="timeline-name">{time}</span>
-                                                            {is_latest.then(|| view! {
+                                                            {(is_latest && !is_failed).then(|| view! {
                                                                 <span class="timeline-latest-pill">"Latest"</span>
                                                             })}
                                                             <span class=status_cls>{status_text}</span>
