@@ -1622,6 +1622,17 @@ tbody tr:hover {
   min-width: 0;
 }
 
+/* While a dry-run is checking, the selection behind it is frozen so it
+   cannot silently drift from what the in-flight check is actually looking
+   at. Segmented-control buttons carry their own native `disabled`; this
+   covers the plugin rows, which are a custom role="checkbox" div rather
+   than a real button. */
+.configure-main.is-disabled {
+  opacity: 0.6;
+  pointer-events: none;
+  transition: opacity var(--transition-fast);
+}
+
 .configure-aside {
   position: sticky;
   top: var(--space-lg);
@@ -1848,6 +1859,106 @@ tbody tr:hover {
 .apply-summary-reassurance {
   font-size: var(--font-size-sm);
   color: var(--text-muted);
+}
+
+/* Calm checking (dry-run) loading state - replaces the apply summary and
+   Preview button while app_state.is_previewing is true. The local dry-run
+   is one blocking call with no per-plugin progress event, so this makes no
+   "N of M done" claim: the heading's count and each row's name are the
+   real, already-known selection; the shimmer and the top-down stagger are
+   cosmetic only, reused from the fadeIn keyframes below section 16. */
+.checking-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  animation: fadeIn var(--transition-normal);
+}
+
+.checking-reassurance {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--color-good-bright, var(--text-secondary));
+}
+
+.checking-heading {
+  font-size: var(--font-size-sub);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.checking-skeleton-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+/* Each row fades in top-down (increasing animation-delay set inline per
+   row in configure_section.rs) - a one-time reveal, never a per-row
+   "done" state. */
+.checking-skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) var(--space-sm);
+  background-color: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  opacity: 0;
+  animation: fadeIn var(--transition-normal) forwards;
+}
+
+/* The shimmer itself loops indefinitely for as long as the row is on
+   screen - unlike the row's entrance, it never settles into a "complete"
+   state, so it cannot be misread as per-area progress. */
+.checking-skeleton-indicator {
+  width: 0.85em;
+  height: 0.85em;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: linear-gradient(
+    90deg,
+    var(--border-strong) 25%,
+    var(--bg-elevated) 50%,
+    var(--border-strong) 75%
+  );
+  background-size: 200% 100%;
+  animation: checking-shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes checking-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.checking-skeleton-name {
+  font-size: var(--font-size-body);
+  color: var(--text-secondary);
+}
+
+.checking-cancel {
+  align-self: flex-start;
+  margin-top: var(--space-xs);
+}
+
+/* Reduced motion: no shimmer sweep, no staggered reveal - the checking
+   view and every row appear fully formed and static immediately. */
+@media (prefers-reduced-motion: reduce) {
+  .checking-view,
+  .checking-skeleton-row {
+    animation: none;
+    opacity: 1;
+  }
+
+  .checking-skeleton-indicator {
+    animation: none;
+    background: var(--border-strong);
+  }
 }
 
 /* .apply-controls container styles removed - now using Card component */

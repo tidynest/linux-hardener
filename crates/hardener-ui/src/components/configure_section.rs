@@ -127,8 +127,24 @@ pub fn ConfigureSection() -> impl IntoView {
     let enabled_count =
         move || plugin_states.with_value(|states| states.iter().filter(|(_, s)| s.get()).count());
 
+    // Display names of the enabled areas, in PLUGINS order - feeds the calm
+    // checking view's skeleton rows. Derived from get_enabled_plugins(): a
+    // real reflection of the current selection, not fabricated per-item
+    // progress (there is none to report; see on_preview below).
+    let checking_areas = move || {
+        get_enabled_plugins()
+            .into_iter()
+            .filter_map(|id| PLUGINS.iter().find(|p| p.id == id).map(|p| p.name))
+            .collect::<Vec<_>>()
+    };
+
     // Which plugin row's `(i)` help is open, if any - only one at a time.
     let help_open = RwSignal::<Option<usize>>::new(None);
+
+    // Set true only by Cancel while a dry-run is in flight (see
+    // on_cancel_checking below); reset at the start of every fresh
+    // on_preview run. Presentation-only client-side state.
+    let checking_cancelled = RwSignal::new(false);
 
     // Preview handler - runs dry-run and shows preview panel
     let on_preview = move |_| {
@@ -137,14 +153,21 @@ pub fn ConfigureSection() -> impl IntoView {
             return;
         }
 
+        checking_cancelled.set(false);
         app_state.is_previewing.set(true);
         app_state.show_preview.set(false);
 
         leptos::task::spawn_local(async move {
             match invoke_apply_dry_run(plugins, app_state.config_path.get_untracked()).await {
                 Ok(results) => {
-                    app_state.preview_results.set(results);
-                    app_state.show_preview.set(true);
+                    // ponytail: the dry-run future in flight cannot be
+                    // truly aborted from here; a Cancel click just discards
+                    // its result instead of racing to stop it, which is the
+                    // honest option available client-side.
+                    if !checking_cancelled.get_untracked() {
+                        app_state.preview_results.set(results);
+                        app_state.show_preview.set(true);
+                    }
                 }
                 Err(e) => {
                     web_sys::console::error_1(&format!("Preview failed: {}", e).into());
@@ -155,6 +178,13 @@ pub fn ConfigureSection() -> impl IntoView {
             }
             app_state.is_previewing.set(false);
         });
+    };
+
+    // Cancel while checking - returns to the selection state without
+    // waiting for the in-flight dry-run; see the ponytail note above.
+    let on_cancel_checking = move |_| {
+        app_state.is_previewing.set(false);
+        checking_cancelled.set(true);
     };
 
     // Cancel preview - hides preview panel
@@ -238,7 +268,7 @@ pub fn ConfigureSection() -> impl IntoView {
     view! {
         <div class="configure-section">
             <div class="configure-layout">
-                <div class="configure-main">
+                <div class="configure-main" class:is-disabled=move || app_state.is_previewing.get()>
                     <div
                         class="segmented-control"
                         role="radiogroup"
@@ -258,6 +288,7 @@ pub fn ConfigureSection() -> impl IntoView {
                                     role="radio"
                                     aria-checked=move || is_active().to_string()
                                     tabindex=move || if is_active() { "0" } else { "-1" }
+                                    disabled=move || app_state.is_previewing.get()
                                     class="segment-btn"
                                     class:is-active=is_active
                                     on:click=move |_| {
@@ -291,6 +322,16 @@ pub fn ConfigureSection() -> impl IntoView {
                                 let signal = *signal;
                                 let is_help_open = move || help_open.get() == Some(i);
                                 let toggle = move || {
+                                    // A dry-run in flight has already captured the
+                                    // selection it is checking; a mid-check toggle
+                                    // would silently desync the two, so no-op it.
+                                    // (Mouse clicks are also blocked by the
+                                    // .configure-main.is-disabled CSS below; this
+                                    // covers the keyboard Space path pointer-events
+                                    // cannot reach.)
+                                    if app_state.is_previewing.get_untracked() {
+                                        return;
+                                    }
                                     signal.update(|v| *v = !*v);
                                     selected_profile.set("custom".to_string());
                                 };
@@ -355,38 +396,76 @@ pub fn ConfigureSection() -> impl IntoView {
                 </div>
 
                 <div class="configure-aside">
-                    <div class="apply-summary" aria-live="polite">
-                        {move || {
-                            let n = enabled_count();
-                            if n == 0 {
-                                view! {
-                                    <p class="apply-summary-text apply-summary-empty">"Select at least one area"</p>
-                                }.into_any()
-                            } else {
-                                view! {
-                                    <p class="apply-summary-text">
-                                        {format!("{} area{} selected", n, if n == 1 { "" } else { "s" })}
+                    // The calm checking (dry-run) loading state. There is no
+                    // per-plugin progress event for the local dry-run (a single
+                    // invoke_apply_dry_run call resolves all at once), so this
+                    // deliberately makes no "N of M done" claim: the skeleton
+                    // rows are a cosmetic top-down reveal, not a completion
+                    // counter. Only the area count and the area names
+                    // themselves are real (the current selection).
+                    <Show
+                        when=move || !app_state.is_previewing.get()
+                        fallback=move || {
+                            let areas = checking_areas();
+                            let count = areas.len();
+                            view! {
+                                <div class="checking-view" aria-live="polite">
+                                    <p class="checking-reassurance">"Nothing is changed yet"</p>
+                                    <p class="checking-heading">
+                                        {format!("Checking {} area{}", count, if count == 1 { "" } else { "s" })}
                                     </p>
-                                }.into_any()
+                                    <ul class="checking-skeleton-list">
+                                        {areas.into_iter().enumerate().map(|(i, name)| {
+                                            view! {
+                                                <li
+                                                    class="checking-skeleton-row"
+                                                    style=format!("animation-delay: {}ms", i * 70)
+                                                >
+                                                    <span class="checking-skeleton-indicator" aria-hidden="true"></span>
+                                                    <span class="checking-skeleton-name">{name}</span>
+                                                </li>
+                                            }
+                                        }).collect::<Vec<_>>()}
+                                    </ul>
+                                    <button
+                                        type="button"
+                                        class="btn btn-secondary checking-cancel"
+                                        on:click=on_cancel_checking
+                                    >
+                                        "Cancel"
+                                    </button>
+                                </div>
                             }
-                        }}
-                        <p class="apply-summary-reassurance">
-                            "A checkpoint is saved before anything changes, so you can undo it all."
-                        </p>
-                    </div>
-
-                    <button
-                        class="btn btn-primary btn-large"
-                        on:click=on_preview
-                        disabled=move || app_state.is_previewing.get() || app_state.is_applying.get() || enabled_count() == 0
-                        aria-live="polite"
+                        }
                     >
-                        {move || if app_state.is_previewing.get() {
-                            "Generating Preview..."
-                        } else {
+                        <div class="apply-summary" aria-live="polite">
+                            {move || {
+                                let n = enabled_count();
+                                if n == 0 {
+                                    view! {
+                                        <p class="apply-summary-text apply-summary-empty">"Select at least one area"</p>
+                                    }.into_any()
+                                } else {
+                                    view! {
+                                        <p class="apply-summary-text">
+                                            {format!("{} area{} selected", n, if n == 1 { "" } else { "s" })}
+                                        </p>
+                                    }.into_any()
+                                }
+                            }}
+                            <p class="apply-summary-reassurance">
+                                "A checkpoint is saved before anything changes, so you can undo it all."
+                            </p>
+                        </div>
+
+                        <button
+                            class="btn btn-primary btn-large"
+                            on:click=on_preview
+                            disabled=move || app_state.is_applying.get() || enabled_count() == 0
+                        >
                             "Preview Changes"
-                        }}
-                    </button>
+                        </button>
+                    </Show>
                 </div>
             </div>
 
