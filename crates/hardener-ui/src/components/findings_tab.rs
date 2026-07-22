@@ -83,31 +83,6 @@ pub fn FindingsTab() -> impl IntoView {
         findings
     });
 
-    // All unchecked checks flattened from scan results. Kept undeduplicated
-    // here: the banner and score badge sum this raw length as the honest
-    // count of unverified checks.
-    let all_unchecked = move || {
-        app_state
-            .scan_results
-            .get()
-            .iter()
-            .flat_map(|r| r.scan_unchecked.clone())
-            .collect::<Vec<_>>()
-    };
-
-    // The audit plugin emits one unchecked entry per underlying rule, and
-    // several rules share an unchecked_check_id/title (25 rules over 7
-    // categories), so rendering all_unchecked() verbatim would repeat, e.g.,
-    // "Audit rule: time-change" four times over. Dedupe by unchecked_check_id
-    // for THIS list view only; the raw count above is left untouched.
-    let unique_unchecked = move || {
-        let mut seen = std::collections::HashSet::new();
-        all_unchecked()
-            .into_iter()
-            .filter(|check| seen.insert(check.unchecked_check_id.clone()))
-            .collect::<Vec<_>>()
-    };
-
     let total_count = move || all_findings().len();
     let filtered_count = move || filtered_findings.get().len();
     let has_findings = move || !all_findings().is_empty();
