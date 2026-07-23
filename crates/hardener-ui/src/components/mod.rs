@@ -18,7 +18,6 @@ mod rollback_modal;
 mod scan_history_tab;
 mod schedule_section;
 mod security_score;
-mod severity_badge;
 mod sidebar;
 mod status_icons;
 mod tabs;
@@ -44,12 +43,6 @@ pub use rollback_modal::RollbackModal;
 pub use scan_history_tab::ScanHistoryTab;
 pub use schedule_section::ScheduleSection;
 pub use security_score::{SecurityScore, calculate_all_scores};
-// SeverityBadge's only consumer was the fleet host FindingsGrid, retired in
-// this slice with the Fleet screen it belonged to (the Analysis findings
-// list carries severity via an inline dot and label instead). Kept, not
-// deleted, in case a future screen wants a standalone badge.
-#[allow(unused_imports)]
-pub use severity_badge::SeverityBadge;
 pub use sidebar::Sidebar;
 // IconX/IconWrench/IconMinus/IconArrowRight are not yet called from any
 // view - the review/drawer/done/partial slices wire them up (see
