@@ -1614,6 +1614,16 @@ mod tests {
     }
 
     #[test]
+    fn rollback_cells_rolled_back_nothing_shows_muted_fallback() {
+        let v = fleet_rollback_cells(&rollback_out(RollbackStatus::RolledBack {
+            restored: 0,
+            failed: 0,
+        }));
+        assert_eq!(v.glyph, OutcomeGlyph::Ok);
+        assert_eq!(v.cells, vec![("Nothing restored".to_string(), "")]);
+    }
+
+    #[test]
     fn rollback_cells_nothing_to_do() {
         let v = fleet_rollback_cells(&rollback_out(RollbackStatus::NothingToDo));
         assert_eq!(v.glyph, OutcomeGlyph::Ok);

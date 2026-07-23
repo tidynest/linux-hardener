@@ -363,7 +363,7 @@ pub fn FleetApplyPage() -> impl IntoView {
                             <h3 id="fleet-apply-modal-title">
                                 {move || {
                                     let mode_label =
-                                        if mode.get() == "apply" { "Apply" } else { "Roll Back" };
+                                        if mode.get() == "apply" { "Apply" } else { "Roll back" };
                                     let n = sel_hosts.get().len() + adhoc.get().len();
                                     let host_word = if n == 1 { "host" } else { "hosts" };
                                     format!("Execute {mode_label} on {n} {host_word}?")
