@@ -12,7 +12,8 @@
    1a. CSS CUSTOM PROPERTIES
    ============================================================ */
 
-:root {
+:root,
+[data-theme="default"] {
   /* Background tiers (darkest to lightest) */
   --bg-primary: #0f1419;
   --bg-secondary: #151b23;

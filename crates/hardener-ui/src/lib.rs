@@ -26,8 +26,8 @@ pub use types::*;
 ///
 /// This sets up:
 /// - Application state (AppState) available to all child components via context
-/// - Router with six routes: Dashboard, Analysis, Hardening, Hosts, Scheduler, Fleet Apply
-///   (plus a `/remote` redirect to Hosts for old links)
+/// - Router with seven routes: Dashboard, Analysis, Hardening, Hosts, Fleet Apply,
+///   Scheduler, Settings (plus a `/remote` redirect to Hosts for old links)
 /// - Grouped sidebar (Local / Fleet / Settings) for moving between pages
 /// - Automatic loading of persisted scan results on mount
 #[component]
