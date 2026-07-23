@@ -28,6 +28,11 @@ pub fn HostRow(
     /// Live per-host status glyph during a bulk scan: None (idle/pending done),
     /// Some(false) ok, Some(true) failed.
     progress: Signal<Option<bool>>,
+    /// Whether a bulk scan is currently running. Gates the `progress` glyph
+    /// so it only wins while the scan is live; once it ends the row falls
+    /// back to `scan`'s tally line even though `progress` may still hold a
+    /// stale `Some(_)` from the scan that just finished.
+    scanning: Signal<bool>,
     conn: Signal<HostConnState>,
     #[prop(into)] on_toggle_select: Callback<()>,
     #[prop(into)] on_toggle_expand: Callback<()>,
@@ -67,8 +72,11 @@ pub fn HostRow(
                 </div>
                 <div class="host-row-posture">
                     {move || {
-                        // Live progress glyph wins while a bulk scan runs.
-                        if let Some(failed) = progress.get() {
+                        // Live progress glyph wins only while a bulk scan is
+                        // actually running; once it ends, fall through to the
+                        // tally line below even if `progress` still holds a
+                        // stale value from the scan that just finished.
+                        if scanning.get() && let Some(failed) = progress.get() {
                             let (glyph, cls) = if failed { ("\u{2717}", "host-prog-failed") } else { ("\u{2713}", "host-prog-ok") };
                             return view! { <span class=cls>{glyph}</span> }.into_any();
                         }

@@ -339,7 +339,7 @@ pub fn HostsPage() -> impl IntoView {
                             );
                             row_view(
                                 key.clone(), h.name.clone(), detail, Some(h.clone()),
-                                scans, selected, expanded, progress, conn_state_for,
+                                scans, selected, expanded, progress, scanning.into(), conn_state_for,
                                 toggle_select, toggle_expand, connect, disconnect, session_scan,
                                 open_edit, delete_host, remove_adhoc,
                             )
@@ -347,7 +347,7 @@ pub fn HostsPage() -> impl IntoView {
                         {adhoc_list.into_iter().map(|t| {
                             row_view(
                                 t.clone(), t.clone(), t.clone(), None,
-                                scans, selected, expanded, progress, conn_state_for,
+                                scans, selected, expanded, progress, scanning.into(), conn_state_for,
                                 toggle_select, toggle_expand, connect, disconnect, session_scan,
                                 open_edit, delete_host, remove_adhoc,
                             )
@@ -383,6 +383,7 @@ fn row_view(
     selected: RwSignal<HashSet<String>>,
     expanded: RwSignal<Option<String>>,
     progress: RwSignal<HashMap<String, bool>>,
+    scanning: Signal<bool>,
     conn_state_for: impl Fn(String) -> HostConnState + Copy + Send + Sync + 'static,
     toggle_select: impl Fn(String) + Copy + Send + Sync + 'static,
     toggle_expand: impl Fn(String) + Copy + Send + Sync + 'static,
@@ -415,6 +416,7 @@ fn row_view(
             selected=sel
             expanded=exp
             progress=prog
+            scanning=scanning
             conn=conn
             on_toggle_select={let k = key.clone(); Callback::new(move |_| toggle_select(k.clone()))}
             on_toggle_expand={let k = key.clone(); Callback::new(move |_| toggle_expand(k.clone()))}
