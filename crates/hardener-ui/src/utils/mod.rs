@@ -2,10 +2,12 @@
 #[allow(dead_code)]
 mod mock_data;
 
+use crate::types::{ApplyOutcome as FleetApplyOutcome, RollbackOutcome as FleetRollbackOutcome};
 use crate::types::{
     ApplyResult, Change, CheckpointInfo, ComplianceFramework, FileRestoreAction, Finding,
     FleetFrameworkPosture, RollbackResult, ScanResult, ScanSessionInfo, Severity, ValidationReport,
 };
+use hardener_types::{ApplyStatus, RollbackStatus};
 
 /// One plugin's dry-run preview decision after cross-checking the estimate
 /// against the latest persisted scan.
@@ -563,6 +565,206 @@ pub fn severity_class(sev: Severity) -> &'static str {
         Severity::Low => "severity_low",
         Severity::Info => "severity_info",
     }
+}
+
+/// Which status glyph a fleet outcome row shows: the worst state wins
+/// (`Failed` over `Pending` over `Ok`), so a host that both stages changes
+/// and hit a validation error reads `Failed`, never the gentler `Pending`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum OutcomeGlyph {
+    Ok,
+    Pending,
+    Failed,
+}
+
+impl OutcomeGlyph {
+    /// Decorative symbol (rows carry the meaning in text; the glyph is
+    /// `aria-hidden`).
+    #[allow(dead_code)]
+    pub fn symbol(self) -> &'static str {
+        match self {
+            OutcomeGlyph::Ok => "\u{2713}",      // check
+            OutcomeGlyph::Pending => "\u{2022}", // bullet
+            OutcomeGlyph::Failed => "\u{2717}",  // ballot X
+        }
+    }
+
+    /// CSS class carrying the glyph's colour (one per band; all seven themes
+    /// define the underlying `--color-*-bright` tokens).
+    #[allow(dead_code)]
+    pub fn class(self) -> &'static str {
+        match self {
+            OutcomeGlyph::Ok => "fleet-glyph-ok",
+            OutcomeGlyph::Pending => "fleet-glyph-pending",
+            OutcomeGlyph::Failed => "fleet-glyph-failed",
+        }
+    }
+}
+
+/// Render-ready view of one host's fleet outcome: a status glyph, zero-or-more
+/// labelled stat cells (each with a band CSS class, `""` for a muted/neutral
+/// cell), and an optional full-width error message. Both apply and rollback,
+/// both dry-run and executed, collapse to this one shape.
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct OutcomeView {
+    pub glyph: OutcomeGlyph,
+    pub cells: Vec<(String, &'static str)>,
+    pub error: Option<String>,
+}
+
+/// Maps one apply outcome (dry-run or executed) to its render-ready view.
+/// Only non-zero counts become cells; `would_change` is a warning, `compliant`
+/// is muted context, `failed` is critical, applied successes are good.
+#[allow(dead_code)]
+pub fn fleet_apply_cells(o: &FleetApplyOutcome) -> OutcomeView {
+    match &o.status {
+        ApplyStatus::Validated {
+            would_change,
+            compliant,
+            failed,
+            ..
+        } => {
+            let mut cells = Vec::new();
+            if *would_change > 0 {
+                cells.push((format!("{would_change} would change"), "score-warning"));
+            }
+            if *compliant > 0 {
+                cells.push((format!("{compliant} already compliant"), ""));
+            }
+            if *failed > 0 {
+                cells.push((format!("{failed} failed"), "score-critical"));
+            }
+            let glyph = if *failed > 0 {
+                OutcomeGlyph::Failed
+            } else if *would_change > 0 {
+                OutcomeGlyph::Pending
+            } else {
+                OutcomeGlyph::Ok
+            };
+            OutcomeView {
+                glyph,
+                cells,
+                error: None,
+            }
+        }
+        ApplyStatus::Applied { ok, failed } => {
+            let mut cells = Vec::new();
+            if *ok > 0 {
+                cells.push((format!("{ok} applied"), "score-good"));
+            }
+            if *failed > 0 {
+                cells.push((format!("{failed} failed"), "score-critical"));
+            }
+            if cells.is_empty() {
+                cells.push(("No changes".to_string(), ""));
+            }
+            let glyph = if *failed > 0 {
+                OutcomeGlyph::Failed
+            } else {
+                OutcomeGlyph::Ok
+            };
+            OutcomeView {
+                glyph,
+                cells,
+                error: None,
+            }
+        }
+        ApplyStatus::Failed { error } => OutcomeView {
+            glyph: OutcomeGlyph::Failed,
+            cells: Vec::new(),
+            error: Some(error.clone()),
+        },
+    }
+}
+
+/// Maps one rollback outcome (dry-run or executed) to its render-ready view.
+#[allow(dead_code)]
+pub fn fleet_rollback_cells(o: &FleetRollbackOutcome) -> OutcomeView {
+    match &o.status {
+        RollbackStatus::Previewed { checkpoints } if *checkpoints > 0 => OutcomeView {
+            glyph: OutcomeGlyph::Pending,
+            cells: vec![(format!("{checkpoints} checkpoints would restore"), "")],
+            error: None,
+        },
+        RollbackStatus::Previewed { .. } | RollbackStatus::NothingToDo => OutcomeView {
+            glyph: OutcomeGlyph::Ok,
+            cells: vec![("Nothing to roll back".to_string(), "")],
+            error: None,
+        },
+        RollbackStatus::RolledBack { restored, failed } => {
+            let mut cells = Vec::new();
+            if *restored > 0 {
+                cells.push((format!("{restored} restored"), "score-good"));
+            }
+            if *failed > 0 {
+                cells.push((format!("{failed} failed"), "score-critical"));
+            }
+            if cells.is_empty() {
+                cells.push(("Nothing restored".to_string(), ""));
+            }
+            let glyph = if *failed > 0 {
+                OutcomeGlyph::Failed
+            } else {
+                OutcomeGlyph::Ok
+            };
+            OutcomeView {
+                glyph,
+                cells,
+                error: None,
+            }
+        }
+        RollbackStatus::Failed { error } => OutcomeView {
+            glyph: OutcomeGlyph::Failed,
+            cells: Vec::new(),
+            error: Some(error.clone()),
+        },
+    }
+}
+
+/// Pluralised "N host(s)" tail shared by both aggregate lines.
+#[allow(dead_code)]
+fn host_count_phrase(n: usize) -> String {
+    if n == 1 {
+        "1 host".to_string()
+    } else {
+        format!("{n} hosts")
+    }
+}
+
+/// Confirm-modal stakes line for an apply: total staged changes across the
+/// previewed hosts. Sums `would_change` over the `Validated` outcomes (other
+/// variants never appear in a dry-run preview).
+#[allow(dead_code)]
+pub fn fleet_apply_aggregate(outcomes: &[FleetApplyOutcome]) -> String {
+    let total: usize = outcomes
+        .iter()
+        .map(|o| match o.status {
+            ApplyStatus::Validated { would_change, .. } => would_change,
+            _ => 0,
+        })
+        .sum();
+    format!(
+        "~{total} changes across {}",
+        host_count_phrase(outcomes.len())
+    )
+}
+
+/// Confirm-modal stakes line for a rollback: total checkpoints that will
+/// restore across the previewed hosts.
+#[allow(dead_code)]
+pub fn fleet_rollback_aggregate(outcomes: &[FleetRollbackOutcome]) -> String {
+    let total: usize = outcomes
+        .iter()
+        .map(|o| match o.status {
+            RollbackStatus::Previewed { checkpoints } => checkpoints,
+            _ => 0,
+        })
+        .sum();
+    format!(
+        "{total} checkpoints will restore across {}",
+        host_count_phrase(outcomes.len())
+    )
 }
 
 #[cfg(test)]
@@ -1271,5 +1473,213 @@ mod tests {
     fn adhoc_target_error_rejects_a_duplicate_canonical() {
         let existing = vec!["admin@web-01:22".to_string()];
         assert!(adhoc_target_error("admin@web-01:22", &existing).is_some());
+    }
+
+    // --- Task 5b: fleet outcome mappers ---
+
+    fn apply_out(status: ApplyStatus) -> FleetApplyOutcome {
+        FleetApplyOutcome {
+            name: "web-01".to_string(),
+            target: "root@web-01:22".to_string(),
+            status,
+        }
+    }
+    fn rollback_out(status: RollbackStatus) -> FleetRollbackOutcome {
+        FleetRollbackOutcome {
+            name: "web-01".to_string(),
+            target: "root@web-01:22".to_string(),
+            status,
+        }
+    }
+
+    #[test]
+    fn apply_cells_all_compliant_reads_ok() {
+        let v = fleet_apply_cells(&apply_out(ApplyStatus::Validated {
+            plugins: 8,
+            would_change: 0,
+            compliant: 3,
+            failed: 0,
+        }));
+        assert_eq!(v.glyph, OutcomeGlyph::Ok);
+        assert_eq!(v.cells, vec![("3 already compliant".to_string(), "")]);
+        assert_eq!(v.error, None);
+    }
+
+    #[test]
+    fn apply_cells_would_change_reads_pending() {
+        let v = fleet_apply_cells(&apply_out(ApplyStatus::Validated {
+            plugins: 8,
+            would_change: 5,
+            compliant: 12,
+            failed: 0,
+        }));
+        assert_eq!(v.glyph, OutcomeGlyph::Pending);
+        assert_eq!(
+            v.cells,
+            vec![
+                ("5 would change".to_string(), "score-warning"),
+                ("12 already compliant".to_string(), ""),
+            ]
+        );
+    }
+
+    #[test]
+    fn apply_cells_any_failed_reads_failed_glyph() {
+        let v = fleet_apply_cells(&apply_out(ApplyStatus::Validated {
+            plugins: 8,
+            would_change: 2,
+            compliant: 0,
+            failed: 1,
+        }));
+        assert_eq!(v.glyph, OutcomeGlyph::Failed);
+        assert_eq!(
+            v.cells,
+            vec![
+                ("2 would change".to_string(), "score-warning"),
+                ("1 failed".to_string(), "score-critical"),
+            ]
+        );
+    }
+
+    #[test]
+    fn apply_cells_applied_clean() {
+        let v = fleet_apply_cells(&apply_out(ApplyStatus::Applied { ok: 5, failed: 0 }));
+        assert_eq!(v.glyph, OutcomeGlyph::Ok);
+        assert_eq!(v.cells, vec![("5 applied".to_string(), "score-good")]);
+    }
+
+    #[test]
+    fn apply_cells_applied_with_failures() {
+        let v = fleet_apply_cells(&apply_out(ApplyStatus::Applied { ok: 3, failed: 2 }));
+        assert_eq!(v.glyph, OutcomeGlyph::Failed);
+        assert_eq!(
+            v.cells,
+            vec![
+                ("3 applied".to_string(), "score-good"),
+                ("2 failed".to_string(), "score-critical"),
+            ]
+        );
+    }
+
+    #[test]
+    fn apply_cells_applied_nothing_shows_muted_fallback() {
+        let v = fleet_apply_cells(&apply_out(ApplyStatus::Applied { ok: 0, failed: 0 }));
+        assert_eq!(v.glyph, OutcomeGlyph::Ok);
+        assert_eq!(v.cells, vec![("No changes".to_string(), "")]);
+    }
+
+    #[test]
+    fn apply_cells_failed_carries_error_no_cells() {
+        let v = fleet_apply_cells(&apply_out(ApplyStatus::Failed {
+            error: "connection refused".to_string(),
+        }));
+        assert_eq!(v.glyph, OutcomeGlyph::Failed);
+        assert!(v.cells.is_empty());
+        assert_eq!(v.error.as_deref(), Some("connection refused"));
+    }
+
+    #[test]
+    fn rollback_cells_previewed_reads_pending() {
+        let v = fleet_rollback_cells(&rollback_out(RollbackStatus::Previewed { checkpoints: 9 }));
+        assert_eq!(v.glyph, OutcomeGlyph::Pending);
+        assert_eq!(
+            v.cells,
+            vec![("9 checkpoints would restore".to_string(), "")]
+        );
+    }
+
+    #[test]
+    fn rollback_cells_previewed_zero_reads_nothing() {
+        let v = fleet_rollback_cells(&rollback_out(RollbackStatus::Previewed { checkpoints: 0 }));
+        assert_eq!(v.glyph, OutcomeGlyph::Ok);
+        assert_eq!(v.cells, vec![("Nothing to roll back".to_string(), "")]);
+    }
+
+    #[test]
+    fn rollback_cells_rolled_back_clean() {
+        let v = fleet_rollback_cells(&rollback_out(RollbackStatus::RolledBack {
+            restored: 9,
+            failed: 0,
+        }));
+        assert_eq!(v.glyph, OutcomeGlyph::Ok);
+        assert_eq!(v.cells, vec![("9 restored".to_string(), "score-good")]);
+    }
+
+    #[test]
+    fn rollback_cells_rolled_back_with_failures() {
+        let v = fleet_rollback_cells(&rollback_out(RollbackStatus::RolledBack {
+            restored: 4,
+            failed: 2,
+        }));
+        assert_eq!(v.glyph, OutcomeGlyph::Failed);
+        assert_eq!(
+            v.cells,
+            vec![
+                ("4 restored".to_string(), "score-good"),
+                ("2 failed".to_string(), "score-critical"),
+            ]
+        );
+    }
+
+    #[test]
+    fn rollback_cells_nothing_to_do() {
+        let v = fleet_rollback_cells(&rollback_out(RollbackStatus::NothingToDo));
+        assert_eq!(v.glyph, OutcomeGlyph::Ok);
+        assert_eq!(v.cells, vec![("Nothing to roll back".to_string(), "")]);
+    }
+
+    #[test]
+    fn rollback_cells_failed_carries_error() {
+        let v = fleet_rollback_cells(&rollback_out(RollbackStatus::Failed {
+            error: "no checkpoint".to_string(),
+        }));
+        assert_eq!(v.glyph, OutcomeGlyph::Failed);
+        assert!(v.cells.is_empty());
+        assert_eq!(v.error.as_deref(), Some("no checkpoint"));
+    }
+
+    #[test]
+    fn apply_aggregate_sums_would_change_over_hosts() {
+        let outcomes = vec![
+            apply_out(ApplyStatus::Validated {
+                plugins: 8,
+                would_change: 5,
+                compliant: 0,
+                failed: 0,
+            }),
+            apply_out(ApplyStatus::Validated {
+                plugins: 8,
+                would_change: 7,
+                compliant: 0,
+                failed: 0,
+            }),
+        ];
+        assert_eq!(
+            fleet_apply_aggregate(&outcomes),
+            "~12 changes across 2 hosts"
+        );
+    }
+
+    #[test]
+    fn apply_aggregate_singular_host() {
+        let outcomes = vec![apply_out(ApplyStatus::Validated {
+            plugins: 8,
+            would_change: 3,
+            compliant: 0,
+            failed: 0,
+        })];
+        assert_eq!(fleet_apply_aggregate(&outcomes), "~3 changes across 1 host");
+    }
+
+    #[test]
+    fn rollback_aggregate_sums_checkpoints_over_hosts() {
+        let outcomes = vec![
+            rollback_out(RollbackStatus::Previewed { checkpoints: 9 }),
+            rollback_out(RollbackStatus::Previewed { checkpoints: 0 }),
+        ];
+        assert_eq!(
+            fleet_rollback_aggregate(&outcomes),
+            "9 checkpoints will restore across 2 hosts"
+        );
     }
 }
