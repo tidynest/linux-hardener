@@ -1,3 +1,10 @@
+//! Findings table with keyboard navigation.
+//!
+//! Its only consumer is FleetTable, which is orphaned once `/fleet` routes to
+//! the merged HostsPage (Task 4), so this component is transitionally dead.
+//! Removed with fleet_page.rs/fleet_table.rs in Task 5.
+#![allow(dead_code)]
+
 use crate::components::SeverityBadge;
 use crate::state::AppState;
 use crate::types::Finding;

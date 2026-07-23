@@ -1,14 +1,6 @@
 //! Expanded per-host panel: connection strip, collapsible Compliance detail,
 //! collapsible Findings (with collapsible severity subgroups), and the
 //! per-host scan-history timeline. Rendered only when a `HostRow` is expanded.
-//!
-//! Not yet consumed anywhere (HostRow, Task 3, wires it up), so `HostPanel`
-//! and `HostConnState` are unused for now. Per-item `#[allow(dead_code)]`
-//! does not reliably suppress this for a `#[component]`: the macro expands
-//! the function into a function plus a separate Props struct that does not
-//! inherit an outer attribute (see `status_icons.rs` for the same note); a
-//! module-level allow covers both.
-#![allow(dead_code)]
 
 use crate::components::ConfirmDeleteButton;
 use crate::tauri_bindings::invoke_get_host_history;

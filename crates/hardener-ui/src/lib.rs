@@ -16,7 +16,7 @@ mod utils;
 
 use components::Sidebar;
 use pages::{
-    AnalysisPage, DashboardPage, FleetApplyPage, FleetPage, HardeningPage, RemotePage,
+    AnalysisPage, DashboardPage, FleetApplyPage, HardeningPage, HostsPage, RemotePage,
     SchedulerPage,
 };
 use state::AppState;
@@ -112,7 +112,7 @@ pub fn App() -> impl IntoView {
                             <Route path=StaticSegment("analysis") view=AnalysisPage/>
                             <Route path=StaticSegment("hardening") view=HardeningPage/>
                             <Route path=StaticSegment("remote") view=RemotePage/>
-                            <Route path=StaticSegment("fleet") view=FleetPage/>
+                            <Route path=StaticSegment("fleet") view=HostsPage/>
                             <Route path=StaticSegment("fleet-apply") view=FleetApplyPage/>
                             <Route path=StaticSegment("scheduler") view=SchedulerPage/>
                         </Routes>

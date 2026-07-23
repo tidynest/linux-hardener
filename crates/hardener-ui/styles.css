@@ -4972,3 +4972,36 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 .host-strip-item b.score-good { color: var(--color-good-bright); box-shadow: none; }
 .host-strip-item b.score-warning { color: var(--color-warning-bright); box-shadow: none; }
 .host-strip-item b.score-critical { color: var(--color-critical-bright); box-shadow: none; }
+
+/* ============================================================
+   HOSTS PAGE (merged inventory: bulk scan + connect session)
+   ============================================================ */
+
+/* Page shell. Token corrections vs the design draft: text colours use
+   --text-secondary/--text-muted, borders use --border (the draft's
+   --color-text-* / --color-border tokens do not exist in :root). */
+.hosts-page { padding: var(--space-lg); max-width: 960px; }
+.hosts-header h1 { font-size: 1.4rem; font-weight: 500; margin: 0; }
+.hosts-subtitle { font-size: 0.82rem; color: var(--text-secondary); margin: 2px 0 0; }
+
+/* Action bar: primary scan + add + ad-hoc disclosure + right-aligned count. */
+.hosts-actions { display: flex; align-items: center; gap: 10px; margin: 18px 0 14px; flex-wrap: wrap; }
+.hosts-adhoc-toggle {
+  background: none; border: none; cursor: pointer; font-size: 0.78rem;
+  color: var(--text-muted);
+}
+.hosts-count { margin-left: auto; font-size: 0.78rem; color: var(--text-secondary); }
+.hosts-adhoc-input { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.hosts-progress { font-size: 0.82rem; color: var(--text-secondary); margin: 0 0 10px; }
+
+/* Inventory list: one hairline-bordered card wrapping the rows. */
+.hosts-list { border: 0.5px solid var(--border); border-radius: 12px; overflow: hidden; }
+.hosts-list-head { display: flex; padding: 8px 14px; border-bottom: 0.5px solid var(--border); }
+.hosts-select-all {
+  background: none; border: none; cursor: pointer; font-size: 0.76rem;
+  color: var(--text-secondary);
+}
+
+/* Empty state: centred, with the three onboarding steps left-aligned. */
+.hosts-empty { padding: 32px 20px; text-align: center; }
+.hosts-empty-steps { text-align: left; display: inline-block; margin: 12px auto; font-size: 0.85rem; }

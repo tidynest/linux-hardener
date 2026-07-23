@@ -1,12 +1,6 @@
 //! One inventory row: the resting two-line summary (name, target, connection
 //! dot, severity tallies, framework score strip) that expands in place into a
 //! `HostPanel`. Ad-hoc targets pass `profile = None`.
-//!
-//! Not yet consumed anywhere (`HostsPage`, Task 4, wires it up), so `HostRow`
-//! is unused for now. A module-level allow covers the `#[component]` macro's
-//! generated Props struct as well as the function itself (see
-//! `host_panel.rs` for the same note).
-#![allow(dead_code)]
 
 use crate::components::{HostConnState, HostPanel};
 use crate::types::{FleetHostScan, FleetHostStatus};

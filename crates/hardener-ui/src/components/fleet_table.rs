@@ -1,4 +1,9 @@
 //! Fleet scan results table: one row per host, expandable to its findings.
+//!
+//! Orphaned once `/fleet` routes to the merged HostsPage (Task 4): FleetPage
+//! was this table's only consumer, so its private helpers and prop fields are
+//! transitionally dead. Removed with fleet_page.rs in Task 5.
+#![allow(dead_code)]
 
 use crate::components::FindingsGrid;
 use crate::tauri_bindings::invoke_get_host_history;

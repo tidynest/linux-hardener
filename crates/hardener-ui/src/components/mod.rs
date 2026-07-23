@@ -43,13 +43,7 @@ pub use fleet_table::FleetTable;
 pub use history_section::HistorySection;
 pub use host_form::HostForm;
 pub use host_list::HostList;
-// HostPanel/HostConnState are not yet consumed - HostRow (Task 3) wires them
-// up. Defined now so that slice imports rather than re-adds.
-#[allow(unused_imports)]
 pub use host_panel::{HostConnState, HostPanel};
-// HostRow is not yet consumed - HostsPage (Task 4) wires it up. Defined now
-// so that slice imports rather than re-adds.
-#[allow(unused_imports)]
 pub use host_row::HostRow;
 pub use notification_section::NotificationSection;
 pub use recent_activity::RecentActivity;

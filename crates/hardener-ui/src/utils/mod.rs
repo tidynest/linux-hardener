@@ -446,7 +446,6 @@ pub fn score_band_label(band: ScoreBand) -> &'static str {
 /// Short display code for a compliance framework, for the Hosts inventory
 /// row's score strip. Distinct from `id()` (request string) and `full_name()`
 /// (long label): a compact badge code.
-#[allow(dead_code)]
 pub fn framework_short_label(framework: ComplianceFramework) -> &'static str {
     match framework {
         ComplianceFramework::CIS => "CIS",
@@ -466,7 +465,6 @@ pub fn framework_short_label(framework: ComplianceFramework) -> &'static str {
 /// score, band CSS class). Built in `ComplianceFramework::ALL` order (stable
 /// across hosts) from the frameworks actually present in `compliance`, so a
 /// host scanned against a subset shows only what it has, always in that order.
-#[allow(dead_code)]
 pub fn framework_score_cells(
     compliance: &[FleetFrameworkPosture],
 ) -> Vec<(&'static str, i32, &'static str)> {
@@ -488,7 +486,6 @@ pub fn framework_score_cells(
 /// the backend guard. Lifted from `adhoc_host_input.rs` so the Hosts screen can
 /// render ad-hoc targets as inventory rows from one tested source. `existing`
 /// holds already-added canonical targets.
-#[allow(dead_code)]
 pub fn adhoc_target_error(target: &str, existing: &[String]) -> Option<String> {
     use hardener_types::remote::RemoteHostProfile;
     if target.is_empty() {
@@ -506,7 +503,6 @@ pub fn adhoc_target_error(target: &str, existing: &[String]) -> Option<String> {
 
 /// Canonical `user@host:port` form of an ad-hoc target: the batch history key,
 /// so display name and persisted key agree.
-#[allow(dead_code)]
 pub fn adhoc_canonical(target: &str) -> String {
     use hardener_types::remote::RemoteHostProfile;
     RemoteHostProfile::from_target(target, 22, None, true).target()
