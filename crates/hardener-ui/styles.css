@@ -4871,3 +4871,59 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   border-radius: var(--radius-sm);
   padding: 0 var(--space-xs);
 }
+
+/* --- Hosts: expanded per-host panel --- */
+.host-panel { padding: 0 var(--space-md, 14px) var(--space-md, 16px) 44px; }
+.host-panel-strip {
+  display: flex; align-items: center; gap: var(--space-sm, 10px);
+  padding: var(--space-md, 14px) 0 var(--space-md, 16px);
+}
+.host-conn { display: inline-flex; align-items: center; gap: 8px; }
+.host-conn-label { font-size: 0.85rem; }
+.host-panel-actions { margin-left: auto; display: flex; gap: 8px; }
+
+.conn-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--border-strong, #888); flex: none;
+}
+.conn-dot-connecting { background: var(--text-secondary, #999); }
+.conn-dot-connected { background: var(--color-accent); }
+
+.host-section-label {
+  font-size: 0.7rem; font-weight: 500; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--text-muted, #888);
+}
+.host-collapse { margin-top: var(--space-lg, 20px); }
+.host-collapse-sub { margin: 8px 0 0; }
+.host-collapse > summary {
+  list-style: none; cursor: pointer; display: flex; align-items: center;
+  gap: 8px; padding: 4px 0;
+}
+.host-collapse > summary::-webkit-details-marker { display: none; }
+.host-collapse-chev {
+  width: 0; height: 0; border-left: 4px solid transparent;
+  border-right: 4px solid transparent; border-top: 5px solid var(--text-muted, #888);
+  transition: transform 0.15s ease;
+}
+.host-collapse[open] > summary .host-collapse-chev { transform: rotate(180deg); }
+
+.host-compliance-scroll { overflow-x: auto; }
+.host-compliance-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.host-compliance-table th {
+  text-align: right; font-weight: 400; color: var(--text-muted, #888);
+  padding: 3px 8px;
+}
+.host-compliance-table td { text-align: right; padding: 4px 8px; border-top: 0.5px solid var(--border); }
+.host-col-left { text-align: left !important; }
+
+.host-finding-row {
+  display: flex; align-items: baseline; gap: 8px; padding: 5px 0;
+  border-top: 0.5px solid var(--border);
+}
+.host-finding-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.host-finding-title { font-size: 0.85rem; }
+.host-finding-plugin {
+  margin-left: auto; font-size: 0.72rem; color: var(--text-muted, #888);
+  font-family: var(--font-mono);
+}
+.host-severity-label { font-size: 0.78rem; font-weight: 500; }

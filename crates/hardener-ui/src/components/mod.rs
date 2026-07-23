@@ -12,6 +12,7 @@ pub(crate) mod form_helpers;
 mod history_section;
 mod host_form;
 mod host_list;
+mod host_panel;
 mod icons;
 mod notification_section;
 mod recent_activity;
@@ -41,6 +42,10 @@ pub use fleet_table::FleetTable;
 pub use history_section::HistorySection;
 pub use host_form::HostForm;
 pub use host_list::HostList;
+// HostPanel/HostConnState are not yet consumed - HostRow (Task 3) wires them
+// up. Defined now so that slice imports rather than re-adds.
+#[allow(unused_imports)]
+pub use host_panel::{HostConnState, HostPanel};
 pub use notification_section::NotificationSection;
 pub use recent_activity::RecentActivity;
 pub use remote_status::RemoteStatus;
