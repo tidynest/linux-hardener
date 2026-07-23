@@ -759,6 +759,46 @@ pub fn fleet_rollback_aggregate(outcomes: &[FleetRollbackOutcome]) -> String {
     )
 }
 
+/// Cron presets with display labels and 6-field cron expressions. The single
+/// source shared by the Scheduler select and the helpers below.
+#[allow(dead_code)]
+pub const SCHEDULE_PRESETS: &[(&str, &str)] = &[
+    ("Daily at 2:00 AM", "0 0 2 * * *"),
+    ("Every 6 hours", "0 0 */6 * * *"),
+    ("Every 12 hours", "0 0 */12 * * *"),
+    ("Weekly on Monday", "0 0 2 * * Mon"),
+];
+
+/// Cron expression for a preset label, if it names a known preset.
+#[allow(dead_code)]
+pub fn preset_cron(label: &str) -> Option<&'static str> {
+    SCHEDULE_PRESETS
+        .iter()
+        .find(|(l, _)| *l == label)
+        .map(|(_, c)| *c)
+}
+
+/// Preset label whose cron matches `cron`, if any. Used on load to decide
+/// whether a saved schedule is a friendly preset or a custom expression.
+#[allow(dead_code)]
+pub fn preset_label_for_cron(cron: &str) -> Option<&'static str> {
+    SCHEDULE_PRESETS
+        .iter()
+        .find(|(_, c)| *c == cron)
+        .map(|(l, _)| *l)
+}
+
+/// The cron the scheduler will actually run: a non-empty `custom_cron`
+/// overrides the preset; otherwise the selected preset's cron; empty string if
+/// neither resolves.
+#[allow(dead_code)]
+pub fn effective_schedule_cron(preset_label: &str, custom_cron: &str) -> String {
+    if !custom_cron.is_empty() {
+        return custom_cron.to_string();
+    }
+    preset_cron(preset_label).unwrap_or_default().to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1683,5 +1723,53 @@ mod tests {
             fleet_rollback_aggregate(&outcomes),
             "9 checkpoints will restore across 2 hosts"
         );
+    }
+
+    // --- Task 5c: scheduler preset/cron helpers ---
+
+    #[test]
+    fn preset_cron_maps_known_and_unknown() {
+        assert_eq!(preset_cron("Daily at 2:00 AM"), Some("0 0 2 * * *"));
+        assert_eq!(preset_cron("nope"), None);
+    }
+
+    #[test]
+    fn preset_label_for_cron_reverse_maps() {
+        assert_eq!(
+            preset_label_for_cron("0 0 */6 * * *"),
+            Some("Every 6 hours")
+        );
+        assert_eq!(preset_label_for_cron("0 0 2 5 * *"), None);
+    }
+
+    #[test]
+    fn effective_cron_custom_overrides_preset() {
+        assert_eq!(
+            effective_schedule_cron("Daily at 2:00 AM", "0 30 3 * * *"),
+            "0 30 3 * * *"
+        );
+    }
+
+    #[test]
+    fn effective_cron_falls_back_to_preset_when_custom_empty() {
+        assert_eq!(
+            effective_schedule_cron("Every 12 hours", ""),
+            "0 0 */12 * * *"
+        );
+    }
+
+    #[test]
+    fn effective_cron_empty_when_neither_resolves() {
+        assert_eq!(effective_schedule_cron("unknown", ""), "");
+    }
+
+    #[test]
+    fn preset_round_trips() {
+        for (label, _) in SCHEDULE_PRESETS {
+            assert_eq!(
+                preset_label_for_cron(preset_cron(label).unwrap()),
+                Some(*label)
+            );
+        }
     }
 }
