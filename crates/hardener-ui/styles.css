@@ -5195,3 +5195,159 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 /* Empty state: centred, with the three onboarding steps left-aligned. */
 .hosts-empty { padding: 32px 20px; text-align: center; }
 .hosts-empty-steps { text-align: left; display: inline-block; margin: 12px auto; font-size: 0.85rem; }
+
+/* ============================================================
+   Settings page - Appearance (theme grid) + About
+   ============================================================ */
+.settings-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  max-width: 900px;
+}
+
+.settings-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.settings-title {
+  margin: 0;
+  font-size: var(--font-size-title);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.settings-subtitle {
+  margin: 0;
+  font-size: var(--font-size-body);
+  color: var(--text-secondary);
+}
+
+.settings-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-lg);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.settings-block-title {
+  margin: 0;
+  font-size: var(--font-size-sub);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.settings-block-hint {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--space-md);
+  margin-top: var(--space-xs);
+}
+
+.theme-swatch {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.theme-swatch:hover {
+  border-color: var(--border-strong);
+}
+
+.theme-swatch.is-active {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-accent-bg);
+}
+
+.theme-swatch-chips {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.theme-chip {
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+}
+
+.theme-chip-accent {
+  background: var(--color-accent);
+}
+
+.theme-chip-good {
+  background: var(--color-good-bright);
+}
+
+.theme-chip-warning {
+  background: var(--color-warning-bright);
+}
+
+.theme-chip-critical {
+  background: var(--color-critical-bright);
+}
+
+.theme-swatch-name {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+}
+
+.theme-swatch-check {
+  position: absolute;
+  top: var(--space-sm);
+  right: var(--space-sm);
+  visibility: hidden;
+  color: var(--color-accent);
+  font-size: var(--font-size-sm);
+}
+
+.theme-swatch.is-active .theme-swatch-check {
+  visibility: visible;
+}
+
+.settings-about {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin: 0;
+}
+
+.settings-about-row {
+  display: flex;
+  gap: var(--space-md);
+}
+
+.settings-about-row dt {
+  flex: 0 0 8rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.settings-about-row dd {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-mono);
+}

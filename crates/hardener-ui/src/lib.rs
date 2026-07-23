@@ -15,7 +15,10 @@ mod types;
 mod utils;
 
 use components::Sidebar;
-use pages::{AnalysisPage, DashboardPage, FleetApplyPage, HardeningPage, HostsPage, SchedulerPage};
+use pages::{
+    AnalysisPage, DashboardPage, FleetApplyPage, HardeningPage, HostsPage, SchedulerPage,
+    SettingsPage,
+};
 use state::AppState;
 pub use types::*;
 
@@ -126,6 +129,7 @@ pub fn App() -> impl IntoView {
                             <Route path=StaticSegment("fleet") view=HostsPage/>
                             <Route path=StaticSegment("fleet-apply") view=FleetApplyPage/>
                             <Route path=StaticSegment("scheduler") view=SchedulerPage/>
+                            <Route path=StaticSegment("settings") view=SettingsPage/>
                         </Routes>
                     </main>
                 </div>

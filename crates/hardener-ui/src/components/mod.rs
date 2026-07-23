@@ -23,6 +23,7 @@ mod segmented_control;
 mod sidebar;
 mod status_icons;
 mod tabs;
+mod theme_picker;
 mod theme_toggle;
 
 pub use adhoc_host_input::AdhocHostInput;
@@ -55,4 +56,5 @@ pub use sidebar::Sidebar;
 pub use status_icons::{IconArrowRight, IconMinus, IconWrench, IconX};
 pub use status_icons::{IconCheck, IconInfo};
 pub use tabs::{TabBar, TabDef, TabPanel};
+pub use theme_picker::ThemePicker;
 pub use theme_toggle::ThemeToggle;
