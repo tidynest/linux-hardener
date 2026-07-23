@@ -10,17 +10,7 @@ use wasm_bindgen::prelude::*;
 use web_sys::KeyboardEvent;
 
 use crate::state::AppState;
-
-/// Theme identifiers in cycle order, matching `theme_toggle::THEMES`.
-const THEME_CYCLE: &[&str] = &[
-    "default",
-    "fortress",
-    "sentinel",
-    "command",
-    "guardian",
-    "daywatch",
-    "high-contrast",
-];
+use crate::utils::theme::THEMES;
 
 /// Installs the global keyboard shortcut handler on `document`.
 ///
@@ -90,7 +80,7 @@ pub fn use_global_keyboard(app_state: AppState) {
             // Alt+T: Cycle theme
             "t" if alt && !ctrl && !shift => {
                 ev.prevent_default();
-                cycle_theme();
+                cycle_theme(app_state);
             }
 
             _ => {}
@@ -202,44 +192,14 @@ fn trigger_global_scan(app_state: AppState) {
     });
 }
 
-/// Cycle to the next theme in order.
-fn cycle_theme() {
-    let Some(window) = web_sys::window() else {
-        return;
-    };
-    let Some(document) = window.document() else {
-        return;
-    };
-    let Some(root) = document.document_element() else {
-        return;
-    };
-
-    // Determine current theme
-    let current = root
-        .get_attribute("data-theme")
-        .unwrap_or_else(|| "default".to_string());
-
-    // Find next in cycle
-    let current_idx = THEME_CYCLE.iter().position(|&t| t == current).unwrap_or(0);
-    let next_idx = (current_idx + 1) % THEME_CYCLE.len();
-    let next_theme = THEME_CYCLE[next_idx];
-
-    // Apply (same logic as theme_toggle.rs)
-    if next_theme == "default" {
-        let _ = root.remove_attribute("data-theme");
-    } else {
-        let _ = root.set_attribute("data-theme", next_theme);
-    }
-
-    // Persist to localStorage
-    if let Ok(Some(storage)) = window.local_storage() {
-        let _ = storage.set_item("theme", next_theme);
-    }
-
-    // Update the <select> element if visible
-    if let Some(select) = document.get_element_by_id("theme-select")
-        && let Ok(select) = select.dyn_into::<web_sys::HtmlSelectElement>()
-    {
-        select.set_value(next_theme);
-    }
+/// Cycle to the next theme by advancing the shared signal; the apply/persist
+/// Effect in `App` reacts to it (single source of truth).
+fn cycle_theme(app_state: AppState) {
+    let current = app_state.theme.get_untracked();
+    let idx = THEMES
+        .iter()
+        .position(|(id, _)| *id == current)
+        .unwrap_or(0);
+    let next = THEMES[(idx + 1) % THEMES.len()].0;
+    app_state.theme.set(next.to_string());
 }
