@@ -1,17 +1,16 @@
 //! Grouped left sidebar navigation with a collapsible icon rail.
 //!
 //! Replaces the old flat top navigation bar. Routes are grouped Local
-//! (Dashboard/Analysis/Hardening) and Fleet (Remote/Fleet/Fleet
-//! Apply/Scheduler), with a pinned Settings area underneath holding the
-//! theme switcher (Settings has no route of its own yet). Every link is a
-//! `leptos_router` `<A>`, so the active-route highlight keys off the
-//! `aria-current="page"` attribute the router already sets - no manual
-//! route comparison needed.
+//! (Dashboard/Analysis/Hardening) and Fleet (Hosts/Fleet Apply/Scheduler),
+//! with a pinned Settings area underneath holding the theme switcher
+//! (Settings has no route of its own yet). Every link is a `leptos_router`
+//! `<A>`, so the active-route highlight keys off the `aria-current="page"`
+//! attribute the router already sets - no manual route comparison needed.
 
 use super::ThemeToggle;
 use super::icons::{
     IconAnalysis, IconChevronCollapse, IconDashboard, IconFleet, IconFleetApply, IconHardening,
-    IconRemote, IconScheduler, IconSettings, IconShieldMark,
+    IconScheduler, IconSettings, IconShieldMark,
 };
 use leptos::prelude::*;
 use leptos_router::components::A;
@@ -124,10 +123,7 @@ pub fn Sidebar() -> impl IntoView {
                 <div class="sidebar-group">
                     <SidebarGroupLabel label="Fleet"/>
                     <ul class="sidebar-group-items">
-                        <SidebarLink href="/remote" label="Remote">
-                            <IconRemote class="sidebar-link-icon"/>
-                        </SidebarLink>
-                        <SidebarLink href="/fleet" label="Fleet">
+                        <SidebarLink href="/fleet" label="Hosts">
                             <IconFleet class="sidebar-link-icon"/>
                         </SidebarLink>
                         <SidebarLink href="/fleet-apply" label="Fleet Apply">

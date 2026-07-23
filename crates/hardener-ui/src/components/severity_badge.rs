@@ -1,3 +1,12 @@
+// Orphaned when the fleet host FindingsGrid (its only consumer) was retired
+// with the Fleet screen; see the re-export note in `components/mod.rs`. A
+// function-level `#[allow(dead_code)]` does not reliably suppress this,
+// because Leptos's `#[component]` macro expands the component into a
+// function plus a separate Props struct that does not inherit an outer
+// attribute; a module-level allow covers both, the same way
+// `status_icons.rs` allows `dead_code` for its not-yet-wired icons.
+#![allow(dead_code)]
+
 use crate::types::Severity;
 use leptos::prelude::*;
 

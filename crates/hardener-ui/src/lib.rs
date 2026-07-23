@@ -15,10 +15,7 @@ mod types;
 mod utils;
 
 use components::Sidebar;
-use pages::{
-    AnalysisPage, DashboardPage, FleetApplyPage, HardeningPage, HostsPage, RemotePage,
-    SchedulerPage,
-};
+use pages::{AnalysisPage, DashboardPage, FleetApplyPage, HardeningPage, HostsPage, SchedulerPage};
 use state::AppState;
 pub use types::*;
 
@@ -26,7 +23,8 @@ pub use types::*;
 ///
 /// This sets up:
 /// - Application state (AppState) available to all child components via context
-/// - Router with seven routes: Dashboard, Analysis, Hardening, Remote, Fleet, Scheduler, Fleet Apply
+/// - Router with six routes: Dashboard, Analysis, Hardening, Hosts, Scheduler, Fleet Apply
+///   (plus a `/remote` redirect to Hosts for old links)
 /// - Grouped sidebar (Local / Fleet / Settings) for moving between pages
 /// - Automatic loading of persisted scan results on mount
 #[component]
@@ -111,7 +109,7 @@ pub fn App() -> impl IntoView {
                             <Route path=StaticSegment("") view=DashboardPage/>
                             <Route path=StaticSegment("analysis") view=AnalysisPage/>
                             <Route path=StaticSegment("hardening") view=HardeningPage/>
-                            <Route path=StaticSegment("remote") view=RemotePage/>
+                            <Route path=StaticSegment("remote") view=RedirectToFleet/>
                             <Route path=StaticSegment("fleet") view=HostsPage/>
                             <Route path=StaticSegment("fleet-apply") view=FleetApplyPage/>
                             <Route path=StaticSegment("scheduler") view=SchedulerPage/>
@@ -134,6 +132,17 @@ fn GlobalHooks() -> impl IntoView {
     navigation::use_scroll_and_focus_on_navigate();
     arm_rate_limit_auto_dismiss(app_state);
     // Renders nothing: purely side-effect driven
+}
+
+/// Retired `/remote` route target: the Remote and Fleet screens merged into
+/// the single Hosts screen (`HostsPage`, routed at `/fleet`). Any stale link
+/// or bookmark pointing at `/remote` lands here and is bounced on to the
+/// merged screen rather than hitting the 404 fallback.
+#[component]
+fn RedirectToFleet() -> impl IntoView {
+    let navigate = leptos_router::hooks::use_navigate();
+    Effect::new(move |_| navigate("/fleet", Default::default()));
+    view! { <span></span> }
 }
 
 /// Auto-dismisses the global error banner when it is showing the backend's

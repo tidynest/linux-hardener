@@ -10,6 +10,15 @@
 //! Icons are decorative - the visible nav label carries the meaning - so
 //! every glyph is `aria-hidden="true"`. Size is entirely the caller's call
 //! via the `class` prop (no width/height in the markup).
+//!
+//! `IconRemote` (below) is currently unwired, orphaned when the sidebar's
+//! Remote link merged into the single Hosts link. A per-item
+//! `#[allow(dead_code)]` cannot silence it: attributes placed directly on a
+//! `nav_icon!` invocation are not forwarded into a `macro_rules!`
+//! expansion, and one placed on the generated `#[component]` function would
+//! still miss the separate Props struct Leptos also emits - the same
+//! limitation `status_icons.rs` documents. Hence the module-level allow.
+#![allow(dead_code)]
 
 use leptos::prelude::*;
 
@@ -55,6 +64,10 @@ nav_icon!(
     r#"<path d="M12 3l7 3v6c0 4.5 -3 8 -7 9c-4 -1 -7 -4.5 -7 -9v-6l7 -3z"/><path d="M9 12l2 2l4 -4"/>"#
 );
 
+// Orphaned when the sidebar's Remote link merged into the single Hosts link
+// (Fleet's IconFleet). Kept, not deleted, in case a future screen wants a
+// single-host glyph distinct from IconFleet. See the module-level
+// `#![allow(dead_code)]` above for why this cannot be silenced per-item.
 nav_icon!(
     /// Remote: a single plug connector, for one ad-hoc SSH host.
     IconRemote,

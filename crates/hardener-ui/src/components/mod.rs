@@ -5,19 +5,15 @@ mod compliance_tab;
 mod config_file_card;
 mod configure_section;
 mod confirm_delete;
-mod findings_grid;
 mod findings_tab;
-mod fleet_table;
 pub(crate) mod form_helpers;
 mod history_section;
 mod host_form;
-mod host_list;
 mod host_panel;
 mod host_row;
 mod icons;
 mod notification_section;
 mod recent_activity;
-mod remote_status;
 mod rollback_modal;
 mod scan_history_tab;
 mod schedule_section;
@@ -37,21 +33,22 @@ pub use compliance_tab::ComplianceTab;
 pub use config_file_card::ConfigFileCard;
 pub use configure_section::ConfigureSection;
 pub use confirm_delete::ConfirmDeleteButton;
-pub use findings_grid::FindingsGrid;
 pub use findings_tab::FindingsTab;
-pub use fleet_table::FleetTable;
 pub use history_section::HistorySection;
 pub use host_form::HostForm;
-pub use host_list::HostList;
 pub use host_panel::{HostConnState, HostPanel};
 pub use host_row::HostRow;
 pub use notification_section::NotificationSection;
 pub use recent_activity::RecentActivity;
-pub use remote_status::RemoteStatus;
 pub use rollback_modal::RollbackModal;
 pub use scan_history_tab::ScanHistoryTab;
 pub use schedule_section::ScheduleSection;
 pub use security_score::{SecurityScore, calculate_all_scores};
+// SeverityBadge's only consumer was the fleet host FindingsGrid, retired in
+// this slice with the Fleet screen it belonged to (the Analysis findings
+// list carries severity via an inline dot and label instead). Kept, not
+// deleted, in case a future screen wants a standalone badge.
+#[allow(unused_imports)]
 pub use severity_badge::SeverityBadge;
 pub use sidebar::Sidebar;
 // IconX/IconWrench/IconMinus/IconArrowRight are not yet called from any
