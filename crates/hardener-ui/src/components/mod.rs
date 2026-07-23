@@ -13,6 +13,7 @@ mod history_section;
 mod host_form;
 mod host_list;
 mod host_panel;
+mod host_row;
 mod icons;
 mod notification_section;
 mod recent_activity;
@@ -46,6 +47,10 @@ pub use host_list::HostList;
 // up. Defined now so that slice imports rather than re-adds.
 #[allow(unused_imports)]
 pub use host_panel::{HostConnState, HostPanel};
+// HostRow is not yet consumed - HostsPage (Task 4) wires it up. Defined now
+// so that slice imports rather than re-adds.
+#[allow(unused_imports)]
+pub use host_row::HostRow;
 pub use notification_section::NotificationSection;
 pub use recent_activity::RecentActivity;
 pub use remote_status::RemoteStatus;

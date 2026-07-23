@@ -4934,3 +4934,41 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   font-family: var(--font-mono);
 }
 .host-severity-label { font-size: 0.78rem; font-weight: 500; }
+
+/* --- Hosts: inventory row --- */
+.host-row { border-bottom: 0.5px solid var(--border); }
+.host-row:last-child { border-bottom: none; }
+.host-row-open { background: var(--bg-tertiary); }
+.host-row-main { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; }
+.host-row-expand { background: none; border: none; cursor: pointer; padding: 2px; margin-top: 1px; }
+.host-row-chev {
+  display: inline-block; width: 0; height: 0;
+  border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+  border-left: 6px solid var(--text-muted); transition: transform 0.15s ease;
+}
+.host-row-chev-open { transform: rotate(90deg); }
+.host-row-id { min-width: 0; }
+.host-row-name { font-size: 0.9rem; font-weight: 500; }
+.host-row-detail { font-size: 0.78rem; color: var(--text-secondary); font-family: var(--font-mono); }
+.host-row-posture { margin-left: auto; font-size: 0.78rem; display: flex; align-items: center; gap: 9px; }
+.host-row-unscanned { color: var(--text-muted); }
+.host-row-failed { color: var(--color-critical); }
+.host-row-tallies { display: flex; gap: 9px; }
+.tally-crit { color: var(--color-critical); }
+.tally-high { color: var(--color-warning); }
+.tally-med { color: var(--text-secondary); }
+.tally-low { color: var(--text-muted); }
+.host-prog-ok { color: var(--color-accent); }
+.host-prog-failed { color: var(--color-critical); }
+.host-row-strip {
+  display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 0 14px 10px 56px;
+  font-size: 0.78rem; font-family: var(--font-mono);
+}
+.host-strip-item b { font-weight: 500; }
+
+/* The shared .score-* classes only colour a .score-value child (a bare <b>
+   has none), so the row's framework strip scopes its own colour, mirroring
+   the fix already applied to the Task 2 compliance table above. */
+.host-strip-item b.score-good { color: var(--color-good-bright); box-shadow: none; }
+.host-strip-item b.score-warning { color: var(--color-warning-bright); box-shadow: none; }
+.host-strip-item b.score-critical { color: var(--color-critical-bright); box-shadow: none; }
