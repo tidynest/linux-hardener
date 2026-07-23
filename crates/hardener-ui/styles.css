@@ -4284,6 +4284,67 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   max-width: 40rem;
 }
 
+/* Per-host outcome row - dry-run preview and executed results share it. */
+.fleet-outcome {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  margin-top: var(--space-sm);
+}
+
+.fleet-outcome-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.fleet-outcome-id {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fleet-outcome-name {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.fleet-outcome-target {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+.fleet-outcome-stats {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex-shrink: 0;
+}
+
+/* Stat cell: muted by default; a band class colours it directly (the shared
+   .score-* classes only colour a .score-value child, so a bare span needs the
+   scoped rules below). */
+.fleet-stat {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+.fleet-stat.score-good { color: var(--color-good-bright); }
+.fleet-stat.score-warning { color: var(--color-warning-bright); }
+.fleet-stat.score-critical { color: var(--color-critical-bright); }
+
+.fleet-glyph {
+  font-weight: 700;
+}
+.fleet-glyph-ok { color: var(--color-good-bright); }
+.fleet-glyph-pending { color: var(--color-warning-bright); }
+.fleet-glyph-failed { color: var(--color-critical-bright); }
+
 /* ============================================================
    26. UNCHECKED CHECKS (PRIVILEGED DEEP SCAN)
    ============================================================ */

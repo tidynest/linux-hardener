@@ -6,6 +6,7 @@ mod config_file_card;
 mod configure_section;
 mod confirm_delete;
 mod findings_tab;
+mod fleet_outcome_row;
 pub(crate) mod form_helpers;
 mod history_section;
 mod host_form;
@@ -34,6 +35,11 @@ pub use config_file_card::ConfigFileCard;
 pub use configure_section::ConfigureSection;
 pub use confirm_delete::ConfirmDeleteButton;
 pub use findings_tab::FindingsTab;
+// FleetOutcomeRow is not yet called from any view - the Fleet Apply results
+// slice wires it up next. Defined now so that slice imports rather than
+// re-adds.
+#[allow(unused_imports)]
+pub use fleet_outcome_row::FleetOutcomeRow;
 pub use history_section::HistorySection;
 pub use host_form::HostForm;
 pub use host_panel::{HostConnState, HostPanel};
