@@ -139,7 +139,7 @@ pub fn Sidebar() -> impl IntoView {
             <div class="sidebar-settings">
                 <A
                     href="/settings"
-                    attr:class="sidebar-link sidebar-settings-link"
+                    attr:class="sidebar-link"
                     attr:title="Settings"
                     attr:aria-label="Settings"
                 >
@@ -165,7 +165,7 @@ pub fn Sidebar() -> impl IntoView {
 
 /// A group heading ("Local" / "Fleet"). Collapses to a plain divider line
 /// in rail mode (the text stays in the DOM for screen readers; only its
-/// visual box shrinks), matching the Settings heading's own label markup.
+/// visual box shrinks).
 #[component]
 fn SidebarGroupLabel(label: &'static str) -> impl IntoView {
     view! {
