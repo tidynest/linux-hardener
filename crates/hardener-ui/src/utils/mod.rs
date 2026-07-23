@@ -3,8 +3,8 @@
 mod mock_data;
 
 use crate::types::{
-    ApplyResult, Change, CheckpointInfo, FileRestoreAction, Finding, RollbackResult, ScanResult,
-    ScanSessionInfo, Severity, ValidationReport,
+    ApplyResult, Change, CheckpointInfo, ComplianceFramework, FileRestoreAction, Finding,
+    FleetFrameworkPosture, RollbackResult, ScanResult, ScanSessionInfo, Severity, ValidationReport,
 };
 
 /// One plugin's dry-run preview decision after cross-checking the estimate
@@ -443,6 +443,75 @@ pub fn score_band_label(band: ScoreBand) -> &'static str {
     }
 }
 
+/// Short display code for a compliance framework, for the Hosts inventory
+/// row's score strip. Distinct from `id()` (request string) and `full_name()`
+/// (long label): a compact badge code.
+#[allow(dead_code)]
+pub fn framework_short_label(framework: ComplianceFramework) -> &'static str {
+    match framework {
+        ComplianceFramework::CIS => "CIS",
+        ComplianceFramework::STIG => "STIG",
+        ComplianceFramework::NIST => "800-53",
+        ComplianceFramework::PCIDSS => "PCI",
+        ComplianceFramework::HIPAA => "HIPAA",
+        ComplianceFramework::GDPR => "GDPR",
+        ComplianceFramework::ISO27001 => "ISO",
+        ComplianceFramework::SOC2 => "SOC2",
+        ComplianceFramework::NIST800171 => "800-171",
+        ComplianceFramework::FedRAMP => "FedRAMP",
+    }
+}
+
+/// One cell of the inventory row's framework score strip: (short label, rounded
+/// score, band CSS class). Built in `ComplianceFramework::ALL` order (stable
+/// across hosts) from the frameworks actually present in `compliance`, so a
+/// host scanned against a subset shows only what it has, always in that order.
+#[allow(dead_code)]
+pub fn framework_score_cells(
+    compliance: &[FleetFrameworkPosture],
+) -> Vec<(&'static str, i32, &'static str)> {
+    ComplianceFramework::ALL
+        .into_iter()
+        .filter_map(|framework| {
+            let posture = compliance.iter().find(|p| p.framework == framework)?;
+            let score = posture.summary.summary_score_percentage.round() as i32;
+            Some((
+                framework_short_label(framework),
+                score,
+                score_band_class(score_band(score)),
+            ))
+        })
+        .collect()
+}
+
+/// Client-side validation for one ad-hoc `user@host[:port]` target, mirroring
+/// the backend guard. Lifted from `adhoc_host_input.rs` so the Hosts screen can
+/// render ad-hoc targets as inventory rows from one tested source. `existing`
+/// holds already-added canonical targets.
+#[allow(dead_code)]
+pub fn adhoc_target_error(target: &str, existing: &[String]) -> Option<String> {
+    use hardener_types::remote::RemoteHostProfile;
+    if target.is_empty() {
+        return Some("Enter user@host[:port]".to_string());
+    }
+    let profile = RemoteHostProfile::from_target(target, 22, None, true);
+    if !RemoteHostProfile::is_valid_hostname(&profile.hostname) {
+        return Some(format!("Invalid target '{target}': invalid hostname"));
+    }
+    if existing.iter().any(|e| e == &adhoc_canonical(target)) {
+        return Some(format!("'{target}' already added"));
+    }
+    None
+}
+
+/// Canonical `user@host:port` form of an ad-hoc target: the batch history key,
+/// so display name and persisted key agree.
+#[allow(dead_code)]
+pub fn adhoc_canonical(target: &str) -> String {
+    use hardener_types::remote::RemoteHostProfile;
+    RemoteHostProfile::from_target(target, 22, None, true).target()
+}
+
 /// Header subtitle for the last scan: the most recent session's `completed_at`
 /// shown as-is, or "Not scanned yet" when there is none.
 ///
@@ -504,8 +573,9 @@ pub fn severity_class(sev: Severity) -> &'static str {
 mod tests {
     use super::*;
     use crate::types::{
-        Change, ChangeType, CheckpointInfo, FileRestoreAction, FileRestoreResult, Finding,
-        FindingCategory, PluginId, RollbackResult, ScanSessionInfo, Severity,
+        Change, ChangeType, CheckpointInfo, ComplianceSummary, FileRestoreAction,
+        FileRestoreResult, Finding, FindingCategory, PluginId, RollbackResult, ScanSessionInfo,
+        Severity,
     };
 
     #[test]
@@ -1134,5 +1204,76 @@ mod tests {
         assert_eq!(severity_label(Severity::Info), "Info");
         assert_eq!(severity_class(Severity::High), "severity_high");
         assert_eq!(severity_class(Severity::Low), "severity_low");
+    }
+
+    // --- Task 1.0: Row-strip and ad-hoc helpers (Hosts screen) ---
+
+    fn fw_posture(framework: ComplianceFramework, pct: f64) -> FleetFrameworkPosture {
+        FleetFrameworkPosture {
+            framework,
+            summary: ComplianceSummary {
+                summary_total_controls: 0,
+                summary_passing: 0,
+                summary_failing: 0,
+                summary_manual_review: 0,
+                summary_not_applicable: 0,
+                summary_score_percentage: pct,
+            },
+        }
+    }
+
+    #[test]
+    fn framework_short_label_maps_the_awkward_ones() {
+        assert_eq!(framework_short_label(ComplianceFramework::CIS), "CIS");
+        assert_eq!(framework_short_label(ComplianceFramework::NIST), "800-53");
+        assert_eq!(
+            framework_short_label(ComplianceFramework::NIST800171),
+            "800-171"
+        );
+        assert_eq!(framework_short_label(ComplianceFramework::PCIDSS), "PCI");
+        assert_eq!(framework_short_label(ComplianceFramework::ISO27001), "ISO");
+    }
+
+    #[test]
+    fn framework_score_cells_follows_all_order_and_bands() {
+        // Input out of ALL-order: CIS must still come before STIG in the output.
+        let compliance = vec![
+            fw_posture(ComplianceFramework::STIG, 61.4),
+            fw_posture(ComplianceFramework::CIS, 84.0),
+        ];
+        assert_eq!(
+            framework_score_cells(&compliance),
+            vec![("CIS", 84, "score-good"), ("STIG", 61, "score-warning")]
+        );
+    }
+
+    #[test]
+    fn framework_score_cells_rounds_then_bands() {
+        assert_eq!(
+            framework_score_cells(&[fw_posture(ComplianceFramework::PCIDSS, 38.7)]),
+            vec![("PCI", 39, "score-critical")]
+        );
+        assert_eq!(framework_score_cells(&[]), Vec::new());
+    }
+
+    #[test]
+    fn adhoc_target_error_mirrors_the_backend_guard() {
+        assert!(adhoc_target_error("", &[]).is_some());
+        assert!(adhoc_target_error("-oProxyCommand=x", &[]).is_some());
+        assert!(adhoc_target_error("admin@", &[]).is_some());
+        assert!(adhoc_target_error("admin@web-01:2222", &[]).is_none());
+        assert!(adhoc_target_error("root@10.242.117.2", &[]).is_none());
+        assert!(adhoc_target_error("root@10.242.117.2, scan:22", &[]).is_some());
+    }
+
+    #[test]
+    fn adhoc_canonical_matches_the_user_host_port_form() {
+        assert_eq!(adhoc_canonical("admin@web-01"), "admin@web-01:22");
+    }
+
+    #[test]
+    fn adhoc_target_error_rejects_a_duplicate_canonical() {
+        let existing = vec!["admin@web-01:22".to_string()];
+        assert!(adhoc_target_error("admin@web-01:22", &existing).is_some());
     }
 }
