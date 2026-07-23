@@ -4916,6 +4916,13 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 .host-compliance-table td { text-align: right; padding: 4px 8px; border-top: 0.5px solid var(--border); }
 .host-col-left { text-align: left !important; }
 
+/* Compliance score cell - colour the percentage text directly. The shared
+   .score-* classes only colour a .score-value child (a bare table cell has
+   none), so the Hosts table scopes its own colour like the fleet table does. */
+.host-compliance-table td.score-good { color: var(--color-good-bright); box-shadow: none; }
+.host-compliance-table td.score-warning { color: var(--color-warning-bright); box-shadow: none; }
+.host-compliance-table td.score-critical { color: var(--color-critical-bright); box-shadow: none; }
+
 .host-finding-row {
   display: flex; align-items: baseline; gap: 8px; padding: 5px 0;
   border-top: 0.5px solid var(--border);
