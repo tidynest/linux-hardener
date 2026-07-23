@@ -32,9 +32,11 @@ pub fn SchedulerPage() -> impl IntoView {
             form.min_severity.set(config.min_severity.clone());
             form.selected_plugins.set(config.plugins.clone());
 
-            // A schedule matching a preset selects it; anything else is a
-            // custom cron - keep the first preset as the visible fallback,
-            // fill the custom field, and auto-open Advanced.
+            // A schedule matching a preset selects it. A non-empty schedule
+            // matching no preset is a real custom cron - keep the first preset
+            // as the visible fallback, fill the custom field, and auto-open
+            // Advanced. An empty schedule (a brand-new config) is not a custom
+            // schedule: fall back to the first preset with Advanced closed.
             match preset_label_for_cron(&config.schedule) {
                 Some(label) => {
                     form.selected_preset.set(label.to_string());
@@ -42,9 +44,14 @@ pub fn SchedulerPage() -> impl IntoView {
                     form.advanced_open.set(false);
                 }
                 None => {
+                    let has_custom = !config.schedule.is_empty();
                     form.selected_preset.set(SCHEDULE_PRESETS[0].0.to_string());
-                    form.custom_cron.set(config.schedule.clone());
-                    form.advanced_open.set(true);
+                    form.custom_cron.set(if has_custom {
+                        config.schedule.clone()
+                    } else {
+                        String::new()
+                    });
+                    form.advanced_open.set(has_custom);
                 }
             }
 
@@ -130,7 +137,10 @@ pub fn SchedulerPage() -> impl IntoView {
             </section>
 
             <div class="scheduler-save-bar">
-                <Show when=move || save_status.get().is_some()>
+                // Always-present live region so the save result is announced
+                // when it appears (a region that only mounts with its content
+                // is not reliably read by screen readers).
+                <div class="scheduler-save-region" role="status" aria-live="polite">
                     {move || {
                         save_status
                             .get()
@@ -143,12 +153,11 @@ pub fn SchedulerPage() -> impl IntoView {
                                 view! { <span class=class>{msg}</span> }
                             })
                     }}
-                </Show>
+                </div>
                 <button
                     class="btn btn-primary"
                     on:click=handle_save
                     disabled=move || app_state.is_saving_scheduler.get()
-                    aria-live="polite"
                 >
                     {move || {
                         if app_state.is_saving_scheduler.get() { "Saving..." } else { "Save" }
