@@ -265,10 +265,24 @@ pub fn FleetApplyPage() -> impl IntoView {
                             when=previewed
                             fallback=move || {
                                 view! {
+                                    // Keep the button focusable when nothing is
+                                    // selected (aria-disabled, not disabled) so a
+                                    // screen reader reaches the reason hint; the run
+                                    // handler no-ops on an empty selection. A real
+                                    // `disabled` only guards the in-flight state.
+                                    <Show when=nothing_selected>
+                                        <span class="fleet-apply-hint" id="fleet-preview-hint">
+                                            "Select at least one host to preview."
+                                        </span>
+                                    </Show>
                                     <button
                                         class="btn btn-primary"
                                         on:click=move |_| run(false)
-                                        disabled=move || busy.get() || nothing_selected()
+                                        disabled=move || busy.get()
+                                        aria-disabled=move || {
+                                            (busy.get() || nothing_selected()).to_string()
+                                        }
+                                        aria-describedby="fleet-preview-hint"
                                     >
                                         {move || {
                                             if busy.get() { "Working\u{2026}" } else { "Preview Changes" }

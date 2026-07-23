@@ -29,7 +29,11 @@ pub fn SchedulerPage() -> impl IntoView {
     Effect::new(move || {
         if let Some(config) = app_state.scheduler_config.get() {
             form.enabled.set(config.enabled);
-            form.min_severity.set(config.min_severity.clone());
+            // An empty stored severity would leave the select unmatched (blank);
+            // keep the form's "medium" default in that case.
+            if !config.min_severity.is_empty() {
+                form.min_severity.set(config.min_severity.clone());
+            }
             form.selected_plugins.set(config.plugins.clone());
 
             // A schedule matching a preset selects it. A non-empty schedule
