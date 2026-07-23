@@ -11,7 +11,9 @@ use crate::components::{IconCheck, IconX};
 use crate::state::AppState;
 use crate::tauri_bindings::{invoke_get_checkpoint_detail, invoke_rollback};
 use crate::types::{CheckpointDetail, CheckpointInfo, RollbackResult};
-use crate::utils::{is_auth_cancelled, restore_action_label, restore_kind, rollback_summary_sentence};
+use crate::utils::{
+    is_auth_cancelled, restore_action_label, restore_kind, rollback_summary_sentence,
+};
 use leptos::html;
 use leptos::prelude::*;
 
@@ -104,7 +106,9 @@ pub fn RollbackModal(
                 // A cancelled pkexec is not an error: return to Confirm silently.
                 Err(e) if is_auth_cancelled(&e) => stage.set(Stage::Confirm),
                 Err(e) => {
-                    app_state.error_message.set(Some(format!("Rollback failed: {e}")));
+                    app_state
+                        .error_message
+                        .set(Some(format!("Rollback failed: {e}")));
                     target.set(None);
                     on_close.run(false);
                 }
