@@ -83,8 +83,8 @@ pub fn HostRow(
                         match scan.get() {
                             None => view! { <span class="host-row-unscanned">"Not scanned yet"</span> }.into_any(),
                             Some(s) => match s.status {
-                                FleetHostStatus::Failed(e) => view! {
-                                    <span class="host-row-failed">{format!("Failed: {e}")}</span>
+                                FleetHostStatus::Failed(_) => view! {
+                                    <span class="host-row-failed">"Failed"</span>
                                 }.into_any(),
                                 FleetHostStatus::Ok => {
                                     let t = s.tallies;
@@ -115,6 +115,18 @@ pub fn HostRow(
                             </span>
                         }).collect_view()}
                     </div>
+                })
+            }}
+
+            // Failed line: the full error on its own full-width line, kept out
+            // of the flex row so a long SSH message wraps and never overlaps
+            // the name and detail.
+            {move || {
+                scan.get().and_then(|s| match s.status {
+                    FleetHostStatus::Failed(e) => {
+                        Some(view! { <div class="host-row-error">{e}</div> })
+                    }
+                    FleetHostStatus::Ok => None,
                 })
             }}
 

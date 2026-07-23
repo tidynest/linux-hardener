@@ -4965,6 +4965,12 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   font-size: 0.78rem; font-family: var(--font-mono);
 }
 .host-strip-item b { font-weight: 500; }
+.host-row-error {
+  padding: 0 14px 10px 56px;
+  font-size: 0.78rem;
+  color: var(--color-critical);
+  overflow-wrap: anywhere;
+}
 
 /* The shared .score-* classes only colour a .score-value child (a bare <b>
    has none), so the row's framework strip scopes its own colour, mirroring
