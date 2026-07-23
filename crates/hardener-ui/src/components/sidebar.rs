@@ -137,10 +137,15 @@ pub fn Sidebar() -> impl IntoView {
             </nav>
 
             <div class="sidebar-settings">
-                <div class="sidebar-group-label">
-                    <IconSettings class="sidebar-group-icon"/>
-                    <span class="sidebar-group-label-text">"Settings"</span>
-                </div>
+                <A
+                    href="/settings"
+                    attr:class="sidebar-link sidebar-settings-link"
+                    attr:title="Settings"
+                    attr:aria-label="Settings"
+                >
+                    <IconSettings class="sidebar-link-icon"/>
+                    <span class="sidebar-link-label">"Settings"</span>
+                </A>
                 <div class="sidebar-settings-content">
                     <ThemeToggle/>
                 </div>

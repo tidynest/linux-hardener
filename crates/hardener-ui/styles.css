@@ -680,14 +680,6 @@ body {
   white-space: nowrap;
 }
 
-.sidebar-group-icon {
-  font-size: var(--font-size-sub);
-  width: 1em;
-  height: 1em;
-  flex-shrink: 0;
-  color: var(--text-muted);
-}
-
 .sidebar-group-label-text {
   font-size: var(--font-size-caption);
   font-weight: 500;
@@ -704,7 +696,6 @@ body {
   overflow: hidden;
 }
 
-.sidebar.rail .sidebar-group-icon,
 .sidebar.rail .sidebar-group-label-text,
 .sidebar.rail .sidebar-wordmark-text,
 .sidebar.rail .sidebar-link-label,
