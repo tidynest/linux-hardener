@@ -580,7 +580,6 @@ pub enum OutcomeGlyph {
 impl OutcomeGlyph {
     /// Decorative symbol (rows carry the meaning in text; the glyph is
     /// `aria-hidden`).
-    #[allow(dead_code)]
     pub fn symbol(self) -> &'static str {
         match self {
             OutcomeGlyph::Ok => "\u{2713}",      // check
@@ -591,7 +590,6 @@ impl OutcomeGlyph {
 
     /// CSS class carrying the glyph's colour (one per band; all seven themes
     /// define the underlying `--color-*-bright` tokens).
-    #[allow(dead_code)]
     pub fn class(self) -> &'static str {
         match self {
             OutcomeGlyph::Ok => "fleet-glyph-ok",
@@ -605,7 +603,6 @@ impl OutcomeGlyph {
 /// labelled stat cells (each with a band CSS class, `""` for a muted/neutral
 /// cell), and an optional full-width error message. Both apply and rollback,
 /// both dry-run and executed, collapse to this one shape.
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq)]
 pub struct OutcomeView {
     pub glyph: OutcomeGlyph,
@@ -616,7 +613,6 @@ pub struct OutcomeView {
 /// Maps one apply outcome (dry-run or executed) to its render-ready view.
 /// Only non-zero counts become cells; `would_change` is a warning, `compliant`
 /// is muted context, `failed` is critical, applied successes are good.
-#[allow(dead_code)]
 pub fn fleet_apply_cells(o: &FleetApplyOutcome) -> OutcomeView {
     match &o.status {
         ApplyStatus::Validated {
@@ -679,7 +675,6 @@ pub fn fleet_apply_cells(o: &FleetApplyOutcome) -> OutcomeView {
 }
 
 /// Maps one rollback outcome (dry-run or executed) to its render-ready view.
-#[allow(dead_code)]
 pub fn fleet_rollback_cells(o: &FleetRollbackOutcome) -> OutcomeView {
     match &o.status {
         RollbackStatus::Previewed { checkpoints } if *checkpoints > 0 => OutcomeView {
@@ -723,7 +718,6 @@ pub fn fleet_rollback_cells(o: &FleetRollbackOutcome) -> OutcomeView {
 }
 
 /// Pluralised "N host(s)" tail shared by both aggregate lines.
-#[allow(dead_code)]
 fn host_count_phrase(n: usize) -> String {
     if n == 1 {
         "1 host".to_string()
@@ -735,7 +729,6 @@ fn host_count_phrase(n: usize) -> String {
 /// Confirm-modal stakes line for an apply: total staged changes across the
 /// previewed hosts. Sums `would_change` over the `Validated` outcomes (other
 /// variants never appear in a dry-run preview).
-#[allow(dead_code)]
 pub fn fleet_apply_aggregate(outcomes: &[FleetApplyOutcome]) -> String {
     let total: usize = outcomes
         .iter()
@@ -752,7 +745,6 @@ pub fn fleet_apply_aggregate(outcomes: &[FleetApplyOutcome]) -> String {
 
 /// Confirm-modal stakes line for a rollback: total checkpoints that will
 /// restore across the previewed hosts.
-#[allow(dead_code)]
 pub fn fleet_rollback_aggregate(outcomes: &[FleetRollbackOutcome]) -> String {
     let total: usize = outcomes
         .iter()

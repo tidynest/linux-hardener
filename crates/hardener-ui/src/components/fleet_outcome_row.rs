@@ -4,13 +4,6 @@
 //! this only lays out the header, the stat cells, and an optional full-width
 //! error line (reusing `.host-row-error` so a long SSH message wraps instead
 //! of overlapping the host identity).
-//!
-//! Not yet called from any view - the Fleet Apply results slice wires it up
-//! next. `#[allow(dead_code)]` per-item does not reliably suppress this,
-//! because Leptos's `#[component]` macro expands the function into a
-//! function plus a separate Props struct that does not inherit an outer
-//! attribute; a module-level allow covers both (see `status_icons.rs`).
-#![allow(dead_code)]
 
 use crate::utils::OutcomeView;
 use leptos::prelude::*;

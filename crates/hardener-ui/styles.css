@@ -4250,20 +4250,51 @@ details[open] summary { border-bottom: 1px solid var(--border); }
    25. FLEET APPLY PAGE
    ============================================================ */
 
-/* Inline label spacing for mode and plugin-select fieldsets. */
-.fleet-mode label,
+/* Inline label spacing for the plugin-select fieldset. */
 .fleet-plugin-select label { margin-right: var(--space-md); }
 
 /* Action row beneath the selection controls. */
 .fleet-actions { display: flex; gap: var(--space-sm); margin-top: var(--space-md); }
 
-/* Monospace output panels - dry-run preview and live results. */
-.fleet-preview,
-.fleet-results {
-  background: var(--bg-tertiary);
-  padding: var(--space-sm);
-  overflow-x: auto;
-  white-space: pre-wrap;
+/* Sticky action bar: the visible selection summary (the armed preview key) on
+   the left, Preview/Execute on the right. */
+.fleet-apply-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  margin-top: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.fleet-apply-summary {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+
+.fleet-apply-bar-actions {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+/* Review (dry-run) and Results (executed) lists: outcome rows stack. */
+.fleet-review,
+.fleet-results-list {
+  margin-top: var(--space-md);
+}
+
+/* Confirm-modal stakes line. */
+.fleet-apply-stakes {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
 }
 
 /* Confirmation modal overlay. */
