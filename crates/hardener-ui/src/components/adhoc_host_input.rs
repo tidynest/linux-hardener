@@ -81,7 +81,7 @@ pub fn AdhocHostInput(
                 />
                 <button
                     type="button"
-                    class="btn-secondary"
+                    class="btn btn-secondary"
                     on:click=move |_| add()
                     disabled=move || draft.get().trim().is_empty()
                 >
@@ -103,7 +103,7 @@ pub fn AdhocHostInput(
                                 {label.clone()}
                                 <button
                                     type="button"
-                                    class="btn-secondary"
+                                    class="btn btn-secondary"
                                     aria-label=format!("Remove {label}")
                                     on:click=on_remove
                                 >

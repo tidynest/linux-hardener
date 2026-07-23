@@ -69,7 +69,7 @@ pub fn HostPanel(
                                 <span class="host-conn-label">"Ad-hoc target (not saved)"</span>
                             </span>
                             <div class="host-panel-actions">
-                                <button class="btn-secondary" on:click=move |_| on_remove_adhoc.run(())>
+                                <button class="btn btn-secondary" on:click=move |_| on_remove_adhoc.run(())>
                                     "Remove"
                                 </button>
                             </div>
@@ -99,7 +99,7 @@ pub fn HostPanel(
                                     when=move || connected
                                     fallback=move || view! {
                                         <button
-                                            class="btn-primary"
+                                            class="btn btn-primary"
                                             on:click=move |_| on_connect.run(())
                                             disabled=connecting
                                         >
@@ -107,14 +107,14 @@ pub fn HostPanel(
                                         </button>
                                     }
                                 >
-                                    <button class="btn-primary" on:click=move |_| on_scan.run(())>
+                                    <button class="btn btn-primary" on:click=move |_| on_scan.run(())>
                                         "Run Scan"
                                     </button>
-                                    <button class="btn-secondary" on:click=move |_| on_disconnect.run(())>
+                                    <button class="btn btn-secondary" on:click=move |_| on_disconnect.run(())>
                                         "Disconnect"
                                     </button>
                                 </Show>
-                                <button class="btn-secondary" on:click=move |_| on_edit.run(())>
+                                <button class="btn btn-secondary" on:click=move |_| on_edit.run(())>
                                     "Edit"
                                 </button>
                                 <ConfirmDeleteButton

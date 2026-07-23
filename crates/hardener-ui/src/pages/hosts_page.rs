@@ -265,7 +265,7 @@ pub fn HostsPage() -> impl IntoView {
             // --- action bar ---
             <div class="hosts-actions">
                 <button
-                    class="btn-primary"
+                    class="btn btn-primary"
                     on:click=scan_selected
                     disabled=move || scanning.get() || selected.get().is_empty()
                 >
@@ -275,7 +275,7 @@ pub fn HostsPage() -> impl IntoView {
                         format!("Scan Selected ({})", selected.get().len())
                     }}
                 </button>
-                <button class="btn-secondary" on:click=open_add>"Add Host"</button>
+                <button class="btn btn-secondary" on:click=open_add>"Add Host"</button>
                 <button class="hosts-adhoc-toggle" on:click=move |_| adhoc_open.update(|o| *o = !*o)>
                     {move || if adhoc_open.get() { "Hide ad-hoc target" } else { "Add ad-hoc target" }}
                 </button>
@@ -294,7 +294,7 @@ pub fn HostsPage() -> impl IntoView {
                         on:input=move |ev| adhoc_draft.set(input_value(&ev))
                         on:keydown=move |ev| if ev.key() == "Enter" { ev.prevent_default(); add_adhoc(); }
                     />
-                    <button class="btn-secondary" on:click=move |_| add_adhoc()
+                    <button class="btn btn-secondary" on:click=move |_| add_adhoc()
                         disabled=move || adhoc_draft.get().trim().is_empty()>"Add"</button>
                     <Show when=move || adhoc_error.get().is_some()>
                         <span class="error-banner" role="alert">{move || adhoc_error.get().unwrap_or_default()}</span>
@@ -322,7 +322,7 @@ pub fn HostsPage() -> impl IntoView {
                                 <li>"Connect or scan it."</li>
                                 <li>"Review its posture and roll out hardening."</li>
                             </ol>
-                            <button class="btn-primary" on:click=open_add>"Add Host"</button>
+                            <button class="btn btn-primary" on:click=open_add>"Add Host"</button>
                         </div>
                     }.into_any();
                 }

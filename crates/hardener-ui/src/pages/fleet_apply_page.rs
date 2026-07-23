@@ -236,7 +236,7 @@ pub fn FleetApplyPage() -> impl IntoView {
 
                 <div class="fleet-actions">
                     <button
-                        class="btn-secondary"
+                        class="btn btn-secondary"
                         on:click=move |_| run(false)
                         disabled=move || {
                             busy.get() || (sel_hosts.get().is_empty() && adhoc.get().is_empty())
@@ -245,7 +245,7 @@ pub fn FleetApplyPage() -> impl IntoView {
                         {move || if busy.get() { "Working\u{2026}" } else { "Dry-run" }}
                     </button>
                     <button
-                        class="btn-primary"
+                        class="btn btn-primary"
                         on:click=move |_| confirm_open.set(true)
                         disabled=move || !can_execute()
                     >
@@ -300,12 +300,12 @@ pub fn FleetApplyPage() -> impl IntoView {
                             </pre>
                             <div class="fleet-actions">
                                 <button
-                                    class="btn-secondary"
+                                    class="btn btn-secondary"
                                     on:click=move |_| confirm_open.set(false)
                                 >
                                     "Cancel"
                                 </button>
-                                <button class="btn-danger" on:click=move |_| run(true)>
+                                <button class="btn btn-danger" on:click=move |_| run(true)>
                                     {move || {
                                         format!(
                                             "Yes, execute on {} host(s)",
