@@ -77,6 +77,11 @@ pub struct AppState {
     /// every `UncheckedBanner` instance (Dashboard and Analysis both mount
     /// one) so the two buttons disable together during a single run.
     pub deep_scan_running: RwSignal<bool>,
+    /// Active colour theme id (see `crate::utils::theme::THEMES`). The single
+    /// source of truth shared by the sidebar quick-switch and the Settings
+    /// page grid; a lone `Effect` in `App` applies it to `<html>` and persists
+    /// it.
+    pub theme: RwSignal<String>,
 }
 
 impl Default for AppState {
@@ -106,6 +111,7 @@ impl Default for AppState {
             config_path: RwSignal::new(None),
             config_summary: RwSignal::new(None),
             deep_scan_running: RwSignal::new(false),
+            theme: RwSignal::new("default".to_string()),
         }
     }
 }

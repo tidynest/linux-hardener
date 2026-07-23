@@ -33,6 +33,19 @@ pub fn App() -> impl IntoView {
     let app_state = AppState::default();
     provide_context(app_state);
 
+    // Theme: restore the persisted choice, then keep `<html data-theme>` and
+    // localStorage in lockstep with the shared signal. Every theme control
+    // just sets `app_state.theme`; this Effect is the only writer of the DOM
+    // attribute and the storage key.
+    app_state
+        .theme
+        .set(utils::theme::get_stored_theme().unwrap_or_else(|| "default".to_string()));
+    Effect::new(move |_| {
+        let theme = app_state.theme.get();
+        utils::theme::apply_theme(&theme);
+        utils::theme::store_theme(&theme);
+    });
+
     // Load persisted scan results from database on app mount
     leptos::task::spawn_local(async move {
         match tauri_bindings::invoke_get_latest_scan().await {
