@@ -9,7 +9,7 @@
 
 use crate::components::{
     Card, ConfigFileCard, HeadingLevel, IconCheck, IconInfo, IconMinus, IconWrench, IconX,
-    calculate_all_scores,
+    SegmentedControl, calculate_all_scores,
 };
 use crate::pages::hardening_page::HardeningSection;
 use crate::state::AppState;
@@ -745,48 +745,6 @@ pub fn ConfigureSection() -> impl IntoView {
             .any(|d| lockout_class(&d.plugin_id).is_some())
     };
 
-    // WAI-ARIA radiogroup keyboard handling for the segmented control:
-    // arrow keys move focus AND selection (mirrors `TabBar`'s pattern).
-    // Native buttons already handle Space/Enter as a click, so only
-    // directional movement needs a handler here.
-    let on_segment_keydown = {
-        let update_profile = update_profile.clone();
-        move |ev: web_sys::KeyboardEvent| {
-            let count = PROFILES.len();
-            let current = PROFILES
-                .iter()
-                .position(|(id, _)| *id == selected_profile.get_untracked())
-                .unwrap_or(0);
-            let next = match ev.key().as_str() {
-                "ArrowRight" | "ArrowDown" => Some((current + 1) % count),
-                "ArrowLeft" | "ArrowUp" => Some(current.checked_sub(1).unwrap_or(count - 1)),
-                "Home" => Some(0),
-                "End" => Some(count - 1),
-                _ => None,
-            };
-
-            if let Some(idx) = next {
-                ev.prevent_default();
-                let (id, _) = PROFILES[idx];
-                if id == "custom" {
-                    selected_profile.set("custom".to_string());
-                } else {
-                    update_profile(id);
-                }
-
-                // Focus by known element ID: avoids a race with the
-                // aria-checked re-render, same as TabBar.
-                if let Some(el) = web_sys::window()
-                    .and_then(|w| w.document())
-                    .and_then(|d| d.get_element_by_id(&format!("segment-{}", id)))
-                    .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
-                {
-                    let _ = el.focus();
-                }
-            }
-        }
-    };
-
     // Done view (Step 4) - the Hardening page's tab-section signal, read
     // via `use_context` (not `expect_context`) so this component still
     // works if it is ever mounted outside `HardeningPage`; "View in
@@ -878,41 +836,22 @@ pub fn ConfigureSection() -> impl IntoView {
             }>
             <div class="configure-layout">
                 <div class="configure-main" class:is-disabled=move || app_state.is_previewing.get()>
-                    <div
-                        class="segmented-control"
-                        role="radiogroup"
-                        aria-label="Protection level"
-                        on:keydown=on_segment_keydown.clone()
-                    >
-                        {PROFILES.iter().map(|(id, label)| {
-                            let id = *id;
-                            let label = *label;
-                            let update = update_profile.clone();
-                            let is_active = move || selected_profile.get() == id;
-
-                            view! {
-                                <button
-                                    type="button"
-                                    id=format!("segment-{}", id)
-                                    role="radio"
-                                    aria-checked=move || is_active().to_string()
-                                    tabindex=move || if is_active() { "0" } else { "-1" }
-                                    disabled=move || app_state.is_previewing.get()
-                                    class="segment-btn"
-                                    class:is-active=is_active
-                                    on:click=move |_| {
-                                        if id == "custom" {
-                                            selected_profile.set("custom".to_string());
-                                        } else {
-                                            update(id);
-                                        }
-                                    }
-                                >
-                                    {label}
-                                </button>
+                    <SegmentedControl
+                        aria_label="Protection level"
+                        segments=PROFILES
+                        selected=selected_profile
+                        on_select=Callback::new({
+                            let update_profile = update_profile.clone();
+                            move |id: String| {
+                                if id == "custom" {
+                                    selected_profile.set("custom".to_string());
+                                } else {
+                                    update_profile(&id);
+                                }
                             }
-                        }).collect::<Vec<_>>()}
-                    </div>
+                        })
+                        disabled=app_state.is_previewing
+                    />
 
                     <p id="plugin-profile-hint" class="sr-only" aria-live="polite">
                         {move || format!("Active profile: {}", selected_profile.get())}
