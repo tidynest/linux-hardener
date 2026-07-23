@@ -109,3 +109,49 @@ impl Default for AppState {
         }
     }
 }
+
+/// Lifted form state for the Scheduler page: one owner for both the schedule
+/// and notification fields, so a single page-level Save writes the whole
+/// `SchedulerUiConfig` at once. The presentational sections read/write these
+/// signals; `SchedulerPage` holds the sole config-sync `Effect` and the save.
+#[derive(Clone, Copy)]
+pub struct SchedulerForm {
+    pub enabled: RwSignal<bool>,
+    pub selected_preset: RwSignal<String>,
+    pub custom_cron: RwSignal<String>,
+    pub advanced_open: RwSignal<bool>,
+    pub selected_plugins: RwSignal<Vec<String>>,
+    pub min_severity: RwSignal<String>,
+    pub email_enabled: RwSignal<bool>,
+    pub email_recipients: RwSignal<String>,
+    pub email_from: RwSignal<String>,
+    pub webhook_enabled: RwSignal<bool>,
+    pub webhook_url: RwSignal<String>,
+    pub webhook_format: RwSignal<String>,
+}
+
+impl SchedulerForm {
+    /// Fresh bundle with empty/default fields, before the config loads.
+    pub fn new() -> Self {
+        Self {
+            enabled: RwSignal::new(false),
+            selected_preset: RwSignal::new(String::new()),
+            custom_cron: RwSignal::new(String::new()),
+            advanced_open: RwSignal::new(false),
+            selected_plugins: RwSignal::new(Vec::new()),
+            min_severity: RwSignal::new("medium".to_string()),
+            email_enabled: RwSignal::new(false),
+            email_recipients: RwSignal::new(String::new()),
+            email_from: RwSignal::new(String::new()),
+            webhook_enabled: RwSignal::new(false),
+            webhook_url: RwSignal::new(String::new()),
+            webhook_format: RwSignal::new("generic".to_string()),
+        }
+    }
+}
+
+impl Default for SchedulerForm {
+    fn default() -> Self {
+        Self::new()
+    }
+}

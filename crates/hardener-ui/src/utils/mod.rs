@@ -761,7 +761,6 @@ pub fn fleet_rollback_aggregate(outcomes: &[FleetRollbackOutcome]) -> String {
 
 /// Cron presets with display labels and 6-field cron expressions. The single
 /// source shared by the Scheduler select and the helpers below.
-#[allow(dead_code)]
 pub const SCHEDULE_PRESETS: &[(&str, &str)] = &[
     ("Daily at 2:00 AM", "0 0 2 * * *"),
     ("Every 6 hours", "0 0 */6 * * *"),
@@ -770,7 +769,6 @@ pub const SCHEDULE_PRESETS: &[(&str, &str)] = &[
 ];
 
 /// Cron expression for a preset label, if it names a known preset.
-#[allow(dead_code)]
 pub fn preset_cron(label: &str) -> Option<&'static str> {
     SCHEDULE_PRESETS
         .iter()
@@ -780,7 +778,6 @@ pub fn preset_cron(label: &str) -> Option<&'static str> {
 
 /// Preset label whose cron matches `cron`, if any. Used on load to decide
 /// whether a saved schedule is a friendly preset or a custom expression.
-#[allow(dead_code)]
 pub fn preset_label_for_cron(cron: &str) -> Option<&'static str> {
     SCHEDULE_PRESETS
         .iter()
@@ -791,7 +788,6 @@ pub fn preset_label_for_cron(cron: &str) -> Option<&'static str> {
 /// The cron the scheduler will actually run: a non-empty `custom_cron`
 /// overrides the preset; otherwise the selected preset's cron; empty string if
 /// neither resolves.
-#[allow(dead_code)]
 pub fn effective_schedule_cron(preset_label: &str, custom_cron: &str) -> String {
     if !custom_cron.is_empty() {
         return custom_cron.to_string();
