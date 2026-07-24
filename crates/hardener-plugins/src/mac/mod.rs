@@ -473,7 +473,7 @@ impl HardeningPlugin for MacHardeningPlugin {
         vec![]
     }
 
-    async fn scan(&self, ctx: &Context, _config: &PluginConfig) -> Result<ScanResult> {
+    async fn scan(&self, ctx: &Context, config: &PluginConfig) -> Result<ScanResult> {
         let start_time = Instant::now();
         let plugin_id = PluginId::new("mac-hardening");
         let mut findings = Vec::new();
@@ -501,7 +501,9 @@ impl HardeningPlugin for MacHardeningPlugin {
                                 finding_severity: Severity::High,
                                 finding_title:    "SELinux Not Enforcing".to_string(),
                                 finding_compliance: get_mac_compliance_mappings("selinux-not-enforcing"),
-                                finding_policy_exception: None,
+                                finding_policy_exception: config
+                                    .has_valid_exception("selinux-enforcing")
+                                    .map(|e| e.to_finding_exception()),
                             });
                         }
                     }
@@ -530,7 +532,9 @@ impl HardeningPlugin for MacHardeningPlugin {
                                 finding_severity: Severity::Medium,
                                 finding_title: "AppArmor Profiles in Complain Mode".to_string(),
                                 finding_compliance: get_mac_compliance_mappings("apparmor-complain-mode"),
-                                finding_policy_exception: None,
+                                finding_policy_exception: config
+                                    .has_valid_exception("apparmor-enforce")
+                                    .map(|e| e.to_finding_exception()),
                             });
                         }
 
@@ -554,7 +558,9 @@ impl HardeningPlugin for MacHardeningPlugin {
                                 finding_compliance: get_mac_compliance_mappings(
                                     "apparmor-no-profiles",
                                 ),
-                                finding_policy_exception: None,
+                                finding_policy_exception: config
+                                    .has_valid_exception("apparmor-enforce")
+                                    .map(|e| e.to_finding_exception()),
                             });
                         }
                     }

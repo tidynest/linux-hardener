@@ -165,6 +165,39 @@ fn apparmor_complain_executor() -> MockExecutor {
         )
 }
 
+/// Creates a mock executor with AppArmor installed but no profiles loaded.
+fn apparmor_no_profiles_executor() -> MockExecutor {
+    MockExecutor::new()
+        .with_file_metadata(
+            "/sys/kernel/security/apparmor",
+            "",
+            FileMetadata {
+                exists: true,
+                is_file: false,
+                is_dir: true,
+                mode: 0o755,
+                size: 0,
+                uid: 0,
+                gid: 0,
+            },
+        )
+        .with_command(
+            "aa-status",
+            &["--verbose"],
+            CommandOutput {
+                stdout: r#"apparmor module is loaded.
+0 profiles are loaded.
+0 profiles are in enforce mode.
+0 profiles are in complain mode.
+0 processes have profiles defined.
+"#
+                .to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+}
+
 /// Creates a mock executor with no MAC system.
 fn no_mac_executor() -> MockExecutor {
     MockExecutor::new()
@@ -443,6 +476,127 @@ async fn test_mac_scan_with_remote_executor() {
     assert!(
         !result.scan_findings.is_empty(),
         "SELinux permissive on remote should have findings"
+    );
+}
+
+#[tokio::test]
+async fn scan_annotates_valid_exception() {
+    // Exceptions annotate findings, they never drop them. MAC's exception
+    // keys are literal strings that differ from the finding ids (the same
+    // "selinux-enforcing" / "apparmor-enforce" keys apply checks at
+    // config.has_valid_exception), so this exercises both MAC systems plus
+    // the no-mac-system finding, which carries no exception key at all.
+
+    // SELinux: not enforcing, with a valid exception on "selinux-enforcing".
+    let executor = selinux_permissive_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = MacHardeningPlugin::new();
+
+    let mut selinux_config = PluginConfig::default();
+    selinux_config.exceptions.insert(
+        "selinux-enforcing".to_string(),
+        PolicyException {
+            value: "Permissive".to_string(),
+            allowed: true,
+            reason: "Development environment".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.scan(&ctx, &selinux_config).await.unwrap();
+    let selinux_finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "selinux-not-enforcing")
+        .expect("non-compliant SELinux mode should still produce a finding");
+    assert!(
+        selinux_finding.finding_policy_exception.is_some(),
+        "SELinux finding should be annotated with the valid exception"
+    );
+
+    // AppArmor: profiles in complain mode, with a valid exception on
+    // "apparmor-enforce" (the literal key apply checks, not the
+    // "apparmor-complain-mode" finding id).
+    let executor = apparmor_complain_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+
+    let mut apparmor_config = PluginConfig::default();
+    apparmor_config.exceptions.insert(
+        "apparmor-enforce".to_string(),
+        PolicyException {
+            value: "complain".to_string(),
+            allowed: true,
+            reason: "Profile rollout in progress".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.scan(&ctx, &apparmor_config).await.unwrap();
+    let apparmor_finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "apparmor-complain-mode")
+        .expect("non-compliant AppArmor mode should still produce a finding");
+    assert!(
+        apparmor_finding.finding_policy_exception.is_some(),
+        "AppArmor finding should be annotated with the valid exception"
+    );
+
+    // no-mac-system carries no exception key at all: it must stay
+    // unannotated, even under a config that holds valid exceptions for the
+    // two keys above (a fresh default config keeps that explicit).
+    let executor = no_mac_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
+    let no_mac_finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "no-mac-system")
+        .expect("absent MAC system should still produce a finding");
+    assert!(
+        no_mac_finding.finding_policy_exception.is_none(),
+        "no-mac-system has no exception key and must never be annotated"
+    );
+}
+
+#[tokio::test]
+async fn scan_annotates_apparmor_no_profiles_exception() {
+    // The second AppArmor finding site (no profiles loaded) must honour the
+    // same "apparmor-enforce" key as the complain-mode site.
+    let executor = apparmor_no_profiles_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = MacHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "apparmor-enforce".to_string(),
+        PolicyException {
+            value: "0 profiles loaded".to_string(),
+            allowed: true,
+            reason: "Fresh install, profiles not yet deployed".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "apparmor-no-profiles")
+        .expect("no loaded AppArmor profiles should still produce a finding");
+    assert!(
+        finding.finding_policy_exception.is_some(),
+        "AppArmor no-profiles finding should be annotated with the valid exception"
     );
 }
 
