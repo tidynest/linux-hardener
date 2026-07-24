@@ -718,21 +718,30 @@ impl HardeningPlugin for KernelHardeningPlugin {
         Vec::new()
     }
 
-    async fn scan(&self, ctx: &Context, _config: &PluginConfig) -> Result<ScanResult> {
+    async fn scan(&self, ctx: &Context, config: &PluginConfig) -> Result<ScanResult> {
         let start_time = Instant::now();
         let mut findings = Vec::new();
 
         for (param_name, expected_value, param_description, severity) in KERNEL_PARAMS {
             match self.read_sysctl(param_name, ctx).await {
                 Ok(actual_value) => {
-                    if actual_value != *expected_value {
+                    // Directive override takes precedence over the built-in baseline.
+                    let target = config
+                        .directives
+                        .get(*param_name)
+                        .map(|s| s.as_str())
+                        .unwrap_or(expected_value);
+                    if actual_value != target {
+                        let policy_exception = config
+                            .has_valid_exception(param_name)
+                            .map(|e| e.to_finding_exception());
                         findings.push(Finding {
                             finding_category: FindingCategory::Kernel,
                             finding_current_value: actual_value.clone(),
                             finding_description: param_description.to_string(),
                             finding_explanation: format!(
                                 "This parameter should be set to '{}' for security hardening",
-                                expected_value,
+                                target,
                             ),
                             finding_id: format!("kernel_{}", param_name.replace('.', "_")),
                             finding_impact: format!(
@@ -740,15 +749,15 @@ impl HardeningPlugin for KernelHardeningPlugin {
                                 param_name,
                             ),
 
-                            finding_recommended_value: expected_value.to_string(),
+                            finding_recommended_value: target.to_string(),
                             finding_remediation_steps: vec![format!(
                                 "Set {} = {}",
-                                param_name, expected_value
+                                param_name, target
                             )],
                             finding_severity: *severity,
                             finding_title: format!("Insecure value for {}", param_name),
                             finding_compliance: get_compliance_mappings(param_name),
-                            finding_policy_exception: None,
+                            finding_policy_exception: policy_exception,
                         });
                     }
                 }

@@ -740,6 +740,70 @@ async fn test_kernel_apply_skips_exceptions() {
 }
 
 #[tokio::test]
+async fn scan_honours_directive_override() {
+    // Baseline for a param whose actual value equals the built-in expected,
+    // but a stricter directive makes it non-compliant -> a finding appears.
+    let executor = secure_kernel_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = KernelHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config
+        .directives
+        .insert("kernel.kptr_restrict".to_string(), "3".to_string());
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    assert!(
+        result
+            .scan_findings
+            .iter()
+            .any(|f| f.finding_id == "kernel_kernel_kptr_restrict"),
+        "stricter directive should surface a finding, got: {:?}",
+        result
+            .scan_findings
+            .iter()
+            .map(|f| &f.finding_id)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn scan_annotates_valid_exception() {
+    // A param that IS non-compliant, plus a valid exception for it:
+    // the finding is still present but annotated.
+    let executor = insecure_kernel_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = KernelHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "kernel.randomize_va_space".to_string(),
+        PolicyException {
+            value: "0".to_string(),
+            allowed: true,
+            reason: "Legacy software compatibility".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let f = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "kernel_kernel_randomize_va_space")
+        .expect("non-compliant param should still produce a finding");
+    assert!(
+        f.finding_policy_exception.is_some(),
+        "finding should be annotated with the valid exception"
+    );
+}
+
+#[tokio::test]
 async fn test_kernel_validate_skips_exceptions() {
     let executor = MockExecutor::new().with_file_metadata(
         "/proc/sys/kernel/randomize_va_space",
