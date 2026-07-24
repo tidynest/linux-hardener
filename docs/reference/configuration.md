@@ -1,6 +1,6 @@
 # Configuration reference
 
-**Last Updated**: 2026-07-19
+**Last Updated**: 2026-07-24
 
 Complete reference for the hardener's configuration files. Configuration
 controls which plugins run, tightens directive targets beyond the built-in
@@ -93,6 +93,10 @@ Every section accepts the same four keys:
 | `directives` | table of string to string | `{}` | Overrides the target value for a built-in check, typically to something stricter than the baseline. |
 | `custom_directives` | table of string to string | `{}` | Additional directives to check beyond the built-in set. |
 | `exceptions` | table of exception entries | `{}` | Policy exceptions; see below. |
+
+These keys, and the `[global]` plugin lists, take effect for `scan` (both
+default and compliance modes) and for `apply`. `scan --audit` ignores the
+config entirely and always evaluates the unmodified secure baseline.
 
 Example, tightening SSH beyond the baseline:
 
