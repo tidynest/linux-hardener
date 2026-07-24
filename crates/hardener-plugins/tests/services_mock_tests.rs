@@ -680,6 +680,42 @@ async fn test_services_apply_skips_exceptions() {
 }
 
 #[tokio::test]
+async fn scan_annotates_valid_exception() {
+    // Bluetooth is enabled and active, plus a valid exception for it: the
+    // finding is still reported but annotated. Services has no directive
+    // override, so there is no target value to assert here.
+    let executor = insecure_services_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = ServicesHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "bluetooth".to_string(),
+        PolicyException {
+            value: "enabled".to_string(),
+            allowed: true,
+            reason: "Desktop workstation needs Bluetooth".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let f = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "service_bluetooth")
+        .expect("unnecessary service should still produce a finding");
+    assert!(
+        f.finding_policy_exception.is_some(),
+        "finding should be annotated with the valid exception"
+    );
+}
+
+#[tokio::test]
 async fn test_services_validate_skips_exceptions() {
     let executor = insecure_services_executor();
     let ctx = Context::with_executor(Arc::new(executor));
