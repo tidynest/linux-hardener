@@ -652,6 +652,84 @@ async fn test_pam_apply_skips_exceptions() {
 }
 
 #[tokio::test]
+async fn scan_honours_directive_override() {
+    // deny = 3 is compliant against the built-in boundary of 5, but a
+    // directive override that tightens the boundary to 2 makes the same
+    // value violate -> a finding appears even though the host already
+    // meets the hardcoded baseline. The override must be clamped through
+    // the same path apply uses, never compared against the raw baseline.
+    let executor = secure_pam_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PamHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config
+        .directives
+        .insert("deny".to_string(), "2".to_string());
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "pam-deny")
+        .unwrap_or_else(|| {
+            panic!(
+                "stricter directive should surface a finding, got: {:?}",
+                result
+                    .scan_findings
+                    .iter()
+                    .map(|f| &f.finding_id)
+                    .collect::<Vec<_>>()
+            )
+        });
+
+    // Target-dependent field must reflect the clamped override (2), not the
+    // hardcoded baseline (5) - otherwise the finding would self-contradict
+    // by recommending a value the host already exceeds.
+    assert_eq!(
+        finding.finding_recommended_value, "2",
+        "recommended value should reflect the directive override, not the baseline"
+    );
+}
+
+#[tokio::test]
+async fn scan_annotates_valid_exception() {
+    // minlen = 8 violates the baseline of 14, and carries a valid exception:
+    // exceptions annotate findings, they never drop them, so the finding
+    // stays present and carries the exception annotation.
+    let executor = insecure_pam_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PamHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "minlen".to_string(),
+        PolicyException {
+            value: "8".to_string(),
+            allowed: true,
+            reason: "Legacy application requires short passwords".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "pam-minlen")
+        .expect("non-compliant directive should still produce a finding");
+    assert!(
+        finding.finding_policy_exception.is_some(),
+        "finding should be annotated with the valid exception"
+    );
+}
+
+#[tokio::test]
 async fn test_pam_validate_skips_exceptions() {
     let executor = MockExecutor::new()
         .with_file("/etc/security/pwquality.conf", "minlen 8\n")
