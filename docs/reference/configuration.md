@@ -1,6 +1,6 @@
 # Configuration reference
 
-**Last Updated**: 2026-07-19
+**Last Updated**: 2026-07-24
 
 Complete reference for the hardener's configuration files. Configuration
 controls which plugins run, tightens directive targets beyond the built-in
@@ -16,7 +16,7 @@ There are three separate files:
 | File | Purpose |
 |------|---------|
 | `config.toml` | Plugin behaviour, policy exceptions, and the `[scheduler]` section |
-| `~/.config/linux-hardener/hosts.toml` | Saved remote-host inventory for `batch` and the desktop Fleet pages |
+| `~/.config/linux-hardener/hosts.toml` | Saved remote-host inventory for `batch` and the desktop Hosts page |
 | `packaging/assets/config.toml.example` (in the repository) | Annotated example installed by packages to `/etc/linux-hardener/config.toml` |
 
 ---
@@ -248,8 +248,8 @@ format = "slack"
 
 The saved remote-host inventory lives at
 `~/.config/linux-hardener/hosts.toml`. The CLI (`hardener batch`) and the
-desktop app's Fleet pages read and write the same file. A missing file is an
-empty inventory.
+desktop app's Hosts page (under the Fleet group in the sidebar) read and write
+the same file. A missing file is an empty inventory.
 
 Each host is one `[[hosts]]` entry:
 

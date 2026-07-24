@@ -1,6 +1,6 @@
 # Linux System Hardener - Architecture Documentation
 
-**Last Updated:** 2026-07-22
+**Last Updated:** 2026-07-24
 **Version:** 1.4.0
 
 ---
@@ -27,10 +27,10 @@ Linux System Hardener is a modular security hardening tool for Linux systems, pr
 │   └─ Apply         │   └─ Dashboard       │   └─ hardener-state │
 │   └─ Rollback      │   └─ Analysis        │                     │
 │   └─ Checkpoint    │   └─ Hardening       │                     │
-│   └─ Report        │   └─ Remote          │                     │
-│   └─ Batch         │   └─ Scheduler       │                     │
-│                    │   └─ Fleet (v1.2.0)  │                     │
-│   └─ Fleet Apply     │                     │
+│   └─ Report        │   └─ Hosts           │                     │
+│   └─ Batch         │   └─ Fleet Apply     │                     │
+│                    │   └─ Scheduler       │                     │
+│                    │   └─ Settings        │                     │
 └────────────────────┴──────────────────────┴─────────────────────┘
                               │
                               ▼
@@ -128,7 +128,7 @@ Linux System Hardener is a modular security hardening tool for Linux systems, pr
 | `hardener-distro` | Distribution detection | `Distribution`, `DistroFamily`, `DistributionAdapter` |
 | `hardener-scheduler` | Scheduled scanning daemon | `SchedulerConfig`, `Daemon`, `ScanHistoryManager`, `JsonStore`, `NotificationDispatcher`, `ScanRunner`, `ScanSummary`, `TriggerType`, `SystemdGenerator`, `cron_to_calendar` |
 | `hardener-cli` | Command-line interface | Binary entry point |
-| `hardener-ui` | Leptos WASM frontend | 7-page architecture (Dashboard, Analysis, Hardening, Remote, Scheduler, Fleet, Fleet Apply), dark terminal CSS theme (depends only on hardener-types) |
+| `hardener-ui` | Leptos WASM frontend | 7-page architecture (Dashboard, Analysis, Hardening, Hosts, Fleet Apply, Scheduler, Settings) behind a grouped left sidebar; 7-theme system (default "Midnight Teal", plus Fortress, Sentinel, Command, Guardian, Daywatch, High Contrast) driven by a shared `AppState.theme` signal and `<html data-theme>` (depends only on hardener-types) |
 | `src-tauri` | Desktop app backend | Tauri commands |
 
 ### Tauri 2.x Integration Notes
@@ -266,17 +266,19 @@ The UI uses a mobile-first responsive approach with CSS custom properties:
 
 | Breakpoint | Target | Layout Behaviour |
 |------------|--------|------------------|
-| < 480px | Mobile | Single column, stacked navigation |
+| < 480px | Mobile | Single column, sidebar shown as a collapsed icon rail |
 | 480-768px | Tablet | 2-column grids, adapted spacing |
 | 768-1024px | Small desktop | Full layouts, scanner sidebar |
 | > 1024px | Desktop | Full 2-column scanner layout |
 | > 1600px | Ultra-wide | Content constrained to 1600px max-width, centred |
 
+Navigation itself is a grouped left sidebar (`aside.sidebar`, `components/sidebar.rs`; groups Local and Fleet plus a pinned Settings area), not the old top nav bar. Independent of the CSS breakpoints above, the sidebar auto-collapses to an icon rail below a 900px viewport width via a JS resize listener, unless the user has an explicit collapse preference stored, which wins in both directions.
+
 Key CSS defensive measures:
 - `.main-content`: `max-width: var(--content-max-width)` prevents ultra-wide stretching
 - `.value-cell`: Overflow handling with `text-overflow: ellipsis` for long paths
 - `#app`: `min-width: 320px` prevents layout collapse at extreme narrow widths
-- `min-width: 0` on flex children (`.navigation`, `.nav-links`, `.header-content`) prevents overflow
+- `min-width: 0` on flex children (`.app-content`, `.header-content`) prevents overflow
 - `minmax(0, 1fr)` in grid templates (`.dashboard-grid`, `.scanner-layout`) prevents content blowout
 
 **Accessibility Features (WCAG 2.1 AA):**

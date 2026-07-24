@@ -157,7 +157,7 @@ This document tracks the development progress and planned features for Linux Sys
 | Timestamp formatting | Format raw timestamp numbers on Checkpoints page | Medium | ✅ Complete |
 | Background personalisation | 5 security-focused themes (Fortress, Sentinel, Command, Guardian, Daywatch) | Low | ✅ Complete |
 | Responsive layout | Mobile-first responsive design | Medium | ✅ Complete |
-| Navigation restructure | 5 pages (Dashboard, Analysis, Hardening, Remote, Scheduler) | Low | ✅ Complete |
+| Navigation restructure | 5 pages (Dashboard, Analysis, Hardening, Remote, Scheduler) - superseded by the GUI/UX redesign below (7 pages behind a grouped sidebar) | Low | ✅ Complete |
 | GUI functional testing | Verify all GUI features work correctly | High | ✅ Complete |
 | CLI functional testing | Verify all CLI commands work (97 tests: 31 unit + 66 functional) | High | ✅ Complete |
 | Safe testing environment | systemd-nspawn container with test scripts | Critical | ✅ Complete |
@@ -501,6 +501,20 @@ User clicks "Apply"
 
 ---
 
+### GUI/UX Redesign (Desktop) ✅
+
+> Frontend-only: markup, CSS and presentational Leptos components only; no backend, IPC or type changes.
+
+- [x] Flat top navigation bar replaced by a grouped left sidebar (Local: Dashboard, Analysis, Hardening; Fleet: Hosts, Fleet Apply, Scheduler) with a collapsible icon rail and a pinned Settings area
+- [x] Remote and Fleet screens merged into a single Hosts page (bulk scan plus a single-host connect session, both behind one expandable row); old `/remote` links redirect there automatically
+- [x] New Settings page: a visual theme swatch grid across all seven themes (Midnight Teal, Fortress, Sentinel, Command, Guardian, Daywatch, High Contrast) plus an About block
+- [x] Fleet Apply restyled as a staged Preview/Execute flow with a segmented Apply/Roll back control and a sticky summary bar
+- [x] Scheduler moves to a single Save action over schedule presets, with custom cron behind an Advanced disclosure
+- [x] Dashboard, Analysis and Hardening restyled to match (security score shown as a bar everywhere, Title Case labels throughout)
+- [x] Keyboard shortcuts updated: Ctrl+1-5 reach Dashboard, Analysis, Hardening, Hosts and Scheduler (Ctrl+4 lands on Hosts via the retained `/remote` redirect); Fleet Apply and Settings have no dedicated shortcut yet
+
+---
+
 ## Future Enhancements
 
 Features planned for post-v1.0.0 releases.
@@ -704,4 +718,4 @@ When working on new features:
 
 ---
 
-**Last Updated**: 2026-07-19
+**Last Updated**: 2026-07-24

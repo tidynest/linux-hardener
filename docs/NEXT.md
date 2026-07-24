@@ -2,7 +2,26 @@
 
 ---
 
-## Current State (as of 2026-07-19)
+## Current State (as of 2026-07-24)
+
+**Since v1.4.0 (on `main`, unreleased):** the reversible-rollback fix landed
+(`303c4d0`) - `hardener rollback` (CLI, desktop and fleet) now snapshots the
+current state before restoring a checkpoint, so a rollback is itself
+reversible; see
+`docs/superpowers/specs/2026-07-21-rollback-auto-snapshot-design.md`.
+Separately, on branch `feat/gui-ux-redesign` (80+ commits ahead of `main`,
+not yet merged), the desktop GUI has been redesigned end to end and is now
+content-complete (Phases 0-6, frontend-only - no backend, IPC or CLI
+behaviour changed): a grouped left sidebar (Local: Dashboard, Analysis,
+Hardening; Fleet: Hosts, Fleet Apply, Scheduler; plus a pinned Settings
+area) replaces the old flat top navigation bar; the former Remote and Fleet
+screens are merged into a single **Hosts** page (`/remote` now redirects
+there); Fleet Apply is a staged Preview/Execute flow with a sticky summary
+bar; Scheduler is a single-Save form over schedule presets; and a new
+**Settings** page adds a seven-theme swatch grid (Midnight Teal, Fortress,
+Sentinel, Command, Guardian, Daywatch, High Contrast) plus an About block.
+All six phases are final-reviewed and eyeballed clean; the epic awaits the
+maintainer's push and a single reviewed pull request into `main`.
 
 **v1.4.0 released** (2026-07-19) to GitHub + GitLab: the honesty, idempotency
 and coherence arc on top of v1.3.2 - honest apply counts (only real changes
@@ -100,6 +119,17 @@ DE test tooling. `cargo test --workspace` = **660 passed / 0 failed / 38 ignored
 ## What's next (priority order)
 
 > Refreshed 2026-07-01. Items are open unless marked Done.
+
+### P0: GUI/UX redesign - merge to main (in progress)
+
+Content-complete on branch `feat/gui-ux-redesign` (Phases 0-6 - Dashboard,
+Analysis, Hardening restyle; the Fleet cluster: Hosts, Fleet Apply,
+Scheduler; and the new Settings page). Every phase is final-reviewed and
+eyeballed clean across all seven themes. Remaining steps: push the epic
+branch, open a single reviewed pull request into `main`, and land it - the
+GUI/CLI/backend contract is unchanged throughout, so this is a docs-plus-
+frontend merge, not a behavioural one. See "Current State" above for what
+changed.
 
 ### P0: Compliance assessment coverage (phase 2)
 
@@ -242,7 +272,9 @@ fleet scans remain in-memory, CLI batch/scheduled scans populate the history).
 All Fleet follow-ups are now shipped. Emergency
 per-host rollback remains available via `sudo hardener --ssh <host> rollback`.
 Per-host CIS score columns plus a per-framework breakdown in the row expander
-shipped 2026-06-24.
+shipped 2026-06-24. (Superseded 2026-07 by the GUI/UX redesign: the
+standalone Fleet page above is now the merged **Hosts** page - see
+"Current State" above.)
 
 **Follow-up (from review): Done (2026-07-16, issue #17, `c86c116`):**
 `finding_to_scan_finding` now persists `severity`/`category` via `Display`
@@ -419,4 +451,4 @@ hardener-scheduler
 
 *This document is prepared for continuity between development sessions.*
 
-**Last Updated**: 2026-07-19
+**Last Updated**: 2026-07-24

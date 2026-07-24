@@ -7,7 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Desktop Settings page: a visual theme picker (a swatch grid across all
+  seven themes, Midnight Teal, Fortress, Sentinel, Command, Guardian,
+  Daywatch and High Contrast) applies a theme live on selection, plus an
+  About block naming the application, version and build identity.
+
 ### Changed
+- Desktop UI redesigned end to end. The flat top navigation bar is gone,
+  replaced by a grouped left sidebar (Local: Dashboard, Analysis,
+  Hardening; Fleet: Hosts, Fleet Apply, Scheduler; plus a pinned Settings
+  area) with a collapsible icon rail for narrow windows. Dashboard now
+  shows the security score as a bar; Analysis groups findings by severity;
+  Hardening is restyled to match. The former Remote and Fleet screens are
+  merged into a single Hosts page (old `/remote` links redirect there
+  automatically). Fleet Apply is now a staged Preview/Execute flow with a
+  segmented Apply/Roll back control and a sticky summary bar. Scheduler
+  moves to a single Save action over schedule presets, with a custom-cron
+  option behind an Advanced disclosure. This is a frontend-only change:
+  no behaviour, IPC, or backend logic changed.
 - Rollback is now reversible. Before restoring a checkpoint, `hardener rollback`
   (CLI, desktop, and fleet) first captures the current state of exactly the
   files it is about to overwrite as a new signed checkpoint, named after the
@@ -1499,4 +1517,4 @@ Configuration file support with layered loading, compliance framework reporting 
 [0.2.0]: https://github.com/tidynest/linux-system-hardener/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tidynest/linux-system-hardener/releases/tag/v0.1.0
 
-**Last Updated**: 2026-07-19
+**Last Updated**: 2026-07-24

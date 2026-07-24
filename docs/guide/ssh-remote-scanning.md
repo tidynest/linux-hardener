@@ -225,59 +225,60 @@ Exit Codes
 Planned Follow-ups
 
 The current release covers concurrent fleet scanning with history persistence,
-per-host trend tracking, regression alerts, a read-only desktop Fleet view with
-CIS compliance-score columns, and a Fleet Apply page for applying/rolling back
+per-host trend tracking, regression alerts, a read-only desktop Hosts scan view with
+compliance-score columns, and a Fleet Apply page for applying/rolling back
 hardening across saved hosts over SSH.
 
-Desktop Fleet View
+Desktop Hosts Screen
 
-The desktop application includes a read-only **Fleet** page that lets you scan
-multiple saved inventory hosts (and ad-hoc `user@host[:port]` targets) from the
-GUI without using the CLI.
+The desktop application's **Hosts** screen (under the Fleet group in the left
+sidebar, routed at `/fleet`) lets you scan multiple saved inventory hosts (and
+ad-hoc `user@host[:port]` targets) from the GUI without using the CLI. It
+merged the former single-host Remote view with multi-host fleet scanning into
+one screen; the old `/remote` route now just redirects here.
 
 ### What it does
 
 - Select any number of saved inventory hosts from a multi-select list, and/or
   enter ad-hoc `user@host[:port]` targets that are not in the inventory
-- Click **Scan selected** to scan them concurrently over SSH (bounded to 8 parallel
+- Click **Scan Selected** to scan them concurrently over SSH (bounded to 8 parallel
   connections, matching `hardener batch scan --concurrency 8`)
 - Watch live per-host progress while the scan runs (a tick or cross appears as each
   host finishes), then review the completed table
-- Each host row shows a CIS compliance score and a per-severity tally: critical /
-  high / medium / low / info
-- Expand any row to see that host's individual findings via the same `FindingsGrid`
-  used on the single-host Remote page
+- Each host row shows a per-severity tally (critical / high / medium / low) and a
+  compliance score strip, one cell per framework the scan carries posture for
+- Expand any row to see that host's compliance detail and its findings, listed
+  and grouped by severity, in a collapsible panel built into the row itself
 
-### How it relates to the Remote page and CLI
+### How it relates to the CLI
 
 | Surface | Scope | Mutates? | Ad-hoc targets? |
 |---------|-------|----------|-----------------|
-| Remote page (GUI) | One inventory host | No (scan only) | No |
-| Fleet page (GUI) | Inventory + ad-hoc `user@host[:port]` | No (scan only) | Yes |
+| Hosts page (GUI) | Inventory + ad-hoc `user@host[:port]` (single or many) | No (scan only) | Yes |
 | Fleet Apply page (GUI) | Inventory + ad-hoc `user@host[:port]` | Yes (dry-run + confirm gate) | Yes |
 | `hardener batch scan` (CLI) | Inventory + ad-hoc `--ssh` | No | Yes |
 | `hardener batch apply` (CLI) | Inventory + ad-hoc `--ssh` | Yes (with `--execute`) | Yes |
 
-The Fleet page reuses the single-host `scan_with_executor` helper internally,
-the same plugin path that powers the Remote page and the CLI's `--ssh` scan.
-The Fleet **Scan** page is read-only by structure: its scan context carries no
-checkpoint manager or audit logger, so apply and rollback paths are unreachable
+The Hosts screen reuses the single-host `scan_with_executor` helper internally,
+the same plugin path that powers its single-host connect session and the CLI's
+`--ssh` scan. The Hosts screen is read-only by structure: its scan context carries
+no checkpoint manager or audit logger, so apply and rollback paths are unreachable
 from it. Mutating fleet operations live on the separate Fleet **Apply** page.
 
 Fleet scanning reads saved hosts from the shared inventory file:
 
 ~/.config/linux-hardener/hosts.toml
 
-Hosts added via the Remote page's **Add Host** form appear in fleet selections
+Hosts added via the Hosts screen's **Add Host** form appear in fleet selections
 immediately. Ad-hoc hosts that are not in the inventory can be entered directly in
-the Fleet page's ad-hoc target field (`user@host[:port]`); invalid targets (a
+the Hosts screen's ad-hoc target field (`user@host[:port]`); invalid targets (a
 space or comma in the hostname, a leading dash) are rejected at entry.
 
 ### What remains CLI-only
 
-- Fleet compliance assessment against an arbitrary framework
-  (`hardener batch report --framework ...`); the GUI Fleet table surfaces only a
-  CIS compliance score
+- Fleet compliance reports as standalone documents
+  (`hardener batch report --framework ...`); the Hosts page shows compliance
+  scores inline per host but does not generate a report file
 - Machine-readable JSON, `--output FILE` export, and `--concurrency` tuning
 
 Troubleshooting
@@ -393,8 +394,8 @@ Current limitations of SSH remote scanning:
 | Local checkpoints               | Checkpoint data stored on local machine                      |
 
 Parallel multi-host scanning is available via `hardener batch scan` (CLI) and
-the desktop **Fleet** page, see *Batch Scanning Multiple Hosts* and
-*Desktop Fleet View* above.
+the desktop **Hosts** screen, see *Batch Scanning Multiple Hosts* and
+*Desktop Hosts Screen* above.
 
 Future Enhancements
 
@@ -402,4 +403,4 @@ Planned for future releases:
 - Jump host / bastion support
 - Remote checkpoint storage option
 
-**Last Updated**: 2026-07-19
+**Last Updated**: 2026-07-24
