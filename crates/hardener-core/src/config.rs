@@ -159,3 +159,43 @@ impl PolicyException {
         self.allowed && !self.is_expired()
     }
 }
+
+impl PolicyException {
+    /// Builds the finding-facing exception record from this policy exception.
+    /// Only valid (allowed, unexpired) exceptions are ever annotated onto a
+    /// finding, so `exception_is_expired` is computed but expected to be false.
+    pub fn to_finding_exception(&self) -> hardener_types::FindingPolicyException {
+        hardener_types::FindingPolicyException {
+            exception_allowed_value: self.value.clone(),
+            exception_reason: self.reason.clone(),
+            exception_approved_by: self.approved_by.clone(),
+            exception_approved_date: self.approved_date.clone(),
+            exception_ticket: self.ticket.clone(),
+            exception_expires: self.expires.clone(),
+            exception_is_expired: self.is_expired(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn policy_exception_maps_to_finding_exception() {
+        let ex = PolicyException {
+            value: "yes".into(),
+            allowed: true,
+            reason: "legacy jump host".into(),
+            approved_by: Some("Security Team".into()),
+            approved_date: Some("2026-01-15".into()),
+            ticket: Some("SEC-1234".into()),
+            expires: None,
+        };
+        let fe = ex.to_finding_exception();
+        assert_eq!(fe.exception_allowed_value, "yes");
+        assert_eq!(fe.exception_reason, "legacy jump host");
+        assert_eq!(fe.exception_ticket.as_deref(), Some("SEC-1234"));
+        assert!(!fe.exception_is_expired); // no expiry -> not expired
+    }
+}

@@ -833,7 +833,7 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
         vec![]
     }
 
-    async fn scan(&self, ctx: &Context) -> Result<ScanResult> {
+    async fn scan(&self, ctx: &Context, _config: &PluginConfig) -> Result<ScanResult> {
         let start_time = Instant::now();
         let mut findings = Vec::new();
         let mut unchecked = Vec::new();

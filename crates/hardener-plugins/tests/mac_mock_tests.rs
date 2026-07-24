@@ -177,7 +177,7 @@ async fn test_mac_scan_selinux_enforcing_no_findings() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = MacHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "SELinux enforcing scan should succeed");
     assert_eq!(result.scan_plugin_id, PluginId::new("mac-hardening"));
@@ -198,7 +198,7 @@ async fn test_mac_scan_selinux_permissive() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = MacHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(
         result.scan_success,
@@ -226,7 +226,7 @@ async fn test_mac_scan_selinux_disabled() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = MacHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "SELinux disabled scan should succeed");
     assert!(
@@ -246,7 +246,7 @@ async fn test_mac_scan_apparmor_enforcing_no_findings() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = MacHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(
         result.scan_success,
@@ -270,7 +270,7 @@ async fn test_mac_scan_apparmor_complain_mode() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = MacHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "AppArmor complain scan should succeed");
     assert!(
@@ -300,7 +300,7 @@ async fn test_mac_scan_no_mac_system() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = MacHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "no MAC system scan should succeed");
     assert!(
@@ -320,7 +320,7 @@ async fn test_mac_scan_compliance_mappings() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = MacHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     let finding = &result.scan_findings[0];
     assert!(
@@ -383,7 +383,7 @@ async fn test_mac_scan_duration_recorded() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = MacHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(
         result.scan_duration_us > 0,
@@ -436,7 +436,7 @@ async fn test_mac_scan_with_remote_executor() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = MacHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "remote MAC scan should succeed");
     // Should find SELinux not enforcing on remote
@@ -714,7 +714,7 @@ async fn test_mac_scan_apparmor_permission_denied_is_unchecked_not_silent() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = MacHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(
         result.scan_success,

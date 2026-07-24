@@ -37,7 +37,7 @@
 //! ```
 
 use hardener_core::{
-    Context, SystemExecutor,
+    Context, PluginConfig, SystemExecutor,
     executor::ssh::{SshConfig, SshExecutor},
     plugin::HardeningPlugin,
 };
@@ -84,7 +84,7 @@ async fn test_kernel_plugin_scan_over_ssh() {
     let ctx = create_ssh_context().await;
     let plugin = KernelHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await;
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await;
 
     assert!(
         result.is_ok(),
@@ -129,7 +129,7 @@ async fn test_ssh_plugin_scan_over_ssh() {
     let ctx = create_ssh_context().await;
     let plugin = SshHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await;
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await;
 
     assert!(
         result.is_ok(),
@@ -155,7 +155,7 @@ async fn test_services_plugin_scan_over_ssh() {
     let ctx = create_ssh_context().await;
     let plugin = ServicesHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await;
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await;
 
     assert!(
         result.is_ok(),
@@ -203,7 +203,7 @@ async fn test_multiple_plugins_sequential_over_ssh() {
     for plugin in &plugins {
         let metadata = plugin.metadata();
 
-        let result = plugin.scan(&ctx).await;
+        let result = plugin.scan(&ctx, &PluginConfig::default()).await;
         assert!(
             result.is_ok(),
             "{} scan failed: {:?}",

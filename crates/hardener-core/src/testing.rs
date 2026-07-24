@@ -103,7 +103,7 @@ impl HardeningPlugin for MockPlugin {
         self.plugin_dependencies.clone()
     }
 
-    async fn scan(&self, _ctx: &Context) -> Result<ScanResult> {
+    async fn scan(&self, _ctx: &Context, _config: &PluginConfig) -> Result<ScanResult> {
         if self.plugin_fail_scan {
             return Err(hardener_common::error::HardeningError::Plugin(
                 "Mock scan failure".to_string(),

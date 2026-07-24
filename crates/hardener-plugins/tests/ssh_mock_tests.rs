@@ -61,7 +61,7 @@ async fn test_ssh_scan_secure_config_no_findings() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = SshHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "secure SSH scan should succeed");
     assert_eq!(result.scan_plugin_id, PluginId::new("ssh-hardening"));
@@ -87,7 +87,7 @@ async fn test_ssh_scan_insecure_config_finds_issues() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = SshHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "insecure SSH scan should succeed");
     assert!(
@@ -132,7 +132,7 @@ async fn test_ssh_scan_missing_config_file() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = SshHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     // Scan should return gracefully with an error message
     assert!(
@@ -157,7 +157,7 @@ async fn test_ssh_scan_missing_directives_flagged() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = SshHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(
         result.scan_success,
@@ -293,7 +293,7 @@ async fn test_ssh_scan_logs_file_read() {
     let ctx = Context::with_executor(Arc::new(executor.clone()));
     let plugin = SshHardeningPlugin::new();
 
-    let _ = plugin.scan(&ctx).await;
+    let _ = plugin.scan(&ctx, &PluginConfig::default()).await;
 
     // Verify the plugin read the config file
     let log = executor.log();
@@ -311,7 +311,7 @@ async fn test_ssh_scan_compliance_mappings() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = SshHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     // Find PermitRootLogin finding
     let root_login = result
@@ -367,7 +367,7 @@ async fn test_ssh_scan_duration_recorded() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = SshHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(
         result.scan_duration_us > 0,
@@ -394,7 +394,7 @@ async fn test_ssh_scan_with_remote_executor() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = SshHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
     assert!(result.scan_success, "remote SSH scan should succeed");
 }
 
@@ -635,7 +635,10 @@ fn ssh_stig_crypto_ids_match_the_rhel8_v2r7_benchmark() {
 async fn scan_reports_directives_unchecked_when_sshd_config_is_root_only() {
     let mock = MockExecutor::new().with_read_permission_denied("/etc/ssh/sshd_config");
     let ctx = Context::with_executor(Arc::new(mock));
-    let result = SshHardeningPlugin::new().scan(&ctx).await.unwrap();
+    let result = SshHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
 
     assert!(result.scan_success);
     assert!(result.scan_findings.is_empty());

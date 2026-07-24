@@ -191,11 +191,12 @@ async fn test_execute_scan_workflow() {
     let mut manager = PluginManager::new(registry);
     manager.resolve_dependencies().unwrap();
 
-    // Create context for scanning
+    // Create context and config for scanning
     let ctx = Context::new();
+    let config = HardenerConfig::default();
 
     // Execute scan
-    let results = manager.execute_scan(&ctx).await.unwrap();
+    let results = manager.execute_scan(&ctx, &config).await.unwrap();
 
     // Verify all 3 plugins were scanned
     assert_eq!(

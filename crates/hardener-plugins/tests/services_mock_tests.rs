@@ -191,7 +191,7 @@ async fn test_services_scan_clean_system_no_findings() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = ServicesHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "clean system scan should succeed");
     assert_eq!(result.scan_plugin_id, PluginId::new("service-minimisation"));
@@ -212,7 +212,7 @@ async fn test_services_scan_finds_enabled_services() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = ServicesHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "insecure services scan should succeed");
 
@@ -249,7 +249,7 @@ async fn test_services_scan_finding_structure() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = ServicesHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     // Find bluetooth finding
     let bt_finding = result
@@ -297,7 +297,7 @@ async fn test_services_scan_cups_enabled_only() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = ServicesHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     // Find CUPS finding - enabled but not active
     let cups_finding = result
@@ -386,7 +386,7 @@ async fn test_services_scan_logs_commands() {
     let ctx = Context::with_executor(Arc::new(executor.clone()));
     let plugin = ServicesHardeningPlugin::new();
 
-    let _ = plugin.scan(&ctx).await;
+    let _ = plugin.scan(&ctx, &PluginConfig::default()).await;
 
     let log = executor.log();
 
@@ -413,7 +413,7 @@ async fn test_services_scan_spawns_exactly_two_systemctl_commands() {
     let ctx = Context::with_executor(Arc::new(executor.clone()));
     let plugin = ServicesHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
     assert!(!result.scan_findings.is_empty(), "scenario has findings");
 
     // The whole scan must cost two spawns: one unit-file listing and one
@@ -438,7 +438,7 @@ async fn test_services_scan_duration_recorded() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = ServicesHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(
         result.scan_duration_us > 0,
@@ -481,7 +481,7 @@ async fn test_services_scan_with_remote_executor() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = ServicesHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "remote services scan should succeed");
     // Should find bluetooth on remote system
@@ -516,7 +516,7 @@ async fn test_services_compliance_mappings() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = ServicesHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     // CUPS should have CIS 2.2.4 mapping
     let cups_finding = result

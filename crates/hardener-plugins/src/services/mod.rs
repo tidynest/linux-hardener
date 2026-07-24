@@ -533,7 +533,7 @@ impl HardeningPlugin for ServicesHardeningPlugin {
         vec![]
     }
 
-    async fn scan(&self, ctx: &Context) -> Result<ScanResult> {
+    async fn scan(&self, ctx: &Context, _config: &PluginConfig) -> Result<ScanResult> {
         let start = Instant::now();
         let mut findings = Vec::new();
 

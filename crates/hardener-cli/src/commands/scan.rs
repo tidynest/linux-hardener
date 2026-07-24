@@ -39,7 +39,7 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
     };
 
     // Load config (ignored in audit mode)
-    let _config = load_config(opts.config_path, mode)?;
+    let config = load_config(opts.config_path, mode)?;
     let registry = hardener_plugins::create_plugin_registry();
     let ctx = Context::with_executor(opts.executor.clone());
 
@@ -48,15 +48,8 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
     let min_severity = severity_filter_to_severity(&opts.severity_filter);
 
     // Resolve the selected plugin handles up front (registry hands out Arcs).
-    let selected: Vec<_> = plugins
-        .iter()
-        .filter(|metadata| {
-            opts.plugin_filter.is_empty()
-                || opts
-                    .plugin_filter
-                    .iter()
-                    .any(|p| is_valid_plugin_name(p, &[metadata.plugin_id.as_str()]))
-        })
+    let selected: Vec<_> = select_enabled_plugins(&plugins, &config, opts.plugin_filter)
+        .into_iter()
         .filter_map(|metadata| {
             registry
                 .get(&metadata.plugin_id)
@@ -75,8 +68,10 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
     // Plugins are independent, so scan them concurrently. join_all yields
     // results in input order, which keeps the rendered output deterministic.
     let wall = std::time::Instant::now();
-    let scans =
-        futures::future::join_all(selected.iter().map(|(_, plugin)| plugin.scan(&ctx))).await;
+    let scans = futures::future::join_all(selected.iter().map(|(metadata, plugin)| {
+        plugin.scan(&ctx, config.get_plugin_config(metadata.plugin_id.as_str()))
+    }))
+    .await;
     let wall_elapsed = wall.elapsed();
 
     let mut all_results = Vec::new();
@@ -191,6 +186,25 @@ fn is_valid_plugin_name(name: &str, valid_ids: &[&str]) -> bool {
         .any(|id| *id == name || id.starts_with(&format!("{}-", name)))
 }
 
+/// Narrows plugin metadata to those that are both config-enabled and match
+/// the CLI `--plugin` filter (an empty filter selects everything).
+fn select_enabled_plugins<'a>(
+    plugins: &'a [PluginMetadata],
+    config: &HardenerConfig,
+    plugin_filter: &[String],
+) -> Vec<&'a PluginMetadata> {
+    plugins
+        .iter()
+        .filter(|metadata| config.is_plugin_enabled(metadata.plugin_id.as_str()))
+        .filter(|metadata| {
+            plugin_filter.is_empty()
+                || plugin_filter
+                    .iter()
+                    .any(|p| is_valid_plugin_name(p, &[metadata.plugin_id.as_str()]))
+        })
+        .collect()
+}
+
 /// Persists scan results to the history database.
 ///
 /// Failures are logged but do not propagate; scan output is already displayed,
@@ -269,6 +283,29 @@ mod tests {
     #[test]
     fn test_invalid_name() {
         assert!(!is_valid_plugin_name("nonexistent", ALL_IDS));
+    }
+
+    #[test]
+    fn disabled_plugin_excluded_from_selection() {
+        // A plugin named in global.disabled_plugins must never appear in the
+        // set scan() is about to run, regardless of the --plugin filter.
+        let plugins = hardener_plugins::create_plugin_registry().list().unwrap();
+        let mut config = HardenerConfig::default();
+        config.global.disabled_plugins = vec!["mac-hardening".to_string()];
+
+        let selected = select_enabled_plugins(&plugins, &config, &[]);
+
+        assert!(
+            selected
+                .iter()
+                .all(|metadata| metadata.plugin_id.as_str() != "mac-hardening"),
+            "disabled plugin must be excluded from the selected set"
+        );
+        assert_eq!(
+            selected.len(),
+            plugins.len() - 1,
+            "exactly the disabled plugin should be excluded"
+        );
     }
 
     #[test]

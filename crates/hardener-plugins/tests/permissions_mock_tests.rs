@@ -148,7 +148,7 @@ async fn test_permissions_scan_secure_config_no_findings() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PermissionsHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(
         result.scan_success,
@@ -175,7 +175,7 @@ async fn test_permissions_scan_finds_insecure_permissions() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PermissionsHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(
         result.scan_success,
@@ -234,7 +234,7 @@ async fn test_permissions_scan_finding_structure() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PermissionsHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert_eq!(result.scan_findings.len(), 1);
     let finding = &result.scan_findings[0];
@@ -270,7 +270,7 @@ async fn test_permissions_scan_missing_paths_skipped() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PermissionsHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(
         result.scan_success,
@@ -303,7 +303,7 @@ async fn test_permissions_scan_sudoers_severity() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PermissionsHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     let sudoers_finding = result
         .scan_findings
@@ -334,7 +334,7 @@ async fn test_permissions_scan_logs_operations() {
     let ctx = Context::with_executor(Arc::new(executor.clone()));
     let plugin = PermissionsHardeningPlugin::new();
 
-    let _ = plugin.scan(&ctx).await;
+    let _ = plugin.scan(&ctx, &PluginConfig::default()).await;
 
     // Note: path_exists uses file_metadata internally in MockExecutor
     // So we can't directly check files_read, but we can verify the scan completed
@@ -346,7 +346,7 @@ async fn test_permissions_scan_duration_recorded() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PermissionsHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(
         result.scan_duration_us > 0,
@@ -411,7 +411,7 @@ async fn test_permissions_scan_with_remote_executor() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PermissionsHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(
         result.scan_success,
@@ -693,7 +693,10 @@ async fn test_permissions_scan_nonposix_fs_emits_unchecked_not_finding() {
     executor = findmnt_fstype(executor, "/etc/passwd", "ext4");
 
     let ctx = Context::with_executor(Arc::new(executor));
-    let result = PermissionsHardeningPlugin::new().scan(&ctx).await.unwrap();
+    let result = PermissionsHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
 
     // /boot must not be a finding.
     assert!(
@@ -757,7 +760,10 @@ async fn test_permissions_scan_nonposix_probe_failsafe() {
     // /boot at 0o755, no findmnt/stat responses registered.
     let executor = MockExecutor::new().with_file_metadata("/boot", "", dir_mode(0o755));
     let ctx = Context::with_executor(Arc::new(executor));
-    let result = PermissionsHardeningPlugin::new().scan(&ctx).await.unwrap();
+    let result = PermissionsHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
 
     assert!(
         result

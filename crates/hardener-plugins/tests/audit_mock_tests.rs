@@ -142,7 +142,7 @@ async fn test_audit_scan_fully_configured_no_findings() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = AuditHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(
         result.scan_success,
@@ -166,7 +166,7 @@ async fn test_audit_scan_not_installed() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = AuditHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "scan with no auditd should succeed");
     assert_eq!(result.scan_findings.len(), 1);
@@ -183,7 +183,7 @@ async fn test_audit_scan_disabled_and_stopped() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = AuditHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "disabled auditd scan should succeed");
 
@@ -218,7 +218,7 @@ async fn test_audit_scan_missing_rules() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = AuditHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "partial rules scan should succeed");
 
@@ -254,7 +254,7 @@ async fn test_audit_scan_finding_structure() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = AuditHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     let finding = &result.scan_findings[0];
 
@@ -326,7 +326,7 @@ async fn test_audit_scan_duration_recorded() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = AuditHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(
         result.scan_duration_us > 0,
@@ -340,7 +340,7 @@ async fn test_audit_scan_logs_commands() {
     let ctx = Context::with_executor(Arc::new(executor.clone()));
     let plugin = AuditHardeningPlugin::new();
 
-    let _ = plugin.scan(&ctx).await;
+    let _ = plugin.scan(&ctx, &PluginConfig::default()).await;
 
     let log = executor.log();
 
@@ -410,7 +410,7 @@ async fn test_audit_scan_with_remote_executor() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = AuditHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "remote audit scan should succeed");
     // Should find auditd not running on remote
@@ -479,7 +479,7 @@ async fn test_audit_scan_permission_denied_should_not_report_missing_rules() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = AuditHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     // auditd is installed, enabled, and running
     // But auditctl -l failed with permission denied

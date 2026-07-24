@@ -85,7 +85,7 @@ async fn test_kernel_scan_secure_config_no_findings() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = KernelHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(
         result.scan_success,
@@ -109,7 +109,7 @@ async fn test_kernel_scan_insecure_config_finds_all_issues() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = KernelHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "insecure kernel scan should succeed");
 
@@ -148,7 +148,7 @@ async fn test_kernel_scan_partial_config_finds_some_issues() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = KernelHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "partial kernel scan should succeed");
 
@@ -187,7 +187,7 @@ async fn test_kernel_scan_missing_params_gracefully_skipped() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = KernelHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     // Scan should succeed even with no readable params
     assert!(
@@ -209,7 +209,7 @@ async fn test_kernel_scan_finding_structure() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = KernelHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert_eq!(result.scan_findings.len(), 1);
     let finding = &result.scan_findings[0];
@@ -238,7 +238,7 @@ async fn test_kernel_scan_compliance_mappings() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = KernelHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     // ASLR finding should have CIS 1.5.1 mapping
     let aslr_finding = result
@@ -590,7 +590,7 @@ async fn test_kernel_scan_logs_file_reads() {
     let ctx = Context::with_executor(Arc::new(executor.clone()));
     let plugin = KernelHardeningPlugin::new();
 
-    let _ = plugin.scan(&ctx).await;
+    let _ = plugin.scan(&ctx, &PluginConfig::default()).await;
 
     let log = executor.log();
 
@@ -617,7 +617,7 @@ async fn test_kernel_scan_duration_recorded() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = KernelHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(
         result.scan_duration_us > 0,
@@ -642,7 +642,7 @@ async fn test_kernel_scan_with_remote_executor() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = KernelHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "remote kernel scan should succeed");
     // Should find kptr_restrict issue

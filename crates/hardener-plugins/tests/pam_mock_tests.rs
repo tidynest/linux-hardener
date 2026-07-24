@@ -92,7 +92,7 @@ async fn test_pam_scan_secure_config_no_findings() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PamHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "secure PAM scan should succeed");
     assert_eq!(result.scan_plugin_id, PluginId::from("pam-hardening"));
@@ -113,7 +113,7 @@ async fn test_pam_scan_insecure_config_finds_issues() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PamHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "insecure PAM scan should succeed");
     assert!(
@@ -158,7 +158,7 @@ async fn test_pam_scan_missing_configs_flags_all() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PamHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(
         result.scan_success,
@@ -186,7 +186,7 @@ async fn test_pam_scan_partial_config() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PamHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "partial PAM scan should succeed");
 
@@ -240,7 +240,7 @@ async fn test_pam_scan_finding_structure() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PamHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     // Find minlen finding
     let minlen_finding = result
@@ -269,7 +269,7 @@ async fn test_pam_scan_compliance_mappings() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PamHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     // minlen should have CIS 5.3.1 mapping
     let minlen_finding = result
@@ -297,7 +297,7 @@ async fn test_pam_scan_severity_levels() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PamHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     // minlen should be High severity
     if let Some(minlen) = result
@@ -356,7 +356,7 @@ async fn test_pam_scan_logs_file_reads() {
     let ctx = Context::with_executor(Arc::new(executor.clone()));
     let plugin = PamHardeningPlugin::new();
 
-    let _ = plugin.scan(&ctx).await;
+    let _ = plugin.scan(&ctx, &PluginConfig::default()).await;
 
     let log = executor.log();
 
@@ -381,7 +381,7 @@ async fn test_pam_scan_duration_recorded() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PamHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(
         result.scan_duration_us > 0,
@@ -414,7 +414,7 @@ async fn test_pam_scan_with_remote_executor() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PamHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "remote PAM scan should succeed");
     // Should find issues on remote system
@@ -451,7 +451,7 @@ PASS_WARN_AGE 7
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PamHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(
         result.scan_success,
@@ -947,7 +947,7 @@ async fn pam_scan_reads_inline_pamd_override() {
     );
     let ctx = Context::with_executor(executor_compliant);
     let plugin = PamHardeningPlugin::new();
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(
         !result
@@ -980,7 +980,7 @@ async fn pam_scan_reads_inline_pamd_override() {
             ),
     );
     let ctx2 = Context::with_executor(executor_non_compliant);
-    let result2 = plugin.scan(&ctx2).await.unwrap();
+    let result2 = plugin.scan(&ctx2, &PluginConfig::default()).await.unwrap();
 
     assert!(
         result2
@@ -1065,7 +1065,10 @@ async fn pam_scan_reports_unchecked_not_findings_when_pwquality_is_root_only() {
         .with_read_permission_denied("/etc/security/pwquality.conf")
         .with_file("/etc/login.defs", "PASS_MAX_DAYS 365\n");
     let ctx = Context::with_executor(Arc::new(mock));
-    let result = PamHardeningPlugin::new().scan(&ctx).await.unwrap();
+    let result = PamHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
 
     // No false "not set" findings for pwquality directives.
     assert!(
@@ -1102,7 +1105,10 @@ async fn pam_scan_reports_unchecked_when_threshold_confs_are_root_only() {
         .with_read_permission_denied("/etc/security/faillock.conf")
         .with_read_permission_denied("/etc/security/pwhistory.conf");
     let ctx = Context::with_executor(Arc::new(mock));
-    let result = PamHardeningPlugin::new().scan(&ctx).await.unwrap();
+    let result = PamHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
 
     let finding_ids: Vec<&str> = result
         .scan_findings
@@ -1154,7 +1160,10 @@ async fn pam_scan_inline_override_wins_over_permission_denied_conf() {
             "auth required pam_faillock.so preauth silent deny=10\n",
         );
     let ctx = Context::with_executor(Arc::new(mock));
-    let result = PamHardeningPlugin::new().scan(&ctx).await.unwrap();
+    let result = PamHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
 
     let deny_finding = result
         .scan_findings

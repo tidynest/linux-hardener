@@ -549,7 +549,7 @@ impl HardeningPlugin for PamHardeningPlugin {
         vec![]
     }
 
-    async fn scan(&self, ctx: &Context) -> Result<ScanResult> {
+    async fn scan(&self, ctx: &Context, _config: &PluginConfig) -> Result<ScanResult> {
         let start = Instant::now();
         info!("Starting PAM authentication hardening scan");
 

@@ -741,7 +741,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
         vec![] // No dependencies
     }
 
-    async fn scan(&self, ctx: &Context) -> Result<ScanResult> {
+    async fn scan(&self, ctx: &Context, _config: &PluginConfig) -> Result<ScanResult> {
         let start = Instant::now();
         let mut findings = Vec::new();
         let mut unchecked = Vec::new();
@@ -1404,7 +1404,10 @@ mod tests {
                 },
             );
         let ctx = Context::with_executor(std::sync::Arc::new(mock));
-        let result = AuditHardeningPlugin::new().scan(&ctx).await.unwrap();
+        let result = AuditHardeningPlugin::new()
+            .scan(&ctx, &PluginConfig::default())
+            .await
+            .unwrap();
 
         assert!(
             !result

@@ -9,7 +9,8 @@ use hardener_compliance::{
     TextFormatter, profile_label,
 };
 use hardener_core::{
-    Context, Finding, PluginMetadata, executor::SystemExecutor, plugin::UncheckedCheck,
+    Context, Finding, PluginConfig, PluginMetadata, executor::SystemExecutor,
+    plugin::UncheckedCheck,
 };
 use hardener_plugins::create_plugin_registry;
 use hardener_scheduler::db::ScanFinding;
@@ -171,8 +172,14 @@ pub async fn scan_grouped(
 
     // Plugins are independent, scan them concurrently. join_all yields
     // results in input order, so groups stay in registry (plugin-id) order.
-    let scans =
-        futures::future::join_all(handles.iter().map(|(_, plugin)| plugin.scan(&ctx))).await;
+    // Real per-plugin config threading for this path is out of scope here.
+    let default_config = PluginConfig::default();
+    let scans = futures::future::join_all(
+        handles
+            .iter()
+            .map(|(_, plugin)| plugin.scan(&ctx, &default_config)),
+    )
+    .await;
 
     let mut grouped = Vec::new();
     for ((metadata, _), scan) in handles.iter().zip(scans) {
