@@ -143,8 +143,8 @@ pub fn SecurityScore() -> impl IntoView {
         });
     };
 
-    // Privileged deep scan, offered from the honesty line (replaces the old
-    // UncheckedBanner on the Dashboard). Cancelled pkexec is not an error.
+    // Privileged deep scan, offered from the honesty line. Cancelled pkexec
+    // is not an error.
     let deep_running = app_state.deep_scan_running;
     let on_deep_scan = move |_| {
         deep_running.set(true);

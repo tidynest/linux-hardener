@@ -55,6 +55,12 @@ pub fn AnalysisPage() -> impl IntoView {
                             );
                         }
                     }
+
+                    // Refresh the header subtitle so it reflects this scan
+                    // rather than the value fetched once on mount.
+                    if let Ok(sessions) = invoke_get_scan_history(Some(1)).await {
+                        last_scanned.set(last_scanned_label(&sessions));
+                    }
                 }
                 Err(e) => {
                     web_sys::console::error_1(&format!("Scan failed: {}", e).into());

@@ -315,29 +315,6 @@ body {
    ============================================================ */
 
 /* CRITICAL: Flex children must have min-width: 0 to allow shrinking */
-.min-w-0 { min-width: 0; }
-
-/* Text truncation - single line */
-.truncate {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Multi-line truncation (WebKitGTK compatible) */
-.line-clamp-2 {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.line-clamp-3 {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
 
 /* Screen reader only - visually hidden but accessible */
 .sr-only {
@@ -379,42 +356,9 @@ body {
 
 /* Flex container utilities - set display and direction */
 .flex { display: flex; }
-.flex-col { flex-direction: column; }
-.flex-wrap { flex-wrap: wrap; }
-.flex-1 { flex: 1; }              /* Grow to fill available space */
-
-/* Flex alignment - control item positioning */
-.items-center { align-items: center; }
-.items-start { align-items: flex-start; }
-.justify-center { justify-content: center; }
-.justify-between { justify-content: space-between; }
 
 /* Grid container utility */
 .grid { display: grid; }
-
-/* Gap utilities - spacing between flex/grid children
-   Uses the spacing scale defined in :root */
-.gap-xs { gap: var(--space-xs); }  /* 4px */
-.gap-sm { gap: var(--space-sm); }  /* 8px */
-.gap-md { gap: var(--space-md); }  /* 12px */
-.gap-lg { gap: var(--space-lg); }  /* 16px */
-.gap-xl { gap: var(--space-xl); }  /* 24px */
-
-/* ── Two-column row layout ──────────────────────────────── */
-.two-col-row {
-  display: flex;
-  gap: var(--space-lg);
-}
-.two-col-row > * {
-  flex: 1;
-  min-width: 0;
-  align-self: start;
-}
-@media (max-width: 768px) {
-  .two-col-row {
-    flex-direction: column;
-  }
-}
 
 /* ============================================================
    2d. CARD COMPONENT
@@ -441,22 +385,6 @@ body {
     margin-bottom: var(--space-md);
 }
 
-.card-compact {
-    padding: var(--space-md);
-    border-radius: var(--radius-md);
-    background-color: var(--bg-tertiary);
-}
-
-.card-empty {
-    border-style: dashed;
-    text-align: center;
-    color: var(--text-muted);
-}
-
-.card-compact.card--empty {
-    padding: var(--space-lg);
-}
-
 /* ============================================================
    3. APP LAYOUT - Fill entire body
    ============================================================ */
@@ -475,7 +403,6 @@ body {
    dropdown popups always inherit dark/daywatch colours instead of falling
    back to a native white popup with pale text. */
 .theme-select,
-.severity-filter select,
 .findings-filters select,
 .form-select,
 .format-select {
@@ -499,7 +426,6 @@ body {
 }
 
 .theme-select:hover,
-.severity-filter select:hover,
 .findings-filters select:hover,
 .form-select:hover,
 .format-select:hover {
@@ -507,7 +433,6 @@ body {
 }
 
 .theme-select:focus-visible,
-.severity-filter select:focus-visible,
 .findings-filters select:focus-visible,
 .form-select:focus-visible,
 .format-select:focus-visible {
@@ -516,7 +441,6 @@ body {
 }
 
 .theme-select option,
-.severity-filter select option,
 .findings-filters select option,
 .form-select option,
 .format-select option {
@@ -528,7 +452,6 @@ body {
 /* Daywatch light theme needs an explicit arrow colour; option colours above
    already resolve through the per-theme custom properties. */
 [data-theme="daywatch"] .theme-select,
-[data-theme="daywatch"] .severity-filter select,
 [data-theme="daywatch"] .findings-filters select,
 [data-theme="daywatch"] .form-select,
 [data-theme="daywatch"] .format-select {
@@ -843,8 +766,7 @@ body {
 
 .dashboard-page,
 .analysis-page,
-.hardening-page,
-.remote-page {
+.hardening-page {
   flex: 1 1 0;
   display: flex;
   flex-direction: column;
@@ -868,29 +790,7 @@ body {
   flex-shrink: 0;
 }
 
-.dashboard-intro {
-  color: var(--text-secondary);
-  font-size: var(--font-size-sub);
-  max-width: 600px;
-  flex-shrink: 0;
-}
-
-.dashboard-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));  /* minmax prevents overflow */
-  gap: var(--space-lg);
-  flex-shrink: 0;
-}
-
 /* .dashboard-section removed - now using Card component */
-
-.dashboard-footer {
-  margin-top: auto;
-  padding-top: var(--space-md);
-  color: var(--text-muted);
-  font-size: var(--font-size-body);
-  flex-shrink: 0;
-}
 
 /* ============================================================
    8. SECURITY SCORE
@@ -913,29 +813,6 @@ body {
   margin-bottom: var(--space-lg);
 }
 
-.score-display {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  /* Proportional sizing: shrinks with container, max 160px */
-  width: min(160px, 45vw);
-  height: min(160px, 45vw);
-  aspect-ratio: 1;
-  margin: 0 auto var(--space-lg);
-  border-radius: 50%;
-  border: 4px solid var(--border);
-  background-color: var(--bg-tertiary);
-  transition: border-color var(--transition-slow), box-shadow var(--transition-slow);
-}
-
-.score-value {
-  font-family: var(--font-mono);
-  font-size: clamp(1.5rem, 8vw, 2.5rem);  /* Scales with viewport */
-  font-weight: 700;
-  line-height: 1;
-}
-
 .score-max {
   font-family: var(--font-mono);
   font-size: clamp(0.75rem, 3vw, 1rem);  /* Scales with viewport */
@@ -943,112 +820,15 @@ body {
   margin-top: var(--space-xs);
 }
 
-.score-pending { border-color: var(--color-pending); }
-.score-pending .score-value { color: var(--text-muted); }
-
 .score-critical { border-color: var(--color-critical); box-shadow: 0 0 20px rgba(239, 68, 68, 0.3); }
-.score-critical .score-value { color: var(--color-critical-bright); }
 
 .score-warning { border-color: var(--color-warning); box-shadow: 0 0 20px rgba(245, 158, 11, 0.3); }
-.score-warning .score-value { color: var(--color-warning-bright); }
 
 .score-good { border-color: var(--color-good); box-shadow: 0 0 20px rgba(16, 185, 129, 0.3); }
-.score-good .score-value { color: var(--color-good-bright); }
-
-.score-status {
-  font-size: var(--font-size-body);
-  color: var(--text-secondary);
-}
-
-/* Score Breakdown (Framework Details) */
-.score-breakdown {
-  margin-top: var(--space-md);
-  text-align: left;
-}
-
-.breakdown-toggle {
-  cursor: pointer;
-  font-size: var(--font-size-caption);
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: var(--space-sm) 0;
-  transition: color var(--transition-fast);
-}
-
-.breakdown-toggle:hover {
-  color: var(--text-secondary);
-}
-
-.breakdown-toggle::marker {
-  color: var(--color-accent);
-}
-
-.breakdown-list {
-  list-style: none;
-  padding: 0;
-  margin: var(--space-sm) 0 0 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
-}
-
-.breakdown-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  padding: var(--space-xs) var(--space-sm);
-  border-radius: var(--radius-sm);
-  background: var(--bg-elevated);
-  font-size: var(--font-size-sm);
-}
-
-.breakdown-name {
-  flex: 1;
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-
-.breakdown-score {
-  font-family: var(--font-mono);
-  font-weight: 600;
-}
-
-.breakdown-detail {
-  font-size: var(--font-size-caption);
-  color: var(--text-muted);
-}
-
-.breakdown-good .breakdown-score { color: var(--color-good-bright); }
-.breakdown-warning .breakdown-score { color: var(--color-warning-bright); }
-.breakdown-critical .breakdown-score { color: var(--color-critical-bright); }
 
 /* ============================================================
    9. QUICK ACTIONS
    ============================================================ */
-
-.quick-actions {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-.quick-actions h2 {
-  font-size: var(--font-size-sub);
-  font-weight: 500;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  margin-bottom: var(--space-lg);
-}
-
-.action-buttons {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: var(--space-md);
-}
 
 /* ============================================================
    10. BUTTONS
@@ -1098,17 +878,6 @@ body {
   color: var(--text-primary);
 }
 
-.btn-accent {
-  background-color: #155e75;
-  color: #cffafe;
-  border-color: #155e75;
-}
-
-.btn-accent:hover:not(:disabled) {
-  background-color: #0e7490;
-  border-color: #0e7490;
-}
-
 .btn-large {
   height: auto;
   padding: 11px 22px;
@@ -1118,65 +887,6 @@ body {
 button {
   font-family: var(--font-sans);
   cursor: pointer;
-}
-
-.delete-button {
-  background-color: transparent;
-  color: var(--color-critical);
-  border: 1px solid var(--color-critical);
-  padding: 8px 16px;
-  font-size: var(--font-size-body);
-  border-radius: 6px;
-  transition: background-color var(--transition-fast), color var(--transition-fast);
-}
-
-.delete-button:hover {
-  background-color: var(--color-critical);
-  color: #ffffff;
-}
-
-.rollback-button {
-  background-color: var(--color-warning);
-  color: var(--bg-primary);
-  border: none;
-  padding: 8px 16px;
-  font-size: var(--font-size-body);
-  font-weight: 600;
-  border-radius: 6px;
-  transition: background-color var(--transition-fast), transform var(--transition-fast);
-}
-
-.rollback-button:hover {
-  background-color: var(--color-warning-bright);
-  transform: translateY(-1px);
-}
-
-.apply-button {
-  background-color: var(--color-good);
-  color: #ffffff;
-  border: none;
-  padding: 10px 20px;
-  font-size: var(--font-size-sub);
-  font-weight: 600;
-  border-radius: 6px;
-  transition: background-color var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
-}
-
-.apply-button:hover {
-  background-color: var(--color-good-bright);
-  transform: translateY(-1px);
-}
-
-.close-button {
-  background: transparent;
-  color: var(--text-muted);
-  border: none;
-  padding: 8px;
-  transition: color var(--transition-fast);
-}
-
-.close-button:hover {
-  color: var(--text-primary);
 }
 
 /* ============================================================
@@ -1246,33 +956,9 @@ tbody tr:hover {
 
 .finding-row { cursor: pointer; }
 
-.value-cell {
-  font-family: var(--font-mono);
-  font-size: var(--font-size-body);
-  max-width: 300px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* ============================================================
    13. SEVERITY BADGES
    ============================================================ */
-
-.severity_badge {
-  display: inline-block;
-  padding: 4px 12px;
-  font-size: var(--font-size-caption);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  border-radius: 9999px;
-  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
-}
-
-.severity_badge:hover {
-  transform: scale(1.05);
-}
 
 .severity_critical { background-color: rgba(239, 68, 68, 0.2); color: var(--color-critical-bright); }
 .severity_high { background-color: rgba(245, 158, 11, 0.2); color: var(--color-warning-bright); }
@@ -1314,61 +1000,11 @@ tbody tr:hover {
   margin: 0;
 }
 
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
-  flex-wrap: wrap;
-}
-
-/* Scanner layout */
-.scanner-page,
-.scanner-controls {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-lg);
-}
-
-.scanner-controls {
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--border-radius);
-  padding: var(--space-lg);
-}
-
-.scanner-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 400px;  /* minmax prevents overflow */
-  gap: var(--space-lg);
-}
-
-.results-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: var(--space-md) var(--space-md);
-}
-
 .findings-filters {
     display: flex;
     align-items: center;
     gap: var(--space-md);
 }
-
-.severity-filter {
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-}
-
-.severity-filter label {
-    font-size: var(--font-size-body);
-    color: var(--text-secondary);
-}
-
-/* Themed select rules for .severity-filter select live with the other
-   select families near the top of this file (search "Themed select
-   controls"). */
 
 /* Finding detail panel */
 .finding-detail {
@@ -1380,138 +1016,13 @@ tbody tr:hover {
   top: calc(var(--header-height) + var(--space-xl));
 }
 
-.detail-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: var(--space-md);
-}
-
-.detail-header h2 { font-size: var(--font-size-head); }
-
-.detail-severity {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: var(--space-md);
-}
-
-.detail-category {
-  font-size: var(--font-size-body);
-  color: var(--text-muted);
-}
-
-.detail-description,
-.detail-explanation,
-.detail-impact,
-.detail-values,
-.detail-remediation {
-  margin-bottom: var(--space-md);
-}
-
-.detail-description h3,
-.detail-explanation h3,
-.detail-impact h3,
-.detail-values h3,
-.detail-remediation h3 {
-  font-size: var(--font-size-body);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
-  margin-bottom: var(--space-sm);
-}
-
-.detail-values dl {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);  /* minmax prevents overflow */
-  gap: 8px 16px;
-}
-
-.detail-values dt { color: var(--text-muted); font-size: var(--font-size-body); }
-.detail-values dd { font-family: var(--font-mono); font-size: var(--font-size-body); }
-
 .value-current { color: var(--color-critical-bright); }
 .value-recommended { color: var(--color-good-bright); }
-
-.detail-remediation ol { padding-left: var(--space-lg); }
-.detail-remediation li { margin-bottom: var(--space-sm); color: var(--text-secondary); }
-
-/* Findings grid */
-.findings-grid {
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--border-radius);
-  overflow: hidden;
-}
-
-.findings-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--border);
-}
 
 .findings-controls {
   display: flex;
   gap: var(--space-md);
   flex-wrap: wrap;
-}
-
-.filter-group {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-}
-
-.filter-group select {
-  background-color: var(--bg-tertiary);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 8px 12px;
-  font-size: var(--font-size-body);
-  cursor: pointer;
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
-}
-
-.filter-group select:hover {
-  border-color: var(--text-muted);
-}
-
-.filter-group select:focus {
-  outline: none;
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.2);
-}
-
-/* Mini security score */
-.mini-security-score {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 16px;
-  background-color: var(--bg-tertiary);
-  border-radius: 6px;
-  border: 1px solid var(--border);
-}
-
-.mini-score-value {
-  font-family: var(--font-mono);
-  font-size: var(--font-size-head);
-  font-weight: 700;
-}
-
-.mini-score-value.score-good { color: var(--color-good-bright); }
-.mini-score-value.score-warning { color: var(--color-warning-bright); }
-.mini-score-value.score-critical { color: var(--color-critical-bright); }
-.mini-score-value.score-pending { color: var(--text-muted); }
-
-.mini-score-label {
-  font-size: var(--font-size-caption);
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
 }
 
 /* ============================================================
@@ -1538,58 +1049,10 @@ tbody tr:hover {
   margin: 0;
 }
 
-/* Section toggle */
-.section-toggle {
-  display: inline-flex;
-  gap: 4px;
-  padding: 4px;
-  background-color: var(--bg-secondary);
-  border-radius: var(--border-radius);
-  border: 1px solid var(--border);
-  margin-bottom: var(--space-lg);
-  max-width: 100%;
-  flex-wrap: wrap;
-}
-
 /* Section content */
 .section-content {
   min-width: 0;
   max-width: 100%;
-}
-
-.section-btn {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  padding: 6px 14px;
-  background: transparent;
-  color: var(--text-muted);
-  font-family: var(--font-sans);
-  font-size: var(--font-size-body);
-  font-weight: 500;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.section-btn:hover { color: var(--text-secondary); }
-.section-btn.section-active {
-  background-color: var(--bg-tertiary);
-  color: var(--text-primary);
-}
-
-.history-indicator {
-  width: 8px;
-  height: 8px;
-  background-color: var(--color-good-bright);
-  border-radius: 50%;
-  animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
 }
 
 /* Configure section */
@@ -2030,14 +1493,6 @@ tbody tr:hover {
 
 /* .apply-controls container styles removed - now using Card component */
 
-.dry-run-toggle {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
 /* Review step - shown after a successful dry-run. Calm by default (no
    warning border/tint on the panel itself): risk is signalled narrowly, by
    the neutral lockout pill and its single tick inside .review-confirm-box,
@@ -2452,39 +1907,6 @@ tbody tr:hover {
 @media (prefers-reduced-motion: reduce) {
   .modal, .modal-backdrop { animation: none; transition: none; }
 }
-
-/* .apply-results-summary and .checkpoints-section container styles removed - now using Card component */
-/* Keep overflow handling for content */
-.apply-results-summary,
-.checkpoints-section {
-  min-width: 0;
-  max-width: 100%;
-}
-
-.result-summary-card {
-  background-color: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: var(--space-md);
-}
-
-.result-status {
-  font-size: var(--font-size-head);
-  font-weight: 600;
-  margin-bottom: 12px;
-}
-
-.result-status.success { color: var(--color-good-bright); }
-.result-status.failed { color: var(--color-critical-bright); }
-
-.result-changes,
-.result-checkpoint {
-  color: var(--text-secondary);
-  font-size: var(--font-size-body);
-  margin-bottom: var(--space-sm);
-}
-
-.result-checkpoint code { color: var(--color-accent); }
 
 /* Done view (Task 2a.6) - the SUCCESS state shown after a fully successful
    apply. Left-aligned throughout, deliberately no centred hero: the check
@@ -2973,45 +2395,6 @@ tbody tr:hover {
    18. COMPLIANCE PAGE
    ============================================================ */
 
-.compliance-page,
-.checkpoint-list,
-.apply-results {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-lg);
-}
-
-/* .framework-selection container styles removed - now using Card component */
-
-.framework-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(170px, 100%), 1fr));  /* min() prevents overflow on narrow viewports */
-  gap: 8px;
-  margin-bottom: var(--space-lg);
-}
-
-.framework-checkbox {
-  background-color: var(--bg-tertiary);
-  padding: 8px 12px;
-  border-radius: 6px;
-}
-
-.framework-checkbox:hover { background-color: var(--bg-elevated); }
-
-/* Generate actions row */
-.generate-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
-  flex-wrap: wrap;
-}
-
-.export-controls {
-  display: flex;
-  align-items: center;
-  gap: var(--space-xs);
-}
-
 /* Themed select rules for .format-select live with the other select
    families near the top of this file (search "Themed select controls"). */
 
@@ -3031,62 +2414,10 @@ tbody tr:hover {
   background-color: rgba(239, 68, 68, 0.1);
 }
 
-/* Report cards */
-.report-card {
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--border-radius);
-  padding: var(--space-lg);
-  margin-bottom: var(--space-lg);
-}
-
-.report-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--space-md);
-}
-
 .compliance-score {
   font-family: var(--font-mono);
   font-size: var(--font-size-title);
   font-weight: 700;
-}
-
-.score-high { color: var(--color-good-bright); }
-.score-medium { color: var(--color-warning-bright); }
-.score-low { color: var(--color-critical-bright); }
-
-.report-summary {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));  /* minmax prevents overflow */
-  gap: var(--space-md);
-  margin-bottom: var(--space-md);
-}
-
-.summary-stat {
-  text-align: center;
-  padding: 6px 10px;
-  background-color: var(--bg-tertiary);
-  border-radius: 6px;
-}
-
-.stat-value {
-  display: block;
-  font-family: var(--font-mono);
-  font-size: var(--font-size-head);
-  font-weight: 700;
-}
-
-.summary-pass .stat-value { color: var(--color-good-bright); }
-.summary-fail .stat-value { color: var(--color-critical-bright); }
-.summary-manual .stat-value { color: var(--color-warning-bright); }
-.summary-na .stat-value { color: var(--text-muted); }
-
-.stat-label {
-  font-size: var(--font-size-caption);
-  color: var(--text-muted);
-  text-transform: uppercase;
 }
 
 /* Expandable sections */
@@ -3126,25 +2457,6 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   font-weight: 600;
 }
 
-.changes-list ol { padding-left: var(--space-lg); }
-.change-success { color: var(--color-good-bright); }
-.change-failure { color: var(--color-critical-bright); }
-.change-skipped { color: var(--color-warning-bright); }
-
-.checkpoint-info {
-  background-color: var(--bg-tertiary);
-  padding: var(--space-md);
-  border-radius: 6px;
-}
-
-.checkpoint-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-sm);
-  margin-bottom: var(--space-md);
-}
-
 .create-checkpoint-form {
   display: flex;
   align-items: center;
@@ -3178,7 +2490,7 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 }
 
 .btn-danger {
-  background: var(--severity-high, #c53030);
+  background: var(--color-critical);
   color: #fff;
   border: none;
   border-radius: 4px;
@@ -3188,22 +2500,6 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 
 .btn-danger:hover {
   opacity: 0.85;
-}
-
-.actions-cell {
-  display: flex;
-  gap: var(--space-xs);
-  align-items: center;
-}
-
-.detail-expansion-row td {
-  padding: 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.checkpoint-detail-panel {
-  padding: var(--space-md) var(--space-md);
-  background: var(--bg-tertiary);
 }
 
 .detail-file-count {
@@ -3276,19 +2572,6 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   line-height: 1.5;
 }
 
-.empty-state-action {
-  margin-top: var(--space-lg);
-}
-
-.no-checkpoints,
-.no-results {
-  text-align: center;
-  padding: var(--space-xl);
-  background-color: var(--bg-secondary);
-  border: 1px dashed var(--border);
-  border-radius: var(--border-radius);
-}
-
 /* Global Error Banner */
 .error-banner {
   display: flex;
@@ -3296,7 +2579,7 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   justify-content: space-between;
   gap: var(--space-sm);
   padding: var(--space-sm) var(--space-md);
-  background-color: rgba(var(--color-critical-rgb, 220, 50, 47), 0.15);
+  background-color: var(--color-critical-bg);
   border: 1px solid var(--color-critical-bright, #dc3545);
   border-radius: var(--radius-sm);
   margin: var(--space-sm) var(--space-md) 0;
@@ -3404,11 +2687,6 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   overflow-wrap: break-word;
 }
 
-.help-text {
-  color: var(--text-muted);
-  font-size: var(--font-size-body);
-}
-
 /* ============================================================
    19b. SCAN HISTORY TAB
    ============================================================ */
@@ -3419,50 +2697,12 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   gap: var(--space-md);
 }
 
-.history-header {
-  display: flex;
-  justify-content: flex-end;
-  padding: var(--space-sm) 0;
-}
-
-.status-badge {
-  display: inline-block;
-  padding: 2px 10px;
-  font-size: var(--font-size-caption);
-  font-weight: 600;
-  text-transform: capitalize;
-  border-radius: 9999px;
-}
-
-.status-badge.status-success {
-  background-color: rgba(16, 185, 129, 0.15);
-  color: var(--color-good-bright);
-}
-
-.status-badge.status-error {
-  background-color: rgba(239, 68, 68, 0.15);
-  color: var(--color-critical-bright);
-}
-
-.status-badge.status-running {
-  background-color: rgba(34, 211, 238, 0.15);
-  color: var(--color-info);
-}
-
 /* ============================================================
    20. RESPONSIVE DESIGN
    ============================================================ */
 
 /* Large tablets - stack dashboard grid earlier for better readability */
 @media (max-width: 1024px) {
-  .scanner-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .dashboard-grid {
-    grid-template-columns: 1fr;
-    gap: var(--space-md);  /* Reduced gap in single-column mode */
-  }
 
   /* Compact security score section in single-column mode */
   .security-score {
@@ -3471,23 +2711,6 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 
   .security-score h2 {
     margin-bottom: var(--space-md);
-  }
-
-  .score-display {
-    margin-bottom: var(--space-md);
-  }
-
-  /* Compact quick actions in single-column mode */
-  .quick-actions {
-    padding: var(--space-md);
-  }
-
-  .quick-actions h2 {
-    margin-bottom: var(--space-md);
-  }
-
-  .action-buttons {
-    gap: var(--space-md);
   }
 
   /* Hardening selection: narrow/tiled window stacks to a single calm
@@ -3509,21 +2732,8 @@ details[open] summary { border-bottom: 1px solid var(--border); }
     --content-padding: 16px;
   }
 
-  .report-summary {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .analysis-header {
     flex-direction: column;
-  }
-
-  .header-actions {
-    width: 100%;
-    flex-direction: column;
-  }
-
-  .mini-security-score {
-    justify-content: center;
   }
 
   .tab-bar {
@@ -3534,34 +2744,12 @@ details[open] summary { border-bottom: 1px solid var(--border); }
     justify-content: flex-start;
   }
 
-  .section-toggle {
-    width: 100%;
-  }
-
-  .section-btn {
-    flex: 1;
-    justify-content: center;
-  }
 }
 
 /* Mobile */
 @media (max-width: 480px) {
   :root {
     --content-padding: 12px;
-  }
-
-  .score-display {
-    width: 140px;
-    height: 140px;
-  }
-
-  .score-value {
-    font-size: 2rem;
-  }
-
-  .framework-grid,
-  .report-summary {
-    grid-template-columns: 1fr;
   }
 
   .btn-large {
@@ -3578,7 +2766,6 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 @media (pointer: coarse) {
   .btn,
   .tab-button,
-  .section-btn,
   .sidebar-link {
     min-height: 44px;
   }
@@ -3612,103 +2799,6 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 /* ============================================================
    22. REMOTE SCANNING PAGE
    ============================================================ */
-
-.remote-page {
-    gap: var(--space-md);
-}
-
-.remote-layout {
-    display: grid;
-    grid-template-columns: 280px 1fr;
-    gap: var(--space-lg);
-}
-
-.remote-sidebar {
-    border-right: 1px solid var(--border);
-    padding-right: var(--space-md);
-}
-
-.remote-main {
-    min-width: 0;
-}
-
-@media (max-width: 768px) {
-    .remote-layout {
-        grid-template-columns: 1fr;
-    }
-    .remote-sidebar {
-        border-right: none;
-        border-bottom: 1px solid var(--border);
-        padding-right: 0;
-        padding-bottom: var(--space-md);
-    }
-}
-
-/* --- Host List Sidebar --- */
-
-.host-list-title {
-    font-size: var(--font-size-sub);
-    font-weight: 600;
-    margin-bottom: var(--space-sm);
-    color: var(--text-primary);
-}
-
-.host-entries {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-xs);
-}
-
-.host-entry {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-xs);
-    padding: var(--space-sm);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    background: var(--bg-secondary);
-    transition: border-color var(--transition-fast);
-}
-
-.host-entry:hover {
-    border-color: var(--color-accent);
-}
-
-.host-entry--active {
-    border-color: var(--color-accent);
-    background: var(--bg-tertiary);
-}
-
-.host-entry-info {
-    display: flex;
-    flex-direction: column;
-}
-
-.host-entry-name {
-    font-weight: 600;
-    font-size: var(--font-size-body);
-    color: var(--text-primary);
-}
-
-.host-entry-detail {
-    font-size: var(--font-size-sm);
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-}
-
-.host-entry-actions {
-    display: flex;
-    gap: var(--space-xs);
-    flex-wrap: wrap;
-}
-
-.host-add-button {
-    width: 100%;
-    margin-top: var(--space-sm);
-}
 
 /* --- Host Form --- */
 
@@ -3753,100 +2843,6 @@ details[open] summary { border-bottom: 1px solid var(--border); }
     display: flex;
     gap: var(--space-sm);
     margin-top: var(--space-xs);
-}
-
-/* --- Remote Status Panel --- */
-
-.remote-empty {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-md);
-    padding: var(--space-lg);
-    color: var(--text-muted);
-}
-
-.remote-guide-title {
-    font-size: var(--font-size-sub);
-    font-weight: 600;
-    color: var(--text-secondary);
-    margin: 0;
-}
-
-.remote-guide-steps {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-sm);
-    counter-reset: guide-step;
-}
-
-.remote-guide-steps li {
-    counter-increment: guide-step;
-    display: flex;
-    align-items: baseline;
-    gap: var(--space-sm);
-    font-size: var(--font-size-body);
-    line-height: 1.5;
-}
-
-.remote-guide-steps li::before {
-    content: counter(guide-step);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 1.5rem;
-    height: 1.5rem;
-    border-radius: 50%;
-    background: var(--bg-tertiary);
-    color: var(--text-secondary);
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    flex-shrink: 0;
-}
-
-.remote-connected-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: var(--space-sm) var(--space-md);
-    background: var(--bg-secondary);
-    border: 1px solid var(--color-accent);
-    border-radius: var(--radius-sm, 6px);
-    margin-bottom: var(--space-md);
-}
-
-.remote-connected-info {
-    display: flex;
-    flex-direction: column;
-}
-
-.remote-connected-label {
-    font-size: var(--font-size-sm);
-    color: var(--text-muted);
-}
-
-.remote-connected-host {
-    font-family: var(--font-mono);
-    font-weight: 600;
-    color: var(--color-accent);
-}
-
-.remote-connected-actions {
-    display: flex;
-    gap: var(--space-sm);
-}
-
-.remote-results {
-    margin-top: var(--space-md);
-}
-
-.remote-results-title {
-    font-size: var(--font-size-sub);
-    font-weight: 600;
-    margin-bottom: var(--space-sm);
-    color: var(--text-primary);
 }
 
 /* =============================================================
@@ -4171,15 +3167,6 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   background: var(--bg-elevated);
 }
 
-.finding-row-selected {
-  background: var(--bg-elevated);
-  border-left: 3px solid var(--color-accent);
-}
-
-.finding-row-selected:focus-visible {
-  border-left: 3px solid var(--color-accent);
-}
-
 /* Inline delete confirmation */
 .confirm-delete-inline {
   display: inline-flex;
@@ -4200,8 +3187,6 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 }
 
 /* Copy button and layout helpers */
-.detail-header-actions,
-.report-card-actions,
 .detail-file-header {
   display: flex;
   align-items: center;
@@ -4224,11 +3209,6 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 }
 
 /* Muted intro paragraph below the card heading. */
-.fleet-intro {
-  color: var(--text-secondary);
-  font-size: var(--font-size-sub);
-  margin-bottom: var(--space-md);
-}
 
 /* Host selection fieldset - reuses the global fieldset token for border/radius
    but adds a touch of vertical rhythm between its children. */
@@ -4255,72 +3235,6 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 
 .fleet-host-option:hover {
   color: var(--text-primary);
-}
-
-/* Wrapper around the results <table> - provides top margin only;
-   the <table> itself reuses .findings-table for its cell/border rules. */
-.fleet-table {
-  margin-top: var(--space-md);
-  overflow-x: auto;
-}
-
-/* Base result row - no extra decoration; inherits tbody tr hover. */
-.fleet-row {
-  outline: none;
-}
-
-/* Rows that can be expanded show a pointer and a subtle left accent on hover. */
-.fleet-row-expandable {
-  cursor: pointer;
-}
-
-.fleet-row-expandable:hover,
-.fleet-row-expandable:focus-visible {
-  background-color: var(--bg-elevated);
-  outline: 2px solid var(--color-accent);
-  outline-offset: -2px;
-}
-
-/* Expanded findings panel - inset background to visually nest under parent row. */
-.fleet-detail-row td {
-  padding: var(--space-sm) var(--space-md);
-  background-color: var(--bg-tertiary);
-  border-bottom: 2px solid var(--border);
-}
-
-/* Status cell colour helpers - reuse existing semantic colour tokens. */
-.fleet-ok {
-  color: var(--color-good-bright);
-  font-weight: 600;
-}
-
-.fleet-failed {
-  color: var(--color-critical-bright);
-  font-weight: 600;
-}
-
-/* CIS score cell - colour the percentage text directly. The shared .score-*
-   classes only colour a .score-value child (a bare table cell has none), so
-   the fleet table scopes its own colour like .fleet-ok above. */
-.fleet-table td.score-good {
-  color: var(--color-good-bright);
-  font-weight: 600;
-}
-
-.fleet-table td.score-warning {
-  color: var(--color-warning-bright);
-  font-weight: 600;
-}
-
-.fleet-table td.score-critical {
-  color: var(--color-critical-bright);
-  font-weight: 600;
-}
-
-/* Per-host framework breakdown inside the expander - separate it from the
-   findings grid rendered below. */
-.fleet-compliance-summary {
-  margin-bottom: var(--space-md);
 }
 
 /* ============================================================
@@ -4449,9 +3363,9 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
 }
-.fleet-stat.score-good { color: var(--color-good-bright); }
-.fleet-stat.score-warning { color: var(--color-warning-bright); }
-.fleet-stat.score-critical { color: var(--color-critical-bright); }
+.fleet-stat.score-good { color: var(--color-good-bright); box-shadow: none; }
+.fleet-stat.score-warning { color: var(--color-warning-bright); box-shadow: none; }
+.fleet-stat.score-critical { color: var(--color-critical-bright); box-shadow: none; }
 
 .fleet-glyph {
   font-weight: 700;
@@ -4463,84 +3377,6 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 /* ============================================================
    26. UNCHECKED CHECKS (PRIVILEGED DEEP SCAN)
    ============================================================ */
-
-/* Requires-privileges presentation: always muted, never severity-coloured -
-   these are unverifiable checks, not findings. */
-.unchecked-banner {
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
-  padding: var(--space-md) var(--space-lg);
-  border: 1px dashed var(--border);
-  border-radius: var(--border-radius);
-  color: var(--text-muted);
-  margin-bottom: var(--space-lg);
-}
-
-.unchecked-banner-text {
-  flex: 1;
-}
-
-.unchecked-banner-button {
-  background-color: transparent;
-  color: var(--text-secondary);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 8px 16px;
-  font-size: var(--font-size-body);
-  font-weight: 600;
-  transition: background-color var(--transition-fast), color var(--transition-fast);
-}
-
-.unchecked-banner-button:hover:not(:disabled) {
-  background-color: var(--bg-tertiary);
-  color: var(--text-primary);
-}
-
-.unchecked-banner-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.unchecked-section {
-  margin-top: var(--space-lg);
-}
-
-.unchecked-heading {
-  font-size: var(--font-size-caption);
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: var(--space-sm);
-}
-
-.score-unchecked,
-.unchecked-reason {
-  color: var(--text-muted);
-}
-
-.score-unchecked {
-  font-size: var(--font-size-sm);
-  margin-top: var(--space-xs);
-}
-
-.unchecked-list {
-  list-style: none;
-  padding: 0;
-}
-
-.unchecked-row {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-lg);
-  padding: var(--space-sm) 0;
-  border-bottom: 1px solid var(--border);
-  color: var(--text-muted);
-}
-
-.unchecked-row:last-child {
-  border-bottom: none;
-}
 
 /* ============================================================
    Dashboard - security score hero (Phase 3)

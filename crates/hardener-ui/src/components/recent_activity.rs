@@ -69,7 +69,14 @@ pub fn RecentActivity() -> impl IntoView {
                             <div class="activity-content">
                                 <span class="activity-title">"Security Scan"</span>
                                 <span class="activity-meta">
-                                    {move || format!("{} findings detected", finding_count())}
+                                    {move || {
+                                        let count = finding_count();
+                                        format!(
+                                            "{} finding{} detected",
+                                            count,
+                                            if count == 1 { "" } else { "s" },
+                                        )
+                                    }}
                                 </span>
                             </div>
                             <A href="/analysis" attr:class="activity-link">"View"</A>

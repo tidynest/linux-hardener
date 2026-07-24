@@ -151,7 +151,12 @@ pub fn FindingsTab() -> impl IntoView {
                         {move || if is_filtered() {
                             format!("{} of {} findings", filtered_count(), total_count())
                         } else {
-                            format!("{} findings detected", total_count())
+                            let total = total_count();
+                            format!(
+                                "{} finding{} detected",
+                                total,
+                                if total == 1 { "" } else { "s" },
+                            )
                         }}
                     </span>
                     <div class="findings-filters">
@@ -252,7 +257,14 @@ pub fn FindingsTab() -> impl IntoView {
 
                 <Show when=move || unchecked_count() != 0>
                     <p class="findings-unchecked">
-                        {move || format!("{} checks not verifiable without privileges. ", unchecked_count())}
+                        {move || {
+                            let count = unchecked_count();
+                            format!(
+                                "{} check{} not verifiable without privileges. ",
+                                count,
+                                if count == 1 { "" } else { "s" },
+                            )
+                        }}
                         <button class="link-button" on:click=on_deep_scan disabled=move || deep_running.get()>
                             {move || if deep_running.get() { "Scanning..." } else { "Run with sudo" }}
                         </button>

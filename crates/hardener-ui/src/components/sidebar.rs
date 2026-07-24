@@ -2,10 +2,11 @@
 //!
 //! Replaces the old flat top navigation bar. Routes are grouped Local
 //! (Dashboard/Analysis/Hardening) and Fleet (Hosts/Fleet Apply/Scheduler),
-//! with a pinned Settings area underneath holding the theme switcher
-//! (Settings has no route of its own yet). Every link is a `leptos_router`
-//! `<A>`, so the active-route highlight keys off the `aria-current="page"`
-//! attribute the router already sets - no manual route comparison needed.
+//! with a pinned Settings area underneath holding a routed link to the
+//! Settings page plus the theme quick-switch. Every link is a
+//! `leptos_router` `<A>`, so the active-route highlight keys off the
+//! `aria-current="page"` attribute the router already sets - no manual
+//! route comparison needed.
 
 use super::ThemeToggle;
 use super::icons::{

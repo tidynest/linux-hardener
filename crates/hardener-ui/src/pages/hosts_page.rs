@@ -280,7 +280,10 @@ pub fn HostsPage() -> impl IntoView {
                     {move || if adhoc_open.get() { "Hide ad-hoc target" } else { "Add ad-hoc target" }}
                 </button>
                 <span class="hosts-count">
-                    {move || format!("{} hosts", app.remote_hosts.get().len() + adhoc.get().len())}
+                    {move || {
+                        let count = app.remote_hosts.get().len() + adhoc.get().len();
+                        format!("{} host{}", count, if count == 1 { "" } else { "s" })
+                    }}
                 </span>
             </div>
 

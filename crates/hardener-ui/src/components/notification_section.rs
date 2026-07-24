@@ -112,7 +112,10 @@ pub fn NotificationSection(form: SchedulerForm) -> impl IntoView {
                         }
                     }}
                 </button>
-                <Show when=move || test_result.get().is_some()>
+                // Always-present live region so the test result is announced
+                // when it appears (a region that only mounts with its content
+                // is not reliably read by screen readers).
+                <div class="notification-test-region" role="status" aria-live="polite">
                     {move || {
                         test_result
                             .get()
@@ -125,7 +128,7 @@ pub fn NotificationSection(form: SchedulerForm) -> impl IntoView {
                                 view! { <span class=class>{msg}</span> }
                             })
                     }}
-                </Show>
+                </div>
             </div>
         </div>
     }

@@ -1,15 +1,14 @@
 use crate::types::{
-    ApplyResult, ComplianceReport, ConfigSummary, Finding, RollbackResult, ScanResult,
-    SchedulerUiConfig, Severity,
+    ApplyResult, ComplianceReport, ConfigSummary, Finding, ScanResult, SchedulerUiConfig, Severity,
 };
 use hardener_types::ValidationReport;
 use hardener_types::remote::{RemoteConnectionInfo, RemoteHostProfile};
 use leptos::prelude::*;
 
 /// Total number of unchecked (requires-privileges) checks across scan
-/// results. Raw, undeduplicated sum: the banner and score badge report this
-/// as the honest count of unverified checks. Shared by UncheckedBanner and
-/// SecurityScore, which call it inside their reactive closures.
+/// results. Raw, undeduplicated sum: the score badge reports this as the
+/// honest count of unverified checks. Shared only by SecurityScore, which
+/// calls it inside its reactive closures.
 pub fn total_unchecked(results: &[ScanResult]) -> usize {
     results.iter().map(|r| r.scan_unchecked.len()).sum()
 }
@@ -33,8 +32,6 @@ pub struct AppState {
     /// History of apply operations.
     /// Stores results from each hardening application.
     pub apply_results: RwSignal<Vec<ApplyResult>>,
-    /// Result from the most recent rollback operation.
-    pub rollback_result: RwSignal<Option<RollbackResult>>,
     /// Whether a system scan is currently in progress.
     pub is_scanning: RwSignal<bool>,
     /// Whether hardening changes are currently being applied.
@@ -57,8 +54,6 @@ pub struct AppState {
     pub remote_hosts: RwSignal<Vec<RemoteHostProfile>>,
     /// Currently active remote connection info (None = disconnected).
     pub remote_connection: RwSignal<Option<RemoteConnectionInfo>>,
-    /// Results from the most recent remote scan.
-    pub remote_scan_results: RwSignal<Vec<ScanResult>>,
     /// Whether an SSH connection attempt is in progress.
     pub is_connecting: RwSignal<bool>,
     /// Whether a remote scan is currently running.
@@ -73,9 +68,9 @@ pub struct AppState {
     pub config_path: RwSignal<Option<String>>,
     /// Validation summary for the currently selected config file.
     pub config_summary: RwSignal<Option<ConfigSummary>>,
-    /// Whether a privileged deep scan is currently running. Shared across
-    /// every `UncheckedBanner` instance (Dashboard and Analysis both mount
-    /// one) so the two buttons disable together during a single run.
+    /// Whether a privileged deep scan is currently running. Shared by the
+    /// Dashboard hero and the Findings honesty footer so their two deep-scan
+    /// buttons disable together during a single run.
     pub deep_scan_running: RwSignal<bool>,
     /// Active colour theme id (see `crate::utils::theme::THEMES`). The single
     /// source of truth shared by the sidebar quick-switch and the Settings
@@ -91,7 +86,6 @@ impl Default for AppState {
             selected_finding: RwSignal::new(None),
             severity_filter: RwSignal::new(None),
             apply_results: RwSignal::new(Vec::new()),
-            rollback_result: RwSignal::new(None),
             is_scanning: RwSignal::new(false),
             is_applying: RwSignal::new(false),
             compliance_reports: RwSignal::new(Vec::new()),
@@ -102,7 +96,6 @@ impl Default for AppState {
             error_message: RwSignal::new(None),
             remote_hosts: RwSignal::new(Vec::new()),
             remote_connection: RwSignal::new(None),
-            remote_scan_results: RwSignal::new(Vec::new()),
             is_connecting: RwSignal::new(false),
             is_remote_scanning: RwSignal::new(false),
             scheduler_config: RwSignal::new(None),

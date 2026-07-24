@@ -57,6 +57,13 @@ pub fn ScheduleSection(form: SchedulerForm) -> impl IntoView {
                         .map(|(label, _)| view! { <option value=*label>{*label}</option> })
                         .collect::<Vec<_>>()}
                 </select>
+                // Surfaced regardless of whether Advanced is open: a non-empty
+                // custom cron always overrides the preset above (see
+                // `utils::effective_schedule_cron`), so collapsing Advanced
+                // must never hide that the preset select is a no-op.
+                <Show when=move || !form.custom_cron.get().is_empty()>
+                    <span class="scheduler-override-note">"Custom schedule active"</span>
+                </Show>
             </div>
 
             <div class="form-row">
@@ -127,9 +134,6 @@ pub fn ScheduleSection(form: SchedulerForm) -> impl IntoView {
                         <span class="form-hint">
                             "Format: sec min hour day month weekday. A custom cron overrides the preset above."
                         </span>
-                        <Show when=move || !form.custom_cron.get().is_empty()>
-                            <span class="scheduler-override-note">"Custom schedule active"</span>
-                        </Show>
                     </div>
                 </Show>
             </div>

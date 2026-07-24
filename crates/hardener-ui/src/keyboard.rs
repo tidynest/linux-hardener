@@ -62,7 +62,7 @@ pub fn use_global_keyboard(app_state: AppState) {
             }
             "4" if ctrl && !shift && !alt => {
                 ev.prevent_default();
-                navigate("/remote", Default::default());
+                navigate("/fleet", Default::default());
             }
             "5" if ctrl && !shift && !alt => {
                 ev.prevent_default();

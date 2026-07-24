@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 use leptos_router::{
-    StaticSegment,
+    NavigateOptions, StaticSegment,
     components::{Route, Router, Routes},
 };
 use wasm_bindgen::closure::Closure;
@@ -158,7 +158,15 @@ fn GlobalHooks() -> impl IntoView {
 #[component]
 fn RedirectToFleet() -> impl IntoView {
     let navigate = leptos_router::hooks::use_navigate();
-    Effect::new(move |_| navigate("/fleet", Default::default()));
+    Effect::new(move |_| {
+        navigate(
+            "/fleet",
+            NavigateOptions {
+                replace: true,
+                ..Default::default()
+            },
+        )
+    });
     view! { <span></span> }
 }
 

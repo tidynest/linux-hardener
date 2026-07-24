@@ -8,20 +8,20 @@
 //!
 //! This is the project's fixed status/flag vocabulary (redesign handoff,
 //! section 2): one glyph plus one colour always means the same thing
-//! everywhere it appears (applied/Failed/Manual step/Skipped, the `(i)` help
-//! affordance, and the drawer diff arrow). Icons are decorative - the
-//! adjoining text or the caller's `aria-label` carries the meaning - so
-//! every glyph is `aria-hidden="true"`. Colour and size are entirely the
-//! caller's call via the `class` prop (`currentColor`, no width/height/fill
-//! in the markup).
+//! everywhere it appears (applied/Failed/Manual step/Skipped, and the `(i)`
+//! help affordance). Icons are decorative - the adjoining text or the
+//! caller's `aria-label` carries the meaning - so every glyph is
+//! `aria-hidden="true"`. Colour and size are entirely the caller's call via
+//! the `class` prop (`currentColor`, no width/height/fill in the markup).
 //!
-//! Task 2a.1 only calls `IconCheck` and `IconInfo`; the other four are
-//! defined now (per the redesign plan) so the review/drawer/done/partial
-//! slices import rather than re-add. `#[allow(dead_code)]` per-item does not
-//! reliably suppress this, because Leptos's `#[component]` macro expands
-//! each icon into a function plus a separate Props struct that does not
-//! inherit an outer attribute; a module-level allow covers both, the same
-//! way `card.rs` allows `dead_code` on `CardVariant`'s not-yet-used variants.
+//! `IconCheck`, `IconX`, `IconWrench`, `IconMinus`, and `IconInfo` are all
+//! called from views (see the review/drawer/done/partial slices and the
+//! rollback modal). `#[allow(dead_code)]` per-item does not reliably
+//! suppress dead-code warnings, because Leptos's `#[component]` macro
+//! expands each icon into a function plus a separate Props struct that does
+//! not inherit an outer attribute; a module-level allow covers both, the
+//! same way `card.rs` allows `dead_code` on `CardVariant`'s not-yet-used
+//! variants.
 #![allow(dead_code)]
 
 use leptos::prelude::*;
@@ -81,10 +81,4 @@ status_icon!(
     /// apply flow.
     IconInfo,
     r#"<circle cx="12" cy="12" r="9"/><path d="M12 8.5h.01"/><path d="M11 12h1v4h1"/>"#
-);
-
-status_icon!(
-    /// Reserved for the admin drawer's `current -> new` diff arrow.
-    IconArrowRight,
-    r#"<path d="M5 12l14 0"/><path d="M13 18l6 -6"/><path d="M13 6l6 6"/>"#
 );

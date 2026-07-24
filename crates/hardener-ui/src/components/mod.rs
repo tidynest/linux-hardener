@@ -49,12 +49,7 @@ pub use schedule_section::ScheduleSection;
 pub use security_score::{SecurityScore, calculate_all_scores};
 pub use segmented_control::SegmentedControl;
 pub use sidebar::Sidebar;
-// IconX/IconWrench/IconMinus/IconArrowRight are not yet called from any
-// view - the review/drawer/done/partial slices wire them up (see
-// status_icons.rs). Defined now so those slices import rather than re-add.
-#[allow(unused_imports)]
-pub use status_icons::{IconArrowRight, IconMinus, IconWrench, IconX};
-pub use status_icons::{IconCheck, IconInfo};
+pub use status_icons::{IconCheck, IconInfo, IconMinus, IconWrench, IconX};
 pub use tabs::{TabBar, TabDef, TabPanel};
 pub use theme_picker::ThemePicker;
 pub use theme_toggle::ThemeToggle;
