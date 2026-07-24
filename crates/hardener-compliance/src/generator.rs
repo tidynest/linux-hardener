@@ -189,7 +189,11 @@ impl ReportGenerator {
     }
 }
 
-/// Collects all findings mapping to a given `(framework, control_id)`.
+/// Collects all findings mapping to a given `(framework, control_id)` that are
+/// still live violations. A finding carrying a policy exception (Task 2-8:
+/// `Plugin::scan` already validated it against config) is excluded, so an
+/// excepted deviation cannot drive the control to Fail; it stays attached to
+/// the finding for visibility elsewhere, just not counted here.
 fn related_findings(
     findings: &[Finding],
     framework: &ComplianceFramework,
@@ -198,9 +202,10 @@ fn related_findings(
     findings
         .iter()
         .filter(|f| {
-            f.finding_compliance.iter().any(|c| {
-                c.compliance_framework == *framework && c.compliance_control_id == control_id
-            })
+            f.finding_policy_exception.is_none()
+                && f.finding_compliance.iter().any(|c| {
+                    c.compliance_framework == *framework && c.compliance_control_id == control_id
+                })
         })
         .cloned()
         .collect()
@@ -210,7 +215,9 @@ fn related_findings(
 mod tests {
     use super::*;
     use crate::config::{OutputFormat, Scenario};
-    use hardener_common::types::{ComplianceProfile, FindingCategory, Severity};
+    use hardener_common::types::{
+        ComplianceProfile, FindingCategory, FindingPolicyException, Severity,
+    };
 
     /// A finding carrying a single CIS mapping for the given control id.
     fn cis_finding(control_id: &str) -> Finding {
@@ -345,6 +352,25 @@ mod tests {
             .find(|c| c.control_id == "1.5.1")
             .unwrap();
         assert_eq!(result.control_status, ControlStatus::Fail);
+    }
+
+    #[test]
+    fn excepted_finding_does_not_fail_control() {
+        // A finding annotated with a policy exception (set by Plugin::scan when
+        // the value matches a valid config exception) must not drive its
+        // control to Fail: the annotation is honoured, not merely recorded.
+        let coverage = vec![mapping(ComplianceFramework::CIS, "1.5.1")];
+        let generator = ReportGenerator::new(config_for(ComplianceFramework::CIS), coverage);
+        let mut excepted = cis_finding("1.5.1");
+        excepted.finding_policy_exception = Some(FindingPolicyException::default());
+        let report = generator.generate(&[excepted], &[]).pop().unwrap();
+
+        let result = report
+            .report_controls
+            .iter()
+            .find(|c| c.control_id == "1.5.1")
+            .expect("1.5.1 in catalogue");
+        assert_ne!(result.control_status, ControlStatus::Fail);
     }
 
     #[test]
