@@ -915,7 +915,7 @@ impl HardeningPlugin for SshHardeningPlugin {
         vec![]
     }
 
-    async fn scan(&self, ctx: &Context, _config: &PluginConfig) -> Result<ScanResult> {
+    async fn scan(&self, ctx: &Context, config: &PluginConfig) -> Result<ScanResult> {
         let start_time = Instant::now();
         let mut findings = Vec::new();
         let plugin_id = PluginId::new("ssh-hardening");
@@ -962,12 +962,22 @@ impl HardeningPlugin for SshHardeningPlugin {
                 false,
             );
 
+            // Directive override takes precedence over the built-in baseline.
+            let target = config
+                .directives
+                .get(directive.ssh_directive_name)
+                .map(|s| s.as_str())
+                .unwrap_or(directive.ssh_secure_value);
+
             let is_insecure = match current_value {
-                Some(ref value) => value != directive.ssh_secure_value,
+                Some(ref value) => value != target,
                 None => true, // Missing directive is insecure
             };
 
             if is_insecure {
+                let policy_exception = config
+                    .has_valid_exception(directive.ssh_directive_name)
+                    .map(|e| e.to_finding_exception());
                 findings.push(Finding {
                     finding_category: FindingCategory::Network,
                     finding_current_value: current_value.unwrap_or_else(|| "not set".to_string()),
@@ -979,11 +989,11 @@ impl HardeningPlugin for SshHardeningPlugin {
                     finding_id: format!("ssh-{}", directive.ssh_directive_name.to_lowercase()),
                     finding_impact: "May allow unauthorised access or weaken SSH security"
                         .to_string(),
-                    finding_recommended_value: directive.ssh_secure_value.to_string(),
+                    finding_recommended_value: target.to_string(),
                     finding_remediation_steps: vec![
                         format!(
                             "Edit /etc/ssh/sshd_config and set: {} {}",
-                            directive.ssh_directive_name, directive.ssh_secure_value,
+                            directive.ssh_directive_name, target,
                         ),
                         "Restart SSH service: systemctl restart sshd".to_string(),
                     ],
@@ -993,7 +1003,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                         directive.ssh_directive_name,
                     ),
                     finding_compliance: get_ssh_compliance_mappings(directive.ssh_directive_name),
-                    finding_policy_exception: None,
+                    finding_policy_exception: policy_exception,
                 });
             }
         }
@@ -1010,6 +1020,9 @@ impl HardeningPlugin for SshHardeningPlugin {
             );
 
             if !crypto_value_is_secure(current_value.as_deref(), crypto.crypto_desired) {
+                let policy_exception = config
+                    .has_valid_exception(crypto.crypto_directive_name)
+                    .map(|e| e.to_finding_exception());
                 findings.push(Finding {
                     finding_category: FindingCategory::Network,
                     finding_current_value: current_value.unwrap_or_else(|| "not set".to_string()),
@@ -1037,7 +1050,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                         crypto.crypto_directive_name,
                     ),
                     finding_compliance: get_ssh_compliance_mappings(crypto.crypto_directive_name),
-                    finding_policy_exception: None,
+                    finding_policy_exception: policy_exception,
                 });
             }
         }

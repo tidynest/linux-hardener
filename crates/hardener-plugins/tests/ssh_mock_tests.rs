@@ -1190,6 +1190,106 @@ async fn ssh_apply_still_writes_and_restarts_when_config_drifts() {
 }
 
 #[tokio::test]
+async fn scan_honours_directive_override() {
+    // Baseline for a directive whose actual value equals the built-in secure
+    // value (MaxAuthTries 3), but a stricter directive override makes it
+    // non-compliant -> a finding appears even though the host already meets
+    // the hardcoded baseline.
+    let executor = secure_ssh_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = SshHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config
+        .directives
+        .insert("MaxAuthTries".to_string(), "2".to_string());
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "ssh-maxauthtries")
+        .unwrap_or_else(|| {
+            panic!(
+                "stricter directive should surface a finding, got: {:?}",
+                result
+                    .scan_findings
+                    .iter()
+                    .map(|f| &f.finding_id)
+                    .collect::<Vec<_>>()
+            )
+        });
+
+    // Target-dependent field must reflect the override value (2), not the
+    // hardcoded baseline (3) - otherwise the finding would self-contradict
+    // by recommending the value the host is already at.
+    assert_eq!(
+        finding.finding_recommended_value, "2",
+        "recommended value should reflect the directive override, not the baseline"
+    );
+}
+
+#[tokio::test]
+async fn scan_annotates_valid_exception() {
+    // A non-compliant host with valid exceptions on one directive finding
+    // (PermitRootLogin) and one crypto finding (KexAlgorithms): exceptions
+    // annotate findings, they never drop them, so both stay present and both
+    // carry the exception annotation.
+    let executor = insecure_ssh_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = SshHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "PermitRootLogin".to_string(),
+        PolicyException {
+            value: "yes".to_string(),
+            allowed: true,
+            reason: "Legacy jump host".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+    config.exceptions.insert(
+        "KexAlgorithms".to_string(),
+        PolicyException {
+            value: "not set".to_string(),
+            allowed: true,
+            reason: "Vendor appliance lacks strong KEX support".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let directive_finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "ssh-permitrootlogin")
+        .expect("non-compliant directive should still produce a finding");
+    assert!(
+        directive_finding.finding_policy_exception.is_some(),
+        "directive finding should be annotated with the valid exception"
+    );
+
+    let crypto_finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "ssh-kexalgorithms")
+        .expect("non-compliant crypto directive should still produce a finding");
+    assert!(
+        crypto_finding.finding_policy_exception.is_some(),
+        "crypto finding should be annotated with the valid exception"
+    );
+}
+
+#[tokio::test]
 async fn ssh_exception_and_weak_crypto_skips_are_not_counted_as_applied() {
     // An already-hardened host with a policy exception on one directive and
     // crypto directives the host advertises no strong algorithm for (no
