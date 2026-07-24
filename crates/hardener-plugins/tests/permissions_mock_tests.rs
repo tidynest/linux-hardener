@@ -600,6 +600,82 @@ async fn test_permissions_apply_skips_exceptions() {
 }
 
 #[tokio::test]
+async fn scan_honours_directive_override() {
+    // Baseline for /root is already compliant (0700), but a stricter
+    // directive override (0500) makes it non-compliant -> a finding appears
+    // even though the host already meets the hardcoded baseline.
+    let executor = secure_permissions_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PermissionsHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config
+        .directives
+        .insert("/root".to_string(), "500".to_string());
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "perm--root")
+        .unwrap_or_else(|| {
+            panic!(
+                "stricter directive should surface a finding, got: {:?}",
+                result
+                    .scan_findings
+                    .iter()
+                    .map(|f| &f.finding_id)
+                    .collect::<Vec<_>>()
+            )
+        });
+
+    // Target-dependent field must reflect the override value (0500), not the
+    // hardcoded baseline (0700) - otherwise the finding would self-contradict
+    // by recommending the value the host is already at.
+    assert_eq!(
+        finding.finding_recommended_value, "0500",
+        "recommended value should reflect the directive override, not the baseline"
+    );
+}
+
+#[tokio::test]
+async fn scan_annotates_valid_exception() {
+    // /root violates baseline (0755 vs 0700) with a valid exception recorded:
+    // exceptions annotate findings, they never drop them, so the finding
+    // stays present and carries the exception annotation.
+    let executor = insecure_permissions_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PermissionsHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "/root".to_string(),
+        PolicyException {
+            value: "0755".to_string(),
+            allowed: true,
+            reason: "Shared admin access".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "perm--root")
+        .expect("non-compliant path should still produce a finding");
+    assert!(
+        finding.finding_policy_exception.is_some(),
+        "finding should be annotated with the valid exception"
+    );
+}
+
+#[tokio::test]
 async fn test_permissions_validate_skips_exceptions() {
     let executor = insecure_permissions_executor();
     let ctx = Context::with_executor(Arc::new(executor));

@@ -275,12 +275,22 @@ enum PermissionCheck {
 
 /// Assesses one critical path's permissions.
 ///
+/// A directive override in `config` (an octal string keyed by
+/// `permission_path`) replaces the built-in baseline mode before the
+/// compliance check runs, so a stricter override can flag an
+/// otherwise-compliant path. A valid policy exception for the path annotates
+/// a resulting finding via `finding_policy_exception` rather than dropping it.
+///
 /// Returns [`PermissionCheck::Insecure`] when the path violates its directive on
 /// a POSIX filesystem, [`PermissionCheck::NonPosix`] when it violates but sits on
 /// a filesystem that cannot hold POSIX permissions (reported as unchecked with
 /// fstab guidance, never a false finding), and [`PermissionCheck::Clear`] when
 /// the path is compliant, missing or unreadable.
-async fn check_path_permissions(ctx: &Context, directive: &PermissionDirective) -> PermissionCheck {
+async fn check_path_permissions(
+    ctx: &Context,
+    directive: &PermissionDirective,
+    config: &PluginConfig,
+) -> PermissionCheck {
     let path = Path::new(directive.permission_path);
 
     // Skip if path doesn't exist
@@ -297,6 +307,22 @@ async fn check_path_permissions(ctx: &Context, directive: &PermissionDirective) 
     // Get current permissions (only last 9 bits = rwxrwxrwx)
     let current_mode = metadata.mode & 0o777;
 
+    // Build an effective directive: an octal directive override wins over the
+    // built-in baseline (mirrors apply :899-907 / validate :960-964),
+    // preserving permission_max_mask so mask semantics (a stricter mode is
+    // compliant) still apply to the overridden target. Shadowing `directive`
+    // means every downstream use (violates/target_mode/finding fields) picks
+    // up the override without further changes.
+    let mut effective = directive.clone();
+    if let Some(mode) = config
+        .directives
+        .get(directive.permission_path)
+        .and_then(|s| u32::from_str_radix(s, 8).ok())
+    {
+        effective.permission_mode = mode;
+    }
+    let directive = &effective;
+
     // Compliant: nothing to report (and no filesystem probe needed).
     if !violates(directive, current_mode) {
         return PermissionCheck::Clear;
@@ -310,6 +336,9 @@ async fn check_path_permissions(ctx: &Context, directive: &PermissionDirective) 
     }
 
     let target = target_mode(directive, current_mode);
+    let policy_exception = config
+        .has_valid_exception(directive.permission_path)
+        .map(|e| e.to_finding_exception());
     PermissionCheck::Insecure(Box::new(Finding {
         finding_category: FindingCategory::FileSystem,
         finding_current_value: format!("{:04o}", current_mode),
@@ -328,7 +357,7 @@ async fn check_path_permissions(ctx: &Context, directive: &PermissionDirective) 
         finding_severity: directive.permission_severity,
         finding_title: format!("Insecure permissions on {}", directive.permission_path),
         finding_compliance: get_permissions_compliance_mappings(directive.permission_path),
-        finding_policy_exception: None,
+        finding_policy_exception: policy_exception,
     }))
 }
 
@@ -833,14 +862,14 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
         vec![]
     }
 
-    async fn scan(&self, ctx: &Context, _config: &PluginConfig) -> Result<ScanResult> {
+    async fn scan(&self, ctx: &Context, config: &PluginConfig) -> Result<ScanResult> {
         let start_time = Instant::now();
         let mut findings = Vec::new();
         let mut unchecked = Vec::new();
 
         // Check all critical permissions
         for directive in CRITICAL_PERMISSIONS {
-            match check_path_permissions(ctx, directive).await {
+            match check_path_permissions(ctx, directive, config).await {
                 PermissionCheck::Insecure(finding) => findings.push(*finding),
                 PermissionCheck::NonPosix(check) => unchecked.push(*check),
                 PermissionCheck::Clear => {}
