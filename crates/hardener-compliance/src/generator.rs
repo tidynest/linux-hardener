@@ -157,6 +157,10 @@ impl ReportGenerator {
         // catalogue is still a real failure and must appear in the report rather
         // than be silently dropped. (With derived catalogues this is rarely hit,
         // but it guarantees a wrong mapping can only ever over-report a failure.)
+        // `related` is already exception-filtered: if every finding mapped to
+        // this control turns out to be excepted, there is no live violation
+        // left to surface, so the control is skipped entirely rather than
+        // manufactured as a Fail with no backing evidence.
         let mut seen: HashSet<String> = controls.iter().map(|c| c.control_id.clone()).collect();
         for mapping in findings.iter().flat_map(|f| &f.finding_compliance) {
             if mapping.compliance_framework != *framework
@@ -165,6 +169,9 @@ impl ReportGenerator {
                 continue;
             }
             let related = related_findings(findings, framework, &mapping.compliance_control_id);
+            if related.is_empty() {
+                continue;
+            }
             controls.push(ControlResult {
                 control_id: mapping.compliance_control_id.clone(),
                 control_title: mapping.compliance_control_title.clone(),
@@ -371,6 +378,27 @@ mod tests {
             .find(|c| c.control_id == "1.5.1")
             .expect("1.5.1 in catalogue");
         assert_ne!(result.control_status, ControlStatus::Fail);
+    }
+
+    #[test]
+    fn excepted_finding_on_uncatalogued_control_is_not_emitted() {
+        // Safe-failure-net path: a finding mapped to a control absent from
+        // both the catalogue and coverage would normally still Fail (a wrong
+        // mapping can only ever over-report, per the net's own purpose). But
+        // when the SOLE finding mapped to that control is excepted, there is
+        // no live violation to surface, so the net must skip it entirely
+        // rather than manufacture a Fail row with an empty findings list.
+        let mut excepted = cis_finding("ZZ-UNCATALOGUED-9999");
+        excepted.finding_policy_exception = Some(FindingPolicyException::default());
+        let generator = ReportGenerator::new(config_for(ComplianceFramework::CIS), vec![]);
+        let report = generator.generate(&[excepted], &[]).pop().unwrap();
+
+        assert!(
+            report
+                .report_controls
+                .iter()
+                .all(|c| c.control_id != "ZZ-UNCATALOGUED-9999")
+        );
     }
 
     #[test]
