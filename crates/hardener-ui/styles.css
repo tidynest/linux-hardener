@@ -543,7 +543,10 @@ body {
 }
 
 .sidebar-wordmark-text {
-  font-size: var(--font-size-head);
+  display: flex;
+  flex-direction: column;
+  font-size: var(--font-size-body);
+  line-height: 1.15;
   white-space: nowrap;
 }
 
@@ -713,10 +716,11 @@ body {
   padding: var(--space-xs) var(--space-lg);
 }
 
+/* Rail mode is icon-only: hide the theme quick-switch entirely. A native
+   <select> squeezed to icon width just clips to "For..."; the Settings icon
+   directly above routes to /settings, where the full theme picker lives. */
 .sidebar.rail .sidebar-settings-content {
-  display: flex;
-  justify-content: center;
-  padding: var(--space-xs) var(--space-sm);
+  display: none;
 }
 
 .sidebar-settings-content .theme-toggle {
@@ -725,13 +729,6 @@ body {
 
 .sidebar-settings-content .theme-select {
   width: 100%;
-}
-
-.sidebar.rail .theme-select {
-  width: var(--control-height);
-  padding-left: 0;
-  padding-right: var(--space-sm);
-  text-align: center;
 }
 
 /* Build identity at the sidebar foot: legible but visually quiet, so a
@@ -811,13 +808,6 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.1em;
   margin-bottom: var(--space-lg);
-}
-
-.score-max {
-  font-family: var(--font-mono);
-  font-size: clamp(0.75rem, 3vw, 1rem);  /* Scales with viewport */
-  color: var(--text-muted);
-  margin-top: var(--space-xs);
 }
 
 .score-critical { border-color: var(--color-critical); box-shadow: 0 0 20px rgba(239, 68, 68, 0.3); }
@@ -2351,46 +2341,6 @@ tbody tr:hover {
   margin-bottom: var(--space-md);
 }
 
-.activity-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
-  padding: var(--row-gap) 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.activity-item:last-child { border-bottom: none; }
-
-.activity-icon {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: var(--bg-tertiary);
-  border-radius: 6px;
-  font-size: var(--font-size-body);
-}
-
-.activity-icon.scan { color: var(--color-info); }
-.activity-icon.apply { color: var(--color-good-bright); }
-
-.activity-content {
-  flex: 1;
-  min-width: 0;  /* Allow text truncation */
-}
-
-.activity-title {
-  font-weight: 500;
-  color: var(--text-primary);
-  margin-bottom: 4px;
-}
-
-.activity-meta {
-  font-size: var(--font-size-body);
-  color: var(--text-muted);
-}
-
 /* ============================================================
    18. COMPLIANCE PAGE
    ============================================================ */
@@ -2412,12 +2362,6 @@ tbody tr:hover {
 .status-error {
   color: var(--color-critical);
   background-color: rgba(239, 68, 68, 0.1);
-}
-
-.compliance-score {
-  font-family: var(--font-mono);
-  font-size: var(--font-size-title);
-  font-weight: 700;
 }
 
 /* Expandable sections */
@@ -2445,17 +2389,6 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 .status-na { color: var(--text-muted); }
 
 .control-id { font-family: var(--font-mono); font-size: var(--font-size-body); }
-
-/* Apply results */
-.apply-summary dl {
-  display: flex;
-  gap: var(--space-lg);
-}
-
-.apply-summary dd {
-  font-size: var(--font-size-head);
-  font-weight: 600;
-}
 
 .create-checkpoint-form {
   display: flex;
@@ -3414,10 +3347,6 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   font-weight: 400;
   color: var(--text-muted);
   margin-left: 2px;
-  /* Override the legacy .score-max (old gauge) mono family + top margin so the
-     "/100" matches the sans score number; the retired rule is swept at epic-final. */
-  font-family: var(--font-sans);
-  margin-top: 0;
 }
 
 .score-pill {
@@ -3516,9 +3445,9 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 }
 
 .compliance-name { flex: 1; }
-/* The legacy .compliance-score (Compliance page) is 22px mono bold; scope a row
-   size here so the framework percentage matches the 13px disclosure row. */
-.compliance-item .compliance-score {
+/* Framework percentage in the compliance disclosure row: sans, matching the
+   13px row scale. */
+.compliance-score {
   font-family: var(--font-sans);
   font-size: var(--font-size-sm);
   font-weight: 600;
@@ -3568,10 +3497,6 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   height: 20px;
   color: var(--text-secondary);
   flex-shrink: 0;
-  /* Neutralise the legacy .activity-icon badge box (old 32px tile) leaking
-     onto the new bare glyph; the retired rules are swept at epic-final. */
-  background: transparent;
-  border-radius: 0;
 }
 
 .activity-content {
