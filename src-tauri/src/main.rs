@@ -12,6 +12,7 @@ use commands::{
     run_remote_scan, run_rollback, run_scan, save_remote_host, save_scheduler_config,
     test_notification, validate_config,
 };
+use tauri::Manager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 fn main() {
@@ -25,6 +26,18 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            // On tiling Wayland compositors the client-side title bar and its
+            // min/max/close controls are redundant: the compositor owns window
+            // placement and lifecycle. Drop the decorations there and keep them
+            // for floating desktops (GNOME, KDE) that depend on them.
+            if !want_decorations()
+                && let Some(window) = app.get_webview_window("main")
+            {
+                let _ = window.set_decorations(false);
+            }
+            Ok(())
+        })
         .manage(RemoteState {
             active_connection: tokio::sync::Mutex::new(None),
         })
@@ -62,4 +75,57 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("Failed to run tauri application");
+}
+
+/// Whether the main window should keep its client-side title bar and controls.
+///
+/// An explicit `HARDENER_DECORATIONS` value wins on any compositor ("0" hides
+/// the frame, anything else shows it); otherwise the frame is dropped on known
+/// tiling Wayland compositors and kept everywhere else.
+fn want_decorations() -> bool {
+    match std::env::var("HARDENER_DECORATIONS") {
+        Ok(value) => value != "0",
+        Err(_) => !is_tiling_wayland(),
+    }
+}
+
+/// Best-effort detection of a tiling Wayland compositor from its session
+/// environment. Recognises the common wlroots-family compositors by their
+/// signature variables or their `XDG_CURRENT_DESKTOP` identifier.
+fn is_tiling_wayland() -> bool {
+    if std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some()
+        || std::env::var_os("SWAYSOCK").is_some()
+    {
+        return true;
+    }
+
+    std::env::var("XDG_CURRENT_DESKTOP").is_ok_and(|desktop| desktop_is_tiling(&desktop))
+}
+
+/// Whether an `XDG_CURRENT_DESKTOP` identifier, possibly a colon-separated
+/// list, names a known tiling Wayland compositor. Case-insensitive.
+fn desktop_is_tiling(xdg: &str) -> bool {
+    const TILING: [&str; 6] = ["hyprland", "sway", "river", "niri", "wayfire", "labwc"];
+    xdg.to_ascii_lowercase()
+        .split(':')
+        .any(|part| TILING.contains(&part))
+}
+
+#[cfg(test)]
+mod decoration_tests {
+    use super::desktop_is_tiling;
+
+    #[test]
+    fn recognises_tiling_compositors() {
+        assert!(desktop_is_tiling("Hyprland"));
+        assert!(desktop_is_tiling("sway"));
+        assert!(desktop_is_tiling("wlroots:river"));
+    }
+
+    #[test]
+    fn rejects_floating_desktops() {
+        assert!(!desktop_is_tiling("GNOME"));
+        assert!(!desktop_is_tiling("KDE"));
+        assert!(!desktop_is_tiling(""));
+    }
 }
