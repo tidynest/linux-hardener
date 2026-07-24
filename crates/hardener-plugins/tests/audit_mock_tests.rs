@@ -1273,3 +1273,52 @@ async fn test_audit_apply_rewrites_when_rules_file_read_fails() {
         log.commands_executed
     );
 }
+
+#[tokio::test]
+async fn scan_annotates_valid_exception() {
+    // The "modules" rule category is missing and has a valid exception: the
+    // finding is still reported but annotated. Audit has no directive
+    // override, so there is no target value to assert here (mirrors
+    // services_mock_tests::scan_annotates_valid_exception).
+    let executor = auditd_disabled_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = AuditHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "modules".to_string(),
+        PolicyException {
+            value: "skip".to_string(),
+            allowed: true,
+            reason: "Module loading monitored by separate HIDS".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let f = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "audit_rule_modules")
+        .expect("missing modules rule should still produce a finding");
+    assert!(
+        f.finding_policy_exception.is_some(),
+        "finding should be annotated with the valid exception"
+    );
+
+    // Daemon-state findings have no exception key: they must stay unannotated
+    // even though this scan is exercising the same config's exception map.
+    let daemon_finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "audit_not_enabled")
+        .expect("disabled auditd should still produce a finding");
+    assert!(
+        daemon_finding.finding_policy_exception.is_none(),
+        "daemon-state findings have no exception key and stay unannotated"
+    );
+}

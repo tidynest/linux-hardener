@@ -741,7 +741,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
         vec![] // No dependencies
     }
 
-    async fn scan(&self, ctx: &Context, _config: &PluginConfig) -> Result<ScanResult> {
+    async fn scan(&self, ctx: &Context, config: &PluginConfig) -> Result<ScanResult> {
         let start = Instant::now();
         let mut findings = Vec::new();
         let mut unchecked = Vec::new();
@@ -854,7 +854,9 @@ impl HardeningPlugin for AuditHardeningPlugin {
                                 rule.audit_rule_category
                             ),
                             finding_compliance: get_audit_compliance_mappings("rules"),
-                            finding_policy_exception: None,
+                            finding_policy_exception: config
+                                .has_valid_exception(rule.audit_rule_category)
+                                .map(|e| e.to_finding_exception()),
                         });
                     }
                 }
