@@ -754,7 +754,18 @@ async fn scan_with_executor(
     executor: Arc<dyn SystemExecutor>,
     history: Option<Arc<ScanHistoryManager>>,
 ) -> HostOutcome {
-    match scan_grouped(true, executor.clone(), &CliOutputFormat::Json).await {
+    // Fleet scan/report config-awareness is an explicit out-of-scope
+    // follow-up (Task 10 note): a real per-host/remote config load is a
+    // separate design question, so this stays on HardenerConfig::default(),
+    // matching the desktop's own remote/fleet scan path.
+    match scan_grouped(
+        true,
+        executor.clone(),
+        &CliOutputFormat::Json,
+        &HardenerConfig::default(),
+    )
+    .await
+    {
         Ok(grouped) => {
             if let Some(history) = &history {
                 persist_host(history, &host_key, &grouped).await;

@@ -977,17 +977,25 @@ fn parse_output_format(format: &str) -> Result<OutputFormat, String> {
 /// Scans all plugins and collects findings and unchecked checks for
 /// compliance reporting. A control whose covering check landed in the
 /// unchecked list must never auto-pass on the mere absence of a finding.
+/// Honours the local system/user config (directives and exceptions), the
+/// same as `run_scan`, so a compliance report matches a manual scan.
 async fn collect_findings() -> Result<(Vec<Finding>, Vec<UncheckedCheck>), String> {
     let ctx = Context::new();
     let registry = create_plugin_registry();
     let plugin_list = registry.list().map_err(safe_err)?;
 
+    // Same loader `run_scan` uses for its no-custom-path case: this call site
+    // has no config_path of its own, so system/user config applies, falling
+    // back to defaults rather than failing a background compliance refresh.
+    let config = ConfigLoader::new().load().unwrap_or_default();
+
     let mut findings = Vec::new();
     let mut unchecked = Vec::new();
-    let default_config = PluginConfig::default();
     for metadata in plugin_list {
         if let Ok(Some(plugin)) = registry.get(&metadata.plugin_id)
-            && let Ok(result) = plugin.scan(&ctx, &default_config).await
+            && let Ok(result) = plugin
+                .scan(&ctx, config.get_plugin_config(metadata.plugin_id.as_str()))
+                .await
         {
             findings.extend(result.scan_findings);
             unchecked.extend(result.scan_unchecked);

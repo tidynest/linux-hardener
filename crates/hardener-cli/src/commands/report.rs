@@ -9,12 +9,12 @@ use hardener_compliance::{
     TextFormatter, profile_label,
 };
 use hardener_core::{
-    Context, Finding, PluginConfig, PluginMetadata, executor::SystemExecutor,
+    ConfigLoader, Context, Finding, HardenerConfig, PluginMetadata, executor::SystemExecutor,
     plugin::UncheckedCheck,
 };
 use hardener_plugins::create_plugin_registry;
 use hardener_scheduler::db::ScanFinding;
-use std::{fs, io, io::Write, sync::Arc};
+use std::{fs, io, io::Write, path::PathBuf, sync::Arc};
 
 #[allow(clippy::too_many_arguments)]
 pub async fn run(
@@ -26,6 +26,7 @@ pub async fn run(
     cli_format: CliOutputFormat,
     quiet: bool,
     executor: Arc<dyn SystemExecutor>,
+    config_path: Option<&PathBuf>,
 ) -> Result<()> {
     // Determine scenario/frameworks (shared with `batch report`).
     let scenario = resolve_scenario(framework, scenario, quiet)?;
@@ -68,9 +69,20 @@ pub async fn run(
         eprintln!("Running security scan...");
     }
 
+    // Load the real plugin configuration (directives + exceptions) so the
+    // report reflects config the same way `scan`/`apply` do. Report has no
+    // audit mode, so a `--config` path is always honoured (missing/invalid
+    // is a hard error, matching `scan`'s `load_config`).
+    let mut loader = ConfigLoader::new();
+    if let Some(path) = config_path {
+        loader = loader.with_cli_config(path.clone());
+    }
+    let hardener_config = loader.load().map_err(|e| anyhow!("Config error: {}", e))?;
+
     // Run scan to get findings and the checks the current privilege level
     // could not evaluate.
-    let (findings, unchecked) = run_scan_with_unchecked(quiet, executor, &cli_format).await?;
+    let (findings, unchecked) =
+        run_scan_with_unchecked(quiet, executor, &cli_format, &hardener_config).await?;
 
     if !quiet {
         eprintln!("Generating compliance report...");
@@ -152,6 +164,7 @@ pub async fn scan_grouped(
     quiet: bool,
     executor: Arc<dyn SystemExecutor>,
     cli_format: &CliOutputFormat,
+    config: &HardenerConfig,
 ) -> Result<Vec<(PluginMetadata, Vec<Finding>, Vec<UncheckedCheck>)>> {
     let registry = create_plugin_registry();
     let ctx = Context::with_executor(executor);
@@ -172,13 +185,9 @@ pub async fn scan_grouped(
 
     // Plugins are independent, scan them concurrently. join_all yields
     // results in input order, so groups stay in registry (plugin-id) order.
-    // Real per-plugin config threading for this path is out of scope here.
-    let default_config = PluginConfig::default();
-    let scans = futures::future::join_all(
-        handles
-            .iter()
-            .map(|(_, plugin)| plugin.scan(&ctx, &default_config)),
-    )
+    let scans = futures::future::join_all(handles.iter().map(|(metadata, plugin)| {
+        plugin.scan(&ctx, config.get_plugin_config(metadata.plugin_id.as_str()))
+    }))
     .await;
 
     let mut grouped = Vec::new();
@@ -217,8 +226,9 @@ pub async fn run_scan_with_unchecked(
     quiet: bool,
     executor: Arc<dyn SystemExecutor>,
     cli_format: &CliOutputFormat,
+    config: &HardenerConfig,
 ) -> Result<(Vec<Finding>, Vec<UncheckedCheck>)> {
-    let grouped = scan_grouped(quiet, executor, cli_format).await?;
+    let grouped = scan_grouped(quiet, executor, cli_format, config).await?;
     let mut findings = Vec::new();
     let mut unchecked = Vec::new();
     for (_, group_findings, group_unchecked) in grouped {
@@ -329,8 +339,8 @@ fn profile_line(profile: ComplianceProfile, scenario: &Scenario) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hardener_common::types::{FindingCategory, PluginId, Severity};
-    use hardener_core::MockExecutor;
+    use hardener_common::types::{ControlStatus, FindingCategory, PluginId, Severity};
+    use hardener_core::{MockExecutor, PolicyException};
     use std::sync::Arc;
 
     #[test]
@@ -397,7 +407,8 @@ mod tests {
     #[tokio::test]
     async fn scan_grouped_keeps_plugin_grouping_and_flattening_matches() {
         let exec = Arc::new(MockExecutor::new());
-        let grouped = scan_grouped(true, exec.clone(), &CliOutputFormat::Json)
+        let default_config = HardenerConfig::default();
+        let grouped = scan_grouped(true, exec.clone(), &CliOutputFormat::Json, &default_config)
             .await
             .unwrap();
         // Every group carries its plugin metadata (so plugin_id is preserved).
@@ -406,9 +417,10 @@ mod tests {
         }
         // run_scan_with_unchecked returns the same findings and unchecked
         // entries, each flattened across plugins.
-        let (findings, unchecked) = run_scan_with_unchecked(true, exec, &CliOutputFormat::Json)
-            .await
-            .unwrap();
+        let (findings, unchecked) =
+            run_scan_with_unchecked(true, exec, &CliOutputFormat::Json, &default_config)
+                .await
+                .unwrap();
         let grouped_findings: usize = grouped.iter().map(|(_, f, _)| f.len()).sum();
         let grouped_unchecked: usize = grouped.iter().map(|(_, _, u)| u.len()).sum();
         assert_eq!(findings.len(), grouped_findings, "findings flatten");
@@ -457,5 +469,84 @@ mod tests {
     fn parse_framework_rejects_unknown() {
         let err = parse_framework("nonsense").unwrap_err().to_string();
         assert!(err.contains("Unknown framework 'nonsense'"), "{err}");
+    }
+
+    /// Proves the report scan path is config-aware end to end: a config that
+    /// excepts a known finding changes the mapped control's outcome, which
+    /// `PluginConfig::default()` (Task 1's placeholder) could never do.
+    #[tokio::test]
+    async fn report_scan_path_honours_config_exceptions() {
+        // A genuine CIS 1.5.1 violation: ASLR disabled. No other plugin has
+        // fixture data on this MockExecutor; scan_grouped tolerates and skips
+        // a plugin whose scan errors, so only this finding is at play.
+        let executor: Arc<dyn SystemExecutor> =
+            Arc::new(MockExecutor::new().with_file("/proc/sys/kernel/randomize_va_space", "0"));
+        let coverage = hardener_plugins::compliance_coverage();
+        let report_config = ReportConfig {
+            scenario: Scenario::Custom(vec![ComplianceFramework::CIS]),
+            formats: vec![OutputFormat::Json],
+            output_dir: None,
+            profile: ComplianceProfile::default(),
+        };
+
+        // Baseline: an unexcepted violation fails the control.
+        let (findings, unchecked) = run_scan_with_unchecked(
+            true,
+            executor.clone(),
+            &CliOutputFormat::Json,
+            &HardenerConfig::default(),
+        )
+        .await
+        .unwrap();
+        let report = ReportGenerator::new(report_config.clone(), coverage.clone())
+            .generate(&findings, &unchecked)
+            .into_iter()
+            .next()
+            .expect("one report");
+        let control = report
+            .report_controls
+            .iter()
+            .find(|c| c.control_id == "1.5.1")
+            .expect("CIS 1.5.1 is covered by the kernel plugin");
+        assert_eq!(
+            control.control_status,
+            ControlStatus::Fail,
+            "an unexcepted ASLR violation must fail CIS 1.5.1"
+        );
+
+        // A real config excepting the exact finding the kernel plugin reports.
+        let mut config = HardenerConfig::default();
+        config.kernel.exceptions.insert(
+            "kernel.randomize_va_space".to_string(),
+            PolicyException {
+                value: "0".to_string(),
+                allowed: true,
+                reason: "test exception".to_string(),
+                approved_by: None,
+                approved_date: None,
+                ticket: None,
+                expires: None,
+            },
+        );
+
+        let (findings, unchecked) =
+            run_scan_with_unchecked(true, executor, &CliOutputFormat::Json, &config)
+                .await
+                .unwrap();
+        let report = ReportGenerator::new(report_config, coverage)
+            .generate(&findings, &unchecked)
+            .into_iter()
+            .next()
+            .expect("one report");
+        let control = report
+            .report_controls
+            .iter()
+            .find(|c| c.control_id == "1.5.1")
+            .expect("CIS 1.5.1 remains covered");
+        assert_eq!(
+            control.control_status,
+            ControlStatus::Pass,
+            "an excepted finding must not fail its mapped control"
+        );
     }
 }

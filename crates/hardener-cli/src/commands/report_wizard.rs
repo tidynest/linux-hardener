@@ -14,7 +14,7 @@ use hardener_compliance::{
     TextFormatter,
     output::{CsvFormatter, HtmlFormatter, PdfFormatter},
 };
-use hardener_core::{LocalExecutor, SystemExecutor};
+use hardener_core::{HardenerConfig, LocalExecutor, SystemExecutor};
 use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -161,8 +161,15 @@ pub async fn run(quiet: bool) -> Result<()> {
     // Step 3: Run scan
     println!("\n{}", "Running security scan...".cyan());
     let executor: Arc<dyn SystemExecutor> = Arc::new(LocalExecutor::new());
-    let (findings, unchecked) =
-        run_scan_with_unchecked(false, executor, &CliOutputFormat::Text).await?;
+    // The wizard has no --config flag of its own; Task 10 wires the report
+    // command's real config path, this interactive surface is unchanged.
+    let (findings, unchecked) = run_scan_with_unchecked(
+        false,
+        executor,
+        &CliOutputFormat::Text,
+        &HardenerConfig::default(),
+    )
+    .await?;
     println!(
         "{}",
         format!(
