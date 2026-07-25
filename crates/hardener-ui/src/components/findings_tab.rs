@@ -5,6 +5,7 @@
 //! (audit-style, default), Compliance (hides policy-excepted findings to
 //! show only real violations).
 
+use super::icons::IconChevron;
 use crate::state::{AppState, total_unchecked};
 use crate::tauri_bindings::{invoke_deep_scan, invoke_generate_report};
 use crate::types::Severity;
@@ -223,9 +224,7 @@ pub fn FindingsTab() -> impl IntoView {
                                                     >
                                                         <span class="finding-title">{f.finding_title.clone()}</span>
                                                         <span class="finding-tag">{category}</span>
-                                                        <span class="finding-chevron" aria-hidden="true">
-                                                            {move || if is_open.get() { "v" } else { ">" }}
-                                                        </span>
+                                                        <IconChevron class="finding-chevron"/>
                                                     </div>
                                                     <Show when=move || is_open.get()>
                                                         <div class="finding-detail">
