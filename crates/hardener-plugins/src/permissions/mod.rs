@@ -718,8 +718,14 @@ fn mode_transition_description(current_mode: Option<u32>, target: u32) -> String
 /// exception; this function reuses it rather than reading the metadata
 /// again. `None` means the mode could not be verified (the `stat` behind it
 /// failed) even though the path may still exist - `path_exists` below is
-/// then the sole authority on existence, since it runs `test -e`
-/// independently of `stat`. An unverified mode never satisfies a policy
+/// then the authority on existence. On `SshExecutor` that is a genuinely
+/// independent check (a separate `test -e` command against the `stat`
+/// command behind `file_metadata`), so the two can disagree for reasons
+/// beyond timing. On `LocalExecutor`, `path_exists` is `path.exists()`,
+/// which runs the very same `fs::metadata` syscall `file_metadata` reads
+/// its mode from, just as a separate, later call; the two can therefore
+/// only disagree via a race, which makes this whole branch effectively
+/// SSH-only in practice. An unverified mode never satisfies a policy
 /// exception (the caller already enforces that before reaching here), but
 /// hardening still proceeds: an exact directive is chmod'd to its fixed
 /// baseline regardless of the current mode, while a max-mask directive's
@@ -739,9 +745,9 @@ async fn apply_path_permissions(
 ) -> Option<Change> {
     let path = Path::new(directive.permission_path);
 
-    // Skip if path doesn't exist. This is the sole existence authority when
-    // `current_mode` is unverified: `path_exists` uses `test -e`, independent
-    // of the `stat` that failed to yield a mode.
+    // Skip if path doesn't exist. This is the existence authority when
+    // `current_mode` is unverified (see the doc comment above: genuinely
+    // independent of the failed `stat` on SSH, but only a race locally).
     if !ctx.executor().path_exists(path).await.unwrap_or(false) {
         return None;
     }
@@ -751,11 +757,21 @@ async fn apply_path_permissions(
         Some(_) => {}
         None => {
             // The path is confirmed present above, but its mode is unknown.
-            // Reproduce pre-branch semantics: an exact directive's target is
-            // the fixed baseline regardless of the current mode, so hardening
-            // still proceeds; a max-mask directive's target depends on the
-            // current mode, which is unknown, so guessing one could loosen an
-            // already-stricter host - skip it instead.
+            // This matches pre-branch behaviour only for the metadata
+            // sentinel (`Ok(exists: false)`, e.g. a `stat` that reports the
+            // path absent while `path_exists` still finds it): pre-branch
+            // derived `current_mode = 0` from that same sentinel and
+            // hardened an exact directive to its fixed baseline, exactly as
+            // this branch now does. It is NOT equivalent for a genuine
+            // metadata `Err`: pre-branch's `.ok()?` discarded that silently
+            // and recorded no change at all, whereas this branch now hardens
+            // an exact directive regardless. In practice `apply` never
+            // reaches this function with that kind of `Err`, because
+            // `create_checkpoint_metadata_only_for_apply` reads the same
+            // metadata for every critical path up front and aborts the
+            // whole `apply` via `?` first. A max-mask directive's target
+            // depends on the current mode, which is unknown, so guessing
+            // one could loosen an already-stricter host - skip it instead.
             warn!(
                 "Permissions on {} could not be verified (stat failed); \
                  hardening proceeds without a known current mode",
@@ -795,10 +811,12 @@ async fn apply_path_permissions(
 
 /// The mode `apply`'s own loop would see for `path`: `None` when a `stat`
 /// failure left the path's mode unestablished even though it may still
-/// exist (both executors collapse that shape to `exists: false`, per
-/// [`apply_path_permissions`]'s doc comment), `Some` otherwise. Shared by
-/// `apply` and `validate` so the two can never again derive "unverified"
-/// from the same metadata read in different ways.
+/// exist (`path_exists` can genuinely disagree with that on `SshExecutor`;
+/// on `LocalExecutor` the two read the same syscall at different times, so
+/// they can only disagree via a race - see [`apply_path_permissions`]'s doc
+/// comment), `Some` otherwise. Shared by `apply` and `validate` so the two
+/// can never again derive "unverified" from the same metadata read in
+/// different ways.
 async fn current_verified_mode(ctx: &Context, path: &Path) -> Option<u32> {
     ctx.executor()
         .file_metadata(path)
@@ -820,8 +838,14 @@ async fn current_verified_mode(ctx: &Context, path: &Path) -> Option<u32> {
 /// `path_exists` check already ran) but its mode could not be established.
 /// This consults the same [`unverified_mode_target`] apply does: a max-mask
 /// directive has nothing to estimate (apply skips it), so the gap is
-/// reported as an issue instead - the only remaining way to tell the
-/// operator the mode could not be read. An exact directive is always
+/// reported as an issue instead. That issue is currently the only place
+/// this is surfaced at all: the CLI's default text renderer
+/// (`validation_reports` in `hardener-cli/src/output.rs`) prints only the
+/// estimated changes and never reads `validation_report_issues` or
+/// `validation_report_is_valid`, the CLI's apply command does not inspect
+/// `is_valid` either, and the desktop reads only the estimated-changes
+/// count - so today the gap reaches the operator solely via
+/// `--format json`. An exact directive is always
 /// hardened by apply regardless of the current mode (unless the filesystem
 /// cannot hold POSIX permissions at all, in which case there is nothing
 /// pending either), so it is reported as a predicted change, worded so the
@@ -1454,13 +1478,27 @@ mod tests {
     /// This cannot be reproduced through the plugin's public `apply`/
     /// `validate` methods against a [`MockExecutor`]: its `path_exists` and
     /// `file_metadata` both read the very same stored `exists` flag, so they
-    /// can never disagree the way the real ssh/local executors do (`test -e`
-    /// succeeding while `stat` fails for an unrelated reason). Calling the
-    /// two decision functions directly with the exact inputs that real
-    /// divergence produces is the closest a mock host state can get; the
-    /// public loops that supply them are, in turn, thin two-line wiring
-    /// (compute `current_verified_mode`, delegate) shared verbatim by
-    /// `apply` and `validate`.
+    /// can never disagree the way `SshExecutor` genuinely can (`test -e`
+    /// succeeding while `stat` fails for an unrelated reason) - the same
+    /// disagreement is only ever a race on `LocalExecutor`, which a mock
+    /// cannot model either way. Calling the two decision functions directly
+    /// with the exact inputs that real divergence produces is the closest a
+    /// mock host state can get.
+    ///
+    /// The public loops that supply those inputs are not, in fact,
+    /// verbatim-shared wiring: apply's loop performs the exception check
+    /// and the directive-override construction inline before calling
+    /// `apply_path_permissions`, which takes no `config` and so cannot
+    /// check exceptions itself; validate's loop also builds the directive
+    /// override inline, but delegates the exception check into
+    /// `validate_path_permissions`. What this test actually proves does not
+    /// depend on that wiring matching: `apply_path_permissions` and
+    /// `validate_path_permissions` agree on the unverified-mode outcome
+    /// once `current_mode` is already `None`, a state neither loop's
+    /// exception check can be reached from (an unverified mode never
+    /// matches an exception in either path), so exercising the two
+    /// functions directly with `None` covers every real path into this
+    /// state.
     #[tokio::test]
     async fn validate_predicts_what_apply_does_for_an_unverified_mode() {
         for directive in CRITICAL_PERMISSIONS {

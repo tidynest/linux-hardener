@@ -200,16 +200,18 @@ This stops a config from passing a control, or a setting from being left
 unhardened, by documenting a deviation the host does not actually have.
 
 The check is fail-closed by design: nothing is exempted merely because its
-current value could not be established. For `[ssh]` and `[kernel]`, an
+current value could not be established, except for one narrow carve-out
+for `[pam]`, covered in full below. For `[ssh]` and `[kernel]`, an
 unreadable value can never match an exception, so the setting is hardened
-rather than silently skipped. `[pam]` behaves the same way with one narrow
-exception, covered in full below: an unreadable directive can still match a
-`value = "not set"` exception, because it renders identically to a
-genuinely absent one. For the `[pam]` threshold directives, `deny` and
-`remember`, hardening can itself fail rather than apply quietly: if an
-inline `pam.d` override is present, `apply` refuses to auto-edit the
-authentication stack and reports the run as failed instead of silently
-editing `faillock.conf` or `pwhistory.conf` underneath it.
+rather than silently skipped. `[pam]` behaves the same way for every value
+except `"not set"`: an unreadable directive can still match that one,
+because it renders identically to a genuinely absent one. For the `[pam]`
+threshold directives, `deny` and `remember`, hardening can itself fail
+rather than apply quietly: if an inline `pam.d` override is present,
+`apply` refuses to auto-edit the authentication stack and reports the run
+as failed instead of silently editing `faillock.conf` or `pwhistory.conf`
+underneath it. Use `"not set"` to except a directive that is absent from
+the file (that is the value `scan` reports for it) for `[ssh]` or `[pam]`.
 
 `[permissions]` tells a missing path apart from one that exists but could
 not be stat'd. A missing path is left alone: no chmod is attempted and
@@ -217,27 +219,35 @@ nothing is recorded, the same treatment as an already-compliant path. A path
 that exists but whose mode could not be verified is hardened anyway for the
 seven critical paths with a single exact target mode (`/root`, `/boot`,
 `/etc/ssh`, `/etc/sudoers`, `/etc/sudoers.d`, `/etc/passwd`, `/etc/group`):
-`apply` chmods it to that baseline regardless of the unknown starting mode,
-and the recorded change says so. The remaining two, `/etc/shadow` and
+`apply` chmods it to that baseline, or to a configured `directives` override
+for the path where one is set, regardless of the unknown starting mode -
+the one exception being a filesystem positively confirmed unable to hold
+POSIX permissions, where a skip is recorded instead of a chmod. Either way
+the recorded change says so. The remaining two, `/etc/shadow` and
 `/etc/gshadow`, only ever strip bits outside an allowed mask, a target that
 cannot be computed without a verified mode, so `apply` skips them instead,
 now recording the skip explicitly and logging a warning rather than doing
 nothing silently. An exception can never match against an unverified mode,
-for any of the nine paths. Use `"not set"` to except a directive that is
-absent from the file (that is the value `scan` reports for it), and for
-`[permissions]` write the mode in octal with or without the leading zero
-(`644` and `0644` both match mode 0644).
+for any of the nine paths. For `[permissions]`, write the mode in octal
+with or without the leading zero (`644` and `0644` both match mode 0644);
+`value = "not set"` can never match here, since the mode is always parsed
+as octal.
 
 For `[pam]`, an unreadable directive renders the same way as an absent one:
 both display as `"not set"`. An exception written as `value = "not set"` is
 therefore honoured whenever the directive could not be read, not only when
 it is genuinely absent from the file, a narrow gap in the fail-closed rule
-above. `[ssh]` does not share this gap: `apply` and `apply --dry-run` read
-the whole `sshd_config` file in a single pass, so a read failure fails the
-operation outright instead of rendering directives as unset; within a file
-that was read successfully, `"not set"` means the directive is genuinely
-absent. Do not write `value = "not set"` to mean "I do not know what this
-is": treat it as a matchable value like any other, for both sections.
+above. `[ssh]` does not share this gap: a read failure of `sshd_config`
+never renders a directive as unset. `apply` reads the whole file in a
+single pass and, if that read fails, the operation fails outright.
+`apply --dry-run` does not fail outright on the same read failure: it
+returns successfully with a Critical validation issue and zero estimated
+changes, which the default text output currently renders as "0 change(s)
+to apply" rather than surfacing the read failure (the issue is visible
+only with `--format json`). Within a file that was read successfully,
+`"not set"` means the directive is genuinely absent. Do not write
+`value = "not set"` to mean "I do not know what this is": treat it as a
+matchable value like any other, for both sections.
 
 For `[services]`, `[mac]`, `[audit]`, and `[firewall]` this comparison does
 not apply on any path, including `apply`: the key itself names the deviating
