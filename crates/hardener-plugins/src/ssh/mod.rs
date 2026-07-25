@@ -1531,7 +1531,7 @@ impl HardeningPlugin for SshHardeningPlugin {
         Ok(())
     }
 
-    async fn validate(&self, ctx: &Context, _config: &PluginConfig) -> Result<ValidationReport> {
+    async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {
         let mut issues = Vec::new();
         let plugin_id = PluginId::new("ssh-hardening");
         let config_path = Path::new("/etc/ssh/sshd_config");
@@ -1571,6 +1571,14 @@ impl HardeningPlugin for SshHardeningPlugin {
             Ok(content) => {
                 // Check each directive to see if it needs updating.
                 for directive in SSH_DIRECTIVES {
+                    // Resolve the target the way apply and scan do: a config
+                    // directive override wins over the hardcoded baseline.
+                    let target = config
+                        .directives
+                        .get(directive.ssh_directive_name)
+                        .map(|s| s.as_str())
+                        .unwrap_or(directive.ssh_secure_value);
+
                     // SSHD config is space-separated and case-insensitive.
                     let current_value = parse_config_value(
                         &content,
@@ -1579,22 +1587,35 @@ impl HardeningPlugin for SshHardeningPlugin {
                         false, // case-insensitive
                     );
 
+                    // The exception is honoured only when it documents the
+                    // value the host actually has, matching apply's rendering
+                    // of an absent directive as "not set".
+                    let observed = current_value
+                        .clone()
+                        .unwrap_or_else(|| "not set".to_string());
+                    if config
+                        .matching_exception(directive.ssh_directive_name, &observed)
+                        .is_some()
+                    {
+                        continue;
+                    }
+
                     match current_value {
-                        Some(val) if val == directive.ssh_secure_value => {
-                            // Already set to secure value - no change needed.
+                        Some(val) if val == target => {
+                            // Already set to the target value - no change needed.
                         }
                         Some(val) => {
-                            // Value exists but is insecure.
+                            // Value exists but does not match the target.
                             estimated_changes.push(format!(
                                 "{}: {} → {}",
-                                directive.ssh_directive_name, val, directive.ssh_secure_value
+                                directive.ssh_directive_name, val, target
                             ));
                         }
                         None => {
                             // Directive not set - will add it.
                             estimated_changes.push(format!(
                                 "{}: (not set) → {}",
-                                directive.ssh_directive_name, directive.ssh_secure_value
+                                directive.ssh_directive_name, target
                             ));
                         }
                     }

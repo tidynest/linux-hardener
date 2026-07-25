@@ -1486,3 +1486,59 @@ X11Forwarding yes
         "a non-matching exception must not produce a skipped change"
     );
 }
+
+#[tokio::test]
+async fn validate_honours_a_directive_override() {
+    // The plugin's hardcoded baseline for MaxAuthTries is "3"; the override
+    // below picks a distinct value so the assertion can only pass if validate
+    // actually consults config.directives rather than the hardcoded baseline.
+    let executor = insecure_ssh_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = SshHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config
+        .directives
+        .insert("MaxAuthTries".to_string(), "6".to_string());
+
+    let report = plugin.validate(&ctx, &config).await.unwrap();
+
+    assert!(
+        report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("MaxAuthTries") && c.contains('6')),
+        "the preview must reflect the directive override"
+    );
+}
+
+#[tokio::test]
+async fn validate_ignores_exception_whose_value_does_not_match() {
+    let executor = insecure_ssh_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = SshHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "PermitRootLogin".to_string(),
+        PolicyException {
+            value: "no".to_string(),
+            allowed: true,
+            reason: "Stale exception".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let report = plugin.validate(&ctx, &config).await.unwrap();
+
+    assert!(
+        report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("PermitRootLogin")),
+        "a non-matching exception must leave the change in the preview"
+    );
+}
