@@ -286,11 +286,7 @@ fn generate_pdf(report: &ComplianceReport) -> Vec<u8> {
         for control in controls {
             // Check if we need a new page
             let control_height = BODY_SIZE * LINE_HEIGHT * 2.0
-                + if control.control_status == ControlStatus::Fail {
-                    control.control_findings.len() as f32 * BODY_SIZE * LINE_HEIGHT
-                } else {
-                    0.0
-                };
+                + control.control_findings.len() as f32 * BODY_SIZE * LINE_HEIGHT;
 
             if y.needs_new_page(control_height) {
                 surface.finish();
@@ -559,19 +555,27 @@ fn draw_control(
 
     y.advance(BODY_SIZE * LINE_HEIGHT);
 
-    // Show findings for failed controls
-    if control.control_status == ControlStatus::Fail && !control.control_findings.is_empty() {
+    // Show the evidence behind the status. A control carrying only excepted
+    // findings passes, but the documented deviations are still listed (in the
+    // neutral colour, not the failure red) so the pass is not mistaken for a
+    // clean one.
+    if !control.control_findings.is_empty() {
         y.advance(BODY_SIZE * LINE_HEIGHT * 0.5);
         for finding in &control.control_findings {
+            let excepted = finding.finding_policy_exception.is_some();
             surface.set_fill(Some(Fill {
-                paint: colour_fail().into(),
+                paint: if excepted {
+                    colour_dark_grey().into()
+                } else {
+                    colour_fail().into()
+                },
                 opacity: NormalizedF32::new(0.8).expect("0.8 is always in [0.0, 1.0]"),
                 rule: FillRule::default(),
             }));
 
             let finding_text = format!(
                 " -> [{}] {}",
-                finding.finding_severity,
+                super::finding_label(finding),
                 truncate_string(&finding.finding_title, 60)
             );
 

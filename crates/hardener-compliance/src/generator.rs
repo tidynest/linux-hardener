@@ -131,7 +131,7 @@ impl ReportGenerator {
             .iter()
             .map(|control| {
                 let related = related_findings(findings, framework, &control.compliance_control_id);
-                let status = if !related.is_empty() {
+                let status = if has_live_finding(&related) {
                     ControlStatus::Fail
                 } else if unchecked_ids.contains(control.compliance_control_id.as_str()) {
                     ControlStatus::ManualReview
@@ -157,10 +157,10 @@ impl ReportGenerator {
         // catalogue is still a real failure and must appear in the report rather
         // than be silently dropped. (With derived catalogues this is rarely hit,
         // but it guarantees a wrong mapping can only ever over-report a failure.)
-        // `related` is already exception-filtered: if every finding mapped to
-        // this control turns out to be excepted, there is no live violation
-        // left to surface, so the control is skipped entirely rather than
-        // manufactured as a Fail with no backing evidence.
+        // If every finding mapped to this control turns out to be excepted,
+        // there is no live violation left to surface, so the control is skipped
+        // entirely rather than manufactured as a Fail backed only by documented
+        // deviations.
         let mut seen: HashSet<String> = controls.iter().map(|c| c.control_id.clone()).collect();
         for mapping in findings.iter().flat_map(|f| &f.finding_compliance) {
             if mapping.compliance_framework != *framework
@@ -169,7 +169,7 @@ impl ReportGenerator {
                 continue;
             }
             let related = related_findings(findings, framework, &mapping.compliance_control_id);
-            if related.is_empty() {
+            if !has_live_finding(&related) {
                 continue;
             }
             controls.push(ControlResult {
@@ -196,11 +196,10 @@ impl ReportGenerator {
     }
 }
 
-/// Collects all findings mapping to a given `(framework, control_id)` that are
-/// still live violations. A finding carrying a policy exception (Task 2-8:
-/// `Plugin::scan` already validated it against config) is excluded, so an
-/// excepted deviation cannot drive the control to Fail; it stays attached to
-/// the finding for visibility elsewhere, just not counted here.
+/// Collects every finding mapping to a given `(framework, control_id)`,
+/// excepted ones included. Status is decided from the live subset via
+/// [`has_live_finding`], but an excepted finding stays in the list so the
+/// report shows the documented deviation instead of an unexplained clean pass.
 fn related_findings(
     findings: &[Finding],
     framework: &ComplianceFramework,
@@ -209,13 +208,21 @@ fn related_findings(
     findings
         .iter()
         .filter(|f| {
-            f.finding_policy_exception.is_none()
-                && f.finding_compliance.iter().any(|c| {
-                    c.compliance_framework == *framework && c.compliance_control_id == control_id
-                })
+            f.finding_compliance.iter().any(|c| {
+                c.compliance_framework == *framework && c.compliance_control_id == control_id
+            })
         })
         .cloned()
         .collect()
+}
+
+/// Whether any of these findings is still a live violation. A finding carrying
+/// a policy exception (validated by `Plugin::scan` against the config) is a
+/// documented deviation, not a failure, so it never drives a control to Fail.
+fn has_live_finding(findings: &[Finding]) -> bool {
+    findings
+        .iter()
+        .any(|f| f.finding_policy_exception.is_none())
 }
 
 #[cfg(test)]
@@ -378,6 +385,65 @@ mod tests {
             .find(|c| c.control_id == "1.5.1")
             .expect("1.5.1 in catalogue");
         assert_ne!(result.control_status, ControlStatus::Fail);
+        // The deviation is still evidence: a control passed by an exception
+        // must not be indistinguishable from a genuinely compliant one.
+        assert_eq!(
+            result.control_findings.len(),
+            1,
+            "the excepted finding must stay attached as visible evidence"
+        );
+        assert!(
+            result.control_findings[0]
+                .finding_policy_exception
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn live_finding_still_fails_a_control_that_also_has_an_excepted_one() {
+        // Catalogue path, mixed case: one documented deviation plus one real
+        // violation. The exception covers only its own finding, so the control
+        // still fails, and both findings are carried as evidence.
+        let coverage = vec![mapping(ComplianceFramework::CIS, "1.5.1")];
+        let generator = ReportGenerator::new(config_for(ComplianceFramework::CIS), coverage);
+        let mut excepted = cis_finding("1.5.1");
+        excepted.finding_id = "test_excepted".to_string();
+        excepted.finding_policy_exception = Some(FindingPolicyException::default());
+        let report = generator
+            .generate(&[excepted, cis_finding("1.5.1")], &[])
+            .pop()
+            .unwrap();
+
+        let result = report
+            .report_controls
+            .iter()
+            .find(|c| c.control_id == "1.5.1")
+            .expect("1.5.1 in catalogue");
+        assert_eq!(result.control_status, ControlStatus::Fail);
+        assert_eq!(result.control_findings.len(), 2);
+    }
+
+    #[test]
+    fn safe_failure_net_fails_a_mixed_uncatalogued_control() {
+        // Safe-failure-net path, mixed case: the excepted finding must not
+        // suppress the live one, so the uncatalogued control is still emitted
+        // as a Fail carrying both findings.
+        let mut excepted = cis_finding("ZZ-UNCATALOGUED-9999");
+        excepted.finding_id = "test_excepted".to_string();
+        excepted.finding_policy_exception = Some(FindingPolicyException::default());
+        let generator = ReportGenerator::new(config_for(ComplianceFramework::CIS), vec![]);
+        let report = generator
+            .generate(&[excepted, cis_finding("ZZ-UNCATALOGUED-9999")], &[])
+            .pop()
+            .unwrap();
+
+        let result = report
+            .report_controls
+            .iter()
+            .find(|c| c.control_id == "ZZ-UNCATALOGUED-9999")
+            .expect("a live finding must still surface an uncatalogued control");
+        assert_eq!(result.control_status, ControlStatus::Fail);
+        assert_eq!(result.control_findings.len(), 2);
     }
 
     #[test]

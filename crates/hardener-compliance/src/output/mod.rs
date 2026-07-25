@@ -75,6 +75,21 @@ pub(crate) fn sort_sections_by_control_id<'a>(
     });
 }
 
+/// Label used in place of a severity on a finding line covered by a valid
+/// policy exception.
+pub(crate) const EXCEPTION_LABEL: &str = "POLICY EXCEPTION";
+
+/// The label for one evidence line under a control. An excepted finding is a
+/// documented deviation, not a violation, so it is never rendered as one; it is
+/// still rendered, so a control passed by an exception is distinguishable from
+/// a genuinely compliant one.
+pub(crate) fn finding_label(finding: &hardener_types::Finding) -> String {
+    match finding.finding_policy_exception {
+        Some(_) => EXCEPTION_LABEL.to_string(),
+        None => finding.finding_severity.to_string(),
+    }
+}
+
 /// Groups report controls by section name.
 pub(crate) fn group_controls_by_section<'a>(
     report: &'a ComplianceReport,
@@ -90,4 +105,29 @@ pub(crate) fn group_controls_by_section<'a>(
     let mut sorted: Vec<_> = sections.into_iter().collect();
     sort_sections_by_control_id(&mut sorted);
     sorted
+}
+
+/// Fixtures shared by the formatter test modules.
+#[cfg(test)]
+pub(crate) mod test_support {
+    use hardener_types::{Finding, FindingCategory, FindingPolicyException, Severity};
+
+    /// A finding as a scan emits it. Passing `exception` mirrors what
+    /// `Plugin::scan` attaches when the config documents the deviation.
+    pub(crate) fn finding(title: &str, excepted: bool) -> Finding {
+        Finding {
+            finding_category: FindingCategory::Network,
+            finding_current_value: "yes".to_string(),
+            finding_description: "Test finding".to_string(),
+            finding_explanation: "Test explanation".to_string(),
+            finding_id: format!("test-{title}"),
+            finding_impact: "Test impact".to_string(),
+            finding_recommended_value: "no".to_string(),
+            finding_remediation_steps: vec!["Fix it".to_string()],
+            finding_severity: Severity::High,
+            finding_title: title.to_string(),
+            finding_compliance: vec![],
+            finding_policy_exception: excepted.then(FindingPolicyException::default),
+        }
+    }
 }

@@ -51,10 +51,13 @@ fn calculate_framework_score(report: &ComplianceReport) -> Option<f64> {
             ControlStatus::NotApplicable => 0.0, // Excluded above
             ControlStatus::ManualReview => 80.0,
             ControlStatus::Fail => {
-                // Use worst (lowest) severity weight from findings
+                // Use worst (lowest) severity weight from the live findings. A
+                // failing control can also carry an excepted finding as
+                // evidence; a documented deviation must not weigh on the score.
                 control
                     .control_findings
                     .iter()
+                    .filter(|f| f.finding_policy_exception.is_none())
                     .map(|f| severity_to_weight(&f.finding_severity))
                     .min_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal))
                     .unwrap_or(50.0) // Default to Medium if no findings

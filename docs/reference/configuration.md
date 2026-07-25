@@ -133,8 +133,10 @@ A config that fails validation is rejected with every invalid entry listed:
 An exception documents an intentional, approved deviation from the secure
 baseline. `scan` still shows the finding, annotated with the exception it
 matched; `hardener report` treats an annotated finding as satisfied, so it no
-longer fails a compliance control. Audit mode (`scan --audit`) ignores the
-config, exceptions included.
+longer fails a compliance control. The control still lists that finding as
+evidence, labelled `POLICY EXCEPTION` instead of a severity, so a control
+passed by a documented deviation is never presented as a clean pass. Audit mode
+(`scan --audit`) ignores the config, exceptions included.
 
 ```toml
 [ssh.exceptions.PasswordAuthentication]

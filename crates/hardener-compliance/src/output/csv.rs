@@ -53,6 +53,16 @@ fn write_report_rows(output: &mut String, report: &ComplianceReport) {
             ControlStatus::ManualReview => "MANUAL",
         };
 
+        // Live violations only: a control now carries its excepted findings as
+        // evidence, and counting those here would report a documented deviation
+        // as a finding against a control this run passed. The exceptions
+        // themselves are listed in the text, HTML, PDF and JSON reports.
+        let live_findings = control
+            .control_findings
+            .iter()
+            .filter(|f| f.finding_policy_exception.is_none())
+            .count();
+
         output.push_str(&format!(
             "{},{},{},{},{},{},{},{}\n",
             framework_escaped,
@@ -62,7 +72,7 @@ fn write_report_rows(output: &mut String, report: &ComplianceReport) {
             escape_csv_field(&control.control_title),
             escape_csv_field(&control.control_section),
             status_str,
-            control.control_findings.len(),
+            live_findings,
         ));
     }
 }
@@ -137,6 +147,50 @@ mod tests {
         assert!(output.contains("Center for Internet Security Benchmarks for Linux"));
         assert!(output.contains("PASS"));
         assert!(output.contains("FAIL"));
+    }
+
+    #[test]
+    fn finding_count_counts_live_violations_only() {
+        // The count column tracks the violations behind the status. A control
+        // that passes because its sole deviation is documented must not report
+        // a finding against itself.
+        let controls = vec![
+            ControlResult {
+                control_id: "1.5.1".to_string(),
+                control_title: "Ensure ASLR is enabled".to_string(),
+                control_section: "Initial Setup".to_string(),
+                control_status: ControlStatus::Pass,
+                control_findings: vec![crate::output::test_support::finding("Excepted", true)],
+            },
+            ControlResult {
+                control_id: "1.5.2".to_string(),
+                control_title: "Ensure ptrace is restricted".to_string(),
+                control_section: "Initial Setup".to_string(),
+                control_status: ControlStatus::Fail,
+                control_findings: vec![
+                    crate::output::test_support::finding("Excepted", true),
+                    crate::output::test_support::finding("Live", false),
+                ],
+            },
+        ];
+        let report = ComplianceReport {
+            report_framework: ComplianceFramework::CIS,
+            report_profile: ComplianceProfile::default(),
+            report_generated_at: Utc::now(),
+            report_summary: ComplianceSummary::from_controls(&controls),
+            report_controls: controls,
+        };
+
+        let output = CsvFormatter::new().format(&report);
+
+        assert!(
+            output.contains("Initial Setup,PASS,0"),
+            "a control passed by an exception has no live finding, got:\n{output}"
+        );
+        assert!(
+            output.contains("Initial Setup,FAIL,1"),
+            "only the live finding counts against a failing control, got:\n{output}"
+        );
     }
 
     #[test]
