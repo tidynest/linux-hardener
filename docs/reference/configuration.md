@@ -67,6 +67,11 @@ pam-hardening        permissions-hardening service-minimisation ssh-hardening
 disabled_plugins = ["mac-hardening"]
 ```
 
+`hardener scan` names the plugins these lists kept it from running, and fails
+with an explanation rather than reporting an empty, clean-looking scan when
+the config disables every plugin selected (for example `scan --plugin ssh`
+with `ssh-hardening` disabled).
+
 ---
 
 ## Plugin sections
@@ -90,7 +95,7 @@ Every section accepts the same four keys:
 | Key | Type | Default | Effect |
 |-----|------|---------|--------|
 | `enabled` | bool | `true` | Accepted and validated, but **not enforced**. To stop a plugin from running, list it in `[global] disabled_plugins`. |
-| `directives` | table of string to string | `{}` | Overrides the target value for a built-in check, typically to something stricter than the baseline. |
+| `directives` | table of string to string | `{}` | Overrides the target value for a built-in check, typically to something stricter than the baseline. Applied as given for `[kernel]`, `[ssh]` and `[permissions]`, so an override can also loosen a check; only the `[pam]` thresholds are clamped tighten-only. See below. |
 | `custom_directives` | table of string to string | `{}` | Accepted and validated, but **not yet enforced** by any plugin. Reserved for checking directives beyond the built-in set. |
 | `exceptions` | table of exception entries | `{}` | Policy exceptions; see below. |
 
@@ -125,6 +130,26 @@ A config that fails validation is rejected with every invalid entry listed:
   space-separated).
 - Permission modes may not set SUID/SGID/sticky bits, may not be
   world-writable, and may not be zero.
+
+### A directive override is not clamped to the baseline
+
+For `[kernel]`, `[ssh]` and `[permissions]` an override replaces the target
+value as given, for both `scan` and `apply`. Nothing checks that the new
+target is at least as strict as the built-in baseline, so an override can
+loosen a check as easily as tighten it: `MaxAuthTries = "10"` makes a host
+running 10 compliant. Validation only rules out values that are unsafe in
+themselves (the list above); it does not compare an override against the
+baseline.
+
+The exception is the `[pam]` threshold directives, `deny` and `remember`,
+which are clamped so an override can only tighten: a `deny` limit above the
+baseline is lowered back to it, and a `remember` count below the baseline is
+raised back to it. Every other PAM directive is compared exactly and takes the
+override as given, like the other sections.
+
+To record a deliberate, approved deviation, prefer an exception over a
+loosening override: an exception carries a reason, an approver and an expiry,
+and the report shows it instead of silently lowering the bar.
 
 ---
 
