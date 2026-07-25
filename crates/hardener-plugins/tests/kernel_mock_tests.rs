@@ -770,6 +770,21 @@ async fn apply_ignores_exception_whose_value_does_not_match() {
             .any(|c| c.change_description.contains("Stale exception")),
         "a non-matching exception must not produce a skipped change"
     );
+
+    // The positive assertion: hardening must actually have happened, not
+    // merely have failed to record a stale-exception skip (which would also
+    // pass if apply returned early for an unrelated reason).
+    let log = executor.log();
+    let write = log
+        .files_written
+        .iter()
+        .find(|(p, _)| p.to_str().unwrap().contains("randomize_va_space"))
+        .expect("should have written randomize_va_space despite the stale exception");
+    assert_eq!(
+        write.1, "2",
+        "randomize_va_space must be hardened to the secure value 2, got: {}",
+        write.1
+    );
 }
 
 #[tokio::test]

@@ -679,6 +679,72 @@ async fn apply_ignores_exception_whose_mode_does_not_match() {
     );
 }
 
+/// A regression test for the `.filter(|m| m.exists)` fix in the apply loop's
+/// `current_mode` read. `/etc/gshadow` is deliberately left unregistered, so
+/// `MockExecutor::file_metadata` returns its sentinel `Ok(exists: false, mode:
+/// 0)` for it - reproducing a host where `stat` fails but the read still
+/// "succeeds" with a mode of zero. The exception below documents "0000",
+/// exactly that sentinel value: without the `.filter` guard, an unverified
+/// mode would satisfy this exception and record a bogus skipped-exception
+/// change for a path that was never actually observed to be 0000. With the
+/// guard restored, an unverified mode never matches any exception, and since
+/// `/etc/gshadow` does not exist in this fixture, `apply_path_permissions`
+/// also declines to act on it (`path_exists` is the authority there) - so no
+/// change at all is recorded for it.
+///
+/// Uses `.remote()` so a would-be chmod (if the regression were present)
+/// goes through the mock's `execute_command` rather than a real local
+/// `fchmod` syscall.
+#[tokio::test]
+async fn apply_ignores_exception_when_mode_is_unverified() {
+    let executor = MockExecutor::new().remote().with_file_metadata(
+        "/root",
+        "",
+        FileMetadata {
+            exists: true,
+            is_file: false,
+            is_dir: true,
+            mode: 0o700,
+            size: 0,
+            uid: 0,
+            gid: 0,
+        },
+    );
+
+    let mut ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PermissionsHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "/etc/gshadow".to_string(),
+        PolicyException {
+            value: "0000".to_string(),
+            allowed: true,
+            reason: "Bogus exception matching the unverified-mode sentinel".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    assert!(
+        !result
+            .apply_changes
+            .iter()
+            .any(|c| c.change_description.contains("/etc/gshadow")),
+        "an unverified mode must not match an exception, and a path that \
+         does not exist must not otherwise be acted on, got: {:?}",
+        result
+            .apply_changes
+            .iter()
+            .map(|c| &c.change_description)
+            .collect::<Vec<_>>()
+    );
+}
+
 #[tokio::test]
 async fn scan_honours_directive_override() {
     // Baseline for /root is already compliant (0700), but a stricter

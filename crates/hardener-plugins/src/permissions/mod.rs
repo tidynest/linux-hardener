@@ -22,7 +22,7 @@ use hardener_core::{
 };
 use std::os::unix::fs::OpenOptionsExt;
 use std::{path::Path, time::Instant};
-use tracing::info;
+use tracing::{info, warn};
 
 /// File Permissions Hardening Plugin
 ///
@@ -682,11 +682,33 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
     }
 }
 
+/// The "from X to Y" fragment of a chmod change description. When the
+/// current mode was verified it names both ends of the transition; when it
+/// was not (see [`apply_path_permissions`]), only the target is known, so the
+/// description says so explicitly rather than implying a starting mode that
+/// was never actually observed.
+fn mode_transition_description(current_mode: Option<u32>, target: u32) -> String {
+    match current_mode {
+        Some(mode) => format!("from {mode:04o} to {target:04o}"),
+        None => format!("to {target:04o} (current permissions could not be verified beforehand)"),
+    }
+}
+
 /// Applies correct permissions to a path and tracks the change.
 ///
 /// `current_mode` is read once by the caller (the apply loop), before the
 /// exception check, so it can be compared numerically against a documented
-/// exception; this function reuses it rather than reading the metadata again.
+/// exception; this function reuses it rather than reading the metadata
+/// again. `None` means the mode could not be verified (the `stat` behind it
+/// failed) even though the path may still exist - `path_exists` below is
+/// then the sole authority on existence, since it runs `test -e`
+/// independently of `stat`. An unverified mode never satisfies a policy
+/// exception (the caller already enforces that before reaching here), but
+/// hardening still proceeds: an exact directive is chmod'd to its fixed
+/// baseline regardless of the current mode, while a max-mask directive's
+/// target depends on the current mode and so cannot be safely guessed - it
+/// is skipped instead, with a `warn!` and a recorded `Change` so the gap is
+/// never silent.
 ///
 /// For local execution: uses `O_NOFOLLOW` open + `fchmod` to operate on
 /// the real inode, eliminating the TOCTOU window between check and chmod.
@@ -696,17 +718,45 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
 async fn apply_path_permissions(
     ctx: &Context,
     directive: &PermissionDirective,
-    current_mode: u32,
+    current_mode: Option<u32>,
 ) -> Option<Change> {
     let path = Path::new(directive.permission_path);
 
-    // Skip if path doesn't exist
+    // Skip if path doesn't exist. This is the sole existence authority when
+    // `current_mode` is unverified: `path_exists` uses `test -e`, independent
+    // of the `stat` that failed to yield a mode.
     if !ctx.executor().path_exists(path).await.unwrap_or(false) {
         return None;
     }
 
-    if !violates(directive, current_mode) {
-        return None;
+    match current_mode {
+        Some(mode) if !violates(directive, mode) => return None,
+        Some(_) => {}
+        None => {
+            // The path is confirmed present above, but its mode is unknown.
+            // Reproduce pre-branch semantics: an exact directive's target is
+            // the fixed baseline regardless of the current mode, so hardening
+            // still proceeds; a max-mask directive's target depends on the
+            // current mode, which is unknown, so guessing one could loosen an
+            // already-stricter host - skip it instead.
+            warn!(
+                "Permissions on {} could not be verified (stat failed); \
+                 hardening proceeds without a known current mode",
+                directive.permission_path
+            );
+            if directive.permission_max_mask {
+                return Some(Change {
+                    change_description: format!(
+                        "{}: skipped (current permissions could not be verified, \
+                         so a safe target cannot be computed for this max-mask directive)",
+                        directive.permission_path
+                    ),
+                    change_type: ChangeType::Skipped,
+                    change_success: true,
+                    change_error: None,
+                });
+            }
+        }
     }
 
     // A filesystem that cannot hold POSIX permissions ignores chmod (it exits 0
@@ -727,7 +777,10 @@ async fn apply_path_permissions(
 }
 
 /// TOCTOU-safe local permission change via `O_NOFOLLOW` + `fchmod`.
-fn apply_local_fchmod(directive: &PermissionDirective, current_mode: u32) -> Option<Change> {
+fn apply_local_fchmod(
+    directive: &PermissionDirective,
+    current_mode: Option<u32>,
+) -> Option<Change> {
     use nix::sys::stat::{Mode, fchmod};
 
     let path = Path::new(directive.permission_path);
@@ -756,13 +809,18 @@ fn apply_local_fchmod(directive: &PermissionDirective, current_mode: u32) -> Opt
         }
     };
 
-    let target = target_mode(directive, current_mode);
+    // `apply_path_permissions` never reaches here with an unverified mode for
+    // a max-mask directive (it returns early for that case), so `unwrap_or(0)`
+    // only ever substitutes for an exact directive, whose target ignores
+    // `current_mode` entirely - the 0 cannot influence the outcome.
+    let target = target_mode(directive, current_mode.unwrap_or(0));
     let target_bits = Mode::from_bits_truncate(target);
     match fchmod(&file, target_bits) {
         Ok(()) => Some(Change {
             change_description: format!(
-                "Changed permissions on {} from {:04o} to {:04o}",
-                directive.permission_path, current_mode, target
+                "Changed permissions on {} {}",
+                directive.permission_path,
+                mode_transition_description(current_mode, target)
             ),
             change_type: ChangeType::Permissions,
             change_success: true,
@@ -784,9 +842,12 @@ fn apply_local_fchmod(directive: &PermissionDirective, current_mode: u32) -> Opt
 async fn apply_remote_chmod(
     ctx: &Context,
     directive: &PermissionDirective,
-    current_mode: u32,
+    current_mode: Option<u32>,
 ) -> Option<Change> {
-    let mode_str = format!("{:04o}", target_mode(directive, current_mode));
+    // See `apply_local_fchmod` re: `unwrap_or(0)` - only ever substitutes for
+    // an exact directive's mode-independent target.
+    let target = target_mode(directive, current_mode.unwrap_or(0));
+    let mode_str = format!("{target:04o}");
     let result = ctx
         .executor()
         .execute_command("chmod", &[&mode_str, directive.permission_path])
@@ -796,7 +857,6 @@ async fn apply_remote_chmod(
         Ok(output) if output.success() => {
             // Verify the change took effect: for max-mask directives, verify
             // no disallowed bits remain; for exact directives, verify equality.
-            let target = target_mode(directive, current_mode);
             let path = Path::new(directive.permission_path);
             let verified = ctx
                 .executor()
@@ -808,8 +868,9 @@ async fn apply_remote_chmod(
             if verified {
                 Some(Change {
                     change_description: format!(
-                        "Changed permissions on {} from {:04o} to {:04o}",
-                        directive.permission_path, current_mode, target
+                        "Changed permissions on {} {}",
+                        directive.permission_path,
+                        mode_transition_description(current_mode, target)
                     ),
                     change_type: ChangeType::Permissions,
                     change_success: true,
@@ -911,10 +972,12 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
         // Apply permissions to all critical paths
         for directive in CRITICAL_PERMISSIONS {
             let path = Path::new(directive.permission_path);
-            // An unreadable mode cannot confirm an exception, so it is not
-            // honoured; the path is then skipped without a recorded change,
-            // since a mode that cannot be read cannot be compared against
-            // the baseline either.
+            // An unverified mode (stat failed) can never confirm an
+            // exception, so it is not honoured below. It does not, however,
+            // mean there is nothing to harden: `apply_path_permissions`
+            // decides how to proceed for that case (see its doc comment),
+            // using `path_exists` as the authority on whether the path is
+            // even there.
             let current_mode = ctx
                 .executor()
                 .file_metadata(path)
@@ -943,12 +1006,6 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
                 });
                 continue;
             }
-
-            // Metadata unreadable: nothing to harden against and no exception
-            // could be confirmed either, so move on without recording a change.
-            let Some(current_mode) = current_mode else {
-                continue;
-            };
 
             // Apply directive mode override if present
             let directive = if let Some(mode_str) = config.directives.get(directive.permission_path)
