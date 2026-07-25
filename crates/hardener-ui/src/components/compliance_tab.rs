@@ -1,98 +1,84 @@
 //! Compliance tab content for the Analysis page.
 //!
-//! Contains framework selection and report generation.
+//! A framework chip picker over the ten supported frameworks, then one report
+//! section per generated framework: a score-band bar, a compact status-count
+//! row, and hairline control rows. A bottom-right Export/Generate footer stays
+//! visible so a report can be generated from the empty state. Presentation-only
+//! over the frozen report bindings.
 
-use crate::components::{Card, CopyButton, HeadingLevel};
 use crate::state::AppState;
 use crate::tauri_bindings::{invoke_export_report, invoke_generate_report};
+use crate::types::ControlStatus;
+use crate::utils::{score_band, score_band_class};
 use leptos::prelude::*;
 
-/// Compliance tab content with framework selection and reports.
+/// The existing `.status-*` colour class for a control status pill. Manual
+/// review maps to the amber `.status-manual` (honesty bucket), never red.
+fn control_status_class(status: &ControlStatus) -> &'static str {
+    match status {
+        ControlStatus::Pass => "status-pass",
+        ControlStatus::Fail => "status-fail",
+        ControlStatus::ManualReview => "status-manual",
+        ControlStatus::NotApplicable => "status-na",
+    }
+}
+
+/// Compliance tab: framework chip picker, per-framework reports, and a
+/// persistent Export/Generate footer.
 #[component]
 pub fn ComplianceTab() -> impl IntoView {
     let app_state = expect_context::<AppState>();
 
-    // Available compliance frameworks, derived from the shared enum so the
+    // The ten frameworks as (id, full name), from the shared enum so the
     // picker cannot drift when a framework is added.
     let frameworks: Vec<(&'static str, &'static str)> = hardener_types::ComplianceFramework::ALL
         .iter()
         .map(|f| (f.id(), f.full_name()))
         .collect();
 
-    // Track selected frameworks
-    let selected_frameworks = RwSignal::new(vec!["cis".to_string()]);
-
-    // Status message for user feedback
-    let status_message = RwSignal::new(Option::<(String, bool)>::None);
-
-    // Export format state
+    let selected = RwSignal::new(vec!["cis".to_string()]);
     let export_format = RwSignal::new("text".to_string());
     let is_exporting = RwSignal::new(false);
+    let status_message = RwSignal::new(Option::<(String, bool)>::None);
 
-    // Toggle framework selection
-    let toggle_framework = move |framework: &str| {
-        let framework = framework.to_string();
-        selected_frameworks.update(|selected| {
-            if selected.contains(&framework) {
-                selected.retain(|f| f != &framework);
+    let toggle = move |id: String| {
+        selected.update(|s| {
+            if s.contains(&id) {
+                s.retain(|f| f != &id);
             } else {
-                selected.push(framework);
+                s.push(id);
             }
         });
     };
 
-    // Generate reports handler
     let on_generate = move |_| {
-        let frameworks = selected_frameworks.get();
+        let frameworks = selected.get();
         if frameworks.is_empty() {
             return;
         }
-
         app_state.is_generating_report.set(true);
         status_message.set(None);
-
         leptos::task::spawn_local(async move {
             match invoke_generate_report(frameworks).await {
-                Ok(reports) => {
-                    let count = reports.len();
-                    app_state.compliance_reports.set(reports);
-                    status_message.set(Some((
-                        format!(
-                            "Generated {} compliance report{}",
-                            count,
-                            if count == 1 { "" } else { "s" }
-                        ),
-                        true,
-                    )));
-                }
-                Err(e) => {
-                    web_sys::console::error_1(&format!("Report generation failed: {}", e).into());
-                    status_message.set(Some((format!("Failed: {}", e), false)));
-                }
+                Ok(reports) => app_state.compliance_reports.set(reports),
+                Err(e) => status_message.set(Some((format!("Failed: {e}"), false))),
             }
             app_state.is_generating_report.set(false);
         });
     };
 
-    // Export handler: generates + saves to file
     let on_export = move |_| {
-        let frameworks = selected_frameworks.get();
+        let frameworks = selected.get();
         if frameworks.is_empty() {
             return;
         }
         let format = export_format.get();
         is_exporting.set(true);
         status_message.set(None);
-
         leptos::task::spawn_local(async move {
             match invoke_export_report(frameworks, format, None).await {
-                Ok(path) => {
-                    status_message.set(Some((format!("Exported to {}", path), true)));
-                }
-                Err(e) => {
-                    web_sys::console::error_1(&format!("Export failed: {}", e).into());
-                    status_message.set(Some((format!("Export failed: {}", e), false)));
-                }
+                Ok(path) => status_message.set(Some((format!("Exported to {path}"), true))),
+                Err(e) => status_message.set(Some((format!("Export failed: {e}"), false))),
             }
             is_exporting.set(false);
         });
@@ -100,145 +86,130 @@ pub fn ComplianceTab() -> impl IntoView {
 
     view! {
         <div class="compliance-tab">
-            <Card title="Select Compliance Frameworks" title_level=HeadingLevel::H2 class="framework-selection">
-                <div class="framework-grid" role="group" aria-label="Compliance frameworks">
-                    {frameworks.into_iter().map(|(id, label)| {
-                        let id_str = id.to_string();
-                        let id_for_check = id_str.clone();
-                        let id_for_click = id_str.clone();
-
-                        view! {
-                            <label class="framework-checkbox">
-                                <input
-                                    type="checkbox"
-                                    checked=move || selected_frameworks.get().contains(&id_for_check)
-                                    on:change=move |_| toggle_framework(&id_for_click)
-                                />
-                                {label}
-                            </label>
-                        }
-                    }).collect::<Vec<_>>()}
-                </div>
-
-                <div class="generate-actions">
-                    <button
-                        class="btn btn-primary"
-                        on:click=on_generate
-                        disabled=move || {
-                            selected_frameworks.get().is_empty() || app_state.is_generating_report.get()
-                        }
-                    >
-                        {move || if app_state.is_generating_report.get() {
-                            "Generating..."
-                        } else {
-                            "Generate Reports"
-                        }}
-                    </button>
-
-                    <div class="export-controls">
-                        <select
-                            class="format-select"
-                            on:change=move |ev| {
-                                export_format.set(event_target_value(&ev));
-                            }
-                        >
-                            <option value="text" selected=true>"Text"</option>
-                            <option value="json">"JSON"</option>
-                            <option value="csv">"CSV"</option>
-                            <option value="html">"HTML"</option>
-                            <option value="pdf">"PDF"</option>
-                        </select>
+            <div class="compliance-frameworks" role="group" aria-label="Compliance frameworks">
+                {frameworks.into_iter().map(|(id, label)| {
+                    let id_str = id.to_string();
+                    let id_check = id_str.clone();
+                    let id_click = id_str.clone();
+                    // Copy Signal so `is_sel` reads at both the class and aria sites.
+                    let is_sel = Signal::derive(move || selected.get().iter().any(|f| f == &id_check));
+                    view! {
                         <button
-                            class="btn btn-secondary"
-                            on:click=on_export
-                            disabled=move || {
-                                selected_frameworks.get().is_empty() || is_exporting.get()
-                            }
+                            type="button"
+                            class="framework-chip"
+                            class:selected=move || is_sel.get()
+                            aria-pressed=move || is_sel.get().to_string()
+                            on:click=move |_| toggle(id_click.clone())
                         >
-                            {move || if is_exporting.get() {
-                                "Exporting..."
-                            } else {
-                                "Export to File"
-                            }}
+                            {label}
                         </button>
-                    </div>
-
-                    {move || status_message.get().map(|(msg, is_success)| {
-                        let class = if is_success { "status-success" } else { "status-error" };
-                        view! {
-                            <span class=format!("status-message {}", class)>{msg}</span>
-                        }
-                    })}
-                </div>
-            </Card>
-
-            <Card class="compliance-results">
-                <Show
-                    when=move || !app_state.compliance_reports.get().is_empty()
-                    fallback=|| view! {
-                        <div class="empty-state">
-                            <div class="empty-state-icon">"📊"</div>
-                            <p class="empty-state-title">"No reports generated yet"</p>
-                            <p class="empty-state-hint">"Select frameworks and generate reports to see compliance status."</p>
-                        </div>
                     }
-                >
-                    {move || app_state.compliance_reports.get().iter().map(|report| {
-                        let framework = format!("{:?}", report.report_framework);
-                        let score = report.report_summary.summary_score_percentage;
-                        let passing = report.report_summary.summary_passing;
-                        let failing = report.report_summary.summary_failing;
-                        let manual = report.report_summary.summary_manual_review;
-                        let na = report.report_summary.summary_not_applicable;
+                }).collect::<Vec<_>>()}
+            </div>
 
-                        let copy_text = format!(
-                            "{}: {:.0}%\nPassing: {} | Failing: {} | Manual: {} | N/A: {}",
-                            framework, score, passing, failing, manual, na,
-                        );
-
-                        let score_class = if score >= 80.0 {
-                            "score-high"
-                        } else if score >= 60.0 {
-                            "score-medium"
-                        } else {
-                            "score-low"
-                        };
-
-                        view! {
-                            <div class="report-card">
-                                <div class="report-card-header">
-                                    <h3>{framework}</h3>
-                                    <div class="report-card-actions">
-                                        <span class=format!("compliance-score {}", score_class)>
-                                            {format!("{:.0}%", score)}
-                                        </span>
-                                        <CopyButton text=Signal::derive(move || copy_text.clone()) />
-                                    </div>
-                                </div>
-
-                                <div class="report-summary">
-                                    <div class="summary-stat summary-pass">
-                                        <span class="stat-value">{passing}</span>
-                                        <span class="stat-label">"Passing"</span>
-                                    </div>
-                                    <div class="summary-stat summary-fail">
-                                        <span class="stat-value">{failing}</span>
-                                        <span class="stat-label">"Failing"</span>
-                                    </div>
-                                    <div class="summary-stat summary-manual">
-                                        <span class="stat-value">{manual}</span>
-                                        <span class="stat-label">"Manual"</span>
-                                    </div>
-                                    <div class="summary-stat summary-na">
-                                        <span class="stat-value">{na}</span>
-                                        <span class="stat-label">"N/A"</span>
-                                    </div>
-                                </div>
+            <Show
+                when=move || !app_state.compliance_reports.get().is_empty()
+                fallback=|| view! {
+                    <div class="empty-state">
+                        <p class="empty-state-title">"No reports generated yet"</p>
+                        <p class="empty-state-hint">
+                            "Select frameworks and generate a report to see per-control compliance."
+                        </p>
+                    </div>
+                }
+            >
+                {move || app_state.compliance_reports.get().into_iter().map(|report| {
+                    let name = report.report_framework.full_name();
+                    let summary = report.report_summary.clone();
+                    let score = summary.summary_score_percentage;
+                    let band_cls = score_band_class(score_band(score.round() as i32));
+                    let total = summary.summary_total_controls;
+                    let pass = summary.summary_passing;
+                    let fail = summary.summary_failing;
+                    let manual = summary.summary_manual_review;
+                    let na = summary.summary_not_applicable;
+                    let controls = report.report_controls.clone();
+                    view! {
+                        <section class=format!("compliance-report {band_cls}")>
+                            <div class="compliance-report-head">
+                                <h3 class="compliance-report-name">{name}</h3>
+                                <span class="compliance-report-assessed">
+                                    {format!("{total} controls assessed")}
+                                </span>
                             </div>
-                        }
-                    }).collect::<Vec<_>>()}
-                </Show>
-            </Card>
+                            <div class="compliance-report-score">
+                                {format!("{:.0}", score)}
+                                <span class="compliance-report-max">"/100"</span>
+                            </div>
+                            <div class="score-bar">
+                                <div
+                                    class="score-bar-fill"
+                                    style=format!("width: {}%", score.clamp(0.0, 100.0))
+                                ></div>
+                            </div>
+                            <div class="compliance-counts">
+                                <span class="compliance-count">
+                                    <span class="count-num status-pass">{pass}</span>" Pass"
+                                </span>
+                                <span class="compliance-count">
+                                    <span class="count-num status-fail">{fail}</span>" Fail"
+                                </span>
+                                <span class="compliance-count">
+                                    <span class="count-num status-manual">{manual}</span>" Manual review"
+                                </span>
+                                <span class="compliance-count">
+                                    <span class="count-num status-na">{na}</span>" N/A"
+                                </span>
+                            </div>
+                            <ul class="compliance-controls-list">
+                                {controls.into_iter().map(|c| {
+                                    let sc = control_status_class(&c.control_status);
+                                    view! {
+                                        <li class="control-row">
+                                            <span class="control-id">{c.control_id}</span>
+                                            <span class="control-title">{c.control_title}</span>
+                                            <span class=format!("control-status {sc}")>
+                                                {c.control_status.to_string()}
+                                            </span>
+                                        </li>
+                                    }
+                                }).collect::<Vec<_>>()}
+                            </ul>
+                        </section>
+                    }
+                }).collect::<Vec<_>>()}
+            </Show>
+
+            <div class="compliance-actions">
+                {move || status_message.get().map(|(msg, ok)| {
+                    let cls = if ok { "status-success" } else { "status-error" };
+                    view! { <span class=format!("status-message {cls}")>{msg}</span> }
+                })}
+                <select
+                    class="format-select"
+                    on:change=move |ev| export_format.set(event_target_value(&ev))
+                >
+                    <option value="text" selected=true>"Text"</option>
+                    <option value="json">"JSON"</option>
+                    <option value="csv">"CSV"</option>
+                    <option value="html">"HTML"</option>
+                    <option value="pdf">"PDF"</option>
+                </select>
+                <button
+                    class="btn btn-secondary"
+                    on:click=on_export
+                    disabled=move || selected.get().is_empty() || is_exporting.get()
+                >
+                    {move || if is_exporting.get() { "Exporting..." } else { "Export" }}
+                </button>
+                <button
+                    class="btn btn-primary"
+                    on:click=on_generate
+                    disabled=move || selected.get().is_empty() || app_state.is_generating_report.get()
+                >
+                    {move || if app_state.is_generating_report.get() { "Generating..." } else { "Generate Report" }}
+                </button>
+            </div>
         </div>
     }
 }

@@ -2,24 +2,15 @@
 //!
 //! Displays apply results and checkpoint management.
 
-use crate::components::{Card, ConfirmDeleteButton, CopyButton, HeadingLevel};
+use crate::components::{ConfirmDeleteButton, CopyButton, RollbackModal};
 use crate::state::AppState;
 use crate::tauri_bindings::{
     invoke_create_checkpoint, invoke_delete_checkpoint, invoke_get_checkpoint_detail,
-    invoke_get_checkpoints, invoke_rollback,
+    invoke_get_checkpoints,
 };
-use crate::types::{CheckpointDetail, CheckpointInfo, FileRestoreAction};
+use crate::types::{CheckpointDetail, CheckpointInfo};
+use crate::utils::{checkpoint_time, group_checkpoints_by_date};
 use leptos::prelude::*;
-
-/// Formats a `FileRestoreAction` variant for display.
-fn format_restore_action(action: FileRestoreAction) -> &'static str {
-    match action {
-        FileRestoreAction::Restored => "Restored",
-        FileRestoreAction::Removed => "Removed",
-        FileRestoreAction::PermissionsRestored => "Permissions Restored",
-        FileRestoreAction::Skipped => "Skipped",
-    }
-}
 
 /// History section with apply results and checkpoints.
 #[component]
@@ -34,6 +25,8 @@ pub fn HistorySection() -> impl IntoView {
     let expanded_detail = RwSignal::new(None::<CheckpointDetail>);
     // Tracks which checkpoint ID has a pending delete confirmation (None = no confirmation shown)
     let pending_delete = RwSignal::new(None::<String>);
+    // Checkpoint currently open in the rollback modal (None = closed).
+    let rollback_target = RwSignal::new(None::<CheckpointInfo>);
 
     // Function to load checkpoints
     let load_checkpoints = move || {
@@ -54,6 +47,17 @@ pub fn HistorySection() -> impl IntoView {
 
     // Load checkpoints on mount
     load_checkpoints();
+
+    // The checkpoint this session's most recent apply created, if any. Used to
+    // mark one rail node "Latest"; falls back to "newest node" when absent
+    // (e.g. after a restart), handled in the render below.
+    let latest_applied_id = move || {
+        app_state
+            .apply_results
+            .get()
+            .last()
+            .and_then(|r| r.apply_checkpoint_id.clone())
+    };
 
     // Create checkpoint handler
     let handle_create = move |_| {
@@ -121,265 +125,140 @@ pub fn HistorySection() -> impl IntoView {
         });
     };
 
-    // Rollback handler
-    let handle_rollback = move |checkpoint_id: String| {
-        leptos::task::spawn_local(async move {
-            match invoke_rollback(checkpoint_id, app_state.config_path.get_untracked()).await {
-                Ok(result) => {
-                    app_state.rollback_result.set(Some(result));
-                    if let Ok(cp) = invoke_get_checkpoints().await {
-                        checkpoints.set(cp);
-                    }
-                }
-                Err(e) => {
-                    web_sys::console::error_1(&format!("Rollback failed: {}", e).into());
-                    app_state
-                        .error_message
-                        .set(Some(format!("Rollback failed: {}", e)));
-                }
-            }
-        });
-    };
-
     view! {
         <div class="history-section">
             <p class="section-guidance">
-                "Review past hardening operations and restore previous configurations. "
-                "Checkpoints preserve your system state before each change, enabling safe rollback."
+                "Every apply saves a checkpoint first. Restore any of them to return "
+                "the system to how it was at that moment."
             </p>
 
-            <div class="two-col-row">
-            // Latest Apply Result
-            <Card title="Latest Apply Operation" title_level=HeadingLevel::H2 class="apply-results-summary">
-                <Show
-                    when=move || app_state.apply_results.get().last().is_some()
-                    fallback=|| view! {
-                        <div class="empty-state">
-                            <div class="empty-state-icon">"⚡"</div>
-                            <p class="empty-state-title">"No apply operations yet"</p>
-                            <p class="empty-state-hint">"Configure and apply hardening in the Configure tab to see results here."</p>
-                        </div>
-                    }
-                >
-                    {move || {
-                        let results = app_state.apply_results.get();
-                        let result = results.last().expect("guarded by Show when=");
-                        let success = result.apply_success;
-                        let changes = result.apply_changes.clone();
-                        let change_summary = crate::utils::apply_change_summary(result);
-                        let checkpoint_id = result.apply_checkpoint_id.clone();
-
-                        view! {
-                            <div class="result-summary-card">
-                                <div class=format!("result-status {}", if success { "success" } else { "failed" })>
-                                    {if success { "Success" } else { "Failed" }}
-                                </div>
-                                <div class="result-changes">
-                                    {change_summary}
-                                </div>
-                                {checkpoint_id.map(|id| view! {
-                                    <div class="result-checkpoint">
-                                        "Checkpoint: "<code>{id}</code>
-                                    </div>
-                                })}
-                                <details>
-                                    <summary>"View Changes"</summary>
-                                    <ol class="changes-list">
-                                        {changes.iter().map(|change| {
-                                            let desc = change.change_description.clone();
-                                            let class = if change.is_skipped() {
-                                                "change-skipped"
-                                            } else if change.change_success {
-                                                "change-success"
-                                            } else {
-                                                "change-failure"
-                                            };
-                                            view! {
-                                                <li class=class>
-                                                    {desc}
-                                                </li>
-                                            }
-                                        }).collect::<Vec<_>>()}
-                                    </ol>
-                                </details>
-                            </div>
+            <div class="checkpoint-controls">
+                <div class="create-checkpoint-form">
+                    <input
+                        type="text"
+                        class="input-text"
+                        placeholder="Checkpoint name..."
+                        prop:value=move || checkpoint_name.get()
+                        on:input=move |ev| {
+                            checkpoint_name.set(event_target_value(&ev));
                         }
-                    }}
-                </Show>
-            </Card>
-
-            // Latest Rollback Result
-            <Card title="Latest Rollback" title_level=HeadingLevel::H2 class="rollback-results-summary">
-                <Show
-                    when=move || app_state.rollback_result.get().is_some()
-                    fallback=|| view! {
-                        <div class="empty-state">
-                            <div class="empty-state-icon">"↩"</div>
-                            <p class="empty-state-title">"No rollback performed yet"</p>
-                            <p class="empty-state-hint">"Click Rollback on a checkpoint to restore a previous state."</p>
-                        </div>
-                    }
-                >
-                    {move || {
-                        let result = app_state.rollback_result.get().expect("guarded by Show when=");
-                        let success = result.rollback_success;
-                        let files_count = result.rollback_files.len();
-                        let checkpoint_id = result.rollback_checkpoint_id.clone();
-                        let files = result.rollback_files.clone();
-
-                        view! {
-                            <div class="result-summary-card">
-                                <div class=format!("result-status {}", if success { "success" } else { "failed" })>
-                                    {if success { "Rollback Successful" } else { "Rollback Failed" }}
-                                </div>
-                                <div class="result-changes">
-                                    {format!("{} files processed", files_count)}
-                                </div>
-                                <div class="result-checkpoint">
-                                    "Checkpoint: "<code>{checkpoint_id}</code>
-                                </div>
-                                <details>
-                                    <summary>"View Restored Files"</summary>
-                                    <ol class="changes-list">
-                                        {files.iter().map(|file| {
-                                            let path = file.restore_path.clone();
-                                            let action = format_restore_action(file.restore_action);
-                                            let ok = file.restore_success;
-                                            view! {
-                                                <li class=if ok { "change-success" } else { "change-failure" }>
-                                                    <code>{path}</code>" - "{action}
-                                                </li>
-                                            }
-                                        }).collect::<Vec<_>>()}
-                                    </ol>
-                                </details>
-                            </div>
-                        }
-                    }}
-                </Show>
-            </Card>
-            </div>
-
-            // Checkpoints Table
-            <Card title="System Checkpoints" title_level=HeadingLevel::H2 class="checkpoints-section">
-                <div class="checkpoint-header">
-                    <div class="create-checkpoint-form">
-                        <input
-                            type="text"
-                            class="input-text"
-                            placeholder="Checkpoint name..."
-                            prop:value=move || checkpoint_name.get()
-                            on:input=move |ev| {
-                                checkpoint_name.set(event_target_value(&ev));
-                            }
-                        />
-                        <button
-                            class="btn btn-primary btn-small"
-                            on:click=handle_create
-                            disabled=move || {
-                                is_creating.get() || checkpoint_name.get().trim().is_empty()
-                            }
-                            aria-live="polite"
-                        >
-                            {move || if is_creating.get() { "Creating..." } else { "Create Checkpoint" }}
-                        </button>
-                    </div>
+                    />
                     <button
-                        class="btn btn-secondary btn-small"
-                        on:click=move |_| load_checkpoints()
-                        disabled=move || is_loading.get()
+                        class="btn btn-primary btn-small"
+                        on:click=handle_create
+                        disabled=move || {
+                            is_creating.get() || checkpoint_name.get().trim().is_empty()
+                        }
                         aria-live="polite"
                     >
-                        {move || if is_loading.get() { "Refreshing..." } else { "Refresh" }}
+                        {move || if is_creating.get() { "Creating..." } else { "Create Checkpoint" }}
                     </button>
                 </div>
-                <Show
-                    when=move || !checkpoints.get().is_empty()
-                    fallback=move || {
-                        if is_loading.get() {
-                            view! {
-                                <div class="empty-state">
-                                    <div class="empty-state-icon">"⏳"</div>
-                                    <p class="empty-state-title">"Loading checkpoints..."</p>
-                                </div>
-                            }.into_any()
-                        } else {
-                            view! {
-                                <div class="empty-state">
-                                    <div class="empty-state-icon">"💾"</div>
-                                    <p class="empty-state-title">"No checkpoints available"</p>
-                                    <p class="empty-state-hint">"Checkpoints are created automatically when applying changes."</p>
-                                </div>
-                            }.into_any()
-                        }
-                    }
+                <button
+                    class="btn btn-secondary btn-small"
+                    on:click=move |_| load_checkpoints()
+                    disabled=move || is_loading.get()
+                    aria-live="polite"
                 >
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>"ID"</th>
-                                <th>"Name"</th>
-                                <th>"Created"</th>
-                                <th>"Actions"</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {move || checkpoints.get().iter().map(|cp| {
+                    {move || if is_loading.get() { "Refreshing..." } else { "Refresh" }}
+                </button>
+            </div>
+
+            <Show
+                when=move || !checkpoints.get().is_empty()
+                fallback=move || {
+                    if is_loading.get() {
+                        view! {
+                            <div class="empty-state">
+                                <div class="empty-state-icon">"⏳"</div>
+                                <p class="empty-state-title">"Loading checkpoints..."</p>
+                            </div>
+                        }.into_any()
+                    } else {
+                        view! {
+                            <div class="empty-state">
+                                <div class="empty-state-icon">"💾"</div>
+                                <p class="empty-state-title">"No checkpoints yet"</p>
+                                <p class="empty-state-hint">"Checkpoints are created automatically when you apply hardening."</p>
+                            </div>
+                        }.into_any()
+                    }
+                }
+            >
+                <ol class="timeline">
+                    {move || {
+                        let latest_id = latest_applied_id();
+                        // Newest node overall gets "Latest" when no session apply id matches.
+                        let newest_id = checkpoints.get().first().map(|c| c.checkpoint_id.clone());
+                        let mark_id = latest_id.or(newest_id);
+                        group_checkpoints_by_date(&checkpoints.get()).into_iter().map(|(date, cps)| {
+                            let nodes = cps.into_iter().map(|cp| {
                                 let id = cp.checkpoint_id.clone();
                                 let name = cp.checkpoint_name.clone();
-                                let created = cp.checkpoint_created.clone();
-                                let rollback_id = id.clone();
+                                let time = checkpoint_time(&cp.checkpoint_created).to_string();
+                                let user = cp.checkpoint_user.clone();
+                                let is_latest = mark_id.as_deref() == Some(id.as_str());
                                 let detail_id = id.clone();
+                                let cp_for_modal = cp.clone();
                                 let delete_id = id.clone();
                                 let row_id = id.clone();
 
                                 view! {
-                                    <tr>
-                                        <td><code>{id}</code></td>
-                                        <td>{name}</td>
-                                        <td>{created}</td>
-                                        <td class="actions-cell">
-                                            <button
-                                                class="btn btn-secondary btn-small"
-                                                on:click=move |_| handle_detail(detail_id.clone())
-                                            >
-                                                "Details"
-                                            </button>
-                                            <button
-                                                class="rollback-button"
-                                                on:click=move |_| handle_rollback(rollback_id.clone())
-                                            >
-                                                "Rollback"
-                                            </button>
-                                            <ConfirmDeleteButton
-                                                item_key=delete_id.clone()
-                                                pending=pending_delete
-                                                on_confirm=Callback::new(move |id: String| handle_delete(id))
-                                            />
-                                        </td>
-                                    </tr>
-                                    // Expansion row for checkpoint detail
-                                    <Show when=move || {
-                                        expanded_detail.get()
-                                            .as_ref()
-                                            .is_some_and(|d| d.checkpoint_id == row_id)
-                                    }>
-                                        {move || {
-                                            let detail = expanded_detail.get();
-                                            let detail = detail.as_ref().expect("guarded by Show when=");
-                                            let file_count = detail.file_count;
-                                            let files = detail.files.clone();
-                                            let copy_text = {
-                                                let mut text = format!("Checkpoint: {} files\n", file_count);
-                                                for f in &files {
-                                                    text.push_str(&format!("  {} ({})\n", f.path, f.permissions));
-                                                }
-                                                text
-                                            };
-                                            view! {
-                                                <tr class="detail-expansion-row">
-                                                    <td colspan="4">
-                                                        <div class="checkpoint-detail-panel">
+                                    <li class="timeline-node">
+                                        <span class=move || if is_latest {
+                                            "timeline-dot timeline-dot-latest"
+                                        } else {
+                                            "timeline-dot"
+                                        } aria-hidden="true"></span>
+                                        <div class="timeline-body">
+                                            <div class="timeline-head">
+                                                <span class="timeline-name">{name}</span>
+                                                {is_latest.then(|| view! {
+                                                    <span class="timeline-latest-pill">"Latest"</span>
+                                                })}
+                                            </div>
+                                            <div class="timeline-meta">
+                                                <span class="timeline-time">{time}</span>
+                                                <span class="timeline-user">{user}</span>
+                                            </div>
+                                            <div class="timeline-actions">
+                                                <button
+                                                    class="btn btn-secondary btn-small"
+                                                    on:click=move |_| handle_detail(detail_id.clone())
+                                                >
+                                                    "Details"
+                                                </button>
+                                                <button
+                                                    class="btn btn-danger btn-small"
+                                                    on:click=move |_| rollback_target.set(Some(cp_for_modal.clone()))
+                                                >
+                                                    "Roll back"
+                                                </button>
+                                                <ConfirmDeleteButton
+                                                    item_key=delete_id.clone()
+                                                    pending=pending_delete
+                                                    on_confirm=Callback::new(move |id: String| handle_delete(id))
+                                                />
+                                            </div>
+                                            <Show when=move || {
+                                                expanded_detail.get()
+                                                    .as_ref()
+                                                    .is_some_and(|d| d.checkpoint_id == row_id)
+                                            }>
+                                                {move || {
+                                                    let detail = expanded_detail.get();
+                                                    let detail = detail.as_ref().expect("guarded by Show when=");
+                                                    let file_count = detail.file_count;
+                                                    let files = detail.files.clone();
+                                                    let copy_text = {
+                                                        let mut text = format!("Checkpoint: {} files\n", file_count);
+                                                        for f in &files {
+                                                            text.push_str(&format!("  {} ({})\n", f.path, f.permissions));
+                                                        }
+                                                        text
+                                                    };
+                                                    view! {
+                                                        <div class="timeline-detail">
                                                             <div class="detail-file-header">
                                                                 <p class="detail-file-count">
                                                                     {format!("{} files captured", file_count)}
@@ -401,17 +280,33 @@ pub fn HistorySection() -> impl IntoView {
                                                                 }).collect::<Vec<_>>()}
                                                             </ul>
                                                         </div>
-                                                    </td>
-                                                </tr>
-                                            }
-                                        }}
-                                    </Show>
+                                                    }
+                                                }}
+                                            </Show>
+                                        </div>
+                                    </li>
                                 }
-                            }).collect::<Vec<_>>()}
-                        </tbody>
-                    </table>
-                </Show>
-            </Card>
+                            }).collect::<Vec<_>>();
+
+                            view! {
+                                <li class="timeline-group">
+                                    <p class="timeline-date">{date}</p>
+                                    <ol class="timeline-nodes">{nodes}</ol>
+                                </li>
+                            }
+                        }).collect::<Vec<_>>()
+                    }}
+                </ol>
+            </Show>
+
+            <RollbackModal
+                target=rollback_target
+                on_close=Callback::new(move |ran: bool| {
+                    if ran {
+                        load_checkpoints();
+                    }
+                })
+            />
         </div>
     }
 }

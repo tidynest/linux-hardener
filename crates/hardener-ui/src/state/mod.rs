@@ -1,15 +1,14 @@
 use crate::types::{
-    ApplyResult, ComplianceReport, ConfigSummary, Finding, RollbackResult, ScanResult,
-    SchedulerUiConfig, Severity,
+    ApplyResult, ComplianceReport, ConfigSummary, Finding, ScanResult, SchedulerUiConfig, Severity,
 };
 use hardener_types::ValidationReport;
 use hardener_types::remote::{RemoteConnectionInfo, RemoteHostProfile};
 use leptos::prelude::*;
 
 /// Total number of unchecked (requires-privileges) checks across scan
-/// results. Raw, undeduplicated sum: the banner and score badge report this
-/// as the honest count of unverified checks. Shared by UncheckedBanner and
-/// SecurityScore, which call it inside their reactive closures.
+/// results. Raw, undeduplicated sum: the score badge reports this as the
+/// honest count of unverified checks. Shared only by SecurityScore, which
+/// calls it inside its reactive closures.
 pub fn total_unchecked(results: &[ScanResult]) -> usize {
     results.iter().map(|r| r.scan_unchecked.len()).sum()
 }
@@ -33,8 +32,6 @@ pub struct AppState {
     /// History of apply operations.
     /// Stores results from each hardening application.
     pub apply_results: RwSignal<Vec<ApplyResult>>,
-    /// Result from the most recent rollback operation.
-    pub rollback_result: RwSignal<Option<RollbackResult>>,
     /// Whether a system scan is currently in progress.
     pub is_scanning: RwSignal<bool>,
     /// Whether hardening changes are currently being applied.
@@ -57,8 +54,6 @@ pub struct AppState {
     pub remote_hosts: RwSignal<Vec<RemoteHostProfile>>,
     /// Currently active remote connection info (None = disconnected).
     pub remote_connection: RwSignal<Option<RemoteConnectionInfo>>,
-    /// Results from the most recent remote scan.
-    pub remote_scan_results: RwSignal<Vec<ScanResult>>,
     /// Whether an SSH connection attempt is in progress.
     pub is_connecting: RwSignal<bool>,
     /// Whether a remote scan is currently running.
@@ -73,10 +68,15 @@ pub struct AppState {
     pub config_path: RwSignal<Option<String>>,
     /// Validation summary for the currently selected config file.
     pub config_summary: RwSignal<Option<ConfigSummary>>,
-    /// Whether a privileged deep scan is currently running. Shared across
-    /// every `UncheckedBanner` instance (Dashboard and Analysis both mount
-    /// one) so the two buttons disable together during a single run.
+    /// Whether a privileged deep scan is currently running. Shared by the
+    /// Dashboard hero and the Findings honesty footer so their two deep-scan
+    /// buttons disable together during a single run.
     pub deep_scan_running: RwSignal<bool>,
+    /// Active colour theme id (see `crate::utils::theme::THEMES`). The single
+    /// source of truth shared by the sidebar quick-switch and the Settings
+    /// page grid; a lone `Effect` in `App` applies it to `<html>` and persists
+    /// it.
+    pub theme: RwSignal<String>,
 }
 
 impl Default for AppState {
@@ -86,7 +86,6 @@ impl Default for AppState {
             selected_finding: RwSignal::new(None),
             severity_filter: RwSignal::new(None),
             apply_results: RwSignal::new(Vec::new()),
-            rollback_result: RwSignal::new(None),
             is_scanning: RwSignal::new(false),
             is_applying: RwSignal::new(false),
             compliance_reports: RwSignal::new(Vec::new()),
@@ -97,7 +96,6 @@ impl Default for AppState {
             error_message: RwSignal::new(None),
             remote_hosts: RwSignal::new(Vec::new()),
             remote_connection: RwSignal::new(None),
-            remote_scan_results: RwSignal::new(Vec::new()),
             is_connecting: RwSignal::new(false),
             is_remote_scanning: RwSignal::new(false),
             scheduler_config: RwSignal::new(None),
@@ -106,6 +104,53 @@ impl Default for AppState {
             config_path: RwSignal::new(None),
             config_summary: RwSignal::new(None),
             deep_scan_running: RwSignal::new(false),
+            theme: RwSignal::new("default".to_string()),
         }
+    }
+}
+
+/// Lifted form state for the Scheduler page: one owner for both the schedule
+/// and notification fields, so a single page-level Save writes the whole
+/// `SchedulerUiConfig` at once. The presentational sections read/write these
+/// signals; `SchedulerPage` holds the sole config-sync `Effect` and the save.
+#[derive(Clone, Copy)]
+pub struct SchedulerForm {
+    pub enabled: RwSignal<bool>,
+    pub selected_preset: RwSignal<String>,
+    pub custom_cron: RwSignal<String>,
+    pub advanced_open: RwSignal<bool>,
+    pub selected_plugins: RwSignal<Vec<String>>,
+    pub min_severity: RwSignal<String>,
+    pub email_enabled: RwSignal<bool>,
+    pub email_recipients: RwSignal<String>,
+    pub email_from: RwSignal<String>,
+    pub webhook_enabled: RwSignal<bool>,
+    pub webhook_url: RwSignal<String>,
+    pub webhook_format: RwSignal<String>,
+}
+
+impl SchedulerForm {
+    /// Fresh bundle with empty/default fields, before the config loads.
+    pub fn new() -> Self {
+        Self {
+            enabled: RwSignal::new(false),
+            selected_preset: RwSignal::new(String::new()),
+            custom_cron: RwSignal::new(String::new()),
+            advanced_open: RwSignal::new(false),
+            selected_plugins: RwSignal::new(Vec::new()),
+            min_severity: RwSignal::new("medium".to_string()),
+            email_enabled: RwSignal::new(false),
+            email_recipients: RwSignal::new(String::new()),
+            email_from: RwSignal::new(String::new()),
+            webhook_enabled: RwSignal::new(false),
+            webhook_url: RwSignal::new(String::new()),
+            webhook_format: RwSignal::new("generic".to_string()),
+        }
+    }
+}
+
+impl Default for SchedulerForm {
+    fn default() -> Self {
+        Self::new()
     }
 }

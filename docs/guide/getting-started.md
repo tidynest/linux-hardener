@@ -1,6 +1,6 @@
 # Getting started
 
-**Last Updated**: 2026-07-22
+**Last Updated**: 2026-07-24
 
 A task-oriented tour of the hardener for new users: scan a system, read the
 findings, preview and apply hardening, roll it back, and produce a first
@@ -156,18 +156,22 @@ auto-detection.
 
 The desktop app (`linux-hardener-desktop`) wraps the same engine:
 
-1. Launch the app and click **Run Scan** on the Dashboard.
+1. Launch the app and click **Run Security Scan** on the Dashboard.
 2. Review findings by severity on the **Analysis** page; click a finding for
    its detail panel.
 3. On the **Hardening** page (Configure tab) pick a profile and plugins, click
-   **Preview Changes**, then **Confirm & Apply**; a polkit dialog asks for your
-   password (root work runs through `pkexec`, see the
-   [desktop environment compatibility guide](desktop-environment-compatibility.md)).
-4. Use the **System Checkpoints** section (Hardening page, History tab) to roll
-   back if needed.
+   **Preview Changes**, then the Apply button (labelled "Apply N Changes"); a
+   polkit dialog asks for your password (root work runs through `pkexec`, see
+   the [desktop environment compatibility guide](desktop-environment-compatibility.md)).
+4. Use the History tab on the Hardening page (it lists the checkpoints saved
+   on every apply) to roll back if needed.
 
-Seven pages in total: Dashboard, Analysis, Hardening, Remote, Scheduler
-(reachable with `Ctrl+1` to `Ctrl+5`), plus **Fleet** (read-only multi-host
-scan posture) and **Fleet Apply** (apply and roll back across hosts) from the
-navigation bar. `Alt+T` cycles themes, `F11` toggles fullscreen, `Escape`
-closes panels.
+Seven pages in total, reached from the grouped left sidebar: Dashboard,
+Analysis and Hardening (grouped Local); Hosts (the merged read-only
+multi-host scan posture and remote scanning), Fleet Apply (apply and roll
+back across hosts) and Scheduler (grouped Fleet); plus Settings (theme
+picker and About), pinned below the groups. `Ctrl+1` to `Ctrl+5` jump to
+Dashboard, Analysis, Hardening, Hosts and Scheduler (`Ctrl+4` reaches Hosts
+via the retained `/remote` redirect); Fleet Apply and Settings have no
+dedicated shortcut yet. `Alt+T` cycles themes, `F11` toggles fullscreen,
+`Escape` closes panels.

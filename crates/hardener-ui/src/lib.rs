@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use leptos_router::{
-    StaticSegment,
-    components::{A, Route, Router, Routes},
+    NavigateOptions, StaticSegment,
+    components::{Route, Router, Routes},
 };
 use wasm_bindgen::closure::Closure;
 
@@ -14,10 +14,10 @@ mod tauri_bindings;
 mod types;
 mod utils;
 
-use components::ThemeToggle;
+use components::Sidebar;
 use pages::{
-    AnalysisPage, DashboardPage, FleetApplyPage, FleetPage, HardeningPage, RemotePage,
-    SchedulerPage,
+    AnalysisPage, DashboardPage, FleetApplyPage, HardeningPage, HostsPage, SchedulerPage,
+    SettingsPage,
 };
 use state::AppState;
 pub use types::*;
@@ -26,14 +26,28 @@ pub use types::*;
 ///
 /// This sets up:
 /// - Application state (AppState) available to all child components via context
-/// - Router with seven routes: Dashboard, Analysis, Hardening, Remote, Fleet, Scheduler, Fleet Apply
-/// - Navigation bar for moving between pages
+/// - Router with seven routes: Dashboard, Analysis, Hardening, Hosts, Fleet Apply,
+///   Scheduler, Settings (plus a `/remote` redirect to Hosts for old links)
+/// - Grouped sidebar (Local / Fleet / Settings) for moving between pages
 /// - Automatic loading of persisted scan results on mount
 #[component]
 pub fn App() -> impl IntoView {
     // Create application state and make it available to all child components
     let app_state = AppState::default();
     provide_context(app_state);
+
+    // Theme: restore the persisted choice, then keep `<html data-theme>` and
+    // localStorage in lockstep with the shared signal. Every theme control
+    // just sets `app_state.theme`; this Effect is the only writer of the DOM
+    // attribute and the storage key.
+    app_state
+        .theme
+        .set(utils::theme::get_stored_theme().unwrap_or_else(|| "default".to_string()));
+    Effect::new(move |_| {
+        let theme = app_state.theme.get();
+        utils::theme::apply_theme(&theme);
+        utils::theme::store_theme(&theme);
+    });
 
     // Load persisted scan results from database on app mount
     leptos::task::spawn_local(async move {
@@ -79,65 +93,47 @@ pub fn App() -> impl IntoView {
             // Skip link for keyboard/screen reader users - appears on focus
             <a href="#main-content" class="skip-link">"Skip to main content"</a>
 
-            <header class="nav-header">
-                <nav class="navigation" aria-label="Main navigation">
-                    <h1>"Linux System Hardener"</h1>
-                    <span class="app-version">
-                        {concat!(
-                            "v",
-                            env!("CARGO_PKG_VERSION"),
-                            " (",
-                            env!("HARDENER_BUILD_IDENTITY"),
-                            ")"
-                        )}
-                    </span>
-                    <ul class="nav-links">
-                        <li><A href="/">"Dashboard"</A></li>
-                        <li><A href="/analysis">"Analysis"</A></li>
-                        <li><A href="/hardening">"Hardening"</A></li>
-                        <li><A href="/remote">"Remote"</A></li>
-                        <li><A href="/fleet">"Fleet"</A></li>
-                        <li><A href="/fleet-apply">"Fleet Apply"</A></li>
-                        <li><A href="/scheduler">"Scheduler"</A></li>
-                    </ul>
-                    <ThemeToggle/>
-                </nav>
-            </header>
+            <div class="app-shell">
+                <Sidebar/>
 
-            // Global error notification banner
-            <Show when=move || app_state.error_message.get().is_some()>
-                <div class="error-banner" role="alert">
-                    <span class="error-banner-message">
-                        {move || app_state.error_message.get().unwrap_or_default()}
-                    </span>
-                    <button
-                        class="error-banner-dismiss"
-                        aria-label="Dismiss error"
-                        on:click=move |_| app_state.error_message.set(None)
-                    >
-                        "✕"
-                    </button>
+                <div class="app-content">
+                    // Global error notification banner
+                    <Show when=move || app_state.error_message.get().is_some()>
+                        <div class="error-banner" role="alert">
+                            <span class="error-banner-message">
+                                {move || app_state.error_message.get().unwrap_or_default()}
+                            </span>
+                            <button
+                                class="error-banner-dismiss"
+                                aria-label="Dismiss error"
+                                on:click=move |_| app_state.error_message.set(None)
+                            >
+                                "✕"
+                            </button>
+                        </div>
+                    </Show>
+
+                    <main id="main-content" class="app-main" tabindex="-1">
+                        <Routes fallback=|| view! {
+                            <article class="error-page">
+                                <div class="error-page-icon">"⚠"</div>
+                                <h1>"404 - Page Not Found"</h1>
+                                <p>"The requested page does not exist."</p>
+                                <a href="/">"← Return to Dashboard"</a>
+                            </article>
+                        }>
+                            <Route path=StaticSegment("") view=DashboardPage/>
+                            <Route path=StaticSegment("analysis") view=AnalysisPage/>
+                            <Route path=StaticSegment("hardening") view=HardeningPage/>
+                            <Route path=StaticSegment("remote") view=RedirectToFleet/>
+                            <Route path=StaticSegment("fleet") view=HostsPage/>
+                            <Route path=StaticSegment("fleet-apply") view=FleetApplyPage/>
+                            <Route path=StaticSegment("scheduler") view=SchedulerPage/>
+                            <Route path=StaticSegment("settings") view=SettingsPage/>
+                        </Routes>
+                    </main>
                 </div>
-            </Show>
-
-            <main id="main-content" class="main-content" tabindex="-1">
-                <Routes fallback=|| view! {
-                    <article class="error-page">
-                        <div class="error-page-icon">"⚠"</div>
-                        <h1>"404 - Page Not Found"</h1>
-                        <p>"The requested page does not exist."</p>
-                        <a href="/">"← Return to Dashboard"</a>
-                    </article>
-                }>
-                    <Route path=StaticSegment("") view=DashboardPage/>
-                    <Route path=StaticSegment("analysis") view=AnalysisPage/>
-                    <Route path=StaticSegment("hardening") view=HardeningPage/>
-                    <Route path=StaticSegment("remote") view=RemotePage/>
-                    <Route path=StaticSegment("fleet") view=FleetPage/>
-                    <Route path=StaticSegment("fleet-apply") view=FleetApplyPage/>
-                    <Route path=StaticSegment("scheduler") view=SchedulerPage/>
-                </Routes>
-            </main>
+            </div>
         </Router>
     }
 }
@@ -153,6 +149,25 @@ fn GlobalHooks() -> impl IntoView {
     navigation::use_scroll_and_focus_on_navigate();
     arm_rate_limit_auto_dismiss(app_state);
     // Renders nothing: purely side-effect driven
+}
+
+/// Retired `/remote` route target: the Remote and Fleet screens merged into
+/// the single Hosts screen (`HostsPage`, routed at `/fleet`). Any stale link
+/// or bookmark pointing at `/remote` lands here and is bounced on to the
+/// merged screen rather than hitting the 404 fallback.
+#[component]
+fn RedirectToFleet() -> impl IntoView {
+    let navigate = leptos_router::hooks::use_navigate();
+    Effect::new(move |_| {
+        navigate(
+            "/fleet",
+            NavigateOptions {
+                replace: true,
+                ..Default::default()
+            },
+        )
+    });
+    view! { <span></span> }
 }
 
 /// Auto-dismisses the global error banner when it is showing the backend's

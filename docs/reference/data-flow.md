@@ -1,6 +1,6 @@
 # Linux System Hardener - Data Flow Documentation
 
-**Last Updated:** 2026-07-22
+**Last Updated:** 2026-07-24
 **Version:** 1.4.0
 
 This document describes the data flow for all major operations in the system.
@@ -563,7 +563,7 @@ a checkpoint or a skip is never counted as a hardening change.
 │  Leptos Frontend                                             │
 │  ├─ Receive ScanResult array                                 │
 │  ├─ Update AppState with findings                            │
-│  ├─ Render findings_grid component                           │
+│  ├─ Render via FindingsTab component                         │
 │  └─ Sort/filter by severity                                  │
 └────────┬─────────────────────────────────────────────────────┘
          │
@@ -574,10 +574,10 @@ a checkpoint or a skip is never counted as a hardening change.
 └──────────────────┘
 ```
 
-**Deep scan (privileged re-scan):** if `scan_unchecked` is non-empty on any
-plugin, `UncheckedBanner` (components/unchecked_banner.rs) renders above the
-score/findings content on the Dashboard and Analysis pages, naming the
-count. Its "Run deep scan" button calls `invoke_deep_scan`, which invokes
+**Deep scan (privileged re-scan):** if any scan result carries unchecked
+checks, `SecurityScore` (components/security_score.rs) renders an inline
+honesty line beneath the score bar on the Dashboard, naming the count. Its
+"Run with sudo" button calls `invoke_deep_scan`, which invokes
 `run_deep_scan` (src-tauri/src/commands.rs) - a pkexec-elevated sibling of
 `run_scan` that shells out to `hardener scan --format json` as root exactly
 like `run_apply` does for applies, so results match `sudo hardener scan`.
@@ -708,6 +708,7 @@ All GUI state lives in `AppState` (`hardener-ui/src/state/mod.rs`). Each field i
 | `config_path` | `RwSignal<Option<String>>` | Selected config file path |
 | `config_summary` | `RwSignal<Option<ConfigSummary>>` | Validated config file summary |
 | `deep_scan_running` | `RwSignal<bool>` | Shared privileged deep-scan button state |
+| `theme` | `RwSignal<String>` | Active colour theme id (see `utils::theme::THEMES`); shared by the sidebar quick-switch and the Settings page grid, applied to `<html data-theme>` and persisted by a single `Effect` in `App` |
 
 ---
 
@@ -1175,21 +1176,23 @@ pub struct Daemon {
 
 ## 10. Desktop Fleet Scan Flow
 
-**User Action:** Select hosts on the Fleet page and click "Scan Fleet"
+**User Action:** Select hosts on the Hosts page and click "Scan Selected"
 
 ```
 ┌──────────────────┐
-│   FleetPage      │
+│   HostsPage      │
 │   (host select + │
 │    scan button)  │
 └────────┬─────────┘
          │
          ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  hardener-ui/src/pages/fleet_page.rs                         │
-│  ├─ Leptos page-local state (no AppState fields)             │
+│  hardener-ui/src/pages/hosts_page.rs (merged Remote +        │
+│  Fleet; routed /fleet)                                       │
+│  ├─ Mostly page-local state; reuses AppState.remote_hosts /  │
+│  │   remote_connection for the single-host connect session   │
 │  ├─ Multi-select inventory hosts + ad-hoc target input       │
-│  └─ On "Scan Fleet": invoke_fleet_scan(names, adhoc,         │
+│  └─ On "Scan Selected": invoke_fleet_scan(names, adhoc,      │
 │     plugins)                                                 │
 └────────┬─────────────────────────────────────────────────────┘
          │ IPC via Tauri (camelCase: hostNames, adhoc, pluginIds)
@@ -1219,7 +1222,7 @@ pub struct Daemon {
 │  └─ SSH params (host, port, user, key) from stored profile   │
 │                                                              │
 │  SshExecutor::connect(ssh_config)                            │
-│  └─ Establishes SSH connection (same as Remote page / CLI)   │
+│  └─ Establishes SSH connection (same as Hosts page / CLI)    │
 │                                                              │
 │  scan_with_executor(executor, plugin_ids)                    │
 │  ├─ Shared helper extracted from run_remote_scan             │
@@ -1249,14 +1252,14 @@ pub struct Daemon {
          │ JSON response (Vec<FleetHostScan>)
          ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  hardener-ui/src/components/fleet_table.rs                   │
-│  ├─ One row per FleetHostScan                                │
-│  ├─ Severity tally badges (critical / high / medium /        │
-│  │   low / info) per host                                    │
-│  ├─ Colour-coded CIS compliance score column                 │
-│  ├─ Expand row → per-framework breakdown (score +            │
-│  │   pass / fail / manual / NA counts)                       │
-│  └─ Expand row → FindingsGrid (reused from Analysis page)    │
+│  hardener-ui/src/components/host_row.rs                      │
+│  ├─ One HostRow per selected host (saved or ad-hoc); shows   │
+│  │   "Not scanned yet" until a FleetHostScan arrives for it  │
+│  ├─ Severity tally badges (critical / high / medium / low)   │
+│  ├─ Framework score strip, one cell per compliance framework │
+│  └─ Expand row → HostPanel: Compliance detail (per-          │
+│     framework score + pass/fail/manual/NA counts) and        │
+│     collapsible Findings grouped by severity                 │
 └────────┬─────────────────────────────────────────────────────┘
          │
          ▼
@@ -1342,9 +1345,12 @@ pub enum RollbackStatus {
 }
 ```
 
-### Key Differences from Single-Host Remote Scan
+### Key Differences: Single-Host Session vs Bulk Fleet Scan
 
-| Aspect | Remote page (single host) | Fleet page (many hosts) |
+Both modes live on the merged Hosts page (`hosts_page.rs`); this table
+compares the two behaviours, not two separate screens.
+
+| Aspect | Single-host connect session | Bulk fleet scan |
 |--------|--------------------------|------------------------|
 | Connection | Persistent: connect once, scan, disconnect | Per-scan: connect, scan, drop |
 | Concurrency | Sequential (one host at a time) | Up to 8 hosts in parallel |
@@ -1355,4 +1361,4 @@ pub enum RollbackStatus {
 
 ---
 
-**Last Updated**: 2026-07-22
+**Last Updated**: 2026-07-24

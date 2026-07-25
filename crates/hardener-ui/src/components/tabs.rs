@@ -8,6 +8,7 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
 /// A single tab definition.
+#[derive(Clone, Copy)]
 pub struct TabDef {
     /// Unique identifier for the tab (used in ARIA attributes).
     pub id: &'static str,
@@ -25,17 +26,19 @@ pub struct TabDef {
 /// * `aria_label` - Accessible label for the tablist
 #[component]
 pub fn TabBar(
-    tabs: Vec<TabDef>,
+    #[prop(into)] tabs: Signal<Vec<TabDef>>,
     active_tab: RwSignal<usize>,
     #[prop(default = "Tabs")] aria_label: &'static str,
 ) -> impl IntoView {
-    let tab_count = tabs.len();
-
-    // Pre-compute tab DOM IDs so the keyboard handler can focus by index
-    let tab_ids: Vec<String> = tabs.iter().map(|t| format!("tab-{}", t.id)).collect();
-
-    // WAI-ARIA Tabs keyboard handler: Arrow keys cycle, Home/End jump
+    // WAI-ARIA Tabs keyboard handler: Arrow keys cycle, Home/End jump. Reads the
+    // current tab set at event time so a reactive `tabs` (e.g. a live badge
+    // count) is always honoured without stale pre-computed indices.
     let on_keydown = move |ev: web_sys::KeyboardEvent| {
+        let current_tabs = tabs.get_untracked();
+        let tab_count = current_tabs.len();
+        if tab_count == 0 {
+            return;
+        }
         let current = active_tab.get_untracked();
         let next = match ev.key().as_str() {
             "ArrowRight" | "ArrowDown" => Some((current + 1) % tab_count),
@@ -50,9 +53,10 @@ pub fn TabBar(
             active_tab.set(idx);
 
             // Focus by known element ID: avoids race with aria-selected re-render
+            let tab_dom_id = format!("tab-{}", current_tabs[idx].id);
             if let Some(el) = web_sys::window()
                 .and_then(|w| w.document())
-                .and_then(|d| d.get_element_by_id(&tab_ids[idx]))
+                .and_then(|d| d.get_element_by_id(&tab_dom_id))
                 .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
             {
                 let _ = el.focus();
@@ -62,7 +66,7 @@ pub fn TabBar(
 
     view! {
         <nav class="tab-bar" role="tablist" aria-label=aria_label on:keydown=on_keydown>
-            {tabs.into_iter().enumerate().map(|(idx, tab)| {
+            {move || tabs.get().into_iter().enumerate().map(|(idx, tab)| {
                 let badge = tab.badge;
                 let label = tab.label;
                 let tab_id = format!("tab-{}", tab.id);

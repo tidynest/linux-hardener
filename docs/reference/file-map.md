@@ -1,6 +1,6 @@
 # Linux System Hardener - File Map
 
-**Last Updated:** 2026-07-19
+**Last Updated:** 2026-07-24
 
 This document lists all source files with their purpose and key exports.
 
@@ -403,16 +403,17 @@ pub struct ScanRunner {
 | File | Purpose | Key Exports |
 |------|---------|-------------|
 | `index.html` | Entry HTML with font links | `#app` mount point |
-| `styles.css` | Dark terminal theme CSS | CSS Variables, utility classes (.truncate, .sr-only, .skip-link), tabs, navigation, score gauge, buttons, tables, forms |
-| `src/lib.rs` | Main App component, WASM entry point; defines route `/fleet` and "Fleet" nav link | `App`, `#[wasm_bindgen(start)] main()` |
+| `styles.css` | Base styles plus the 7-theme system (`[data-theme="..."]` overrides, incl. light Daywatch and WCAG AAA High Contrast) | CSS Variables, utility classes (.truncate, .sr-only, .skip-link), tabs, sidebar, score gauge, buttons, tables, forms |
+| `src/lib.rs` | Main App component and WASM entry point; defines seven routes (Dashboard, Analysis, Hardening, Hosts at `/fleet`, Fleet Apply, Scheduler, Settings) plus a `/remote` -> `/fleet` redirect, mounts the grouped `Sidebar`, and owns the sole theme apply/persist `Effect` | `App`, `#[wasm_bindgen(start)] main()` |
 | `src/types.rs` | Re-exports from hardener-types | `pub use hardener_types::*` (ApplyResult, Change, ChangeType, ComplianceFramework, ComplianceMapping, ComplianceReport, ComplianceSummary, ConfigSummary, ControlResult, ControlStatus, FileRestoreAction, FileRestoreResult, Finding, FindingCategory, FindingPolicyException, PluginId, PluginMetadata, RollbackResult, ScanResult, Severity, UncheckedCheck, ValidationIssue, ValidationReport), scheduler re-exports (SchedulerUiConfig, NotificationUiConfig, EmailUiConfig, WebhookUiConfig, TestNotificationResult), `CheckpointInfo`, `ScanSessionInfo`, `CheckpointDetail`, `CheckpointFileInfo` |
 | `src/state/mod.rs` | Reactive state | `AppState` |
 | `src/tauri_bindings.rs` | Tauri command bindings | `tauri_available`, `invoke_scan`, `invoke_deep_scan`, `invoke_apply`, `invoke_apply_dry_run`, `invoke_generate_report`, `invoke_export_report`, `invoke_get_latest_scan`, `invoke_get_checkpoints`, `invoke_create_checkpoint`, `invoke_delete_checkpoint`, `invoke_get_scan_history`, `invoke_get_scan_session`, `invoke_get_checkpoint_detail`, `invoke_rollback`, `invoke_list_remote_hosts`, `invoke_save_remote_host`, `invoke_delete_remote_host`, `invoke_connect_remote`, `invoke_disconnect_remote`, `invoke_remote_scan`, `invoke_fleet_scan`, `invoke_fleet_apply`, `invoke_fleet_rollback`, `invoke_get_host_history`, `invoke_list_plugins`, `invoke_get_scheduler_config`, `invoke_save_scheduler_config`, `invoke_test_notification`, `invoke_validate_config`, `invoke_pick_config_file` |
-| `src/keyboard.rs` | Global keyboard event handler | Ctrl+1-5 page nav (pages 1-5 only; Fleet and Fleet Apply pages have no shortcut), Alt+T theme cycle, Escape close, F11 fullscreen |
+| `src/keyboard.rs` | Global keyboard event handler | Ctrl+1-5 page nav (Dashboard/Analysis/Hardening/Hosts/Scheduler; Ctrl+4 reaches Hosts via the retained `/remote` redirect - Fleet Apply and Settings have no shortcut yet), Ctrl+Shift+S scan from anywhere, Alt+T theme cycle, Escape close, F11 fullscreen |
 | `src/navigation.rs` | Navigation signal helpers | Page routing helpers for keyboard and UI nav |
-| `src/utils/mod.rs` | Utils module exports and preview/apply helpers | `annotate_preview()`, `PreviewDecision`, `apply_change_summary()`, `is_auth_cancelled()`, `parse_rate_limit_wait_secs()`; `mock_data` mod |
+| `src/utils/mod.rs` | Utils module exports and preview/apply helpers | `annotate_preview()`, `PreviewDecision`, `apply_change_summary()`, `is_auth_cancelled()`, `parse_rate_limit_wait_secs()`; `mock_data` mod, `theme` mod |
 | `src/utils/mock_data.rs` | Development mocks | Mock data generators |
-| `src/pages/mod.rs` | Pages module exports | `DashboardPage`, `AnalysisPage`, `HardeningPage`, `RemotePage`, `SchedulerPage`, `FleetPage`, `FleetApplyPage` |
+| `src/utils/theme.rs` | Shared theme metadata plus the single apply/persist side effects; the only writer of `<html data-theme>` and the `theme` localStorage key | `THEMES` (7 themes), `apply_theme()`, `get_stored_theme()`, `store_theme()` |
+| `src/pages/mod.rs` | Pages module exports | `DashboardPage`, `AnalysisPage`, `HardeningPage`, `HostsPage`, `SchedulerPage`, `SettingsPage`, `FleetApplyPage` |
 | `src/components/mod.rs` | Components module exports | All component re-exports, `Card`, `CardVariant`, `HeadingLevel` |
 
 ### Pages (7-page architecture)
@@ -422,42 +423,42 @@ pub struct ScanRunner {
 | `src/pages/dashboard_page.rs` | Dashboard with security score and quick actions | `DashboardPage` |
 | `src/pages/analysis_page.rs` | Tabbed interface for findings and compliance | `AnalysisPage` |
 | `src/pages/hardening_page.rs` | Sectioned interface for configuration and history | `HardeningPage` |
-| `src/pages/remote_page.rs` | Remote SSH host management and scanning | `RemotePage` |
-| `src/pages/scheduler_page.rs` | Scheduler and notification configuration | `SchedulerPage` |
-| `src/pages/fleet_page.rs` | Read-only multi-host fleet scan (host multi-select, concurrent SSH scan, per-host tally rows, CIS score column, per-framework breakdown) | `FleetPage` |
+| `src/pages/hosts_page.rs` | Hosts page: the merged inventory - bulk read-only scan across selected hosts plus the single-host connect session, both surfaced through one expandable row per host (replaces the former Remote and Fleet pages) | `HostsPage` |
 | `src/pages/fleet_apply_page.rs` | Mutating multi-host **Fleet Apply** page: apply/roll back across saved hosts by shelling out to the audited `batch apply/rollback` CLI; mode toggle, host+plugin select, mandatory dry-run + confirm modal | `FleetApplyPage` |
+| `src/pages/scheduler_page.rs` | Scheduler and notification configuration | `SchedulerPage` |
+| `src/pages/settings_page.rs` | Settings page: Appearance theme swatch grid plus a static About block | `SettingsPage` |
 
 ### Components
 
 | File | Purpose | Key Exports |
 |------|---------|-------------|
-| `src/components/security_score.rs` | Main security score gauge with compliance-based calculation | `SecurityScore`, `calculate_all_scores()`, `FrameworkScore` |
-| `src/components/mini_security_score.rs` | Compact score for headers | `MiniSecurityScore` |
-| `src/components/quick_actions.rs` | Dashboard quick action buttons | `QuickActions` |
+| `src/components/security_score.rs` | Main security score gauge with compliance-based calculation; also renders the deep-scan "Run with sudo" offer inline when unprivileged results contain unverifiable checks (replaces the old UncheckedBanner) | `SecurityScore`, `calculate_all_scores()`, `FrameworkScore` |
 | `src/components/recent_activity.rs` | Recent scan/apply activity summary | `RecentActivity` |
+| `src/components/sidebar.rs` | Grouped left sidebar navigation with a collapsible icon rail; replaces the old flat top nav bar (groups Local and Fleet, plus a pinned Settings area) | `Sidebar` |
 | `src/components/tabs.rs` | Reusable tab bar and panel with WAI-ARIA | `TabBar`, `TabDef` (id, label, badge), `TabPanel` (id, index, active_tab) |
-| `src/components/findings_grid.rs` | Findings table display | `FindingsGrid` |
-| `src/components/finding_detail.rs` | Individual finding details panel | `FindingDetail` |
 | `src/components/findings_tab.rs` | Findings tab wrapper for Analysis page | `FindingsTab` |
 | `src/components/compliance_tab.rs` | Compliance framework selection and reports with status feedback | `ComplianceTab` |
 | `src/components/configure_section.rs` | Profile selection and plugin toggles | `ConfigureSection` |
+| `src/components/segmented_control.rs` | Reusable WAI-ARIA segmented control (roving-tabindex radiogroup); shared by the Fleet Apply mode toggle and the Hardening protection-level control | `SegmentedControl` |
 | `src/components/history_section.rs` | Apply results and checkpoint management with refresh button | `HistorySection` |
-| `src/components/severity_badge.rs` | Severity level badge display | `SeverityBadge` |
+| `src/components/rollback_modal.rs` | Rollback confirmation modal for the Hardening History timeline (confirm, restoring, and per-file result stages) | `RollbackModal` |
 | `src/components/card.rs` | Reusable card container component | `Card`, `CardVariant`, `HeadingLevel` |
-| `src/components/theme_toggle.rs` | Theme selector dropdown component | `ThemeToggle` |
-| `src/components/host_list.rs` | Remote host profile list sidebar | `HostList` |
+| `src/components/theme_toggle.rs` | Theme quick-switch `<select>` in the sidebar, bound to the shared `AppState.theme` signal (presentational only; the App `Effect` applies/persists it) | `ThemeToggle` |
+| `src/components/theme_picker.rs` | Settings page theme swatch grid: WAI-ARIA radiogroup of live-coloured preview cards, one per `THEMES` entry | `ThemePicker` |
+| `src/components/status_icons.rs` | Shared status/flag inline SVG icon set (applied/failed/manual/skipped, help affordance, diff arrow) | `IconCheck`, `IconInfo`, `IconX`, `IconWrench`, `IconMinus`, `IconArrowRight` |
+| `src/components/icons.rs` | Inline SVG icon set for the sidebar navigation and brand mark | `IconDashboard`, `IconAnalysis`, `IconHardening`, `IconFleet`, `IconFleetApply`, `IconScheduler`, `IconSettings`, `IconChevronCollapse`, `IconShieldMark` |
 | `src/components/host_form.rs` | Add/edit remote host profile form | `HostForm` |
-| `src/components/remote_status.rs` | Remote connection status and scan results | `RemoteStatus` |
+| `src/components/host_panel.rs` | Expanded per-host panel: connection strip, collapsible compliance detail, collapsible findings, and the per-host scan-history timeline; rendered when a `HostRow` is expanded | `HostPanel`, `HostConnState` |
+| `src/components/host_row.rs` | One Hosts-page inventory row (name, target, connection dot, severity tallies, framework score strip) that expands in place into a `HostPanel` | `HostRow` |
 | `src/components/scan_history_tab.rs` | Scan history timeline for Analysis page | `ScanHistoryTab` |
 | `src/components/schedule_section.rs` | Cron schedule configuration form | `ScheduleSection` |
 | `src/components/notification_section.rs` | Email and webhook notification config | `NotificationSection` |
 | `src/components/config_file_card.rs` | Config file picker card component (text input, browse, validation) | `ConfigFileCard` |
 | `src/components/clipboard.rs` | Copy-to-clipboard button with async Clipboard API | `CopyButton` |
-| `src/components/confirm_delete.rs` | Inline delete confirmation component | `ConfirmDelete` |
+| `src/components/confirm_delete.rs` | Inline delete confirmation component | `ConfirmDeleteButton` |
 | `src/components/form_helpers.rs` | Shared JsCast event extraction helpers | `input_value()`, `checkbox_checked()`, `select_value()` |
-| `src/components/fleet_table.rs` | Fleet scan results table: per-host severity tally rows, colour-coded CIS score column, per-framework breakdown in row expander, expandable to FindingsGrid | `FleetTable` |
+| `src/components/fleet_outcome_row.rs` | One host's Fleet Apply/rollback outcome row, rendered from a pre-computed `OutcomeView` (`utils::fleet_apply_cells` / `fleet_rollback_cells`) | `FleetOutcomeRow` |
 | `src/components/adhoc_host_input.rs` | Ad-hoc SSH target entry for fleet scans (host:user@addr rows, add/remove) | `AdhocHostInput` |
-| `src/components/unchecked_banner.rs` | Banner offering a privileged deep scan when unprivileged results contain unverifiable checks | `UncheckedBanner` |
 
 **Note**: This crate depends only on `hardener-types` for shared types to ensure WASM compatibility. External dependencies include Leptos (WASM framework), wasm-bindgen, and web-sys for browser APIs.
 
@@ -809,7 +810,7 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | `gui-tests/tests/dashboard.spec.js` | T-DASH-01..09 (9 tests): score, scan trigger, navigation, activity |
 | `gui-tests/tests/analysis.spec.js` | T-FIND-01..10, T-COMP-01..08 (18 tests): findings + compliance |
 | `gui-tests/tests/hardening.spec.js` | T-CONF-01..10, T-HIST-01..06 (16 tests): configure + history |
-| `gui-tests/tests/themes.spec.js` | T-THEME-01..07 (7 tests + 30 screenshots): all 6 themes |
+| `gui-tests/tests/themes.spec.js` | T-THEME-01..07 (7 tests + 30 screenshots): 6 of the 7 themes (default/Midnight Teal, fortress, sentinel, command, guardian, daywatch; High Contrast has no coverage yet) |
 | `gui-tests/tests/errors.spec.js` | T-ERR-01..04 (4 tests): error handling and dismiss |
 
 ### Runner Scripts
@@ -832,4 +833,4 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | `hardener-common/src/types.rs` | Added `FindingPolicyException` struct |
 | `hardener-cli/src/cli.rs` | Added `--config`, `--audit`, `--compliance`, `--exit-code` flags, `ScanMode` enum |
 
-**Last Updated**: 2026-07-19
+**Last Updated**: 2026-07-24

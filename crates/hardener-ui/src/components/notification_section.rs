@@ -1,102 +1,25 @@
-//! Notification configuration section: email, webhook, and test button.
+//! Notification configuration section (presentational): email + webhook
+//! toggle-reveal fields over the shared `SchedulerForm`, plus the contextual
+//! Test Notification action. The page owns the config sync and the single Save;
+//! only the test handler lives here.
 
-use crate::state::AppState;
+use crate::components::form_helpers;
+use crate::state::{AppState, SchedulerForm};
 use crate::tauri_bindings;
 use leptos::prelude::*;
 
-/// Notification configuration form with email and webhook subsections.
-///
-/// Each channel has an enabled toggle that conditionally reveals its
-/// detail fields. Recipients are displayed as a comma-separated string
-/// in the text input and split into a `Vec<String>` on save.
-///
-/// The save handler merges notification fields into the existing config,
-/// preserving the schedule section untouched. A "Send Test Notification"
-/// button dispatches `invoke_test_notification()` and shows success or
-/// failure inline via `test_result_message`.
 #[component]
-pub fn NotificationSection() -> impl IntoView {
+pub fn NotificationSection(form: SchedulerForm) -> impl IntoView {
     let app_state = expect_context::<AppState>();
+    let test_result = RwSignal::new(None::<(bool, String)>);
 
-    // Local form signals
-    let email_enabled = RwSignal::new(false);
-    let email_recipients = RwSignal::new(String::new());
-    let email_from = RwSignal::new(String::new());
-    let webhook_enabled = RwSignal::new(false);
-    let webhook_url = RwSignal::new(String::new());
-    let webhook_format = RwSignal::new("generic".to_string());
-    let test_result_message = RwSignal::new(None::<(bool, String)>);
-    let save_status = RwSignal::new(None::<(bool, String)>);
-
-    // Sync from loaded config
-    Effect::new(move || {
-        if let Some(config) = app_state.scheduler_config.get() {
-            let notif = config.notifications;
-            email_enabled.set(notif.email.enabled);
-            email_recipients.set(notif.email.recipients.join(", "));
-            email_from.set(notif.email.from_address);
-            webhook_enabled.set(notif.webhooks.enabled);
-            webhook_url.set(notif.webhooks.url);
-            webhook_format.set(notif.webhooks.format);
-        }
-    });
-
-    // Save handler: merges notification fields into existing config, preserving schedule
-    let handle_save = move |_| {
-        app_state.is_saving_scheduler.set(true);
-        save_status.set(None);
-
-        // Snapshot all form signals before entering async (avoids reactive tracking warnings)
-        let recipients: Vec<String> = email_recipients
-            .get_untracked()
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
-        let is_email_enabled = email_enabled.get_untracked();
-        let from = email_from.get_untracked();
-        let is_webhook_enabled = webhook_enabled.get_untracked();
-        let url = webhook_url.get_untracked();
-        let format = webhook_format.get_untracked();
-        let mut config = app_state
-            .scheduler_config
-            .get_untracked()
-            .unwrap_or_default();
-
-        leptos::task::spawn_local(async move {
-            config.notifications.email.enabled = is_email_enabled;
-            config.notifications.email.recipients = recipients;
-            config.notifications.email.from_address = from;
-            config.notifications.webhooks.enabled = is_webhook_enabled;
-            config.notifications.webhooks.url = url;
-            config.notifications.webhooks.format = format;
-
-            match tauri_bindings::invoke_save_scheduler_config(config.clone()).await {
-                Ok(path) => {
-                    app_state.scheduler_config.set(Some(config));
-                    save_status.set(Some((true, format!("Notifications saved to {path}"))));
-                }
-                Err(e) => {
-                    save_status.set(Some((false, format!("Failed to save: {e}"))));
-                }
-            }
-            app_state.is_saving_scheduler.set(false);
-        });
-    };
-
-    // Test notification handler
     let handle_test = move |_| {
         app_state.is_testing_notification.set(true);
-        test_result_message.set(None);
-
+        test_result.set(None);
         leptos::task::spawn_local(async move {
             match tauri_bindings::invoke_test_notification().await {
-                Ok(result) => {
-                    test_result_message.set(Some((result.success, result.message)));
-                }
-                Err(e) => {
-                    test_result_message.set(Some((false, format!("Request failed: {e}"))));
-                }
+                Ok(result) => test_result.set(Some((result.success, result.message))),
+                Err(e) => test_result.set(Some((false, format!("Request failed: {e}")))),
             }
             app_state.is_testing_notification.set(false);
         });
@@ -104,34 +27,26 @@ pub fn NotificationSection() -> impl IntoView {
 
     view! {
         <div class="notification-section">
-            // --- Email ---
             <h3 class="subsection-title">"Email"</h3>
-
-            <div class="form-row">
-                <label class="toggle-label">
-                    <input
-                        type="checkbox"
-                        class="toggle-input"
-                        prop:checked=move || email_enabled.get()
-                        on:change=move |event| {
-                            email_enabled.set(crate::components::form_helpers::checkbox_checked(&event));
-                        }
-                    />
-                    "Enable email notifications"
-                </label>
-            </div>
-
-            <Show when=move || email_enabled.get()>
+            <label class="toggle-switch">
+                <input
+                    type="checkbox"
+                    class="toggle-switch-input"
+                    prop:checked=move || form.email_enabled.get()
+                    on:change=move |ev| form.email_enabled.set(form_helpers::checkbox_checked(&ev))
+                />
+                <span class="toggle-switch-track" aria-hidden="true"></span>
+                <span class="toggle-switch-label">"Enable email notifications"</span>
+            </label>
+            <Show when=move || form.email_enabled.get()>
                 <div class="form-row">
                     <label class="form-label">"Recipients"</label>
                     <input
                         type="text"
                         class="form-input"
                         placeholder="admin@example.com, ops@example.com"
-                        prop:value=move || email_recipients.get()
-                        on:input=move |event| {
-                            email_recipients.set(crate::components::form_helpers::input_value(&event));
-                        }
+                        prop:value=move || form.email_recipients.get()
+                        on:input=move |ev| form.email_recipients.set(form_helpers::input_value(&ev))
                     />
                     <span class="form-hint">"Comma-separated email addresses"</span>
                 </div>
@@ -141,52 +56,40 @@ pub fn NotificationSection() -> impl IntoView {
                         type="text"
                         class="form-input"
                         placeholder="hardener@example.com"
-                        prop:value=move || email_from.get()
-                        on:input=move |event| {
-                            email_from.set(crate::components::form_helpers::input_value(&event));
-                        }
+                        prop:value=move || form.email_from.get()
+                        on:input=move |ev| form.email_from.set(form_helpers::input_value(&ev))
                     />
                 </div>
             </Show>
 
-            // --- Webhook ---
             <h3 class="subsection-title">"Webhook"</h3>
-
-            <div class="form-row">
-                <label class="toggle-label">
-                    <input
-                        type="checkbox"
-                        class="toggle-input"
-                        prop:checked=move || webhook_enabled.get()
-                        on:change=move |event| {
-                            webhook_enabled.set(crate::components::form_helpers::checkbox_checked(&event));
-                        }
-                    />
-                    "Enable webhook notifications"
-                </label>
-            </div>
-
-            <Show when=move || webhook_enabled.get()>
+            <label class="toggle-switch">
+                <input
+                    type="checkbox"
+                    class="toggle-switch-input"
+                    prop:checked=move || form.webhook_enabled.get()
+                    on:change=move |ev| form.webhook_enabled.set(form_helpers::checkbox_checked(&ev))
+                />
+                <span class="toggle-switch-track" aria-hidden="true"></span>
+                <span class="toggle-switch-label">"Enable webhook notifications"</span>
+            </label>
+            <Show when=move || form.webhook_enabled.get()>
                 <div class="form-row">
                     <label class="form-label">"Endpoint URL"</label>
                     <input
                         type="url"
                         class="form-input"
                         placeholder="https://hooks.slack.com/services/..."
-                        prop:value=move || webhook_url.get()
-                        on:input=move |event| {
-                            webhook_url.set(crate::components::form_helpers::input_value(&event));
-                        }
+                        prop:value=move || form.webhook_url.get()
+                        on:input=move |ev| form.webhook_url.set(form_helpers::input_value(&ev))
                     />
                 </div>
                 <div class="form-row">
                     <label class="form-label">"Format"</label>
                     <select
                         class="form-select"
-                        prop:value=move || webhook_format.get()
-                        on:change=move |event| {
-                            webhook_format.set(crate::components::form_helpers::select_value(&event));
-                        }
+                        prop:value=move || form.webhook_format.get()
+                        on:change=move |ev| form.webhook_format.set(form_helpers::select_value(&ev))
                     >
                         <option value="generic">"Generic JSON"</option>
                         <option value="slack">"Slack"</option>
@@ -195,49 +98,9 @@ pub fn NotificationSection() -> impl IntoView {
                 </div>
             </Show>
 
-            // Status messages
-            <Show when=move || save_status.get().is_some()>
-                {move || {
-                    save_status.get().map(|(ok, msg)| {
-                        let class = if ok {
-                            "test-result test-result--success"
-                        } else {
-                            "test-result test-result--failure"
-                        };
-                        view! { <div class=class>{msg}</div> }
-                    })
-                }}
-            </Show>
-            <Show when=move || test_result_message.get().is_some()>
-                {move || {
-                    test_result_message.get().map(|(success, message)| {
-                        let class = if success {
-                            "test-result test-result--success"
-                        } else {
-                            "test-result test-result--failure"
-                        };
-                        view! { <div class=class>{message}</div> }
-                    })
-                }}
-            </Show>
-
-            // --- Actions ---
-            <div class="form-actions">
+            <div class="notification-actions">
                 <button
-                    class="btn btn-primary"
-                    on:click=handle_save
-                    disabled=move || app_state.is_saving_scheduler.get()
-                >
-                    {move || {
-                        if app_state.is_saving_scheduler.get() {
-                            "Saving..."
-                        } else {
-                            "Save Notifications"
-                        }
-                    }}
-                </button>
-                <button
-                    class="btn btn-accent"
+                    class="btn btn-secondary"
                     on:click=handle_test
                     disabled=move || app_state.is_testing_notification.get()
                 >
@@ -245,10 +108,27 @@ pub fn NotificationSection() -> impl IntoView {
                         if app_state.is_testing_notification.get() {
                             "Sending..."
                         } else {
-                            "\u{25B6} Test Notification"
+                            "Test Notification"
                         }
                     }}
                 </button>
+                // Always-present live region so the test result is announced
+                // when it appears (a region that only mounts with its content
+                // is not reliably read by screen readers).
+                <div class="notification-test-region" role="status" aria-live="polite">
+                    {move || {
+                        test_result
+                            .get()
+                            .map(|(ok, msg)| {
+                                let class = if ok {
+                                    "scheduler-save-status is-ok"
+                                } else {
+                                    "scheduler-save-status is-fail"
+                                };
+                                view! { <span class=class>{msg}</span> }
+                            })
+                    }}
+                </div>
             </div>
         </div>
     }

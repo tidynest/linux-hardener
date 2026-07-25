@@ -1,37 +1,31 @@
+//! Dashboard landing page: header, security score hero, and recent activity.
+
+use crate::components::{RecentActivity, SecurityScore};
+use crate::tauri_bindings::invoke_get_scan_history;
+use crate::utils::last_scanned_label;
 use leptos::prelude::*;
 
-use crate::components::{QuickActions, RecentActivity, SecurityScore, UncheckedBanner};
-
-/// Dashboard page showing system security overview.
-///
-/// This is the main landing page displaying:
-/// - Security score calculated from all findings
-/// - Quick action buttons for common tasks
-/// - Recent activity summary
-/// - Overall system security status
+/// Dashboard page: the score hero plus recent activity, under a compact header
+/// whose subtitle is the last completed scan (fetched on mount).
 #[component]
 pub fn DashboardPage() -> impl IntoView {
+    // Header subtitle: most recent completed scan, or "Not scanned yet".
+    let last_scanned = RwSignal::new(String::from("Not scanned yet"));
+    leptos::task::spawn_local(async move {
+        if let Ok(sessions) = invoke_get_scan_history(Some(1)).await {
+            last_scanned.set(last_scanned_label(&sessions));
+        }
+    });
+
     view! {
         <article class="dashboard-page">
-            <h1>"System Security Dashboard"</h1>
-            <p class="dashboard-intro">
-                "Monitor your system's security posture and take quick actions to improve it."
-            </p>
+            <header class="dashboard-header">
+                <h1>"Dashboard"</h1>
+                <p class="dashboard-subtitle">{move || last_scanned.get()}</p>
+            </header>
 
-            <UncheckedBanner/>
-
-            <section class="dashboard-grid">
-                <SecurityScore/>
-                <QuickActions/>
-            </section>
-
-            <RecentActivity/>
-
-            <footer class="dashboard-footer">
-                <p class="help-text">
-                    "Click 'Run Scan' to analyse your system security. Results will appear in the Analysis page."
-                </p>
-            </footer>
+            <SecurityScore />
+            <RecentActivity />
         </article>
     }
 }

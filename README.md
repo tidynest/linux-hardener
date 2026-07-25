@@ -122,16 +122,22 @@ The tool is designed for system administrators, DevOps engineers, and security p
 
 - **Desktop Application**: Tauri-based native app with Leptos (Rust) frontend
 - **Web Interface**: Runs in browser via Trunk (WASM)
-- **Dark Terminal Theme**: Professional security-focused aesthetic with colour-coded severity states (7 themes including WCAG AAA High Contrast)
+- **Themes**: Seven built-in colour themes, including a light theme (Daywatch) and a WCAG AAA High Contrast theme, with colour-coded severity states throughout
 - **Keyboard Navigation**: Full keyboard control: Ctrl+1-5 (pages), Alt+T (themes), Escape (close), F11 (fullscreen), Arrow keys (tabs and grids)
 - **ARIA Accessibility**: WAI-ARIA tabs, skip link, `aria-selected`, `aria-live` regions, focus management
 - **Progressive Disclosure**: Simple overview with drill-down for details
 - **Real-time Feedback**: Live scan progress and results
-- **Multi-host Fleet View** (desktop): A read-only **Fleet** page scans several
-  saved inventory hosts concurrently and shows each host's severity posture
-  (per-host critical/high/medium/low/info tallies and a colour-coded CIS
-  compliance score) and expands to reveal that host's findings plus a
-  per-framework compliance breakdown (pass/fail/manual/NA counts).
+- **Multi-host Hosts View** (desktop): The **Hosts** page merges the former
+  single-host Remote (connect to and scan one host) and Fleet (bulk scan
+  several inventory hosts) screens. It scans several saved inventory hosts
+  concurrently and shows each host's severity posture (per-host
+  critical/high/medium/low/info tallies and a colour-coded CIS compliance
+  score) and expands to reveal that host's findings plus a per-framework
+  compliance breakdown (pass/fail/manual/NA counts).
+- **Settings Page** (desktop): A theme picker (swatch grid across all seven
+  colour themes) plus an About block showing the application version and
+  build identity. Themes can also be switched from the sidebar quick-switch
+  or cycled with Alt+T.
 
 ---
 
@@ -338,7 +344,7 @@ The web app runs in any browser without needing Tauri installed:
 | Apply hardening | ❌ UI only | ✅ With pkexec |
 | Generate reports | ❌ UI only | ✅ Full functionality |
 | Navigate pages | ✅ Works | ✅ Works |
-| Dark terminal theme | ✅ Works | ✅ Works |
+| Theme switching | ✅ Works | ✅ Works |
 
 The web app is useful for UI development and testing. All pages render with proper empty states.
 
@@ -416,17 +422,19 @@ Fleet host inventory: `~/.config/linux-hardener/hosts.toml`
 
 | Shortcut | Action |
 |----------|--------|
-| Ctrl+1-5 | Navigate to Dashboard/Analysis/Hardening/Remote/Scheduler |
+| Ctrl+1-5 | Navigate to Dashboard/Analysis/Hardening/Hosts/Scheduler |
+| Ctrl+Shift+S | Run a security scan from any page |
 | Alt+T | Cycle through themes |
 | Escape | Close detail panels, exit fullscreen |
 | F11 | Toggle fullscreen |
 | Arrow keys | Navigate tab bars and findings grid |
 | Enter/Space | Open finding detail |
 
-The desktop app has seven pages. `Ctrl+1`-`5` cover the first five (Dashboard,
-Analysis, Hardening, Remote, Scheduler); the two multi-host pages, **Fleet**
-(read-only fleet scan) and **Fleet Apply** (apply/roll back across hosts), are
-reached from the navigation bar and have no dedicated shortcut yet.
+The desktop app has seven pages, reached from the grouped left sidebar.
+`Ctrl+1`-`5` cover Dashboard, Analysis, Hardening, Hosts, and Scheduler
+(`Ctrl+4` lands on Hosts via the retained `/remote` redirect); **Fleet Apply**
+(apply/roll back across hosts) and **Settings** (theme picker and About) have
+no dedicated shortcut yet.
 
 ---
 
@@ -528,4 +536,4 @@ This project draws inspiration from established security tools including:
 **Contact**: tidynest@proton.me
 **Repository**: https://github.com/tidynest/linux-system-hardener
 
-**Last Updated**: 2026-07-19
+**Last Updated**: 2026-07-24

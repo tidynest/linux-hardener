@@ -734,7 +734,7 @@ In addition to CLI testing, the Web UI is validated with Playwright across all 5
 | Compliance | T-COMP-01..08 | 8 | Framework selection, report generation, score colours |
 | Configure | T-CONF-01..10 | 10 | Profiles, plugin toggles, preview, cancel |
 | History | T-HIST-01..06 | 6 | Checkpoints, rollback, apply results |
-| Themes | T-THEME-01..07 | 7 | All 6 themes verified (the theme spec dynamically generates 30 additional screenshot tests: 5 states x 6 themes, bringing the suite total to 84) |
+| Themes | T-THEME-01..07 | 7 | 6 of the 7 themes verified, High Contrast not yet covered (the theme spec dynamically generates 30 additional screenshot tests: 5 states x 6 themes, bringing the suite total to 84) |
 | Errors | T-ERR-01..04 | 4 | Scan/apply/checkpoint errors, dismiss |
 
 ### Per-Distro Notes

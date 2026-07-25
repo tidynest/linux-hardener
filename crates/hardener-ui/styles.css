@@ -4,15 +4,16 @@
  *
  * HTML Structure (Leptos components):
  *   #app (trunk-injected)
- *     header.nav-header > nav.navigation > h1 + ul.nav-links > li > a
- *     main.main-content > Routes (dashboard-page | analysis-page | hardening-page | remote-page)
+ *     div.app-shell > aside.sidebar (grouped nav + icon rail, see components/sidebar.rs)
+ *       + div.app-content > main.app-main > Routes (dashboard-page | analysis-page | hardening-page | remote-page)
  */
 
 /* ============================================================
    1a. CSS CUSTOM PROPERTIES
    ============================================================ */
 
-:root {
+:root,
+[data-theme="default"] {
   /* Background tiers (darkest to lightest) */
   --bg-primary: #0f1419;
   --bg-secondary: #151b23;
@@ -34,6 +35,12 @@
   --color-info: #22d3ee;
   --color-pending: #64748b;
 
+  /* Status tints - badge and calm-box backgrounds */
+  --color-good-bg: rgba(16, 185, 129, .15);
+  --color-warning-bg: rgba(245, 158, 11, .15);
+  --color-critical-bg: rgba(239, 68, 68, .15);
+  --color-accent-bg: rgba(34, 211, 238, .12);
+
   /* Interactive colors - teal accent */
   --color-accent: #22d3ee;
   --color-accent-hover: #67e8f9;
@@ -43,26 +50,36 @@
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
 
-  /* Spacing - compact scale: dense pages, more above the fold */
-  --space-1: 0.25rem;
-  --space-2: 0.5rem;
-  --space-3: 0.75rem;
-  --space-4: 0.875rem;
-  --space-6: 1rem;
-  --space-8: 1.25rem;
+  /* Type size scale */
+  --font-size-caption: 12px;
+  --font-size-sm: 13px;
+  --font-size-body: 14px;
+  --font-size-sub: 16px;
+  --font-size-head: 18px;
+  --font-size-title: 22px;
+  --leading-ui: 1.4;
+  --leading-prose: 1.6;
 
   /* Layout */
   --header-height: 52px;
   --content-padding: 16px;
+  --sidebar-width: 220px;
+  --sidebar-rail-width: 56px;
   /* No max-width - content fills available space */
 
-  /* Extended spacing scale (Session 2 prep) */
-  --space-xs: 0.25rem;    /* 4px */
-  --space-sm: 0.5rem;     /* 8px */
-  --space-md: 0.875rem;   /* 14px */
-  --space-lg: 1rem;       /* 16px */
-  --space-xl: 1.25rem;    /* 20px */
-  --space-2xl: 1.75rem;   /* 28px */
+  /* Spacing - one 4px scale */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+
+  /* Density: single default now; a later [data-density] block remaps these */
+  --control-height: 32px;
+  --control-pad-x: 12px;
+  --row-gap: 8px;
+  --section-gap: 16px;
 
   /* Border radius scale */
   --radius-sm: 0.25rem;  /* 4px */
@@ -78,7 +95,8 @@
 
   /* Borders & Effects */
   --border-radius: 8px;
-  --border-color: var(--bg-elevated);
+  --border: #1e252e;        /* hairline; themed per file */
+  --border-strong: #2a323c; /* emphasis/hover */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.25);
 
@@ -112,6 +130,12 @@
     --color-accent: #fbbf24;
     --color-accent-hover: #fcd34d;
     --color-focus: rgba(251, 191, 36, 0.4);
+    --border: #1a2640;
+    --border-strong: #243352;
+    --color-good-bg: rgba(34, 197, 94, .15);
+    --color-warning-bg: rgba(234, 179, 8, .15);
+    --color-critical-bg: rgba(239, 68, 68, .15);
+    --color-accent-bg: rgba(251, 191, 36, .12);
 }
 
 /* Sentinel - Warm charcoal with amber accents */
@@ -134,6 +158,12 @@
     --color-accent: #f59e0b;
     --color-accent-hover: #fbbf24;
     --color-focus: rgba(245, 158, 11, 0.4);
+    --border: #2e2926;
+    --border-strong: #3a3432;
+    --color-good-bg: rgba(34, 197, 94, .15);
+    --color-warning-bg: rgba(245, 158, 11, .15);
+    --color-critical-bg: rgba(239, 68, 68, .15);
+    --color-accent-bg: rgba(245, 158, 11, .12);
 }
 
 /* Command - Deep navy with ice-blue accents */
@@ -156,6 +186,12 @@
     --color-accent: #38bdf8;
     --color-accent-hover: #7dd3fc;
     --color-focus: rgba(56, 189, 248, 0.4);
+    --border: #1a2238;
+    --border-strong: #252e48;
+    --color-good-bg: rgba(16, 185, 129, .15);
+    --color-warning-bg: rgba(245, 158, 11, .15);
+    --color-critical-bg: rgba(239, 68, 68, .15);
+    --color-accent-bg: rgba(56, 189, 248, .12);
 }
 
 /* Guardian - Forest black with emerald accents */
@@ -178,6 +214,12 @@
     --color-accent: #10b981;
     --color-accent-hover: #34d399;
     --color-focus: rgba(16, 185, 129, 0.4);
+    --border: #1a2620;
+    --border-strong: #24332a;
+    --color-good-bg: rgba(16, 185, 129, .15);
+    --color-warning-bg: rgba(234, 179, 8, .15);
+    --color-critical-bg: rgba(239, 68, 68, .15);
+    --color-accent-bg: rgba(16, 185, 129, .12);
 }
 
 /* Daywatch - Light mode with warm off-white */
@@ -200,7 +242,12 @@
     --color-accent: #0d9488;
     --color-accent-hover: #14b8a6;
     --color-focus: rgba(13, 148, 136, 0.3);
-    --border-color: #d6d3d1;
+    --border: #d6d3d1;
+    --border-strong: #a8a29e;
+    --color-good-bg: rgba(5, 150, 105, .15);
+    --color-warning-bg: rgba(217, 119, 6, .15);
+    --color-critical-bg: rgba(220, 38, 38, .15);
+    --color-accent-bg: rgba(13, 148, 136, .12);
 }
 
 /* High Contrast - WCAG AAA accessibility theme */
@@ -223,7 +270,12 @@
     --color-accent: #67e8f9;
     --color-accent-hover: #a5f3fc;
     --color-focus: rgba(103, 232, 249, 0.6);
-    --border-color: #525252;
+    --border: #767676;
+    --border-strong: #8f8f8f;
+    --color-good-bg: rgba(74, 222, 128, .25);
+    --color-warning-bg: rgba(253, 224, 71, .25);
+    --color-critical-bg: rgba(252, 165, 165, .25);
+    --color-accent-bg: rgba(103, 232, 249, .2);
 }
 
 /* ============================================================
@@ -251,7 +303,7 @@ body {
   height: 100%;
   min-height: 100%;
   font-family: var(--font-sans);
-  font-size: 1rem;
+  font-size: var(--font-size-body);
   line-height: 1.5;
   color: var(--text-primary);
   background-color: var(--bg-primary);
@@ -263,29 +315,6 @@ body {
    ============================================================ */
 
 /* CRITICAL: Flex children must have min-width: 0 to allow shrinking */
-.min-w-0 { min-width: 0; }
-
-/* Text truncation - single line */
-.truncate {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Multi-line truncation (WebKitGTK compatible) */
-.line-clamp-2 {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.line-clamp-3 {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
 
 /* Screen reader only - visually hidden but accessible */
 .sr-only {
@@ -304,7 +333,7 @@ body {
 .skip-link {
   position: absolute;
   top: -100px;
-  left: var(--space-4);
+  left: var(--space-md);
   padding: var(--space-sm) var(--space-md);
   background-color: var(--bg-elevated);
   color: var(--text-primary);
@@ -316,7 +345,7 @@ body {
 }
 
 .skip-link:focus {
-  top: var(--space-4);
+  top: var(--space-md);
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
@@ -327,42 +356,9 @@ body {
 
 /* Flex container utilities - set display and direction */
 .flex { display: flex; }
-.flex-col { flex-direction: column; }
-.flex-wrap { flex-wrap: wrap; }
-.flex-1 { flex: 1; }              /* Grow to fill available space */
-
-/* Flex alignment - control item positioning */
-.items-center { align-items: center; }
-.items-start { align-items: flex-start; }
-.justify-center { justify-content: center; }
-.justify-between { justify-content: space-between; }
 
 /* Grid container utility */
 .grid { display: grid; }
-
-/* Gap utilities - spacing between flex/grid children
-   Uses the spacing scale defined in :root */
-.gap-xs { gap: var(--space-xs); }  /* 4px */
-.gap-sm { gap: var(--space-sm); }  /* 8px */
-.gap-md { gap: var(--space-md); }  /* 16px */
-.gap-lg { gap: var(--space-lg); }  /* 24px */
-.gap-xl { gap: var(--space-xl); }  /* 32px */
-
-/* ── Two-column row layout ──────────────────────────────── */
-.two-col-row {
-  display: flex;
-  gap: var(--space-lg);
-}
-.two-col-row > * {
-  flex: 1;
-  min-width: 0;
-  align-self: start;
-}
-@media (max-width: 768px) {
-  .two-col-row {
-    flex-direction: column;
-  }
-}
 
 /* ============================================================
    2d. CARD COMPONENT
@@ -372,7 +368,7 @@ body {
 /* Base card - default variant */
 .card {
     background-color: var(--bg-secondary);
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--border);
     border-radius: var(--border-radius);
     padding: var(--space-lg);
     transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
@@ -383,26 +379,10 @@ body {
 }
 
 .card-title {
-    font-size: 1.125rem;
+    font-size: var(--font-size-head);
     font-weight: 600;
     color: var(--text-primary);
     margin-bottom: var(--space-md);
-}
-
-.card-compact {
-    padding: var(--space-md);
-    border-radius: var(--radius-md);
-    background-color: var(--bg-tertiary);
-}
-
-.card-empty {
-    border-style: dashed;
-    text-align: center;
-    color: var(--text-muted);
-}
-
-.card-compact.card--empty {
-    padding: var(--space-lg);
 }
 
 /* ============================================================
@@ -418,96 +398,12 @@ body {
   min-height: 100vh;
 }
 
-/* ============================================================
-   4. NAVIGATION HEADER
-   ============================================================ */
-
-.nav-header {
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  background-color: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-color);
-  flex-shrink: 0;
-}
-
-.navigation {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-  width: 100%;
-  min-width: 0;  /* CRITICAL: Allow flex shrinking */
-  min-height: var(--header-height);
-  padding: 8px var(--content-padding);
-}
-
-.navigation h1 {
-  font-family: var(--font-mono);
-  font-size: 1.125rem;
-  font-weight: 700;
-  color: var(--color-accent);
-  white-space: nowrap;
-}
-
-/* Build identity next to the wordmark: legible but visually quiet, so a
-   stale installed build is spottable without competing with the title. */
-.app-version {
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  align-self: center;
-  margin-right: auto;
-}
-
-.nav-links {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px;
-  min-width: 0;  /* Allow shrinking */
-  list-style: none;
-}
-
-.nav-links li {
-  display: block;
-}
-
-.nav-links a {
-  display: block;
-  padding: 6px 12px;
-  color: var(--text-secondary);
-  font-size: 0.875rem;
-  font-weight: 500;
-  text-decoration: none;
-  border-radius: 6px;
-  transition: background-color var(--transition-fast), color var(--transition-fast);
-  white-space: nowrap;
-}
-
-.nav-links a:hover {
-  color: var(--text-primary);
-  background-color: var(--bg-tertiary);
-}
-
-.nav-links a.active {
-  color: var(--text-primary);
-  background-color: var(--bg-tertiary);
-}
-
-/* Theme toggle dropdown */
-.theme-toggle {
-    margin-left: auto;
-}
-
 /* Themed select controls (theme toggle, findings severity filter, schedule
    and notification forms, compliance export). One definition so opened
    dropdown popups always inherit dark/daywatch colours instead of falling
    back to a native white popup with pale text. */
 .theme-select,
-.severity-filter select,
+.findings-filters select,
 .form-select,
 .format-select {
     /* Reset native appearance for consistent cross-browser styling */
@@ -519,25 +415,25 @@ body {
     background-repeat: no-repeat;
     background-position: right 0.5rem center;
     color: var(--text-primary);
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     padding: var(--space-xs) var(--space-sm);
     padding-right: 1.75rem;
-    font-size: 0.875rem;
+    font-size: var(--font-size-body);
     font-family: var(--font-sans);
     cursor: pointer;
     transition: border-color var(--transition-fast);
 }
 
 .theme-select:hover,
-.severity-filter select:hover,
+.findings-filters select:hover,
 .form-select:hover,
 .format-select:hover {
     border-color: var(--color-accent);
 }
 
 .theme-select:focus-visible,
-.severity-filter select:focus-visible,
+.findings-filters select:focus-visible,
 .form-select:focus-visible,
 .format-select:focus-visible {
     outline: 0.125rem solid var(--color-accent);
@@ -545,7 +441,7 @@ body {
 }
 
 .theme-select option,
-.severity-filter select option,
+.findings-filters select option,
 .form-select option,
 .format-select option {
     background: var(--bg-secondary);
@@ -556,7 +452,7 @@ body {
 /* Daywatch light theme needs an explicit arrow colour; option colours above
    already resolve through the per-theme custom properties. */
 [data-theme="daywatch"] .theme-select,
-[data-theme="daywatch"] .severity-filter select,
+[data-theme="daywatch"] .findings-filters select,
 [data-theme="daywatch"] .form-select,
 [data-theme="daywatch"] .format-select {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%231c1917' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
@@ -569,10 +465,287 @@ body {
 }
 
 /* ============================================================
+   4. SIDEBAR SHELL
+   Grouped left navigation (Local / Fleet / Settings) that collapses to a
+   narrow icon rail. See crates/hardener-ui/src/components/sidebar.rs.
+   ============================================================ */
+
+/* Row that holds aside.sidebar and the main content column side by side. */
+.app-shell {
+  display: flex;
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Column to the right of the sidebar: error banner (when shown) above the
+   routed page. */
+.app-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: var(--sidebar-width);
+  background-color: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  overflow-x: hidden;
+  overflow-y: auto;
+  transition: width var(--transition-normal);
+}
+
+/* sidebar.rs computes this single class from the user's explicit choice if
+   one is stored, else the live window width (auto-collapse for
+   tiled/narrow windows) - so every collapsed-content rule below keys off
+   this one class regardless of which of those two decided it. */
+.sidebar.rail {
+  width: var(--sidebar-rail-width);
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  min-height: var(--header-height);
+  padding: var(--space-md) var(--space-lg);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.sidebar.rail .sidebar-header {
+  flex-direction: column;
+  padding: var(--space-md) var(--space-xs);
+}
+
+.sidebar-wordmark {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+
+.sidebar-wordmark-icon {
+  font-size: var(--font-size-head);
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+}
+
+.sidebar-wordmark-text {
+  display: flex;
+  flex-direction: column;
+  font-size: var(--font-size-body);
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.sidebar-collapse-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--control-height);
+  height: var(--control-height);
+  padding: 0;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.sidebar-collapse-toggle:hover {
+  color: var(--text-primary);
+  background-color: var(--bg-tertiary);
+  border-color: var(--color-accent);
+}
+
+.sidebar-collapse-icon {
+  font-size: var(--font-size-sub);
+  width: 1em;
+  height: 1em;
+  transition: transform var(--transition-normal);
+}
+
+.sidebar.rail .sidebar-collapse-icon {
+  transform: rotate(180deg);
+}
+
+.sidebar-nav {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-md) 0;
+  overflow-y: auto;
+}
+
+.sidebar-group + .sidebar-group {
+  margin-top: var(--space-md);
+}
+
+/* Group heading (Local / Fleet / Settings). Collapses to a plain divider
+   in rail mode; the text stays in the DOM for screen readers even though
+   its visual box shrinks to a hairline. */
+.sidebar-group-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-lg) var(--space-xs);
+  white-space: nowrap;
+}
+
+.sidebar-group-label-text {
+  font-size: var(--font-size-caption);
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.sidebar.rail .sidebar-group-label {
+  height: 1px;
+  padding: 0;
+  margin: var(--space-sm) var(--space-md);
+  background-color: var(--border);
+  overflow: hidden;
+}
+
+.sidebar.rail .sidebar-group-label-text,
+.sidebar.rail .sidebar-wordmark-text,
+.sidebar.rail .sidebar-link-label,
+.sidebar.rail .app-version {
+  display: none;
+}
+
+.sidebar-group-items {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: 0 var(--space-sm);
+}
+
+/* Active state keys off the router's own aria-current="page" (set by <A>),
+   never a hand-rolled route comparison. */
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border-left: 3px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: var(--font-size-body);
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.sidebar-link:hover {
+  color: var(--text-primary);
+  background-color: var(--bg-tertiary);
+}
+
+.sidebar-link[aria-current="page"] {
+  color: var(--text-primary);
+  background-color: var(--color-accent-bg);
+  border-left-color: var(--color-accent);
+}
+
+.sidebar-link-icon {
+  font-size: var(--font-size-sub);
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+}
+
+.sidebar-link-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Rail-mode tooltip: reads the same title attribute already required for
+   a11y, so the hover label never drifts out of sync with the accessible
+   name. */
+.sidebar.rail .sidebar-link {
+  position: relative;
+  justify-content: center;
+}
+
+.sidebar.rail .sidebar-link:hover::after,
+.sidebar.rail .sidebar-link:focus-visible::after {
+  content: attr(title);
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-left: var(--space-sm);
+  padding: var(--space-xs) var(--space-sm);
+  background-color: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
+  white-space: nowrap;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  z-index: var(--z-dropdown);
+  pointer-events: none;
+}
+
+.sidebar-settings {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+  padding: var(--space-md) 0;
+}
+
+.sidebar-settings-content {
+  padding: var(--space-xs) var(--space-lg);
+}
+
+/* Rail mode is icon-only: hide the theme quick-switch entirely. A native
+   <select> squeezed to icon width just clips to "For..."; the Settings icon
+   directly above routes to /settings, where the full theme picker lives. */
+.sidebar.rail .sidebar-settings-content {
+  display: none;
+}
+
+.sidebar-settings-content .theme-toggle {
+  margin-left: 0;
+}
+
+.sidebar-settings-content .theme-select {
+  width: 100%;
+}
+
+/* Build identity at the sidebar foot: legible but visually quiet, so a
+   stale installed build is spottable without competing with the wordmark. */
+.app-version {
+  padding: var(--space-sm) var(--space-lg) 0;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ============================================================
    5. MAIN CONTENT
    ============================================================ */
 
-.main-content {
+.app-main {
   flex: 1 1 0;
   display: flex;
   flex-direction: column;
@@ -590,8 +763,7 @@ body {
 
 .dashboard-page,
 .analysis-page,
-.hardening-page,
-.remote-page {
+.hardening-page {
   flex: 1 1 0;
   display: flex;
   flex-direction: column;
@@ -606,38 +778,16 @@ body {
    ============================================================ */
 
 .dashboard-page {
-  gap: var(--space-6);
+  gap: var(--section-gap);
 }
 
 .dashboard-page > h1 {
-  font-size: 1.25rem;
+  font-size: var(--font-size-title);
   font-weight: 600;
   flex-shrink: 0;
 }
 
-.dashboard-intro {
-  color: var(--text-secondary);
-  font-size: 1rem;
-  max-width: 600px;
-  flex-shrink: 0;
-}
-
-.dashboard-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));  /* minmax prevents overflow */
-  gap: var(--space-6);
-  flex-shrink: 0;
-}
-
 /* .dashboard-section removed - now using Card component */
-
-.dashboard-footer {
-  margin-top: auto;
-  padding-top: var(--space-4);
-  color: var(--text-muted);
-  font-size: 0.875rem;
-  flex-shrink: 0;
-}
 
 /* ============================================================
    8. SECURITY SCORE
@@ -652,150 +802,23 @@ body {
 }
 
 .security-score h2 {
-  font-size: 0.9375rem;  /* Increased from 0.875rem (14px to 15px) for better readability */
+  font-size: var(--font-size-sub);
   font-weight: 500;
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  margin-bottom: var(--space-6);
+  margin-bottom: var(--space-lg);
 }
-
-.score-display {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  /* Proportional sizing: shrinks with container, max 160px */
-  width: min(160px, 45vw);
-  height: min(160px, 45vw);
-  aspect-ratio: 1;
-  margin: 0 auto var(--space-6);
-  border-radius: 50%;
-  border: 4px solid var(--border-color);
-  background-color: var(--bg-tertiary);
-  transition: border-color var(--transition-slow), box-shadow var(--transition-slow);
-}
-
-.score-value {
-  font-family: var(--font-mono);
-  font-size: clamp(1.5rem, 8vw, 2.5rem);  /* Scales with viewport */
-  font-weight: 700;
-  line-height: 1;
-}
-
-.score-max {
-  font-family: var(--font-mono);
-  font-size: clamp(0.75rem, 3vw, 1rem);  /* Scales with viewport */
-  color: var(--text-muted);
-  margin-top: var(--space-1);
-}
-
-.score-pending { border-color: var(--color-pending); }
-.score-pending .score-value { color: var(--text-muted); }
 
 .score-critical { border-color: var(--color-critical); box-shadow: 0 0 20px rgba(239, 68, 68, 0.3); }
-.score-critical .score-value { color: var(--color-critical-bright); }
 
 .score-warning { border-color: var(--color-warning); box-shadow: 0 0 20px rgba(245, 158, 11, 0.3); }
-.score-warning .score-value { color: var(--color-warning-bright); }
 
 .score-good { border-color: var(--color-good); box-shadow: 0 0 20px rgba(16, 185, 129, 0.3); }
-.score-good .score-value { color: var(--color-good-bright); }
-
-.score-status {
-  font-size: 0.875rem;
-  color: var(--text-secondary);
-}
-
-/* Score Breakdown (Framework Details) */
-.score-breakdown {
-  margin-top: var(--space-3);
-  text-align: left;
-}
-
-.breakdown-toggle {
-  cursor: pointer;
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: var(--space-2) 0;
-  transition: color var(--transition-fast);
-}
-
-.breakdown-toggle:hover {
-  color: var(--text-secondary);
-}
-
-.breakdown-toggle::marker {
-  color: var(--color-accent);
-}
-
-.breakdown-list {
-  list-style: none;
-  padding: 0;
-  margin: var(--space-2) 0 0 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.breakdown-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-sm);
-  background: var(--bg-elevated);
-  font-size: 0.8125rem;
-}
-
-.breakdown-name {
-  flex: 1;
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-
-.breakdown-score {
-  font-family: var(--font-mono);
-  font-weight: 600;
-}
-
-.breakdown-detail {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-}
-
-.breakdown-good .breakdown-score { color: var(--color-good-bright); }
-.breakdown-warning .breakdown-score { color: var(--color-warning-bright); }
-.breakdown-critical .breakdown-score { color: var(--color-critical-bright); }
 
 /* ============================================================
    9. QUICK ACTIONS
    ============================================================ */
-
-.quick-actions {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-.quick-actions h2 {
-  font-size: 0.9375rem;  /* Increased from 0.875rem for consistency */
-  font-weight: 500;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  margin-bottom: var(--space-6);
-}
-
-.action-buttons {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: var(--space-4);
-}
 
 /* ============================================================
    10. BUTTONS
@@ -805,10 +828,11 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-2);
-  padding: 9px 18px;
+  gap: var(--space-sm);
+  height: var(--control-height);
+  padding: 0 var(--control-pad-x);
   font-family: var(--font-sans);
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   font-weight: 600;
   border: 1px solid transparent;
   border-radius: 6px;
@@ -816,7 +840,8 @@ body {
   transition: all var(--transition-fast);
 }
 
-.btn:disabled {
+.btn:disabled,
+.btn[aria-disabled="true"] {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -835,7 +860,7 @@ body {
 .btn-secondary {
   background-color: transparent;
   color: var(--text-secondary);
-  border-color: var(--border-color);
+  border-color: var(--border);
 }
 
 .btn-secondary:hover:not(:disabled) {
@@ -843,20 +868,10 @@ body {
   color: var(--text-primary);
 }
 
-.btn-accent {
-  background-color: #155e75;
-  color: #cffafe;
-  border-color: #155e75;
-}
-
-.btn-accent:hover:not(:disabled) {
-  background-color: #0e7490;
-  border-color: #0e7490;
-}
-
 .btn-large {
+  height: auto;
   padding: 11px 22px;
-  font-size: 1rem;
+  font-size: var(--font-size-sub);
 }
 
 button {
@@ -864,88 +879,28 @@ button {
   cursor: pointer;
 }
 
-.delete-button {
-  background-color: transparent;
-  color: var(--color-critical);
-  border: 1px solid var(--color-critical);
-  padding: 8px 16px;
-  font-size: 0.875rem;
-  border-radius: 6px;
-  transition: background-color var(--transition-fast), color var(--transition-fast);
-}
-
-.delete-button:hover {
-  background-color: var(--color-critical);
-  color: #ffffff;
-}
-
-.rollback-button {
-  background-color: var(--color-warning);
-  color: var(--bg-primary);
-  border: none;
-  padding: 8px 16px;
-  font-size: 0.875rem;
-  font-weight: 600;
-  border-radius: 6px;
-  transition: background-color var(--transition-fast), transform var(--transition-fast);
-}
-
-.rollback-button:hover {
-  background-color: var(--color-warning-bright);
-  transform: translateY(-1px);
-}
-
-.apply-button {
-  background-color: var(--color-good);
-  color: #ffffff;
-  border: none;
-  padding: 10px 20px;
-  font-size: 1rem;
-  font-weight: 600;
-  border-radius: 6px;
-  transition: background-color var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
-}
-
-.apply-button:hover {
-  background-color: var(--color-good-bright);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
-}
-
-.close-button {
-  background: transparent;
-  color: var(--text-muted);
-  border: none;
-  padding: 8px;
-  transition: color var(--transition-fast);
-}
-
-.close-button:hover {
-  color: var(--text-primary);
-}
-
 /* ============================================================
    11. FORM ELEMENTS
    ============================================================ */
 
 fieldset {
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  padding: var(--space-4);
-  margin-bottom: var(--space-4);
+  padding: var(--space-md);
+  margin-bottom: var(--space-md);
 }
 
 legend {
-  padding: 0 var(--space-2);
-  font-size: 0.875rem;
+  padding: 0 var(--space-sm);
+  font-size: var(--font-size-body);
   color: var(--text-muted);
 }
 
 label {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) 0;
+  gap: var(--space-sm);
+  padding: var(--space-sm) 0;
   color: var(--text-secondary);
   cursor: pointer;
 }
@@ -969,11 +924,11 @@ table {
 th, td {
   padding: 12px 16px;
   text-align: left;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border);
 }
 
 th {
-  font-size: 0.75rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -991,33 +946,9 @@ tbody tr:hover {
 
 .finding-row { cursor: pointer; }
 
-.value-cell {
-  font-family: var(--font-mono);
-  font-size: 0.875rem;
-  max-width: 300px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* ============================================================
    13. SEVERITY BADGES
    ============================================================ */
-
-.severity_badge {
-  display: inline-block;
-  padding: 4px 12px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  border-radius: 9999px;
-  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
-}
-
-.severity_badge:hover {
-  transform: scale(1.05);
-}
 
 .severity_critical { background-color: rgba(239, 68, 68, 0.2); color: var(--color-critical-bright); }
 .severity_high { background-color: rgba(245, 158, 11, 0.2); color: var(--color-warning-bright); }
@@ -1032,7 +963,7 @@ tbody tr:hover {
 .analysis-page {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: var(--space-lg);
 }
 
 .analysis-header {
@@ -1040,9 +971,9 @@ tbody tr:hover {
   justify-content: space-between;
   align-items: flex-start;
   flex-wrap: wrap;
-  gap: var(--space-4);
-  padding-bottom: var(--space-6);
-  border-bottom: 1px solid var(--border-color);
+  gap: var(--space-md);
+  padding-bottom: var(--space-lg);
+  border-bottom: 1px solid var(--border);
 }
 
 .header-content {
@@ -1050,8 +981,8 @@ tbody tr:hover {
 }
 
 .header-content h1 {
-  font-size: 1.25rem;
-  margin-bottom: var(--space-2);
+  font-size: var(--font-size-title);
+  margin-bottom: var(--space-sm);
 }
 
 .header-subtitle {
@@ -1059,204 +990,29 @@ tbody tr:hover {
   margin: 0;
 }
 
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-}
-
-/* Scanner layout */
-.scanner-page,
-.scanner-controls {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
-}
-
-.scanner-controls {
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--border-radius);
-  padding: var(--space-6);
-}
-
-.scanner-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 400px;  /* minmax prevents overflow */
-  gap: var(--space-6);
-}
-
-.results-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: var(--space-3) var(--space-4);
-}
-
 .findings-filters {
     display: flex;
     align-items: center;
-    gap: var(--space-4);
+    gap: var(--space-md);
 }
-
-.severity-filter {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-}
-
-.severity-filter label {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-}
-
-/* Themed select rules for .severity-filter select live with the other three
-   select families near the top of this file (search "Themed select
-   controls"). */
 
 /* Finding detail panel */
 .finding-detail {
   background-color: var(--bg-secondary);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: var(--border-radius);
-  padding: var(--space-6);
+  padding: var(--space-lg);
   position: sticky;
-  top: calc(var(--header-height) + var(--space-8));
+  top: calc(var(--header-height) + var(--space-xl));
 }
-
-.detail-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: var(--space-4);
-}
-
-.detail-header h2 { font-size: 1.125rem; }
-
-.detail-severity {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: var(--space-4);
-}
-
-.detail-category {
-  font-size: 0.875rem;
-  color: var(--text-muted);
-}
-
-.detail-description,
-.detail-explanation,
-.detail-impact,
-.detail-values,
-.detail-remediation {
-  margin-bottom: var(--space-4);
-}
-
-.detail-description h3,
-.detail-explanation h3,
-.detail-impact h3,
-.detail-values h3,
-.detail-remediation h3 {
-  font-size: 0.875rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
-  margin-bottom: var(--space-2);
-}
-
-.detail-values dl {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);  /* minmax prevents overflow */
-  gap: 8px 16px;
-}
-
-.detail-values dt { color: var(--text-muted); font-size: 0.875rem; }
-.detail-values dd { font-family: var(--font-mono); font-size: 0.875rem; }
 
 .value-current { color: var(--color-critical-bright); }
 .value-recommended { color: var(--color-good-bright); }
 
-.detail-remediation ol { padding-left: var(--space-6); }
-.detail-remediation li { margin-bottom: var(--space-2); color: var(--text-secondary); }
-
-/* Findings grid */
-.findings-grid {
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--border-radius);
-  overflow: hidden;
-}
-
-.findings-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--border-color);
-}
-
 .findings-controls {
   display: flex;
-  gap: var(--space-4);
+  gap: var(--space-md);
   flex-wrap: wrap;
-}
-
-.filter-group {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.filter-group select {
-  background-color: var(--bg-tertiary);
-  color: var(--text-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 8px 12px;
-  font-size: 0.875rem;
-  cursor: pointer;
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
-}
-
-.filter-group select:hover {
-  border-color: var(--text-muted);
-}
-
-.filter-group select:focus {
-  outline: none;
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.2);
-}
-
-/* Mini security score */
-.mini-security-score {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 16px;
-  background-color: var(--bg-tertiary);
-  border-radius: 6px;
-  border: 1px solid var(--border-color);
-}
-
-.mini-score-value {
-  font-family: var(--font-mono);
-  font-size: 1.125rem;
-  font-weight: 700;
-}
-
-.mini-score-value.score-good { color: var(--color-good-bright); }
-.mini-score-value.score-warning { color: var(--color-warning-bright); }
-.mini-score-value.score-critical { color: var(--color-critical-bright); }
-.mini-score-value.score-pending { color: var(--text-muted); }
-
-.mini-score-label {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
 }
 
 /* ============================================================
@@ -1266,34 +1022,21 @@ tbody tr:hover {
 .hardening-page {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: var(--space-lg);
 }
 
 .hardening-header {
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-md);
 }
 
 .hardening-header h1 {
-  font-size: 1.25rem;
-  margin-bottom: var(--space-2);
+  font-size: var(--font-size-title);
+  margin-bottom: var(--space-sm);
 }
 
 .hardening-header p {
   color: var(--text-secondary);
   margin: 0;
-}
-
-/* Section toggle */
-.section-toggle {
-  display: inline-flex;
-  gap: 4px;
-  padding: 4px;
-  background-color: var(--bg-secondary);
-  border-radius: var(--border-radius);
-  border: 1px solid var(--border-color);
-  margin-bottom: var(--space-6);
-  max-width: 100%;
-  flex-wrap: wrap;
 }
 
 /* Section content */
@@ -1302,199 +1045,1194 @@ tbody tr:hover {
   max-width: 100%;
 }
 
-.section-btn {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: 6px 14px;
-  background: transparent;
-  color: var(--text-muted);
-  font-family: var(--font-sans);
-  font-size: 0.875rem;
-  font-weight: 500;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.section-btn:hover { color: var(--text-secondary); }
-.section-btn.section-active {
-  background-color: var(--bg-tertiary);
-  color: var(--text-primary);
-}
-
-.history-indicator {
-  width: 8px;
-  height: 8px;
-  background-color: var(--color-good-bright);
-  border-radius: 50%;
-  animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
 /* Configure section */
 .configure-section {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: var(--space-lg);
   min-width: 0;
   max-width: 100%;
 }
 
-/* .profile-selector and .plugin-toggles container styles removed - now using Card component */
-/* Card component provides: bg-secondary, border, border-radius, padding */
-
-.plugin-grid {
+/* Selection state: main column (level, areas, advanced) beside a live
+   summary. One markup; this grid is the wide-window layout, collapsed to a
+   single column below the same breakpoint the dashboard grid uses (see
+   "Large tablets" media query further down). */
+.configure-layout {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));  /* min() prevents overflow */
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
+  align-items: start;
+  gap: var(--space-xl);
+  min-width: 0;
+}
+
+.configure-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  min-width: 0;
+}
+
+/* While a dry-run is checking, the selection behind it is frozen so it
+   cannot silently drift from what the in-flight check is actually looking
+   at. Segmented-control buttons carry their own native `disabled`; this
+   covers the plugin rows, which are a custom role="checkbox" div rather
+   than a real button. */
+.configure-main.is-disabled {
+  opacity: 0.6;
+  pointer-events: none;
+  transition: opacity var(--transition-fast);
+}
+
+.configure-aside {
+  position: sticky;
+  top: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+/* Protection level: a segmented control (role="radiogroup" of role="radio"
+   buttons in configure_section.rs). Replaces the old radio-in-fieldset Card,
+   which drew a border around a border. */
+.segmented-control {
+  display: flex;
+  gap: var(--space-xs);
+  padding: var(--space-xs);
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.segment-btn {
+  flex: 1;
+  padding: var(--space-sm) var(--space-md);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-body);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.segment-btn:hover {
+  color: var(--text-primary);
+  background-color: var(--bg-elevated);
+}
+
+.segment-btn.is-active {
+  background-color: var(--color-accent-bg);
+  border-color: var(--color-accent);
+  color: var(--text-primary);
+}
+
+/* Per-area plugin rows - replaces the old plugin-grid checkbox tiles.
+   Each row is a custom role="checkbox" (see configure_section.rs) so the
+   whole row, not just a small control, toggles the plugin. */
+.plugin-rows {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-secondary);
+  padding: var(--space-xs) 0;
+}
+
+.plugin-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  column-gap: var(--space-sm);
+  row-gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+}
+
+.plugin-row:hover {
+  background-color: var(--bg-tertiary);
+}
+
+.plugin-row + .plugin-row {
+  border-top: 1px solid var(--border);
+}
+
+.plugin-row-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+}
+
+/* Neutral empty ring for the "off" state - never colour alone, the check
+   icon vs. empty ring is the shape difference that carries the meaning. */
+.plugin-row-indicator-empty {
+  width: 0.85em;
+  height: 0.85em;
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--radius-full);
+}
+
+.plugin-row-check-icon {
+  width: 1.15em;
+  height: 1.15em;
+  color: var(--color-good);
+}
+
+.plugin-row-name {
+  font-size: var(--font-size-body);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.plugin-row-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-height);
+  height: var(--control-height);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.plugin-row-help:hover,
+.plugin-row-help[aria-expanded="true"] {
+  color: var(--color-accent);
+  background-color: var(--bg-elevated);
+  border-color: var(--border);
+}
+
+.plugin-row-help-icon {
+  width: 1em;
+  height: 1em;
+}
+
+.plugin-row-detail {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding-left: calc(1.25rem + var(--space-sm));
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+/* Advanced (optional) disclosure - houses the config file picker, collapsed
+   by default. Native <details>/<summary>, same pattern as .score-breakdown. */
+.advanced-disclosure {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-secondary);
+}
+
+.advanced-disclosure-summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  font-size: var(--font-size-body);
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: color var(--transition-fast);
+}
+
+.advanced-disclosure-summary::-webkit-details-marker {
+  display: none;
+}
+
+.advanced-disclosure-summary::marker {
+  content: "";
+}
+
+.advanced-disclosure-summary::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 5px solid var(--text-muted);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform var(--transition-fast);
+}
+
+.advanced-disclosure[open] .advanced-disclosure-summary::before {
+  transform: rotate(90deg);
+}
+
+.advanced-disclosure-summary:hover {
+  color: var(--text-primary);
+}
+
+.advanced-disclosure-body {
+  padding: 0 var(--space-md) var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.advanced-disclosure-hint {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.config-file-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+/* Live "what will change" summary beside the primary Preview action. */
+.apply-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.apply-summary-text {
+  font-size: var(--font-size-sub);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.apply-summary-empty {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* Shared with .applying-panel's "keep this window open" note below - both
+   are a muted, neutral aside, deliberately never the amber status colour
+   (that is reserved for the "Manual step" status). */
+.apply-summary-reassurance,
+.applying-keep-open {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
+/* Calm checking (dry-run) loading state - replaces the apply summary and
+   Preview button while app_state.is_previewing is true. The local dry-run
+   is one blocking call with no per-plugin progress event, so this makes no
+   "N of M done" claim: the heading's count and each row's name are the
+   real, already-known selection; the shimmer and the top-down stagger are
+   cosmetic only, reused from the fadeIn keyframes below section 16. */
+.checking-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  animation: fadeIn var(--transition-normal);
+}
+
+/* Shared with .applying-panel's and the done view's checkpoint reassurance
+   below - same reassuring tone (safe/tracked), three different messages. */
+.checking-reassurance,
+.applying-reassurance,
+.done-checkpoint-reassurance {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--color-good-bright, var(--text-secondary));
+}
+
+.checking-heading {
+  font-size: var(--font-size-sub);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.checking-skeleton-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+/* Each row fades in top-down (increasing animation-delay set inline per
+   row in configure_section.rs) - a one-time reveal, never a per-row
+   "done" state. */
+.checking-skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) var(--space-sm);
+  background-color: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  opacity: 0;
+  animation: fadeIn var(--transition-normal) forwards;
+}
+
+/* The shimmer itself loops indefinitely for as long as the row is on
+   screen - unlike the row's entrance, it never settles into a "complete"
+   state, so it cannot be misread as per-area progress. */
+.checking-skeleton-indicator {
+  width: 0.85em;
+  height: 0.85em;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: linear-gradient(
+    90deg,
+    var(--border-strong) 25%,
+    var(--bg-elevated) 50%,
+    var(--border-strong) 75%
+  );
+  background-size: 200% 100%;
+  animation: checking-shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes checking-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.checking-skeleton-name {
+  font-size: var(--font-size-body);
+  color: var(--text-secondary);
+}
+
+.checking-cancel {
+  align-self: flex-start;
+  margin-top: var(--space-xs);
+}
+
+/* Reduced motion: no shimmer sweep, no staggered reveal - the checking
+   view and every row appear fully formed and static immediately. Also
+   covers .applying-area-indicator below: a static active state, not a
+   faded-out one - the row is still genuinely in progress, so the
+   indicator stays fully opaque in its neutral tone, it just stops
+   pulsing. */
+@media (prefers-reduced-motion: reduce) {
+  .checking-view,
+  .checking-skeleton-row {
+    animation: none;
+    opacity: 1;
+  }
+
+  .checking-skeleton-indicator {
+    animation: none;
+    background: var(--border-strong);
+  }
+
+  .applying-area-indicator {
+    animation: none;
+    opacity: 1;
+  }
+
+  /* Done view's score-reveal strip (Step 3): the count-up itself is
+     skipped in Rust (run_score_reveal checks prefers_reduced_motion and
+     jumps `displayed` straight to the final value), so these two rules
+     only need to stop the CSS smoothing between/around that single jump -
+     an instant settle rather than an eased one. */
+  .score-reveal-bar-fill,
+  .score-reveal-result {
+    transition: none;
+  }
+}
+
+/* Applying (the real apply write, in progress) - replaces the review Card
+   while app_state.is_applying is true; see configure_section.rs's own
+   comment on that Show block for why it is the only one of the three
+   states visible at that point. Same no-progress-stream reality as the
+   checking view above: a single invoke_apply call has no per-plugin
+   signal, so this makes no "area X done" claim either - every row keeps
+   one ACTIVE, indeterminate indicator for the whole apply, never a green
+   tick (--color-good is the real applied status, only knowable once
+   apply_results is read in the later done/partial view). Row/list/name
+   styling reuses .checking-skeleton-row/-list/-name verbatim (including
+   their reduced-motion rule, merged into the single block above) rather
+   than duplicating it - DRY; only the indicator itself reads differently
+   here, in the neutral --text-secondary tone for "this is happening, not
+   yet a status", never in --color-accent - in the guardian theme
+   --color-accent and --color-good are the same value, so an accent-toned
+   indicator here would wear the exact colour that later means "applied".
+   Amber (--color-warning*) is deliberately never used anywhere in this
+   block - that family is reserved for the "Manual step" status alone. */
+.applying-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+/* Active, not "done": pulses in the neutral --text-secondary tone for as
+   long as its row is on screen and never settles into --color-good (or
+   any other status colour), so it cannot be misread as this specific area
+   having finished. */
+.applying-area-indicator {
+  width: 0.85em;
+  height: 0.85em;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background-color: var(--text-secondary);
+  animation: applying-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes applying-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
 }
 
 /* .apply-controls container styles removed - now using Card component */
 
-.dry-run-toggle {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-/* Preview panel - dry-run results before apply */
-.preview-panel {
-  border: 2px solid var(--color-warning);
-  background: linear-gradient(
-    to bottom,
-    color-mix(in srgb, var(--color-warning) 8%, var(--bg-secondary)),
-    var(--bg-secondary)
-  );
-}
-
-.preview-warning {
-  color: var(--text-secondary);
-  margin-bottom: var(--space-4);
-  padding: var(--space-3);
-  background-color: color-mix(in srgb, var(--color-warning) 10%, transparent);
-  border-radius: 6px;
-  border-left: 3px solid var(--color-warning);
-}
-
-.preview-changes {
+/* Review step - shown after a successful dry-run. Calm by default (no
+   warning border/tint on the panel itself): risk is signalled narrowly, by
+   the neutral lockout pill and its single tick inside .review-confirm-box,
+   never by colouring the whole step amber/red. */
+.review-panel {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  margin-bottom: var(--space-6);
+  gap: var(--space-lg);
+}
+
+/* Step 1 - the selection collapses to this summary header + [Edit]. */
+.review-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.review-summary {
+  margin: 0;
+  font-size: var(--font-size-sub);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Step 2 - one group per area, grouped by annotate_preview's decisions. */
+.review-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
   max-height: 400px;
   overflow-y: auto;
 }
 
-.preview-plugin {
+.review-group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   background-color: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: var(--space-4);
 }
 
-.preview-plugin-name {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: var(--space-3);
+/* A verified_compliant group: shown, never hidden, but visually receded -
+   dimmed opacity plus the muted IconMinus rather than the change-bearing
+   IconCheck. */
+.review-group-compliant {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  opacity: 0.7;
 }
 
-.preview-change-count {
-  font-size: 0.75rem;
-  font-weight: 400;
-  color: var(--text-tertiary);
+.review-group-minus-icon {
+  width: 1.1em;
+  height: 1.1em;
+  flex-shrink: 0;
+  color: var(--text-muted);
 }
 
-.preview-change-list {
+.review-group-name {
+  font-size: var(--font-size-body);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.review-group-note {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
+/* Native <details>/<summary> per group with changes - the lazy correct
+   choice for "expandable". The summary::before chevron below reproduces
+   .advanced-disclosure-summary's border-triangle mechanism further up this
+   file (native marker hidden, a border-drawn triangle rotated on [open]),
+   so every theme incl. high-contrast inherits it through the same tokens. */
+.review-group-details > summary {
   list-style: none;
-  padding: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.review-group-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.review-group-details > summary::marker {
+  content: "";
+}
+
+.review-group-details > summary::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 5px solid var(--text-muted);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform var(--transition-fast);
+}
+
+.review-group-details[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+/* Not "applied" (that stays --color-good elsewhere in the fixed status
+   vocabulary) - this check marks "a real, pending change", so it takes the
+   neutral accent colour instead. */
+.review-group-check-icon {
+  width: 1.1em;
+  height: 1.1em;
+  flex-shrink: 0;
+  color: var(--color-accent);
+}
+
+/* Step 4 - neutral bordered caution pill for ssh ("login") / firewall
+   ("network") groups. Never amber, never a status colour - text carries
+   the meaning, not colour alone. */
+.lockout-pill {
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  padding: 1px var(--space-sm);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+}
+
+.review-group-count {
+  margin-left: auto;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
+}
+
+.review-group-changes {
+  list-style: none;
   margin: 0;
+  padding: 0 var(--space-md) var(--space-md);
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-sm);
 }
 
-.preview-change-list li {
-  font-size: 0.875rem;
+.review-group-changes li {
+  font-size: var(--font-size-body);
   color: var(--text-secondary);
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-sm) var(--space-md);
   background-color: var(--bg-primary);
   border-radius: 4px;
   font-family: var(--font-mono);
 }
 
-/* Shown in place of the change list when the last deep scan verified a
-   plugin fully compliant: a positive confirmation that no change is
-   pending, rather than the conditional estimates the apply would skip. */
-.preview-compliant-note {
-  font-size: 0.875rem;
-  color: var(--color-good-bright, var(--text-secondary));
-  padding: var(--space-2) var(--space-3);
-  background-color: rgba(16, 185, 129, 0.1);
-  border-left: 3px solid var(--color-good, var(--border-color));
-  border-radius: 4px;
+/* Step 3 - the calm accent confirm box (never red/warning), holding the
+   checkpoint/password reassurance directly beside the count-named confirm,
+   plus Step 4's single lockout tick when it applies. */
+.review-confirm-box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  background-color: var(--color-accent-bg);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-md);
 }
 
-.preview-actions {
+.review-confirm-reassurance {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.review-lockout-tick {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  color: var(--text-primary);
+  font-size: var(--font-size-body);
+  cursor: pointer;
+}
+
+.review-confirm-actions {
   display: flex;
   justify-content: flex-end;
-  gap: var(--space-3);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--border-color);
+  gap: var(--space-md);
+}
+
+/* Nudge shown while the lockout tick above is required but unchecked -
+   never silent, per the brief's Step 4. */
+.review-lockout-hint {
+  margin: 0;
+  align-self: flex-end;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 
 /* History section */
 .history-section {
   display: flex;
   flex-direction: column;
-  gap: var(--space-8);
+  gap: var(--space-xl);
   min-width: 0;
   max-width: 100%;
 }
 
-/* .apply-results-summary and .checkpoints-section container styles removed - now using Card component */
-/* Keep overflow handling for content */
-.apply-results-summary,
-.checkpoints-section {
-  min-width: 0;
-  max-width: 100%;
+/* ============================================================
+   Hardening History - checkpoint timeline (Phase 2b)
+   ============================================================ */
+
+.checkpoint-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
+  flex-wrap: wrap;
 }
 
-.result-summary-card {
-  background-color: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: var(--space-4);
+.timeline,
+.timeline-nodes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
-.result-status {
-  font-size: 1.125rem;
+.timeline-group + .timeline-group {
+  margin-top: var(--space-lg);
+}
+
+.timeline-date {
+  font-size: var(--font-size-caption);
   font-weight: 600;
-  margin-bottom: 12px;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0 0 var(--space-sm) 0;
 }
 
-.result-status.success { color: var(--color-good-bright); }
-.result-status.failed { color: var(--color-critical-bright); }
+/* The rail: a hairline down the node column, dots sit on it. */
+.timeline-nodes {
+  position: relative;
+  padding-left: var(--space-lg);
+}
 
-.result-changes,
-.result-checkpoint {
+.timeline-nodes::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 4px;
+  bottom: 4px;
+  width: 1px;
+  background: var(--border);
+}
+
+.timeline-node {
+  position: relative;
+  display: flex;
+  gap: var(--space-md);
+  padding: var(--space-sm) 0 var(--space-md) 0;
+}
+
+.timeline-dot {
+  position: absolute;
+  left: calc(-1 * var(--space-lg) + 1px);
+  top: 7px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--bg-primary);
+  border: 2px solid var(--text-muted);
+  box-sizing: border-box;
+}
+
+.timeline-dot-latest {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+}
+
+.timeline-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.timeline-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.timeline-name {
+  font-size: var(--font-size-sub);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.timeline-latest-pill {
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  color: var(--color-accent);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-xs);
+}
+
+.timeline-meta {
+  display: flex;
+  gap: var(--space-md);
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
-  font-size: 0.875rem;
-  margin-bottom: var(--space-2);
+  margin-top: 2px;
 }
 
-.result-checkpoint code { color: var(--color-accent); }
+.timeline-actions {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.timeline-detail {
+  margin-top: var(--space-sm);
+  padding: var(--space-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+/* Rollback modal stages (Phase 2b). */
+.rollback-modal {
+  max-width: 34rem;
+  width: 100%;
+}
+
+.rollback-sub {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin: 0 0 var(--space-md) 0;
+}
+
+.rollback-body {
+  margin: 0 0 var(--space-md) 0;
+}
+
+.rollback-file-list {
+  list-style: none;
+  margin: 0 0 var(--space-md) 0;
+  padding: 0;
+  max-height: 14rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.rollback-file-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: var(--font-size-sm);
+}
+
+.rollback-file-kind {
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
+}
+
+.rollback-caveat {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  border-left: 2px solid var(--border);
+  padding-left: var(--space-sm);
+  margin: 0 0 var(--space-lg) 0;
+}
+
+/* Restoring: neutral, never green (theme accent==good collision). */
+.rollback-progress {
+  color: var(--text-secondary);
+  margin: var(--space-md) 0;
+}
+
+.rollback-outcome {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.rollback-outcome-icon {
+  width: 24px;
+  height: 24px;
+}
+
+.rollback-outcome.ok .rollback-outcome-icon { color: var(--color-good); }
+.rollback-outcome.fail .rollback-outcome-icon { color: var(--color-critical); }
+
+.rollback-summary {
+  margin: 0 0 var(--space-md) 0;
+  color: var(--text-secondary);
+}
+
+.restore-icon { width: 16px; height: 16px; flex-shrink: 0; }
+.restore-ok .restore-icon { color: var(--color-good); }
+.restore-fail .restore-icon { color: var(--color-critical); }
+.restore-action { color: var(--text-secondary); font-size: var(--font-size-caption); }
+.restore-error { color: var(--color-critical); font-size: var(--font-size-caption); }
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+  margin-top: var(--space-lg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal, .modal-backdrop { animation: none; transition: none; }
+}
+
+/* Done view (Task 2a.6) - the SUCCESS state shown after a fully successful
+   apply. Left-aligned throughout, deliberately no centred hero: the check
+   mark is small, "System Hardened" sits at the same normal title size as
+   any other Card heading (.card-title's 18px/600), and the score-reveal
+   number further down is only a notch above body text - never a big hero
+   number. Status vocabulary stays fixed here too: applied is the green
+   check, Skipped is the muted minus, no amber anywhere in this block. */
+.done-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.done-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.done-heading-icon {
+  width: 1.3em;
+  height: 1.3em;
+  flex-shrink: 0;
+  color: var(--color-good);
+}
+
+/* Same size/weight as .card-title (Card's own title, which this view does
+   not use directly - the icon needs to sit inline with the text). */
+.done-heading-title {
+  margin: 0;
+  font-size: var(--font-size-head);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.done-summary-line {
+  margin: 0;
+  font-size: var(--font-size-body);
+  color: var(--text-secondary);
+}
+
+.done-area-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.done-area-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  background-color: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+}
+
+/* An all-skipped/all-compliant result: shown, never hidden, but visually
+   receded - same dimmed treatment as .review-group-compliant. */
+.done-area-compliant {
+  opacity: 0.7;
+}
+
+.done-area-check-icon {
+  width: 1.1em;
+  height: 1.1em;
+  flex-shrink: 0;
+  color: var(--color-good);
+}
+
+.done-area-minus-icon {
+  width: 1.1em;
+  height: 1.1em;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.done-area-name {
+  font-size: var(--font-size-body);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.done-area-summary,
+.done-area-note {
+  margin-left: auto;
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
+.done-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+}
+
+/* Score-reveal strip (Step 3). Score honesty: before the first scan
+   .score-reveal renders an empty <div> (nothing but the "Run Security
+   Scan" action already in .done-actions above) - there is deliberately no
+   CSS state for "no number yet" beyond simply not rendering anything. */
+.score-reveal-status {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.score-reveal-content {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+/* The success-tint flash target. Background transitions both ways - in
+   instantly when .score-reveal-flash is added, back out over the same
+   duration once it is removed - so one class toggle in Rust (flash_once)
+   is enough for the full flash-then-fade. */
+.score-reveal-result {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-sm);
+  transition: background-color 600ms ease;
+}
+
+.score-reveal-flash {
+  background-color: var(--color-good-bg);
+}
+
+/* Leads by weight and colour, not by size: a notch above body text
+   (--font-size-sub), never the dashboard's big hero .score-value. */
+.score-reveal-value {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sub);
+  font-weight: 700;
+  color: var(--color-good);
+}
+
+.score-reveal-max {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
+}
+
+.score-reveal-delta {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+/* The thin sweeping bar - width is bound to the same `displayed` count-up
+   signal as .score-reveal-value in configure_section.rs, so the two stay
+   in lockstep; the transition below only smooths the steps between the
+   set_interval ticks. High-contrast-safe: --color-good and --border-strong
+   both carry enough contrast against near-black in that theme. */
+.score-reveal-bar {
+  height: 3px;
+  min-width: 80px;
+  flex: 1 1 120px;
+  max-width: 200px;
+  background-color: var(--border-strong);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.score-reveal-bar-fill {
+  height: 100%;
+  width: 0%;
+  background-color: var(--color-good);
+  transition: width var(--transition-fast);
+}
+
+/* The shared score-strip wrapper (configure_section.rs's `score_strip`,
+   used verbatim by both the done view above and the partial view below).
+   `display: contents` removes the wrapper's own box so .done-actions/
+   .score-reveal/its sr-only paragraph keep participating directly in
+   whichever parent's flex column (.done-panel/.partial-panel) they are
+   mounted into - laid out exactly as if this function's markup had been
+   copy-pasted inline, without actually duplicating it. */
+.score-strip {
+  display: contents;
+}
+
+/* Partial/mixed view (Task 2a.7) - the honest sad path shown when an apply
+   partly failed or needs a manual step. Sibling of .done-panel above and
+   built the same way: left-aligned, no centred hero, same
+   --space-md-gapped flex column so the shared .score-strip settles in with
+   identical spacing either place it mounts. The header circle is
+   deliberately NOT one of the four fixed status icons below - it summarises
+   a MIX of them, so IconInfo (already this file's neutral/notice glyph,
+   distinct from the applied/Failed/Manual step/Skipped vocabulary) reads
+   correctly where none of the four alone would. */
+.partial-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.partial-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+/* The brief's small warning circle: 28px, amber-tinted, never a big alarm -
+   deliberately far smaller than .done-heading-icon's inline check mark
+   would read at this same visual weight, because a mixed result is not a
+   one-glyph story the way a clean success is. */
+.partial-heading-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background-color: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.partial-heading-icon-glyph {
+  width: 16px;
+  height: 16px;
+}
+
+.partial-heading-text {
+  margin: 0;
+  font-size: var(--font-size-body);
+  color: var(--text-primary);
+}
+
+.partial-area-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* One hairline-separated row per ApplyResult - the accepted single-column
+   layout. The two rejected variants (a left-status-column layout, and a
+   headed two-up grid) do not appear here. */
+.partial-row {
+  padding: var(--space-sm) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.partial-row:last-child {
+  border-bottom: none;
+}
+
+.partial-row-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+/* Base glyph sizing; colour comes from the per-status modifier below, so
+   the fixed icon+colour+word triad always travels together. */
+.partial-row-icon {
+  width: 1.1em;
+  height: 1.1em;
+  flex-shrink: 0;
+}
+
+.partial-row-icon-applied { color: var(--color-good); }
+.partial-row-icon-failed { color: var(--color-critical); }
+.partial-row-icon-manual { color: var(--color-warning); }
+.partial-row-icon-skipped { color: var(--text-muted); }
+
+.partial-row-name {
+  font-size: var(--font-size-body);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+/* Plain right-aligned status text - Applied's "N applied" and Skipped's
+   "Skipped: {reason}". Never the sole signal (both also carry a distinct
+   icon+colour), so text alone stays legible under any theme. */
+.partial-row-status {
+  margin-left: auto;
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
+/* Failed/Manual step's status pill - same shape as .lockout-pill, tinted
+   per status rather than neutral. */
+.partial-row-badge {
+  margin-left: auto;
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  padding: 1px var(--space-sm);
+  border-radius: var(--radius-full);
+}
+
+.partial-row-badge-failed {
+  color: var(--color-critical);
+  background-color: var(--color-critical-bg);
+}
+
+.partial-row-badge-manual {
+  color: var(--color-warning);
+  background-color: var(--color-warning-bg);
+}
+
+/* "View details"/"How?" - a quiet text affordance, not a full button, so it
+   does not visually compete with Retry (a real .btn) on the Failed row. */
+.partial-row-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.partial-row-toggle:hover,
+.partial-row-toggle:focus-visible {
+  color: var(--text-primary);
+}
+
+/* The revealed second line - the real failure text or manual instruction,
+   never fabricated, never fetched fresh (Step 3: it is already present in
+   apply_results, this only toggles its visibility). */
+.partial-row-detail {
+  margin: var(--space-xs) 0 0;
+  padding-left: calc(1.1em + var(--space-sm));
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.partial-row-detail-mono {
+  font-family: var(--font-mono);
+}
 
 /* ============================================================
    16. TAB COMPONENTS
@@ -1506,7 +2244,7 @@ tbody tr:hover {
   padding: 4px;
   background: var(--bg-tertiary);
   border-radius: var(--border-radius);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
 }
 
 .tab-button {
@@ -1514,12 +2252,12 @@ tbody tr:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-2);
+  gap: var(--space-sm);
   padding: 12px 24px;
   background: transparent;
   color: var(--text-secondary);
   font-family: var(--font-sans);
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   font-weight: 500;
   border: none;
   border-radius: 6px;
@@ -1536,7 +2274,6 @@ tbody tr:hover {
 .tab-button.tab-active {
   background: var(--bg-secondary);
   color: var(--text-primary);
-  box-shadow: var(--shadow-sm);
 }
 
 .tab-button.tab-active::after {
@@ -1560,7 +2297,7 @@ tbody tr:hover {
   padding: 0 8px;
   background: var(--color-accent);
   color: var(--bg-primary);
-  font-size: 0.75rem;
+  font-size: var(--font-size-caption);
   font-weight: 700;
   border-radius: 9999px;
 }
@@ -1596,179 +2333,42 @@ tbody tr:hover {
 }
 
 .recent-activity h2 {
-  font-size: 0.9375rem;  /* Increased from 0.875rem for consistency */
+  font-size: var(--font-size-sub);
   font-weight: 500;
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  margin-bottom: var(--space-4);
-}
-
-.activity-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  padding: 12px 0;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.activity-item:last-child { border-bottom: none; }
-
-.activity-icon {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: var(--bg-tertiary);
-  border-radius: 6px;
-  font-size: 0.875rem;
-}
-
-.activity-icon.scan { color: var(--color-info); }
-.activity-icon.apply { color: var(--color-good-bright); }
-
-.activity-content {
-  flex: 1;
-  min-width: 0;  /* Allow text truncation */
-}
-
-.activity-title {
-  font-weight: 500;
-  color: var(--text-primary);
-  margin-bottom: 4px;
-}
-
-.activity-meta {
-  font-size: 0.875rem;
-  color: var(--text-muted);
+  margin-bottom: var(--space-md);
 }
 
 /* ============================================================
    18. COMPLIANCE PAGE
    ============================================================ */
 
-.compliance-page,
-.checkpoint-list,
-.apply-results {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
-}
-
-/* .framework-selection container styles removed - now using Card component */
-
-.framework-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(170px, 100%), 1fr));  /* min() prevents overflow on narrow viewports */
-  gap: 8px;
-  margin-bottom: var(--space-6);
-}
-
-.framework-checkbox {
-  background-color: var(--bg-tertiary);
-  padding: 8px 12px;
-  border-radius: 6px;
-}
-
-.framework-checkbox:hover { background-color: var(--bg-elevated); }
-
-/* Generate actions row */
-.generate-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
-  flex-wrap: wrap;
-}
-
-.export-controls {
-  display: flex;
-  align-items: center;
-  gap: var(--space-xs);
-}
-
-/* Themed select rules for .format-select live with the other three select
+/* Themed select rules for .format-select live with the other select
    families near the top of this file (search "Themed select controls"). */
 
 .status-message {
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   padding: var(--space-xs) var(--space-sm);
   border-radius: var(--radius-sm);
 }
 
 .status-success {
-  color: var(--score-good);
+  color: var(--color-good);
   background-color: rgba(16, 185, 129, 0.1);
 }
 
 .status-error {
-  color: var(--score-critical);
+  color: var(--color-critical);
   background-color: rgba(239, 68, 68, 0.1);
-}
-
-/* Report cards */
-.report-card {
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--border-radius);
-  padding: var(--space-6);
-  margin-bottom: var(--space-6);
-}
-
-.report-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--space-4);
-}
-
-.compliance-score {
-  font-family: var(--font-mono);
-  font-size: 1.25rem;
-  font-weight: 700;
-}
-
-.score-high { color: var(--color-good-bright); }
-.score-medium { color: var(--color-warning-bright); }
-.score-low { color: var(--color-critical-bright); }
-
-.report-summary {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));  /* minmax prevents overflow */
-  gap: var(--space-4);
-  margin-bottom: var(--space-4);
-}
-
-.summary-stat {
-  text-align: center;
-  padding: 6px 10px;
-  background-color: var(--bg-tertiary);
-  border-radius: 6px;
-}
-
-.stat-value {
-  display: block;
-  font-family: var(--font-mono);
-  font-size: 1.125rem;
-  font-weight: 700;
-}
-
-.summary-pass .stat-value { color: var(--color-good-bright); }
-.summary-fail .stat-value { color: var(--color-critical-bright); }
-.summary-manual .stat-value { color: var(--color-warning-bright); }
-.summary-na .stat-value { color: var(--text-muted); }
-
-.stat-label {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
 }
 
 /* Expandable sections */
 details {
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  margin-bottom: var(--space-2);
+  margin-bottom: var(--space-sm);
 }
 
 summary {
@@ -1780,45 +2380,15 @@ summary {
 }
 
 summary:hover { background-color: var(--bg-elevated); }
-details[open] summary { border-bottom: 1px solid var(--border-color); }
+details[open] summary { border-bottom: 1px solid var(--border); }
 
-.control-status { font-weight: 600; font-size: 0.75rem; }
+.control-status { font-weight: 600; font-size: var(--font-size-caption); }
 .status-pass { color: var(--color-good-bright); }
 .status-fail { color: var(--color-critical-bright); }
 .status-manual { color: var(--color-warning-bright); }
 .status-na { color: var(--text-muted); }
 
-.control-id { font-family: var(--font-mono); font-size: 0.875rem; }
-
-/* Apply results */
-.apply-summary dl {
-  display: flex;
-  gap: var(--space-6);
-}
-
-.apply-summary dd {
-  font-size: 1.125rem;
-  font-weight: 600;
-}
-
-.changes-list ol { padding-left: var(--space-6); }
-.change-success { color: var(--color-good-bright); }
-.change-failure { color: var(--color-critical-bright); }
-.change-skipped { color: var(--color-warning-bright); }
-
-.checkpoint-info {
-  background-color: var(--bg-tertiary);
-  padding: var(--space-4);
-  border-radius: 6px;
-}
-
-.checkpoint-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-sm);
-  margin-bottom: var(--space-md);
-}
+.control-id { font-family: var(--font-mono); font-size: var(--font-size-body); }
 
 .create-checkpoint-form {
   display: flex;
@@ -1828,18 +2398,18 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 
 .input-text {
   padding: var(--space-xs) var(--space-sm);
-  font-size: 0.85rem;
+  font-size: var(--font-size-body);
   font-family: inherit;
   background: var(--bg-secondary);
   color: var(--text-primary);
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--border);
   border-radius: 4px;
   outline: none;
   transition: border-color 0.15s ease;
 }
 
 .input-text:focus {
-  border-color: var(--accent-primary);
+  border-color: var(--color-accent);
 }
 
 .input-text::placeholder {
@@ -1847,12 +2417,13 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 }
 
 .btn-small {
+  height: auto;
   padding: var(--space-xs) var(--space-sm);
-  font-size: 0.75rem;
+  font-size: var(--font-size-caption);
 }
 
 .btn-danger {
-  background: var(--severity-high, #c53030);
+  background: var(--color-critical);
   color: #fff;
   border: none;
   border-radius: 4px;
@@ -1864,26 +2435,10 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
   opacity: 0.85;
 }
 
-.actions-cell {
-  display: flex;
-  gap: var(--space-xs);
-  align-items: center;
-}
-
-.detail-expansion-row td {
-  padding: 0;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.checkpoint-detail-panel {
-  padding: var(--space-3) var(--space-4);
-  background: var(--bg-tertiary);
-}
-
 .detail-file-count {
-  font-size: 0.85rem;
+  font-size: var(--font-size-body);
   color: var(--text-secondary);
-  margin-bottom: var(--space-2);
+  margin-bottom: var(--space-sm);
 }
 
 .detail-file-list {
@@ -1891,20 +2446,20 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: var(--space-xs);
 }
 
 .detail-file-list li {
-  font-size: 0.85rem;
+  font-size: var(--font-size-body);
   color: var(--text-secondary);
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-sm);
 }
 
 .detail-file-perms {
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: var(--font-size-caption);
   color: var(--text-muted);
   background: var(--bg-elevated);
   padding: 1px 6px;
@@ -1936,31 +2491,18 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 }
 
 .empty-state-title {
-  font-size: 1.125rem;
+  font-size: var(--font-size-head);
   font-weight: 500;
   color: var(--text-secondary);
   margin-bottom: var(--space-sm);
 }
 
 .empty-state-hint {
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   color: var(--text-muted);
   max-width: 400px;
   margin: 0 auto;
   line-height: 1.5;
-}
-
-.empty-state-action {
-  margin-top: var(--space-lg);
-}
-
-.no-checkpoints,
-.no-results {
-  text-align: center;
-  padding: var(--space-8);
-  background-color: var(--bg-secondary);
-  border: 1px dashed var(--border-color);
-  border-radius: var(--border-radius);
 }
 
 /* Global Error Banner */
@@ -1970,12 +2512,12 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
   justify-content: space-between;
   gap: var(--space-sm);
   padding: var(--space-sm) var(--space-md);
-  background-color: rgba(var(--color-critical-rgb, 220, 50, 47), 0.15);
+  background-color: var(--color-critical-bg);
   border: 1px solid var(--color-critical-bright, #dc3545);
   border-radius: var(--radius-sm);
   margin: var(--space-sm) var(--space-md) 0;
   color: var(--color-critical-bright, #dc3545);
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   animation: slide-down 200ms ease-out;
 }
 
@@ -1990,7 +2532,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
   color: var(--color-critical-bright, #dc3545);
   cursor: pointer;
   padding: var(--space-xs);
-  font-size: 1rem;
+  font-size: var(--font-size-sub);
   line-height: 1;
   opacity: 0.7;
   transition: opacity var(--transition-fast);
@@ -2032,7 +2574,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 .error-page p {
   color: var(--text-secondary);
   margin-bottom: var(--space-lg);
-  font-size: 1.125rem;
+  font-size: var(--font-size-head);
 }
 
 .error-page a {
@@ -2061,26 +2603,21 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 /* Guidance text */
 .page-description {
   color: var(--text-secondary);
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-md);
   word-wrap: break-word;
   overflow-wrap: break-word;
 }
 
 .section-guidance {
   color: var(--text-muted);
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   background-color: var(--bg-secondary);
   border-left: 3px solid var(--color-info);
   padding: 12px 16px;
-  margin-bottom: var(--space-6);
+  margin-bottom: var(--space-lg);
   border-radius: 0 6px 6px 0;
   word-wrap: break-word;
   overflow-wrap: break-word;
-}
-
-.help-text {
-  color: var(--text-muted);
-  font-size: 0.875rem;
 }
 
 /* ============================================================
@@ -2090,37 +2627,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 .scan-history-tab {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-}
-
-.history-header {
-  display: flex;
-  justify-content: flex-end;
-  padding: var(--space-2) 0;
-}
-
-.status-badge {
-  display: inline-block;
-  padding: 2px 10px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: capitalize;
-  border-radius: 9999px;
-}
-
-.status-badge.status-success {
-  background-color: rgba(16, 185, 129, 0.15);
-  color: var(--color-good-bright);
-}
-
-.status-badge.status-error {
-  background-color: rgba(239, 68, 68, 0.15);
-  color: var(--color-critical-bright);
-}
-
-.status-badge.status-running {
-  background-color: rgba(34, 211, 238, 0.15);
-  color: var(--color-info);
+  gap: var(--space-md);
 }
 
 /* ============================================================
@@ -2129,41 +2636,27 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 
 /* Large tablets - stack dashboard grid earlier for better readability */
 @media (max-width: 1024px) {
-  .scanner-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .dashboard-grid {
-    grid-template-columns: 1fr;
-    gap: var(--space-4);  /* Reduced gap in single-column mode */
-  }
 
   /* Compact security score section in single-column mode */
   .security-score {
-    padding: var(--space-4);
+    padding: var(--space-md);
   }
 
   .security-score h2 {
-    margin-bottom: var(--space-4);
+    margin-bottom: var(--space-md);
   }
 
-  .score-display {
-    margin-bottom: var(--space-4);
+  /* Hardening selection: narrow/tiled window stacks to a single calm
+     column (level -> rows -> advanced -> summary+Preview); the live
+     summary only earns a dedicated right pane once the window is wide. */
+  .configure-layout {
+    display: flex;
+    flex-direction: column;
   }
 
-  /* Compact quick actions in single-column mode */
-  .quick-actions {
-    padding: var(--space-4);
+  .configure-aside {
+    position: static;
   }
-
-  .quick-actions h2 {
-    margin-bottom: var(--space-4);
-  }
-
-  .action-buttons {
-    gap: var(--space-3);
-  }
-
 }
 
 /* Tablets */
@@ -2172,35 +2665,8 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
     --content-padding: 16px;
   }
 
-  .navigation {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 8px;
-  }
-
-  .navigation h1 {
-    text-align: center;
-  }
-
-  .nav-links {
-    justify-content: center;
-  }
-
-  .report-summary {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .analysis-header {
     flex-direction: column;
-  }
-
-  .header-actions {
-    width: 100%;
-    flex-direction: column;
-  }
-
-  .mini-security-score {
-    justify-content: center;
   }
 
   .tab-bar {
@@ -2211,14 +2677,6 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
     justify-content: flex-start;
   }
 
-  .section-toggle {
-    width: 100%;
-  }
-
-  .section-btn {
-    flex: 1;
-    justify-content: center;
-  }
 }
 
 /* Mobile */
@@ -2227,36 +2685,9 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
     --content-padding: 12px;
   }
 
-  .navigation h1 {
-    font-size: 1rem;
-  }
-
-  .nav-links a {
-    padding: 6px 10px;
-    font-size: 0.8125rem;
-  }
-
-  .score-display {
-    width: 140px;
-    height: 140px;
-  }
-
-  .score-value {
-    font-size: 2rem;
-  }
-
-  .framework-grid,
-  .report-summary {
-    grid-template-columns: 1fr;
-  }
-
-  .plugin-grid {
-    grid-template-columns: 1fr;
-  }
-
   .btn-large {
     padding: 12px 16px;
-    font-size: 0.875rem;
+    font-size: var(--font-size-body);
   }
 }
 
@@ -2268,8 +2699,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 @media (pointer: coarse) {
   .btn,
   .tab-button,
-  .section-btn,
-  .nav-links a {
+  .sidebar-link {
     min-height: 44px;
   }
 }
@@ -2303,103 +2733,6 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
    22. REMOTE SCANNING PAGE
    ============================================================ */
 
-.remote-page {
-    gap: var(--space-md);
-}
-
-.remote-layout {
-    display: grid;
-    grid-template-columns: 280px 1fr;
-    gap: var(--space-lg);
-}
-
-.remote-sidebar {
-    border-right: 1px solid var(--border-color);
-    padding-right: var(--space-md);
-}
-
-.remote-main {
-    min-width: 0;
-}
-
-@media (max-width: 768px) {
-    .remote-layout {
-        grid-template-columns: 1fr;
-    }
-    .remote-sidebar {
-        border-right: none;
-        border-bottom: 1px solid var(--border-color);
-        padding-right: 0;
-        padding-bottom: var(--space-md);
-    }
-}
-
-/* --- Host List Sidebar --- */
-
-.host-list-title {
-    font-size: 1rem;
-    font-weight: 600;
-    margin-bottom: var(--space-sm);
-    color: var(--text-primary);
-}
-
-.host-entries {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-xs);
-}
-
-.host-entry {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-xs);
-    padding: var(--space-sm);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    background: var(--bg-secondary);
-    transition: border-color var(--transition-fast);
-}
-
-.host-entry:hover {
-    border-color: var(--color-accent);
-}
-
-.host-entry--active {
-    border-color: var(--color-accent);
-    background: var(--bg-tertiary);
-}
-
-.host-entry-info {
-    display: flex;
-    flex-direction: column;
-}
-
-.host-entry-name {
-    font-weight: 600;
-    font-size: 0.9rem;
-    color: var(--text-primary);
-}
-
-.host-entry-detail {
-    font-size: 0.8rem;
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-}
-
-.host-entry-actions {
-    display: flex;
-    gap: var(--space-xs);
-    flex-wrap: wrap;
-}
-
-.host-add-button {
-    width: 100%;
-    margin-top: var(--space-sm);
-}
-
 /* --- Host Form --- */
 
 .host-form {
@@ -2407,25 +2740,25 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
     flex-direction: column;
     gap: var(--space-sm);
     padding: var(--space-md);
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--border);
     border-radius: var(--radius-sm, 6px);
     background: var(--bg-secondary);
 }
 
 .host-form h3 {
     margin: 0 0 var(--space-xs);
-    font-size: 1rem;
+    font-size: var(--font-size-sub);
     color: var(--text-primary);
 }
 
 .form-field {
     display: flex;
     flex-direction: column;
-    gap: var(--space-2xs, 4px);
+    gap: var(--space-xs);
 }
 
 .form-field label {
-    font-size: 0.85rem;
+    font-size: var(--font-size-body);
     font-weight: 500;
     color: var(--text-secondary);
 }
@@ -2434,7 +2767,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
     display: flex;
     align-items: center;
     gap: var(--space-xs);
-    font-size: 0.9rem;
+    font-size: var(--font-size-body);
     color: var(--text-primary);
     cursor: pointer;
 }
@@ -2445,123 +2778,144 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
     margin-top: var(--space-xs);
 }
 
-/* --- Remote Status Panel --- */
-
-.remote-empty {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-md);
-    padding: var(--space-lg);
-    color: var(--text-muted);
-}
-
-.remote-guide-title {
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--text-secondary);
-    margin: 0;
-}
-
-.remote-guide-steps {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-sm);
-    counter-reset: guide-step;
-}
-
-.remote-guide-steps li {
-    counter-increment: guide-step;
-    display: flex;
-    align-items: baseline;
-    gap: var(--space-sm);
-    font-size: 0.9rem;
-    line-height: 1.5;
-}
-
-.remote-guide-steps li::before {
-    content: counter(guide-step);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 1.5rem;
-    height: 1.5rem;
-    border-radius: 50%;
-    background: var(--bg-tertiary);
-    color: var(--text-secondary);
-    font-size: 0.8rem;
-    font-weight: 600;
-    flex-shrink: 0;
-}
-
-.remote-connected-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: var(--space-sm) var(--space-md);
-    background: var(--bg-secondary);
-    border: 1px solid var(--color-accent);
-    border-radius: var(--radius-sm, 6px);
-    margin-bottom: var(--space-md);
-}
-
-.remote-connected-info {
-    display: flex;
-    flex-direction: column;
-}
-
-.remote-connected-label {
-    font-size: 0.8rem;
-    color: var(--text-muted);
-}
-
-.remote-connected-host {
-    font-family: var(--font-mono);
-    font-weight: 600;
-    color: var(--color-accent);
-}
-
-.remote-connected-actions {
-    display: flex;
-    gap: var(--space-sm);
-}
-
-.remote-results {
-    margin-top: var(--space-md);
-}
-
-.remote-results-title {
-    font-size: 1rem;
-    font-weight: 600;
-    margin-bottom: var(--space-sm);
-    color: var(--text-primary);
-}
-
 /* =============================================================
    22. SCHEDULER PAGE
    ============================================================ */
 
 .scheduler-page {
+  max-width: 760px;
+}
+
+/* Page header */
+.scheduler-header { margin-bottom: var(--space-lg); }
+.scheduler-title {
+  font-size: var(--font-size-title);
+  color: var(--text-primary);
+  margin: 0;
+}
+.scheduler-subtitle {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  margin: var(--space-xs) 0 0;
+}
+
+/* Section block */
+.scheduler-block {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg);
+  margin-bottom: var(--space-md);
+}
+.scheduler-block-title {
+  font-size: var(--font-size-head);
+  color: var(--text-primary);
+  margin: 0 0 var(--space-md);
+}
+
+/* Toggle switch (wraps a real checkbox for native a11y) */
+.toggle-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  cursor: pointer;
+  margin-bottom: var(--space-md);
+}
+.toggle-switch-input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.toggle-switch-track {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  flex-shrink: 0;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+.toggle-switch-track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: var(--text-muted);
+  border-radius: var(--radius-full);
+  transition: transform var(--transition-fast), background var(--transition-fast);
+}
+.toggle-switch-input:checked + .toggle-switch-track {
+  background: var(--color-accent-bg);
+  border-color: var(--color-accent);
+}
+.toggle-switch-input:checked + .toggle-switch-track::after {
+  transform: translateX(16px);
+  background: var(--color-accent);
+}
+.toggle-switch-input:focus-visible + .toggle-switch-track {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.toggle-switch-label { color: var(--text-primary); }
+
+/* Advanced disclosure */
+.scheduler-advanced { margin-top: var(--space-md); }
+.scheduler-advanced-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+.scheduler-advanced-summary:hover { color: var(--text-primary); }
+.scheduler-advanced-chev {
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid currentColor;
+  transition: transform var(--transition-fast);
+}
+.scheduler-advanced-chev.open { transform: rotate(180deg); }
+.scheduler-override-note {
+  display: inline-block;
+  margin-top: var(--space-xs);
+  color: var(--color-accent);
+  font-size: var(--font-size-sm);
+}
+
+/* Save bar */
+.scheduler-save-bar {
+  position: sticky;
+  bottom: 0;
   display: flex;
-  gap: var(--space-lg);
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-md);
+  margin-top: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
 }
+.scheduler-save-status { font-size: var(--font-size-sm); }
+.scheduler-save-status.is-ok { color: var(--color-good-bright); }
+.scheduler-save-status.is-fail { color: var(--color-critical-bright); }
 
-.scheduler-page > * {
-  flex: 1;
-  min-width: 0;
-  align-self: start;
-}
-
-.scheduler-page .form-actions {
-  padding-top: 1rem;
-}
-
-@media (max-width: 768px) {
-  .scheduler-page {
-    flex-direction: column;
-  }
+/* Notification test action row */
+.notification-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin-top: var(--space-md);
 }
 
 .schedule-section,
@@ -2572,12 +2926,12 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 }
 
 .subsection-title {
-  font-size: 1rem;
+  font-size: var(--font-size-sub);
   font-weight: 600;
   color: var(--text-primary);
   margin: 0.5rem 0 0;
   padding-top: 0.75rem;
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid var(--border);
 }
 
 .form-row {
@@ -2587,7 +2941,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 }
 
 .form-label {
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   font-weight: 500;
   color: var(--text-secondary);
 }
@@ -2595,10 +2949,10 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 .form-input {
   padding: 0.5rem 0.75rem;
   background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text-primary);
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   font-family: inherit;
   max-width: 400px;
 }
@@ -2614,21 +2968,8 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
    "Themed select controls"); max-width lives there too. */
 
 .form-hint {
-  font-size: 0.75rem;
+  font-size: var(--font-size-caption);
   color: var(--text-muted);
-}
-
-.toggle-label {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  cursor: pointer;
-  font-size: 0.875rem;
-  color: var(--text-primary);
-}
-
-.toggle-input {
-  accent-color: var(--color-good);
 }
 
 .plugin-checkboxes {
@@ -2641,7 +2982,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
   display: flex;
   align-items: center;
   gap: 0.375rem;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
   cursor: pointer;
 }
@@ -2656,31 +2997,12 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
   margin-top: 0.5rem;
 }
 
-.test-result {
-  padding: 0.5rem 0.75rem;
-  border-radius: 6px;
-  font-size: 0.8125rem;
-}
-
-.test-result--success {
-  background: rgba(16, 185, 129, 0.12);
-  color: var(--color-good-bright);
-  border: 1px solid var(--color-good);
-}
-
-.test-result--failure {
-  background: rgba(239, 68, 68, 0.12);
-  color: var(--color-critical-bright);
-  border: 1px solid var(--color-critical);
-}
-
 /* =============================================================
    23. CONFIG FILE PICKER
+   Sits inside .advanced-disclosure-body (configure_section.rs); no card
+   framing of its own, see .config-file-fields near the selection-state
+   rules above.
    ============================================================ */
-
-.config-file-card {
-  margin-bottom: var(--space-md);
-}
 
 .config-file-row {
   display: flex;
@@ -2691,24 +3013,24 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 .config-file-input {
   flex: 1;
   padding: var(--space-xs) var(--space-sm);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
   font-family: var(--font-mono);
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   transition: border-color var(--transition-fast);
 }
 
 .config-file-input:focus {
   outline: none;
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 2px rgba(var(--color-accent-rgb, 59, 130, 246), 0.15);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 15%, transparent);
 }
 
 .config-file-input::placeholder {
   color: var(--text-muted);
-  font-family: var(--font-body);
+  font-family: var(--font-sans);
   font-style: italic;
 }
 
@@ -2725,7 +3047,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 }
 
 .config-status {
-  font-size: 0.8125rem;
+  font-size: var(--font-size-sm);
 }
 
 .config-default {
@@ -2737,7 +3059,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 }
 
 .config-valid {
-  color: var(--color-success, #22c55e);
+  color: var(--color-good);
 }
 
 .config-valid .config-status-icon {
@@ -2745,7 +3067,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 }
 
 .config-invalid {
-  color: var(--color-error, #ef4444);
+  color: var(--color-critical);
 }
 
 .config-invalid .config-status-icon {
@@ -2757,7 +3079,7 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
   border: none;
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-sm);
   padding: 0;
   text-decoration: underline;
   transition: color var(--transition-fast);
@@ -2778,25 +3100,16 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
   background: var(--bg-elevated);
 }
 
-.finding-row-selected {
-  background: var(--bg-elevated);
-  border-left: 3px solid var(--color-accent);
-}
-
-.finding-row-selected:focus-visible {
-  border-left: 3px solid var(--color-accent);
-}
-
 /* Inline delete confirmation */
 .confirm-delete-inline {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--space-xs);
   animation: confirm-fade-in 150ms ease-out;
 }
 
 .confirm-delete-label {
-  font-size: 0.8125rem;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--color-critical, #ef4444);
 }
@@ -2807,19 +3120,17 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 }
 
 /* Copy button and layout helpers */
-.detail-header-actions,
-.report-card-actions,
 .detail-file-header {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-sm);
 }
 
 /* ============================================================
    24. FLEET PAGE
    ============================================================ */
 
-/* Page container — mirrors other *-page classes in section 6. */
+/* Page container - mirrors other *-page classes in section 6. */
 .fleet-page {
   flex: 1 1 0;
   display: flex;
@@ -2831,16 +3142,11 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
 }
 
 /* Muted intro paragraph below the card heading. */
-.fleet-intro {
-  color: var(--text-secondary);
-  font-size: 0.9375rem;
-  margin-bottom: var(--space-md);
-}
 
-/* Host selection fieldset — reuses the global fieldset token for border/radius
+/* Host selection fieldset - reuses the global fieldset token for border/radius
    but adds a touch of vertical rhythm between its children. */
 .fleet-host-select {
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: var(--space-sm) var(--space-md);
   margin-bottom: var(--space-md);
@@ -2864,90 +3170,62 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
   color: var(--text-primary);
 }
 
-/* Wrapper around the results <table> — provides top margin only;
-   the <table> itself reuses .findings-table for its cell/border rules. */
-.fleet-table {
-  margin-top: var(--space-md);
-  overflow-x: auto;
-}
-
-/* Base result row — no extra decoration; inherits tbody tr hover. */
-.fleet-row {
-  outline: none;
-}
-
-/* Rows that can be expanded show a pointer and a subtle left accent on hover. */
-.fleet-row-expandable {
-  cursor: pointer;
-}
-
-.fleet-row-expandable:hover,
-.fleet-row-expandable:focus-visible {
-  background-color: var(--bg-elevated);
-  outline: 2px solid var(--color-accent);
-  outline-offset: -2px;
-}
-
-/* Expanded findings panel — inset background to visually nest under parent row. */
-.fleet-detail-row td {
-  padding: var(--space-sm) var(--space-md);
-  background-color: var(--bg-tertiary);
-  border-bottom: 2px solid var(--border-color);
-}
-
-/* Status cell colour helpers — reuse existing semantic colour tokens. */
-.fleet-ok {
-  color: var(--color-good-bright);
-  font-weight: 600;
-}
-
-.fleet-failed {
-  color: var(--color-critical-bright);
-  font-weight: 600;
-}
-
-/* CIS score cell — colour the percentage text directly. The shared .score-*
-   classes only colour a .score-value child (a bare table cell has none), so
-   the fleet table scopes its own colour like .fleet-ok above. */
-.fleet-table td.score-good {
-  color: var(--color-good-bright);
-  font-weight: 600;
-}
-
-.fleet-table td.score-warning {
-  color: var(--color-warning-bright);
-  font-weight: 600;
-}
-
-.fleet-table td.score-critical {
-  color: var(--color-critical-bright);
-  font-weight: 600;
-}
-
-/* Per-host framework breakdown inside the expander — separate it from the
-   findings grid rendered below. */
-.fleet-compliance-summary {
-  margin-bottom: var(--space-md);
-}
-
 /* ============================================================
    25. FLEET APPLY PAGE
    ============================================================ */
 
-/* Inline label spacing for mode and plugin-select fieldsets. */
-.fleet-mode label,
+/* Inline label spacing for the plugin-select fieldset. */
 .fleet-plugin-select label { margin-right: var(--space-md); }
 
 /* Action row beneath the selection controls. */
 .fleet-actions { display: flex; gap: var(--space-sm); margin-top: var(--space-md); }
 
-/* Monospace output panels — dry-run preview and live results. */
-.fleet-preview,
-.fleet-results {
-  background: var(--bg-tertiary);
-  padding: var(--space-sm);
-  overflow-x: auto;
-  white-space: pre-wrap;
+/* Sticky action bar: the visible selection summary (the armed preview key) on
+   the left, Preview/Execute on the right. */
+.fleet-apply-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  margin-top: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.fleet-apply-summary {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+
+.fleet-apply-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+/* Reason shown when Preview is unavailable (no host selected). */
+.fleet-apply-hint {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* Review (dry-run) and Results (executed) lists: outcome rows stack. */
+.fleet-review,
+.fleet-results-list {
+  margin-top: var(--space-md);
+}
+
+/* Confirm-modal stakes line. */
+.fleet-apply-stakes {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
 }
 
 /* Confirmation modal overlay. */
@@ -2968,84 +3246,861 @@ details[open] summary { border-bottom: 1px solid var(--border-color); }
   max-width: 40rem;
 }
 
+/* Per-host outcome row - dry-run preview and executed results share it. */
+.fleet-outcome {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  margin-top: var(--space-sm);
+}
+
+.fleet-outcome-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.fleet-outcome-id {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fleet-outcome-name {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.fleet-outcome-target {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+.fleet-outcome-stats {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex-shrink: 0;
+}
+
+/* Stat cell: muted by default; a band class colours it directly (the shared
+   .score-* classes only colour a .score-value child, so a bare span needs the
+   scoped rules below). */
+.fleet-stat {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+.fleet-stat.score-good { color: var(--color-good-bright); box-shadow: none; }
+.fleet-stat.score-warning { color: var(--color-warning-bright); box-shadow: none; }
+.fleet-stat.score-critical { color: var(--color-critical-bright); box-shadow: none; }
+
+.fleet-glyph {
+  font-weight: 700;
+}
+.fleet-glyph-ok { color: var(--color-good-bright); }
+.fleet-glyph-pending { color: var(--color-warning-bright); }
+.fleet-glyph-failed { color: var(--color-critical-bright); }
+
 /* ============================================================
    26. UNCHECKED CHECKS (PRIVILEGED DEEP SCAN)
    ============================================================ */
 
-/* Requires-privileges presentation: always muted, never severity-coloured -
-   these are unverifiable checks, not findings. */
-.unchecked-banner {
+/* ============================================================
+   Dashboard - security score hero (Phase 3)
+   ============================================================ */
+
+.score-hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
+}
+
+.score-hero-main {
+  padding: var(--space-lg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+.score-hero-head {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-6);
-  border: 1px dashed var(--border-color);
-  border-radius: var(--border-radius);
-  color: var(--text-muted);
-  margin-bottom: var(--space-6);
+  gap: var(--space-md);
+  flex-wrap: wrap;
 }
 
-.unchecked-banner-text {
-  flex: 1;
-}
-
-.unchecked-banner-button {
-  background-color: transparent;
-  color: var(--text-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 8px 16px;
-  font-size: 0.875rem;
+.score-number {
+  font-size: 24px;
   font-weight: 600;
-  transition: background-color var(--transition-fast), color var(--transition-fast);
+  line-height: 1;
 }
 
-.unchecked-banner-button:hover:not(:disabled) {
-  background-color: var(--bg-tertiary);
-  color: var(--text-primary);
-}
-
-.unchecked-banner-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.unchecked-section {
-  margin-top: var(--space-6);
-}
-
-.unchecked-heading {
-  font-size: 0.75rem;
+.score-max {
+  font-size: var(--font-size-sm);
+  font-weight: 400;
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: var(--space-2);
+  margin-left: 2px;
 }
 
-.score-unchecked,
-.unchecked-reason {
+.score-pill {
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  padding: 2px var(--space-sm);
+  border-radius: var(--radius-sm);
+  border: 1px solid currentColor;
+}
+
+.score-scan-btn {
+  margin-left: auto;
+}
+
+.score-bar {
+  margin-top: var(--space-md);
+  height: 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--bg-tertiary);
+}
+
+.score-bar-fill {
+  height: 100%;
+  transition: width var(--transition-normal);
+}
+
+/* Band colouring - number, pill text, and bar fill share the band. */
+.score-hero-main.score-good .score-number,
+.score-hero-main.score-good .score-pill { color: var(--color-good); }
+.score-hero-main.score-good .score-bar-fill { background: var(--color-good); }
+.score-hero-main.score-warning .score-number,
+.score-hero-main.score-warning .score-pill { color: var(--color-warning); }
+.score-hero-main.score-warning .score-bar-fill { background: var(--color-warning); }
+.score-hero-main.score-critical .score-number,
+.score-hero-main.score-critical .score-pill { color: var(--color-critical); }
+.score-hero-main.score-critical .score-bar-fill { background: var(--color-critical); }
+
+.score-honesty {
+  margin: var(--space-md) 0 0 0;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
 
-.score-unchecked {
-  font-size: 0.8125rem;
-  margin-top: var(--space-1);
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--color-accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
 }
 
-.unchecked-list {
+.link-button:disabled { color: var(--text-muted); cursor: default; text-decoration: none; }
+
+.score-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+.score-empty-title {
+  margin: 0;
+  font-size: var(--font-size-sub);
+  color: var(--text-secondary);
+}
+
+.compliance-disclosure > summary {
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: var(--space-sm) 0;
+}
+
+.compliance-list {
   list-style: none;
+  margin: var(--space-sm) 0 0 0;
   padding: 0;
 }
 
-.unchecked-row {
+.compliance-item {
   display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--font-size-sm);
+}
+
+.compliance-name { flex: 1; }
+/* Framework percentage in the compliance disclosure row: sans, matching the
+   13px row scale. */
+.compliance-score {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+.compliance-item.score-good .compliance-score { color: var(--color-good); }
+.compliance-item.score-warning .compliance-score { color: var(--color-warning); }
+.compliance-item.score-critical .compliance-score { color: var(--color-critical); }
+.compliance-detail { color: var(--text-muted); }
+
+/* The legacy bare .score-good/.score-warning/.score-critical rules (old circular
+   gauge) carry a 20px glow box-shadow. The hero card and each compliance row also
+   wear those bare band classes, so suppress the inherited glow here. Higher
+   specificity (0,2,0) beats the bare rule (0,1,0); mini-score and fleet-table use
+   their own scoped selectors and are untouched. */
+.score-hero-main.score-good,
+.score-hero-main.score-warning,
+.score-hero-main.score-critical,
+.compliance-item.score-good,
+.compliance-item.score-warning,
+.compliance-item.score-critical {
+  box-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .score-bar-fill { transition: none; }
+}
+
+/* Dashboard - recent activity rows (Phase 3). */
+.activity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.activity-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.activity-item:last-child { border-bottom: none; }
+
+.activity-icon {
+  width: 20px;
+  height: 20px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.activity-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.activity-title {
+  font-weight: 600;
+  margin-bottom: 0;
+}
+
+.activity-meta {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.activity-link {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.activity-link:hover { text-decoration: underline; }
+
+/* Dashboard - header (Phase 3). */
+.dashboard-header {
+  margin-bottom: var(--space-lg);
+}
+
+.dashboard-header h1 {
+  margin: 0;
+  /* The old .dashboard-page > h1 rule no longer matches (h1 now nests in
+     <header>); restore the app-wide header size to match the other pages. */
+  font-size: var(--font-size-title);
+  font-weight: 600;
+}
+
+.dashboard-subtitle {
+  margin: var(--space-xs) 0 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+/* ============================================================
+   Analysis - Findings grouped list (Phase 4a)
+   ============================================================ */
+
+.findings-controls {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
-  gap: var(--space-6);
-  padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--border-color);
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-md);
+}
+
+.findings-count { font-size: var(--font-size-sm); color: var(--text-secondary); }
+.findings-filters { display: flex; gap: var(--space-sm); }
+
+.findings-groups, .finding-rows { list-style: none; margin: 0; padding: 0; }
+
+.finding-group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-xs);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Reuse the severity colour: severity_* sets `color`; paint the dot with it. */
+.finding-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.finding-group-name { font-size: var(--font-size-sm); font-weight: 600; }
+.finding-group-count { font-size: var(--font-size-caption); color: var(--text-muted); }
+
+.finding-row { border-bottom: 1px solid var(--border); }
+
+.finding-row-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-xs);
+  cursor: pointer;
+}
+
+.finding-row.open .finding-row-head { background: var(--bg-secondary); }
+.finding-title { flex: 1; }
+.finding-tag { font-size: var(--font-size-caption); color: var(--text-muted); }
+.finding-chevron { color: var(--text-muted); font-family: var(--font-mono); }
+
+.finding-detail {
+  padding: 2px var(--space-xs) var(--space-lg);
+  background: var(--bg-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+}
+
+/* Collision guard: the retired sidebar `.finding-detail` panel (still used
+   by the orphaned FindingDetail component until it is deleted) also sets
+   `border`, `border-radius` and `position: sticky` on the same class name.
+   Equal specificity plus source order already wins the properties declared
+   above, but sticky/border/radius are never redeclared there, so they would
+   otherwise leak through unopposed onto this inline expand-in-place block.
+   Scope a higher-specificity reset to the new list context instead of
+   editing the shared/old rule. */
+.finding-row .finding-detail {
+  position: static;
+  border: none;
+  border-radius: 0;
+  /* Only the row head toggles; the old .finding-row cursor:pointer (still live
+     for the FindingsGrid table rows) must not leak the hand cursor here. */
+  cursor: default;
+}
+
+.finding-desc { margin: 0 0 var(--space-sm); color: var(--text-secondary); }
+.finding-explain { margin: 0 0 var(--space-md); color: var(--text-primary); }
+
+.finding-values {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin: 0 0 var(--space-md);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-caption);
+}
+
+.value-current {
+  background: var(--color-critical-bg);
+  color: var(--color-critical-bright);
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.value-arrow { color: var(--text-muted); }
+
+.value-recommended {
+  background: var(--color-good-bg);
+  color: var(--color-good);
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.finding-remediation-label { margin: 0 0 var(--space-xs); color: var(--text-muted); font-size: var(--font-size-caption); }
+.finding-remediation { margin: 0 0 var(--space-md); padding-left: 18px; color: var(--text-secondary); }
+
+.finding-bridge {
+  font-size: var(--font-size-sm);
+  color: var(--color-accent);
+  text-decoration: none;
+}
+.finding-bridge:hover { text-decoration: underline; }
+
+.findings-unchecked {
+  margin: var(--space-md) 0 0;
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--border);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+/* ============================================================
+   Analysis - Compliance tab (Phase 4b)
+   ============================================================ */
+
+.compliance-frameworks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-lg);
+}
+
+.framework-chip {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-xs) var(--space-md);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.framework-chip:hover { border-color: var(--text-muted); }
+
+.framework-chip.selected {
+  color: var(--text-primary);
+  border-color: var(--color-accent);
+  background: var(--color-accent-bg);
+}
+
+.compliance-report + .compliance-report { margin-top: var(--space-lg); }
+
+.compliance-report-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.compliance-report-name {
+  margin: 0;
+  font-size: var(--font-size-sub);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.compliance-report-assessed {
+  font-size: var(--font-size-caption);
   color: var(--text-muted);
 }
 
-.unchecked-row:last-child {
-  border-bottom: none;
+/* Reuse the hero score bar; colour the fill by band, and suppress the legacy
+   bare .score-* glow that the band class would otherwise pull onto the section. */
+.compliance-report.score-good .score-bar-fill { background: var(--color-good); }
+.compliance-report.score-warning .score-bar-fill { background: var(--color-warning); }
+.compliance-report.score-critical .score-bar-fill { background: var(--color-critical); }
+.compliance-report.score-good,
+.compliance-report.score-warning,
+.compliance-report.score-critical { box-shadow: none; }
+
+.compliance-report-score {
+  margin-top: var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-head);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.compliance-report-max {
+  margin-left: 2px;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.compliance-report.score-good .compliance-report-score { color: var(--color-good); }
+.compliance-report.score-warning .compliance-report-score { color: var(--color-warning); }
+.compliance-report.score-critical .compliance-report-score { color: var(--color-critical); }
+
+.compliance-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-lg);
+  margin: var(--space-md) 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.count-num { font-weight: 700; margin-right: var(--space-xs); }
+
+.compliance-controls-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.control-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-md);
+  padding: var(--space-sm) 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--font-size-sm);
+}
+
+.control-row .control-title { flex: 1; min-width: 0; color: var(--text-secondary); }
+.control-row .control-status { margin-left: auto; }
+
+.compliance-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+  margin-top: var(--space-lg);
+  flex-wrap: wrap;
+}
+
+/* Analysis - History timeline reuses the Phase 2b .timeline-* rail; only the
+   failed-node dot and the status label are new. */
+
+/* The History tab has a single Refresh control; the shared .checkpoint-controls
+   uses space-between for the 2b two-child layout, so align right here. */
+.scan-history-tab .checkpoint-controls { justify-content: flex-end; }
+
+.timeline-dot-failed {
+  border-color: var(--color-critical);
+  background: var(--color-critical);
+}
+
+.timeline-status {
+  margin-left: auto;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
+}
+
+.timeline-status.failed {
+  color: var(--color-critical-bright);
+  border: 1px solid var(--color-critical);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-xs);
+}
+
+/* --- Hosts: expanded per-host panel --- */
+.host-panel { padding: 0 var(--space-md, 14px) var(--space-md, 16px) 44px; }
+.host-panel-strip {
+  display: flex; align-items: center; gap: var(--space-sm, 10px);
+  padding: var(--space-md, 14px) 0 var(--space-md, 16px);
+}
+.host-conn { display: inline-flex; align-items: center; gap: 8px; }
+.host-conn-label { font-size: 0.85rem; }
+.host-panel-actions { margin-left: auto; display: flex; gap: 8px; }
+
+.conn-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--border-strong, #888); flex: none;
+}
+.conn-dot-connecting { background: var(--text-secondary, #999); }
+.conn-dot-connected { background: var(--color-accent); }
+
+.host-section-label {
+  font-size: 0.7rem; font-weight: 500; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--text-muted, #888);
+}
+.host-collapse { margin-top: var(--space-lg, 20px); }
+.host-collapse-sub { margin: 8px 0 0; }
+.host-collapse > summary {
+  list-style: none; cursor: pointer; display: flex; align-items: center;
+  gap: 8px; padding: 4px 0;
+}
+.host-collapse > summary::-webkit-details-marker { display: none; }
+.host-collapse-chev {
+  width: 0; height: 0; border-left: 4px solid transparent;
+  border-right: 4px solid transparent; border-top: 5px solid var(--text-muted, #888);
+  transition: transform 0.15s ease;
+}
+.host-collapse[open] > summary .host-collapse-chev { transform: rotate(180deg); }
+
+.host-compliance-scroll { overflow-x: auto; }
+.host-compliance-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.host-compliance-table th {
+  text-align: right; font-weight: 400; color: var(--text-muted, #888);
+  padding: 3px 8px;
+}
+.host-compliance-table td { text-align: right; padding: 4px 8px; border-top: 0.5px solid var(--border); }
+.host-col-left { text-align: left !important; }
+
+/* Compliance score cell - colour the percentage text directly. The shared
+   .score-* classes only colour a .score-value child (a bare table cell has
+   none), so the Hosts table scopes its own colour like the fleet table does. */
+.host-compliance-table td.score-good { color: var(--color-good-bright); box-shadow: none; }
+.host-compliance-table td.score-warning { color: var(--color-warning-bright); box-shadow: none; }
+.host-compliance-table td.score-critical { color: var(--color-critical-bright); box-shadow: none; }
+
+.host-finding-row {
+  display: flex; align-items: baseline; gap: 8px; padding: 5px 0;
+  border-top: 0.5px solid var(--border);
+}
+.host-finding-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.host-finding-title { font-size: 0.85rem; }
+.host-finding-plugin {
+  margin-left: auto; font-size: 0.72rem; color: var(--text-muted, #888);
+  font-family: var(--font-mono);
+}
+.host-severity-label { font-size: 0.78rem; font-weight: 500; }
+
+/* --- Hosts: inventory row --- */
+.host-row { border-bottom: 0.5px solid var(--border); }
+.host-row:last-child { border-bottom: none; }
+.host-row-open { background: var(--bg-tertiary); }
+.host-row-main { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; }
+.host-row-expand { background: none; border: none; cursor: pointer; padding: 2px; margin-top: 1px; }
+.host-row-chev {
+  display: inline-block; width: 0; height: 0;
+  border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+  border-left: 6px solid var(--text-muted); transition: transform 0.15s ease;
+}
+.host-row-chev-open { transform: rotate(90deg); }
+.host-row-id { min-width: 0; }
+.host-row-name { font-size: 0.9rem; font-weight: 500; }
+.host-row-detail { font-size: 0.78rem; color: var(--text-secondary); font-family: var(--font-mono); }
+.host-row-posture { margin-left: auto; font-size: 0.78rem; display: flex; align-items: center; gap: 9px; }
+.host-row-unscanned { color: var(--text-muted); }
+.host-row-failed { color: var(--color-critical); }
+.host-row-tallies { display: flex; gap: 9px; }
+.tally-crit { color: var(--color-critical); }
+.tally-high { color: var(--color-warning); }
+.tally-med { color: var(--text-secondary); }
+.tally-low { color: var(--text-muted); }
+.host-prog-ok { color: var(--color-accent); }
+.host-prog-failed { color: var(--color-critical); }
+.host-row-strip {
+  display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 0 14px 10px 56px;
+  font-size: 0.78rem; font-family: var(--font-mono);
+}
+.host-strip-item b { font-weight: 500; }
+.host-row-error {
+  padding: 0 14px 10px 56px;
+  font-size: 0.78rem;
+  color: var(--color-critical);
+  overflow-wrap: anywhere;
+}
+
+/* The shared .score-* classes only colour a .score-value child (a bare <b>
+   has none), so the row's framework strip scopes its own colour, mirroring
+   the fix already applied to the Task 2 compliance table above. */
+.host-strip-item b.score-good { color: var(--color-good-bright); box-shadow: none; }
+.host-strip-item b.score-warning { color: var(--color-warning-bright); box-shadow: none; }
+.host-strip-item b.score-critical { color: var(--color-critical-bright); box-shadow: none; }
+
+/* ============================================================
+   HOSTS PAGE (merged inventory: bulk scan + connect session)
+   ============================================================ */
+
+/* Page shell. Token corrections vs the design draft: text colours use
+   --text-secondary/--text-muted, borders use --border (the draft's
+   --color-text-* / --color-border tokens do not exist in :root). */
+.hosts-page { padding: var(--space-lg); max-width: 960px; }
+.hosts-header h1 { font-size: 1.4rem; font-weight: 500; margin: 0; }
+.hosts-subtitle { font-size: 0.82rem; color: var(--text-secondary); margin: 2px 0 0; }
+
+/* Action bar: primary scan + add + ad-hoc disclosure + right-aligned count. */
+.hosts-actions { display: flex; align-items: center; gap: 10px; margin: 18px 0 14px; flex-wrap: wrap; }
+.hosts-adhoc-toggle {
+  background: none; border: none; cursor: pointer; font-size: 0.78rem;
+  color: var(--text-muted);
+}
+.hosts-count { margin-left: auto; font-size: 0.78rem; color: var(--text-secondary); }
+.hosts-adhoc-input { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.hosts-progress { font-size: 0.82rem; color: var(--text-secondary); margin: 0 0 10px; }
+
+/* Inventory list: one hairline-bordered card wrapping the rows. */
+.hosts-list { border: 0.5px solid var(--border); border-radius: 12px; overflow: hidden; }
+.hosts-list-head { display: flex; padding: 8px 14px; border-bottom: 0.5px solid var(--border); }
+.hosts-select-all {
+  background: none; border: none; cursor: pointer; font-size: 0.76rem;
+  color: var(--text-secondary);
+}
+
+/* Empty state: centred, with the three onboarding steps left-aligned. */
+.hosts-empty { padding: 32px 20px; text-align: center; }
+.hosts-empty-steps { text-align: left; display: inline-block; margin: 12px auto; font-size: 0.85rem; }
+
+/* ============================================================
+   Settings page - Appearance (theme grid) + About
+   ============================================================ */
+.settings-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  max-width: 900px;
+}
+
+.settings-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.settings-title {
+  margin: 0;
+  font-size: var(--font-size-title);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.settings-subtitle {
+  margin: 0;
+  font-size: var(--font-size-body);
+  color: var(--text-secondary);
+}
+
+.settings-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-lg);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.settings-block-title {
+  margin: 0;
+  font-size: var(--font-size-sub);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.settings-block-hint {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--space-md);
+  margin-top: var(--space-xs);
+}
+
+.theme-swatch {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.theme-swatch:hover {
+  border-color: var(--border-strong);
+}
+
+.theme-swatch.is-active {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-accent-bg);
+}
+
+.theme-swatch-chips {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.theme-chip {
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+}
+
+.theme-chip-accent {
+  background: var(--color-accent);
+}
+
+.theme-chip-good {
+  background: var(--color-good-bright);
+}
+
+.theme-chip-warning {
+  background: var(--color-warning-bright);
+}
+
+.theme-chip-critical {
+  background: var(--color-critical-bright);
+}
+
+.theme-swatch-name {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+}
+
+.theme-swatch-check {
+  position: absolute;
+  top: var(--space-sm);
+  right: var(--space-sm);
+  visibility: hidden;
+  color: var(--color-accent);
+  font-size: var(--font-size-sm);
+}
+
+.theme-swatch.is-active .theme-swatch-check {
+  visibility: visible;
+}
+
+.settings-about {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin: 0;
+}
+
+.settings-about-row {
+  display: flex;
+  gap: var(--space-md);
+}
+
+.settings-about-row dt {
+  flex: 0 0 8rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.settings-about-row dd {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-mono);
 }

@@ -2,9 +2,10 @@
 //!
 //! Computes weighted scores per framework and an overall average.
 
-use crate::components::{Card, HeadingLevel};
 use crate::state::{AppState, total_unchecked};
+use crate::tauri_bindings::{invoke_deep_scan, invoke_generate_report, invoke_scan};
 use crate::types::{ComplianceReport, ControlStatus, Severity};
+use crate::utils::{is_auth_cancelled, score_band, score_band_class, score_band_label};
 use leptos::prelude::*;
 use std::cmp::Ordering;
 
@@ -101,128 +102,144 @@ pub fn calculate_all_scores(reports: &[ComplianceReport]) -> (i32, Vec<Framework
     (avg.round() as i32, framework_scores)
 }
 
-/// Displays the calculated security score based on compliance reports.
-///
-/// Shows "Run a scan" when no data is available.
-///
-/// Score calculation:
-/// - Uses compliance-based weighted scoring across all frameworks
-/// - Each control's contribution is weighted by finding severity
-/// - Pass = 100pts, Critical fail = 0pts, High = 25pts, Medium = 50pts, Low = 75pts
-/// - Overall score is the average across all framework scores
-///
-/// Colour coding:
-/// - No scan: Grey (neutral)
-/// - 0-40: Red (critical state)
-/// - 41-70: Yellow (needs attention)
-/// - 71-100: Green (good state)
+/// The Dashboard security-score hero: a band-coloured number with a thin bar,
+/// a status pill, the primary Run Security Scan action, an in-hero honesty line
+/// (offering a privileged deep scan when checks are unverified), and a collapsed
+/// per-framework compliance disclosure. Empty until the first scan.
 #[component]
 pub fn SecurityScore() -> impl IntoView {
     let app_state = expect_context::<AppState>();
 
     let has_compliance_data = move || !app_state.compliance_reports.get().is_empty();
-
     let unchecked_count = move || total_unchecked(&app_state.scan_results.get());
-
-    // Calculate score from compliance reports with severity weighting
-    let scores = move || {
-        let reports = app_state.compliance_reports.get();
-        calculate_all_scores(&reports)
-    };
-
+    let scores = move || calculate_all_scores(&app_state.compliance_reports.get());
     let score = move || scores().0;
     let framework_scores = move || scores().1;
+    let band = move || score_band(score());
 
-    let score_class = move || {
-        if !has_compliance_data() {
-            return "score-pending";
-        }
-        let current_score = score();
-        if current_score <= 40 {
-            "score-critical"
-        } else if current_score <= 70 {
-            "score-warning"
-        } else {
-            "score-good"
-        }
+    // Primary (unprivileged) scan: the hero's one accent action.
+    let on_run_scan = move |_| {
+        app_state.is_scanning.set(true);
+        leptos::task::spawn_local(async move {
+            match invoke_scan(vec![], app_state.config_path.get_untracked()).await {
+                Ok(results) => {
+                    app_state.scan_results.set(results);
+                    let frameworks = hardener_types::ComplianceFramework::ALL
+                        .iter()
+                        .map(|f| f.id().to_string())
+                        .collect();
+                    match invoke_generate_report(frameworks).await {
+                        Ok(reports) => app_state.compliance_reports.set(reports),
+                        Err(e) => web_sys::console::warn_1(
+                            &format!("Compliance generation failed: {e}").into(),
+                        ),
+                    }
+                }
+                Err(e) => {
+                    web_sys::console::error_1(&format!("Scan failed: {e}").into());
+                    app_state
+                        .error_message
+                        .set(Some(format!("Scan failed: {e}")));
+                }
+            }
+            app_state.is_scanning.set(false);
+        });
     };
 
-    let score_status = move || {
-        if !has_compliance_data() {
-            return "Run a scan to see your score";
-        }
-        let current_score = score();
-        if current_score <= 40 {
-            "Critical - Immediate action required"
-        } else if current_score <= 70 {
-            "Needs attention"
-        } else {
-            "Good security posture"
-        }
+    // Privileged deep scan, offered from the honesty line. Cancelled pkexec
+    // is not an error.
+    let deep_running = app_state.deep_scan_running;
+    let on_deep_scan = move |_| {
+        deep_running.set(true);
+        leptos::task::spawn_local(async move {
+            match invoke_deep_scan(vec![], app_state.config_path.get_untracked()).await {
+                Ok(results) => {
+                    app_state.scan_results.set(results);
+                    let frameworks = hardener_types::ComplianceFramework::ALL
+                        .iter()
+                        .map(|f| f.id().to_string())
+                        .collect();
+                    if let Ok(reports) = invoke_generate_report(frameworks).await {
+                        app_state.compliance_reports.set(reports);
+                    }
+                }
+                Err(e) if is_auth_cancelled(&e) => {}
+                Err(e) => {
+                    app_state
+                        .error_message
+                        .set(Some(format!("Deep scan failed: {e}")));
+                }
+            }
+            deep_running.set(false);
+        });
     };
 
     view! {
-        <Card title="Security Score" title_level=HeadingLevel::H2 class="security-score">
-            <output class={move || format!("score-display {}", score_class())}>
-                {move || if has_compliance_data() {
-                    view! {
-                        <span class="score-value">{score}</span>
-                        <span class="score-max">"/100"</span>
-                    }.into_any()
-                } else {
-                    view! {
-                        <span class="score-value">"--"</span>
-                        <span class="score-max">"/100"</span>
-                    }.into_any()
-                }}
-            </output>
-            <p class="score-status">{score_status}</p>
-
-            <Show when=move || unchecked_count() != 0>
-                <p class="score-unchecked">
-                    {move || format!("{} check(s) not verified (needs privileges)", unchecked_count())}
-                </p>
-            </Show>
-
-            // Framework breakdown - only shown when we have data
-            {move || {
-                if has_compliance_data() {
-                    let scores = framework_scores();
-                    if scores.is_empty() {
-                        view! { <div></div> }.into_any()
-                    } else {
-                        view! {
-                            <details class="score-breakdown">
-                                <summary class="breakdown-toggle">"Framework Breakdown"</summary>
-                                <ul class="breakdown-list">
-                                    {scores.into_iter().map(|fs| {
-                                        let score_class = if fs.score >= 70.0 {
-                                            "breakdown-good"
-                                        } else if fs.score >= 40.0 {
-                                            "breakdown-warning"
-                                        } else {
-                                            "breakdown-critical"
-                                        };
-                                        view! {
-                                            <li class={format!("breakdown-item {}", score_class)}>
-                                                <span class="breakdown-name">{fs.name}</span>
-                                                <span class="breakdown-score">
-                                                    {format!("{:.0}%", fs.score)}
-                                                </span>
-                                                <span class="breakdown-detail">
-                                                    {format!("({}/{})", fs.passing, fs.total)}
-                                                </span>
-                                            </li>
-                                        }
-                                    }).collect::<Vec<_>>()}
-                                </ul>
-                            </details>
-                        }.into_any()
-                    }
-                } else {
-                    view! { <div></div> }.into_any()
+        <section class="score-hero">
+            <Show
+                when=has_compliance_data
+                fallback=move || view! {
+                    <div class="score-empty">
+                        <p class="score-empty-title">"Not scanned yet"</p>
+                        <button
+                            class="btn btn-primary"
+                            on:click=on_run_scan
+                            disabled=move || app_state.is_scanning.get()
+                            aria-live="polite"
+                        >
+                            {move || if app_state.is_scanning.get() { "Scanning..." } else { "Run Security Scan" }}
+                        </button>
+                    </div>
                 }
-            }}
-        </Card>
+            >
+                <div class=move || format!("score-hero-main {}", score_band_class(band()))>
+                    <div class="score-hero-head">
+                        <output class="score-number">
+                            {score}<span class="score-max">"/100"</span>
+                        </output>
+                        <span class="score-pill">{move || score_band_label(band())}</span>
+                        <button
+                            class="btn btn-primary score-scan-btn"
+                            on:click=on_run_scan
+                            disabled=move || app_state.is_scanning.get()
+                            aria-live="polite"
+                        >
+                            {move || if app_state.is_scanning.get() { "Scanning..." } else { "Run Security Scan" }}
+                        </button>
+                    </div>
+                    <div class="score-bar">
+                        <div class="score-bar-fill" style=move || format!("width: {}%", score().clamp(0, 100))></div>
+                    </div>
+                    <Show when=move || unchecked_count() != 0>
+                        <p class="score-honesty">
+                            {move || format!("{} check(s) not verified. ", unchecked_count())}
+                            <button
+                                class="link-button"
+                                on:click=on_deep_scan
+                                disabled=move || deep_running.get()
+                            >
+                                {move || if deep_running.get() { "Scanning..." } else { "Run with sudo" }}
+                            </button>
+                        </p>
+                    </Show>
+                </div>
+
+                <details class="compliance-disclosure">
+                    <summary>"Compliance by framework"</summary>
+                    <ul class="compliance-list">
+                        {move || framework_scores().into_iter().map(|fs| {
+                            let cls = score_band_class(score_band(fs.score.round() as i32));
+                            view! {
+                                <li class=format!("compliance-item {}", cls)>
+                                    <span class="compliance-name">{fs.name}</span>
+                                    <span class="compliance-score">{format!("{:.0}%", fs.score)}</span>
+                                    <span class="compliance-detail">{format!("{}/{}", fs.passing, fs.total)}</span>
+                                </li>
+                            }
+                        }).collect::<Vec<_>>()}
+                    </ul>
+                </details>
+            </Show>
+        </section>
     }
 }

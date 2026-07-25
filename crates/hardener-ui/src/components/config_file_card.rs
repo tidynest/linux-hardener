@@ -1,9 +1,11 @@
-//! Config file picker card for the Hardening page.
+//! Config file picker for the Hardening page's "Advanced (optional)"
+//! disclosure.
 //!
 //! Lets the user select a custom TOML config file via text input
-//! or native file dialog, with inline validation feedback.
+//! or native file dialog, with inline validation feedback. Presentation
+//! only: no card framing of its own, since the surrounding disclosure
+//! already provides the box.
 
-use crate::components::{Card, HeadingLevel};
 use crate::state::AppState;
 use crate::tauri_bindings::{invoke_pick_config_file, invoke_validate_config, tauri_available};
 use leptos::prelude::*;
@@ -91,7 +93,7 @@ pub fn ConfigFileCard() -> impl IntoView {
 
         match app_state.config_summary.get() {
             None => {
-                view! { <span class="config-status config-default">"Using default configuration"</span> }
+                view! { <span class="config-status config-default">"Using the built in defaults"</span> }
                     .into_any()
             }
             Some(summary) if summary.config_is_valid => {
@@ -131,12 +133,12 @@ pub fn ConfigFileCard() -> impl IntoView {
     };
 
     view! {
-        <Card title="Configuration File" title_level=HeadingLevel::H2 class="config-file-card">
+        <div class="config-file-fields">
             <div class="config-file-row">
                 <input
                     type="text"
                     class="config-file-input"
-                    placeholder="Using default configuration"
+                    placeholder="path to a .toml config file"
                     prop:value=move || input_value.get()
                     on:input=move |ev| {
                         input_value.set(event_target_value(&ev));
@@ -158,6 +160,6 @@ pub fn ConfigFileCard() -> impl IntoView {
                     </button>
                 </Show>
             </div>
-        </Card>
+        </div>
     }
 }

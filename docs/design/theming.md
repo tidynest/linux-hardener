@@ -12,17 +12,32 @@ The theming system uses CSS custom properties (variables) with a `[data-theme]` 
 
 1. **Base styles** are defined in `:root` (the default "Midnight Teal" theme)
 2. **Theme overrides** use `[data-theme="theme-name"]` selectors
-3. **JavaScript** sets the `data-theme` attribute on the `<html>` element
+3. **A single Effect** in `App` sets the `data-theme` attribute on the `<html>` element
 4. **Persistence** uses localStorage to remember the user's choice
+
+There are two theme controls, and both simply write the shared `AppState.theme`
+signal rather than touching the DOM or storage themselves:
+
+- The **Settings > Appearance swatch grid** (`ThemePicker`, a keyboard-navigable
+  WAI-ARIA radiogroup of live-coloured preview cards) is the primary selector.
+- The **sidebar quick-switch dropdown** (`ThemeToggle`) offers the same choice
+  without leaving the current page.
 
 ```
 User selects theme
+ (ThemePicker grid or ThemeToggle dropdown)
         │
         ▼
 ┌───────────────────────┐
-│ theme_toggle.rs       │
-│ apply_theme()         │
+│ AppState.theme signal │
 └───────────┬───────────┘
+            │
+            ▼
+┌───────────────────────────────────────┐
+│ Effect in App (lib.rs)                │
+│ utils::theme::apply_theme()           │
+│ utils::theme::store_theme()           │
+└───────────┬───────────────────────────┘
             │
             ▼
 ┌───────────────────────────────────────┐
@@ -44,7 +59,10 @@ User selects theme
 | File | Purpose |
 |------|---------|
 | `crates/hardener-ui/styles.css` | All theme CSS variables |
-| `crates/hardener-ui/src/components/theme_toggle.rs` | Theme switching component |
+| `crates/hardener-ui/src/utils/theme.rs` | `THEMES` list plus the `apply_theme`/`get_stored_theme`/`store_theme` helpers; the only writer of `<html data-theme>` and the `theme` localStorage key |
+| `crates/hardener-ui/src/components/theme_picker.rs` | Settings page swatch grid (`ThemePicker`), the primary theme selector |
+| `crates/hardener-ui/src/components/theme_toggle.rs` | Sidebar quick-switch dropdown (`ThemeToggle`); writes `AppState.theme` |
+| `crates/hardener-ui/src/lib.rs` | The `App` component's single `Effect` that applies and persists the theme whenever `AppState.theme` changes |
 
 ---
 
@@ -194,10 +212,13 @@ Add your theme to `styles.css` after the existing themes:
 
 ### Step 3: Register the Theme
 
-Add your theme to the THEMES array in `theme_toggle.rs`:
+Add your theme to the `THEMES` array in `crates/hardener-ui/src/utils/theme.rs`.
+Both theme controls, the sidebar dropdown (`ThemeToggle`) and the Settings
+swatch grid (`ThemePicker`), render their options from this single array, so
+one edit updates both:
 
 ```rust
-const THEMES: &[(&str, &str)] = &[
+pub const THEMES: &[(&str, &str)] = &[
     ("default", "Midnight Teal"),
     ("fortress", "Fortress"),
     ("sentinel", "Sentinel"),
@@ -226,8 +247,8 @@ Tools:
 ### Step 5: Visual Testing
 
 1. Run the app: `trunk serve --port 1420`
-2. Select your theme from the dropdown
-3. Navigate all pages (Dashboard, Analysis, Hardening)
+2. Select your theme from the Settings page swatch grid, or the sidebar quick-switch dropdown
+3. Navigate all pages (Dashboard, Analysis, Hardening, Hosts, Fleet Apply, Scheduler, Settings)
 4. Check:
    - Title colour reflects accent
    - Cards and panels have clear hierarchy
@@ -338,4 +359,4 @@ Complete list of CSS variables used in themes:
 
 ---
 
-**Last Updated**: 2026-07-19
+**Last Updated**: 2026-07-24
