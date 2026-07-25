@@ -745,6 +745,13 @@ pub fn ConfigureSection() -> impl IntoView {
             .any(|d| lockout_class(&d.plugin_id).is_some())
     };
 
+    // Step 3/4's reassurance and lockout tick describe what an apply will do.
+    // With nothing to apply, none of it happens: no checkpoint, no password
+    // prompt, no lockout risk. Gate both on there being real work, leaving
+    // Cancel and the disabled "Nothing to Apply" button as the way out.
+    let total_changes = Signal::derive(move || total_estimated_changes(&get_decisions()));
+    let has_changes = Signal::derive(move || total_changes.get() != 0);
+
     // Done view (Step 4) - the Hardening page's tab-section signal, read
     // via `use_context` (not `expect_context`) so this component still
     // works if it is ever mounted outside `HardeningPage`; "View in
@@ -1100,11 +1107,13 @@ pub fn ConfigureSection() -> impl IntoView {
                     // the same box, shown only when the selection includes
                     // an ssh/firewall area.
                     <div class="review-confirm-box">
-                        <p class="review-confirm-reassurance">
-                            "A checkpoint is saved first, and you will be asked for your password. You can undo everything from History."
-                        </p>
+                        <Show when=move || has_changes.get()>
+                            <p class="review-confirm-reassurance">
+                                "A checkpoint is saved first, and you will be asked for your password. You can undo everything from History."
+                            </p>
+                        </Show>
 
-                        <Show when=has_lockout>
+                        <Show when=move || has_lockout() && has_changes.get()>
                             <label class="review-lockout-tick">
                                 <input
                                     type="checkbox"
@@ -1128,9 +1137,8 @@ pub fn ConfigureSection() -> impl IntoView {
                                 class="btn btn-primary"
                                 on:click=on_confirm_apply
                                 disabled=move || {
-                                    let total = total_estimated_changes(&get_decisions());
                                     app_state.is_applying.get()
-                                        || total == 0
+                                        || total_changes.get() == 0
                                         || (has_lockout() && !lockout_ack.get())
                                 }
                                 aria-live="polite"
@@ -1142,7 +1150,7 @@ pub fn ConfigureSection() -> impl IntoView {
                                 // applying view below is what the user sees instead. The
                                 // disabled check above stays as a defensive guard.
                                 {move || {
-                                    let total = total_estimated_changes(&get_decisions());
+                                    let total = total_changes.get();
                                     if total == 0 {
                                         "Nothing to Apply".to_string()
                                     } else {
@@ -1152,7 +1160,7 @@ pub fn ConfigureSection() -> impl IntoView {
                             </button>
                         </div>
 
-                        <Show when=move || has_lockout() && !lockout_ack.get()>
+                        <Show when=move || has_lockout() && !lockout_ack.get() && has_changes.get()>
                             <p class="review-lockout-hint">"Tick the box above to enable Apply."</p>
                         </Show>
                     </div>

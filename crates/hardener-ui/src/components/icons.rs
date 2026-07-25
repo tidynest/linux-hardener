@@ -1,4 +1,4 @@
-//! Inline SVG icon set for the sidebar navigation.
+//! Shared inline SVG icon set for the application shell and its affordances.
 //!
 //! Small, dependency-free Tabler-outline-style glyphs (`viewBox="0 0 24 24"`,
 //! `fill="none"`, `stroke="currentColor"`, rounded caps and joins) rendered
@@ -84,6 +84,13 @@ nav_icon!(
     /// the rail is expanded.
     IconChevronCollapse,
     r#"<path d="M11 6l-6 6l6 6"/><path d="M17 6l-6 6l6 6"/>"#
+);
+
+nav_icon!(
+    /// Single right-pointing chevron for expand/collapse affordances.
+    /// Rotated by the caller's stylesheet to indicate the open state.
+    IconChevron,
+    r#"<path d="M9 6l6 6l-6 6"/>"#
 );
 
 nav_icon!(

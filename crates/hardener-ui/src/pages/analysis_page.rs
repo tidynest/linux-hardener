@@ -91,7 +91,7 @@ pub fn AnalysisPage() -> impl IntoView {
             },
             TabDef {
                 id: "history",
-                label: "History",
+                label: "Scan History",
                 badge: None,
             },
         ]

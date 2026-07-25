@@ -3473,6 +3473,7 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 
 @media (prefers-reduced-motion: reduce) {
   .score-bar-fill { transition: none; }
+  .finding-chevron { transition: none; }
 }
 
 /* Dashboard - recent activity rows (Phase 3). */
@@ -3592,9 +3593,19 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 }
 
 .finding-row.open .finding-row-head { background: var(--bg-secondary); }
+.finding-row-head:hover { background: var(--bg-secondary); }
 .finding-title { flex: 1; }
 .finding-tag { font-size: var(--font-size-caption); color: var(--text-muted); }
-.finding-chevron { color: var(--text-muted); font-family: var(--font-mono); }
+
+.finding-chevron {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform var(--transition-fast);
+}
+
+.finding-row.open .finding-chevron { transform: rotate(90deg); }
 
 .finding-detail {
   padding: 2px var(--space-xs) var(--space-lg);

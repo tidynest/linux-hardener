@@ -3,7 +3,7 @@
 //! row per host. Replaces the old Remote and Fleet pages.
 
 use crate::components::form_helpers::input_value;
-use crate::components::{HostConnState, HostForm, HostRow};
+use crate::components::{HostConnState, HostForm, HostRow, Modal};
 use crate::state::AppState;
 use crate::tauri_bindings::{
     invoke_connect_remote, invoke_delete_remote_host, invoke_disconnect_remote, invoke_fleet_scan,
@@ -361,11 +361,12 @@ pub fn HostsPage() -> impl IntoView {
 
             // --- add/edit modal ---
             <Show when=move || modal_open.get()>
-                <div class="modal-backdrop">
-                    <div class="modal" role="dialog" aria-modal="true" aria-label="Host details">
-                        <HostForm existing=editing.get() on_close=on_modal_close />
-                    </div>
-                </div>
+                <Modal
+                    on_dismiss=Callback::new(move |_| on_modal_close(()))
+                    aria_label="Host details"
+                >
+                    <HostForm existing=editing.get() on_close=on_modal_close />
+                </Modal>
             </Show>
         </div>
     }
