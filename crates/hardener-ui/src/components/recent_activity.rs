@@ -95,7 +95,7 @@ pub fn RecentActivity() -> impl IntoView {
                                 </span>
                                 <span class="activity-meta">{last_apply_summary}</span>
                             </div>
-                            <A href="/hardening" attr:class="activity-link">"History"</A>
+                            <A href="/hardening" attr:class="activity-link">"Hardening History"</A>
                         </li>
                     </Show>
                 </ul>
