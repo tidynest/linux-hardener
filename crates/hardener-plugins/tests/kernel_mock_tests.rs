@@ -740,6 +740,39 @@ async fn test_kernel_apply_skips_exceptions() {
 }
 
 #[tokio::test]
+async fn apply_ignores_exception_whose_value_does_not_match() {
+    // The host has randomize_va_space = 0, but the exception documents 2.
+    // An exception that does not describe the host must not stop hardening.
+    let executor = insecure_kernel_executor();
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    let plugin = KernelHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "kernel.randomize_va_space".to_string(),
+        PolicyException {
+            value: "2".to_string(),
+            allowed: true,
+            reason: "Stale exception".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    assert!(
+        !result
+            .apply_changes
+            .iter()
+            .any(|c| c.change_description.contains("Stale exception")),
+        "a non-matching exception must not produce a skipped change"
+    );
+}
+
+#[tokio::test]
 async fn scan_honours_directive_override() {
     // Baseline for a param whose actual value equals the built-in expected,
     // but a stricter directive makes it non-compliant -> a finding appears.
@@ -905,5 +938,36 @@ async fn test_kernel_validate_skips_exceptions() {
             .iter()
             .any(|c| c.contains("randomize_va_space")),
         "excepted param should not appear in estimated changes"
+    );
+}
+
+#[tokio::test]
+async fn validate_ignores_exception_whose_value_does_not_match() {
+    let executor = insecure_kernel_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = KernelHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "kernel.randomize_va_space".to_string(),
+        PolicyException {
+            value: "2".to_string(),
+            allowed: true,
+            reason: "Stale exception".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let report = plugin.validate(&ctx, &config).await.unwrap();
+
+    assert!(
+        report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("randomize_va_space")),
+        "a non-matching exception must leave the change in the preview"
     );
 }

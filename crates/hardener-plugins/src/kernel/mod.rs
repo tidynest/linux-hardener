@@ -818,8 +818,15 @@ impl HardeningPlugin for KernelHardeningPlugin {
         let mut compliant_count = 0usize;
 
         for (param_name, expected_value, param_description, _severity) in KERNEL_PARAMS {
-            // Check for a valid exception: skip this parameter if exempted
-            if let Some(exception) = config.has_valid_exception(param_name) {
+            // The exception is honoured only when it documents the value the
+            // host actually has. Read before deciding: an unreadable value
+            // cannot confirm the exception, so it is not honoured and the
+            // parameter is hardened (fail closed).
+            let observed = self.read_sysctl(param_name, ctx).await.ok();
+            if let Some(exception) = observed
+                .as_deref()
+                .and_then(|value| config.matching_exception(param_name, value))
+            {
                 info!("Skipping {} (exception: {})", param_name, exception.reason);
                 sysctl_config_content.push_str(&format!(
                     "# {}: SKIPPED (exception: {})\n\n",
@@ -853,7 +860,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
             ));
 
             // Already at the target: no runtime write needed.
-            if let Ok(current) = self.read_sysctl(param_name, ctx).await
+            if let Some(current) = observed.as_deref()
                 && current == target_value
             {
                 compliant_count += 1;
@@ -1019,8 +1026,14 @@ impl HardeningPlugin for KernelHardeningPlugin {
         let mut compliant_count = 0usize;
 
         for (param_name, expected_value, _expected_description, _severity) in KERNEL_PARAMS {
-            // Skip parameters with valid exceptions
-            if config.has_valid_exception(param_name).is_some() {
+            // Honour an exception only when it documents the value the host
+            // actually has; an unreadable value is not a match (fail closed).
+            let observed = self.read_sysctl(param_name, ctx).await.ok();
+            if observed
+                .as_deref()
+                .and_then(|value| config.matching_exception(param_name, value))
+                .is_some()
+            {
                 continue;
             }
 
@@ -1042,13 +1055,13 @@ impl HardeningPlugin for KernelHardeningPlugin {
                         validation_issue_config_key: Some(param_name.to_string()),
                     });
                 }
-                Ok(_) => match self.read_sysctl(param_name, ctx).await {
-                    Ok(current) if current == target_value => compliant_count += 1,
-                    Ok(current) => estimated_changes.push(format!(
+                Ok(_) => match observed.as_deref() {
+                    Some(current) if current == target_value => compliant_count += 1,
+                    Some(current) => estimated_changes.push(format!(
                         "{} will change: {} -> {}",
                         param_name, current, target_value
                     )),
-                    Err(_) => estimated_changes
+                    None => estimated_changes
                         .push(format!("{} will be set to {}", param_name, target_value)),
                 },
                 Err(_) => {
