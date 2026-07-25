@@ -1352,16 +1352,18 @@ async fn scan_ignores_exception_whose_value_does_not_match() {
 
 #[tokio::test]
 async fn ssh_exception_and_weak_crypto_skips_are_not_counted_as_applied() {
-    // An already-hardened host with a policy exception on one directive and
-    // crypto directives the host advertises no strong algorithm for (no
-    // `ssh -Q` registered). Every resulting entry is a deliberate no-op: the
-    // directive exception, the three "no strong algorithm" crypto skips and
-    // the "already compliant" no-op guard. None may be counted as an applied
-    // change, or a fully compliant host reads "SSH Hardening - N change(s)
-    // applied" describing skips.
+    // An otherwise-hardened host with a genuine policy exception on one
+    // directive (the exception documents the value the host actually has,
+    // "yes", exactly as an operator would write it) and crypto directives
+    // the host advertises no strong algorithm for (no `ssh -Q` registered).
+    // Every resulting entry is a deliberate no-op: the directive exception,
+    // the three "no strong algorithm" crypto skips and the "already
+    // compliant" no-op guard. None may be counted as an applied change, or
+    // a fully compliant host reads "SSH Hardening - N change(s) applied"
+    // describing skips.
     let hardened = "\
 PermitRootLogin no
-PasswordAuthentication no
+PasswordAuthentication yes
 PermitEmptyPasswords no
 MaxAuthTries 3
 X11Forwarding no
@@ -1436,5 +1438,51 @@ ClientAliveCountMax 2
     assert!(
         !restarted_sshd(&executor),
         "a compliant apply must not restart sshd"
+    );
+}
+
+#[tokio::test]
+async fn apply_ignores_exception_whose_value_does_not_match() {
+    // The host has PermitRootLogin yes; the exception documents "no".
+    //
+    // Uses apply_ready_executor rather than the bare insecure_ssh_executor:
+    // without the backup/restart mocks the apply aborts at the `cp` backup
+    // step (unregistered command) before the per-directive `changes` are
+    // ever merged into the returned ApplyResult, which would make this
+    // assertion pass vacuously regardless of the exception-matching logic
+    // under test.
+    let executor = apply_ready_executor(
+        "\
+# Default SSH configuration (insecure)
+PermitRootLogin yes
+PasswordAuthentication yes
+X11Forwarding yes
+",
+    );
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    let plugin = SshHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "PermitRootLogin".to_string(),
+        PolicyException {
+            value: "no".to_string(),
+            allowed: true,
+            reason: "Stale exception".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    assert!(
+        !result
+            .apply_changes
+            .iter()
+            .any(|c| c.change_description.contains("Stale exception")),
+        "a non-matching exception must not produce a skipped change"
     );
 }

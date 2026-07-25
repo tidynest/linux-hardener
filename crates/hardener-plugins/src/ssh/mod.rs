@@ -1116,8 +1116,20 @@ impl HardeningPlugin for SshHardeningPlugin {
         let remote_root_session = is_remote_root_session(ctx.executor().as_ref()).await;
 
         for directive in SSH_DIRECTIVES {
-            // Check for a valid exception: skip this directive if exempted
-            if let Some(exception) = config.has_valid_exception(directive.ssh_directive_name) {
+            // The exception is honoured only when it documents the value the
+            // host actually has, so a stale exception cannot stop hardening.
+            // An absent directive reads as "not set", matching scan's rendering
+            // and therefore what an operator writes in the config.
+            let observed = parse_config_value(
+                &original_content,
+                directive.ssh_directive_name,
+                ConfigFormat::SpaceSeparated,
+                false,
+            )
+            .unwrap_or_else(|| "not set".to_string());
+            if let Some(exception) =
+                config.matching_exception(directive.ssh_directive_name, &observed)
+            {
                 info!(
                     "Skipping {} (exception: {})",
                     directive.ssh_directive_name, exception.reason
@@ -1247,7 +1259,19 @@ impl HardeningPlugin for SshHardeningPlugin {
         // only (desired strong ∩ supported). This can never produce a weak algo
         // (subset of the hardcoded allow-list) nor one the host cannot parse.
         for crypto in SSH_CRYPTO_DIRECTIVES {
-            if let Some(exception) = config.has_valid_exception(crypto.crypto_directive_name) {
+            // As above: the crypto allow-list intersection deliberately has no
+            // directive override, but the exception itself still only applies
+            // when it documents the value actually on the host.
+            let observed = parse_config_value(
+                &original_content,
+                crypto.crypto_directive_name,
+                ConfigFormat::SpaceSeparated,
+                false,
+            )
+            .unwrap_or_else(|| "not set".to_string());
+            if let Some(exception) =
+                config.matching_exception(crypto.crypto_directive_name, &observed)
+            {
                 info!(
                     "Skipping {} (exception: {})",
                     crypto.crypto_directive_name, exception.reason
