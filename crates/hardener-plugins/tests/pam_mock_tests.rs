@@ -92,7 +92,7 @@ async fn test_pam_scan_secure_config_no_findings() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PamHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "secure PAM scan should succeed");
     assert_eq!(result.scan_plugin_id, PluginId::from("pam-hardening"));
@@ -113,7 +113,7 @@ async fn test_pam_scan_insecure_config_finds_issues() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PamHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "insecure PAM scan should succeed");
     assert!(
@@ -158,7 +158,7 @@ async fn test_pam_scan_missing_configs_flags_all() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PamHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(
         result.scan_success,
@@ -186,7 +186,7 @@ async fn test_pam_scan_partial_config() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PamHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "partial PAM scan should succeed");
 
@@ -240,7 +240,7 @@ async fn test_pam_scan_finding_structure() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PamHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     // Find minlen finding
     let minlen_finding = result
@@ -269,7 +269,7 @@ async fn test_pam_scan_compliance_mappings() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PamHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     // minlen should have CIS 5.3.1 mapping
     let minlen_finding = result
@@ -297,7 +297,7 @@ async fn test_pam_scan_severity_levels() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PamHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     // minlen should be High severity
     if let Some(minlen) = result
@@ -356,7 +356,7 @@ async fn test_pam_scan_logs_file_reads() {
     let ctx = Context::with_executor(Arc::new(executor.clone()));
     let plugin = PamHardeningPlugin::new();
 
-    let _ = plugin.scan(&ctx).await;
+    let _ = plugin.scan(&ctx, &PluginConfig::default()).await;
 
     let log = executor.log();
 
@@ -381,7 +381,7 @@ async fn test_pam_scan_duration_recorded() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PamHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(
         result.scan_duration_us > 0,
@@ -414,7 +414,7 @@ async fn test_pam_scan_with_remote_executor() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PamHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "remote PAM scan should succeed");
     // Should find issues on remote system
@@ -451,7 +451,7 @@ PASS_WARN_AGE 7
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PamHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(
         result.scan_success,
@@ -648,6 +648,84 @@ async fn test_pam_apply_skips_exceptions() {
             .iter()
             .any(|c| c.change_description.contains("Set minlen")),
         "should not have a 'Set minlen' change when excepted"
+    );
+}
+
+#[tokio::test]
+async fn scan_honours_directive_override() {
+    // deny = 3 is compliant against the built-in boundary of 5, but a
+    // directive override that tightens the boundary to 2 makes the same
+    // value violate -> a finding appears even though the host already
+    // meets the hardcoded baseline. The override must be clamped through
+    // the same path apply uses, never compared against the raw baseline.
+    let executor = secure_pam_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PamHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config
+        .directives
+        .insert("deny".to_string(), "2".to_string());
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "pam-deny")
+        .unwrap_or_else(|| {
+            panic!(
+                "stricter directive should surface a finding, got: {:?}",
+                result
+                    .scan_findings
+                    .iter()
+                    .map(|f| &f.finding_id)
+                    .collect::<Vec<_>>()
+            )
+        });
+
+    // Target-dependent field must reflect the clamped override (2), not the
+    // hardcoded baseline (5) - otherwise the finding would self-contradict
+    // by recommending a value the host already exceeds.
+    assert_eq!(
+        finding.finding_recommended_value, "2",
+        "recommended value should reflect the directive override, not the baseline"
+    );
+}
+
+#[tokio::test]
+async fn scan_annotates_valid_exception() {
+    // minlen = 8 violates the baseline of 14, and carries a valid exception:
+    // exceptions annotate findings, they never drop them, so the finding
+    // stays present and carries the exception annotation.
+    let executor = insecure_pam_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PamHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "minlen".to_string(),
+        PolicyException {
+            value: "8".to_string(),
+            allowed: true,
+            reason: "Legacy application requires short passwords".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "pam-minlen")
+        .expect("non-compliant directive should still produce a finding");
+    assert!(
+        finding.finding_policy_exception.is_some(),
+        "finding should be annotated with the valid exception"
     );
 }
 
@@ -947,7 +1025,7 @@ async fn pam_scan_reads_inline_pamd_override() {
     );
     let ctx = Context::with_executor(executor_compliant);
     let plugin = PamHardeningPlugin::new();
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(
         !result
@@ -980,7 +1058,7 @@ async fn pam_scan_reads_inline_pamd_override() {
             ),
     );
     let ctx2 = Context::with_executor(executor_non_compliant);
-    let result2 = plugin.scan(&ctx2).await.unwrap();
+    let result2 = plugin.scan(&ctx2, &PluginConfig::default()).await.unwrap();
 
     assert!(
         result2
@@ -1065,7 +1143,10 @@ async fn pam_scan_reports_unchecked_not_findings_when_pwquality_is_root_only() {
         .with_read_permission_denied("/etc/security/pwquality.conf")
         .with_file("/etc/login.defs", "PASS_MAX_DAYS 365\n");
     let ctx = Context::with_executor(Arc::new(mock));
-    let result = PamHardeningPlugin::new().scan(&ctx).await.unwrap();
+    let result = PamHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
 
     // No false "not set" findings for pwquality directives.
     assert!(
@@ -1102,7 +1183,10 @@ async fn pam_scan_reports_unchecked_when_threshold_confs_are_root_only() {
         .with_read_permission_denied("/etc/security/faillock.conf")
         .with_read_permission_denied("/etc/security/pwhistory.conf");
     let ctx = Context::with_executor(Arc::new(mock));
-    let result = PamHardeningPlugin::new().scan(&ctx).await.unwrap();
+    let result = PamHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
 
     let finding_ids: Vec<&str> = result
         .scan_findings
@@ -1154,7 +1238,10 @@ async fn pam_scan_inline_override_wins_over_permission_denied_conf() {
             "auth required pam_faillock.so preauth silent deny=10\n",
         );
     let ctx = Context::with_executor(Arc::new(mock));
-    let result = PamHardeningPlugin::new().scan(&ctx).await.unwrap();
+    let result = PamHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
 
     let deny_finding = result
         .scan_findings

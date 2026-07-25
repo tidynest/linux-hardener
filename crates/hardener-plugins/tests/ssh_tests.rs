@@ -28,7 +28,7 @@ async fn test_ssh_scan_reads_configuration() {
     let plugin = SshHardeningPlugin::new();
     let ctx = Context::new();
 
-    let result = plugin.scan(&ctx).await;
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await;
 
     match result {
         Ok(scan_result) => {

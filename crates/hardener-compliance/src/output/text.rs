@@ -69,14 +69,15 @@ impl ReportFormatter for TextFormatter {
                     control.control_id, status_str, control.control_title
                 ));
 
-                // Show findings for failed controls
-                if control.control_status == ControlStatus::Fail {
-                    for finding in &control.control_findings {
-                        output.push_str(&format!(
-                            "        → {}: {}\n",
-                            finding.finding_severity, finding.finding_title
-                        ));
-                    }
+                // Show the evidence behind the status. A control carrying only
+                // excepted findings passes, but the documented deviations are
+                // still listed so the pass is not mistaken for a clean one.
+                for finding in &control.control_findings {
+                    output.push_str(&format!(
+                        "        → {}: {}\n",
+                        super::finding_label(finding),
+                        finding.finding_title
+                    ));
                 }
             }
         }
@@ -166,6 +167,64 @@ mod tests {
         assert!(output.contains("[PASS]"));
         assert!(output.contains("[FAIL]"));
         assert!(output.contains("Score:          50.0%"));
+    }
+
+    /// A single-control CIS report carrying the given status and findings.
+    fn report_with(
+        status: ControlStatus,
+        findings: Vec<hardener_types::Finding>,
+    ) -> ComplianceReport {
+        let controls = vec![ControlResult {
+            control_id: "1.5.1".to_string(),
+            control_title: "Ensure ASLR is enabled".to_string(),
+            control_section: "Initial Setup".to_string(),
+            control_status: status,
+            control_findings: findings,
+        }];
+        ComplianceReport {
+            report_framework: ComplianceFramework::CIS,
+            report_profile: ComplianceProfile::default(),
+            report_generated_at: Utc::now(),
+            report_summary: ComplianceSummary::from_controls(&controls),
+            report_controls: controls,
+        }
+    }
+
+    #[test]
+    fn passing_control_shows_the_deviation_its_exception_documents() {
+        // A control that passes only because the config documents the deviation
+        // must not read as an untouched, genuinely compliant check.
+        let report = report_with(
+            ControlStatus::Pass,
+            vec![crate::output::test_support::finding(
+                "Root login permitted",
+                true,
+            )],
+        );
+        let output = TextFormatter::new().format(&report);
+
+        assert!(output.contains("[PASS]"));
+        assert!(
+            output.contains("POLICY EXCEPTION: Root login permitted"),
+            "an excepted deviation must be shown as evidence, got:\n{output}"
+        );
+    }
+
+    #[test]
+    fn failing_control_does_not_render_an_excepted_finding_as_a_violation() {
+        // Mixed control: one live violation and one documented deviation. Both
+        // are listed, but only the live one carries a severity.
+        let report = report_with(
+            ControlStatus::Fail,
+            vec![
+                crate::output::test_support::finding("Root login permitted", true),
+                crate::output::test_support::finding("Password auth enabled", false),
+            ],
+        );
+        let output = TextFormatter::new().format(&report);
+
+        assert!(output.contains("POLICY EXCEPTION: Root login permitted"));
+        assert!(output.contains("HIGH: Password auth enabled"));
     }
 
     /// An empty STIG report under the given profile.

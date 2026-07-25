@@ -66,7 +66,7 @@ pub trait HardeningPlugin: Send + Sync {
     /// Scans the system for security issues in this plugin's domain.
     ///
     /// This method should not modify the system (read-only operation).
-    async fn scan(&self, ctx: &Context) -> Result<ScanResult>;
+    async fn scan(&self, ctx: &Context, config: &PluginConfig) -> Result<ScanResult>;
 
     /// Applies hardening changes based on the provided configuration.
     ///

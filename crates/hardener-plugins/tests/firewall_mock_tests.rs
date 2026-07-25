@@ -87,7 +87,7 @@ async fn test_firewall_scan_ufw_active_no_findings() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = FirewallHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "active firewall scan should succeed");
     assert_eq!(result.scan_plugin_id, PluginId::new("firewall-hardening"));
@@ -115,7 +115,7 @@ async fn test_firewall_scan_ufw_disabled_has_finding() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = FirewallHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "disabled firewall scan should succeed");
 
@@ -156,7 +156,7 @@ async fn test_firewall_scan_permission_denied_should_not_report_disabled() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = FirewallHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     // The plugin detected UFW exists (command_exists returns true)
     // But `ufw status` failed with permission denied
@@ -196,7 +196,7 @@ async fn test_firewall_scan_no_backend_fails_gracefully() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = FirewallHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     // No backend found - scan should indicate this
     assert!(
@@ -227,7 +227,7 @@ async fn test_firewall_scan_logs_commands() {
     let ctx = Context::with_executor(Arc::new(executor.clone()));
     let plugin = FirewallHardeningPlugin::new();
 
-    let _ = plugin.scan(&ctx).await;
+    let _ = plugin.scan(&ctx, &PluginConfig::default()).await;
 
     let log = executor.log();
 
@@ -244,7 +244,7 @@ async fn test_firewall_scan_duration_recorded() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = FirewallHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(
         result.scan_duration_us > 0,
@@ -499,7 +499,7 @@ async fn test_backend_selection_prefers_active_nftables_over_inactive_ufw() {
     let ctx = Context::with_executor(Arc::new(executor.clone()));
     let plugin = FirewallHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "scan should succeed");
     let disabled_findings: Vec<_> = result
@@ -565,7 +565,7 @@ async fn test_backend_selection_keeps_priority_order_when_ufw_active() {
     let ctx = Context::with_executor(Arc::new(executor.clone()));
     let plugin = FirewallHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
     assert!(result.scan_success, "scan should succeed");
 
     let log = executor.log();
@@ -618,7 +618,7 @@ async fn test_backend_selection_falls_back_to_first_installed_when_none_active()
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = FirewallHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
     assert!(result.scan_success, "scan should succeed");
 
     let disabled = result
@@ -728,7 +728,7 @@ async fn test_backend_selection_ignores_docker_style_nat_table_falls_back_to_ufw
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = FirewallHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
     assert!(result.scan_success, "scan should succeed");
 
     let disabled = result

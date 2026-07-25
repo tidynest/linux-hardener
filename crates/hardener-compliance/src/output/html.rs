@@ -93,17 +93,21 @@ impl ReportFormatter for HtmlFormatter {
                     status_str
                 ));
 
-                // Show findings for failed controls
-                if control.control_status == ControlStatus::Fail
-                    && !control.control_findings.is_empty()
-                {
-                    for finding in &control.control_findings {
-                        html.push_str(&format!(
-                            "<tr class=\"finding\"><td></td><td colspan=\"2\">→ [{}] {}</td></tr>\n",
-                            html_escape(&finding.finding_severity.to_string()),
-                            html_escape(&finding.finding_title)
-                        ));
-                    }
+                // Show the evidence behind the status. A control carrying only
+                // excepted findings passes, but the documented deviations are
+                // still listed (in their own style) so the pass is not mistaken
+                // for a clean one.
+                for finding in &control.control_findings {
+                    let row_class = match finding.finding_policy_exception {
+                        Some(_) => "exception",
+                        None => "finding",
+                    };
+                    html.push_str(&format!(
+                        "<tr class=\"{}\"><td></td><td colspan=\"2\">→ [{}] {}</td></tr>\n",
+                        row_class,
+                        html_escape(&super::finding_label(finding)),
+                        html_escape(&finding.finding_title)
+                    ));
                 }
             }
 
@@ -211,6 +215,12 @@ const HTML_HEADER: &str = r#"<!DOCTYPE html>
               font-size: 0.9em;
               color: #856404;
           }
+          tr.exception td {
+              background: #e8eef6;
+              font-size: 0.9em;
+              color: #2c3e50;
+              font-style: italic;
+          }
       </style>
   </head>
   <body>
@@ -262,6 +272,39 @@ mod tests {
         assert!(output.contains("CIS Benchmark Compliance Report"));
         assert!(output.contains("100.0%"));
         assert!(output.contains("PASS"));
+    }
+
+    #[test]
+    fn passing_control_shows_the_deviation_its_exception_documents() {
+        // A control that passes only because the config documents the deviation
+        // must render the deviation, styled as an exception rather than as a
+        // failure row.
+        let controls = vec![ControlResult {
+            control_id: "1.5.1".to_string(),
+            control_title: "Ensure ASLR is enabled".to_string(),
+            control_section: "Initial Setup".to_string(),
+            control_status: ControlStatus::Pass,
+            control_findings: vec![crate::output::test_support::finding(
+                "Root login permitted",
+                true,
+            )],
+        }];
+        let report = ComplianceReport {
+            report_framework: ComplianceFramework::CIS,
+            report_profile: ComplianceProfile::default(),
+            report_generated_at: Utc::now(),
+            report_summary: ComplianceSummary::from_controls(&controls),
+            report_controls: controls,
+        };
+
+        let output = HtmlFormatter::new().format(&report);
+
+        assert!(output.contains("POLICY EXCEPTION"));
+        assert!(output.contains("Root login permitted"));
+        assert!(
+            output.contains("tr class=\"exception\""),
+            "an excepted deviation must not be styled as a failure row, got:\n{output}"
+        );
     }
 
     #[test]

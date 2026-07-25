@@ -549,7 +549,7 @@ impl HardeningPlugin for PamHardeningPlugin {
         vec![]
     }
 
-    async fn scan(&self, ctx: &Context) -> Result<ScanResult> {
+    async fn scan(&self, ctx: &Context, config: &PluginConfig) -> Result<ScanResult> {
         let start = Instant::now();
         info!("Starting PAM authentication hardening scan");
 
@@ -607,11 +607,40 @@ impl HardeningPlugin for PamHardeningPlugin {
                 }
             };
 
-            // Check if current value satisfies the directive's comparison.
-            let is_secure = !pam_violates(directive, current_value.as_deref());
+            // Resolve the effective target the same way apply does: a
+            // directive override wins over the hardcoded baseline, and for
+            // threshold directives (AtMost/AtLeast) it is clamped so an
+            // override can only tighten, never loosen (apply ~725-729,
+            // ~761-766).
+            let target: String = match directive.pam_compare {
+                PamCompare::Exact => config
+                    .directives
+                    .get(directive.pam_directive_name)
+                    .map(|s| s.as_str())
+                    .unwrap_or(directive.pam_secure_value)
+                    .to_string(),
+                compare => {
+                    let secure: i64 = directive
+                        .pam_secure_value
+                        .parse()
+                        .expect("pam_secure_value must be a valid integer");
+                    let over = config
+                        .directives
+                        .get(directive.pam_directive_name)
+                        .and_then(|s| s.parse::<i64>().ok());
+                    clamp_target(compare, secure, over).to_string()
+                }
+            };
+
+            // Check if current value satisfies the directive's comparison
+            // against the resolved (overridden + clamped) target.
+            let is_secure = !pam_violates(directive, &target, current_value.as_deref());
 
             if !is_secure {
                 let current_display = current_value.unwrap_or_else(|| "not set".to_string());
+                let policy_exception = config
+                    .matching_exception(directive.pam_directive_name, &current_display)
+                    .map(|e| e.to_finding_exception());
 
                 findings.push(Finding {
                     finding_id: format!(
@@ -624,16 +653,16 @@ impl HardeningPlugin for PamHardeningPlugin {
                         "PAM directive '{}' is currently '{}' but should be '{}'",
                         directive.pam_directive_name,
                         current_display,
-                        directive.pam_secure_value,
+                        target,
                     ),
                     finding_explanation: directive.pam_description.to_string(),
                     finding_impact: "Weak authentication settings can allow easier password guessing and brute-force attacks".to_string(),
-                    finding_recommended_value: directive.pam_secure_value.to_string(),
+                    finding_recommended_value: target.clone(),
                     finding_remediation_steps: vec![
                         format!(
                             "Set {} = {} in the appropriate configuration file",
                             directive.pam_directive_name,
-                            directive.pam_secure_value,
+                            target,
                         ),
                     ],
                     finding_severity: directive.pam_severity,
@@ -642,7 +671,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                         directive.pam_directive_name
                     ),
                     finding_compliance: get_pam_compliance_mappings(directive.pam_directive_name),
-                    finding_policy_exception: None,
+                    finding_policy_exception: policy_exception,
                 });
             }
         }
@@ -1237,18 +1266,18 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
     },
 ];
 
-/// True when `current` fails the directive's comparison. Unset/unparseable
-/// integers fail. Effective value (inline pam.d args or /etc/security/*.conf)
-/// is resolved by callers via `read_effective_threshold` before this check.
-fn pam_violates(directive: &PamDirective, current: Option<&str>) -> bool {
+/// True when `current` fails the directive's comparison against `target`,
+/// the resolved effective target (a directive override clamped so it can
+/// only tighten the built-in baseline, or the baseline itself with no
+/// override). Unset/unparseable integers fail. Effective value (inline
+/// pam.d args or /etc/security/*.conf) is resolved by callers via
+/// `read_effective_threshold` before this check.
+fn pam_violates(directive: &PamDirective, target: &str, current: Option<&str>) -> bool {
     match directive.pam_compare {
-        PamCompare::Exact => current != Some(directive.pam_secure_value),
+        PamCompare::Exact => current != Some(target),
         compare => breaches_threshold(
             compare,
-            directive
-                .pam_secure_value
-                .parse()
-                .expect("pam_secure_value must be a valid integer"),
+            target.parse().expect("target must be a valid integer"),
             current,
         ),
     }
@@ -1697,10 +1726,15 @@ mod tests {
             pam_config_file: PamConfigFile::SecurityConf("/etc/security/faillock.conf"),
             pam_compare: PamCompare::AtMost,
         };
-        assert!(pam_violates(&deny, Some("10"))); // too loose
-        assert!(!pam_violates(&deny, Some("3"))); // stricter, compliant
-        assert!(!pam_violates(&deny, Some("5")));
-        assert!(pam_violates(&deny, None)); // not configured
+        assert!(pam_violates(&deny, deny.pam_secure_value, Some("10"))); // too loose
+        assert!(!pam_violates(&deny, deny.pam_secure_value, Some("3"))); // stricter, compliant
+        assert!(!pam_violates(&deny, deny.pam_secure_value, Some("5")));
+        assert!(pam_violates(&deny, deny.pam_secure_value, None)); // not configured
+
+        // A clamped override target (not the raw baseline) is what scan()
+        // actually compares against: a stricter override on an
+        // already-compliant value must now violate.
+        assert!(pam_violates(&deny, "2", Some("3"))); // baseline-compliant, override-violating
 
         let remember = PamDirective {
             pam_directive_name: "remember",
@@ -1708,9 +1742,22 @@ mod tests {
             pam_compare: PamCompare::AtLeast,
             ..deny
         };
-        assert!(pam_violates(&remember, Some("2"))); // too few
-        assert!(!pam_violates(&remember, Some("10"))); // stricter, compliant
-        assert!(!pam_violates(&remember, Some("5")));
+        assert!(pam_violates(
+            &remember,
+            remember.pam_secure_value,
+            Some("2")
+        )); // too few
+        assert!(!pam_violates(
+            &remember,
+            remember.pam_secure_value,
+            Some("10")
+        )); // stricter, compliant
+        assert!(!pam_violates(
+            &remember,
+            remember.pam_secure_value,
+            Some("5")
+        ));
+        assert!(!pam_violates(&remember, "12", Some("15"))); // still compliant against a tighter override
 
         // Spread from `remember` (not `deny`, already moved above); PamDirective isn't Copy.
         let exact = PamDirective {
@@ -1718,7 +1765,7 @@ mod tests {
             pam_secure_value: "14",
             ..remember
         };
-        assert!(!pam_violates(&exact, Some("14")));
-        assert!(pam_violates(&exact, Some("8")));
+        assert!(!pam_violates(&exact, exact.pam_secure_value, Some("14")));
+        assert!(pam_violates(&exact, exact.pam_secure_value, Some("8")));
     }
 }

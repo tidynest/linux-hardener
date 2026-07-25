@@ -85,7 +85,7 @@ async fn test_kernel_scan_secure_config_no_findings() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = KernelHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(
         result.scan_success,
@@ -109,7 +109,7 @@ async fn test_kernel_scan_insecure_config_finds_all_issues() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = KernelHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "insecure kernel scan should succeed");
 
@@ -148,7 +148,7 @@ async fn test_kernel_scan_partial_config_finds_some_issues() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = KernelHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "partial kernel scan should succeed");
 
@@ -187,7 +187,7 @@ async fn test_kernel_scan_missing_params_gracefully_skipped() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = KernelHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     // Scan should succeed even with no readable params
     assert!(
@@ -209,7 +209,7 @@ async fn test_kernel_scan_finding_structure() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = KernelHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert_eq!(result.scan_findings.len(), 1);
     let finding = &result.scan_findings[0];
@@ -238,7 +238,7 @@ async fn test_kernel_scan_compliance_mappings() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = KernelHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     // ASLR finding should have CIS 1.5.1 mapping
     let aslr_finding = result
@@ -590,7 +590,7 @@ async fn test_kernel_scan_logs_file_reads() {
     let ctx = Context::with_executor(Arc::new(executor.clone()));
     let plugin = KernelHardeningPlugin::new();
 
-    let _ = plugin.scan(&ctx).await;
+    let _ = plugin.scan(&ctx, &PluginConfig::default()).await;
 
     let log = executor.log();
 
@@ -617,7 +617,7 @@ async fn test_kernel_scan_duration_recorded() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = KernelHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(
         result.scan_duration_us > 0,
@@ -642,7 +642,7 @@ async fn test_kernel_scan_with_remote_executor() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = KernelHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "remote kernel scan should succeed");
     // Should find kptr_restrict issue
@@ -736,6 +736,130 @@ async fn test_kernel_apply_skips_exceptions() {
             .iter()
             .any(|(p, _)| p.to_str().unwrap().contains("randomize_va_space")),
         "should not write to excepted parameter"
+    );
+}
+
+#[tokio::test]
+async fn scan_honours_directive_override() {
+    // Baseline for a param whose actual value equals the built-in expected,
+    // but a stricter directive makes it non-compliant -> a finding appears.
+    let executor = secure_kernel_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = KernelHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config
+        .directives
+        .insert("kernel.kptr_restrict".to_string(), "3".to_string());
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "kernel_kernel_kptr_restrict")
+        .unwrap_or_else(|| {
+            panic!(
+                "stricter directive should surface a finding, got: {:?}",
+                result
+                    .scan_findings
+                    .iter()
+                    .map(|f| &f.finding_id)
+                    .collect::<Vec<_>>()
+            )
+        });
+
+    // Target-dependent fields must reflect the override (3), not the built-in
+    // baseline (2) the host already meets - otherwise the finding would
+    // recommend the value the host is at and read as self-contradictory.
+    assert_eq!(
+        finding.finding_recommended_value, "3",
+        "recommended value should reflect the directive override, not the baseline"
+    );
+    assert!(
+        finding.finding_explanation.contains('3'),
+        "explanation should quote the override value, got: {}",
+        finding.finding_explanation
+    );
+    assert!(
+        finding
+            .finding_remediation_steps
+            .iter()
+            .any(|s| s.contains("kernel.kptr_restrict = 3")),
+        "remediation should set the override value, got: {:?}",
+        finding.finding_remediation_steps
+    );
+}
+
+#[tokio::test]
+async fn scan_annotates_valid_exception() {
+    // A param that IS non-compliant, plus a valid exception for it:
+    // the finding is still present but annotated.
+    let executor = insecure_kernel_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = KernelHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "kernel.randomize_va_space".to_string(),
+        PolicyException {
+            value: "0".to_string(),
+            allowed: true,
+            reason: "Legacy software compatibility".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let f = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "kernel_kernel_randomize_va_space")
+        .expect("non-compliant param should still produce a finding");
+    assert!(
+        f.finding_policy_exception.is_some(),
+        "finding should be annotated with the valid exception"
+    );
+}
+
+#[tokio::test]
+async fn scan_ignores_exception_whose_value_does_not_match() {
+    // The exception documents a deviation to "1", but the host is actually at
+    // "0". An exception that does not describe the real deviation is not an
+    // exception: the finding stays a live violation, unannotated, so it still
+    // fails its compliance controls.
+    let executor = insecure_kernel_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = KernelHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "kernel.randomize_va_space".to_string(),
+        PolicyException {
+            value: "1".to_string(),
+            allowed: true,
+            reason: "Legacy software compatibility".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let f = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "kernel_kernel_randomize_va_space")
+        .expect("non-compliant param should still produce a finding");
+    assert!(
+        f.finding_policy_exception.is_none(),
+        "an exception for a value the host does not have must not be honoured"
     );
 }
 

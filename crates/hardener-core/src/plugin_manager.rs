@@ -174,20 +174,26 @@ impl PluginManager {
     ///
     /// # Arguments
     /// * `ctx` - Execution context containing system information
+    /// * `config` - Configuration used to look up each plugin's settings
     ///
     /// # Errors
     /// Returns an error if dependency resolution fails or no plugins are registered.
     ///
     /// # Example
     /// ```ignore
-    /// # use hardener_core::{PluginManager, PluginRegistry, Context};
+    /// # use hardener_core::{PluginManager, PluginRegistry, Context, HardenerConfig};
     /// let mut manager = PluginManager::new(PluginRegistry::new());
     /// manager.resolve_dependencies()?;
     /// let ctx = Context::new();
-    /// let results = manager.execute_scan(&ctx).await?;
+    /// let config = HardenerConfig::default();
+    /// let results = manager.execute_scan(&ctx, &config).await?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub async fn execute_scan(&self, ctx: &Context) -> Result<Vec<ScanResult>> {
+    pub async fn execute_scan(
+        &self,
+        ctx: &Context,
+        config: &HardenerConfig,
+    ) -> Result<Vec<ScanResult>> {
         info!("Starting scan execution");
 
         // Deliberately sequential: this path honours the dependency graph's
@@ -204,7 +210,8 @@ impl PluginManager {
 
             info!("Executing scan for plugin: {}", plugin_id);
 
-            match plugin.scan(ctx).await {
+            let plugin_config = config.get_plugin_config(plugin_id.as_str());
+            match plugin.scan(ctx, plugin_config).await {
                 Ok(result) => {
                     debug!(
                         "Plugin {} scan completed: {} findings",

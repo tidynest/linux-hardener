@@ -37,7 +37,7 @@ async fn test_firewall_scan_detects_backend() {
     let plugin = FirewallHardeningPlugin::new();
     let ctx = Context::new();
 
-    let result = plugin.scan(&ctx).await;
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await;
 
     // The scan should succeed (even if no backend is found, it returns success: false)
     assert!(result.is_ok(), "Scan should return Ok result");
@@ -90,7 +90,7 @@ async fn test_firewall_apply_requires_root() {
 
     if apply_result.apply_success {
         // Verify scan now shows firewall as enabled
-        let scan_result = plugin.scan(&ctx).await.unwrap();
+        let scan_result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
         assert!(scan_result.scan_success, "Scan should succeed after apply");
     }
 }
@@ -109,7 +109,7 @@ async fn test_backend_detection_order() {
     let plugin = FirewallHardeningPlugin::new();
     let ctx = Context::new();
 
-    let result = plugin.scan(&ctx).await;
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await;
     assert!(
         result.is_ok(),
         "Scan should return Ok even if no backend found"

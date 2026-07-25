@@ -3,13 +3,13 @@
 //! Provides MockPlugin for testing plugin-related functionality.
 
 use crate::{
-    ApplyResult, Checkpoint, Context, HardeningPlugin, PluginConfig, PluginMetadata, ScanResult,
-    ValidationReport,
+    ApplyResult, Checkpoint, Context, Finding, HardeningPlugin, PluginConfig, PluginMetadata,
+    ScanResult, ValidationReport,
 };
 use async_trait::async_trait;
 use hardener_common::{
     error::Result,
-    types::{FindingCategory, PluginId},
+    types::{FindingCategory, PluginId, Severity},
 };
 
 /// A configurable mock plugin for testing.
@@ -34,6 +34,7 @@ pub struct MockPlugin {
     plugin_dependencies: Vec<PluginId>,
     plugin_fail_scan: bool,
     plugin_fail_apply: bool,
+    plugin_directive_key: Option<String>,
 }
 
 impl MockPlugin {
@@ -47,6 +48,7 @@ impl MockPlugin {
             plugin_dependencies: vec![],
             plugin_fail_scan: false,
             plugin_fail_apply: false,
+            plugin_directive_key: None,
         }
     }
 
@@ -85,6 +87,15 @@ impl MockPlugin {
         self.plugin_fail_apply = true;
         self
     }
+
+    /// Makes `scan` config-aware: it reports exactly one finding when `key`
+    /// is present in the `PluginConfig.directives` map it is called with,
+    /// and none otherwise. Used to prove a directive override placed on
+    /// `HardenerConfig` reaches an individual plugin's scan.
+    pub fn directive_sensitive(mut self, key: &str) -> MockPlugin {
+        self.plugin_directive_key = Some(key.to_string());
+        self
+    }
 }
 
 #[async_trait]
@@ -103,16 +114,37 @@ impl HardeningPlugin for MockPlugin {
         self.plugin_dependencies.clone()
     }
 
-    async fn scan(&self, _ctx: &Context) -> Result<ScanResult> {
+    async fn scan(&self, _ctx: &Context, config: &PluginConfig) -> Result<ScanResult> {
         if self.plugin_fail_scan {
             return Err(hardener_common::error::HardeningError::Plugin(
                 "Mock scan failure".to_string(),
             ));
         }
+        let mut scan_findings = Vec::new();
+        if let Some(key) = &self.plugin_directive_key
+            && let Some(value) = config.directives.get(key)
+        {
+            scan_findings.push(Finding {
+                finding_category: self.plugin_category,
+                finding_current_value: "baseline-compliant".to_string(),
+                finding_description: format!("Directive override present for '{key}'"),
+                finding_explanation: "Mock finding proving execute_scan threads config \
+                    directives to a plugin's scan"
+                    .to_string(),
+                finding_id: format!("{}-{key}", self.plugin_id),
+                finding_impact: "None (mock finding)".to_string(),
+                finding_recommended_value: value.clone(),
+                finding_remediation_steps: vec![],
+                finding_severity: Severity::Low,
+                finding_title: format!("Mock directive finding: {key}"),
+                finding_compliance: vec![],
+                finding_policy_exception: None,
+            });
+        }
         Ok(ScanResult {
             scan_plugin_id: PluginId::new(&self.plugin_id),
             scan_success: true,
-            scan_findings: vec![],
+            scan_findings,
             scan_unchecked: vec![],
             scan_duration_us: 10,
             scan_error: None,

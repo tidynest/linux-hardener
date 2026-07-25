@@ -32,7 +32,7 @@ async fn test_pam_scan_reads_configuration() {
     let context = Context::new();
 
     // Run scan
-    let result = plugin.scan(&context).await;
+    let result = plugin.scan(&context, &PluginConfig::default()).await;
 
     // Should succeed even if files don't exist (graceful degradation)
     assert!(result.is_ok(), "Scan should succeed: {:?}", result.err());

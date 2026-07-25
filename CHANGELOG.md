@@ -14,6 +14,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   About block naming the application, version and build identity.
 
 ### Changed
+- `hardener scan` now honours the configuration file. `Plugin::scan` receives
+  the plugin's config, so a `directives` entry overrides the target value a
+  check is measured against, and a finding matching a valid policy exception is
+  annotated with that exception instead of being reported as a plain violation.
+  `hardener report` treats an annotated finding as satisfied, so a documented
+  deviation no longer fails a compliance control, and the text, HTML, PDF and
+  JSON reports still list the finding as evidence labelled `POLICY EXCEPTION`
+  so a pass carried by an exception is never presented as a clean pass. An
+  exception is honoured only when its `value` matches the value found on the
+  system for `[ssh]`, `[kernel]`, `[pam]` and `[permissions]`; one that does
+  not match is ignored and the finding stays a live violation. `scan --audit`
+  still ignores the config entirely and evaluates the unmodified secure
+  baseline. `scan` also names the plugins the config kept it from running, and
+  fails instead of reporting an empty scan when the config disables every
+  selected plugin.
 - Desktop UI redesigned end to end. The flat top navigation bar is gone,
   replaced by a grouped left sidebar (Local: Dashboard, Analysis,
   Hardening; Fleet: Hosts, Fleet Apply, Scheduler; plus a pinned Settings

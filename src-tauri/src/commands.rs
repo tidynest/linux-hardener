@@ -7,8 +7,8 @@ use hardener_compliance::{
     resolve_profile,
 };
 use hardener_core::{
-    ApplyResult, ConfigLoader, Context, Finding, PluginMetadata, ScanResult, UncheckedCheck,
-    ValidationReport,
+    ApplyResult, ConfigLoader, Context, Finding, PluginConfig, PluginMetadata, ScanResult,
+    UncheckedCheck, ValidationReport,
 };
 use hardener_distro::Distribution;
 use hardener_plugins::create_plugin_registry;
@@ -593,7 +593,8 @@ pub async fn run_scan(
             }
             // Retrieve the actual plugin
             if let Ok(Some(plugin)) = registry.get(&metadata.plugin_id) {
-                match plugin.scan(&ctx).await {
+                let plugin_config = config.get_plugin_config(metadata.plugin_id.as_str());
+                match plugin.scan(&ctx, plugin_config).await {
                     Ok(result) => results.push(result),
                     Err(e) => {
                         error!("Scan failed for plugin {}: {}", metadata.plugin_id, e);
@@ -976,16 +977,25 @@ fn parse_output_format(format: &str) -> Result<OutputFormat, String> {
 /// Scans all plugins and collects findings and unchecked checks for
 /// compliance reporting. A control whose covering check landed in the
 /// unchecked list must never auto-pass on the mere absence of a finding.
+/// Honours the local system/user config (directives and exceptions), the
+/// same as `run_scan`, so a compliance report matches a manual scan.
 async fn collect_findings() -> Result<(Vec<Finding>, Vec<UncheckedCheck>), String> {
     let ctx = Context::new();
     let registry = create_plugin_registry();
     let plugin_list = registry.list().map_err(safe_err)?;
 
+    // Same loader `run_scan` uses for its no-custom-path case: this call site
+    // has no config_path of its own, so system/user config applies, falling
+    // back to defaults rather than failing a background compliance refresh.
+    let config = ConfigLoader::new().load().unwrap_or_default();
+
     let mut findings = Vec::new();
     let mut unchecked = Vec::new();
     for metadata in plugin_list {
         if let Ok(Some(plugin)) = registry.get(&metadata.plugin_id)
-            && let Ok(result) = plugin.scan(&ctx).await
+            && let Ok(result) = plugin
+                .scan(&ctx, config.get_plugin_config(metadata.plugin_id.as_str()))
+                .await
         {
             findings.extend(result.scan_findings);
             unchecked.extend(result.scan_unchecked);
@@ -1422,6 +1432,7 @@ async fn scan_with_executor(
     let registry = create_plugin_registry();
     let mut results = Vec::new();
     let plugin_list = registry.list().map_err(safe_err)?;
+    let default_config = PluginConfig::default();
 
     for metadata in plugin_list {
         if let Some(ids) = plugin_ids
@@ -1435,7 +1446,7 @@ async fn scan_with_executor(
         }
 
         if let Ok(Some(plugin)) = registry.get(&metadata.plugin_id) {
-            match plugin.scan(&ctx).await {
+            match plugin.scan(&ctx, &default_config).await {
                 Ok(result) => results.push(result),
                 Err(e) => error!("Scan failed for plugin {}: {}", metadata.plugin_id, e),
             }
