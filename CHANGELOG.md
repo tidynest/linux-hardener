@@ -55,14 +55,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its `value` matches the value found on the system, which `scan` and
   `hardener report` already required. An exception describing a deviation the
   host does not have no longer stops that setting being hardened, so a host
-  carrying a stale exception may see changes it did not see before. A value
-  that cannot be read never matches, so for `[ssh]`, `[kernel]` and `[pam]`
-  the setting is hardened rather than silently skipped; `[permissions]`
-  instead skips a path whose mode cannot be established, whether because it
-  is missing or because it could not be stat'd, without attempting a chmod
-  or recording a change. `[services]`, `[mac]`, `[audit]` and `[firewall]`
-  are unaffected: their exception key names the deviating item rather than
-  a value.
+  carrying a stale exception may see changes it did not see before. For
+  `[pam]`'s `deny` and `remember` thresholds, that hardening can itself fail
+  rather than apply quietly: if an inline `pam.d` override is present,
+  `apply` refuses to auto-edit the authentication stack and marks the run
+  unsuccessful instead of editing `faillock.conf` or `pwhistory.conf`
+  underneath it. A value that cannot be read never matches, so for `[ssh]`
+  and `[kernel]` the setting is hardened rather than silently skipped.
+  `[pam]` renders an unreadable directive the same as an absent one, both as
+  `"not set"`, so an exception documenting `value = "not set"` still
+  matches when the file could not be read; outside that gap, an unreadable
+  `[pam]` value is hardened the same way as `[ssh]` and `[kernel]`.
+  `[permissions]` treats a missing path, which is left alone, differently
+  from one that exists but could not be stat'd: the seven paths with a
+  single exact target mode are hardened anyway, chmod'd to their baseline
+  with a note that the prior mode was unknown, while the two mask-based
+  paths, `/etc/shadow` and `/etc/gshadow`, cannot compute a safe target
+  without a verified mode and are skipped instead, now with the skip and a
+  warning recorded rather than silent. `[services]`, `[mac]`, `[audit]` and
+  `[firewall]` are unaffected: their exception key names the deviating item
+  rather than a value.
 - SSH `apply --dry-run` now honours the configuration file.
   `SshHardeningPlugin::validate` bound its config parameter as `_config` and
   never read it, so directive overrides and policy exceptions had no effect

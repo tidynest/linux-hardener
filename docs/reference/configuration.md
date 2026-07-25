@@ -199,18 +199,32 @@ compliance controls, and `apply` hardens the setting instead of skipping it.
 This stops a config from passing a control, or a setting from being left
 unhardened, by documenting a deviation the host does not actually have.
 
-The check is fail-closed: an unreadable value never matches an exception, so
-a stale or unconfirmed exception is never honoured on faith. For `[ssh]`,
-`[kernel]` and `[pam]` that also means the setting is hardened rather than
-silently skipped. `[permissions]` cannot go that far: `apply` needs a path's
-mode before it can either match it against an exception or attempt a chmod,
-so a path whose mode cannot be established, whether because the path does
-not exist or because it could not be stat'd, is skipped instead, with no
-chmod attempted and no change recorded. The two cases cannot be told apart,
-but that is unremarkable: skipping a path that is genuinely absent is
-already the correct outcome, and an unreadable existing path gets the same
-safe, non-destructive treatment. Use `"not set"` to except a directive that
-is absent from the file (that is the value `scan` reports for it), and for
+The check is fail-closed by design: nothing is exempted merely because its
+current value could not be established. For `[ssh]` and `[kernel]`, an
+unreadable value can never match an exception, so the setting is hardened
+rather than silently skipped. `[pam]` behaves the same way with one narrow
+exception, covered in full below: an unreadable directive can still match a
+`value = "not set"` exception, because it renders identically to a
+genuinely absent one. For the `[pam]` threshold directives, `deny` and
+`remember`, hardening can itself fail rather than apply quietly: if an
+inline `pam.d` override is present, `apply` refuses to auto-edit the
+authentication stack and reports the run as failed instead of silently
+editing `faillock.conf` or `pwhistory.conf` underneath it.
+
+`[permissions]` tells a missing path apart from one that exists but could
+not be stat'd. A missing path is left alone: no chmod is attempted and
+nothing is recorded, the same treatment as an already-compliant path. A path
+that exists but whose mode could not be verified is hardened anyway for the
+seven critical paths with a single exact target mode (`/root`, `/boot`,
+`/etc/ssh`, `/etc/sudoers`, `/etc/sudoers.d`, `/etc/passwd`, `/etc/group`):
+`apply` chmods it to that baseline regardless of the unknown starting mode,
+and the recorded change says so. The remaining two, `/etc/shadow` and
+`/etc/gshadow`, only ever strip bits outside an allowed mask, a target that
+cannot be computed without a verified mode, so `apply` skips them instead,
+now recording the skip explicitly and logging a warning rather than doing
+nothing silently. An exception can never match against an unverified mode,
+for any of the nine paths. Use `"not set"` to except a directive that is
+absent from the file (that is the value `scan` reports for it), and for
 `[permissions]` write the mode in octal with or without the leading zero
 (`644` and `0644` both match mode 0644).
 
