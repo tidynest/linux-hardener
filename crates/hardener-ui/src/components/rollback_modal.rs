@@ -7,7 +7,7 @@
 //! held locally here rather than in `AppState`, so History has a single result
 //! surface.
 
-use crate::components::{IconCheck, IconX};
+use crate::components::{IconCheck, IconX, Modal};
 use crate::state::AppState;
 use crate::tauri_bindings::{invoke_get_checkpoint_detail, invoke_rollback};
 use crate::types::{CheckpointDetail, CheckpointInfo, RollbackResult};
@@ -116,54 +116,42 @@ pub fn RollbackModal(
         });
     };
 
-    // Escape key: cancel from Confirm, close from Result, inert while Restoring.
-    let on_keydown = move |ev: web_sys::KeyboardEvent| {
-        if ev.key() == "Escape" && !stage.with(|s| matches!(s, Stage::Restoring)) {
-            close(did_rollback.get());
-        }
-    };
+    // Dismissal (Escape or a backdrop click) cancels from Confirm and closes
+    // from Result, but stays inert while a rollback is in flight. Both paths
+    // report `did_rollback`, so dismissing from Result cannot tell the parent
+    // that nothing happened.
+    let can_dismiss = Signal::derive(move || !stage.with(|s| matches!(s, Stage::Restoring)));
+    let on_dismiss = Callback::new(move |_| close(did_rollback.get()));
 
     view! {
         <Show when=move || target.get().is_some()>
-            <div
-                class="modal-backdrop"
-                on:click=move |_| {
-                    if stage.with(|s| matches!(s, Stage::Confirm)) {
-                        close(false);
-                    }
-                }
+            <Modal
+                on_dismiss=on_dismiss
+                dismissible=can_dismiss
+                class="rollback-modal"
+                aria_labelledby="rollback-modal-title"
+                dialog_ref=dialog_ref
             >
-                <div
-                    class="modal rollback-modal"
-                    role="dialog"
-                    aria-modal="true"
-                    aria-labelledby="rollback-modal-title"
-                    tabindex="-1"
-                    node_ref=dialog_ref
-                    on:click=move |ev| ev.stop_propagation()
-                    on:keydown=on_keydown
-                >
-                    {move || {
-                        let cp = target.get();
-                        let cp = match cp.as_ref() {
-                            Some(c) => c.clone(),
-                            None => return ().into_any(),
-                        };
-                        match stage.get() {
-                            Stage::Confirm => confirm_view(cp, detail, on_confirm, close).into_any(),
-                            Stage::Restoring => view! {
-                                <div class="rollback-restoring">
-                                    <h3 id="rollback-modal-title">"Restoring..."</h3>
-                                    <p class="rollback-progress">
-                                        "Applying the checkpoint. Do not close this window."
-                                    </p>
-                                </div>
-                            }.into_any(),
-                            Stage::Result(result) => result_view(result, close).into_any(),
-                        }
-                    }}
-                </div>
-            </div>
+                {move || {
+                    let cp = target.get();
+                    let cp = match cp.as_ref() {
+                        Some(c) => c.clone(),
+                        None => return ().into_any(),
+                    };
+                    match stage.get() {
+                        Stage::Confirm => confirm_view(cp, detail, on_confirm, close).into_any(),
+                        Stage::Restoring => view! {
+                            <div class="rollback-restoring">
+                                <h3 id="rollback-modal-title">"Restoring..."</h3>
+                                <p class="rollback-progress">
+                                    "Applying the checkpoint. Do not close this window."
+                                </p>
+                            </div>
+                        }.into_any(),
+                        Stage::Result(result) => result_view(result, close).into_any(),
+                    }
+                }}
+            </Modal>
         </Show>
     }
 }
