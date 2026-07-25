@@ -89,14 +89,15 @@ Every section accepts the same four keys:
 
 | Key | Type | Default | Effect |
 |-----|------|---------|--------|
-| `enabled` | bool | `true` | Disables this plugin when `false` (same effect as listing it in `disabled_plugins`). |
+| `enabled` | bool | `true` | Accepted and validated, but **not enforced**. To stop a plugin from running, list it in `[global] disabled_plugins`. |
 | `directives` | table of string to string | `{}` | Overrides the target value for a built-in check, typically to something stricter than the baseline. |
-| `custom_directives` | table of string to string | `{}` | Additional directives to check beyond the built-in set. |
+| `custom_directives` | table of string to string | `{}` | Accepted and validated, but **not yet enforced** by any plugin. Reserved for checking directives beyond the built-in set. |
 | `exceptions` | table of exception entries | `{}` | Policy exceptions; see below. |
 
-These keys, and the `[global]` plugin lists, take effect for `scan` (both
-default and compliance modes) and for `apply`. `scan --audit` ignores the
-config entirely and always evaluates the unmodified secure baseline.
+`directives` and `exceptions`, together with the `[global]` plugin lists, take
+effect for `scan` (both default and compliance modes) and for `apply`.
+`scan --audit` ignores the config entirely and always evaluates the unmodified
+secure baseline.
 
 Example, tightening SSH beyond the baseline:
 
@@ -130,9 +131,10 @@ A config that fails validation is rejected with every invalid entry listed:
 ## Policy exceptions
 
 An exception documents an intentional, approved deviation from the secure
-baseline. The finding is still shown, annotated with the exception; it is only
-filtered out in compliance mode (`scan --compliance`). Audit mode
-(`scan --audit`) ignores the config, exceptions included.
+baseline. `scan` still shows the finding, annotated with the exception it
+matched; `hardener report` treats an annotated finding as satisfied, so it no
+longer fails a compliance control. Audit mode (`scan --audit`) ignores the
+config, exceptions included.
 
 ```toml
 [ssh.exceptions.PasswordAuthentication]
@@ -153,7 +155,7 @@ expires = "2026-07-15"
 | `approved_by` | string | no | Who approved the exception. |
 | `approved_date` | string | no | Approval date, ISO 8601 (`YYYY-MM-DD`). |
 | `ticket` | string | no | Reference to the approval ticket or issue. |
-| `expires` | string | no | Expiry date, ISO 8601 (`YYYY-MM-DD`). After this date the exception stops applying and the finding reappears in compliance mode. |
+| `expires` | string | no | Expiry date, ISO 8601 (`YYYY-MM-DD`). After this date the exception stops applying and the finding counts as a violation again. |
 
 An exception is **valid** only while `allowed = true` and the `expires` date
 (if set) has not passed. Expired exceptions are ignored, which means
