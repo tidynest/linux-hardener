@@ -1078,6 +1078,97 @@ async fn pam_validate_reports_requires_root_when_pwquality_is_root_only() {
     );
 }
 
+/// Validate's `SecurityConf` estimate reuses the `observed` value already
+/// computed for the exception check instead of reading the conf file a
+/// second time. This pins down the "compliant" and "needs tightening"
+/// wordings so that reuse can never silently change what an operator is
+/// told.
+#[tokio::test]
+async fn pam_validate_security_conf_estimate_reuses_observed_value() {
+    let executor = MockExecutor::new()
+        .with_file(
+            "/etc/security/pwquality.conf",
+            "minlen 14\ndcredit -1\nucredit -1\nlcredit -1\nocredit -1\nmaxrepeat 3\n",
+        )
+        .with_file(
+            "/etc/login.defs",
+            "PASS_MAX_DAYS 90\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n",
+        )
+        // deny = 3 is stricter than the boundary of 5: compliant, no estimate line.
+        .with_file("/etc/security/faillock.conf", "deny = 3\n")
+        // remember = 2 is looser than the minimum of 5: needs tightening.
+        .with_file("/etc/security/pwhistory.conf", "remember = 2\n");
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PamHardeningPlugin::new();
+
+    let report = plugin
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(
+        !report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("deny")),
+        "a compliant deny must not appear as a pending change, got: {:?}",
+        report.validation_report_estimated_changes
+    );
+    let remember_line = report
+        .validation_report_estimated_changes
+        .iter()
+        .find(|c| c.contains("remember"))
+        .expect("looser remember must be listed");
+    assert_eq!(
+        remember_line, "remember will change: 2 -> 5",
+        "wording must reflect the observed value and the clamped target"
+    );
+}
+
+/// Complementary to the estimate test above: a `SecurityConf` file blocked by
+/// privileges must keep the requires-root wording after the duplicate
+/// `read_effective_threshold` call was removed, exactly as it did before.
+#[tokio::test]
+async fn pam_validate_security_conf_requires_root_when_faillock_is_root_only() {
+    let executor = MockExecutor::new()
+        .with_file(
+            "/etc/security/pwquality.conf",
+            "minlen 14\ndcredit -1\nucredit -1\nlcredit -1\nocredit -1\nmaxrepeat 3\n",
+        )
+        .with_file(
+            "/etc/login.defs",
+            "PASS_MAX_DAYS 90\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n",
+        )
+        .with_file("/etc/security/faillock.conf", "deny = 3\n")
+        .with_read_permission_denied("/etc/security/faillock.conf")
+        .with_file("/etc/security/pwhistory.conf", "remember = 10\n");
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PamHardeningPlugin::new();
+
+    let report = plugin
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(
+        !report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("deny") && c.contains("not set")),
+        "an unreadable faillock.conf must never be claimed 'not set', got: {:?}",
+        report.validation_report_estimated_changes
+    );
+    let deny_line = report
+        .validation_report_estimated_changes
+        .iter()
+        .find(|c| c.contains("deny"))
+        .expect("deny must still be listed");
+    assert_eq!(
+        deny_line, "deny <= 5 (current value requires root; applied only if currently looser)",
+        "unreadable faillock directives must use the requires-root wording"
+    );
+}
+
 /// Scan reads the effective faillock/pwhistory value from inline pam.d args
 /// when the /etc/security/*.conf file is empty or absent, because inline args
 /// override the .conf at runtime.

@@ -707,22 +707,33 @@ impl HardeningPlugin for PamHardeningPlugin {
         let mut login_defs_changed = false;
 
         // Pre-apply snapshots for the exception check below. Taken once, here,
-        // before any directive can mutate `pwquality_content`/`login_defs_content`:
-        // the exception decision must be judged against the host's actual state,
-        // not against apply's own partially-rewritten buffer from an earlier
-        // iteration in this same loop.
+        // before any directive can mutate `pwquality_content`/`login_defs_content`,
+        // or write a `SecurityConf` file: the exception decision must be judged
+        // against the host's actual pre-apply state, never against a buffer or
+        // file this same loop has already rewritten. Resolving every directive's
+        // observed value in this one pass, before any write happens, makes that
+        // guarantee hold structurally, so it stays true even if a future
+        // directive's `SecurityConf` path happens to collide with an earlier
+        // one's, rather than relying on today's `PAM_DIRECTIVES` entries
+        // pointing at distinct files.
         let pwquality_observed = ConfRead::Content(pwquality_content.clone());
         let login_defs_observed = login_defs_content.clone();
+        let mut observed_values = Vec::with_capacity(PAM_DIRECTIVES.len());
+        for directive in PAM_DIRECTIVES {
+            observed_values.push(
+                observed_pam_value(ctx, directive, &pwquality_observed, &login_defs_observed).await,
+            );
+        }
 
         // Step 2: Apply each directive (state-aware: already-correct values
         // record a Skipped no-op and never trigger a rewrite)
-        for directive in PAM_DIRECTIVES {
+        for (directive, observed) in PAM_DIRECTIVES.iter().zip(observed_values.iter()) {
             // Honour an exception only when it documents the value the host
-            // actually has. An unset or unreadable value renders "not set",
-            // matching scan's rendering and what an operator writes in the
-            // config; either way it is never trusted on faith.
-            let observed =
-                observed_pam_value(ctx, directive, &pwquality_observed, &login_defs_observed).await;
+            // actually has. An unset value and an unreadable one both render
+            // "not set", matching scan's rendering and what an operator
+            // writes in the config, so an exception documenting value =
+            // "not set" is honoured even when the file could not be read: a
+            // narrow, deliberate gap in the fail-closed rule.
 
             // Check for a valid exception: skip this directive if exempted
             if let Some(exception) =
@@ -1091,8 +1102,14 @@ impl HardeningPlugin for PamHardeningPlugin {
                         )),
                     }
                 }
-                PamConfigFile::SecurityConf(path) => {
-                    // Same clamped target and effective-value resolution as apply.
+                PamConfigFile::SecurityConf(_) => {
+                    // Same clamped target and effective-value resolution as
+                    // apply. Reuses `observed` (computed above, the source of
+                    // which is this exact `read_effective_threshold` call)
+                    // instead of reading again: unlike login.defs, a
+                    // `SecurityConf` directive has no lenient/classified
+                    // split between the exception check and this estimate,
+                    // so there is no wording that reusing it could degrade.
                     let secure: i64 = d
                         .pam_secure_value
                         .parse()
@@ -1102,21 +1119,21 @@ impl HardeningPlugin for PamHardeningPlugin {
                         .get(d.pam_directive_name)
                         .and_then(|s| s.parse::<i64>().ok());
                     let target = clamp_target(d.pam_compare, secure, over);
-                    match read_effective_threshold(ctx, d.pam_directive_name, path).await {
-                        ThresholdRead::Value(v)
-                            if !breaches_threshold(d.pam_compare, target, Some(&v)) =>
+                    match &observed {
+                        PamObserved::Value(v)
+                            if !breaches_threshold(d.pam_compare, target, Some(v)) =>
                         {
                             compliant_count += 1
                         }
-                        ThresholdRead::Value(v) => estimated_changes.push(format!(
+                        PamObserved::Value(v) => estimated_changes.push(format!(
                             "{} will change: {} -> {}",
                             d.pam_directive_name, v, target
                         )),
-                        ThresholdRead::NotSet => estimated_changes.push(format!(
+                        PamObserved::NotSet => estimated_changes.push(format!(
                             "Set {} = {} (currently not set)",
                             d.pam_directive_name, target
                         )),
-                        ThresholdRead::PermissionDenied => {
+                        PamObserved::PermissionDenied(_) => {
                             let op = match d.pam_compare {
                                 PamCompare::AtMost => "<=",
                                 _ => ">=",
