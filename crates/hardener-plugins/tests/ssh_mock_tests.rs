@@ -1542,3 +1542,40 @@ async fn validate_ignores_exception_whose_value_does_not_match() {
         "a non-matching exception must leave the change in the preview"
     );
 }
+
+#[tokio::test]
+async fn validate_honours_an_exception_whose_value_matches() {
+    // insecure_ssh_executor's host genuinely runs `PermitRootLogin yes`, which
+    // is insecure against the "no" baseline. The exception documents "yes",
+    // the value the host actually has, so it must be honoured: the directive
+    // is expected to be dropped entirely, not merely annotated.
+    let executor = insecure_ssh_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = SshHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "PermitRootLogin".to_string(),
+        PolicyException {
+            value: "yes".to_string(),
+            allowed: true,
+            reason: "Legacy jump host".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let report = plugin.validate(&ctx, &config).await.unwrap();
+
+    assert!(
+        !report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("PermitRootLogin")),
+        "a matching exception must remove the directive from the preview, \
+         got: {:?}",
+        report.validation_report_estimated_changes
+    );
+}
