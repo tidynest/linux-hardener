@@ -656,14 +656,26 @@ async fn apply_ignores_exception_whose_mode_does_not_match() {
         "a non-matching exception must not produce a skipped change"
     );
 
-    // The path must actually have been hardened: a chmod for /boot was issued.
+    // The path must actually have been hardened: a chmod to the 0700
+    // baseline for /boot was issued, not merely some chmod naming /boot.
     let log = executor.log();
+    let chmod_cmd = log
+        .commands_executed
+        .iter()
+        .find(|(cmd, args): &&(String, Vec<String>)| {
+            cmd == "chmod" && args.iter().any(|a| a == "/boot")
+        });
     assert!(
+        chmod_cmd.is_some(),
+        "should have called chmod for /boot, got: {:?}",
         log.commands_executed
-            .iter()
-            .any(|(cmd, args)| cmd == "chmod" && args.iter().any(|a| a == "/boot")),
-        "a non-matching exception must not suppress hardening of /boot, got: {:?}",
-        log.commands_executed
+    );
+    let (_, args) = chmod_cmd.expect("checked above");
+    assert_eq!(
+        args,
+        &vec!["0700".to_string(), "/boot".to_string()],
+        "chmod should harden /boot to the 0700 baseline with no extra args, got: {:?}",
+        args
     );
 }
 

@@ -912,12 +912,15 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
         for directive in CRITICAL_PERMISSIONS {
             let path = Path::new(directive.permission_path);
             // An unreadable mode cannot confirm an exception, so it is not
-            // honoured and the path is hardened (fail closed).
+            // honoured; the path is then skipped without a recorded change,
+            // since a mode that cannot be read cannot be compared against
+            // the baseline either.
             let current_mode = ctx
                 .executor()
                 .file_metadata(path)
                 .await
                 .ok()
+                .filter(|m| m.exists)
                 .map(|m| m.mode & 0o777);
 
             // Check for a valid exception whose documented value matches the
@@ -1019,6 +1022,12 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
 
             // Get current permissions
             match ctx.executor().file_metadata(path).await {
+                Ok(metadata) if !metadata.exists => {
+                    // The existence probe above passed, but the metadata read
+                    // itself came back empty (the ssh executor's stat sentinel
+                    // covers any failed stat, not only a missing path) - the
+                    // mode cannot be trusted, so there is nothing to validate.
+                }
                 Ok(metadata) => {
                     let current_mode = metadata.mode & 0o777;
 
