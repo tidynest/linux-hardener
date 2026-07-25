@@ -56,13 +56,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `hardener report` already required. An exception describing a deviation the
   host does not have no longer stops that setting being hardened, so a host
   carrying a stale exception may see changes it did not see before. A value
-  that cannot be read counts as not matching, so the setting is hardened rather
-  than silently skipped. `[services]`, `[mac]` and `[audit]` are unaffected:
-  their exception key names the deviating item rather than a value.
-- SSH `apply --dry-run` now honours the configuration file. `SshPlugin::validate`
-  bound its config parameter as `_config` and never read it, so directive
-  overrides and policy exceptions had no effect on the SSH preview and it could
-  not agree with what `apply` then did.
+  that cannot be read never matches, so for `[ssh]`, `[kernel]` and `[pam]`
+  the setting is hardened rather than silently skipped; `[permissions]`
+  instead skips a path whose mode cannot be established, whether because it
+  is missing or because it could not be stat'd, without attempting a chmod
+  or recording a change. `[services]`, `[mac]`, `[audit]` and `[firewall]`
+  are unaffected: their exception key names the deviating item rather than
+  a value.
+- SSH `apply --dry-run` now honours the configuration file.
+  `SshHardeningPlugin::validate` bound its config parameter as `_config` and
+  never read it, so directive overrides and policy exceptions had no effect
+  on the SSH preview and it could not agree with what `apply` then did.
 
 ## [1.4.0] - 2026-07-19
 

@@ -199,23 +199,36 @@ compliance controls, and `apply` hardens the setting instead of skipping it.
 This stops a config from passing a control, or a setting from being left
 unhardened, by documenting a deviation the host does not actually have.
 
-The check is fail-closed: a value that cannot be read counts as not matching,
-so the setting is hardened rather than silently skipped. Use `"not set"` to
-except a directive that is absent from the file (that is the value `scan`
-reports for it), and for `[permissions]` write the mode in octal with or
-without the leading zero (`644` and `0644` both match mode 0644).
+The check is fail-closed: an unreadable value never matches an exception, so
+a stale or unconfirmed exception is never honoured on faith. For `[ssh]`,
+`[kernel]` and `[pam]` that also means the setting is hardened rather than
+silently skipped. `[permissions]` cannot go that far: `apply` needs a path's
+mode before it can either match it against an exception or attempt a chmod,
+so a path whose mode cannot be established, whether because the path does
+not exist or because it could not be stat'd, is skipped instead, with no
+chmod attempted and no change recorded. The two cases cannot be told apart,
+but that is unremarkable: skipping a path that is genuinely absent is
+already the correct outcome, and an unreadable existing path gets the same
+safe, non-destructive treatment. Use `"not set"` to except a directive that
+is absent from the file (that is the value `scan` reports for it), and for
+`[permissions]` write the mode in octal with or without the leading zero
+(`644` and `0644` both match mode 0644).
 
-For `[ssh]` and `[pam]`, an unreadable directive renders the same way as an
-absent one: both display as `"not set"`. An exception written as
-`value = "not set"` is therefore honoured whenever the directive could not be
-read, not only when it is genuinely absent from the file, a narrow gap in the
-fail-closed rule above. Do not write `value = "not set"` to mean "I do not
-know what this is": treat it as a matchable value like any other.
+For `[pam]`, an unreadable directive renders the same way as an absent one:
+both display as `"not set"`. An exception written as `value = "not set"` is
+therefore honoured whenever the directive could not be read, not only when
+it is genuinely absent from the file, a narrow gap in the fail-closed rule
+above. `[ssh]` does not share this gap: `apply` and `apply --dry-run` read
+the whole `sshd_config` file in a single pass, so a read failure fails the
+operation outright instead of rendering directives as unset; within a file
+that was read successfully, `"not set"` means the directive is genuinely
+absent. Do not write `value = "not set"` to mean "I do not know what this
+is": treat it as a matchable value like any other, for both sections.
 
-For `[services]`, `[mac]`, and `[audit]` this comparison does not apply on any
-path, including `apply`: the key itself names the deviating item and there is
-no single system value to compare, so `value` is advisory only; it is
-recorded in the audit trail but never matched.
+For `[services]`, `[mac]`, `[audit]`, and `[firewall]` this comparison does
+not apply on any path, including `apply`: the key itself names the deviating
+item and there is no single system value to compare, so `value` is advisory
+only; it is recorded in the audit trail but never matched.
 
 The exception key is check-specific: an sshd directive name for `[ssh]`, a
 sysctl name for `[kernel]`, a PAM directive name for `[pam]` (for example
