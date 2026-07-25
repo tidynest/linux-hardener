@@ -975,12 +975,16 @@ impl HardeningPlugin for SshHardeningPlugin {
             };
 
             if is_insecure {
+                // An exception is honoured only when it documents the value the
+                // host actually has, so a config cannot pass a control by
+                // describing a deviation that is not there.
+                let current_display = current_value.unwrap_or_else(|| "not set".to_string());
                 let policy_exception = config
-                    .has_valid_exception(directive.ssh_directive_name)
+                    .matching_exception(directive.ssh_directive_name, &current_display)
                     .map(|e| e.to_finding_exception());
                 findings.push(Finding {
                     finding_category: FindingCategory::Network,
-                    finding_current_value: current_value.unwrap_or_else(|| "not set".to_string()),
+                    finding_current_value: current_display.clone(),
                     finding_description: directive.ssh_description.to_string(),
                     finding_explanation: format!(
                         "The SSH directive '{}' is not configured securely. {}",
@@ -1020,12 +1024,13 @@ impl HardeningPlugin for SshHardeningPlugin {
             );
 
             if !crypto_value_is_secure(current_value.as_deref(), crypto.crypto_desired) {
+                let current_display = current_value.unwrap_or_else(|| "not set".to_string());
                 let policy_exception = config
-                    .has_valid_exception(crypto.crypto_directive_name)
+                    .matching_exception(crypto.crypto_directive_name, &current_display)
                     .map(|e| e.to_finding_exception());
                 findings.push(Finding {
                     finding_category: FindingCategory::Network,
-                    finding_current_value: current_value.unwrap_or_else(|| "not set".to_string()),
+                    finding_current_value: current_display.clone(),
                     finding_description: crypto.crypto_description.to_string(),
                     finding_explanation: format!(
                         "The SSH directive '{}' is unset or permits weak algorithms. {}",

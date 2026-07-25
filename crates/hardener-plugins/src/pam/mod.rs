@@ -639,7 +639,7 @@ impl HardeningPlugin for PamHardeningPlugin {
             if !is_secure {
                 let current_display = current_value.unwrap_or_else(|| "not set".to_string());
                 let policy_exception = config
-                    .has_valid_exception(directive.pam_directive_name)
+                    .matching_exception(directive.pam_directive_name, &current_display)
                     .map(|e| e.to_finding_exception());
 
                 findings.push(Finding {

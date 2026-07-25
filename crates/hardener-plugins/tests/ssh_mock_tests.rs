@@ -1290,6 +1290,67 @@ async fn scan_annotates_valid_exception() {
 }
 
 #[tokio::test]
+async fn scan_ignores_exception_whose_value_does_not_match() {
+    // The exception approves "prohibit-password", but the host actually runs
+    // "PermitRootLogin yes". A config file must not be able to pass a control
+    // by documenting a deviation the host does not have: the finding stays a
+    // live, unannotated violation.
+    let executor = insecure_ssh_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = SshHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "PermitRootLogin".to_string(),
+        PolicyException {
+            value: "prohibit-password".to_string(),
+            allowed: true,
+            reason: "Legacy jump host".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+    config.exceptions.insert(
+        "KexAlgorithms".to_string(),
+        PolicyException {
+            value: "curve25519-sha256".to_string(),
+            allowed: true,
+            reason: "Vendor appliance lacks strong KEX support".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let directive_finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "ssh-permitrootlogin")
+        .expect("non-compliant directive should still produce a finding");
+    assert!(
+        directive_finding.finding_policy_exception.is_none(),
+        "an exception for a value the host does not have must not be honoured"
+    );
+
+    // The crypto directive is unset on this host, so an exception naming a
+    // concrete algorithm list does not describe it either.
+    let crypto_finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "ssh-kexalgorithms")
+        .expect("non-compliant crypto directive should still produce a finding");
+    assert!(
+        crypto_finding.finding_policy_exception.is_none(),
+        "an exception for a value the host does not have must not be honoured"
+    );
+}
+
+#[tokio::test]
 async fn ssh_exception_and_weak_crypto_skips_are_not_counted_as_applied() {
     // An already-hardened host with a policy exception on one directive and
     // crypto directives the host advertises no strong algorithm for (no

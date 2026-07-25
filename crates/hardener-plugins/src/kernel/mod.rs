@@ -733,7 +733,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
                         .unwrap_or(expected_value);
                     if actual_value != target {
                         let policy_exception = config
-                            .has_valid_exception(param_name)
+                            .matching_exception(param_name, &actual_value)
                             .map(|e| e.to_finding_exception());
                         findings.push(Finding {
                             finding_category: FindingCategory::Kernel,

@@ -337,7 +337,7 @@ async fn check_path_permissions(
 
     let target = target_mode(directive, current_mode);
     let policy_exception = config
-        .has_valid_exception(directive.permission_path)
+        .matching_mode_exception(directive.permission_path, current_mode)
         .map(|e| e.to_finding_exception());
     PermissionCheck::Insecure(Box::new(Finding {
         finding_category: FindingCategory::FileSystem,

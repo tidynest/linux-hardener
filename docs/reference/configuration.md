@@ -161,11 +161,28 @@ An exception is **valid** only while `allowed = true` and the `expires` date
 (if set) has not passed. Expired exceptions are ignored, which means
 exceptions age out rather than being forgotten forever.
 
+### Where `value` is checked
+
+For `[ssh]`, `[kernel]`, `[pam]`, and `[permissions]` the `value` field is
+compared against the value found on the system. An exception whose `value`
+does not match is ignored: the finding stays a live violation and still fails
+its compliance controls. This stops a config from passing a control by
+documenting a deviation the host does not actually have. Use `"not set"` to
+except a directive that is absent from the file (that is the value `scan`
+reports for it), and for `[permissions]` write the mode in octal with or
+without the leading zero (`644` and `0644` both match mode 0644).
+
+For `[services]`, `[mac]`, and `[audit]` the key itself names the deviating
+item and there is no single system value to compare, so `value` is advisory
+only; it is recorded in the audit trail but not matched.
+
 The exception key is check-specific: an sshd directive name for `[ssh]`, a
-sysctl name for `[kernel]`, a service name for `[services]` (for example
-`cups`), an audit rule category for `[audit]` (`time-change`, `identity`,
-`network-change`, `perm-mod`, `privileged`, `delete`, `modules`), and
-`selinux-enforcing` / `apparmor-enforce` for `[mac]`.
+sysctl name for `[kernel]`, a PAM directive name for `[pam]` (for example
+`minlen`), an absolute path for `[permissions]` (for example `/etc/shadow`), a
+service name for `[services]` (for example `cups`), an audit rule category for
+`[audit]` (`time-change`, `identity`, `network-change`, `perm-mod`,
+`privileged`, `delete`, `modules`), and `selinux-enforcing` /
+`apparmor-enforce` for `[mac]`.
 
 ---
 

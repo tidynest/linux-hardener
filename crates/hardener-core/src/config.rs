@@ -73,6 +73,24 @@ impl PluginConfig {
     pub fn has_valid_exception(&self, key: &str) -> Option<&PolicyException> {
         self.exceptions.get(key).filter(|e| e.is_valid())
     }
+
+    /// Returns a valid, non-expired exception for `key` only when its documented
+    /// `value` matches the value actually present on the system. An exception
+    /// that does not describe the real deviation is not an exception.
+    pub fn matching_exception(&self, key: &str, actual_value: &str) -> Option<&PolicyException> {
+        self.has_valid_exception(key)
+            .filter(|e| e.value == actual_value)
+    }
+
+    /// Octal-mode variant of [`matching_exception`](Self::matching_exception)
+    /// for permission paths. A mode may be spelled with or without the leading
+    /// zero ("644" and "0644" name the same mode), so both sides are compared
+    /// numerically rather than as text. A value that is not a valid octal mode
+    /// never matches.
+    pub fn matching_mode_exception(&self, key: &str, actual_mode: u32) -> Option<&PolicyException> {
+        self.has_valid_exception(key)
+            .filter(|e| u32::from_str_radix(&e.value, 8).is_ok_and(|mode| mode == actual_mode))
+    }
 }
 
 /// A policy exception that allows a value deviating from secure baseline.
@@ -197,5 +215,88 @@ mod tests {
         assert_eq!(fe.exception_reason, "legacy jump host");
         assert_eq!(fe.exception_ticket.as_deref(), Some("SEC-1234"));
         assert!(!fe.exception_is_expired); // no expiry -> not expired
+    }
+
+    /// Builds a valid exception allowing `value` for testing.
+    fn exception(value: &str, expires: Option<&str>) -> PolicyException {
+        PolicyException {
+            value: value.into(),
+            allowed: true,
+            reason: "documented deviation".into(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: expires.map(str::to_string),
+        }
+    }
+
+    fn plugin_with(key: &str, exception: PolicyException) -> PluginConfig {
+        let mut plugin = PluginConfig::default();
+        plugin.exceptions.insert(key.to_string(), exception);
+        plugin
+    }
+
+    #[test]
+    fn matching_exception_honours_only_the_documented_value() {
+        let plugin = plugin_with("PermitRootLogin", exception("yes", None));
+
+        // The exception describes the real deviation: honoured.
+        assert!(
+            plugin
+                .matching_exception("PermitRootLogin", "yes")
+                .is_some()
+        );
+        // The system deviates differently from what was approved: ignored.
+        assert!(
+            plugin
+                .matching_exception("PermitRootLogin", "prohibit-password")
+                .is_none()
+        );
+        // Unknown key: nothing to honour.
+        assert!(plugin.matching_exception("X11Forwarding", "yes").is_none());
+    }
+
+    #[test]
+    fn matching_exception_rejects_an_expired_exception() {
+        let plugin = plugin_with("PermitRootLogin", exception("yes", Some("2020-01-01")));
+
+        assert!(
+            plugin
+                .matching_exception("PermitRootLogin", "yes")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn matching_mode_exception_normalises_octal_spelling() {
+        let plugin = plugin_with("/etc/passwd", exception("644", None));
+
+        // Written without the leading zero, but the same mode.
+        assert!(
+            plugin
+                .matching_mode_exception("/etc/passwd", 0o644)
+                .is_some()
+        );
+        // A different mode is not the approved deviation.
+        assert!(
+            plugin
+                .matching_mode_exception("/etc/passwd", 0o600)
+                .is_none()
+        );
+
+        // The four-digit spelling of the same mode also matches.
+        let padded = plugin_with("/etc/passwd", exception("0644", None));
+        assert!(
+            padded
+                .matching_mode_exception("/etc/passwd", 0o644)
+                .is_some()
+        );
+        // A non-octal value can never describe a mode.
+        let bogus = plugin_with("/etc/passwd", exception("rw-r--r--", None));
+        assert!(
+            bogus
+                .matching_mode_exception("/etc/passwd", 0o644)
+                .is_none()
+        );
     }
 }
