@@ -651,6 +651,47 @@ async fn test_pam_apply_skips_exceptions() {
     );
 }
 
+/// A stale exception (documented value no longer matches the host) must not
+/// suppress hardening: apply must treat it as if there were no exception.
+#[tokio::test]
+async fn apply_ignores_exception_whose_value_does_not_match() {
+    let executor = insecure_pam_executor();
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    let plugin = PamHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "minlen".to_string(),
+        PolicyException {
+            value: "99".to_string(),
+            allowed: true,
+            reason: "Stale exception".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    assert!(
+        !result
+            .apply_changes
+            .iter()
+            .any(|c| c.change_description.contains("Stale exception")),
+        "a non-matching exception must not produce a skipped change"
+    );
+    assert!(
+        result
+            .apply_changes
+            .iter()
+            .any(|c| c.change_description.contains("Set minlen")),
+        "the directive must actually be hardened once the stale exception is ignored, got: {:?}",
+        result.apply_changes
+    );
+}
+
 #[tokio::test]
 async fn scan_honours_directive_override() {
     // deny = 3 is compliant against the built-in boundary of 5, but a
@@ -770,6 +811,43 @@ async fn test_pam_validate_skips_exceptions() {
             .iter()
             .any(|c| c.contains("dcredit")),
         "non-excepted directives should still appear"
+    );
+}
+
+/// A stale exception (documented value no longer matches the host) must not
+/// remove the directive from validate's preview.
+#[tokio::test]
+async fn validate_ignores_exception_whose_value_does_not_match() {
+    let executor = MockExecutor::new()
+        .with_file("/etc/security/pwquality.conf", "minlen 8\n")
+        .with_file("/etc/login.defs", "PASS_MAX_DAYS 99999\n");
+
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PamHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "minlen".to_string(),
+        PolicyException {
+            value: "99".to_string(),
+            allowed: true,
+            reason: "Stale exception".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let report = plugin.validate(&ctx, &config).await.unwrap();
+
+    assert!(
+        report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("minlen")),
+        "a non-matching exception must leave the directive in the preview, got: {:?}",
+        report.validation_report_estimated_changes
     );
 }
 

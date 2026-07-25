@@ -566,46 +566,23 @@ impl HardeningPlugin for PamHardeningPlugin {
 
         // Check each PAM directive.
         for directive in PAM_DIRECTIVES {
-            let current_value = match directive.pam_config_file {
-                PamConfigFile::PwQuality => match &pwquality {
-                    ConfRead::Content(content) => parse_config_value(
-                        content,
-                        directive.pam_directive_name,
-                        ConfigFormat::Auto,
-                        true,
-                    ),
-                    ConfRead::PermissionDenied => {
-                        unchecked.push(unchecked_pam_directive(
-                            directive,
-                            "/etc/security/pwquality.conf",
-                        ));
+            if directive.pam_config_file == PamConfigFile::PamAuth {
+                debug!(
+                    "Skipping PAM module directive: {}",
+                    directive.pam_directive_name
+                );
+                continue;
+            }
+
+            let current_value =
+                match observed_pam_value(ctx, directive, &pwquality, &login_defs_content).await {
+                    PamObserved::Value(v) => Some(v),
+                    PamObserved::NotSet => None,
+                    PamObserved::PermissionDenied(path) => {
+                        unchecked.push(unchecked_pam_directive(directive, path));
                         continue;
                     }
-                },
-                PamConfigFile::LoginDefs => parse_config_value(
-                    &login_defs_content,
-                    directive.pam_directive_name,
-                    ConfigFormat::Auto,
-                    true,
-                ),
-                PamConfigFile::PamAuth => {
-                    debug!(
-                        "Skipping PAM module directive: {}",
-                        directive.pam_directive_name
-                    );
-                    continue;
-                }
-                PamConfigFile::SecurityConf(path) => {
-                    match read_effective_threshold(ctx, directive.pam_directive_name, path).await {
-                        ThresholdRead::Value(v) => Some(v),
-                        ThresholdRead::NotSet => None,
-                        ThresholdRead::PermissionDenied => {
-                            unchecked.push(unchecked_pam_directive(directive, path));
-                            continue;
-                        }
-                    }
-                }
-            };
+                };
 
             // Resolve the effective target the same way apply does: a
             // directive override wins over the hardcoded baseline, and for
@@ -732,8 +709,22 @@ impl HardeningPlugin for PamHardeningPlugin {
         // Step 2: Apply each directive (state-aware: already-correct values
         // record a Skipped no-op and never trigger a rewrite)
         for directive in PAM_DIRECTIVES {
+            // Honour an exception only when it documents the value the host
+            // actually has. An unset or unreadable value renders "not set",
+            // matching scan's rendering and what an operator writes in the
+            // config; either way it is never trusted on faith.
+            let observed = observed_pam_value(
+                ctx,
+                directive,
+                &ConfRead::Content(pwquality_content.clone()),
+                &login_defs_content,
+            )
+            .await;
+
             // Check for a valid exception: skip this directive if exempted
-            if let Some(exception) = config.has_valid_exception(directive.pam_directive_name) {
+            if let Some(exception) =
+                config.matching_exception(directive.pam_directive_name, observed.value_or_not_set())
+            {
                 info!(
                     "Skipping {} (exception: {})",
                     directive.pam_directive_name, exception.reason
@@ -795,19 +786,19 @@ impl HardeningPlugin for PamHardeningPlugin {
                     let target = clamp_target(directive.pam_compare, secure, over);
 
                     let inline = read_pamd_inline(ctx, directive.pam_directive_name).await;
-                    let content = read_security_conf(ctx, path).await;
-                    let conf_val = parse_config_value(
-                        &content,
-                        directive.pam_directive_name,
-                        ConfigFormat::KeyValue,
-                        true,
-                    );
-                    let effective = inline.clone().or(conf_val);
 
                     // No-loosen contract: only act when the effective value
                     // breaches the (clamped) target. A stricter value is already
-                    // compliant, so touching it could only loosen it.
-                    if !breaches_threshold(directive.pam_compare, target, effective.as_deref()) {
+                    // compliant, so touching it could only loosen it. `observed`
+                    // (computed above via the shared helper) already resolved
+                    // inline-vs-conf-file precedence; "not set" fails to parse as
+                    // an integer just like a genuinely missing value, so reusing
+                    // it here is equivalent to reading afresh.
+                    if !breaches_threshold(
+                        directive.pam_compare,
+                        target,
+                        Some(observed.value_or_not_set()),
+                    ) {
                         changes.push(Change {
                             change_type: ChangeType::Skipped,
                             change_description: format!(
@@ -862,6 +853,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                         }
                     }
 
+                    let content = read_security_conf(ctx, path).await;
                     let target_str = target.to_string();
                     let updated = apply_directive_to_content(
                         &content,
@@ -1026,9 +1018,29 @@ impl HardeningPlugin for PamHardeningPlugin {
         let mut estimated_changes = Vec::new();
         let mut compliant_count = 0usize;
 
+        // Plain content for the shared helper's login_defs argument: it
+        // carries no permission distinction, matching scan's and apply's
+        // existing lenient (always-content) read of /etc/login.defs. The
+        // classified `login_defs` above is still used, unchanged, by the
+        // SecurityConf/PwQuality estimate below.
+        let login_defs_str = match &login_defs {
+            ConfRead::Content(c) => c.as_str(),
+            ConfRead::PermissionDenied => "",
+        };
+
         for d in PAM_DIRECTIVES {
-            if d.pam_config_file == PamConfigFile::PamAuth
-                || config.has_valid_exception(d.pam_directive_name).is_some()
+            if d.pam_config_file == PamConfigFile::PamAuth {
+                continue;
+            }
+
+            // Honour an exception only when it documents the value the host
+            // actually has, matching apply's rendering of an absent or
+            // unreadable directive as "not set" so neither trusts an
+            // exception on faith.
+            let observed = observed_pam_value(ctx, d, &pwquality, login_defs_str).await;
+            if config
+                .matching_exception(d.pam_directive_name, observed.value_or_not_set())
+                .is_some()
             {
                 continue;
             }
@@ -1392,6 +1404,83 @@ async fn read_effective_threshold(ctx: &Context, arg: &str, conf: &str) -> Thres
             match parse_config_value(&content, arg, ConfigFormat::KeyValue, true) {
                 Some(v) => ThresholdRead::Value(v),
                 None => ThresholdRead::NotSet,
+            }
+        }
+    }
+}
+
+/// The value a PAM directive currently has on the host: a value present in
+/// its config file, confirmed absence, or (for `PwQuality`/`SecurityConf`
+/// directives only) a config file the current privilege level could not
+/// read, carrying the path that was denied so `scan` can still report it
+/// unchecked.
+///
+/// Shared by `scan`, `apply` and `validate` so all three agree on what "the
+/// observed value" means. That agreement is load bearing: a policy exception
+/// is honoured only when its documented value equals this one, so two
+/// callers computing it differently would silently change which exceptions
+/// apply.
+enum PamObserved {
+    Value(String),
+    NotSet,
+    PermissionDenied(&'static str),
+}
+
+impl PamObserved {
+    /// Renders as `"not set"` for callers with no `unchecked` concept.
+    /// `apply` and `validate` must fail closed on an unreadable value rather
+    /// than trust it: this is exactly the string an operator is told to
+    /// write in the config for a directive that is genuinely absent, so an
+    /// exception only matches when it documents that same fallback.
+    fn value_or_not_set(&self) -> &str {
+        match self {
+            PamObserved::Value(v) => v,
+            PamObserved::NotSet | PamObserved::PermissionDenied(_) => "not set",
+        }
+    }
+}
+
+/// Computes [`PamObserved`] for `directive`. `pwquality` and `login_defs` are
+/// the file contents the caller has already read, so this performs I/O only
+/// for `SecurityConf` directives. `login_defs` carries no permission
+/// distinction, matching `scan`'s existing lenient (always-content) read of
+/// `/etc/login.defs`.
+async fn observed_pam_value(
+    ctx: &Context,
+    directive: &PamDirective,
+    pwquality: &ConfRead,
+    login_defs: &str,
+) -> PamObserved {
+    match &directive.pam_config_file {
+        PamConfigFile::PwQuality => match pwquality {
+            ConfRead::Content(content) => match parse_config_value(
+                content,
+                directive.pam_directive_name,
+                ConfigFormat::Auto,
+                true,
+            ) {
+                Some(v) => PamObserved::Value(v),
+                None => PamObserved::NotSet,
+            },
+            ConfRead::PermissionDenied => {
+                PamObserved::PermissionDenied("/etc/security/pwquality.conf")
+            }
+        },
+        PamConfigFile::LoginDefs => match parse_config_value(
+            login_defs,
+            directive.pam_directive_name,
+            ConfigFormat::Auto,
+            true,
+        ) {
+            Some(v) => PamObserved::Value(v),
+            None => PamObserved::NotSet,
+        },
+        PamConfigFile::PamAuth => PamObserved::NotSet,
+        PamConfigFile::SecurityConf(path) => {
+            match read_effective_threshold(ctx, directive.pam_directive_name, path).await {
+                ThresholdRead::Value(v) => PamObserved::Value(v),
+                ThresholdRead::NotSet => PamObserved::NotSet,
+                ThresholdRead::PermissionDenied => PamObserved::PermissionDenied(path),
             }
         }
     }
