@@ -754,17 +754,40 @@ async fn scan_honours_directive_override() {
 
     let result = plugin.scan(&ctx, &config).await.unwrap();
 
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "kernel_kernel_kptr_restrict")
+        .unwrap_or_else(|| {
+            panic!(
+                "stricter directive should surface a finding, got: {:?}",
+                result
+                    .scan_findings
+                    .iter()
+                    .map(|f| &f.finding_id)
+                    .collect::<Vec<_>>()
+            )
+        });
+
+    // Target-dependent fields must reflect the override (3), not the built-in
+    // baseline (2) the host already meets - otherwise the finding would
+    // recommend the value the host is at and read as self-contradictory.
+    assert_eq!(
+        finding.finding_recommended_value, "3",
+        "recommended value should reflect the directive override, not the baseline"
+    );
     assert!(
-        result
-            .scan_findings
+        finding.finding_explanation.contains('3'),
+        "explanation should quote the override value, got: {}",
+        finding.finding_explanation
+    );
+    assert!(
+        finding
+            .finding_remediation_steps
             .iter()
-            .any(|f| f.finding_id == "kernel_kernel_kptr_restrict"),
-        "stricter directive should surface a finding, got: {:?}",
-        result
-            .scan_findings
-            .iter()
-            .map(|f| &f.finding_id)
-            .collect::<Vec<_>>()
+            .any(|s| s.contains("kernel.kptr_restrict = 3")),
+        "remediation should set the override value, got: {:?}",
+        finding.finding_remediation_steps
     );
 }
 
@@ -800,6 +823,43 @@ async fn scan_annotates_valid_exception() {
     assert!(
         f.finding_policy_exception.is_some(),
         "finding should be annotated with the valid exception"
+    );
+}
+
+#[tokio::test]
+async fn scan_ignores_exception_whose_value_does_not_match() {
+    // The exception documents a deviation to "1", but the host is actually at
+    // "0". An exception that does not describe the real deviation is not an
+    // exception: the finding stays a live violation, unannotated, so it still
+    // fails its compliance controls.
+    let executor = insecure_kernel_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = KernelHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "kernel.randomize_va_space".to_string(),
+        PolicyException {
+            value: "1".to_string(),
+            allowed: true,
+            reason: "Legacy software compatibility".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let f = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "kernel_kernel_randomize_va_space")
+        .expect("non-compliant param should still produce a finding");
+    assert!(
+        f.finding_policy_exception.is_none(),
+        "an exception for a value the host does not have must not be honoured"
     );
 }
 
