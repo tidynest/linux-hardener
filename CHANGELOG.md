@@ -51,6 +51,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   captured, the rollback is refused and nothing is written, rather than running
   a restore that could not be undone. This closes the asymmetry where apply
   checkpointed before changing but rollback did not.
+- A policy exception is now honoured by `apply` and `apply --dry-run` only when
+  its `value` matches the value found on the system, which `scan` and
+  `hardener report` already required. An exception describing a deviation the
+  host does not have no longer stops that setting being hardened, so a host
+  carrying a stale exception may see changes it did not see before. A value
+  that cannot be read counts as not matching, so the setting is hardened rather
+  than silently skipped. `[services]`, `[mac]` and `[audit]` are unaffected:
+  their exception key names the deviating item rather than a value.
+- SSH `apply --dry-run` now honours the configuration file. `SshPlugin::validate`
+  bound its config parameter as `_config` and never read it, so directive
+  overrides and policy exceptions had no effect on the SSH preview and it could
+  not agree with what `apply` then did.
 
 ## [1.4.0] - 2026-07-19
 

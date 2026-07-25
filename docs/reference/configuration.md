@@ -191,20 +191,31 @@ exceptions age out rather than being forgotten forever.
 
 ### Where `value` is checked
 
-On the `scan` and `report` paths, for `[ssh]`, `[kernel]`, `[pam]`, and
-`[permissions]`, the `value` field is compared against the value found on the
-system. An exception whose `value` does not match is ignored: the finding stays
-a live violation and still fails its compliance controls. This stops a config
-from passing a control by documenting a deviation the host does not actually
-have. `apply` does not yet make this comparison, so it still skips a setting
-carrying any valid exception. Use `"not set"` to
+On every path, `scan`, `report`, `apply` and `apply --dry-run`, for `[ssh]`,
+`[kernel]`, `[pam]`, and `[permissions]`, the `value` field is compared
+against the value found on the system. An exception whose `value` does not
+match is ignored: the finding stays a live violation, still fails its
+compliance controls, and `apply` hardens the setting instead of skipping it.
+This stops a config from passing a control, or a setting from being left
+unhardened, by documenting a deviation the host does not actually have.
+
+The check is fail-closed: a value that cannot be read counts as not matching,
+so the setting is hardened rather than silently skipped. Use `"not set"` to
 except a directive that is absent from the file (that is the value `scan`
 reports for it), and for `[permissions]` write the mode in octal with or
 without the leading zero (`644` and `0644` both match mode 0644).
 
-For `[services]`, `[mac]`, and `[audit]` the key itself names the deviating
-item and there is no single system value to compare, so `value` is advisory
-only; it is recorded in the audit trail but not matched.
+For `[ssh]` and `[pam]`, an unreadable directive renders the same way as an
+absent one: both display as `"not set"`. An exception written as
+`value = "not set"` is therefore honoured whenever the directive could not be
+read, not only when it is genuinely absent from the file, a narrow gap in the
+fail-closed rule above. Do not write `value = "not set"` to mean "I do not
+know what this is": treat it as a matchable value like any other.
+
+For `[services]`, `[mac]`, and `[audit]` this comparison does not apply on any
+path, including `apply`: the key itself names the deviating item and there is
+no single system value to compare, so `value` is advisory only; it is
+recorded in the audit trail but never matched.
 
 The exception key is check-specific: an sshd directive name for `[ssh]`, a
 sysctl name for `[kernel]`, a PAM directive name for `[pam]` (for example
