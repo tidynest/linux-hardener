@@ -684,22 +684,26 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
 
 /// Applies correct permissions to a path and tracks the change.
 ///
+/// `current_mode` is read once by the caller (the apply loop), before the
+/// exception check, so it can be compared numerically against a documented
+/// exception; this function reuses it rather than reading the metadata again.
+///
 /// For local execution: uses `O_NOFOLLOW` open + `fchmod` to operate on
 /// the real inode, eliminating the TOCTOU window between check and chmod.
 /// For remote execution: falls back to the executor's `execute_command`.
 ///
 /// Returns a Change object if successful, None if path doesn't exist or on error.
-async fn apply_path_permissions(ctx: &Context, directive: &PermissionDirective) -> Option<Change> {
+async fn apply_path_permissions(
+    ctx: &Context,
+    directive: &PermissionDirective,
+    current_mode: u32,
+) -> Option<Change> {
     let path = Path::new(directive.permission_path);
 
     // Skip if path doesn't exist
     if !ctx.executor().path_exists(path).await.unwrap_or(false) {
         return None;
     }
-
-    // Get current permissions via executor (works for both local and remote)
-    let metadata = ctx.executor().file_metadata(path).await.ok()?;
-    let current_mode = metadata.mode & 0o777;
 
     if !violates(directive, current_mode) {
         return None;
@@ -906,8 +910,21 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
 
         // Apply permissions to all critical paths
         for directive in CRITICAL_PERMISSIONS {
-            // Check for a valid exception: skip this path if exempted
-            if let Some(exception) = config.has_valid_exception(directive.permission_path) {
+            let path = Path::new(directive.permission_path);
+            // An unreadable mode cannot confirm an exception, so it is not
+            // honoured and the path is hardened (fail closed).
+            let current_mode = ctx
+                .executor()
+                .file_metadata(path)
+                .await
+                .ok()
+                .map(|m| m.mode & 0o777);
+
+            // Check for a valid exception whose documented value matches the
+            // mode actually observed: skip this path only then.
+            if let Some(exception) = current_mode
+                .and_then(|mode| config.matching_mode_exception(directive.permission_path, mode))
+            {
                 info!(
                     "Skipping {} (exception: {})",
                     directive.permission_path, exception.reason
@@ -924,6 +941,12 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
                 continue;
             }
 
+            // Metadata unreadable: nothing to harden against and no exception
+            // could be confirmed either, so move on without recording a change.
+            let Some(current_mode) = current_mode else {
+                continue;
+            };
+
             // Apply directive mode override if present
             let directive = if let Some(mode_str) = config.directives.get(directive.permission_path)
             {
@@ -935,7 +958,7 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
                 directive.clone()
             };
 
-            if let Some(change) = apply_path_permissions(ctx, &directive).await {
+            if let Some(change) = apply_path_permissions(ctx, &directive, current_mode).await {
                 changes.push(change);
             }
         }
@@ -973,14 +996,6 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
         let mut estimated_changes = Vec::new();
 
         for directive in CRITICAL_PERMISSIONS {
-            // Skip paths with valid exceptions
-            if config
-                .has_valid_exception(directive.permission_path)
-                .is_some()
-            {
-                continue;
-            }
-
             // Build an effective directive: apply any per-path override to
             // `permission_mode` while preserving `permission_max_mask`, so the
             // dry-run's compliance test matches scan/apply exactly (a stricter
@@ -1006,6 +1021,16 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
             match ctx.executor().file_metadata(path).await {
                 Ok(metadata) => {
                     let current_mode = metadata.mode & 0o777;
+
+                    // Skip paths with an exception whose documented value
+                    // matches the mode actually observed above (fail closed:
+                    // a stale or wrong exception does not suppress a change).
+                    if config
+                        .matching_mode_exception(directive.permission_path, current_mode)
+                        .is_some()
+                    {
+                        continue;
+                    }
 
                     // A pending change requires both a violation and a filesystem
                     // that chmod can actually change. `&&` short-circuits, so the
