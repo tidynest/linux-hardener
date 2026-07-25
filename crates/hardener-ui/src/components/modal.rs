@@ -15,6 +15,15 @@
 //! pull focus back after each swap, since removing the focused node drops
 //! focus to `<body>` and out of the subtree. Such a caller passes its own
 //! `dialog_ref` and runs that effect itself; see `rollback_modal.rs`.
+//!
+//! Escape is swallowed here rather than left to bubble. `keyboard.rs` binds a
+//! keydown listener on `document` whose Escape branch is a priority chain over
+//! global `AppState` (error banner, selected finding, preview panel). Without
+//! `stop_propagation` a single press would both close this dialog and advance
+//! that chain, so dismissing a host or fleet dialog would silently discard a
+//! pending apply review. The event is swallowed even when `dismissible` reads
+//! false: a modal that refuses to close during an in-flight operation must not
+//! let the press reach the global chain either.
 
 use leptos::html;
 use leptos::prelude::*;
@@ -53,8 +62,25 @@ pub fn Modal(
         }
     };
 
+    // A click event retargets to the nearest common ancestor when its mousedown
+    // and mouseup land on different elements, so selecting text inside the
+    // dialog and releasing over the backdrop would otherwise dismiss and throw
+    // away whatever the user had typed. Only a press that began on the backdrop
+    // itself counts as a dismissal.
+    let pressed_on_backdrop = StoredValue::new(false);
+
     view! {
-        <div class="modal-backdrop" on:click=move |_| dismiss()>
+        <div
+            class="modal-backdrop"
+            on:mousedown=move |ev: web_sys::MouseEvent| {
+                pressed_on_backdrop.set_value(ev.target() == ev.current_target());
+            }
+            on:click=move |_| {
+                if pressed_on_backdrop.get_value() {
+                    dismiss();
+                }
+            }
+        >
             <div
                 class=class
                 role="dialog"
@@ -66,6 +92,7 @@ pub fn Modal(
                 on:click=move |ev| ev.stop_propagation()
                 on:keydown=move |ev: web_sys::KeyboardEvent| {
                     if ev.key() == "Escape" {
+                        ev.stop_propagation();
                         dismiss();
                     }
                 }

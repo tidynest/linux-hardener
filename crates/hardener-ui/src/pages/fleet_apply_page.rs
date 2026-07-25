@@ -371,42 +371,42 @@ pub fn FleetApplyPage() -> impl IntoView {
                         on_dismiss=Callback::new(move |_| confirm_open.set(false))
                         aria_labelledby="fleet-apply-modal-title"
                     >
-                            <h3 id="fleet-apply-modal-title">
+                        <h3 id="fleet-apply-modal-title">
+                            {move || {
+                                let mode_label =
+                                    if mode.get() == "apply" { "Apply" } else { "Roll back" };
+                                let n = sel_hosts.get().len() + adhoc.get().len();
+                                let host_word = if n == 1 { "host" } else { "hosts" };
+                                format!("Execute {mode_label} on {n} {host_word}?")
+                            }}
+                        </h3>
+                        <p>
+                            "This mutates the selected hosts. Checkpoints are created automatically."
+                        </p>
+                        <p class="fleet-apply-stakes">
+                            {move || {
+                                if mode.get() == "apply" {
+                                    fleet_apply_aggregate(&preview_apply.get())
+                                } else {
+                                    fleet_rollback_aggregate(&preview_rollback.get())
+                                }
+                            }}
+                        </p>
+                        <div class="fleet-actions">
+                            <button
+                                class="btn btn-secondary"
+                                on:click=move |_| confirm_open.set(false)
+                            >
+                                "Cancel"
+                            </button>
+                            <button class="btn btn-danger" on:click=move |_| run(true)>
                                 {move || {
-                                    let mode_label =
-                                        if mode.get() == "apply" { "Apply" } else { "Roll back" };
                                     let n = sel_hosts.get().len() + adhoc.get().len();
                                     let host_word = if n == 1 { "host" } else { "hosts" };
-                                    format!("Execute {mode_label} on {n} {host_word}?")
+                                    format!("Yes, Execute on {n} {host_word}")
                                 }}
-                            </h3>
-                            <p>
-                                "This mutates the selected hosts. Checkpoints are created automatically."
-                            </p>
-                            <p class="fleet-apply-stakes">
-                                {move || {
-                                    if mode.get() == "apply" {
-                                        fleet_apply_aggregate(&preview_apply.get())
-                                    } else {
-                                        fleet_rollback_aggregate(&preview_rollback.get())
-                                    }
-                                }}
-                            </p>
-                            <div class="fleet-actions">
-                                <button
-                                    class="btn btn-secondary"
-                                    on:click=move |_| confirm_open.set(false)
-                                >
-                                    "Cancel"
-                                </button>
-                                <button class="btn btn-danger" on:click=move |_| run(true)>
-                                    {move || {
-                                        let n = sel_hosts.get().len() + adhoc.get().len();
-                                        let host_word = if n == 1 { "host" } else { "hosts" };
-                                        format!("Yes, Execute on {n} {host_word}")
-                                    }}
-                                </button>
-                            </div>
+                            </button>
+                        </div>
                     </Modal>
                 </Show>
             </Card>

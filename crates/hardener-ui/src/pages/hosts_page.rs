@@ -362,7 +362,7 @@ pub fn HostsPage() -> impl IntoView {
             // --- add/edit modal ---
             <Show when=move || modal_open.get()>
                 <Modal
-                    on_dismiss=Callback::new(move |_| modal_open.set(false))
+                    on_dismiss=Callback::new(move |_| on_modal_close(()))
                     aria_label="Host details"
                 >
                     <HostForm existing=editing.get() on_close=on_modal_close />

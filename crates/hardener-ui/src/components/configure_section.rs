@@ -749,7 +749,8 @@ pub fn ConfigureSection() -> impl IntoView {
     // With nothing to apply, none of it happens: no checkpoint, no password
     // prompt, no lockout risk. Gate both on there being real work, leaving
     // Cancel and the disabled "Nothing to Apply" button as the way out.
-    let has_changes = Signal::derive(move || total_estimated_changes(&get_decisions()) != 0);
+    let total_changes = Signal::derive(move || total_estimated_changes(&get_decisions()));
+    let has_changes = Signal::derive(move || total_changes.get() != 0);
 
     // Done view (Step 4) - the Hardening page's tab-section signal, read
     // via `use_context` (not `expect_context`) so this component still
@@ -1136,9 +1137,8 @@ pub fn ConfigureSection() -> impl IntoView {
                                 class="btn btn-primary"
                                 on:click=on_confirm_apply
                                 disabled=move || {
-                                    let total = total_estimated_changes(&get_decisions());
                                     app_state.is_applying.get()
-                                        || total == 0
+                                        || total_changes.get() == 0
                                         || (has_lockout() && !lockout_ack.get())
                                 }
                                 aria-live="polite"
@@ -1150,7 +1150,7 @@ pub fn ConfigureSection() -> impl IntoView {
                                 // applying view below is what the user sees instead. The
                                 // disabled check above stays as a defensive guard.
                                 {move || {
-                                    let total = total_estimated_changes(&get_decisions());
+                                    let total = total_changes.get();
                                     if total == 0 {
                                         "Nothing to Apply".to_string()
                                     } else {
