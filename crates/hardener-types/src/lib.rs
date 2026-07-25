@@ -722,7 +722,8 @@ pub struct ControlResult {
     pub control_section: String,
     /// Whether the control passed or failed.
     pub control_status: ControlStatus,
-    /// Findings that caused this control to fail (empty if passed).
+    /// Findings mapped to this control. An excepted finding is kept as
+    /// evidence, so a passing control may still be non-empty.
     pub control_findings: Vec<Finding>,
 }
 

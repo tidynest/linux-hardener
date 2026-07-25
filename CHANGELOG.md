@@ -13,9 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   check is measured against, and a finding matching a valid policy exception is
   annotated with that exception instead of being reported as a plain violation.
   `hardener report` treats an annotated finding as satisfied, so a documented
-  deviation no longer fails a compliance control, and the control still lists
-  the finding as evidence labelled `POLICY EXCEPTION` so a pass carried by an
-  exception is never presented as a clean pass. An exception is honoured only
+  deviation no longer fails a compliance control, and the text, HTML, PDF and
+  JSON reports still list the finding as evidence labelled `POLICY EXCEPTION`
+  so a pass carried by an exception is never presented as a clean pass. An exception is honoured only
   when its `value` matches the value found on the system for `[ssh]`,
   `[kernel]`, `[pam]` and `[permissions]`; one that does not match is ignored
   and the finding stays a live violation. `scan --audit` still ignores the

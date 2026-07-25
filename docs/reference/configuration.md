@@ -158,9 +158,10 @@ and the report shows it instead of silently lowering the bar.
 An exception documents an intentional, approved deviation from the secure
 baseline. `scan` still shows the finding, annotated with the exception it
 matched; `hardener report` treats an annotated finding as satisfied, so it no
-longer fails a compliance control. The control still lists that finding as
-evidence, labelled `POLICY EXCEPTION` instead of a severity, so a control
-passed by a documented deviation is never presented as a clean pass. Audit mode
+longer fails a compliance control. The text, HTML, PDF and JSON reports still
+list that finding under its control as evidence, labelled `POLICY EXCEPTION`
+instead of a severity, so a control passed by a documented deviation is never
+presented as a clean pass. Audit mode
 (`scan --audit`) ignores the config, exceptions included.
 
 ```toml
@@ -190,11 +191,13 @@ exceptions age out rather than being forgotten forever.
 
 ### Where `value` is checked
 
-For `[ssh]`, `[kernel]`, `[pam]`, and `[permissions]` the `value` field is
-compared against the value found on the system. An exception whose `value`
-does not match is ignored: the finding stays a live violation and still fails
-its compliance controls. This stops a config from passing a control by
-documenting a deviation the host does not actually have. Use `"not set"` to
+On the `scan` and `report` paths, for `[ssh]`, `[kernel]`, `[pam]`, and
+`[permissions]`, the `value` field is compared against the value found on the
+system. An exception whose `value` does not match is ignored: the finding stays
+a live violation and still fails its compliance controls. This stops a config
+from passing a control by documenting a deviation the host does not actually
+have. `apply` does not yet make this comparison, so it still skips a setting
+carrying any valid exception. Use `"not set"` to
 except a directive that is absent from the file (that is the value `scan`
 reports for it), and for `[permissions]` write the mode in octal with or
 without the leading zero (`644` and `0644` both match mode 0644).
