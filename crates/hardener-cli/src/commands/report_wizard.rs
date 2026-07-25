@@ -14,7 +14,7 @@ use hardener_compliance::{
     TextFormatter,
     output::{CsvFormatter, HtmlFormatter, PdfFormatter},
 };
-use hardener_core::{LocalExecutor, SystemExecutor};
+use hardener_core::{ConfigLoader, LocalExecutor, SystemExecutor};
 use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -161,8 +161,15 @@ pub async fn run(quiet: bool) -> Result<()> {
     // Step 3: Run scan
     println!("\n{}", "Running security scan...".cyan());
     let executor: Arc<dyn SystemExecutor> = Arc::new(LocalExecutor::new());
+    // The wizard has no --config flag, but it must still honour the operator's
+    // config: scoring the same host differently from `hardener report` would
+    // make one of the two surfaces wrong. Invalid config is a hard error here
+    // too (report.rs ~76-80).
+    let hardener_config = ConfigLoader::new()
+        .load()
+        .map_err(|e| anyhow!("Config error: {}", e))?;
     let (findings, unchecked) =
-        run_scan_with_unchecked(false, executor, &CliOutputFormat::Text).await?;
+        run_scan_with_unchecked(false, executor, &CliOutputFormat::Text, &hardener_config).await?;
     println!(
         "{}",
         format!(

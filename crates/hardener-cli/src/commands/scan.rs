@@ -39,7 +39,7 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
     };
 
     // Load config (ignored in audit mode)
-    let _config = load_config(opts.config_path, mode)?;
+    let config = load_config(opts.config_path, mode)?;
     let registry = hardener_plugins::create_plugin_registry();
     let ctx = Context::with_executor(opts.executor.clone());
 
@@ -48,15 +48,28 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
     let min_severity = severity_filter_to_severity(&opts.severity_filter);
 
     // Resolve the selected plugin handles up front (registry hands out Arcs).
-    let selected: Vec<_> = plugins
-        .iter()
-        .filter(|metadata| {
-            opts.plugin_filter.is_empty()
-                || opts
-                    .plugin_filter
-                    .iter()
-                    .any(|p| is_valid_plugin_name(p, &[metadata.plugin_id.as_str()]))
-        })
+    let (enabled, skipped_by_config) =
+        select_enabled_plugins(&plugins, &config, opts.plugin_filter);
+
+    // A plugin the user asked for but the config disables must not vanish
+    // without a word: silence there reads as a clean host.
+    if !skipped_by_config.is_empty() && !opts.quiet {
+        output::status(
+            &opts.format,
+            &format!("Skipped by config: {}", plugin_id_list(&skipped_by_config)),
+        );
+    }
+    if enabled.is_empty() && !skipped_by_config.is_empty() {
+        anyhow::bail!(
+            "Config disabled every selected plugin ({}). Nothing was scanned. \
+             Remove them from [global] disabled_plugins, add them to \
+             [global] enabled_plugins, or select a plugin the config enables.",
+            plugin_id_list(&skipped_by_config)
+        );
+    }
+
+    let selected: Vec<_> = enabled
+        .into_iter()
         .filter_map(|metadata| {
             registry
                 .get(&metadata.plugin_id)
@@ -75,8 +88,10 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
     // Plugins are independent, so scan them concurrently. join_all yields
     // results in input order, which keeps the rendered output deterministic.
     let wall = std::time::Instant::now();
-    let scans =
-        futures::future::join_all(selected.iter().map(|(_, plugin)| plugin.scan(&ctx))).await;
+    let scans = futures::future::join_all(selected.iter().map(|(metadata, plugin)| {
+        plugin.scan(&ctx, config.get_plugin_config(metadata.plugin_id.as_str()))
+    }))
+    .await;
     let wall_elapsed = wall.elapsed();
 
     let mut all_results = Vec::new();
@@ -191,6 +206,35 @@ fn is_valid_plugin_name(name: &str, valid_ids: &[&str]) -> bool {
         .any(|id| *id == name || id.starts_with(&format!("{}-", name)))
 }
 
+/// Splits the plugins matching the CLI `--plugin` filter (an empty filter
+/// selects everything) into those the config enables and those it disables.
+/// The skipped half is returned rather than dropped so the caller can say why
+/// a plugin the user asked for did not run.
+fn select_enabled_plugins<'a>(
+    plugins: &'a [PluginMetadata],
+    config: &HardenerConfig,
+    plugin_filter: &[String],
+) -> (Vec<&'a PluginMetadata>, Vec<&'a PluginMetadata>) {
+    plugins
+        .iter()
+        .filter(|metadata| {
+            plugin_filter.is_empty()
+                || plugin_filter
+                    .iter()
+                    .any(|p| is_valid_plugin_name(p, &[metadata.plugin_id.as_str()]))
+        })
+        .partition(|metadata| config.is_plugin_enabled(metadata.plugin_id.as_str()))
+}
+
+/// Comma-separated plugin IDs, as the user writes them in the config.
+fn plugin_id_list(plugins: &[&PluginMetadata]) -> String {
+    plugins
+        .iter()
+        .map(|metadata| metadata.plugin_id.as_str())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// Persists scan results to the history database.
 ///
 /// Failures are logged but do not propagate; scan output is already displayed,
@@ -269,6 +313,61 @@ mod tests {
     #[test]
     fn test_invalid_name() {
         assert!(!is_valid_plugin_name("nonexistent", ALL_IDS));
+    }
+
+    #[test]
+    fn disabled_plugin_excluded_from_selection() {
+        // A plugin named in global.disabled_plugins must never appear in the
+        // set scan() is about to run, regardless of the --plugin filter.
+        let plugins = hardener_plugins::create_plugin_registry().list().unwrap();
+        let mut config = HardenerConfig::default();
+        config.global.disabled_plugins = vec!["mac-hardening".to_string()];
+
+        let (selected, skipped) = select_enabled_plugins(&plugins, &config, &[]);
+
+        assert!(
+            selected
+                .iter()
+                .all(|metadata| metadata.plugin_id.as_str() != "mac-hardening"),
+            "disabled plugin must be excluded from the selected set"
+        );
+        assert_eq!(
+            selected.len(),
+            plugins.len() - 1,
+            "exactly the disabled plugin should be excluded"
+        );
+        // The exclusion is reported, not silent.
+        assert_eq!(plugin_id_list(&skipped), "mac-hardening");
+    }
+
+    #[test]
+    fn filter_naming_only_config_disabled_plugins_selects_nothing() {
+        // `hardener scan --plugin ssh` on a host whose config disables ssh:
+        // the selection is empty and every skipped plugin is named, so the
+        // caller can fail loudly instead of exiting clean with no output.
+        let plugins = hardener_plugins::create_plugin_registry().list().unwrap();
+        let mut config = HardenerConfig::default();
+        config.global.disabled_plugins = vec!["ssh-hardening".to_string()];
+
+        let (selected, skipped) = select_enabled_plugins(&plugins, &config, &["ssh".to_string()]);
+
+        assert!(selected.is_empty());
+        assert_eq!(plugin_id_list(&skipped), "ssh-hardening");
+    }
+
+    #[test]
+    fn enabled_plugins_list_narrows_the_selection_too() {
+        // global.enabled_plugins is the other way to disable a plugin: anything
+        // absent from a non-empty list is skipped by config.
+        let plugins = hardener_plugins::create_plugin_registry().list().unwrap();
+        let mut config = HardenerConfig::default();
+        config.global.enabled_plugins = vec!["kernel-hardening".to_string()];
+
+        let (selected, skipped) = select_enabled_plugins(&plugins, &config, &[]);
+
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].plugin_id.as_str(), "kernel-hardening");
+        assert_eq!(skipped.len(), plugins.len() - 1);
     }
 
     #[test]

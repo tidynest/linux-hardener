@@ -27,7 +27,7 @@ async fn test_kernel_scan_reads_parameters() {
     let plugin = KernelHardeningPlugin::new();
     let ctx = Context::new();
 
-    let result = plugin.scan(&ctx).await;
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await;
     assert!(result.is_ok(), "Scan should succeed");
 
     let scan_result = result.unwrap();

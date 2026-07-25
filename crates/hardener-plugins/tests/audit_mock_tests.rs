@@ -142,7 +142,7 @@ async fn test_audit_scan_fully_configured_no_findings() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = AuditHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(
         result.scan_success,
@@ -166,7 +166,7 @@ async fn test_audit_scan_not_installed() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = AuditHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "scan with no auditd should succeed");
     assert_eq!(result.scan_findings.len(), 1);
@@ -183,7 +183,7 @@ async fn test_audit_scan_disabled_and_stopped() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = AuditHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "disabled auditd scan should succeed");
 
@@ -218,7 +218,7 @@ async fn test_audit_scan_missing_rules() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = AuditHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "partial rules scan should succeed");
 
@@ -254,7 +254,7 @@ async fn test_audit_scan_finding_structure() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = AuditHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     let finding = &result.scan_findings[0];
 
@@ -326,7 +326,7 @@ async fn test_audit_scan_duration_recorded() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = AuditHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(
         result.scan_duration_us > 0,
@@ -340,7 +340,7 @@ async fn test_audit_scan_logs_commands() {
     let ctx = Context::with_executor(Arc::new(executor.clone()));
     let plugin = AuditHardeningPlugin::new();
 
-    let _ = plugin.scan(&ctx).await;
+    let _ = plugin.scan(&ctx, &PluginConfig::default()).await;
 
     let log = executor.log();
 
@@ -410,7 +410,7 @@ async fn test_audit_scan_with_remote_executor() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = AuditHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     assert!(result.scan_success, "remote audit scan should succeed");
     // Should find auditd not running on remote
@@ -479,7 +479,7 @@ async fn test_audit_scan_permission_denied_should_not_report_missing_rules() {
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = AuditHardeningPlugin::new();
 
-    let result = plugin.scan(&ctx).await.unwrap();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
 
     // auditd is installed, enabled, and running
     // But auditctl -l failed with permission denied
@@ -1271,5 +1271,54 @@ async fn test_audit_apply_rewrites_when_rules_file_read_fails() {
             .any(|(cmd, args)| cmd == "augenrules" && args == &["--load".to_string()]),
         "a drifting/unknowable file must still reload the daemon, commands: {:?}",
         log.commands_executed
+    );
+}
+
+#[tokio::test]
+async fn scan_annotates_valid_exception() {
+    // The "modules" rule category is missing and has a valid exception: the
+    // finding is still reported but annotated. Audit has no directive
+    // override, so there is no target value to assert here (mirrors
+    // services_mock_tests::scan_annotates_valid_exception).
+    let executor = auditd_disabled_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = AuditHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "modules".to_string(),
+        PolicyException {
+            value: "skip".to_string(),
+            allowed: true,
+            reason: "Module loading monitored by separate HIDS".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let f = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "audit_rule_modules")
+        .expect("missing modules rule should still produce a finding");
+    assert!(
+        f.finding_policy_exception.is_some(),
+        "finding should be annotated with the valid exception"
+    );
+
+    // Daemon-state findings have no exception key: they must stay unannotated
+    // even though this scan is exercising the same config's exception map.
+    let daemon_finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "audit_not_enabled")
+        .expect("disabled auditd should still produce a finding");
+    assert!(
+        daemon_finding.finding_policy_exception.is_none(),
+        "daemon-state findings have no exception key and stay unannotated"
     );
 }

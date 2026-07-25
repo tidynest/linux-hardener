@@ -527,7 +527,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         vec![]
     }
 
-    async fn scan(&self, ctx: &Context) -> Result<ScanResult> {
+    async fn scan(&self, ctx: &Context, _config: &PluginConfig) -> Result<ScanResult> {
         let start_time = Instant::now();
         let plugin_id = PluginId::new("firewall-hardening");
 
@@ -846,7 +846,10 @@ mod tests {
                 },
             );
         let ctx = Context::with_executor(std::sync::Arc::new(mock));
-        let result = FirewallHardeningPlugin::new().scan(&ctx).await.unwrap();
+        let result = FirewallHardeningPlugin::new()
+            .scan(&ctx, &PluginConfig::default())
+            .await
+            .unwrap();
 
         assert!(result.scan_findings.is_empty(), "no false disabled finding");
         assert_eq!(result.scan_unchecked.len(), 1);
@@ -899,7 +902,10 @@ mod tests {
                 },
             );
         let ctx = Context::with_executor(std::sync::Arc::new(mock));
-        let result = FirewallHardeningPlugin::new().scan(&ctx).await.unwrap();
+        let result = FirewallHardeningPlugin::new()
+            .scan(&ctx, &PluginConfig::default())
+            .await
+            .unwrap();
 
         assert!(
             result.scan_findings.is_empty(),
@@ -941,7 +947,10 @@ mod tests {
                 },
             );
         let ctx = Context::with_executor(std::sync::Arc::new(mock));
-        let result = FirewallHardeningPlugin::new().scan(&ctx).await.unwrap();
+        let result = FirewallHardeningPlugin::new()
+            .scan(&ctx, &PluginConfig::default())
+            .await
+            .unwrap();
 
         assert!(
             result.scan_unchecked.is_empty(),
@@ -987,7 +996,10 @@ mod tests {
                 },
             );
         let ctx = Context::with_executor(std::sync::Arc::new(mock));
-        let result = FirewallHardeningPlugin::new().scan(&ctx).await.unwrap();
+        let result = FirewallHardeningPlugin::new()
+            .scan(&ctx, &PluginConfig::default())
+            .await
+            .unwrap();
 
         assert!(
             result.scan_findings.is_empty(),
@@ -1042,7 +1054,10 @@ mod tests {
                 },
             );
         let ctx = Context::with_executor(std::sync::Arc::new(mock));
-        let result = FirewallHardeningPlugin::new().scan(&ctx).await.unwrap();
+        let result = FirewallHardeningPlugin::new()
+            .scan(&ctx, &PluginConfig::default())
+            .await
+            .unwrap();
 
         assert!(
             result.scan_findings.is_empty(),

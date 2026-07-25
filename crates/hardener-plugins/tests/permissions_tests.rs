@@ -32,7 +32,7 @@ async fn test_permissions_scan_checks_paths() {
     let context = Context::new();
 
     // Run scan
-    let result = plugin.scan(&context).await;
+    let result = plugin.scan(&context, &PluginConfig::default()).await;
 
     // Should succeed
     assert!(result.is_ok(), "Scan should succeed: {:?}", result.err());

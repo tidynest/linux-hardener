@@ -32,7 +32,7 @@ async fn test_services_scan_detects_services() {
     let context = Context::new();
 
     // Run scan
-    let result = plugin.scan(&context).await;
+    let result = plugin.scan(&context, &PluginConfig::default()).await;
 
     // Should succeed even if systemctl isn't available (graceful degradation)
     assert!(result.is_ok(), "Scan should succeed: {:?}", result.err());

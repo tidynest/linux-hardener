@@ -49,6 +49,7 @@ macro_rules! define_plugin {
             async fn scan(
                 &self,
                 _ctx: &$crate::hardener_core::Context,
+                _config: &$crate::hardener_core::PluginConfig,
             ) -> $crate::hardener_common::error::Result<$crate::hardener_core::plugin::ScanResult> {
                 todo!("Implement scan() for {}", stringify!($plugin_name))
             }

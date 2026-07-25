@@ -533,7 +533,7 @@ impl HardeningPlugin for ServicesHardeningPlugin {
         vec![]
     }
 
-    async fn scan(&self, ctx: &Context) -> Result<ScanResult> {
+    async fn scan(&self, ctx: &Context, config: &PluginConfig) -> Result<ScanResult> {
         let start = Instant::now();
         let mut findings = Vec::new();
 
@@ -584,7 +584,9 @@ impl HardeningPlugin for ServicesHardeningPlugin {
                         directive.service_name
                     ),
                     finding_compliance: get_service_compliance_mappings(directive.service_name),
-                    finding_policy_exception: None,
+                    finding_policy_exception: config
+                        .has_valid_exception(directive.service_name)
+                        .map(|e| e.to_finding_exception()),
                 });
             }
         }

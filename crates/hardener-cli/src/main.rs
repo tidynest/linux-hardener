@@ -125,6 +125,7 @@ async fn main() -> Result<()> {
                     cli.format,
                     cli.quiet,
                     executor.clone(),
+                    cli.config.as_ref(),
                 )
                 .await
             }

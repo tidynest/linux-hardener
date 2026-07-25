@@ -13,7 +13,7 @@ use hardener_common::{
     error::{HardeningError, Result},
     types::Severity,
 };
-use hardener_core::{Context, PluginManager, ScanResult};
+use hardener_core::{ConfigLoader, Context, PluginManager, ScanResult};
 use serde::Serialize;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
@@ -249,8 +249,17 @@ impl ScanRunner {
 
         debug!("Created scan session {}", session_id);
 
-        // Execute scans
-        let scan_results = match plugin_manager.execute_scan(ctx).await {
+        // Execute scans. No HardenerConfig is threaded through the scheduler
+        // yet, so this loads the same on-disk sources the CLI honours. The
+        // daemon keeps running on a load failure rather than stopping scheduled
+        // scans, but it must say so: plugins consume the config now, so a
+        // silent fallback would scan the raw baseline while appearing to honour
+        // the operator's directives and exceptions.
+        let hardener_config = ConfigLoader::new().load().unwrap_or_else(|e| {
+            warn!("Config load failed, scanning the secure baseline instead: {e}");
+            Default::default()
+        });
+        let scan_results = match plugin_manager.execute_scan(ctx, &hardener_config).await {
             Ok(results) => results,
             Err(e) => {
                 error!("Scan execution failed: {}", e);

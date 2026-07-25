@@ -191,11 +191,12 @@ async fn test_execute_scan_workflow() {
     let mut manager = PluginManager::new(registry);
     manager.resolve_dependencies().unwrap();
 
-    // Create context for scanning
+    // Create context and config for scanning
     let ctx = Context::new();
+    let config = HardenerConfig::default();
 
     // Execute scan
-    let results = manager.execute_scan(&ctx).await.unwrap();
+    let results = manager.execute_scan(&ctx, &config).await.unwrap();
 
     // Verify all 3 plugins were scanned
     assert_eq!(
@@ -234,6 +235,64 @@ async fn test_execute_scan_workflow() {
     assert!(
         plugin_ids.contains(&"plugin-c".to_string()),
         "Should have result for plugin-c"
+    );
+}
+
+/// Tests that `execute_scan` threads the `HardenerConfig` it is given down
+/// to each plugin's own `scan()`, rather than only using it to resolve
+/// dependency order.
+///
+/// This is the manager-level counterpart to the per-plugin config tests:
+/// those prove each plugin's `scan()` honours its `PluginConfig` when called
+/// directly; this proves `PluginManager::execute_scan` (the entry point the
+/// scheduler daemon runs scans through, and the shape the CLI and desktop
+/// scan paths mirror) is the thing actually resolving and passing that
+/// `PluginConfig` in the first place. The mock is registered under the real
+/// `kernel-hardening` ID specifically so `HardenerConfig::get_plugin_config`
+/// routes it to `config.kernel` exactly as it would the real plugin.
+#[tokio::test]
+async fn test_execute_scan_honours_directive_override() {
+    let registry = PluginRegistry::new();
+    registry
+        .register(Box::new(
+            MockPlugin::new("kernel-hardening").directive_sensitive("mock-directive"),
+        ))
+        .unwrap();
+
+    let mut manager = PluginManager::new(registry);
+    manager.resolve_dependencies().unwrap();
+    let ctx = Context::new();
+
+    // Default config carries no directives, so the plugin's (mock)
+    // baseline-compliant value has nothing stricter to fail against.
+    let baseline = manager
+        .execute_scan(&ctx, &HardenerConfig::default())
+        .await
+        .unwrap();
+    assert_eq!(baseline.len(), 1, "the one registered plugin should scan");
+    assert!(
+        baseline[0].scan_findings.is_empty(),
+        "default config has no directive override; execute_scan should report no finding"
+    );
+
+    // The same key, set as a stricter directive under [kernel], must reach
+    // the plugin via execute_scan and flip the finding on.
+    let mut strict_config = HardenerConfig::default();
+    strict_config
+        .kernel
+        .directives
+        .insert("mock-directive".to_string(), "strict-value".to_string());
+
+    let strict = manager.execute_scan(&ctx, &strict_config).await.unwrap();
+    assert_eq!(strict.len(), 1, "the one registered plugin should scan");
+    assert_eq!(
+        strict[0].scan_findings.len(),
+        1,
+        "a [kernel] directive override must reach the plugin's scan via execute_scan"
+    );
+    assert_eq!(
+        strict[0].scan_findings[0].finding_recommended_value, "strict-value",
+        "the finding should carry the directive's value through from the config"
     );
 }
 
