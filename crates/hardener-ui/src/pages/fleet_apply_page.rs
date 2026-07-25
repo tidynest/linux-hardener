@@ -21,7 +21,7 @@ fn selection_key(
     (mode.to_string(), h, a, p)
 }
 
-use crate::components::{AdhocHostInput, Card, FleetOutcomeRow, SegmentedControl};
+use crate::components::{AdhocHostInput, Card, FleetOutcomeRow, Modal, SegmentedControl};
 use crate::tauri_bindings::{
     invoke_fleet_apply, invoke_fleet_rollback, invoke_list_plugins, invoke_list_remote_hosts,
 };
@@ -367,13 +367,10 @@ pub fn FleetApplyPage() -> impl IntoView {
                 </Show>
 
                 <Show when=move || confirm_open.get()>
-                    <div class="modal-backdrop">
-                        <div
-                            class="modal"
-                            role="dialog"
-                            aria-modal="true"
-                            aria-labelledby="fleet-apply-modal-title"
-                        >
+                    <Modal
+                        on_dismiss=Callback::new(move |_| confirm_open.set(false))
+                        aria_labelledby="fleet-apply-modal-title"
+                    >
                             <h3 id="fleet-apply-modal-title">
                                 {move || {
                                     let mode_label =
@@ -410,8 +407,7 @@ pub fn FleetApplyPage() -> impl IntoView {
                                     }}
                                 </button>
                             </div>
-                        </div>
-                    </div>
+                    </Modal>
                 </Show>
             </Card>
         </div>
