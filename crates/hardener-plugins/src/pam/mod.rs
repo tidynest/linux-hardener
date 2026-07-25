@@ -706,6 +706,14 @@ impl HardeningPlugin for PamHardeningPlugin {
         });
         let mut login_defs_changed = false;
 
+        // Pre-apply snapshots for the exception check below. Taken once, here,
+        // before any directive can mutate `pwquality_content`/`login_defs_content`:
+        // the exception decision must be judged against the host's actual state,
+        // not against apply's own partially-rewritten buffer from an earlier
+        // iteration in this same loop.
+        let pwquality_observed = ConfRead::Content(pwquality_content.clone());
+        let login_defs_observed = login_defs_content.clone();
+
         // Step 2: Apply each directive (state-aware: already-correct values
         // record a Skipped no-op and never trigger a rewrite)
         for directive in PAM_DIRECTIVES {
@@ -713,13 +721,8 @@ impl HardeningPlugin for PamHardeningPlugin {
             // actually has. An unset or unreadable value renders "not set",
             // matching scan's rendering and what an operator writes in the
             // config; either way it is never trusted on faith.
-            let observed = observed_pam_value(
-                ctx,
-                directive,
-                &ConfRead::Content(pwquality_content.clone()),
-                &login_defs_content,
-            )
-            .await;
+            let observed =
+                observed_pam_value(ctx, directive, &pwquality_observed, &login_defs_observed).await;
 
             // Check for a valid exception: skip this directive if exempted
             if let Some(exception) =
@@ -785,6 +788,11 @@ impl HardeningPlugin for PamHardeningPlugin {
                     // Clamp so a per-host override can tighten but never loosen.
                     let target = clamp_target(directive.pam_compare, secure, over);
 
+                    // Read directly (rather than reusing `observed`, which already
+                    // read this via `read_effective_threshold`) because the refuse-
+                    // to-auto-edit message below needs to know specifically whether
+                    // the value came from an inline pam.d override, a distinction
+                    // `PamObserved` deliberately does not carry.
                     let inline = read_pamd_inline(ctx, directive.pam_directive_name).await;
 
                     // No-loosen contract: only act when the effective value
