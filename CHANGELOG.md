@@ -96,6 +96,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recursing into a declared directory keep the previous best-effort
   behaviour and are logged, so a single unreadable file somewhere under a
   captured directory does not stop an apply.
+- `hardener scan` no longer reports a `[pam]` directive as "not set" because
+  it could not read the file that holds it. Only a permission denial counted
+  as unverifiable before; every other read failure of
+  `/etc/security/pwquality.conf`, `faillock.conf` or `pwhistory.conf` (a file
+  that is not valid UTF-8, or an I/O error, for instance) was treated as empty
+  content, so each directive in it became a finding claiming it was unset.
+  Such a file now produces one unchecked check per directive instead, the same
+  treatment a root-only file already received. On an affected host the finding
+  count falls, the "could not be verified" count rises, and a compliance
+  control covered only by those checks reports ManualReview rather than a
+  false Fail. A file confirmed to be absent still reports its directives as
+  genuinely not set, and `/etc/login.defs` is unaffected: `scan` still reads it
+  leniently. `apply --dry-run` follows the same rule, listing the directive as
+  "current value requires root" instead of "currently not set".
 
 ### Fixed
 - Rollback could delete the files it was meant to protect. Over SSH,
@@ -125,10 +139,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path worked: `create_config_backup` checked only that `cp` started, not that
   it succeeded, so a failed backup was reported as created; and checkpoint
   capture stored an unreadable file with no content, which rollback restores as
-  permissions only. `apply` now refuses to rewrite a file whose current
-  contents it could not read, reporting that file as failed and continuing with
-  the rest, and a `cp` that exits non-zero is reported as a failed backup. This
-  covers `pwquality.conf`, `login.defs`, `faillock.conf` and `pwhistory.conf`.
+  permissions only. `apply` now stops before writing anything: the pre-apply
+  checkpoint refuses to record a declared file whose contents it could not
+  read, which aborts the apply for the whole plugin, and this is what every
+  `hardener` command that applies now does. The plugin also refuses on its own,
+  per file, reporting that one file as failed and hardening the rest, which is
+  what protects an embedding of the plugin crate that applies with no
+  checkpoint manager configured. A `cp` that exits non-zero is reported as a
+  failed backup rather than as a created one. This covers `pwquality.conf`,
+  `login.defs`, `faillock.conf` and `pwhistory.conf`.
 
 ## [1.4.0] - 2026-07-19
 
