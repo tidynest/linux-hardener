@@ -223,13 +223,26 @@ pub enum Duplicates {
     Remove,
 }
 
+/// The keyword that opens a conditional block in `sshd_config`, and so ends
+/// the region [`set_config_directive`] treats as global.
+///
+/// Applied to every file the writer touches rather than being a caller opt-in.
+/// The other four are flat: `login.defs(5)`, `pwquality.conf`,
+/// `faillock.conf` and `pwhistory.conf` define no directive of this name and
+/// have no block syntax at all, so the boundary can never fire in them. A
+/// caller that could switch it off would only ever be able to switch off the
+/// protection.
+const MATCH_KEYWORD: &str = "Match";
+
 /// Sets or updates a directive in configuration content.
 ///
-/// A live (uncommented) definition is what the daemon reads, so it is always
-/// the line that gets rewritten. A commented line naming the directive is only
-/// a target when the file has no live definition at all, which is how a
-/// commented default gets activated. If neither exists the directive is
-/// appended.
+/// Only the file's global region is considered: the text above the first live
+/// `Match` line (see [`MATCH_KEYWORD`]). Within it, a live (uncommented)
+/// definition is what the daemon reads, so it is always the line that gets
+/// rewritten. A commented line naming the directive is only a target when the
+/// region has no live definition at all, which is how a commented default gets
+/// activated. If neither exists the directive is inserted just above the
+/// boundary, or appended when the file has none.
 ///
 /// # Arguments
 /// * `content` - The current file content
@@ -264,6 +277,7 @@ pub fn set_config_directive(
     let mut live: Option<usize> = None;
     let mut commented: Option<usize> = None;
     let mut extra: Vec<usize> = Vec::new();
+    let mut boundary: Option<usize> = None;
 
     for (index, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
@@ -275,6 +289,19 @@ pub fn set_config_directive(
         let Some(first) = check_line.split_whitespace().next() else {
             continue;
         };
+        // Everything below a live `Match` belongs to a conditional block and
+        // is not a global setting. Without this stop, the writer would rewrite
+        // a block scoped directive when that is the file's only live
+        // occurrence, silently narrowing a host wide setting to whatever the
+        // block matches while the global one stays at the daemon's compiled
+        // default. That is a false pass, not a cosmetic issue: it is how
+        // `PermitRootLogin no` ended up applying to one subnet while root
+        // login stayed open everywhere else. Do not remove this.
+        // A commented `Match` opens no block, so it does not stop anything.
+        if !is_comment && first.eq_ignore_ascii_case(MATCH_KEYWORD) {
+            boundary = Some(index);
+            break;
+        }
         let matches = if case_sensitive {
             first == directive_name
         } else {
@@ -294,9 +321,11 @@ pub fn set_config_directive(
         }
     }
 
-    match live.or(commented) {
-        Some(index) => lines[index] = new_line,
-        None => lines.push(new_line),
+    match (live.or(commented), boundary) {
+        (Some(index), _) => lines[index] = new_line,
+        // Appending would drop the directive inside the trailing block.
+        (None, Some(index)) => lines.insert(index, new_line),
+        (None, None) => lines.push(new_line),
     }
 
     // Only when the caller says a second definition cannot be meaningful.
@@ -639,6 +668,121 @@ Match Address 10.0.0.0/8
         assert!(
             out.contains("    PermitRootLogin yes"),
             "a Match scoped directive is not a duplicate and must survive:\n{out}",
+        );
+    }
+
+    /// The only live occurrence of a directive can sit inside a `Match` block
+    /// while the global setting exists only as a commented default. Rewriting
+    /// the block line would leave the global at sshd's compiled default and
+    /// narrow the new value to the block's scope, so the commented global is
+    /// the only correct target.
+    #[test]
+    fn a_global_directive_is_never_written_inside_a_match_block() {
+        let sshd = "\
+#PermitRootLogin prohibit-password
+Match Address 10.0.0.0/8
+    PermitRootLogin yes
+";
+        let out = set_config_directive(
+            sshd,
+            "PermitRootLogin",
+            "no",
+            ConfigFormat::SpaceSeparated,
+            true,
+            Duplicates::Keep,
+        );
+
+        assert_eq!(
+            out.lines().next(),
+            Some("PermitRootLogin no"),
+            "the commented global default is the line to rewrite:\n{out}",
+        );
+        assert!(
+            out.contains("Match Address 10.0.0.0/8\n    PermitRootLogin yes"),
+            "the block must survive byte for byte, indentation included:\n{out}",
+        );
+        assert_eq!(
+            out.lines().count(),
+            3,
+            "no line may be added inside the block:\n{out}",
+        );
+        assert_eq!(
+            out.lines()
+                .filter(|l| l.trim() == "PermitRootLogin no")
+                .count(),
+            1,
+            "the new value belongs to the global scope only:\n{out}",
+        );
+    }
+
+    /// Appending a brand new directive at the end of the file would land it
+    /// inside a trailing block, scoping a global setting to whatever that
+    /// block matches.
+    #[test]
+    fn a_new_directive_is_inserted_above_a_trailing_match_block() {
+        let sshd = "\
+Port 22
+Match User deploy
+    PasswordAuthentication yes
+";
+        let out = set_config_directive(
+            sshd,
+            "PermitRootLogin",
+            "no",
+            ConfigFormat::SpaceSeparated,
+            true,
+            Duplicates::Keep,
+        );
+        assert_eq!(
+            out,
+            "Port 22\nPermitRootLogin no\nMatch User deploy\n    PasswordAuthentication yes",
+        );
+    }
+
+    /// A commented `Match` opens no block, so it must not shorten the region
+    /// the writer may consider.
+    #[test]
+    fn a_commented_match_does_not_end_the_global_region() {
+        let sshd = "\
+#Match Address 10.0.0.0/8
+PermitRootLogin yes
+";
+        let out = set_config_directive(
+            sshd,
+            "PermitRootLogin",
+            "no",
+            ConfigFormat::SpaceSeparated,
+            true,
+            Duplicates::Keep,
+        );
+        assert_eq!(out, "#Match Address 10.0.0.0/8\nPermitRootLogin no");
+    }
+
+    /// sshd reads `match` as readily as `Match`, so the boundary is ASCII
+    /// case insensitive.
+    #[test]
+    fn a_lowercase_match_ends_the_global_region_too() {
+        let sshd = "\
+#PermitRootLogin prohibit-password
+match address 10.0.0.0/8
+    PermitRootLogin yes
+";
+        let out = set_config_directive(
+            sshd,
+            "PermitRootLogin",
+            "no",
+            ConfigFormat::SpaceSeparated,
+            true,
+            Duplicates::Keep,
+        );
+        assert_eq!(
+            out.lines().next(),
+            Some("PermitRootLogin no"),
+            "the commented global default is the line to rewrite:\n{out}",
+        );
+        assert!(
+            out.contains("    PermitRootLogin yes"),
+            "the block line must survive:\n{out}",
         );
     }
 }
