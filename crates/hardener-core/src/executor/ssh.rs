@@ -505,6 +505,23 @@ mod tests {
     }
 
     #[test]
+    fn probe_rejects_empty_or_whitespace_only_output() {
+        // The original bug's second, unreported arm: completely empty command
+        // output (a dropped connection, a shell that printed nothing at all)
+        // read as confirmed absence too, not just the `NOTFOUND` sentinel.
+        // Only a bare `N` marker may ever confirm absence.
+        for stdout in ["", "\n", "   \n", "\n\n   \n"] {
+            let err = parse_metadata_probe(stdout)
+                .expect_err("empty or whitespace-only output must not confirm absence");
+            let message = format!("{err:#}");
+            assert!(
+                message.contains("unrecognised metadata probe output"),
+                "error must name what was actually received, got: {message}"
+            );
+        }
+    }
+
+    #[test]
     fn path_exists_probe_confirms_presence() {
         let exists = parse_path_exists_probe("yes\n").expect("a bare yes must parse");
         assert!(exists, "yes must report presence");

@@ -84,13 +84,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deleting it. The remaining files in the same checkpoint are still restored.
   This can also happen for an innocent reason: a package installed after the
   checkpoint was taken supplies a file that genuinely was not there before.
-- On a host whose file metadata cannot be read, `apply` now hardens the critical
-  permission paths and reports the outcome as unverified, rather than reporting
-  no changes at all. Directives with an exact target mode are set to that mode;
-  those whose target depends on the current mode are recorded as skipped with a
-  warning, since the target cannot be computed. Because the verification read
-  after each change also fails on such a host, these changes are reported as
-  unsuccessful even though they were applied.
 
 ### Fixed
 - Rollback could delete the files it was meant to protect. Over SSH,
