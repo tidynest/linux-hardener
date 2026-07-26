@@ -6,7 +6,9 @@
 //! - Password ageing policies (expiry, reuse prevention)
 
 use async_trait::async_trait;
-use hardener_common::file_utils::{ConfigFormat, parse_config_value};
+use hardener_common::file_utils::{
+    ConfigFormat, Duplicates, parse_config_value, set_config_directive,
+};
 use hardener_common::{
     error::{HardeningError, Result},
     types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
@@ -821,6 +823,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                     &mut changes,
                     directive.pam_directive_name,
                     target_value,
+                    directive.pam_config_file.config_format(),
                     "pwquality.conf",
                 ),
                 PamConfigFile::LoginDefs => apply_exact_directive(
@@ -829,6 +832,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                     &mut changes,
                     directive.pam_directive_name,
                     target_value,
+                    directive.pam_config_file.config_format(),
                     "login.defs",
                 ),
                 PamConfigFile::PamAuth => {
@@ -925,10 +929,13 @@ impl HardeningPlugin for PamHardeningPlugin {
                     };
 
                     let target_str = target.to_string();
-                    let updated = apply_directive_to_content(
+                    let updated = set_config_directive(
                         &current,
                         directive.pam_directive_name,
                         &target_str,
+                        directive.pam_config_file.config_format(),
+                        true,
+                        Duplicates::Remove,
                     );
 
                     if backup_and_write(ctx, path, path, &updated, &mut changes).await {
@@ -1260,6 +1267,18 @@ enum PamConfigFile {
     PamAuth,
     /// A `key = value` file under /etc/security (path carried inline).
     SecurityConf(&'static str),
+}
+
+impl PamConfigFile {
+    /// The syntax the file itself accepts. `login.defs(5)` defines
+    /// `NAME VALUE`; `=` is not part of it. The `security/*.conf` files take
+    /// `key = value`.
+    fn config_format(&self) -> ConfigFormat {
+        match self {
+            PamConfigFile::LoginDefs => ConfigFormat::SpaceSeparated,
+            _ => ConfigFormat::KeyValue,
+        }
+    }
 }
 
 /// How a directive's current value is judged against its secure value.
@@ -1594,16 +1613,19 @@ async fn observed_pam_value(
     }
 }
 
-/// State-aware exact-match apply for a `key = value` config held in memory:
-/// mutates `content` and records a real change only when the file's current
-/// value differs from the target; an already-correct value records a Skipped
-/// no-op instead, leaving the applied count honest.
+/// State-aware exact-match apply for a config held in memory: mutates `content`
+/// and records a real change only when the file's current value differs from
+/// the target; an already-correct value records a Skipped no-op instead,
+/// leaving the applied count honest. `format` is the syntax the file accepts,
+/// which is the caller's to know: writing a directive in a syntax its file does
+/// not parse leaves the insecure value in force.
 fn apply_exact_directive(
     content: &mut String,
     changed: &mut bool,
     changes: &mut Vec<Change>,
     name: &str,
     target: &str,
+    format: ConfigFormat,
     file_label: &str,
 ) {
     let current = parse_config_value(content, name, ConfigFormat::Auto, true);
@@ -1617,7 +1639,7 @@ fn apply_exact_directive(
         return;
     }
 
-    *content = apply_directive_to_content(content, name, target);
+    *content = set_config_directive(content, name, target, format, true, Duplicates::Remove);
     *changed = true;
     changes.push(Change {
         change_type: ChangeType::ConfigFile,
@@ -1739,51 +1761,6 @@ async fn create_config_backup(ctx: &Context, file_path: &str) -> Result<String> 
     }
 
     Ok(backup_path)
-}
-
-/// Applies a directive to configuration file content.
-///
-/// If the directive exists, updates its value.
-/// If the directive doesn't exist, appends it to the end.
-fn apply_directive_to_content(content: &str, directive_name: &str, secure_value: &str) -> String {
-    let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
-    let mut found = false;
-
-    // Try to update existing directive.
-    for line in &mut lines {
-        let trimmed = line.trim();
-
-        // Skip comments.
-        if trimmed.starts_with('#') {
-            continue;
-        }
-
-        // Check if this line contains our directive.
-        if let Some(stripped) = trimmed.strip_prefix(directive_name) {
-            let remainder = stripped.trim();
-
-            // Check if it is followed by = or whitespace (actual directive, not just prefix match).
-            let is_whitespace_separated = if let Some(ch) = remainder.chars().next() {
-                ch.is_whitespace()
-            } else {
-                false
-            };
-
-            if remainder.starts_with('=') || is_whitespace_separated {
-                // Update the line with new value.
-                *line = format!("{} = {}", directive_name, secure_value);
-                found = true;
-                break;
-            }
-        }
-    }
-
-    // If not found, append to end.
-    if !found {
-        lines.push(format!("{} = {}", directive_name, secure_value));
-    }
-
-    lines.join("\n")
 }
 
 #[cfg(test)]

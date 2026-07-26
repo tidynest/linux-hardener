@@ -1250,6 +1250,73 @@ async fn apply_still_creates_absent_pwquality_and_login_defs() {
     }
 }
 
+/// `login.defs(5)` takes `NAME VALUE`; `=` is not part of its syntax. A host
+/// hardened by an earlier release carries the proof in its own file: an
+/// appended `PASS_MAX_DAYS = 90` the tools ignore, sitting below the live
+/// `99999` it was meant to replace. Apply must rewrite the live line in the
+/// syntax the file accepts, and clear the stale line it left behind.
+#[tokio::test]
+async fn apply_writes_login_defs_in_the_syntax_login_defs_accepts() {
+    const REAL_LOGIN_DEFS: &str = "\
+#\tPASS_MAX_DAYS\tMaximum number of days a password may be used.
+#
+PASS_MAX_DAYS\t99999
+PASS_MIN_DAYS\t0
+PASS_WARN_AGE\t7
+PASS_MAX_DAYS = 90
+";
+
+    let path = "/etc/login.defs";
+    // Everything else in the fixture is already compliant, so login.defs is the
+    // only file this apply rewrites.
+    let executor = Arc::new(with_backup_cp(
+        secure_pam_executor().with_file(path, REAL_LOGIN_DEFS),
+        path,
+    ));
+    let mut ctx = Context::with_executor(executor.clone());
+
+    PamHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply must run");
+
+    let log = executor.log();
+    let written = &log
+        .files_written
+        .iter()
+        .find(|(p, _)| p.to_str() == Some(path))
+        .expect("login.defs must be rewritten")
+        .1;
+
+    let live: Vec<&str> = written
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .filter(|line| line.split_whitespace().next() == Some("PASS_MAX_DAYS"))
+        .collect();
+    assert_eq!(
+        live.len(),
+        1,
+        "login.defs takes one definition per key, so the stale one must go:\n{written}"
+    );
+    assert_eq!(
+        live[0].split_whitespace().collect::<Vec<_>>(),
+        ["PASS_MAX_DAYS", "90"],
+        "the live line must read `NAME VALUE`, with no `=`:\n{written}"
+    );
+    assert!(
+        !written.contains("99999"),
+        "the insecure value must no longer be in force:\n{written}"
+    );
+    assert!(
+        !written.contains("PASS_MAX_DAYS = 90"),
+        "`=` is not login.defs syntax:\n{written}"
+    );
+    assert!(
+        written.contains("#\tPASS_MAX_DAYS\tMaximum number of days"),
+        "the explanatory comment is documentation and must survive:\n{written}"
+    );
+}
+
 /// The refusal is per file, not per run: one unreadable config must not stop
 /// the other three being hardened, and must contribute exactly one change, the
 /// refusal itself.
