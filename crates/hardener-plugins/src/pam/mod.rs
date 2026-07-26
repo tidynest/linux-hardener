@@ -694,16 +694,52 @@ impl HardeningPlugin for PamHardeningPlugin {
         // Step 1: Read current configuration files. Backups are created later,
         // and only for a file that will actually be rewritten, so a compliant
         // host accumulates no backup churn in /etc.
-        let mut pwquality_content = read_pwquality_config(ctx).await.unwrap_or_else(|e| {
-            warn!("Failed to read pwquality.conf, using empty content: {}", e);
-            String::new()
-        });
+        let pwquality_read = read_conf_classified(ctx, "/etc/security/pwquality.conf").await;
+        let pwquality_writable = match &pwquality_read {
+            ConfRead::Unreadable(e) => {
+                warn!("Refusing to rewrite /etc/security/pwquality.conf: {}", e);
+                all_success = false;
+                changes.push(Change {
+                    change_type: ChangeType::ConfigFile,
+                    change_description:
+                        "Refused to rewrite /etc/security/pwquality.conf: its current contents \
+                         could not be read, and rewriting it would discard them"
+                            .to_string(),
+                    change_success: false,
+                    change_error: Some(e.clone()),
+                });
+                false
+            }
+            _ => true,
+        };
+        let mut pwquality_content = match &pwquality_read {
+            ConfRead::Content(content) => content.clone(),
+            _ => String::new(),
+        };
         let mut pwquality_changed = false;
 
-        let mut login_defs_content = read_login_defs(ctx).await.unwrap_or_else(|e| {
-            warn!("Failed to read login.defs, using empty content: {}", e);
-            String::new()
-        });
+        let login_defs_read = read_conf_classified(ctx, "/etc/login.defs").await;
+        let login_defs_writable = match &login_defs_read {
+            ConfRead::Unreadable(e) => {
+                warn!("Refusing to rewrite /etc/login.defs: {}", e);
+                all_success = false;
+                changes.push(Change {
+                    change_type: ChangeType::ConfigFile,
+                    change_description:
+                        "Refused to rewrite /etc/login.defs: its current contents could not be \
+                         read, and rewriting it would discard them"
+                            .to_string(),
+                    change_success: false,
+                    change_error: Some(e.clone()),
+                });
+                false
+            }
+            _ => true,
+        };
+        let mut login_defs_content = match &login_defs_read {
+            ConfRead::Content(content) => content.clone(),
+            _ => String::new(),
+        };
         let mut login_defs_changed = false;
 
         // Pre-apply snapshots for the exception check below. Taken once, here,
@@ -716,7 +752,7 @@ impl HardeningPlugin for PamHardeningPlugin {
         // directive's `SecurityConf` path happens to collide with an earlier
         // one's, rather than relying on today's `PAM_DIRECTIVES` entries
         // pointing at distinct files.
-        let pwquality_observed = ConfRead::Content(pwquality_content.clone());
+        let pwquality_observed = pwquality_read;
         let login_defs_observed = login_defs_content.clone();
         let mut observed_values = Vec::with_capacity(PAM_DIRECTIVES.len());
         for directive in PAM_DIRECTIVES {
@@ -898,7 +934,7 @@ impl HardeningPlugin for PamHardeningPlugin {
 
         // Step 3: Back up and rewrite only the files that actually changed.
         // As before, a failed backup blocks the write for that file.
-        if pwquality_changed {
+        if pwquality_changed && pwquality_writable {
             if backup_and_write(
                 ctx,
                 "/etc/security/pwquality.conf",
@@ -919,7 +955,7 @@ impl HardeningPlugin for PamHardeningPlugin {
             }
         }
 
-        if login_defs_changed {
+        if login_defs_changed && login_defs_writable {
             if backup_and_write(
                 ctx,
                 "/etc/login.defs",
@@ -1634,14 +1670,6 @@ async fn backup_and_write(
             false
         }
     }
-}
-
-/// Reads the pwquality configuration file.
-async fn read_pwquality_config(ctx: &Context) -> Result<String> {
-    ctx.executor()
-        .read_file(Path::new("/etc/security/pwquality.conf"))
-        .await
-        .map_err(|e| HardeningError::Plugin(e.to_string()))
 }
 
 /// Reads the login.defs configuration file.

@@ -1100,6 +1100,134 @@ async fn apply_still_creates_an_absent_security_conf() {
     );
 }
 
+#[tokio::test]
+async fn apply_refuses_to_rewrite_an_unreadable_pwquality() {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    // pwquality.conf exists with a drifted value, so apply wants to rewrite it,
+    // but cannot read it. Rewriting would discard every directive the host has.
+    let path = "/etc/security/pwquality.conf";
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before the unix epoch")
+        .as_secs();
+    let mut executor = secure_pam_executor()
+        .with_file(path, "minlen 8\n")
+        .with_read_permission_denied(path);
+    for t in now..now + 3 {
+        let backup = format!("{path}.backup-{t}");
+        executor = executor.with_command(
+            "cp",
+            &[path, &backup],
+            hardener_core::CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        );
+    }
+    let executor = Arc::new(executor);
+    let mut ctx = Context::with_executor(executor.clone());
+    let plugin = PamHardeningPlugin::new();
+
+    let result = plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply must run rather than abort");
+
+    let log = executor.log();
+    assert!(
+        !log.files_written
+            .iter()
+            .any(|(written, _)| written.to_str() == Some(path)),
+        "an unreadable pwquality.conf must never be rewritten, got: {:?}",
+        log.files_written
+    );
+    assert!(
+        !result.apply_success,
+        "refusing to harden a file must be reported"
+    );
+}
+
+/// Mirrors `apply_refuses_to_rewrite_an_unreadable_pwquality` for login.defs:
+/// a genuinely distinct code path (its own read, its own write gate), so it
+/// needs its own proof rather than relying on the pwquality coverage above.
+#[tokio::test]
+async fn apply_refuses_to_rewrite_an_unreadable_login_defs() {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let path = "/etc/login.defs";
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before the unix epoch")
+        .as_secs();
+    let mut executor = secure_pam_executor()
+        .with_file(path, "PASS_MAX_DAYS 99999\n")
+        .with_read_permission_denied(path);
+    for t in now..now + 3 {
+        let backup = format!("{path}.backup-{t}");
+        executor = executor.with_command(
+            "cp",
+            &[path, &backup],
+            hardener_core::CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        );
+    }
+    let executor = Arc::new(executor);
+    let mut ctx = Context::with_executor(executor.clone());
+    let plugin = PamHardeningPlugin::new();
+
+    let result = plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply must run rather than abort");
+
+    let log = executor.log();
+    assert!(
+        !log.files_written
+            .iter()
+            .any(|(written, _)| written.to_str() == Some(path)),
+        "an unreadable login.defs must never be rewritten, got: {:?}",
+        log.files_written
+    );
+    assert!(
+        !result.apply_success,
+        "refusing to harden a file must be reported"
+    );
+}
+
+/// Guard against over-correction on the other two files this task touches:
+/// neither pwquality.conf nor login.defs is registered, so both are Absent
+/// (a confirmed non-existence), which must still start from an empty buffer
+/// and be created, exactly as before this fix, distinct from the refusal
+/// above which requires a confirmed Unreadable classification.
+#[tokio::test]
+async fn apply_still_creates_absent_pwquality_and_login_defs() {
+    let executor = Arc::new(missing_pam_config_executor());
+    let mut ctx = Context::with_executor(executor.clone());
+    let plugin = PamHardeningPlugin::new();
+
+    plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply must run");
+
+    let log = executor.log();
+    for path in ["/etc/security/pwquality.conf", "/etc/login.defs"] {
+        assert!(
+            log.files_written
+                .iter()
+                .any(|(written, _)| written.to_str() == Some(path)),
+            "an absent {} must still be created, got: {:?}",
+            path,
+            log.files_written
+        );
+    }
+}
+
 /// State-aware validate: a fully compliant host lists zero pending directives;
 /// every checked directive is tallied in `validation_report_compliant_count`.
 #[tokio::test]
