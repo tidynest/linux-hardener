@@ -853,34 +853,34 @@ impl HardeningPlugin for PamHardeningPlugin {
                         continue;
                     }
 
-                    match create_config_backup(ctx, path).await {
-                        Ok(backup) => changes.push(Change {
-                            change_type: ChangeType::ConfigFile,
-                            change_description: format!("Created backup: {}", backup),
-                            change_success: true,
-                            change_error: None,
-                        }),
-                        Err(e) => {
-                            warn!("Failed to backup {}: {}", path, e);
+                    let current = match read_conf_classified(ctx, path).await {
+                        ConfRead::Content(content) => content,
+                        ConfRead::Absent => String::new(),
+                        ConfRead::Unreadable(e) => {
+                            warn!("Refusing to rewrite {}: {}", path, e);
                             all_success = false;
                             changes.push(Change {
                                 change_type: ChangeType::ConfigFile,
-                                change_description: format!("Failed to backup {}", path),
+                                change_description: format!(
+                                    "Refused to rewrite {path}: its current contents could not be \
+                                     read, and rewriting it would discard them",
+                                ),
                                 change_success: false,
-                                change_error: Some(e.to_string()),
+                                change_error: Some(e),
                             });
+                            continue;
                         }
-                    }
+                    };
 
-                    let content = read_security_conf(ctx, path).await;
                     let target_str = target.to_string();
                     let updated = apply_directive_to_content(
-                        &content,
+                        &current,
                         directive.pam_directive_name,
                         &target_str,
                     );
-                    match ctx.executor().write_file(Path::new(path), &updated).await {
-                        Ok(_) => changes.push(Change {
+
+                    if backup_and_write(ctx, path, path, &updated, &mut changes).await {
+                        changes.push(Change {
                             change_type: ChangeType::ConfigFile,
                             change_description: format!(
                                 "Set {} = {} in {}",
@@ -888,17 +888,9 @@ impl HardeningPlugin for PamHardeningPlugin {
                             ),
                             change_success: true,
                             change_error: None,
-                        }),
-                        Err(e) => {
-                            warn!("Failed to write {}: {}", path, e);
-                            all_success = false;
-                            changes.push(Change {
-                                change_type: ChangeType::ConfigFile,
-                                change_description: format!("Failed to write {}", path),
-                                change_success: false,
-                                change_error: Some(e.to_string()),
-                            });
-                        }
+                        });
+                    } else {
+                        all_success = false;
                     }
                 }
             }
@@ -906,8 +898,8 @@ impl HardeningPlugin for PamHardeningPlugin {
 
         // Step 3: Back up and rewrite only the files that actually changed.
         // As before, a failed backup blocks the write for that file.
-        if pwquality_changed
-            && !backup_and_write(
+        if pwquality_changed {
+            if backup_and_write(
                 ctx,
                 "/etc/security/pwquality.conf",
                 "pwquality.conf",
@@ -915,12 +907,20 @@ impl HardeningPlugin for PamHardeningPlugin {
                 &mut changes,
             )
             .await
-        {
-            all_success = false;
+            {
+                changes.push(Change {
+                    change_type: ChangeType::ConfigFile,
+                    change_description: "Wrote modified pwquality.conf".to_string(),
+                    change_success: true,
+                    change_error: None,
+                });
+            } else {
+                all_success = false;
+            }
         }
 
-        if login_defs_changed
-            && !backup_and_write(
+        if login_defs_changed {
+            if backup_and_write(
                 ctx,
                 "/etc/login.defs",
                 "login.defs",
@@ -928,8 +928,16 @@ impl HardeningPlugin for PamHardeningPlugin {
                 &mut changes,
             )
             .await
-        {
-            all_success = false;
+            {
+                changes.push(Change {
+                    change_type: ChangeType::ConfigFile,
+                    change_description: "Wrote modified login.defs".to_string(),
+                    change_success: true,
+                    change_error: None,
+                });
+            } else {
+                all_success = false;
+            }
         }
 
         let duration_ms = start.elapsed().as_millis() as u64;
@@ -1383,7 +1391,13 @@ fn pamd_module_for(arg: &str) -> Option<(&'static str, &'static [&'static str])>
 async fn read_pamd_inline(ctx: &Context, arg: &str) -> Option<String> {
     let (module, files) = pamd_module_for(arg)?;
     for file in files {
-        for line in read_security_conf(ctx, file).await.lines() {
+        // A scan writes nothing, so Absent and Unreadable both simply mean
+        // "no inline override here"; only Content is worth scanning.
+        let content = match read_conf_classified(ctx, file).await {
+            ConfRead::Content(c) => c,
+            ConfRead::Absent | ConfRead::Unreadable(_) => continue,
+        };
+        for line in content.lines() {
             let line = line.trim();
             if line.starts_with('#') || !line.contains(module) {
                 continue;
@@ -1408,10 +1422,6 @@ async fn read_pamd_inline(ctx: &Context, arg: &str) -> Option<String> {
 enum ConfRead {
     Content(String),
     Absent,
-    // The carried error string is not read by any consumer this task
-    // touches; it is here for later callers (checkpoint/diagnostic paths)
-    // that need to say *why* a file was unreadable, not just that it was.
-    #[allow(dead_code)]
     Unreadable(String),
 }
 
@@ -1570,9 +1580,10 @@ fn apply_exact_directive(
     });
 }
 
-/// Backs up `path` and writes `content` to it, recording both outcomes.
-/// A failed backup blocks the write (never modify a file without a backup).
-/// Returns false when either step failed so the caller can mark the run.
+/// Backs up `path` and writes `content` to it, recording the backup outcome
+/// and any failure. A failed backup blocks the write (never modify a file
+/// without a backup). Returns true on a successful write; callers push their
+/// own success change, since its wording varies by call site.
 async fn backup_and_write(
     ctx: &Context,
     path: &str,
@@ -1602,12 +1613,6 @@ async fn backup_and_write(
     match ctx.executor().write_file(Path::new(path), content).await {
         Ok(_) => {
             info!("Successfully wrote {}", path);
-            changes.push(Change {
-                change_type: ChangeType::ConfigFile,
-                change_description: format!("Wrote modified {}", file_label),
-                change_success: true,
-                change_error: None,
-            });
             true
         }
         Err(e) => {
@@ -1621,17 +1626,6 @@ async fn backup_and_write(
             false
         }
     }
-}
-
-/// Lenient config read: the file's contents, or an empty string on any
-/// failure (absence, privileges, or otherwise). Used where permission
-/// classification is not needed: the scan's pam.d inline-override lookups
-/// (world-readable files) and apply's /etc/security conf reads (root context).
-async fn read_security_conf(ctx: &Context, path: &str) -> String {
-    ctx.executor()
-        .read_file(Path::new(path))
-        .await
-        .unwrap_or_default()
 }
 
 /// Reads the pwquality configuration file.
