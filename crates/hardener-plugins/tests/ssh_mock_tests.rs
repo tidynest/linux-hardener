@@ -871,6 +871,59 @@ async fn ssh_local_apply_still_writes_permitrootlogin_no() {
     );
 }
 
+/// The only live `PermitRootLogin` sits inside a `Match` block while the
+/// global setting exists as a commented default. Apply must activate the
+/// commented global and leave the block alone. Writing the block line instead
+/// would harden one subnet, leave root login at sshd's compiled default
+/// everywhere else, and then read back as compliant on the next scan.
+#[tokio::test]
+async fn ssh_apply_never_writes_a_directive_into_a_match_block() {
+    const BLOCK: &str = "Match Address 10.0.0.0/8\n    \
+                         PermitRootLogin yes\n    \
+                         PasswordAuthentication yes";
+    let executor = apply_ready_executor(&format!(
+        "#PermitRootLogin prohibit-password\n\
+         PasswordAuthentication no\n\
+         PermitEmptyPasswords no\n\
+         MaxAuthTries 3\n\
+         X11Forwarding no\n\
+         ClientAliveInterval 300\n\
+         ClientAliveCountMax 2\n\
+         \n\
+         {BLOCK}\n"
+    ));
+
+    let result = run_ssh_apply(&executor).await;
+
+    assert!(result.apply_success, "apply should succeed: {result:?}");
+    let written = written_sshd_config(&executor);
+    let start = written
+        .find("Match Address")
+        .unwrap_or_else(|| panic!("the Match block must survive:\n{written}"));
+
+    // Everything from the block header on must be exactly what went in, which
+    // rules out both an edit inside the block and an append below it. Only
+    // trailing whitespace is discounted: the writer joins lines without a
+    // final newline, which is pre-existing and tracked separately.
+    assert_eq!(
+        written[start..].trim_end(),
+        BLOCK,
+        "the Match block must survive byte for byte, indentation included:\n{written}",
+    );
+    assert!(
+        has_permit_root_login(&written[..start], "no"),
+        "the commented global default is the line apply must activate:\n{written}",
+    );
+    assert!(
+        result
+            .apply_changes
+            .iter()
+            .any(|c| c.change_description.starts_with("PermitRootLogin:")),
+        "a PermitRootLogin change must be recorded, or this test proves nothing: {:?}",
+        result.apply_changes
+    );
+}
+
 #[tokio::test]
 async fn ssh_remote_apply_with_failed_uid_probe_applies_strict_no() {
     // `id -u` unregistered on the mock -> the probe errors. Fail-safe: treat

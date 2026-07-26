@@ -629,7 +629,10 @@ PASS_MIN_DAYS\t0
 
     #[test]
     fn remove_drops_a_later_definition_of_the_same_key() {
-        let damaged = format!("{REAL_LOGIN_DEFS}PASS_MAX_DAYS = 90\n");
+        // The commented occurrence sits BELOW the live line, in the same
+        // stretch the removal loop walks. A comment above it could never be a
+        // removal candidate, so it proves nothing about the loop.
+        let damaged = format!("{REAL_LOGIN_DEFS}#PASS_MAX_DAYS 12345\nPASS_MAX_DAYS = 90\n");
         let out = set_config_directive(
             &damaged,
             "PASS_MAX_DAYS",
@@ -646,6 +649,10 @@ PASS_MIN_DAYS\t0
         assert!(
             out.contains("#\tPASS_MAX_DAYS\tMaximum number of days"),
             "a comment is documentation and is never removed:\n{out}",
+        );
+        assert!(
+            out.contains("#PASS_MAX_DAYS 12345"),
+            "a comment below the live line is not a duplicate either:\n{out}",
         );
     }
 
