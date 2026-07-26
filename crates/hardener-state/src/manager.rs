@@ -170,11 +170,12 @@ impl CheckpointManager {
             Ok(content) => Some(content.into_bytes()),
             Err(e) => match policy {
                 ContentPolicy::Required => {
-                    return Err(HardeningError::System(std::io::Error::other(format!(
-                        "Cannot checkpoint {}: its content could not be read ({e}). Refusing to \
-                         record a checkpoint that could not restore it.",
+                    return Err(HardeningError::Executor(format!(
+                        "Cannot checkpoint {}: its content could not be read ({e}). Without \
+                         that content, a later rollback could not restore the file, so \
+                         continuing would leave it unprotected.",
                         file_path.display(),
-                    ))));
+                    )));
                 }
                 ContentPolicy::BestEffort => {
                     tracing::warn!(
@@ -1590,9 +1591,15 @@ mod tests {
             .create_checkpoint(&executor, "sweep", &[Path::new(dir)])
             .await;
 
-        assert!(
-            result.is_ok(),
-            "an unreadable file found by recursion must not fail the capture, got: {result:?}"
+        let id = result.expect("an unreadable file found by recursion must not fail the capture");
+        let (_, file_states) = manager.get_checkpoint(&id).await.expect("get_checkpoint");
+        let captured = file_states
+            .iter()
+            .find(|s| s.file_path == child)
+            .expect("the capture must still record a row for the unreadable child");
+        assert_eq!(
+            captured.file_content, None,
+            "the tolerated child must carry no content, since none was read"
         );
     }
 
