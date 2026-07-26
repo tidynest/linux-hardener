@@ -22,7 +22,7 @@ use hardener_core::{
 };
 use std::os::unix::fs::OpenOptionsExt;
 use std::{path::Path, time::Instant};
-use tracing::info;
+use tracing::{info, warn};
 
 /// File Permissions Hardening Plugin
 ///
@@ -172,6 +172,23 @@ fn target_mode(directive: &PermissionDirective, current_mode: u32) -> u32 {
     } else {
         directive.permission_mode
     }
+}
+
+/// `Some(baseline)` when a path whose mode could not be verified should still
+/// be hardened to a fixed target: an exact directive's target is
+/// `permission_mode` regardless of the current mode, so it never needed one
+/// to begin with. `None` when no safe target can be computed without a real
+/// current mode: a max-mask directive's target strips bits from a current
+/// mode that here is unknown, and guessing one could loosen an
+/// already-stricter host.
+///
+/// This is the single decision both `apply_path_permissions` (which turns it
+/// into a `Change`) and `validate_path_permissions` (which turns it into a
+/// predicted change or a reported gap) consult, so a dry-run preview and the
+/// apply it previews can never again describe different outcomes for the
+/// same unverified path.
+fn unverified_mode_target(directive: &PermissionDirective) -> Option<u32> {
+    (!directive.permission_max_mask).then_some(directive.permission_mode)
 }
 
 /// Filesystem-type tokens that cannot store POSIX permission bits. On these a
@@ -682,27 +699,97 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
     }
 }
 
+/// The "from X to Y" fragment of a chmod change description. When the
+/// current mode was verified it names both ends of the transition; when it
+/// was not (see [`apply_path_permissions`]), only the target is known, so the
+/// description says so explicitly rather than implying a starting mode that
+/// was never actually observed.
+fn mode_transition_description(current_mode: Option<u32>, target: u32) -> String {
+    match current_mode {
+        Some(mode) => format!("from {mode:04o} to {target:04o}"),
+        None => format!("to {target:04o} (current permissions could not be verified beforehand)"),
+    }
+}
+
 /// Applies correct permissions to a path and tracks the change.
+///
+/// `current_mode` is read once by the caller (the apply loop), before the
+/// exception check, so it can be compared numerically against a documented
+/// exception; this function reuses it rather than reading the metadata
+/// again. `None` means the mode could not be verified (the `stat` behind it
+/// failed) even though the path may still exist - `path_exists` below is
+/// then the authority on existence. On `SshExecutor` that is a genuinely
+/// independent check (a separate `test -e` command against the `stat`
+/// command behind `file_metadata`), so the two can disagree for reasons
+/// beyond timing. On `LocalExecutor`, `path_exists` is `path.exists()`,
+/// which runs the very same `fs::metadata` syscall `file_metadata` reads
+/// its mode from, just as a separate, later call; the two can therefore
+/// only disagree via a race, which makes this whole branch effectively
+/// SSH-only in practice. An unverified mode never satisfies a policy
+/// exception (the caller already enforces that before reaching here), but
+/// hardening still proceeds: an exact directive is chmod'd to its fixed
+/// baseline regardless of the current mode, while a max-mask directive's
+/// target depends on the current mode and so cannot be safely guessed - it
+/// is skipped instead, with a `warn!` and a recorded `Change` so the gap is
+/// never silent.
 ///
 /// For local execution: uses `O_NOFOLLOW` open + `fchmod` to operate on
 /// the real inode, eliminating the TOCTOU window between check and chmod.
 /// For remote execution: falls back to the executor's `execute_command`.
 ///
 /// Returns a Change object if successful, None if path doesn't exist or on error.
-async fn apply_path_permissions(ctx: &Context, directive: &PermissionDirective) -> Option<Change> {
+async fn apply_path_permissions(
+    ctx: &Context,
+    directive: &PermissionDirective,
+    current_mode: Option<u32>,
+) -> Option<Change> {
     let path = Path::new(directive.permission_path);
 
-    // Skip if path doesn't exist
+    // Skip if path doesn't exist. This is the existence authority when
+    // `current_mode` is unverified (see the doc comment above: genuinely
+    // independent of the failed `stat` on SSH, but only a race locally).
     if !ctx.executor().path_exists(path).await.unwrap_or(false) {
         return None;
     }
 
-    // Get current permissions via executor (works for both local and remote)
-    let metadata = ctx.executor().file_metadata(path).await.ok()?;
-    let current_mode = metadata.mode & 0o777;
-
-    if !violates(directive, current_mode) {
-        return None;
+    match current_mode {
+        Some(mode) if !violates(directive, mode) => return None,
+        Some(_) => {}
+        None => {
+            // The path is confirmed present above, but its mode is unknown.
+            // This matches pre-branch behaviour only for the metadata
+            // sentinel (`Ok(exists: false)`, e.g. a `stat` that reports the
+            // path absent while `path_exists` still finds it): pre-branch
+            // derived `current_mode = 0` from that same sentinel and
+            // hardened an exact directive to its fixed baseline, exactly as
+            // this branch now does. It is NOT equivalent for a genuine
+            // metadata `Err`: pre-branch's `.ok()?` discarded that silently
+            // and recorded no change at all, whereas this branch now hardens
+            // an exact directive regardless. In practice `apply` never
+            // reaches this function with that kind of `Err`, because
+            // `create_checkpoint_metadata_only_for_apply` reads the same
+            // metadata for every critical path up front and aborts the
+            // whole `apply` via `?` first. A max-mask directive's target
+            // depends on the current mode, which is unknown, so guessing
+            // one could loosen an already-stricter host - skip it instead.
+            warn!(
+                "Permissions on {} could not be verified (stat failed); \
+                 hardening proceeds without a known current mode",
+                directive.permission_path
+            );
+            if unverified_mode_target(directive).is_none() {
+                return Some(Change {
+                    change_description: format!(
+                        "{}: skipped (current permissions could not be verified, \
+                         so a safe target cannot be computed for this max-mask directive)",
+                        directive.permission_path
+                    ),
+                    change_type: ChangeType::Skipped,
+                    change_success: true,
+                    change_error: None,
+                });
+            }
+        }
     }
 
     // A filesystem that cannot hold POSIX permissions ignores chmod (it exits 0
@@ -722,8 +809,140 @@ async fn apply_path_permissions(ctx: &Context, directive: &PermissionDirective) 
     }
 }
 
+/// The mode `apply`'s own loop would see for `path`: `None` when a `stat`
+/// failure left the path's mode unestablished even though it may still
+/// exist (`path_exists` can genuinely disagree with that on `SshExecutor`;
+/// on `LocalExecutor` the two read the same syscall at different times, so
+/// they can only disagree via a race - see [`apply_path_permissions`]'s doc
+/// comment), `Some` otherwise. Shared by `apply` and `validate` so the two
+/// can never again derive "unverified" from the same metadata read in
+/// different ways.
+async fn current_verified_mode(ctx: &Context, path: &Path) -> Option<u32> {
+    ctx.executor()
+        .file_metadata(path)
+        .await
+        .ok()
+        .filter(|m| m.exists)
+        .map(|m| m.mode & 0o777)
+}
+
+/// Validate's counterpart to `apply_path_permissions`: the pending change (if
+/// any) a dry-run should report for one critical path. Mirrors that
+/// function's shape, including the `current_mode` parameter, so the two can
+/// be reasoned about and tested identically and can never again describe a
+/// different outcome for the same directive and mode.
+///
+/// Returns `(estimated_change, issue)`; at most one is ever `Some`.
+///
+/// `current_mode: None` means the path is confirmed to exist (the caller's
+/// `path_exists` check already ran) but its mode could not be established.
+/// This consults the same [`unverified_mode_target`] apply does: a max-mask
+/// directive has nothing to estimate (apply skips it), so the gap is
+/// reported as an issue instead. That issue is currently the only place
+/// this is surfaced at all: the CLI's default text renderer
+/// (`validation_reports` in `hardener-cli/src/output.rs`) prints only the
+/// estimated changes and never reads `validation_report_issues` or
+/// `validation_report_is_valid`, the CLI's apply command does not inspect
+/// `is_valid` either, and the desktop reads only the estimated-changes
+/// count - so today the gap reaches the operator solely via
+/// `--format json`. An exact directive is always
+/// hardened by apply regardless of the current mode (unless the filesystem
+/// cannot hold POSIX permissions at all, in which case there is nothing
+/// pending either), so it is reported as a predicted change, worded so the
+/// "from" mode is honestly described as unknown rather than invented; a
+/// second issue on top would only repeat what the estimate already says.
+///
+/// `current_mode: Some(mode)` is the pre-existing, unchanged behaviour: an
+/// exception whose documented value matches the observed mode suppresses the
+/// prediction (fail closed - a stale or wrong exception never does), and a
+/// genuine violation on a filesystem that can actually hold POSIX
+/// permissions becomes the predicted change.
+async fn validate_path_permissions(
+    ctx: &Context,
+    directive: &PermissionDirective,
+    config: &PluginConfig,
+    current_mode: Option<u32>,
+) -> (Option<String>, Option<hardener_core::ValidationIssue>) {
+    let Some(mode) = current_mode else {
+        let Some(target) = unverified_mode_target(directive) else {
+            return (
+                None,
+                Some(hardener_core::ValidationIssue {
+                    validation_issue_severity: Severity::High,
+                    validation_issue_message: format!(
+                        "Current permissions on {} could not be verified; apply will skip \
+                         hardening it (no safe target can be computed for this max-mask \
+                         directive without the current mode)",
+                        directive.permission_path
+                    ),
+                    validation_issue_config_key: Some(directive.permission_path.to_string()),
+                }),
+            );
+        };
+
+        // Mirrors apply_path_permissions: a non-POSIX filesystem makes chmod
+        // futile, so it is not a pending change either. Fail-safe: an
+        // inconclusive probe still predicts the chmod, matching apply, which
+        // attempts it when the probe cannot positively confirm the
+        // filesystem.
+        if non_posix_fstype(ctx, directive.permission_path)
+            .await
+            .is_some()
+        {
+            return (None, None);
+        }
+
+        return (
+            Some(format!(
+                "{}: current permissions could not be verified → {target:04o} \
+                 (apply hardens this exact-mode directive regardless)",
+                directive.permission_path
+            )),
+            None,
+        );
+    };
+
+    // Skip paths with an exception whose documented value matches the mode
+    // actually observed (fail closed: a stale or wrong exception does not
+    // suppress a change). Exception matching requires a verified mode,
+    // exactly as apply enforces before it ever reaches apply_path_permissions.
+    if config
+        .matching_mode_exception(directive.permission_path, mode)
+        .is_some()
+    {
+        return (None, None);
+    }
+
+    // A pending change requires both a violation and a filesystem that
+    // chmod can actually change. `&&` short-circuits, so the filesystem
+    // probe only fires for a violating path; a non-POSIX filesystem (probe
+    // positively confirmed) is not a pending change. Fail-safe: an
+    // inconclusive probe returns None, so a genuine violation is still
+    // counted.
+    if violates(directive, mode)
+        && non_posix_fstype(ctx, directive.permission_path)
+            .await
+            .is_none()
+    {
+        return (
+            Some(format!(
+                "{}: {:04o} → {:04o}",
+                directive.permission_path,
+                mode,
+                target_mode(directive, mode)
+            )),
+            None,
+        );
+    }
+
+    (None, None)
+}
+
 /// TOCTOU-safe local permission change via `O_NOFOLLOW` + `fchmod`.
-fn apply_local_fchmod(directive: &PermissionDirective, current_mode: u32) -> Option<Change> {
+fn apply_local_fchmod(
+    directive: &PermissionDirective,
+    current_mode: Option<u32>,
+) -> Option<Change> {
     use nix::sys::stat::{Mode, fchmod};
 
     let path = Path::new(directive.permission_path);
@@ -752,13 +971,18 @@ fn apply_local_fchmod(directive: &PermissionDirective, current_mode: u32) -> Opt
         }
     };
 
-    let target = target_mode(directive, current_mode);
+    // `apply_path_permissions` never reaches here with an unverified mode for
+    // a max-mask directive (it returns early for that case), so `unwrap_or(0)`
+    // only ever substitutes for an exact directive, whose target ignores
+    // `current_mode` entirely - the 0 cannot influence the outcome.
+    let target = target_mode(directive, current_mode.unwrap_or(0));
     let target_bits = Mode::from_bits_truncate(target);
     match fchmod(&file, target_bits) {
         Ok(()) => Some(Change {
             change_description: format!(
-                "Changed permissions on {} from {:04o} to {:04o}",
-                directive.permission_path, current_mode, target
+                "Changed permissions on {} {}",
+                directive.permission_path,
+                mode_transition_description(current_mode, target)
             ),
             change_type: ChangeType::Permissions,
             change_success: true,
@@ -780,9 +1004,12 @@ fn apply_local_fchmod(directive: &PermissionDirective, current_mode: u32) -> Opt
 async fn apply_remote_chmod(
     ctx: &Context,
     directive: &PermissionDirective,
-    current_mode: u32,
+    current_mode: Option<u32>,
 ) -> Option<Change> {
-    let mode_str = format!("{:04o}", target_mode(directive, current_mode));
+    // See `apply_local_fchmod` re: `unwrap_or(0)` - only ever substitutes for
+    // an exact directive's mode-independent target.
+    let target = target_mode(directive, current_mode.unwrap_or(0));
+    let mode_str = format!("{target:04o}");
     let result = ctx
         .executor()
         .execute_command("chmod", &[&mode_str, directive.permission_path])
@@ -792,7 +1019,6 @@ async fn apply_remote_chmod(
         Ok(output) if output.success() => {
             // Verify the change took effect: for max-mask directives, verify
             // no disallowed bits remain; for exact directives, verify equality.
-            let target = target_mode(directive, current_mode);
             let path = Path::new(directive.permission_path);
             let verified = ctx
                 .executor()
@@ -804,8 +1030,9 @@ async fn apply_remote_chmod(
             if verified {
                 Some(Change {
                     change_description: format!(
-                        "Changed permissions on {} from {:04o} to {:04o}",
-                        directive.permission_path, current_mode, target
+                        "Changed permissions on {} {}",
+                        directive.permission_path,
+                        mode_transition_description(current_mode, target)
                     ),
                     change_type: ChangeType::Permissions,
                     change_success: true,
@@ -906,8 +1133,20 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
 
         // Apply permissions to all critical paths
         for directive in CRITICAL_PERMISSIONS {
-            // Check for a valid exception: skip this path if exempted
-            if let Some(exception) = config.has_valid_exception(directive.permission_path) {
+            let path = Path::new(directive.permission_path);
+            // An unverified mode (stat failed) can never confirm an
+            // exception, so it is not honoured below. It does not, however,
+            // mean there is nothing to harden: `apply_path_permissions`
+            // decides how to proceed for that case (see its doc comment),
+            // using `path_exists` as the authority on whether the path is
+            // even there.
+            let current_mode = current_verified_mode(ctx, path).await;
+
+            // Check for a valid exception whose documented value matches the
+            // mode actually observed: skip this path only then.
+            if let Some(exception) = current_mode
+                .and_then(|mode| config.matching_mode_exception(directive.permission_path, mode))
+            {
                 info!(
                     "Skipping {} (exception: {})",
                     directive.permission_path, exception.reason
@@ -935,7 +1174,7 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
                 directive.clone()
             };
 
-            if let Some(change) = apply_path_permissions(ctx, &directive).await {
+            if let Some(change) = apply_path_permissions(ctx, &directive, current_mode).await {
                 changes.push(change);
             }
         }
@@ -973,14 +1212,6 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
         let mut estimated_changes = Vec::new();
 
         for directive in CRITICAL_PERMISSIONS {
-            // Skip paths with valid exceptions
-            if config
-                .has_valid_exception(directive.permission_path)
-                .is_some()
-            {
-                continue;
-            }
-
             // Build an effective directive: apply any per-path override to
             // `permission_mode` while preserving `permission_max_mask`, so the
             // dry-run's compliance test matches scan/apply exactly (a stricter
@@ -1002,42 +1233,15 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
                 continue;
             }
 
-            // Get current permissions
-            match ctx.executor().file_metadata(path).await {
-                Ok(metadata) => {
-                    let current_mode = metadata.mode & 0o777;
-
-                    // A pending change requires both a violation and a filesystem
-                    // that chmod can actually change. `&&` short-circuits, so the
-                    // filesystem probe only fires for a violating path; a
-                    // non-POSIX filesystem (probe positively confirmed) is not a
-                    // pending change. Fail-safe: an inconclusive probe returns
-                    // None, so a genuine violation is still counted.
-                    if violates(&effective, current_mode)
-                        && non_posix_fstype(ctx, directive.permission_path)
-                            .await
-                            .is_none()
-                    {
-                        estimated_changes.push(format!(
-                            "{}: {:04o} → {:04o}",
-                            directive.permission_path,
-                            current_mode,
-                            target_mode(&effective, current_mode)
-                        ));
-                    }
-                }
-                Err(e) => {
-                    // Cannot read metadata - might not have permission
-                    issues.push(hardener_core::ValidationIssue {
-                        validation_issue_severity: Severity::High,
-                        validation_issue_message: format!(
-                            "Cannot read {}: {}",
-                            directive.permission_path, e
-                        ),
-                        validation_issue_config_key: Some(directive.permission_path.to_string()),
-                    });
-                }
-            }
+            // Mirrors apply's own loop: the same current_verified_mode read,
+            // handed to the same-shaped validate_path_permissions, so a
+            // dry-run preview and the apply it previews can never again
+            // derive "unverified" differently or act on it differently.
+            let current_mode = current_verified_mode(ctx, path).await;
+            let (estimate, issue) =
+                validate_path_permissions(ctx, &effective, config, current_mode).await;
+            estimated_changes.extend(estimate);
+            issues.extend(issue);
         }
 
         Ok(ValidationReport {
@@ -1055,6 +1259,7 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hardener_core::{CommandOutput, FileMetadata, MockExecutor};
 
     /// A representative permissions check (`/etc/shadow`) must now carry
     /// multi-framework mappings: the existing CIS control plus NIST 800-53
@@ -1259,5 +1464,131 @@ mod tests {
         let sshd = fedramp_for("/etc/ssh");
         assert_eq!(sshd.compliance_control_id, "AC-17(a)");
         assert_eq!(sshd.compliance_section.as_deref(), Some("Access Control"));
+    }
+
+    /// Proves `apply` and `validate` agree on every critical path whose mode
+    /// could not be verified even though the path is known to exist: an
+    /// exact-mode directive is hardened to its baseline regardless (so
+    /// `validate` must predict that change), a max-mask directive is skipped
+    /// (so `validate` must predict no change, but must still surface the
+    /// gap). `apply_path_permissions` and `validate_path_permissions` are the
+    /// only two call sites that decide this, and both are exercised directly
+    /// here with `current_mode` supplied as `None`.
+    ///
+    /// This cannot be reproduced through the plugin's public `apply`/
+    /// `validate` methods against a [`MockExecutor`]: its `path_exists` and
+    /// `file_metadata` both read the very same stored `exists` flag, so they
+    /// can never disagree the way `SshExecutor` genuinely can (`test -e`
+    /// succeeding while `stat` fails for an unrelated reason) - the same
+    /// disagreement is only ever a race on `LocalExecutor`, which a mock
+    /// cannot model either way. Calling the two decision functions directly
+    /// with the exact inputs that real divergence produces is the closest a
+    /// mock host state can get.
+    ///
+    /// The public loops that supply those inputs are not, in fact,
+    /// verbatim-shared wiring: apply's loop performs the exception check
+    /// and the directive-override construction inline before calling
+    /// `apply_path_permissions`, which takes no `config` and so cannot
+    /// check exceptions itself; validate's loop also builds the directive
+    /// override inline, but delegates the exception check into
+    /// `validate_path_permissions`. What this test actually proves does not
+    /// depend on that wiring matching: `apply_path_permissions` and
+    /// `validate_path_permissions` agree on the unverified-mode outcome
+    /// once `current_mode` is already `None`, a state neither loop's
+    /// exception check can be reached from (an unverified mode never
+    /// matches an exception in either path), so exercising the two
+    /// functions directly with `None` covers every real path into this
+    /// state.
+    #[tokio::test]
+    async fn validate_predicts_what_apply_does_for_an_unverified_mode() {
+        for directive in CRITICAL_PERMISSIONS {
+            // `path_exists` must read true; the current mode is supplied
+            // directly as `None` below rather than through the mock, so the
+            // metadata's `mode` here only needs to be a plausible post-chmod
+            // state for apply's own verification re-read to confirm success.
+            let mut executor = MockExecutor::new().remote().with_file_metadata(
+                directive.permission_path,
+                "",
+                FileMetadata {
+                    exists: true,
+                    is_file: false,
+                    is_dir: false,
+                    mode: directive.permission_mode,
+                    size: 0,
+                    uid: 0,
+                    gid: 0,
+                },
+            );
+            if !directive.permission_max_mask {
+                executor = executor.with_command(
+                    "chmod",
+                    &[
+                        &format!("{:04o}", directive.permission_mode),
+                        directive.permission_path,
+                    ],
+                    CommandOutput {
+                        stdout: String::new(),
+                        stderr: String::new(),
+                        exit_code: 0,
+                    },
+                );
+            }
+            let ctx = Context::with_executor(std::sync::Arc::new(executor));
+
+            let applied = apply_path_permissions(&ctx, directive, None)
+                .await
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{} must always record a change (a chmod or a skip)",
+                        directive.permission_path
+                    )
+                });
+            let (estimate, issue) =
+                validate_path_permissions(&ctx, directive, &PluginConfig::default(), None).await;
+
+            if directive.permission_max_mask {
+                assert!(
+                    applied.is_skipped(),
+                    "{} (max-mask): apply must skip rather than guess a target, got: {:?}",
+                    directive.permission_path,
+                    applied
+                );
+                assert!(
+                    estimate.is_none(),
+                    "{} (max-mask): validate must not predict a change apply will not make, got: {:?}",
+                    directive.permission_path,
+                    estimate
+                );
+                assert!(
+                    issue.is_some(),
+                    "{} (max-mask): validate must still flag the unreadable mode",
+                    directive.permission_path
+                );
+            } else {
+                assert!(
+                    !applied.is_skipped() && applied.change_success,
+                    "{} (exact): apply must actually chmod to the baseline, got: {:?}",
+                    directive.permission_path,
+                    applied
+                );
+                let estimate = estimate.unwrap_or_else(|| {
+                    panic!(
+                        "{} (exact): validate must predict the change apply makes",
+                        directive.permission_path
+                    )
+                });
+                let target = format!("{:04o}", directive.permission_mode);
+                assert!(
+                    estimate.contains(directive.permission_path) && estimate.contains(&target),
+                    "{} (exact): prediction must name the path and its baseline {target}, got: {estimate}",
+                    directive.permission_path
+                );
+                assert!(
+                    issue.is_none(),
+                    "{} (exact): validate must not also raise an issue duplicating the estimate",
+                    directive.permission_path
+                );
+            }
+        }
     }
 }

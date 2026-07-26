@@ -651,6 +651,47 @@ async fn test_pam_apply_skips_exceptions() {
     );
 }
 
+/// A stale exception (documented value no longer matches the host) must not
+/// suppress hardening: apply must treat it as if there were no exception.
+#[tokio::test]
+async fn apply_ignores_exception_whose_value_does_not_match() {
+    let executor = insecure_pam_executor();
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    let plugin = PamHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "minlen".to_string(),
+        PolicyException {
+            value: "99".to_string(),
+            allowed: true,
+            reason: "Stale exception".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    assert!(
+        !result
+            .apply_changes
+            .iter()
+            .any(|c| c.change_description.contains("Stale exception")),
+        "a non-matching exception must not produce a skipped change"
+    );
+    assert!(
+        result
+            .apply_changes
+            .iter()
+            .any(|c| c.change_description.contains("Set minlen")),
+        "the directive must actually be hardened once the stale exception is ignored, got: {:?}",
+        result.apply_changes
+    );
+}
+
 #[tokio::test]
 async fn scan_honours_directive_override() {
     // deny = 3 is compliant against the built-in boundary of 5, but a
@@ -770,6 +811,43 @@ async fn test_pam_validate_skips_exceptions() {
             .iter()
             .any(|c| c.contains("dcredit")),
         "non-excepted directives should still appear"
+    );
+}
+
+/// A stale exception (documented value no longer matches the host) must not
+/// remove the directive from validate's preview.
+#[tokio::test]
+async fn validate_ignores_exception_whose_value_does_not_match() {
+    let executor = MockExecutor::new()
+        .with_file("/etc/security/pwquality.conf", "minlen 8\n")
+        .with_file("/etc/login.defs", "PASS_MAX_DAYS 99999\n");
+
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PamHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "minlen".to_string(),
+        PolicyException {
+            value: "99".to_string(),
+            allowed: true,
+            reason: "Stale exception".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let report = plugin.validate(&ctx, &config).await.unwrap();
+
+    assert!(
+        report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("minlen")),
+        "a non-matching exception must leave the directive in the preview, got: {:?}",
+        report.validation_report_estimated_changes
     );
 }
 
@@ -997,6 +1075,97 @@ async fn pam_validate_reports_requires_root_when_pwquality_is_root_only() {
     assert!(
         minlen_line.contains("requires root"),
         "unreadable pwquality directives must use the requires-root wording, got: {minlen_line}"
+    );
+}
+
+/// Validate's `SecurityConf` estimate reuses the `observed` value already
+/// computed for the exception check instead of reading the conf file a
+/// second time. This pins down the "compliant" and "needs tightening"
+/// wordings so that reuse can never silently change what an operator is
+/// told.
+#[tokio::test]
+async fn pam_validate_security_conf_estimate_reuses_observed_value() {
+    let executor = MockExecutor::new()
+        .with_file(
+            "/etc/security/pwquality.conf",
+            "minlen 14\ndcredit -1\nucredit -1\nlcredit -1\nocredit -1\nmaxrepeat 3\n",
+        )
+        .with_file(
+            "/etc/login.defs",
+            "PASS_MAX_DAYS 90\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n",
+        )
+        // deny = 3 is stricter than the boundary of 5: compliant, no estimate line.
+        .with_file("/etc/security/faillock.conf", "deny = 3\n")
+        // remember = 2 is looser than the minimum of 5: needs tightening.
+        .with_file("/etc/security/pwhistory.conf", "remember = 2\n");
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PamHardeningPlugin::new();
+
+    let report = plugin
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(
+        !report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("deny")),
+        "a compliant deny must not appear as a pending change, got: {:?}",
+        report.validation_report_estimated_changes
+    );
+    let remember_line = report
+        .validation_report_estimated_changes
+        .iter()
+        .find(|c| c.contains("remember"))
+        .expect("looser remember must be listed");
+    assert_eq!(
+        remember_line, "remember will change: 2 -> 5",
+        "wording must reflect the observed value and the clamped target"
+    );
+}
+
+/// Complementary to the estimate test above: a `SecurityConf` file blocked by
+/// privileges must keep the requires-root wording after the duplicate
+/// `read_effective_threshold` call was removed, exactly as it did before.
+#[tokio::test]
+async fn pam_validate_security_conf_requires_root_when_faillock_is_root_only() {
+    let executor = MockExecutor::new()
+        .with_file(
+            "/etc/security/pwquality.conf",
+            "minlen 14\ndcredit -1\nucredit -1\nlcredit -1\nocredit -1\nmaxrepeat 3\n",
+        )
+        .with_file(
+            "/etc/login.defs",
+            "PASS_MAX_DAYS 90\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n",
+        )
+        .with_file("/etc/security/faillock.conf", "deny = 3\n")
+        .with_read_permission_denied("/etc/security/faillock.conf")
+        .with_file("/etc/security/pwhistory.conf", "remember = 10\n");
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PamHardeningPlugin::new();
+
+    let report = plugin
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(
+        !report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("deny") && c.contains("not set")),
+        "an unreadable faillock.conf must never be claimed 'not set', got: {:?}",
+        report.validation_report_estimated_changes
+    );
+    let deny_line = report
+        .validation_report_estimated_changes
+        .iter()
+        .find(|c| c.contains("deny"))
+        .expect("deny must still be listed");
+    assert_eq!(
+        deny_line, "deny <= 5 (current value requires root; applied only if currently looser)",
+        "unreadable faillock directives must use the requires-root wording"
     );
 }
 

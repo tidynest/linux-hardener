@@ -1116,8 +1116,20 @@ impl HardeningPlugin for SshHardeningPlugin {
         let remote_root_session = is_remote_root_session(ctx.executor().as_ref()).await;
 
         for directive in SSH_DIRECTIVES {
-            // Check for a valid exception: skip this directive if exempted
-            if let Some(exception) = config.has_valid_exception(directive.ssh_directive_name) {
+            // The exception is honoured only when it documents the value the
+            // host actually has, so a stale exception cannot stop hardening.
+            // An absent directive reads as "not set", matching scan's rendering
+            // and therefore what an operator writes in the config.
+            let observed = parse_config_value(
+                &original_content,
+                directive.ssh_directive_name,
+                ConfigFormat::SpaceSeparated,
+                false,
+            )
+            .unwrap_or_else(|| "not set".to_string());
+            if let Some(exception) =
+                config.matching_exception(directive.ssh_directive_name, &observed)
+            {
                 info!(
                     "Skipping {} (exception: {})",
                     directive.ssh_directive_name, exception.reason
@@ -1247,7 +1259,19 @@ impl HardeningPlugin for SshHardeningPlugin {
         // only (desired strong ∩ supported). This can never produce a weak algo
         // (subset of the hardcoded allow-list) nor one the host cannot parse.
         for crypto in SSH_CRYPTO_DIRECTIVES {
-            if let Some(exception) = config.has_valid_exception(crypto.crypto_directive_name) {
+            // As above: the crypto allow-list intersection deliberately has no
+            // directive override, but the exception itself still only applies
+            // when it documents the value actually on the host.
+            let observed = parse_config_value(
+                &original_content,
+                crypto.crypto_directive_name,
+                ConfigFormat::SpaceSeparated,
+                false,
+            )
+            .unwrap_or_else(|| "not set".to_string());
+            if let Some(exception) =
+                config.matching_exception(crypto.crypto_directive_name, &observed)
+            {
                 info!(
                     "Skipping {} (exception: {})",
                     crypto.crypto_directive_name, exception.reason
@@ -1507,7 +1531,7 @@ impl HardeningPlugin for SshHardeningPlugin {
         Ok(())
     }
 
-    async fn validate(&self, ctx: &Context, _config: &PluginConfig) -> Result<ValidationReport> {
+    async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {
         let mut issues = Vec::new();
         let plugin_id = PluginId::new("ssh-hardening");
         let config_path = Path::new("/etc/ssh/sshd_config");
@@ -1547,6 +1571,14 @@ impl HardeningPlugin for SshHardeningPlugin {
             Ok(content) => {
                 // Check each directive to see if it needs updating.
                 for directive in SSH_DIRECTIVES {
+                    // Resolve the target the way apply and scan do: a config
+                    // directive override wins over the hardcoded baseline.
+                    let target = config
+                        .directives
+                        .get(directive.ssh_directive_name)
+                        .map(|s| s.as_str())
+                        .unwrap_or(directive.ssh_secure_value);
+
                     // SSHD config is space-separated and case-insensitive.
                     let current_value = parse_config_value(
                         &content,
@@ -1555,22 +1587,35 @@ impl HardeningPlugin for SshHardeningPlugin {
                         false, // case-insensitive
                     );
 
+                    // The exception is honoured only when it documents the
+                    // value the host actually has, matching apply's rendering
+                    // of an absent directive as "not set".
+                    let observed = current_value
+                        .clone()
+                        .unwrap_or_else(|| "not set".to_string());
+                    if config
+                        .matching_exception(directive.ssh_directive_name, &observed)
+                        .is_some()
+                    {
+                        continue;
+                    }
+
                     match current_value {
-                        Some(val) if val == directive.ssh_secure_value => {
-                            // Already set to secure value - no change needed.
+                        Some(val) if val == target => {
+                            // Already set to the target value - no change needed.
                         }
                         Some(val) => {
-                            // Value exists but is insecure.
+                            // Value exists but does not match the target.
                             estimated_changes.push(format!(
                                 "{}: {} → {}",
-                                directive.ssh_directive_name, val, directive.ssh_secure_value
+                                directive.ssh_directive_name, val, target
                             ));
                         }
                         None => {
                             // Directive not set - will add it.
                             estimated_changes.push(format!(
                                 "{}: (not set) → {}",
-                                directive.ssh_directive_name, directive.ssh_secure_value
+                                directive.ssh_directive_name, target
                             ));
                         }
                     }

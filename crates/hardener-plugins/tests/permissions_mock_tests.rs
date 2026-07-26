@@ -600,6 +600,152 @@ async fn test_permissions_apply_skips_exceptions() {
 }
 
 #[tokio::test]
+async fn apply_ignores_exception_whose_mode_does_not_match() {
+    // /boot is 0777 on the mock; the exception documents 0755. The values
+    // disagree, so the exception must not be honoured and /boot must be
+    // hardened (chmod'd to the 0700 baseline) rather than skipped.
+    // Uses `.remote()` because MockExecutor cannot support local fchmod.
+    let executor = MockExecutor::new()
+        .remote()
+        .with_file_metadata(
+            "/boot",
+            "",
+            FileMetadata {
+                exists: true,
+                is_file: false,
+                is_dir: true,
+                mode: 0o777,
+                size: 0,
+                uid: 0,
+                gid: 0,
+            },
+        )
+        .with_command(
+            "chmod",
+            &["0700", "/boot"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        );
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    let plugin = PermissionsHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "/boot".to_string(),
+        PolicyException {
+            value: "0755".to_string(),
+            allowed: true,
+            reason: "Stale exception".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    assert!(
+        !result
+            .apply_changes
+            .iter()
+            .any(|c| c.change_description.contains("Stale exception")),
+        "a non-matching exception must not produce a skipped change"
+    );
+
+    // The path must actually have been hardened: a chmod to the 0700
+    // baseline for /boot was issued, not merely some chmod naming /boot.
+    let log = executor.log();
+    let chmod_cmd = log
+        .commands_executed
+        .iter()
+        .find(|(cmd, args): &&(String, Vec<String>)| {
+            cmd == "chmod" && args.iter().any(|a| a == "/boot")
+        });
+    assert!(
+        chmod_cmd.is_some(),
+        "should have called chmod for /boot, got: {:?}",
+        log.commands_executed
+    );
+    let (_, args) = chmod_cmd.expect("checked above");
+    assert_eq!(
+        args,
+        &vec!["0700".to_string(), "/boot".to_string()],
+        "chmod should harden /boot to the 0700 baseline with no extra args, got: {:?}",
+        args
+    );
+}
+
+/// A regression test for the `.filter(|m| m.exists)` fix in the apply loop's
+/// `current_mode` read. `/etc/gshadow` is deliberately left unregistered, so
+/// `MockExecutor::file_metadata` returns its sentinel `Ok(exists: false, mode:
+/// 0)` for it - reproducing a host where `stat` fails but the read still
+/// "succeeds" with a mode of zero. The exception below documents "0000",
+/// exactly that sentinel value: without the `.filter` guard, an unverified
+/// mode would satisfy this exception and record a bogus skipped-exception
+/// change for a path that was never actually observed to be 0000. With the
+/// guard restored, an unverified mode never matches any exception, and since
+/// `/etc/gshadow` does not exist in this fixture, `apply_path_permissions`
+/// also declines to act on it (`path_exists` is the authority there) - so no
+/// change at all is recorded for it.
+///
+/// Uses `.remote()` so a would-be chmod (if the regression were present)
+/// goes through the mock's `execute_command` rather than a real local
+/// `fchmod` syscall.
+#[tokio::test]
+async fn apply_ignores_exception_when_mode_is_unverified() {
+    let executor = MockExecutor::new().remote().with_file_metadata(
+        "/root",
+        "",
+        FileMetadata {
+            exists: true,
+            is_file: false,
+            is_dir: true,
+            mode: 0o700,
+            size: 0,
+            uid: 0,
+            gid: 0,
+        },
+    );
+
+    let mut ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PermissionsHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "/etc/gshadow".to_string(),
+        PolicyException {
+            value: "0000".to_string(),
+            allowed: true,
+            reason: "Bogus exception matching the unverified-mode sentinel".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    assert!(
+        !result
+            .apply_changes
+            .iter()
+            .any(|c| c.change_description.contains("/etc/gshadow")),
+        "an unverified mode must not match an exception, and a path that \
+         does not exist must not otherwise be acted on, got: {:?}",
+        result
+            .apply_changes
+            .iter()
+            .map(|c| &c.change_description)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
 async fn scan_honours_directive_override() {
     // Baseline for /root is already compliant (0700), but a stricter
     // directive override (0500) makes it non-compliant -> a finding appears
@@ -713,6 +859,39 @@ async fn test_permissions_validate_skips_exceptions() {
             .iter()
             .any(|c| c.contains("/boot")),
         "non-excepted paths should still appear"
+    );
+}
+
+#[tokio::test]
+async fn validate_ignores_exception_whose_mode_does_not_match() {
+    // insecure_permissions_executor's /root is genuinely 0755; the exception
+    // documents 0750, a value the host does not actually have.
+    let executor = insecure_permissions_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PermissionsHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "/root".to_string(),
+        PolicyException {
+            value: "0750".to_string(),
+            allowed: true,
+            reason: "Stale exception".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let report = plugin.validate(&ctx, &config).await.unwrap();
+
+    assert!(
+        report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("/root")),
+        "a non-matching exception must leave the change in the preview"
     );
 }
 
