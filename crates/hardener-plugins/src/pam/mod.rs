@@ -1636,8 +1636,11 @@ fn apply_exact_directive(
     // one in a syntax they do not parse. Skipping on the value would leave that
     // repair undone on every run, so the file never converges. With the value
     // already correct the writer can only rewrite a line where it stands or
-    // drop a duplicate, and only the second changes the line count.
-    if current.as_deref() == Some(target) && updated.lines().count() == content.lines().count() {
+    // drop a duplicate, and only the second changes how many lines carry text.
+    // Blank ones are excluded because joining the lines drops a trailing blank,
+    // which would otherwise read as a duplicate and rewrite a compliant file.
+    let lines_with_text = |text: &str| text.lines().filter(|l| !l.trim().is_empty()).count();
+    if current.as_deref() == Some(target) && lines_with_text(&updated) == lines_with_text(content) {
         changes.push(Change {
             change_type: ChangeType::Skipped,
             change_description: format!("{} already set to {} in {}", name, target, file_label),

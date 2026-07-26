@@ -1317,6 +1317,34 @@ PASS_MAX_DAYS = 90
     );
 }
 
+/// A file that ends with a blank line is still a file with nothing to repair.
+/// The writer joins the lines it was given, which drops a trailing blank, so
+/// counting every line would read that as a dropped duplicate and rewrite a
+/// compliant host's file for nothing.
+#[tokio::test]
+async fn apply_leaves_a_compliant_file_ending_in_a_blank_line_alone() {
+    let path = "/etc/login.defs";
+    let executor = Arc::new(with_backup_cp(
+        secure_pam_executor().with_file(
+            path,
+            "PASS_MAX_DAYS 90\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n\n",
+        ),
+        path,
+    ));
+    let mut ctx = Context::with_executor(executor.clone());
+
+    PamHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply must run");
+
+    assert!(
+        executor.log().files_written.is_empty(),
+        "a compliant host must not be rewritten, got: {:?}",
+        executor.log().files_written
+    );
+}
+
 /// Clearing the line an earlier release appended cannot depend on the value
 /// having drifted. `PASS_WARN_AGE 7` is the stock setting on most hosts and is
 /// already the target, so the stale `PASS_WARN_AGE = 7` below it survived every
