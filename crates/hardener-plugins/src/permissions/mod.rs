@@ -1591,4 +1591,20 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn every_critical_path_is_protected_from_rollback_deletion() {
+        // The two lists live in different crates: this plugin decides what is
+        // critical, and hardener-state decides what a rollback may delete. A
+        // path added here but not there would be deletable by a rollback
+        // reading a checkpoint that wrongly records it as absent.
+        for directive in CRITICAL_PERMISSIONS {
+            assert!(
+                hardener_common::types::UNDELETABLE_ROLLBACK_PATHS
+                    .contains(&directive.permission_path),
+                "{} is hardened by this plugin but rollback may still delete it",
+                directive.permission_path
+            );
+        }
+    }
 }
