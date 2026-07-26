@@ -110,6 +110,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   genuinely not set, and `/etc/login.defs` is unaffected: `scan` still reads it
   leniently. `apply --dry-run` follows the same rule, listing the directive as
   "current value requires root" instead of "currently not set".
+- Which line `apply` rewrites in a configuration file has changed. A live
+  definition is now always the line it targets. `/etc/ssh/sshd_config` ships
+  its defaults commented out, and wherever a commented directive preceded the
+  live one, the comment was the line that got rewritten, leaving the live
+  directive untouched below it and the file carrying two live definitions of
+  the same directive. In `/etc/security/pwquality.conf`, `/etc/login.defs`,
+  `/etc/security/faillock.conf` and `/etc/security/pwhistory.conf`, a
+  commented directive is now activated where it sits when the file holds no
+  live definition of it, rather than a new line being appended at the end of
+  the file; and when `apply` rewrites one of these four, a second live
+  definition of the same key is dropped, since each takes one definition per
+  key and a second is stale. `sshd_config` keeps every definition it has,
+  because a repeated directive there is scoped by the `Match` block it sits
+  in and dropping one would change which connections a rule applies to.
 
 ### Fixed
 - Rollback could delete the files it was meant to protect. Over SSH,
@@ -148,6 +162,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checkpoint manager configured. A `cp` that exits non-zero is reported as a
   failed backup rather than as a created one. This covers `pwquality.conf`,
   `login.defs`, `faillock.conf` and `pwhistory.conf`.
+- Password ageing was never applied, and was then reported as compliant.
+  `/etc/login.defs` takes `NAME VALUE`, but every release since v1.0.0 wrote
+  `NAME = VALUE`, a syntax the file does not accept. The directive matcher
+  trimmed a line before testing whether the name was followed by whitespace,
+  so that test was false for every possible input: the live line was never
+  recognised and a new one was appended instead. The reader had the same
+  fault, so a later scan skipped the live line, found the tool's own appended
+  line, and reported the host compliant while `PASS_MAX_DAYS`, `PASS_MIN_DAYS`
+  and `PASS_WARN_AGE` kept the values they already had. Both now recognise a
+  whitespace separated directive, `apply` writes the syntax the file accepts
+  and rewrites the line that is in force rather than a comment that names it,
+  and the line an earlier release appended is removed. A host hardened by an
+  earlier release will report a violation it previously reported as a pass;
+  running `apply` repairs the file and the report together.
 
 ## [1.4.0] - 2026-07-19
 
