@@ -211,8 +211,11 @@ fn strip_prefix_with_case<'a>(s: &'a str, prefix: &str, case_sensitive: bool) ->
 
 /// Sets or updates a directive in configuration content.
 ///
-/// If the directive exists (even if commented), it will be updated.
-/// If not found, it will be appended to the end.
+/// A live (uncommented) definition is what the daemon reads, so it is always
+/// the line that gets rewritten. A commented line naming the directive is only
+/// a target when the file has no live definition at all, which is how a
+/// commented default gets activated. If neither exists the directive is
+/// appended.
 ///
 /// # Arguments
 /// * `content` - The current file content
@@ -231,7 +234,6 @@ pub fn set_config_directive(
     case_sensitive: bool,
 ) -> String {
     let mut lines: Vec<String> = content.lines().map(String::from).collect();
-    let mut found = false;
 
     let new_line = match format {
         ConfigFormat::SpaceSeparated | ConfigFormat::Auto => {
@@ -242,32 +244,39 @@ pub fn set_config_directive(
         }
     };
 
-    for line in &mut lines {
+    let mut live: Option<usize> = None;
+    let mut commented: Option<usize> = None;
+
+    for (index, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
         }
-
-        // Check both commented and uncommented lines
+        let is_comment = trimmed.starts_with('#');
         let check_line = trimmed.trim_start_matches('#').trim();
-        let parts: Vec<&str> = check_line.split_whitespace().collect();
-
-        if !parts.is_empty() {
-            let matches = if case_sensitive {
-                parts[0] == directive_name
-            } else {
-                parts[0].eq_ignore_ascii_case(directive_name)
-            };
-            if matches {
-                *line = new_line.clone();
-                found = true;
-                break;
-            }
+        let Some(first) = check_line.split_whitespace().next() else {
+            continue;
+        };
+        let matches = if case_sensitive {
+            first == directive_name
+        } else {
+            first.eq_ignore_ascii_case(directive_name)
+        };
+        if !matches {
+            continue;
+        }
+        // A live directive is what the daemon reads, so it wins. A comment is
+        // only a target when there is no live line to rewrite.
+        if is_comment {
+            commented.get_or_insert(index);
+        } else if live.is_none() {
+            live = Some(index);
         }
     }
 
-    if !found {
-        lines.push(new_line);
+    match live.or(commented) {
+        Some(index) => lines[index] = new_line,
+        None => lines.push(new_line),
     }
 
     lines.join("\n")
@@ -521,5 +530,40 @@ PASS_MIN_DAYS\t0
             Some("99999".to_string()),
             "the live line comes first and is what the system enforces",
         );
+    }
+
+    #[test]
+    fn the_live_line_is_rewritten_not_the_comment_above_it() {
+        let out = set_config_directive(
+            REAL_LOGIN_DEFS,
+            "PASS_MAX_DAYS",
+            "90",
+            ConfigFormat::SpaceSeparated,
+            true,
+        );
+        assert!(
+            out.contains("#\tPASS_MAX_DAYS\tMaximum number of days"),
+            "the explanatory comment must survive:\n{out}",
+        );
+        assert!(
+            out.contains("PASS_MAX_DAYS 90"),
+            "the live line must carry the new value:\n{out}",
+        );
+        assert!(
+            !out.contains("99999"),
+            "and the old value must be gone:\n{out}",
+        );
+    }
+
+    #[test]
+    fn a_commented_default_with_no_live_line_is_still_replaced() {
+        let out = set_config_directive(
+            "#PermitRootLogin prohibit-password\n",
+            "PermitRootLogin",
+            "no",
+            ConfigFormat::SpaceSeparated,
+            true,
+        );
+        assert_eq!(out.trim(), "PermitRootLogin no");
     }
 }
