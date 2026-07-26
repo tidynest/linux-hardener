@@ -803,10 +803,15 @@ impl HardeningPlugin for PamHardeningPlugin {
             // A file whose current contents could not be read is never
             // rewritten, and that refusal was already recorded once, at read
             // time. Skip its directives outright so none of them records a
-            // change for a write that cannot happen: "N change(s) applied"
-            // must only ever mean N hardening successes. The `SecurityConf`
-            // arm classifies its own read and refuses per directive below,
-            // which is the same rule applied at its own read site.
+            // change for a write that cannot happen. "N change(s) applied" is
+            // not always N hardening successes: a separator repaired on an
+            // already-correct value counts as a change too, because the tool
+            // cannot tell a cosmetic repair from a load-bearing one without
+            // modelling each consumer's parser, and over-reporting is the
+            // safe direction, since under-reporting was the defect this
+            // branch fixed. The `SecurityConf` arm classifies its own read
+            // and refuses per directive below, which is the same rule applied
+            // at its own read site.
             let file_writable = match directive.pam_config_file {
                 PamConfigFile::PwQuality => pwquality_writable,
                 PamConfigFile::LoginDefs => login_defs_writable,
@@ -1614,10 +1619,13 @@ async fn observed_pam_value(
 }
 
 /// State-aware exact-match apply for a config held in memory: mutates `content`
-/// and records a real change only when the file's current value differs from
-/// the target, or when the file defines the key more than once; anything else
-/// records a Skipped no-op instead, leaving the applied count honest. `format`
-/// is the syntax the file accepts, which is the caller's to know: writing a
+/// and records a real change when the file's current value differs from the
+/// target, when the file defines the key more than once, or when the line
+/// holding an already-correct value needs its separator repaired in place;
+/// anything else records a Skipped no-op instead. The third case means the
+/// count this produces is not always a count of hardening successes, since a
+/// cosmetic repair reports the same as a load-bearing one. `format` is the
+/// syntax the file accepts, which is the caller's to know: writing a
 /// directive in a syntax its file does not parse leaves the insecure value in
 /// force.
 fn apply_exact_directive(
