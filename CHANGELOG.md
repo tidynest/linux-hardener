@@ -176,9 +176,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `PASS_WARN_AGE` kept the values they already had. Both now recognise a
   whitespace separated directive, `apply` writes the syntax the file accepts
   and rewrites the line that is in force rather than a comment that names it,
-  and the line an earlier release appended is removed. A host hardened by an
-  earlier release will report a violation it previously reported as a pass;
-  running `apply` repairs the file and the report together.
+  and the line an earlier release appended is removed even where the live value
+  already matches the target and there is nothing else about the file to
+  change. A host hardened by an earlier release will report a violation it
+  previously reported as a pass; running `apply` repairs the file and the
+  report together.
+- `scan` and `apply` now recognise a directive written as `Key=Value`. Both
+  took a directive's name to end at whitespace, so `PermitRootLogin=yes` in
+  `/etc/ssh/sshd_config` and `deny=10` in `/etc/security/faillock.conf` matched
+  nothing, though `sshd_config(5)` and the `security/*.conf` files all accept
+  that syntax and `sshd -t` passes it. `scan` reported such a directive as not
+  set, and `apply` left the operator's line where it stood and defined the key
+  a second time elsewhere in the file, so the file carried two definitions of
+  the same directive, never converged however often `apply` ran, and the tool
+  could report a value the host does not enforce. A name now ends at whitespace
+  or at `=`, whichever comes first, for both reading and writing. On an
+  affected host the reported value changes from "not set" to the value the file
+  holds, which can turn a finding into a pass or the reverse, and the first
+  `apply` after this release rewrites that line rather than adding to it. An
+  exception written as `value = "not set"` for such a directive stops matching,
+  since the directive was never unset.
 - `apply` could scope a global SSH setting to a single `Match` block. A
   directive `/etc/ssh/sshd_config` did not mention at all was appended to the
   end of the file, and because `sshd_config(5)` puts `Match` blocks last, that
@@ -187,9 +204,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the host kept sshd's compiled default. `apply` now treats the first live
   `Match` line as the end of the file's global section: it never rewrites a
   directive below one, and inserts a new directive above the block instead of
-  at the end of the file. Hosts with a `Match` block that were hardened by an
-  earlier release should be checked for a hardening directive sitting inside
-  it, which `apply` cannot move on its own.
+  at the end of the file. On such a host the damage was usually larger than one
+  mis-scoped directive: `sshd_config(5)` permits neither `KexAlgorithms`,
+  `Ciphers` nor `MACs` inside a `Match` block, so once one of those was the
+  directive being appended, the `sshd -t` validation added in v1.2.0 rejected
+  the candidate file and the apply aborted having written nothing at all. On a
+  host whose `sshd_config` ends with a live `Match` block and does not already
+  name those three above it, no release since v1.2.0 has hardened any SSH
+  directive; `apply` reported the failure each time. Hosts with a `Match` block
+  that were hardened by an earlier release should be checked for a hardening
+  directive sitting inside it, which `apply` cannot move on its own.
 
 ## [1.4.0] - 2026-07-19
 
