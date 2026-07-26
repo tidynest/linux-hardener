@@ -6,7 +6,9 @@
 //! - Password ageing policies (expiry, reuse prevention)
 
 use async_trait::async_trait;
-use hardener_common::file_utils::{ConfigFormat, parse_config_value};
+use hardener_common::file_utils::{
+    ConfigFormat, Duplicates, parse_config_value, set_config_directive,
+};
 use hardener_common::{
     error::{HardeningError, Result},
     types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
@@ -801,10 +803,15 @@ impl HardeningPlugin for PamHardeningPlugin {
             // A file whose current contents could not be read is never
             // rewritten, and that refusal was already recorded once, at read
             // time. Skip its directives outright so none of them records a
-            // change for a write that cannot happen: "N change(s) applied"
-            // must only ever mean N hardening successes. The `SecurityConf`
-            // arm classifies its own read and refuses per directive below,
-            // which is the same rule applied at its own read site.
+            // change for a write that cannot happen. "N change(s) applied" is
+            // not always N hardening successes: a separator repaired on an
+            // already-correct value counts as a change too, because the tool
+            // cannot tell a cosmetic repair from a load-bearing one without
+            // modelling each consumer's parser, and over-reporting is the
+            // safe direction, since under-reporting was the defect this
+            // branch fixed. The `SecurityConf` arm classifies its own read
+            // and refuses per directive below, which is the same rule applied
+            // at its own read site.
             let file_writable = match directive.pam_config_file {
                 PamConfigFile::PwQuality => pwquality_writable,
                 PamConfigFile::LoginDefs => login_defs_writable,
@@ -821,6 +828,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                     &mut changes,
                     directive.pam_directive_name,
                     target_value,
+                    directive.pam_config_file.config_format(),
                     "pwquality.conf",
                 ),
                 PamConfigFile::LoginDefs => apply_exact_directive(
@@ -829,6 +837,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                     &mut changes,
                     directive.pam_directive_name,
                     target_value,
+                    directive.pam_config_file.config_format(),
                     "login.defs",
                 ),
                 PamConfigFile::PamAuth => {
@@ -925,10 +934,13 @@ impl HardeningPlugin for PamHardeningPlugin {
                     };
 
                     let target_str = target.to_string();
-                    let updated = apply_directive_to_content(
+                    let updated = set_config_directive(
                         &current,
                         directive.pam_directive_name,
                         &target_str,
+                        directive.pam_config_file.config_format(),
+                        true,
+                        Duplicates::Remove,
                     );
 
                     if backup_and_write(ctx, path, path, &updated, &mut changes).await {
@@ -1260,6 +1272,18 @@ enum PamConfigFile {
     PamAuth,
     /// A `key = value` file under /etc/security (path carried inline).
     SecurityConf(&'static str),
+}
+
+impl PamConfigFile {
+    /// The syntax the file itself accepts. `login.defs(5)` defines
+    /// `NAME VALUE`; `=` is not part of it. The `security/*.conf` files take
+    /// `key = value`.
+    fn config_format(&self) -> ConfigFormat {
+        match self {
+            PamConfigFile::LoginDefs => ConfigFormat::SpaceSeparated,
+            _ => ConfigFormat::KeyValue,
+        }
+    }
 }
 
 /// How a directive's current value is judged against its secure value.
@@ -1594,20 +1618,43 @@ async fn observed_pam_value(
     }
 }
 
-/// State-aware exact-match apply for a `key = value` config held in memory:
-/// mutates `content` and records a real change only when the file's current
-/// value differs from the target; an already-correct value records a Skipped
-/// no-op instead, leaving the applied count honest.
+/// State-aware exact-match apply for a config held in memory: mutates `content`
+/// and records a real change when the file's current value differs from the
+/// target, when the file defines the key more than once, or when the line
+/// holding an already-correct value needs its separator repaired in place;
+/// anything else records a Skipped no-op instead. The third case means the
+/// count this produces is not always a count of hardening successes, since a
+/// cosmetic repair reports the same as a load-bearing one. `format` is the
+/// syntax the file accepts, which is the caller's to know: writing a
+/// directive in a syntax its file does not parse leaves the insecure value in
+/// force.
 fn apply_exact_directive(
     content: &mut String,
     changed: &mut bool,
     changes: &mut Vec<Change>,
     name: &str,
     target: &str,
+    format: ConfigFormat,
     file_label: &str,
 ) {
     let current = parse_config_value(content, name, ConfigFormat::Auto, true);
-    if current.as_deref() == Some(target) {
+    let updated = set_config_directive(content, name, target, format, true, Duplicates::Remove);
+    // A correct value alone is not enough to leave the file alone: these files
+    // take one definition per key, and an earlier release appended a second
+    // one in a syntax they do not parse. Skipping on the value would leave that
+    // repair undone on every run, so the file never converges. With the value
+    // already correct the writer can still rewrite a line where it stands,
+    // repair the syntax of that line, or drop a duplicate, and only comparing
+    // the lines themselves tells "nothing to do" apart from all three: a
+    // repaired line leaves the count of lines exactly as it was, which is how a
+    // file whose only definition is the appended one stayed broken and green.
+    // Blank lines are excluded because joining the lines drops a trailing
+    // blank, which would otherwise read as a change and rewrite a compliant
+    // file.
+    fn lines_with_text(text: &str) -> Vec<&str> {
+        text.lines().filter(|l| !l.trim().is_empty()).collect()
+    }
+    if current.as_deref() == Some(target) && lines_with_text(&updated) == lines_with_text(content) {
         changes.push(Change {
             change_type: ChangeType::Skipped,
             change_description: format!("{} already set to {} in {}", name, target, file_label),
@@ -1617,7 +1664,7 @@ fn apply_exact_directive(
         return;
     }
 
-    *content = apply_directive_to_content(content, name, target);
+    *content = updated;
     *changed = true;
     changes.push(Change {
         change_type: ChangeType::ConfigFile,
@@ -1739,51 +1786,6 @@ async fn create_config_backup(ctx: &Context, file_path: &str) -> Result<String> 
     }
 
     Ok(backup_path)
-}
-
-/// Applies a directive to configuration file content.
-///
-/// If the directive exists, updates its value.
-/// If the directive doesn't exist, appends it to the end.
-fn apply_directive_to_content(content: &str, directive_name: &str, secure_value: &str) -> String {
-    let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
-    let mut found = false;
-
-    // Try to update existing directive.
-    for line in &mut lines {
-        let trimmed = line.trim();
-
-        // Skip comments.
-        if trimmed.starts_with('#') {
-            continue;
-        }
-
-        // Check if this line contains our directive.
-        if let Some(stripped) = trimmed.strip_prefix(directive_name) {
-            let remainder = stripped.trim();
-
-            // Check if it is followed by = or whitespace (actual directive, not just prefix match).
-            let is_whitespace_separated = if let Some(ch) = remainder.chars().next() {
-                ch.is_whitespace()
-            } else {
-                false
-            };
-
-            if remainder.starts_with('=') || is_whitespace_separated {
-                // Update the line with new value.
-                *line = format!("{} = {}", directive_name, secure_value);
-                found = true;
-                break;
-            }
-        }
-    }
-
-    // If not found, append to end.
-    if !found {
-        lines.push(format!("{} = {}", directive_name, secure_value));
-    }
-
-    lines.join("\n")
 }
 
 #[cfg(test)]

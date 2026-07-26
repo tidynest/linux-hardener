@@ -110,6 +110,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   genuinely not set, and `/etc/login.defs` is unaffected: `scan` still reads it
   leniently. `apply --dry-run` follows the same rule, listing the directive as
   "current value requires root" instead of "currently not set".
+- Which line `apply` rewrites in a configuration file has changed. Within the
+  part of a file that sets a host's global policy, a live definition is now
+  always the line it targets. `/etc/ssh/sshd_config` ships its defaults
+  commented out, and wherever a commented directive preceded the live one, the
+  comment was the line that got rewritten, leaving the live directive
+  untouched below it and the file carrying two live definitions of the same
+  directive. That global part ends at the first live `Match` line, since every
+  directive below one applies only to the connections its block matches; see
+  the related entry under Fixed. In `/etc/security/pwquality.conf`, `/etc/login.defs`,
+  `/etc/security/faillock.conf` and `/etc/security/pwhistory.conf`, a
+  commented directive is now activated where it sits when the file holds no
+  live definition of it, rather than a new line being appended at the end of
+  the file; and when `apply` rewrites one of these four, a second live
+  definition of the same key is dropped, since each takes one definition per
+  key and a second is stale. `sshd_config` keeps every definition it has,
+  because a repeated directive there is scoped by the `Match` block it sits
+  in and dropping one would change which connections a rule applies to.
 
 ### Fixed
 - Rollback could delete the files it was meant to protect. Over SSH,
@@ -148,6 +165,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checkpoint manager configured. A `cp` that exits non-zero is reported as a
   failed backup rather than as a created one. This covers `pwquality.conf`,
   `login.defs`, `faillock.conf` and `pwhistory.conf`.
+- Password ageing was never applied, and was then reported as compliant.
+  `/etc/login.defs` takes `NAME VALUE`, but every release since v1.0.0 wrote
+  `NAME = VALUE`, a syntax the file does not accept. The directive matcher
+  trimmed a line before testing whether the name was followed by whitespace,
+  so that test was false for every possible input: the live line was never
+  recognised and a new one was appended instead. The reader had the same
+  fault, so a later scan skipped the live line, found the tool's own appended
+  line, and reported `PASS_MAX_DAYS`, `PASS_MIN_DAYS` and `PASS_WARN_AGE`
+  compliant on the strength of a line the tool had written itself, in a syntax
+  `login.defs(5)` does not define, while the file's own syntax was left saying
+  exactly what it said before the apply. Both now recognise a whitespace
+  separated directive, `apply` writes the syntax the file accepts and rewrites
+  the line that is in force rather than a comment that names it, and the line
+  an earlier release appended is removed even where the live value already
+  matches the target and there is nothing else about the file to change. A host
+  hardened by an earlier release will report a violation it previously reported
+  as a pass; running `apply` repairs the file and the report together. A
+  definition that already holds the target value but is written in another form
+  the reader accepts, such as a tab separator in `login.defs` or a bare space
+  in `pwquality.conf`, is rewritten once into the form `apply` writes for that
+  file and converges there; only that line's separator changes, so the first
+  run after this release can report a change that hardens nothing.
+- `scan` and `apply` now recognise a directive written as `Key=Value`. The
+  writer took a directive's name to end at whitespace, so `PermitRootLogin=yes`
+  in `/etc/ssh/sshd_config` and `deny=10` in `/etc/security/faillock.conf`
+  matched nothing, though `ssh_config(5)` and the `security/*.conf` files all
+  accept that syntax and `sshd -t` passes it: `apply` left the operator's line
+  where it stood and defined the key a second time elsewhere in the file, so
+  the file carried two definitions of the same directive, never converged
+  however often `apply` ran, and the tool could report a value the host does
+  not enforce. Reading was blind to the same syntax only where a file is read
+  as space separated, which is `/etc/ssh/sshd_config` alone, so `scan` reported
+  an `=` separated directive there as not set; `faillock.conf` and
+  `pwhistory.conf` are read as key-value, which already accepted `deny=10`. A
+  name now ends at whitespace or at `=`, whichever comes first, for both
+  reading and writing. On a host whose `sshd_config` carries such a directive
+  the reported value changes from "not set" to the value the file holds, which
+  can turn a finding into a pass or the reverse, and the first `apply` after
+  this release rewrites that line rather than adding to it. An exception for
+  such a directive written as
+  `value = "not set"` stops matching, since the directive was never unset.
+- `apply` could scope a global SSH setting to a single `Match` block. A
+  directive `/etc/ssh/sshd_config` did not mention at all was appended to the
+  end of the file, and because `sshd_config(5)` puts `Match` blocks last, that
+  is inside the final block on any host that has one. The setting then applied
+  only to the users, groups or addresses that block matches, while the rest of
+  the host kept sshd's compiled default. `apply` now treats the first live
+  `Match` line as the end of the file's global section: it never rewrites a
+  directive below one, and inserts a new directive above the block instead of
+  at the end of the file. On such a host the damage was usually larger than one
+  mis-scoped directive: `sshd_config(5)` permits neither `KexAlgorithms`,
+  `Ciphers` nor `MACs` inside a `Match` block, so once one of those was the
+  directive being appended, the `sshd -t` validation added in v1.2.0 rejected
+  the candidate file and the apply aborted having written nothing at all. On a
+  host whose `sshd_config` ends with a live `Match` block and does not already
+  name those three above it, no release since v1.2.0 has hardened any SSH
+  directive; `apply` reported the failure each time. Hosts with a `Match` block
+  that were hardened by an earlier release should be checked for a hardening
+  directive sitting inside it, which `apply` cannot move on its own.
 
 ## [1.4.0] - 2026-07-19
 
