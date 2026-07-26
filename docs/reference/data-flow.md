@@ -255,7 +255,8 @@ struct UncheckedCheck {
 ```
 
 **Apply honesty and idempotency.** Every plugin apply is state-aware: an
-already-compliant setting is recorded as a `ChangeType::Skipped` no-op (config
+already-compliant setting is recorded as a `ChangeType::Skipped` no-op, unless
+its separator needs repairing in place, which still counts as a change (config
 files are backed up and rewritten only when their content actually changes,
 services are not restarted when nothing changed, nftables rules are
 presence-checked so they are never duplicated, and SSH/audit rewrites are gated
