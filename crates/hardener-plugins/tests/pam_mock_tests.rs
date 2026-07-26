@@ -1010,31 +1010,16 @@ async fn pam_apply_one_drifted_rewrites_one_file_with_one_backup() {
 
 #[tokio::test]
 async fn apply_refuses_to_rewrite_an_unreadable_security_conf() {
-    use std::time::{SystemTime, UNIX_EPOCH};
-
     // The file exists with a non-compliant value, so apply wants to rewrite it,
     // but its contents cannot be read. Merging directives into an empty buffer
     // would replace the host's file with ours, so the write must not happen.
+    // The refusal is detected, and the function returns, before any backup is
+    // attempted, so no `cp` is registered here: a registration that never runs
+    // would misleadingly suggest that path is exercised.
     let path = "/etc/security/faillock.conf";
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before the unix epoch")
-        .as_secs();
-    let mut executor = secure_pam_executor()
+    let executor = secure_pam_executor()
         .with_file(path, "deny = 10\n")
         .with_read_permission_denied(path);
-    for t in now..now + 3 {
-        let backup = format!("{path}.backup-{t}");
-        executor = executor.with_command(
-            "cp",
-            &[path, &backup],
-            hardener_core::CommandOutput {
-                stdout: String::new(),
-                stderr: String::new(),
-                exit_code: 0,
-            },
-        );
-    }
     let executor = Arc::new(executor);
     let mut ctx = Context::with_executor(executor.clone());
     let plugin = PamHardeningPlugin::new();
@@ -1056,6 +1041,15 @@ async fn apply_refuses_to_rewrite_an_unreadable_security_conf() {
         !result.apply_success,
         "refusing to harden a file must be reported, not silently swallowed"
     );
+    assert!(
+        result
+            .apply_changes
+            .iter()
+            .any(|change| { !change.change_success && change.change_description.contains(path) }),
+        "the refusal must be reported as a failed change naming {}, got: {:?}",
+        path,
+        result.apply_changes
+    );
 }
 
 #[tokio::test]
@@ -1074,13 +1068,16 @@ async fn apply_still_creates_an_absent_security_conf() {
     let mut executor = secure_pam_executor_base();
     for t in now..now + 3 {
         let backup = format!("{path}.backup-{t}");
+        // A missing source cannot be backed up: this is what `cp` actually
+        // does when the file is not there, and is why absence must skip the
+        // backup rather than attempt and fail it.
         executor = executor.with_command(
             "cp",
             &[path, &backup],
             hardener_core::CommandOutput {
                 stdout: String::new(),
-                stderr: String::new(),
-                exit_code: 0,
+                stderr: format!("cp: cannot stat '{path}': No such file or directory\n"),
+                exit_code: 1,
             },
         );
     }

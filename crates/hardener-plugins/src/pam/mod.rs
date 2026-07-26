@@ -1591,22 +1591,30 @@ async fn backup_and_write(
     content: &str,
     changes: &mut Vec<Change>,
 ) -> bool {
-    match create_config_backup(ctx, path).await {
-        Ok(backup) => changes.push(Change {
-            change_type: ChangeType::ConfigFile,
-            change_description: format!("Created backup: {}", backup),
-            change_success: true,
-            change_error: None,
-        }),
-        Err(e) => {
-            warn!("Failed to backup {}: {}", path, e);
-            changes.push(Change {
+    // A file that is not there has nothing to back up, and cp on a missing
+    // source fails. Absence is an ordinary case: creating the file is correct.
+    // Fail closed, so only a CONFIRMED absence skips the backup. An existence
+    // probe that errors, or that says the file is present, still requires one.
+    let needs_backup = !matches!(ctx.executor().path_exists(Path::new(path)).await, Ok(false));
+
+    if needs_backup {
+        match create_config_backup(ctx, path).await {
+            Ok(backup) => changes.push(Change {
                 change_type: ChangeType::ConfigFile,
-                change_description: format!("Failed to create {} backup", file_label),
-                change_success: false,
-                change_error: Some(e.to_string()),
-            });
-            return false;
+                change_description: format!("Created backup: {}", backup),
+                change_success: true,
+                change_error: None,
+            }),
+            Err(e) => {
+                warn!("Failed to backup {}: {}", path, e);
+                changes.push(Change {
+                    change_type: ChangeType::ConfigFile,
+                    change_description: format!("Failed to backup {}", file_label),
+                    change_success: false,
+                    change_error: Some(e.to_string()),
+                });
+                return false;
+            }
         }
     }
 
