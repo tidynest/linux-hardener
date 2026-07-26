@@ -160,14 +160,17 @@ pub fn parse_config_value(
                 if let Some(stripped) =
                     strip_prefix_with_case(trimmed, directive_name, case_sensitive)
                 {
-                    let remainder = stripped.trim();
-                    // Handle "key = value" format
-                    if let Some(value) = remainder.strip_prefix('=') {
+                    // Test the text as it sits after the key. Trimming first
+                    // destroys the whitespace that separates a key from its
+                    // value, which is what made a space separated directive
+                    // invisible to this arm.
+                    if let Some(value) = stripped.trim_start().strip_prefix('=') {
                         return Some(value.trim().to_string());
                     }
-                    // Handle "key value" format (space after key)
-                    if remainder.starts_with(char::is_whitespace) {
-                        return Some(remainder.trim().to_string());
+                    if stripped.starts_with(char::is_whitespace)
+                        && let Some(value) = stripped.split_whitespace().next()
+                    {
+                        return Some(value.to_string());
                     }
                 }
             }
@@ -457,6 +460,66 @@ mod tests {
         assert_eq!(
             parse_config_value("minlen=14\n", "minlen", ConfigFormat::Auto, true),
             Some("14".to_string())
+        );
+    }
+
+    const REAL_LOGIN_DEFS: &str = "\
+#\tPASS_MAX_DAYS\tMaximum number of days a password may be used.
+#
+PASS_MAX_DAYS\t99999
+PASS_MIN_DAYS\t0
+";
+
+    #[test]
+    fn key_value_reads_a_whitespace_separated_directive() {
+        assert_eq!(
+            parse_config_value(
+                REAL_LOGIN_DEFS,
+                "PASS_MAX_DAYS",
+                ConfigFormat::KeyValue,
+                true
+            ),
+            Some("99999".to_string()),
+        );
+    }
+
+    #[test]
+    fn key_value_still_reads_an_equals_separated_directive() {
+        assert_eq!(
+            parse_config_value("minlen = 14\n", "minlen", ConfigFormat::KeyValue, true),
+            Some("14".to_string()),
+        );
+    }
+
+    #[test]
+    fn key_value_does_not_match_a_longer_key_that_starts_the_same() {
+        assert_eq!(
+            parse_config_value(REAL_LOGIN_DEFS, "PASS_MAX", ConfigFormat::KeyValue, true),
+            None,
+            "the separator test is what enforces the key boundary",
+        );
+    }
+
+    #[test]
+    fn key_value_ignores_a_key_with_no_value() {
+        assert_eq!(
+            parse_config_value(
+                "PASS_MAX_DAYS\n",
+                "PASS_MAX_DAYS",
+                ConfigFormat::KeyValue,
+                true
+            ),
+            None,
+        );
+    }
+
+    #[test]
+    fn a_damaged_file_reports_the_live_line_not_the_appended_one() {
+        let damaged = format!("{REAL_LOGIN_DEFS}PASS_MAX_DAYS = 90\n");
+        assert_eq!(
+            parse_config_value(&damaged, "PASS_MAX_DAYS", ConfigFormat::Auto, true),
+            Some("99999".to_string()),
+            "the live line comes first and is what the system enforces",
         );
     }
 }
