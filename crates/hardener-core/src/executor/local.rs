@@ -84,6 +84,9 @@ impl SystemExecutor for LocalExecutor {
                 uid: meta.uid(),
                 gid: meta.gid(),
             }),
+            // Only NotFound is positive confirmation of absence. Every other
+            // error means "could not determine" and must propagate: see the
+            // contract on SystemExecutor::file_metadata.
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(FileMetadata {
                 exists: false,
                 is_file: false,

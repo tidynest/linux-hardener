@@ -208,13 +208,9 @@ impl SystemExecutor for SshExecutor {
     }
 
     async fn file_metadata(&self, path: &Path) -> Result<FileMetadata> {
-        let escaped = shell_escape(&path.display().to_string());
-        let cmd = format!("stat -c '%F %a %s %u %g' {escaped} 2>/dev/null || echo 'NOTFOUND'");
-        let output = self.run_command(&cmd).await?;
-
-        // ponytail: this still sends the old single-probe command; Task 2 replaces
-        // it with the two-line existence+stat probe that parse_metadata_probe expects.
+        let output = self.run_command(&metadata_probe_command(path)).await?;
         parse_metadata_probe(&output.stdout)
+            .with_context(|| format!("Failed to determine metadata for {}", path.display()))
     }
 
     async fn read_dir(&self, path: &Path) -> Result<Vec<PathBuf>> {
@@ -251,6 +247,20 @@ impl SystemExecutor for SshExecutor {
         let output = self.execute_command("which", &[program]).await?;
         Ok(output.success())
     }
+}
+
+/// Builds the metadata probe: an existence marker, then `stat` output when
+/// `stat` succeeds. Both probes run in one shell invocation, so this costs a
+/// single round trip and leaves the smallest window a remote check can.
+///
+/// `stat` alone cannot carry this. It exits non-zero for a missing path and for
+/// an unreadable one alike, so the previous `|| echo NOTFOUND` shape reported
+/// every failure as absence, and rollback deletes what it recorded as absent.
+fn metadata_probe_command(path: &Path) -> String {
+    let escaped = shell_escape(&path.display().to_string());
+    format!(
+        "test -e {escaped} && echo E || echo N; stat -c '%F %a %s %u %g' {escaped} 2>/dev/null || true"
+    )
 }
 
 /// Parses one `stat -c '%F %a %s %u %g'` line into `FileMetadata`.
@@ -469,5 +479,31 @@ mod tests {
         // A shell that emitted something else entirely must not be read as absence.
         parse_metadata_probe("something unexpected\n")
             .expect_err("an unrecognised marker must not report absence");
+    }
+
+    #[test]
+    fn metadata_probe_confirms_existence_and_reads_stat_in_one_round_trip() {
+        let cmd = metadata_probe_command(Path::new("/etc/shadow"));
+        assert!(
+            cmd.contains("test -e"),
+            "absence must be positively confirmed, not inferred from stat failing"
+        );
+        assert!(cmd.contains("stat -c '%F %a %s %u %g'"));
+        assert!(cmd.contains("echo E") && cmd.contains("echo N"));
+        assert!(
+            !cmd.contains("NOTFOUND"),
+            "the sentinel that conflated absent with unreadable must be gone"
+        );
+    }
+
+    #[test]
+    fn metadata_probe_escapes_a_path_with_spaces() {
+        // Both occurrences of the path must be escaped, or a crafted path could
+        // break out of one of them.
+        let cmd = metadata_probe_command(Path::new("/etc/my dir/file"));
+        assert!(
+            !cmd.contains("/etc/my dir/file "),
+            "unescaped path leaked into the command: {cmd}"
+        );
     }
 }
