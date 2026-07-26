@@ -1597,7 +1597,10 @@ mod tests {
         // The two lists live in different crates: this plugin decides what is
         // critical, and hardener-state decides what a rollback may delete. A
         // path added here but not there would be deletable by a rollback
-        // reading a checkpoint that wrongly records it as absent.
+        // reading a checkpoint that wrongly records it as absent. This check
+        // is one-directional only: UNDELETABLE_ROLLBACK_PATHS may legitimately
+        // protect paths this plugin does not harden, so the reverse is not
+        // asserted here.
         for directive in CRITICAL_PERMISSIONS {
             assert!(
                 hardener_common::types::UNDELETABLE_ROLLBACK_PATHS

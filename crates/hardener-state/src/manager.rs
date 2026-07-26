@@ -780,23 +780,31 @@ impl CheckpointManager {
         // A mode-0 row means "absent at capture", but a checkpoint written by a
         // version that could not read a path's metadata records an existing file
         // the same way, and upgrading does not rewrite rows already stored. An
-        // apply never creates these paths, so deleting one is never a correct
-        // restore: refuse rather than trust the row.
-        if matches!(action, FileRestoreAction::Removed)
-            && UNDELETABLE_ROLLBACK_PATHS.contains(&path_str.as_str())
-        {
-            return (
-                FileRestoreAction::Skipped,
-                Err(HardeningError::Config(format!(
-                    "Refusing to delete {path_str} during rollback: the checkpoint records it as \
-                     absent, which for this path means the checkpoint is untrustworthy rather \
-                     than that the file should be removed"
-                ))),
-            );
-        }
-
-        // Remove files that did not exist at checkpoint time.
+        // apply never creates any of these paths, so a row calling one absent
+        // while the host actually has it is an untrustworthy row rather than an
+        // instruction to delete. A path that is genuinely still absent needs no
+        // action at all, and must not be reported as a failure.
         if matches!(action, FileRestoreAction::Removed) {
+            if UNDELETABLE_ROLLBACK_PATHS.contains(&path_str.as_str()) {
+                return match executor.path_exists(path).await {
+                    Ok(false) => (FileRestoreAction::Skipped, Ok(())),
+                    Ok(true) => (
+                        FileRestoreAction::Skipped,
+                        Err(HardeningError::Rollback(format!(
+                            "Refusing to delete {path_str}: the checkpoint records it as absent but \
+                             the file is present, so the checkpoint cannot be trusted for this path"
+                        ))),
+                    ),
+                    Err(e) => (
+                        FileRestoreAction::Skipped,
+                        Err(HardeningError::Rollback(format!(
+                            "Refusing to delete {path_str}: could not determine whether it exists: {e}"
+                        ))),
+                    ),
+                };
+            }
+
+            // Remove files that did not exist at checkpoint time.
             let result = executor
                 .execute_command("rm", &["-f", path_str])
                 .await
@@ -1146,6 +1154,80 @@ mod tests {
         assert!(
             !result.rollback_success,
             "a refused deletion means the checkpoint is untrustworthy and must be reported, not silently swallowed"
+        );
+    }
+
+    #[tokio::test]
+    async fn rollback_refuses_to_delete_a_critical_path_when_existence_cannot_be_checked() {
+        // The existence probe itself can fail, for example an SSH command that
+        // dies mid-check. That is neither "confirmed absent" nor "confirmed
+        // present": the guard must fail closed rather than guess either way.
+        let manager = test_manager().await;
+        let passwd = "/etc/passwd";
+
+        let capturing = MockExecutor::new();
+        let cp_id = manager
+            .create_checkpoint_metadata_only(&capturing, "poisoned", &[Path::new(passwd)])
+            .await
+            .expect("capture of a confirmed-absent path must succeed");
+
+        let restoring = MockExecutor::new().with_path_exists_error(passwd);
+
+        let result = manager
+            .rollback(&restoring, &cp_id)
+            .await
+            .expect("rollback must run rather than abort");
+
+        let restoring_log = restoring.log();
+        let deletions: Vec<_> = restoring_log
+            .commands_executed
+            .iter()
+            .filter(|(cmd, args)| cmd == "rm" && args.iter().any(|a| a == passwd))
+            .collect();
+        assert!(
+            deletions.is_empty(),
+            "rollback must never delete {passwd} when its existence cannot be confirmed, but issued: {deletions:?}"
+        );
+        assert_eq!(
+            result.rollback_files[0].restore_action,
+            FileRestoreAction::Skipped,
+            "an unverifiable path must be recorded as Skipped"
+        );
+        assert!(
+            !result.rollback_success,
+            "an unverifiable path means rollback cannot proceed safely and must be reported, not silently swallowed"
+        );
+    }
+
+    #[tokio::test]
+    async fn rollback_succeeds_when_a_protected_path_is_genuinely_absent() {
+        // A minimal host with no sudo installed has no /etc/sudoers.d. Capture
+        // records that absence correctly, so rollback has nothing to delete and
+        // must report an ordinary success. Refusing here would fail every
+        // rollback on every host that lacks an optional package.
+        let manager = test_manager().await;
+        let sudoers_d = "/etc/sudoers.d";
+
+        // Absent at capture and still absent at restore: nothing registered.
+        let executor = MockExecutor::new();
+        let cp_id = manager
+            .create_checkpoint_metadata_only(&executor, "minimal-host", &[Path::new(sudoers_d)])
+            .await
+            .expect("capture of a confirmed-absent path must succeed");
+
+        let result = manager
+            .rollback(&executor, &cp_id)
+            .await
+            .expect("rollback must run");
+
+        assert!(
+            result.rollback_success,
+            "a genuinely absent optional path must not fail the rollback: {result:?}"
+        );
+        assert!(
+            result.rollback_files[0].restore_error.is_none(),
+            "no error should be recorded for a path that was never there: {:?}",
+            result.rollback_files[0].restore_error
         );
     }
 

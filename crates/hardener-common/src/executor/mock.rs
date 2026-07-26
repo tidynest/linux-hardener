@@ -59,6 +59,7 @@ pub struct MockExecutor {
     command_exists: CommandExistsStore,
     read_permission_denied: PermissionDeniedStore,
     metadata_error: PermissionDeniedStore,
+    path_exists_error: PermissionDeniedStore,
     path_exists_override: PathExistsStore,
     log: LogStore,
     is_remote: bool,
@@ -82,6 +83,7 @@ impl MockExecutor {
             command_exists: Arc::new(Mutex::new(HashMap::new())),
             read_permission_denied: Arc::new(Mutex::new(HashSet::new())),
             metadata_error: Arc::new(Mutex::new(HashSet::new())),
+            path_exists_error: Arc::new(Mutex::new(HashSet::new())),
             path_exists_override: Arc::new(Mutex::new(HashMap::new())),
             log: Arc::new(Mutex::new(MockExecutorLog::default())),
             is_remote: false,
@@ -240,6 +242,19 @@ impl MockExecutor {
         self
     }
 
+    /// Marks a path whose existence probe fails, simulating an executor that
+    /// could not determine whether the path exists, for example an SSH command
+    /// that failed mid-probe. Distinct from a confirmed absence: the executor
+    /// contract says `Err` means "could not determine", which callers must
+    /// treat as fail closed rather than as absence.
+    pub fn with_path_exists_error(self, path: &str) -> Self {
+        self.path_exists_error
+            .lock()
+            .expect("path_exists_error mutex poisoned")
+            .insert(PathBuf::from(path));
+        self
+    }
+
     /// Returns the operation log for assertions.
     pub fn log(&self) -> MockExecutorLog {
         self.log.lock().expect("log mutex poisoned").clone()
@@ -340,6 +355,18 @@ impl SystemExecutor for MockExecutor {
     }
 
     async fn path_exists(&self, path: &Path) -> Result<bool> {
+        if self
+            .path_exists_error
+            .lock()
+            .expect("path_exists_error mutex poisoned")
+            .contains(path)
+        {
+            return Err(anyhow::Error::new(std::io::Error::other(format!(
+                "Mock: path_exists unavailable: {}",
+                path.display()
+            ))));
+        }
+
         if let Some(exists) = self
             .path_exists_override
             .lock()
@@ -502,5 +529,13 @@ mod tests {
         mock.file_metadata(std::path::Path::new("/etc/shadow"))
             .await
             .expect_err("metadata is still unreadable");
+    }
+
+    #[tokio::test]
+    async fn path_exists_error_is_not_reported_as_absence() {
+        let mock = MockExecutor::new().with_path_exists_error("/etc/passwd");
+        mock.path_exists(std::path::Path::new("/etc/passwd"))
+            .await
+            .expect_err("an unverifiable path must error, never report exists: false");
     }
 }
