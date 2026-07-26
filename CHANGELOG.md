@@ -110,12 +110,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   genuinely not set, and `/etc/login.defs` is unaffected: `scan` still reads it
   leniently. `apply --dry-run` follows the same rule, listing the directive as
   "current value requires root" instead of "currently not set".
-- Which line `apply` rewrites in a configuration file has changed. A live
-  definition is now always the line it targets. `/etc/ssh/sshd_config` ships
-  its defaults commented out, and wherever a commented directive preceded the
-  live one, the comment was the line that got rewritten, leaving the live
-  directive untouched below it and the file carrying two live definitions of
-  the same directive. In `/etc/security/pwquality.conf`, `/etc/login.defs`,
+- Which line `apply` rewrites in a configuration file has changed. Within the
+  part of a file that sets a host's global policy, a live definition is now
+  always the line it targets. `/etc/ssh/sshd_config` ships its defaults
+  commented out, and wherever a commented directive preceded the live one, the
+  comment was the line that got rewritten, leaving the live directive
+  untouched below it and the file carrying two live definitions of the same
+  directive. That global part ends at the first live `Match` line, since every
+  directive below one applies only to the connections its block matches; see
+  the related entry under Fixed. In `/etc/security/pwquality.conf`, `/etc/login.defs`,
   `/etc/security/faillock.conf` and `/etc/security/pwhistory.conf`, a
   commented directive is now activated where it sits when the file holds no
   live definition of it, rather than a new line being appended at the end of
@@ -176,6 +179,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the line an earlier release appended is removed. A host hardened by an
   earlier release will report a violation it previously reported as a pass;
   running `apply` repairs the file and the report together.
+- `apply` could scope a global SSH setting to a single `Match` block. A
+  directive `/etc/ssh/sshd_config` did not mention at all was appended to the
+  end of the file, and because `sshd_config(5)` puts `Match` blocks last, that
+  is inside the final block on any host that has one. The setting then applied
+  only to the users, groups or addresses that block matches, while the rest of
+  the host kept sshd's compiled default. `apply` now treats the first live
+  `Match` line as the end of the file's global section: it never rewrites a
+  directive below one, and inserts a new directive above the block instead of
+  at the end of the file. Hosts with a `Match` block that were hardened by an
+  earlier release should be checked for a hardening directive sitting inside
+  it, which `apply` cannot move on its own.
 
 ## [1.4.0] - 2026-07-19
 
