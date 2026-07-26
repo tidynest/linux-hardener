@@ -340,6 +340,7 @@ fn parse_metadata_probe(stdout: &str) -> Result<FileMetadata> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::PermissionsExt;
 
     #[test]
     fn connect_error_carries_reason_and_no_hint_on_network_failure() {
@@ -504,6 +505,128 @@ mod tests {
         assert!(
             !cmd.contains("/etc/my dir/file "),
             "unescaped path leaked into the command: {cmd}"
+        );
+    }
+
+    // The two tests above assert on substrings of the command text. A command
+    // with `&&`/`||` swapped, or a `stat` gated on the wrong branch, still
+    // contains every one of those substrings and would still pass them - that
+    // textual match is exactly how the original `|| echo 'NOTFOUND'` survived
+    // review. The tests below run the real command through a real shell
+    // instead, so they exercise the actual branch behaviour.
+
+    /// Scratch directory unique to one test run, so parallel test binaries and
+    /// repeated runs never collide. Removed on drop, including on panic, so a
+    /// failing assertion never leaks a directory under the system temp dir.
+    struct ScratchDir(PathBuf);
+
+    impl ScratchDir {
+        fn new(label: &str) -> Self {
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock")
+                .as_nanos();
+            let dir = std::env::temp_dir().join(format!(
+                "hardener-ssh-metadata-probe-{label}-{}-{nanos}",
+                std::process::id()
+            ));
+            std::fs::create_dir_all(&dir).expect("create scratch dir");
+            Self(dir)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for ScratchDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// Runs `metadata_probe_command(path)` through a real `/bin/sh -c`,
+    /// optionally shadowing PATH lookups with `fake_bin_dir` prepended ahead
+    /// of the real PATH (used to make `stat` resolve to a binary that always
+    /// fails), and returns raw stdout for `parse_metadata_probe` to classify.
+    /// The shell itself is located by absolute path so overriding PATH for
+    /// `stat` resolution never breaks finding `sh`.
+    fn run_probe(path: &Path, fake_bin_dir: Option<&Path>) -> String {
+        let mut command = std::process::Command::new("/bin/sh");
+        command.arg("-c").arg(metadata_probe_command(path));
+        if let Some(dir) = fake_bin_dir {
+            let real_path = std::env::var("PATH").unwrap_or_default();
+            command.env("PATH", format!("{}:{real_path}", dir.display()));
+        }
+        let output = command
+            .output()
+            .expect("run the metadata probe under a real shell");
+        String::from_utf8_lossy(&output.stdout).into_owned()
+    }
+
+    #[test]
+    fn metadata_probe_execution_confirms_an_existing_readable_path() {
+        let dir = ScratchDir::new("exists");
+        let file = dir.path().join("target");
+        std::fs::write(&file, b"content").expect("write fixture file");
+
+        let stdout = run_probe(&file, None);
+        assert!(
+            stdout.starts_with("E\n"),
+            "an existing path must be positively confirmed, got: {stdout:?}"
+        );
+        let meta = parse_metadata_probe(&stdout).expect("existing readable path must parse");
+        assert!(meta.exists, "readable existing path must report exists");
+    }
+
+    #[test]
+    fn metadata_probe_execution_confirms_an_absent_path() {
+        let dir = ScratchDir::new("absent");
+        let missing = dir.path().join("does-not-exist");
+
+        let stdout = run_probe(&missing, None);
+        assert_eq!(
+            stdout.trim(),
+            "N",
+            "an absent path must yield a bare N marker, got: {stdout:?}"
+        );
+        let meta = parse_metadata_probe(&stdout).expect("confirmed absence must not be an error");
+        assert!(!meta.exists, "absent path must report exists = false");
+    }
+
+    #[test]
+    fn metadata_probe_execution_flags_an_existing_unreadable_path_as_unverifiable() {
+        let dir = ScratchDir::new("stat-fails");
+        let file = dir.path().join("target");
+        std::fs::write(&file, b"content").expect("write fixture file");
+
+        // Shadow `stat` on PATH with a binary that always fails, so the path
+        // genuinely exists while the stat probe genuinely produces nothing -
+        // the same shape an incompatible `stat` or a permission error
+        // produces on a real host. `test` and `echo` are shell builtins, so
+        // they still resolve correctly under this restricted PATH.
+        let fake_bin = dir.path().join("fakebin");
+        std::fs::create_dir_all(&fake_bin).expect("create fake bin dir");
+        let fake_stat = fake_bin.join("stat");
+        std::fs::write(&fake_stat, b"#!/bin/sh\nexit 1\n").expect("write fake stat binary");
+        let mut perms = std::fs::metadata(&fake_stat)
+            .expect("stat the fake stat binary")
+            .permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&fake_stat, perms).expect("make fake stat executable");
+
+        let stdout = run_probe(&file, Some(&fake_bin));
+        assert_eq!(
+            stdout.trim(),
+            "E",
+            "existing path with a failing stat must yield a bare E marker, got: {stdout:?}"
+        );
+        let err = parse_metadata_probe(&stdout)
+            .expect_err("a path that exists but cannot be stat'd must never read as absent");
+        let message = format!("{err:#}");
+        assert!(
+            message.contains("could not be read"),
+            "error must say the metadata was unreadable, got: {message}"
         );
     }
 }
