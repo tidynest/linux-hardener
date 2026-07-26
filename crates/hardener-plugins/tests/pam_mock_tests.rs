@@ -1308,7 +1308,12 @@ async fn pam_apply_refuses_inline_pamd_override() {
 /// scan. The permission failure surfaces as unchecked instead.
 #[tokio::test]
 async fn pam_scan_reports_unchecked_not_findings_when_pwquality_is_root_only() {
+    // Registered as an existing file, then marked unreadable: a root-only
+    // conf is still stat-able (its existence is not secret), only its
+    // content is blocked, so the mock must reflect both facts for the
+    // classifier's existence probe to land on Unreadable, not Absent.
     let mock = MockExecutor::new()
+        .with_file("/etc/security/pwquality.conf", "minlen 14\n")
         .with_read_permission_denied("/etc/security/pwquality.conf")
         .with_file("/etc/login.defs", "PASS_MAX_DAYS 365\n");
     let ctx = Context::with_executor(Arc::new(mock));
@@ -1340,6 +1345,10 @@ async fn pam_scan_reports_unchecked_not_findings_when_pwquality_is_root_only() {
 /// surface their threshold directives as unchecked, not as "not set" findings.
 #[tokio::test]
 async fn pam_scan_reports_unchecked_when_threshold_confs_are_root_only() {
+    // Both threshold confs are registered as existing files, then marked
+    // unreadable, so the classifier's existence probe lands on Unreadable
+    // rather than the Absent it would (wrongly) see for a path with no
+    // metadata at all.
     let mock = MockExecutor::new()
         .with_file(
             "/etc/security/pwquality.conf",
@@ -1349,7 +1358,9 @@ async fn pam_scan_reports_unchecked_when_threshold_confs_are_root_only() {
             "/etc/login.defs",
             "PASS_MAX_DAYS 90\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n",
         )
+        .with_file("/etc/security/faillock.conf", "deny = 3\n")
         .with_read_permission_denied("/etc/security/faillock.conf")
+        .with_file("/etc/security/pwhistory.conf", "remember = 10\n")
         .with_read_permission_denied("/etc/security/pwhistory.conf");
     let ctx = Context::with_executor(Arc::new(mock));
     let result = PamHardeningPlugin::new()

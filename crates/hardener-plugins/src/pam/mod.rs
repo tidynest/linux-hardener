@@ -1044,7 +1044,8 @@ impl HardeningPlugin for PamHardeningPlugin {
         // SecurityConf/PwQuality estimate below.
         let login_defs_str = match &login_defs {
             ConfRead::Content(c) => c.as_str(),
-            ConfRead::PermissionDenied => "",
+            ConfRead::Absent => "",
+            ConfRead::Unreadable(_) => "",
         };
 
         for d in PAM_DIRECTIVES {
@@ -1076,14 +1077,23 @@ impl HardeningPlugin for PamHardeningPlugin {
                         .get(d.pam_directive_name)
                         .map(|s| s.as_str())
                         .unwrap_or(d.pam_secure_value);
-                    let ConfRead::Content(content) = read else {
-                        // Root-only file: never claim "not set" for a value
-                        // that cannot be read at this privilege level.
-                        estimated_changes.push(format!(
-                            "Set {} = {} (current value requires root; applied only if it differs)",
-                            d.pam_directive_name, target_value
-                        ));
-                        continue;
+                    // Absent reads as empty content, same as a confirmed-missing
+                    // file always has: parsing finds nothing and the directive
+                    // is honestly reported "(currently not set)" below. Only an
+                    // Unreadable file (existing but blocked by privilege) must
+                    // avoid that claim, since it is not a fact this scan can see.
+                    let content = match read {
+                        ConfRead::Content(c) => c.as_str(),
+                        ConfRead::Absent => "",
+                        ConfRead::Unreadable(_) => {
+                            // Root-only file: never claim "not set" for a value
+                            // that cannot be read at this privilege level.
+                            estimated_changes.push(format!(
+                                "Set {} = {} (current value requires root; applied only if it differs)",
+                                d.pam_directive_name, target_value
+                            ));
+                            continue;
+                        }
                     };
                     match parse_config_value(
                         content,
@@ -1389,23 +1399,35 @@ async fn read_pamd_inline(ctx: &Context, arg: &str) -> Option<String> {
     None
 }
 
-/// Outcome of reading a scan-relevant config file at the current privilege level.
+/// How a configuration file read turned out.
+///
+/// `Absent` and `Unreadable` are deliberately distinct: a file that is not
+/// there has genuinely unset directives and may be created, whereas a file
+/// whose contents could not be read tells us nothing, and merging directives
+/// into the empty string would replace the host's file with ours.
 enum ConfRead {
     Content(String),
-    PermissionDenied,
+    Absent,
+    // The carried error string is not read by any consumer this task
+    // touches; it is here for later callers (checkpoint/diagnostic paths)
+    // that need to say *why* a file was unreadable, not just that it was.
+    #[allow(dead_code)]
+    Unreadable(String),
 }
 
-/// Reads a config file, distinguishing privilege failures from absence.
-/// A missing file reads as empty content (directives genuinely not set);
-/// a permission failure must not masquerade as "not set".
+/// Reads a config file, distinguishing absence from a failure to read.
+/// Fails closed: any read failure of a path that is not confirmed absent is
+/// `Unreadable`, including a failure to determine whether it exists at all.
 async fn read_conf_classified(ctx: &Context, path: &str) -> ConfRead {
     match ctx.executor().read_file(Path::new(path)).await {
         Ok(content) => ConfRead::Content(content),
-        Err(e) if hardener_common::error::is_permission_denied(&e) => ConfRead::PermissionDenied,
-        Err(e) => {
-            warn!("Failed to read {}: {}", path, e);
-            ConfRead::Content(String::new())
-        }
+        Err(e) => match ctx.executor().path_exists(Path::new(path)).await {
+            Ok(false) => ConfRead::Absent,
+            _ => {
+                warn!("Failed to read {}: {}", path, e);
+                ConfRead::Unreadable(e.to_string())
+            }
+        },
     }
 }
 
@@ -1424,7 +1446,9 @@ async fn read_effective_threshold(ctx: &Context, arg: &str, conf: &str) -> Thres
         return ThresholdRead::Value(inline);
     }
     match read_conf_classified(ctx, conf).await {
-        ConfRead::PermissionDenied => ThresholdRead::PermissionDenied,
+        ConfRead::Unreadable(_) => ThresholdRead::PermissionDenied,
+        // A missing file has no directives, same as today: empty content.
+        ConfRead::Absent => ThresholdRead::NotSet,
         ConfRead::Content(content) => {
             match parse_config_value(&content, arg, ConfigFormat::KeyValue, true) {
                 Some(v) => ThresholdRead::Value(v),
@@ -1487,7 +1511,9 @@ async fn observed_pam_value(
                 Some(v) => PamObserved::Value(v),
                 None => PamObserved::NotSet,
             },
-            ConfRead::PermissionDenied => {
+            // A missing file has no directives, same as today: empty content.
+            ConfRead::Absent => PamObserved::NotSet,
+            ConfRead::Unreadable(_) => {
                 PamObserved::PermissionDenied("/etc/security/pwquality.conf")
             }
         },
@@ -1879,6 +1905,46 @@ mod tests {
         assert!(
             message.contains("Permission denied"),
             "the error must carry cp's own stderr so an operator can act on it, got: {message}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_read_error_is_not_reported_as_empty_content() {
+        use hardener_common::executor::MockExecutor;
+        use std::sync::Arc;
+
+        // A file that exists but cannot be read must never classify as content.
+        // Empty content means "the directive is genuinely not set", which is a
+        // different fact and drives a rewrite.
+        let path = "/etc/security/faillock.conf";
+        let executor = MockExecutor::new()
+            .with_file(path, "deny = 3\n")
+            .with_read_permission_denied(path);
+        let ctx = Context::with_executor(Arc::new(executor));
+
+        assert!(
+            matches!(
+                read_conf_classified(&ctx, path).await,
+                ConfRead::Unreadable(_)
+            ),
+            "an unreadable file must classify as Unreadable"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_absent_file_is_distinguishable_from_an_unreadable_one() {
+        use hardener_common::executor::MockExecutor;
+        use std::sync::Arc;
+
+        // Nothing registered: the mock reports a confirmed absence.
+        let ctx = Context::with_executor(Arc::new(MockExecutor::new()));
+
+        assert!(
+            matches!(
+                read_conf_classified(&ctx, "/etc/security/faillock.conf").await,
+                ConfRead::Absent
+            ),
+            "a file that is simply not there must classify as Absent, since creating it is correct"
         );
     }
 
