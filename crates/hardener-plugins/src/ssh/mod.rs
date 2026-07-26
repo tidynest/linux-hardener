@@ -14,7 +14,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use hardener_common::{
     error::Result,
-    file_utils::{ConfigFormat, parse_config_value, set_config_directive},
+    file_utils::{ConfigFormat, Duplicates, parse_config_value, set_config_directive},
     types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
@@ -1232,6 +1232,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                     target_value,
                     ConfigFormat::SpaceSeparated,
                     false,
+                    Duplicates::Keep,
                 );
 
                 changes.push(Change {
@@ -1327,6 +1328,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                     &target_value,
                     ConfigFormat::SpaceSeparated,
                     false,
+                    Duplicates::Keep,
                 );
                 changes.push(Change {
                     change_description: format!(

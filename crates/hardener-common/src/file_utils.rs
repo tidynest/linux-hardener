@@ -209,6 +209,20 @@ fn strip_prefix_with_case<'a>(s: &'a str, prefix: &str, case_sensitive: bool) ->
     }
 }
 
+/// Whether a second definition of the same directive is meaningful in this
+/// file.
+///
+/// `login.defs` takes one definition per key, so a second is stale and should
+/// go. `sshd_config` scopes a repeated directive to its enclosing `Match`
+/// block, so removing one would change which hosts a rule applies to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Duplicates {
+    /// Leave every other definition where it is.
+    Keep,
+    /// Remove other uncommented definitions of this key.
+    Remove,
+}
+
 /// Sets or updates a directive in configuration content.
 ///
 /// A live (uncommented) definition is what the daemon reads, so it is always
@@ -223,6 +237,8 @@ fn strip_prefix_with_case<'a>(s: &'a str, prefix: &str, case_sensitive: bool) ->
 /// * `value` - The value to set
 /// * `format` - The config file format (affects output format)
 /// * `case_sensitive` - Whether to match directive names case-sensitively
+/// * `duplicates` - Whether a further live definition of the key is meaningful
+///   in this file, or stale and safe to drop
 ///
 /// # Returns
 /// New content with the directive set.
@@ -232,6 +248,7 @@ pub fn set_config_directive(
     value: &str,
     format: ConfigFormat,
     case_sensitive: bool,
+    duplicates: Duplicates,
 ) -> String {
     let mut lines: Vec<String> = content.lines().map(String::from).collect();
 
@@ -246,6 +263,7 @@ pub fn set_config_directive(
 
     let mut live: Option<usize> = None;
     let mut commented: Option<usize> = None;
+    let mut extra: Vec<usize> = Vec::new();
 
     for (index, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
@@ -271,12 +289,23 @@ pub fn set_config_directive(
             commented.get_or_insert(index);
         } else if live.is_none() {
             live = Some(index);
+        } else {
+            extra.push(index);
         }
     }
 
     match live.or(commented) {
         Some(index) => lines[index] = new_line,
         None => lines.push(new_line),
+    }
+
+    // Only when the caller says a second definition cannot be meaningful.
+    // `extra` holds live lines after the one just rewritten, so removing them
+    // in reverse leaves the rewritten index valid.
+    if duplicates == Duplicates::Remove {
+        for index in extra.into_iter().rev() {
+            lines.remove(index);
+        }
     }
 
     lines.join("\n")
@@ -540,6 +569,7 @@ PASS_MIN_DAYS\t0
             "90",
             ConfigFormat::SpaceSeparated,
             true,
+            Duplicates::Keep,
         );
         assert!(
             out.contains("#\tPASS_MAX_DAYS\tMaximum number of days"),
@@ -563,7 +593,52 @@ PASS_MIN_DAYS\t0
             "no",
             ConfigFormat::SpaceSeparated,
             true,
+            Duplicates::Keep,
         );
         assert_eq!(out.trim(), "PermitRootLogin no");
+    }
+
+    #[test]
+    fn remove_drops_a_later_definition_of_the_same_key() {
+        let damaged = format!("{REAL_LOGIN_DEFS}PASS_MAX_DAYS = 90\n");
+        let out = set_config_directive(
+            &damaged,
+            "PASS_MAX_DAYS",
+            "90",
+            ConfigFormat::SpaceSeparated,
+            true,
+            Duplicates::Remove,
+        );
+        assert!(out.contains("PASS_MAX_DAYS 90"), "{out}");
+        assert!(
+            !out.contains("PASS_MAX_DAYS = 90"),
+            "the appended line must go:\n{out}"
+        );
+        assert!(
+            out.contains("#\tPASS_MAX_DAYS\tMaximum number of days"),
+            "a comment is documentation and is never removed:\n{out}",
+        );
+    }
+
+    #[test]
+    fn keep_leaves_a_match_block_directive_alone() {
+        let sshd = "\
+PermitRootLogin yes
+Match Address 10.0.0.0/8
+    PermitRootLogin yes
+";
+        let out = set_config_directive(
+            sshd,
+            "PermitRootLogin",
+            "no",
+            ConfigFormat::SpaceSeparated,
+            true,
+            Duplicates::Keep,
+        );
+        assert!(out.contains("PermitRootLogin no"), "{out}");
+        assert!(
+            out.contains("    PermitRootLogin yes"),
+            "a Match scoped directive is not a duplicate and must survive:\n{out}",
+        );
     }
 }
