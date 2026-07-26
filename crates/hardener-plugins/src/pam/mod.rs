@@ -1090,9 +1090,11 @@ impl HardeningPlugin for PamHardeningPlugin {
         let mut estimated_changes = Vec::new();
         let mut compliant_count = 0usize;
 
-        // Plain content for the shared helper's login_defs argument: it
-        // carries no permission distinction, matching scan's and apply's
-        // existing lenient (always-content) read of /etc/login.defs. The
+        // Plain content for the shared helper's login_defs argument: it carries
+        // no permission distinction, so an unreadable /etc/login.defs renders
+        // its directives as "not set" here. That matches scan's lenient
+        // (always-content) read, and apply, which classifies its read but still
+        // seeds an empty buffer for a file it will then refuse to rewrite. The
         // classified `login_defs` above is still used, unchanged, by the
         // SecurityConf/PwQuality estimate below.
         let login_defs_str = match &login_defs {

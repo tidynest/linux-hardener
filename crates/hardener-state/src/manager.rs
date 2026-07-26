@@ -1568,9 +1568,16 @@ mod tests {
             .create_checkpoint(&executor, "unreadable", &[Path::new(path)])
             .await;
 
+        let error = result
+            .expect_err("a declared path whose content could not be read must fail the capture")
+            .to_string();
+        // Named in the capture's own words, not merely somewhere in the wrapped
+        // cause: this mock's read error happens to repeat the path, but a real
+        // one need not (a bare "Permission denied (os error 13)" does not), and
+        // an operator cannot act on a failure that does not say which file.
         assert!(
-            result.is_err(),
-            "a declared path whose content could not be read must fail the capture, got: {result:?}"
+            error.contains(&format!("Cannot checkpoint {path}")),
+            "the failure must name the path it could not capture, got: {error}"
         );
     }
 

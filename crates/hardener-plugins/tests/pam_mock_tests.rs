@@ -1151,30 +1151,17 @@ async fn apply_still_creates_an_absent_security_conf() {
 
 #[tokio::test]
 async fn apply_refuses_to_rewrite_an_unreadable_pwquality() {
-    use std::time::{SystemTime, UNIX_EPOCH};
-
     // pwquality.conf exists with a drifted value, so apply wants to rewrite it,
     // but cannot read it. Rewriting would discard every directive the host has.
+    // No `cp` is registered, for the reason given in
+    // `apply_refuses_to_rewrite_an_unreadable_security_conf`: the refusal is
+    // recorded at read time and every directive for the file is skipped, so no
+    // backup is ever attempted, and a registration that cannot run would
+    // misleadingly suggest that path is exercised.
     let path = "/etc/security/pwquality.conf";
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before the unix epoch")
-        .as_secs();
-    let mut executor = secure_pam_executor()
+    let executor = secure_pam_executor()
         .with_file(path, "minlen 8\n")
         .with_read_permission_denied(path);
-    for t in now..now + 3 {
-        let backup = format!("{path}.backup-{t}");
-        executor = executor.with_command(
-            "cp",
-            &[path, &backup],
-            hardener_core::CommandOutput {
-                stdout: String::new(),
-                stderr: String::new(),
-                exit_code: 0,
-            },
-        );
-    }
     let executor = Arc::new(executor);
     let mut ctx = Context::with_executor(executor.clone());
     let plugin = PamHardeningPlugin::new();
@@ -1204,28 +1191,12 @@ async fn apply_refuses_to_rewrite_an_unreadable_pwquality() {
 /// needs its own proof rather than relying on the pwquality coverage above.
 #[tokio::test]
 async fn apply_refuses_to_rewrite_an_unreadable_login_defs() {
-    use std::time::{SystemTime, UNIX_EPOCH};
-
+    // No `cp` is registered here either: the refusal returns before any backup
+    // is attempted, so a registration would only suggest a path that cannot run.
     let path = "/etc/login.defs";
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock before the unix epoch")
-        .as_secs();
-    let mut executor = secure_pam_executor()
+    let executor = secure_pam_executor()
         .with_file(path, "PASS_MAX_DAYS 99999\n")
         .with_read_permission_denied(path);
-    for t in now..now + 3 {
-        let backup = format!("{path}.backup-{t}");
-        executor = executor.with_command(
-            "cp",
-            &[path, &backup],
-            hardener_core::CommandOutput {
-                stdout: String::new(),
-                stderr: String::new(),
-                exit_code: 0,
-            },
-        );
-    }
     let executor = Arc::new(executor);
     let mut ctx = Context::with_executor(executor.clone());
     let plugin = PamHardeningPlugin::new();
@@ -1777,6 +1748,12 @@ async fn pam_scan_inline_override_wins_over_permission_denied_conf() {
             "PASS_MAX_DAYS 90\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n",
         )
         .with_file("/etc/security/pwhistory.conf", "remember = 10\n")
+        // Registered as well as denied: an unregistered path reads as absent,
+        // which would model a host with no faillock.conf rather than the
+        // root-only one this test is named for. The compliant deny = 3 it holds
+        // is the value the finding must NOT carry, since the inline override
+        // wins before this file is ever read.
+        .with_file("/etc/security/faillock.conf", "deny = 3\n")
         .with_read_permission_denied("/etc/security/faillock.conf")
         .with_file(
             "/etc/pam.d/system-auth",
