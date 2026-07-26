@@ -84,6 +84,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deleting it. The remaining files in the same checkpoint are still restored.
   This can also happen for an innocent reason: a package installed after the
   checkpoint was taken supplies a file that genuinely was not there before.
+- A checkpoint no longer records "no content" for a path passed to it
+  directly, whether by a plugin's pre-apply checkpoint or by `hardener
+  checkpoint create` (which declares `/etc/ssh/sshd_config` and
+  `/etc/audit/auditd.conf` among others). Capture now fails when such a path
+  exists and its content cannot be read, rather than storing a row a rollback
+  could not restore from. This can fail a checkpoint that used to succeed
+  silently: `checkpoint create` against a remote host as a non-root user, for
+  one, since a declared file this project's own hardening has locked down to
+  root can no longer be read over a plain SSH session. Files found by
+  recursing into a declared directory keep the previous best-effort
+  behaviour and are logged, so a single unreadable file somewhere under a
+  captured directory does not stop an apply.
 
 ### Fixed
 - Rollback could delete the files it was meant to protect. Over SSH,
@@ -106,6 +118,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SshExecutor::path_exists` reported a path as absent whenever its probe
   returned anything other than `yes`, so unexpected output from a remote shell
   read as a missing file. It now reports output it cannot interpret as an error.
+- The PAM plugin could replace a configuration file with one containing only
+  its own directives. Every read on the apply path turned a failure into an
+  empty string, so a file that existed but could not be read was merged into
+  nothing and written back, discarding the host's settings. Neither recovery
+  path worked: `create_config_backup` checked only that `cp` started, not that
+  it succeeded, so a failed backup was reported as created; and checkpoint
+  capture stored an unreadable file with no content, which rollback restores as
+  permissions only. `apply` now refuses to rewrite a file whose current
+  contents it could not read, reporting that file as failed and continuing with
+  the rest, and a `cp` that exits non-zero is reported as a failed backup. This
+  covers `pwquality.conf`, `login.defs`, `faillock.conf` and `pwhistory.conf`.
 
 ## [1.4.0] - 2026-07-19
 

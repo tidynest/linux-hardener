@@ -1,6 +1,6 @@
 # Configuration reference
 
-**Last Updated**: 2026-07-24
+**Last Updated**: 2026-07-26
 
 Complete reference for the hardener's configuration files. Configuration
 controls which plugins run, tightens directive targets beyond the built-in
@@ -248,6 +248,13 @@ only with `--format json`). Within a file that was read successfully,
 `"not set"` means the directive is genuinely absent. Do not write
 `value = "not set"` to mean "I do not know what this is": treat it as a
 matchable value like any other, for both sections.
+
+Outside exception matching, `[pam]`'s `apply` fails more narrowly than
+`[ssh]` on an unreadable file: it refuses to rewrite whichever of
+`pwquality.conf`, `login.defs`, `faillock.conf` or `pwhistory.conf` it
+could not read, reports that one file as a failed change, and continues
+with the rest of the plugin's directives, rather than aborting the whole
+plugin the way `[ssh]` does.
 
 For `[services]`, `[mac]`, `[audit]`, and `[firewall]` this comparison does
 not apply on any path, including `apply`: the key itself names the deviating
