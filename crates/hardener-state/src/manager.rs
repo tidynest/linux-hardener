@@ -1097,39 +1097,110 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rollback_refuses_to_delete_a_critical_path_recorded_as_absent() {
+    async fn rollback_refuses_to_delete_every_undeletable_path_recorded_as_absent() {
         use hardener_common::executor::FileMetadata;
 
         // A checkpoint written by a version whose stat probe reported an
         // existing file as absent stores it with mode 0, which restore reads
         // as "remove on rollback". Fixing capture cannot disarm rows already
-        // on disk, so restore must refuse to delete an account file outright.
+        // on disk, so restore must refuse the deletion outright.
+        //
+        // Every entry in the list is exercised, not a representative one, so a
+        // path added to UNDELETABLE_ROLLBACK_PATHS is covered the moment it is
+        // added rather than waiting for someone to remember a new test.
         let manager = test_manager().await;
-        let passwd = "/etc/passwd";
 
-        // Capture believes the path is absent: nothing registered on the mock,
-        // so file_metadata reports a confirmed absence and the row stores 0.
+        for path in UNDELETABLE_ROLLBACK_PATHS {
+            // Capture believes the path is absent: nothing registered on the
+            // mock, so file_metadata reports a confirmed absence and the row
+            // stores 0.
+            let capturing = MockExecutor::new();
+            let cp_id = manager
+                .create_checkpoint_metadata_only(&capturing, "poisoned", &[Path::new(path)])
+                .await
+                .unwrap_or_else(|e| panic!("{path}: capture of a confirmed-absent path: {e}"));
+
+            // Rollback then runs against a host that does have the path, which
+            // is what an operator upgrading from v1.4.0 actually has.
+            let restoring = MockExecutor::new().with_file_metadata(
+                path,
+                "",
+                FileMetadata {
+                    exists: true,
+                    is_file: true,
+                    is_dir: false,
+                    mode: 0o100644,
+                    size: 0,
+                    uid: 0,
+                    gid: 0,
+                },
+            );
+
+            let result = manager
+                .rollback(&restoring, &cp_id)
+                .await
+                .unwrap_or_else(|e| panic!("{path}: rollback must run rather than abort: {e}"));
+
+            let restoring_log = restoring.log();
+            let deletions: Vec<_> = restoring_log
+                .commands_executed
+                .iter()
+                .filter(|(cmd, args)| cmd == "rm" && args.iter().any(|a| a == path))
+                .collect();
+            assert!(
+                deletions.is_empty(),
+                "rollback must never delete {path}, but issued: {deletions:?}"
+            );
+            assert_eq!(
+                result.rollback_files[0].restore_action,
+                FileRestoreAction::Skipped,
+                "{path}: a refused deletion must be recorded as Skipped"
+            );
+            assert!(
+                !result.rollback_success,
+                "{path}: a refused deletion means the checkpoint is untrustworthy and must be reported, not silently swallowed"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn rollback_still_deletes_a_path_an_apply_can_create() {
+        use hardener_common::executor::FileMetadata;
+
+        // The counterpart to the test above: the refusal is keyed on list
+        // membership, so a path an apply CAN create must still be removed. The
+        // kernel plugin writes its own /etc/sysctl.d drop-in, so a checkpoint
+        // taken before that apply records the file as absent truthfully, and
+        // deleting it is what the operator asked for. Protecting it instead
+        // would leave the hardening in place after a rollback.
+        let manager = test_manager().await;
+        let drop_in = "/etc/sysctl.d/99-hardener.conf";
+        assert!(
+            !UNDELETABLE_ROLLBACK_PATHS.contains(&drop_in),
+            "{drop_in} is created by the kernel plugin's apply, so it must stay deletable"
+        );
+
         let capturing = MockExecutor::new();
         let cp_id = manager
-            .create_checkpoint_metadata_only(&capturing, "poisoned", &[Path::new(passwd)])
+            .create_checkpoint_metadata_only(&capturing, "pre-apply", &[Path::new(drop_in)])
             .await
             .expect("capture of a confirmed-absent path must succeed");
 
-        // Rollback then runs against a host that does have the file, which is
-        // what an operator upgrading from v1.4.0 actually has.
-        let restoring = MockExecutor::new().with_file_metadata(
-            passwd,
-            "root:x:0:0::/root:/bin/bash\n",
-            FileMetadata {
-                exists: true,
-                is_file: true,
-                is_dir: false,
-                mode: 0o100644,
-                size: 0,
-                uid: 0,
-                gid: 0,
-            },
-        );
+        let restoring = MockExecutor::new()
+            .with_file_metadata(
+                drop_in,
+                "",
+                FileMetadata {
+                    exists: true,
+                    is_file: true,
+                    is_dir: false,
+                    mode: 0o100644,
+                    size: 0,
+                    uid: 0,
+                    gid: 0,
+                },
+            )
+            .with_command("rm", &["-f", drop_in], ok_output());
 
         let result = manager
             .rollback(&restoring, &cp_id)
@@ -1137,23 +1208,22 @@ mod tests {
             .expect("rollback must run rather than abort");
 
         let restoring_log = restoring.log();
-        let deletions: Vec<_> = restoring_log
-            .commands_executed
-            .iter()
-            .filter(|(cmd, args)| cmd == "rm" && args.iter().any(|a| a == passwd))
-            .collect();
         assert!(
-            deletions.is_empty(),
-            "rollback must never delete {passwd}, but issued: {deletions:?}"
+            restoring_log
+                .commands_executed
+                .iter()
+                .any(|(cmd, args)| cmd == "rm" && args.iter().any(|a| a == drop_in)),
+            "a file the apply created must still be deleted, but the commands issued were: {:?}",
+            restoring_log.commands_executed
         );
         assert_eq!(
             result.rollback_files[0].restore_action,
-            FileRestoreAction::Skipped,
-            "a refused deletion must be recorded as Skipped"
+            FileRestoreAction::Removed,
+            "an unprotected path recorded as absent must be Removed"
         );
         assert!(
-            !result.rollback_success,
-            "a refused deletion means the checkpoint is untrustworthy and must be reported, not silently swallowed"
+            result.rollback_success,
+            "deleting a path the apply created is an ordinary success: {result:?}"
         );
     }
 
