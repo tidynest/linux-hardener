@@ -1635,10 +1635,19 @@ async fn create_config_backup(ctx: &Context, file_path: &str) -> Result<String> 
 
     let backup_path = format!("{}.backup-{}", file_path, timestamp);
 
-    ctx.executor()
+    let output = ctx
+        .executor()
         .execute_command("cp", &[file_path, &backup_path])
         .await
         .map_err(|e| HardeningError::Plugin(e.to_string()))?;
+
+    if !output.success() {
+        return Err(HardeningError::Plugin(format!(
+            "Failed to back up {file_path} to {backup_path}: cp exited {} ({})",
+            output.exit_code,
+            output.stderr.trim(),
+        )));
+    }
 
     Ok(backup_path)
 }
@@ -1827,6 +1836,49 @@ mod tests {
         assert!(
             fedramp_for("remember").is_none(),
             "pwhistory has no 800-53 source control and must not claim FedRAMP"
+        );
+    }
+
+    #[tokio::test]
+    async fn backup_reports_failure_when_cp_exits_non_zero() {
+        use hardener_common::executor::{CommandOutput, MockExecutor};
+        use std::sync::Arc;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        // The backup path embeds a unix timestamp, so register the cp across a
+        // small clock window (the idiom used in pam_mock_tests.rs).
+        let path = "/etc/security/faillock.conf";
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock before the unix epoch")
+            .as_secs();
+        let mut executor = MockExecutor::new();
+        for t in now..now + 3 {
+            let backup = format!("{path}.backup-{t}");
+            executor = executor.with_command(
+                "cp",
+                &[path, &backup],
+                CommandOutput {
+                    stdout: String::new(),
+                    stderr: "cp: cannot stat '/etc/security/faillock.conf': Permission denied\n"
+                        .to_string(),
+                    exit_code: 1,
+                },
+            );
+        }
+        let ctx = Context::with_executor(Arc::new(executor));
+
+        let result = create_config_backup(&ctx, path).await;
+
+        let err = result.expect_err("a cp that exits non-zero must not report a backup");
+        let message = err.to_string();
+        assert!(
+            message.contains(path),
+            "the error must name the file it failed to back up, got: {message}"
+        );
+        assert!(
+            message.contains("Permission denied"),
+            "the error must carry cp's own stderr so an operator can act on it, got: {message}"
         );
     }
 
