@@ -18,6 +18,7 @@ type CommandSequenceStore = Arc<Mutex<HashMap<(String, Vec<String>), VecDeque<Co
 type CommandExistsStore = Arc<Mutex<HashMap<String, bool>>>;
 type LogStore = Arc<Mutex<MockExecutorLog>>;
 type PermissionDeniedStore = Arc<Mutex<HashSet<PathBuf>>>;
+type PathExistsStore = Arc<Mutex<HashMap<PathBuf, bool>>>;
 
 /// Records of operations performed on the mock executor.
 #[derive(Clone, Debug, Default)]
@@ -57,6 +58,8 @@ pub struct MockExecutor {
     command_sequences: CommandSequenceStore,
     command_exists: CommandExistsStore,
     read_permission_denied: PermissionDeniedStore,
+    metadata_error: PermissionDeniedStore,
+    path_exists_override: PathExistsStore,
     log: LogStore,
     is_remote: bool,
     description: String,
@@ -78,6 +81,8 @@ impl MockExecutor {
             command_sequences: Arc::new(Mutex::new(HashMap::new())),
             command_exists: Arc::new(Mutex::new(HashMap::new())),
             read_permission_denied: Arc::new(Mutex::new(HashSet::new())),
+            metadata_error: Arc::new(Mutex::new(HashSet::new())),
+            path_exists_override: Arc::new(Mutex::new(HashMap::new())),
             log: Arc::new(Mutex::new(MockExecutorLog::default())),
             is_remote: false,
             description: "mock".to_string(),
@@ -211,6 +216,30 @@ impl MockExecutor {
         self
     }
 
+    /// Marks a path whose metadata read fails, simulating a host whose `stat`
+    /// output cannot be parsed. Distinct from an absent path: the executor
+    /// contract says `Err` means "could not determine", which callers must treat
+    /// as fail closed rather than as absence.
+    pub fn with_metadata_error(self, path: &str) -> Self {
+        self.metadata_error
+            .lock()
+            .expect("metadata_error mutex poisoned")
+            .insert(PathBuf::from(path));
+        self
+    }
+
+    /// Sets `path_exists` for a path independently of its stored metadata, so a
+    /// test can express "the path is there but its metadata cannot be read".
+    /// That divergence is what an incompatible remote `stat` produces, and a
+    /// mock keying both answers off one flag cannot reproduce it.
+    pub fn with_path_exists(self, path: &str, exists: bool) -> Self {
+        self.path_exists_override
+            .lock()
+            .expect("path_exists_override mutex poisoned")
+            .insert(PathBuf::from(path), exists);
+        self
+    }
+
     /// Returns the operation log for assertions.
     pub fn log(&self) -> MockExecutorLog {
         self.log.lock().expect("log mutex poisoned").clone()
@@ -311,6 +340,14 @@ impl SystemExecutor for MockExecutor {
     }
 
     async fn path_exists(&self, path: &Path) -> Result<bool> {
+        if let Some(exists) = self
+            .path_exists_override
+            .lock()
+            .expect("path_exists_override mutex poisoned")
+            .get(path)
+        {
+            return Ok(*exists);
+        }
         Ok(self
             .file_metadata
             .lock()
@@ -321,6 +358,18 @@ impl SystemExecutor for MockExecutor {
     }
 
     async fn file_metadata(&self, path: &Path) -> Result<FileMetadata> {
+        if self
+            .metadata_error
+            .lock()
+            .expect("metadata_error mutex poisoned")
+            .contains(path)
+        {
+            return Err(anyhow::Error::new(std::io::Error::other(format!(
+                "Mock: metadata unavailable: {}",
+                path.display()
+            ))));
+        }
+
         Ok(self
             .file_metadata
             .lock()
@@ -428,5 +477,30 @@ mod tests {
             .await
             .unwrap_err();
         assert!(crate::error::is_permission_denied(&err));
+    }
+
+    #[tokio::test]
+    async fn metadata_error_is_not_reported_as_absence() {
+        let mock = MockExecutor::new().with_metadata_error("/etc/shadow");
+        mock.file_metadata(std::path::Path::new("/etc/shadow"))
+            .await
+            .expect_err("an unverifiable path must error, never report exists: false");
+    }
+
+    #[tokio::test]
+    async fn path_exists_can_disagree_with_metadata() {
+        // The real divergence on an incompatible host: the path is there, but
+        // its metadata cannot be read. A shared flag cannot express this.
+        let mock = MockExecutor::new()
+            .with_metadata_error("/etc/shadow")
+            .with_path_exists("/etc/shadow", true);
+        assert!(
+            mock.path_exists(std::path::Path::new("/etc/shadow"))
+                .await
+                .expect("path_exists does not fail here")
+        );
+        mock.file_metadata(std::path::Path::new("/etc/shadow"))
+            .await
+            .expect_err("metadata is still unreadable");
     }
 }
