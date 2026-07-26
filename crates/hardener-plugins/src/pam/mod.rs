@@ -1615,10 +1615,11 @@ async fn observed_pam_value(
 
 /// State-aware exact-match apply for a config held in memory: mutates `content`
 /// and records a real change only when the file's current value differs from
-/// the target; an already-correct value records a Skipped no-op instead,
-/// leaving the applied count honest. `format` is the syntax the file accepts,
-/// which is the caller's to know: writing a directive in a syntax its file does
-/// not parse leaves the insecure value in force.
+/// the target, or when the file defines the key more than once; anything else
+/// records a Skipped no-op instead, leaving the applied count honest. `format`
+/// is the syntax the file accepts, which is the caller's to know: writing a
+/// directive in a syntax its file does not parse leaves the insecure value in
+/// force.
 fn apply_exact_directive(
     content: &mut String,
     changed: &mut bool,
@@ -1629,7 +1630,14 @@ fn apply_exact_directive(
     file_label: &str,
 ) {
     let current = parse_config_value(content, name, ConfigFormat::Auto, true);
-    if current.as_deref() == Some(target) {
+    let updated = set_config_directive(content, name, target, format, true, Duplicates::Remove);
+    // A correct value alone is not enough to leave the file alone: these files
+    // take one definition per key, and an earlier release appended a second
+    // one in a syntax they do not parse. Skipping on the value would leave that
+    // repair undone on every run, so the file never converges. With the value
+    // already correct the writer can only rewrite a line where it stands or
+    // drop a duplicate, and only the second changes the line count.
+    if current.as_deref() == Some(target) && updated.lines().count() == content.lines().count() {
         changes.push(Change {
             change_type: ChangeType::Skipped,
             change_description: format!("{} already set to {} in {}", name, target, file_label),
@@ -1639,7 +1647,7 @@ fn apply_exact_directive(
         return;
     }
 
-    *content = set_config_directive(content, name, target, format, true, Duplicates::Remove);
+    *content = updated;
     *changed = true;
     changes.push(Change {
         change_type: ChangeType::ConfigFile,

@@ -1317,6 +1317,61 @@ PASS_MAX_DAYS = 90
     );
 }
 
+/// Clearing the line an earlier release appended cannot depend on the value
+/// having drifted. `PASS_WARN_AGE 7` is the stock setting on most hosts and is
+/// already the target, so the stale `PASS_WARN_AGE = 7` below it survived every
+/// apply: the directive reported as already set and the writer never ran. The
+/// file must converge to one definition instead.
+#[tokio::test]
+async fn apply_clears_a_stale_definition_whose_value_already_matches() {
+    const LOGIN_DEFS: &str = "\
+PASS_MAX_DAYS\t90
+PASS_MIN_DAYS\t1
+PASS_WARN_AGE\t7
+PASS_WARN_AGE = 7
+";
+
+    let path = "/etc/login.defs";
+    let executor = Arc::new(with_backup_cp(
+        secure_pam_executor().with_file(path, LOGIN_DEFS),
+        path,
+    ));
+    let mut ctx = Context::with_executor(executor.clone());
+
+    PamHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply must run");
+
+    let log = executor.log();
+    let written = &log
+        .files_written
+        .iter()
+        .find(|(p, _)| p.to_str() == Some(path))
+        .expect("login.defs must be rewritten to clear the stale definition")
+        .1;
+
+    let live: Vec<&str> = written
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .filter(|line| line.split_whitespace().next() == Some("PASS_WARN_AGE"))
+        .collect();
+    assert_eq!(
+        live.len(),
+        1,
+        "login.defs takes one definition per key, so the stale one must go:\n{written}"
+    );
+    assert_eq!(
+        live[0].split_whitespace().collect::<Vec<_>>(),
+        ["PASS_WARN_AGE", "7"],
+        "the surviving line must read `NAME VALUE`, with no `=`:\n{written}"
+    );
+    assert!(
+        written.contains("PASS_MAX_DAYS\t90"),
+        "a directive with nothing to repair must be left exactly as it stands:\n{written}"
+    );
+}
+
 /// The refusal is per file, not per run: one unreadable config must not stop
 /// the other three being hardened, and must contribute exactly one change, the
 /// refusal itself.
