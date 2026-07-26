@@ -59,7 +59,26 @@ pub trait SystemExecutor: Send + Sync {
     /// Checks if a file path exists.
     async fn path_exists(&self, path: &Path) -> Result<bool>;
 
-    /// Gets file metadata.
+    /// Reads metadata for `path`.
+    ///
+    /// The three outcomes are a contract every implementation must honour,
+    /// because callers act on the difference:
+    ///
+    /// - `Ok(FileMetadata { exists: true, .. })`: the path exists and its
+    ///   metadata was read.
+    /// - `Ok(FileMetadata { exists: false, .. })`: absence was **positively
+    ///   confirmed**.
+    /// - `Err`: existence or metadata **could not be determined**. Callers must
+    ///   fail closed and must never treat this as absence.
+    ///
+    /// The distinction is not cosmetic. Checkpoint capture records an absent
+    /// path with `file_permissions: 0`, and rollback removes any path it
+    /// recorded that way, so an implementation that reports an unreadable path
+    /// as absent makes a later rollback delete it.
+    ///
+    /// Known limitation: over SSH, absence is confirmed with `test -e`, which is
+    /// also false when a parent directory cannot be traversed. Such a path reads
+    /// as absent rather than unverifiable.
     async fn file_metadata(&self, path: &Path) -> Result<FileMetadata>;
 
     /// Lists the immediate children of a directory (non-recursive),

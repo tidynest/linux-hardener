@@ -148,6 +148,15 @@ hardener checkpoint list                     # Find the checkpoint ID
 sudo hardener rollback abc123                # Restore to that checkpoint
 ```
 
+A checkpoint that records a protected system path (account databases, `/etc/ssh`,
+`/etc/sudoers` and similar; see `UNDELETABLE_ROLLBACK_PATHS` in the source) as
+absent is never trusted to mean the file should be deleted. If that path is
+present on the host, rollback refuses to remove it, reports it as skipped, and
+marks the run unsuccessful, leaving the file untouched; every other file in the
+checkpoint still restores normally. A path that really is still absent restores
+as a silent no-op, so a host that genuinely lacks an optional file is
+unaffected.
+
 ---
 
 ## checkpoint

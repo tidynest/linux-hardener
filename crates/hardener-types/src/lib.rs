@@ -628,6 +628,53 @@ pub enum FileRestoreAction {
     Skipped,
 }
 
+/// Paths a rollback must never delete, whatever a checkpoint records.
+///
+/// A checkpoint stores an absent path with `file_permissions: 0`, which restore
+/// reads as "remove on rollback". Versions up to and including v1.4.0 could
+/// record an existing file that way when its metadata could not be read, and
+/// upgrading does not rewrite rows already in `checkpoints.db`, so such a row
+/// is an untrustworthy record rather than an instruction to delete.
+///
+/// Membership rule: a path belongs here only when an apply can never create it,
+/// which is what makes deleting it never a correct restore. A path some apply
+/// can bring into existence must stay deletable, whether that is a file the
+/// tool writes without first requiring it to be there, a drop-in of its own, or
+/// a directory it creates with `mkdir`; protecting one of those would leave
+/// behind the very file the operator asked to be rolled back. Where the source
+/// cannot settle the question, the path stays deletable.
+///
+/// Exact matches only. `/etc/sudoers.d` the directory is protected; a drop-in
+/// file inside it that an apply created stays removable.
+pub const UNDELETABLE_ROLLBACK_PATHS: &[&str] = &[
+    // Account, boot and auth paths hardened by the permissions plugin, which
+    // only ever chmods/chowns what is already there.
+    "/root",
+    "/boot",
+    "/etc/ssh",
+    "/etc/sudoers",
+    "/etc/sudoers.d",
+    "/etc/passwd",
+    "/etc/group",
+    "/etc/shadow",
+    "/etc/gshadow",
+    // Distribution-owned configuration the plugins edit in place after a read
+    // that aborts on absence, or capture without ever writing.
+    "/etc/ssh/sshd_config",
+    "/etc/sysctl.conf",
+    "/etc/audit/auditd.conf",
+    "/etc/nftables.conf",
+    "/etc/selinux/config",
+    // Directories the plugins write files into, or capture and never touch.
+    // Writes go through `write_file`, which cannot create a missing parent, and
+    // no apply runs `mkdir` for any of these.
+    "/etc/sysctl.d",
+    "/etc/pam.d",
+    "/etc/security",
+    "/etc/apparmor",
+    "/etc/apparmor.d",
+];
+
 /// Outcome of a single file restore during rollback.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct FileRestoreResult {

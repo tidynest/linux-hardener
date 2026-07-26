@@ -1107,3 +1107,84 @@ async fn test_permissions_validate_nonposix_fs_not_pending() {
         report.validation_report_estimated_changes
     );
 }
+
+/// Covers the branch `apply_path_permissions` takes when a path is confirmed
+/// present (`path_exists` true) but its mode could not be read (`file_metadata`
+/// errors), the state a real `SshExecutor` produces when `stat` fails mid-scan.
+/// `/etc/passwd` is an exact directive (`permission_max_mask: false`, baseline
+/// 0o644 per `CRITICAL_PERMISSIONS`), so `unverified_mode_target` yields
+/// `Some(0o644)` regardless of the unknown current mode, and apply must still
+/// harden it rather than give up. `target_mode` for an exact directive ignores
+/// `current_mode` entirely, so the registered chmod is `0644` (the baseline),
+/// not derived from any observed mode.
+#[tokio::test]
+async fn apply_hardens_an_exact_directive_with_an_unverifiable_mode() {
+    let executor = MockExecutor::new()
+        .remote()
+        .with_metadata_error("/etc/passwd")
+        .with_path_exists("/etc/passwd", true)
+        .with_command(
+            "chmod",
+            &["0644", "/etc/passwd"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        );
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    let plugin = PermissionsHardeningPlugin::new();
+
+    plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply succeeds");
+
+    let log = executor.log();
+    let chmods: Vec<_> = log
+        .commands_executed
+        .iter()
+        .filter(|(program, args)| program == "chmod" && args.iter().any(|a| a == "/etc/passwd"))
+        .collect();
+    assert!(
+        !chmods.is_empty(),
+        "an exact directive with an unverifiable mode must still be hardened"
+    );
+}
+
+/// The max-mask counterpart of the test above. `/etc/shadow` is a max-mask
+/// directive (`permission_max_mask: true`, mask 0o640), whose target is
+/// `current_mode & mask` - uncomputable when `current_mode` is unknown, per
+/// `unverified_mode_target` returning `None` for max-mask directives. Apply
+/// must not guess (that could loosen an already-stricter host); it records a
+/// Skipped change instead of vanishing the path or attempting a chmod.
+#[tokio::test]
+async fn apply_records_a_skip_for_an_unverifiable_max_mask_directive() {
+    let executor = MockExecutor::new()
+        .remote()
+        .with_metadata_error("/etc/shadow")
+        .with_path_exists("/etc/shadow", true);
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    let plugin = PermissionsHardeningPlugin::new();
+
+    let result = plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply succeeds");
+
+    assert!(
+        result
+            .apply_changes
+            .iter()
+            .any(|c| c.change_description.contains("/etc/shadow") && c.is_skipped()),
+        "an unverifiable max-mask path must record a skip, not vanish"
+    );
+
+    let log = executor.log();
+    let chmods: Vec<_> = log
+        .commands_executed
+        .iter()
+        .filter(|(program, args)| program == "chmod" && args.iter().any(|a| a == "/etc/shadow"))
+        .collect();
+    assert!(chmods.is_empty(), "a max-mask target is uncomputable here");
+}

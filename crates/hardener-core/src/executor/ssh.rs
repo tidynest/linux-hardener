@@ -204,16 +204,14 @@ impl SystemExecutor for SshExecutor {
         let cmd = format!("test -e {escaped} && echo yes || echo no");
 
         let output = self.run_command(&cmd).await?;
-        Ok(output.stdout.trim() == "yes")
+        parse_path_exists_probe(&output.stdout)
+            .with_context(|| format!("Failed to determine whether {} exists", path.display()))
     }
 
     async fn file_metadata(&self, path: &Path) -> Result<FileMetadata> {
-        let escaped = shell_escape(&path.display().to_string());
-        let cmd = format!("stat -c '%F %a %s %u %g' {escaped} 2>/dev/null || echo 'NOTFOUND'");
-        let output = self.run_command(&cmd).await?;
-
-        parse_stat_metadata(&output.stdout)
-            .ok_or_else(|| anyhow::anyhow!("Failed to parse stat output: {}", output.stdout.trim()))
+        let output = self.run_command(&metadata_probe_command(path)).await?;
+        parse_metadata_probe(&output.stdout)
+            .with_context(|| format!("Failed to determine metadata for {}", path.display()))
     }
 
     async fn read_dir(&self, path: &Path) -> Result<Vec<PathBuf>> {
@@ -252,32 +250,53 @@ impl SystemExecutor for SshExecutor {
     }
 }
 
-/// Parses `stat -c '%F %a %s %u %g'` output (or the `NOTFOUND` sentinel) into
-/// `FileMetadata`. Pure (no I/O) so the parse is unit-testable off a real host.
+/// Classifies the trimmed output of `path_exists`'s `test -e {path} && echo
+/// yes || echo no` probe.
+///
+/// The command can only print `yes` or `no` on success, so matching is exact
+/// rather than a substring or prefix check: a login banner, a sudo password
+/// prompt, or any other shell noise mixed into stdout must not be folded into
+/// `no`. Rollback's undeletable-path guard treats an `Err` here as "cannot be
+/// determined" and refuses to delete; reading unexpected output as absence
+/// would make that fail-closed arm unreachable over SSH, the same defect
+/// `parse_metadata_probe` fixed for `file_metadata`. Pure (no I/O) so the
+/// classification is unit-testable without a live connection.
+fn parse_path_exists_probe(stdout: &str) -> Result<bool> {
+    match stdout.trim() {
+        "yes" => Ok(true),
+        "no" => Ok(false),
+        other => Err(anyhow::anyhow!(
+            "unrecognised path_exists probe output: {other:?}"
+        )),
+    }
+}
+
+/// Builds the metadata probe: an existence marker, then `stat` output when
+/// `stat` succeeds. Both probes run in one shell invocation, so this costs a
+/// single round trip and leaves the smallest window a remote check can.
+///
+/// `stat` alone cannot carry this. It exits non-zero for a missing path and for
+/// an unreadable one alike, so the previous `|| echo NOTFOUND` shape reported
+/// every failure as absence, and rollback deletes what it recorded as absent.
+fn metadata_probe_command(path: &Path) -> String {
+    let escaped = shell_escape(&path.display().to_string());
+    format!(
+        "test -e {escaped} && echo E || echo N; stat -c '%F %a %s %u %g' {escaped} 2>/dev/null || true"
+    )
+}
+
+/// Parses one `stat -c '%F %a %s %u %g'` line into `FileMetadata`.
 ///
 /// The file-type bit from `%F` is OR-ed into `mode`, so any existing path has a
 /// non-zero mode. Checkpoint rollback reads `mode == 0` as "did not exist at
 /// capture" and removes the path; without the type bit a legitimate 0000-perm
-/// file (e.g. Arch's `/etc/shadow`) would be deleted on a remote rollback. This
-/// mirrors the local executor, which returns the full `st_mode`. Returns `None`
-/// when the line has too few fields to parse.
-fn parse_stat_metadata(stdout: &str) -> Option<FileMetadata> {
-    let stdout = stdout.trim();
-    if stdout == "NOTFOUND" || stdout.is_empty() {
-        return Some(FileMetadata {
-            exists: false,
-            is_file: false,
-            is_dir: false,
-            mode: 0,
-            size: 0,
-            uid: 0,
-            gid: 0,
-        });
-    }
-
+/// file (for example Arch's `/etc/shadow`) would be deleted on a remote
+/// rollback. This mirrors the local executor, which returns the full `st_mode`.
+/// Returns `None` when the line has too few fields to parse.
+fn parse_stat_fields(line: &str) -> Option<FileMetadata> {
     // "%F %a %s %u %g": %F (file type) may contain spaces, so split from the
     // right: rsplitn(5, ' ') yields [gid, uid, size, mode, file_type].
-    let parts: Vec<&str> = stdout.rsplitn(5, ' ').collect();
+    let parts: Vec<&str> = line.rsplitn(5, ' ').collect();
     if parts.len() < 5 {
         return None;
     }
@@ -299,9 +318,51 @@ fn parse_stat_metadata(stdout: &str) -> Option<FileMetadata> {
     })
 }
 
+/// Classifies the two-line probe emitted by `metadata_probe_command`.
+///
+/// Line 1 is the existence marker (`E` or `N`); line 2, when present, is the
+/// `stat -c '%F %a %s %u %g'` output. Pure (no I/O) so the classification is
+/// unit-testable off a real host.
+///
+/// Three outcomes, and the distinction is load bearing. `Ok(exists: false)`
+/// means absence was positively confirmed; `Err` means existence or metadata
+/// could not be determined. Checkpoint rollback deletes a path it recorded as
+/// absent, so an unverifiable path must never be reported as missing.
+fn parse_metadata_probe(stdout: &str) -> Result<FileMetadata> {
+    let mut lines = stdout.trim().lines();
+    let marker = lines.next().unwrap_or("").trim();
+    let stat_line = lines.next().unwrap_or("").trim();
+
+    // A parsed stat line is stronger evidence than the marker: if `test -e` lost
+    // a race with the path being created, trust the metadata actually read.
+    if !stat_line.is_empty() {
+        return parse_stat_fields(stat_line)
+            .ok_or_else(|| anyhow::anyhow!("Unparseable stat output: {stat_line}"));
+    }
+
+    match marker {
+        "N" => Ok(FileMetadata {
+            exists: false,
+            is_file: false,
+            is_dir: false,
+            mode: 0,
+            size: 0,
+            uid: 0,
+            gid: 0,
+        }),
+        "E" => Err(anyhow::anyhow!(
+            "path exists but its metadata could not be read (stat failed or is incompatible)"
+        )),
+        other => Err(anyhow::anyhow!(
+            "unrecognised metadata probe output: {other:?}"
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::PermissionsExt;
 
     #[test]
     fn connect_error_carries_reason_and_no_hint_on_network_failure() {
@@ -371,7 +432,7 @@ mod tests {
         // A remote 0000-perm regular file (e.g. Arch's /etc/shadow): rollback reads
         // mode 0 as "did not exist" and deletes it, so an existing file must never
         // parse to mode 0. Parity with local.rs::metadata_of_zero_perm_file_*.
-        let meta = parse_stat_metadata("regular empty file 0 0 0 0").expect("parse");
+        let meta = parse_metadata_probe("E\nregular empty file 0 0 0 0").expect("parse");
         assert!(meta.exists && meta.is_file);
         assert_ne!(
             meta.mode, 0,
@@ -385,18 +446,8 @@ mod tests {
     }
 
     #[test]
-    fn parse_stat_notfound_keeps_zero_mode_sentinel() {
-        let meta = parse_stat_metadata("NOTFOUND").expect("parse");
-        assert!(!meta.exists);
-        assert_eq!(
-            meta.mode, 0,
-            "absent path keeps the mode-0 'did not exist' sentinel"
-        );
-    }
-
-    #[test]
     fn parse_stat_directory_preserves_perms_and_type() {
-        let meta = parse_stat_metadata("directory 755 4096 0 0").expect("parse");
+        let meta = parse_metadata_probe("E\ndirectory 755 4096 0 0").expect("parse");
         assert!(meta.is_dir);
         assert_eq!(meta.mode & 0o777, 0o755);
         assert_ne!(meta.mode & 0o170000, 0, "type bit present for existing dir");
@@ -405,10 +456,243 @@ mod tests {
     #[test]
     fn parse_stat_regular_file_parses_all_fields() {
         // rsplitn from the right: gid=42, uid=0, size=1234, mode=640, type="regular file".
-        let meta = parse_stat_metadata("regular file 640 1234 0 42").expect("parse");
+        let meta = parse_metadata_probe("E\nregular file 640 1234 0 42").expect("parse");
         assert_eq!(meta.mode & 0o777, 0o640);
         assert_eq!(meta.size, 1234);
         assert_eq!(meta.uid, 0);
         assert_eq!(meta.gid, 42);
+    }
+
+    #[test]
+    fn probe_marks_existing_but_unreadable_path_as_unverifiable() {
+        // The whole point of the change: `stat` failed on a path that is there.
+        // Reporting this as absent is what let rollback delete /etc/passwd.
+        let err = parse_metadata_probe("E\n").expect_err("must not report absence");
+        let message = format!("{err:#}");
+        assert!(
+            message.contains("could not be read"),
+            "error must say the metadata was unreadable, got: {message}"
+        );
+    }
+
+    #[test]
+    fn probe_reports_confirmed_absence_as_ok() {
+        // `test -e` said no and `stat` printed nothing: absence is confirmed, and
+        // this must stay a non-error so hosts lacking an optional path still work.
+        let meta = parse_metadata_probe("N\n").expect("confirmed absence is not an error");
+        assert!(!meta.exists);
+        assert_eq!(
+            meta.mode, 0,
+            "absent path keeps the mode-0 'did not exist' sentinel"
+        );
+    }
+
+    #[test]
+    fn probe_trusts_a_parsed_stat_line_over_a_losing_marker() {
+        // `test -e` can lose a race with a path being created between the two
+        // probes. A parsed stat line is the stronger evidence.
+        let meta = parse_metadata_probe("N\nregular file 640 1234 0 42")
+            .expect("a stat line wins over the marker");
+        assert!(meta.exists);
+        assert_eq!(meta.mode & 0o777, 0o640);
+    }
+
+    #[test]
+    fn probe_rejects_an_unrecognised_marker() {
+        // A shell that emitted something else entirely must not be read as absence.
+        parse_metadata_probe("something unexpected\n")
+            .expect_err("an unrecognised marker must not report absence");
+    }
+
+    #[test]
+    fn probe_rejects_empty_or_whitespace_only_output() {
+        // The original bug's second, unreported arm: completely empty command
+        // output (a dropped connection, a shell that printed nothing at all)
+        // read as confirmed absence too, not just the `NOTFOUND` sentinel.
+        // Only a bare `N` marker may ever confirm absence.
+        for stdout in ["", "\n", "   \n", "\n\n   \n"] {
+            let err = parse_metadata_probe(stdout)
+                .expect_err("empty or whitespace-only output must not confirm absence");
+            let message = format!("{err:#}");
+            assert!(
+                message.contains("unrecognised metadata probe output"),
+                "error must name what was actually received, got: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn path_exists_probe_confirms_presence() {
+        let exists = parse_path_exists_probe("yes\n").expect("a bare yes must parse");
+        assert!(exists, "yes must report presence");
+    }
+
+    #[test]
+    fn path_exists_probe_confirms_absence() {
+        let exists = parse_path_exists_probe("no\n").expect("a bare no must parse");
+        assert!(!exists, "no must report absence");
+    }
+
+    #[test]
+    fn path_exists_probe_rejects_unexpected_output() {
+        // A remote shell that emits a banner, a sudo prompt, or any other
+        // noise ahead of the marker must not be read as "no" - that is the
+        // bug this branch exists to fix, one function over from where it was
+        // first found.
+        let err = parse_path_exists_probe("Last login: Tue Jan  1 00:00:00 2026\nyes")
+            .expect_err("noise ahead of the marker must not resolve to a boolean");
+        let message = format!("{err:#}");
+        assert!(
+            message.contains("unrecognised path_exists probe output"),
+            "error must name what was actually received, got: {message}"
+        );
+    }
+
+    #[test]
+    fn metadata_probe_confirms_existence_and_reads_stat_in_one_round_trip() {
+        let cmd = metadata_probe_command(Path::new("/etc/shadow"));
+        assert!(
+            cmd.contains("test -e"),
+            "absence must be positively confirmed, not inferred from stat failing"
+        );
+        assert!(cmd.contains("stat -c '%F %a %s %u %g'"));
+        assert!(cmd.contains("echo E") && cmd.contains("echo N"));
+        assert!(
+            !cmd.contains("NOTFOUND"),
+            "the sentinel that conflated absent with unreadable must be gone"
+        );
+    }
+
+    #[test]
+    fn metadata_probe_escapes_a_path_with_spaces() {
+        // Both occurrences of the path must be escaped, or a crafted path could
+        // break out of one of them.
+        let cmd = metadata_probe_command(Path::new("/etc/my dir/file"));
+        assert!(
+            !cmd.contains("/etc/my dir/file "),
+            "unescaped path leaked into the command: {cmd}"
+        );
+    }
+
+    // The two tests above assert on substrings of the command text. A command
+    // with `&&`/`||` swapped, or a `stat` gated on the wrong branch, still
+    // contains every one of those substrings and would still pass them - that
+    // textual match is exactly how the original `|| echo 'NOTFOUND'` survived
+    // review. The tests below run the real command through a real shell
+    // instead, so they exercise the actual branch behaviour.
+
+    /// Scratch directory unique to one test run, so parallel test binaries and
+    /// repeated runs never collide. Removed on drop, including on panic, so a
+    /// failing assertion never leaks a directory under the system temp dir.
+    struct ScratchDir(PathBuf);
+
+    impl ScratchDir {
+        fn new(label: &str) -> Self {
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock")
+                .as_nanos();
+            let dir = std::env::temp_dir().join(format!(
+                "hardener-ssh-metadata-probe-{label}-{}-{nanos}",
+                std::process::id()
+            ));
+            std::fs::create_dir_all(&dir).expect("create scratch dir");
+            Self(dir)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for ScratchDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// Runs `metadata_probe_command(path)` through a real `/bin/sh -c`,
+    /// optionally shadowing PATH lookups with `fake_bin_dir` prepended ahead
+    /// of the real PATH (used to make `stat` resolve to a binary that always
+    /// fails), and returns raw stdout for `parse_metadata_probe` to classify.
+    /// The shell itself is located by absolute path so overriding PATH for
+    /// `stat` resolution never breaks finding `sh`.
+    fn run_probe(path: &Path, fake_bin_dir: Option<&Path>) -> String {
+        let mut command = std::process::Command::new("/bin/sh");
+        command.arg("-c").arg(metadata_probe_command(path));
+        if let Some(dir) = fake_bin_dir {
+            let real_path = std::env::var("PATH").unwrap_or_default();
+            command.env("PATH", format!("{}:{real_path}", dir.display()));
+        }
+        let output = command
+            .output()
+            .expect("run the metadata probe under a real shell");
+        String::from_utf8_lossy(&output.stdout).into_owned()
+    }
+
+    #[test]
+    fn metadata_probe_execution_confirms_an_existing_readable_path() {
+        let dir = ScratchDir::new("exists");
+        let file = dir.path().join("target");
+        std::fs::write(&file, b"content").expect("write fixture file");
+
+        let stdout = run_probe(&file, None);
+        assert!(
+            stdout.starts_with("E\n"),
+            "an existing path must be positively confirmed, got: {stdout:?}"
+        );
+        let meta = parse_metadata_probe(&stdout).expect("existing readable path must parse");
+        assert!(meta.exists, "readable existing path must report exists");
+    }
+
+    #[test]
+    fn metadata_probe_execution_confirms_an_absent_path() {
+        let dir = ScratchDir::new("absent");
+        let missing = dir.path().join("does-not-exist");
+
+        let stdout = run_probe(&missing, None);
+        assert_eq!(
+            stdout.trim(),
+            "N",
+            "an absent path must yield a bare N marker, got: {stdout:?}"
+        );
+        let meta = parse_metadata_probe(&stdout).expect("confirmed absence must not be an error");
+        assert!(!meta.exists, "absent path must report exists = false");
+    }
+
+    #[test]
+    fn metadata_probe_execution_flags_an_existing_unreadable_path_as_unverifiable() {
+        let dir = ScratchDir::new("stat-fails");
+        let file = dir.path().join("target");
+        std::fs::write(&file, b"content").expect("write fixture file");
+
+        // Shadow `stat` on PATH with a binary that always fails, so the path
+        // genuinely exists while the stat probe genuinely produces nothing -
+        // the same shape an incompatible `stat` or a permission error
+        // produces on a real host. `test` and `echo` are shell builtins, so
+        // they still resolve correctly under this restricted PATH.
+        let fake_bin = dir.path().join("fakebin");
+        std::fs::create_dir_all(&fake_bin).expect("create fake bin dir");
+        let fake_stat = fake_bin.join("stat");
+        std::fs::write(&fake_stat, b"#!/bin/sh\nexit 1\n").expect("write fake stat binary");
+        let mut perms = std::fs::metadata(&fake_stat)
+            .expect("stat the fake stat binary")
+            .permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&fake_stat, perms).expect("make fake stat executable");
+
+        let stdout = run_probe(&file, Some(&fake_bin));
+        assert_eq!(
+            stdout.trim(),
+            "E",
+            "existing path with a failing stat must yield a bare E marker, got: {stdout:?}"
+        );
+        let err = parse_metadata_probe(&stdout)
+            .expect_err("a path that exists but cannot be stat'd must never read as absent");
+        let message = format!("{err:#}");
+        assert!(
+            message.contains("could not be read"),
+            "error must say the metadata was unreadable, got: {message}"
+        );
     }
 }

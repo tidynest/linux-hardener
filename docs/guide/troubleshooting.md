@@ -1,6 +1,6 @@
 # Troubleshooting
 
-**Last Updated**: 2026-07-19
+**Last Updated**: 2026-07-26
 
 Symptom-organised fixes for the most common problems. Installation steps live
 in the [installation guide](installation.md); the per-desktop polkit agent
@@ -118,6 +118,25 @@ file for the host in the inventory, or start the GUI from a shell where
 `echo $SSH_AUTH_SOCK` is non-empty. Ad-hoc `user@host[:port]` targets with
 spaces or commas are rejected at entry, so a malformed target never reaches the
 connection attempt.
+
+## Apply fails over SSH with "Failed to determine metadata"
+
+`hardener --ssh ... apply` prints something like `Failed to apply File
+Permissions Hardening: System error: Failed to determine metadata for
+/etc/passwd`, that plugin makes no changes, and the run still exits non-zero
+even though other plugins in the same `apply --all` continue and may succeed.
+
+The cause is on the remote host, not the local one: before changing anything,
+apply takes a checkpoint of the paths it is about to touch, which needs a
+working `stat` on the remote end. If `stat -c '%F %a %s %u %g' <path>` cannot
+be run there (an incompatible build such as BusyBox, or a permission problem
+reading the path) the checkpoint cannot be trusted, so apply refuses to guess
+and stops before touching that path rather than risk a later `rollback`
+deleting it.
+
+Confirm the remote `stat` accepts that format and that the connecting user (or
+its sudo) can read the path in question, then re-run. Nothing was changed by
+the plugin that failed while you fix this.
 
 ## Docker scan reports tools as unavailable
 

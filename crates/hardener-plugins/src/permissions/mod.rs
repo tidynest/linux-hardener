@@ -1475,15 +1475,20 @@ mod tests {
     /// only two call sites that decide this, and both are exercised directly
     /// here with `current_mode` supplied as `None`.
     ///
-    /// This cannot be reproduced through the plugin's public `apply`/
-    /// `validate` methods against a [`MockExecutor`]: its `path_exists` and
-    /// `file_metadata` both read the very same stored `exists` flag, so they
-    /// can never disagree the way `SshExecutor` genuinely can (`test -e`
-    /// succeeding while `stat` fails for an unrelated reason) - the same
-    /// disagreement is only ever a race on `LocalExecutor`, which a mock
-    /// cannot model either way. Calling the two decision functions directly
-    /// with the exact inputs that real divergence produces is the closest a
-    /// mock host state can get.
+    /// This divergence is no longer reachable only by calling the decision
+    /// functions directly. [`MockExecutor`] gained `with_metadata_error` and
+    /// `with_path_exists`, which let its `path_exists` and `file_metadata`
+    /// disagree the way `SshExecutor` genuinely can (`test -e` succeeding
+    /// while `stat` fails for an unrelated reason), and
+    /// `permissions_mock_tests.rs` now reproduces exactly that divergence
+    /// through the plugin's public `apply`:
+    /// `apply_hardens_an_exact_directive_with_an_unverifiable_mode` and
+    /// `apply_records_a_skip_for_an_unverifiable_max_mask_directive`. Those
+    /// tests cover `apply` only; `validate` is not exercised through the mock
+    /// this way, so calling the two decision functions directly below is
+    /// still what gives both methods the same coverage, and does so for
+    /// every `CRITICAL_PERMISSIONS` directive in one table-driven pass
+    /// rather than one `MockExecutor` fixture per path.
     ///
     /// The public loops that supply those inputs are not, in fact,
     /// verbatim-shared wiring: apply's loop performs the exception check
@@ -1589,6 +1594,25 @@ mod tests {
                     directive.permission_path
                 );
             }
+        }
+    }
+
+    #[test]
+    fn every_critical_path_is_protected_from_rollback_deletion() {
+        // The two lists live in different crates: this plugin decides what is
+        // critical, and hardener-state decides what a rollback may delete. A
+        // path added here but not there would be deletable by a rollback
+        // reading a checkpoint that wrongly records it as absent. This check
+        // is one-directional only: UNDELETABLE_ROLLBACK_PATHS may legitimately
+        // protect paths this plugin does not harden, so the reverse is not
+        // asserted here.
+        for directive in CRITICAL_PERMISSIONS {
+            assert!(
+                hardener_common::types::UNDELETABLE_ROLLBACK_PATHS
+                    .contains(&directive.permission_path),
+                "{} is hardened by this plugin but rollback may still delete it",
+                directive.permission_path
+            );
         }
     }
 }
