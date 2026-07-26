@@ -38,6 +38,18 @@ const DEFAULT_ROLLBACK_PREFIXES: &[&str] = &[
     "/boot",
 ];
 
+/// Whether a file's content must be captured, or may be skipped if unreadable.
+///
+/// A path a plugin explicitly declared may be rewritten by that plugin, so a
+/// checkpoint that holds no content for it offers no recovery. A file found by
+/// recursing into a declared directory is incidental: refusing the whole
+/// capture over one unreadable file there would break hosts that work today.
+#[derive(Clone, Copy)]
+enum ContentPolicy {
+    Required,
+    BestEffort,
+}
+
 /// Bundled header fields passed to `store_checkpoint` to stay within the argument-count lint.
 struct CheckpointHeader<'a> {
     id: &'a CheckpointId,
@@ -130,12 +142,14 @@ impl CheckpointManager {
 
     /// Captures the current state of a single file (not a directory) via the executor.
     ///
-    /// Records file content, permissions, and ownership.  An unreadable file's content
-    /// is stored as `None`; absent files are represented with all-zero metadata.
+    /// Records file content, permissions, and ownership. Absent files are
+    /// represented with all-zero metadata. How an unreadable existing file's
+    /// content is handled depends on `policy`: see [`ContentPolicy`].
     async fn capture_single_file(
         &self,
         executor: &dyn SystemExecutor,
         file_path: &Path,
+        policy: ContentPolicy,
     ) -> Result<FileState> {
         let meta = executor
             .file_metadata(file_path)
@@ -152,12 +166,25 @@ impl CheckpointManager {
             });
         }
 
-        // Content is best-effort: unreadable files are stored with content=None.
-        let file_content = executor
-            .read_file(file_path)
-            .await
-            .ok()
-            .map(|s| s.into_bytes());
+        let file_content = match executor.read_file(file_path).await {
+            Ok(content) => Some(content.into_bytes()),
+            Err(e) => match policy {
+                ContentPolicy::Required => {
+                    return Err(HardeningError::System(std::io::Error::other(format!(
+                        "Cannot checkpoint {}: its content could not be read ({e}). Refusing to \
+                         record a checkpoint that could not restore it.",
+                        file_path.display(),
+                    ))));
+                }
+                ContentPolicy::BestEffort => {
+                    tracing::warn!(
+                        "Checkpoint for {} will not hold its content: {e}",
+                        file_path.display(),
+                    );
+                    None
+                }
+            },
+        };
 
         Ok(FileState {
             file_path: file_path.to_string_lossy().to_string(),
@@ -229,7 +256,10 @@ impl CheckpointManager {
         if meta.is_dir {
             self.capture_directory_recursive(executor, file_path).await
         } else {
-            Ok(vec![self.capture_single_file(executor, file_path).await?])
+            Ok(vec![
+                self.capture_single_file(executor, file_path, ContentPolicy::Required)
+                    .await?,
+            ])
         }
     }
 
@@ -257,7 +287,10 @@ impl CheckpointManager {
                     Box::pin(self.capture_directory_recursive(executor, &child)).await?;
                 file_states.extend(sub_states);
             } else {
-                file_states.push(self.capture_single_file(executor, &child).await?);
+                file_states.push(
+                    self.capture_single_file(executor, &child, ContentPolicy::BestEffort)
+                        .await?,
+                );
             }
         }
 
@@ -1517,6 +1550,50 @@ mod tests {
             )
             .await
             .expect("a confirmed-absent path is not an error");
+    }
+
+    #[tokio::test]
+    async fn capture_refuses_a_declared_path_whose_content_cannot_be_read() {
+        // A checkpoint that silently records no content for a file it was asked
+        // to protect is worse than no checkpoint: rollback restores the mode and
+        // never the contents, so the file cannot be recovered.
+        let manager = test_manager().await;
+        let path = "/etc/security/faillock.conf";
+        let executor = MockExecutor::new()
+            .with_file(path, "deny = 3\n")
+            .with_read_permission_denied(path);
+
+        let result = manager
+            .create_checkpoint(&executor, "unreadable", &[Path::new(path)])
+            .await;
+
+        assert!(
+            result.is_err(),
+            "a declared path whose content could not be read must fail the capture, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn capture_tolerates_an_unreadable_child_of_a_declared_directory() {
+        // Guard against over-correction: a plugin declares /etc/pam.d to record
+        // it, not to rewrite what is inside. One odd file in there must not stop
+        // an apply on a host that works today.
+        let manager = test_manager().await;
+        let dir = "/etc/pam.d";
+        let child = "/etc/pam.d/odd";
+        let executor = MockExecutor::new()
+            .with_directory(dir)
+            .with_file(child, "unreadable\n")
+            .with_read_permission_denied(child);
+
+        let result = manager
+            .create_checkpoint(&executor, "sweep", &[Path::new(dir)])
+            .await;
+
+        assert!(
+            result.is_ok(),
+            "an unreadable file found by recursion must not fail the capture, got: {result:?}"
+        );
     }
 
     #[tokio::test]
