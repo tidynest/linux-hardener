@@ -4,7 +4,8 @@
 
 use hardener_common::types::{PluginId, Severity};
 use hardener_core::{
-    Context, MockExecutor, PluginConfig, PolicyException, SystemExecutor, plugin::HardeningPlugin,
+    Change, Context, MockExecutor, PluginConfig, PolicyException, SystemExecutor,
+    plugin::HardeningPlugin,
 };
 use hardener_plugins::PamHardeningPlugin;
 use std::sync::Arc;
@@ -42,6 +43,54 @@ PASS_WARN_AGE 7
 fn secure_pam_executor() -> MockExecutor {
     // faillock.conf: deny=3 is stricter than the threshold of 5, compliant
     secure_pam_executor_base().with_file("/etc/security/faillock.conf", "deny = 3\n")
+}
+
+/// Asserts that a file apply refused to rewrite is named by exactly one change,
+/// the refusal, and that nothing recorded for it counts as a hardening success.
+/// A directive that could not be written must record nothing of its own, or
+/// "N change(s) applied" tallies writes that never happened.
+fn assert_refusal_is_the_only_change(changes: &[Change], label: &str) {
+    let named: Vec<&str> = changes
+        .iter()
+        .filter(|c| c.change_description.contains(label))
+        .map(|c| c.change_description.as_str())
+        .collect();
+    assert_eq!(
+        named.len(),
+        1,
+        "{label} must contribute exactly one change, the refusal, got: {named:?}"
+    );
+    assert!(
+        !changes
+            .iter()
+            .any(|c| c.change_success && !c.is_skipped() && c.change_description.contains(label)),
+        "no change for {label} may count as a hardening success, got: {named:?}"
+    );
+}
+
+/// Registers the `cp` that `create_config_backup` issues for `path`, across a
+/// three-second window so a clock tick between registration and call cannot
+/// break the test.
+fn with_backup_cp(mut executor: MockExecutor, path: &str) -> MockExecutor {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before the unix epoch")
+        .as_secs();
+    for t in now..now + 3 {
+        let backup = format!("{path}.backup-{t}");
+        executor = executor.with_command(
+            "cp",
+            &[path, &backup],
+            hardener_core::CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        );
+    }
+    executor
 }
 
 /// Creates a mock executor with insecure PAM configuration.
@@ -1143,6 +1192,7 @@ async fn apply_refuses_to_rewrite_an_unreadable_pwquality() {
         "an unreadable pwquality.conf must never be rewritten, got: {:?}",
         log.files_written
     );
+    assert_refusal_is_the_only_change(&result.apply_changes, "pwquality.conf");
     assert!(
         !result.apply_success,
         "refusing to harden a file must be reported"
@@ -1193,6 +1243,7 @@ async fn apply_refuses_to_rewrite_an_unreadable_login_defs() {
         "an unreadable login.defs must never be rewritten, got: {:?}",
         log.files_written
     );
+    assert_refusal_is_the_only_change(&result.apply_changes, "login.defs");
     assert!(
         !result.apply_success,
         "refusing to harden a file must be reported"
@@ -1226,6 +1277,71 @@ async fn apply_still_creates_absent_pwquality_and_login_defs() {
             log.files_written
         );
     }
+}
+
+/// The refusal is per file, not per run: one unreadable config must not stop
+/// the other three being hardened, and must contribute exactly one change, the
+/// refusal itself.
+///
+/// Built on a context with no checkpoint manager, which is the only place this
+/// fallback is reachable. Where a manager is present, which is every path a
+/// `hardener` command takes, the unreadable declared path fails the pre-apply
+/// capture and aborts the whole apply before this loop runs.
+#[tokio::test]
+async fn apply_refuses_only_the_unreadable_file_and_hardens_the_rest() {
+    let unreadable = "/etc/security/pwquality.conf";
+    let written = [
+        "/etc/login.defs",
+        "/etc/security/faillock.conf",
+        "/etc/security/pwhistory.conf",
+    ];
+
+    // Every file drifts, so apply wants to rewrite all four; only pwquality.conf
+    // cannot be read.
+    let mut executor = MockExecutor::new()
+        .with_file(unreadable, "minlen 8\n")
+        .with_read_permission_denied(unreadable)
+        .with_file(
+            "/etc/login.defs",
+            "PASS_MAX_DAYS 99999\nPASS_MIN_DAYS 0\nPASS_WARN_AGE 7\n",
+        )
+        .with_file("/etc/security/faillock.conf", "deny = 10\n")
+        .with_file("/etc/security/pwhistory.conf", "remember = 2\n");
+    for path in written {
+        executor = with_backup_cp(executor, path);
+    }
+    let executor = Arc::new(executor);
+    let mut ctx = Context::with_executor(executor.clone());
+
+    let result = PamHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply must run rather than abort");
+
+    let log = executor.log();
+    assert!(
+        !log.files_written
+            .iter()
+            .any(|(path, _)| path.to_str() == Some(unreadable)),
+        "the unreadable file must never be rewritten, got: {:?}",
+        log.files_written
+    );
+    for path in written {
+        assert!(
+            log.files_written
+                .iter()
+                .any(|(p, _)| p.to_str() == Some(path)),
+            "one unreadable file must not stop {} being hardened, got: {:?}",
+            path,
+            log.files_written
+        );
+    }
+
+    assert_refusal_is_the_only_change(&result.apply_changes, "pwquality.conf");
+    assert!(
+        !result.apply_success,
+        "refusing to harden a file must be reported, not silently swallowed"
+    );
 }
 
 /// State-aware validate: a fully compliant host lists zero pending directives;

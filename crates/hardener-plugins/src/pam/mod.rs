@@ -798,6 +798,22 @@ impl HardeningPlugin for PamHardeningPlugin {
                 .map(|s| s.as_str())
                 .unwrap_or(directive.pam_secure_value);
 
+            // A file whose current contents could not be read is never
+            // rewritten, and that refusal was already recorded once, at read
+            // time. Skip its directives outright so none of them records a
+            // change for a write that cannot happen: "N change(s) applied"
+            // must only ever mean N hardening successes. The `SecurityConf`
+            // arm classifies its own read and refuses per directive below,
+            // which is the same rule applied at its own read site.
+            let file_writable = match directive.pam_config_file {
+                PamConfigFile::PwQuality => pwquality_writable,
+                PamConfigFile::LoginDefs => login_defs_writable,
+                _ => true,
+            };
+            if !file_writable {
+                continue;
+            }
+
             match directive.pam_config_file {
                 PamConfigFile::PwQuality => apply_exact_directive(
                     &mut pwquality_content,
@@ -934,8 +950,16 @@ impl HardeningPlugin for PamHardeningPlugin {
 
         // Step 3: Back up and rewrite only the files that actually changed.
         // As before, a failed backup blocks the write for that file.
-        if pwquality_changed && pwquality_writable {
-            if backup_and_write(
+        //
+        // The `_writable` half of each guard is deliberate belt and braces, not
+        // load bearing: Step 2 skips every directive belonging to a file that
+        // could not be read, so nothing can set `_changed` for one. It stays
+        // because the write it guards destroys the host's settings if it ever
+        // runs on contents that were never read, and a second, local check
+        // costs nothing.
+        if pwquality_changed
+            && pwquality_writable
+            && !write_changed_conf(
                 ctx,
                 "/etc/security/pwquality.conf",
                 "pwquality.conf",
@@ -943,20 +967,13 @@ impl HardeningPlugin for PamHardeningPlugin {
                 &mut changes,
             )
             .await
-            {
-                changes.push(Change {
-                    change_type: ChangeType::ConfigFile,
-                    change_description: "Wrote modified pwquality.conf".to_string(),
-                    change_success: true,
-                    change_error: None,
-                });
-            } else {
-                all_success = false;
-            }
+        {
+            all_success = false;
         }
 
-        if login_defs_changed && login_defs_writable {
-            if backup_and_write(
+        if login_defs_changed
+            && login_defs_writable
+            && !write_changed_conf(
                 ctx,
                 "/etc/login.defs",
                 "login.defs",
@@ -964,16 +981,8 @@ impl HardeningPlugin for PamHardeningPlugin {
                 &mut changes,
             )
             .await
-            {
-                changes.push(Change {
-                    change_type: ChangeType::ConfigFile,
-                    change_description: "Wrote modified login.defs".to_string(),
-                    change_success: true,
-                    change_error: None,
-                });
-            } else {
-                all_success = false;
-            }
+        {
+            all_success = false;
         }
 
         let duration_ms = start.elapsed().as_millis() as u64;
@@ -1670,6 +1679,28 @@ async fn backup_and_write(
             false
         }
     }
+}
+
+/// Rewrites a config file whose in-memory buffer the directive loop changed,
+/// recording the write. Returns false when no write happened, so the caller can
+/// mark the run unsuccessful; `backup_and_write` has already recorded why.
+async fn write_changed_conf(
+    ctx: &Context,
+    path: &str,
+    file_label: &str,
+    content: &str,
+    changes: &mut Vec<Change>,
+) -> bool {
+    if !backup_and_write(ctx, path, file_label, content, changes).await {
+        return false;
+    }
+    changes.push(Change {
+        change_type: ChangeType::ConfigFile,
+        change_description: format!("Wrote modified {}", file_label),
+        change_success: true,
+        change_error: None,
+    });
+    true
 }
 
 /// Reads the login.defs configuration file.
