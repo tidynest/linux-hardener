@@ -204,7 +204,8 @@ impl SystemExecutor for SshExecutor {
         let cmd = format!("test -e {escaped} && echo yes || echo no");
 
         let output = self.run_command(&cmd).await?;
-        Ok(output.stdout.trim() == "yes")
+        parse_path_exists_probe(&output.stdout)
+            .with_context(|| format!("Failed to determine whether {} exists", path.display()))
     }
 
     async fn file_metadata(&self, path: &Path) -> Result<FileMetadata> {
@@ -246,6 +247,27 @@ impl SystemExecutor for SshExecutor {
     async fn command_exists(&self, program: &str) -> Result<bool> {
         let output = self.execute_command("which", &[program]).await?;
         Ok(output.success())
+    }
+}
+
+/// Classifies the trimmed output of `path_exists`'s `test -e {path} && echo
+/// yes || echo no` probe.
+///
+/// The command can only print `yes` or `no` on success, so matching is exact
+/// rather than a substring or prefix check: a login banner, a sudo password
+/// prompt, or any other shell noise mixed into stdout must not be folded into
+/// `no`. Rollback's undeletable-path guard treats an `Err` here as "cannot be
+/// determined" and refuses to delete; reading unexpected output as absence
+/// would make that fail-closed arm unreachable over SSH, the same defect
+/// `parse_metadata_probe` fixed for `file_metadata`. Pure (no I/O) so the
+/// classification is unit-testable without a live connection.
+fn parse_path_exists_probe(stdout: &str) -> Result<bool> {
+    match stdout.trim() {
+        "yes" => Ok(true),
+        "no" => Ok(false),
+        other => Err(anyhow::anyhow!(
+            "unrecognised path_exists probe output: {other:?}"
+        )),
     }
 }
 
@@ -480,6 +502,33 @@ mod tests {
         // A shell that emitted something else entirely must not be read as absence.
         parse_metadata_probe("something unexpected\n")
             .expect_err("an unrecognised marker must not report absence");
+    }
+
+    #[test]
+    fn path_exists_probe_confirms_presence() {
+        let exists = parse_path_exists_probe("yes\n").expect("a bare yes must parse");
+        assert!(exists, "yes must report presence");
+    }
+
+    #[test]
+    fn path_exists_probe_confirms_absence() {
+        let exists = parse_path_exists_probe("no\n").expect("a bare no must parse");
+        assert!(!exists, "no must report absence");
+    }
+
+    #[test]
+    fn path_exists_probe_rejects_unexpected_output() {
+        // A remote shell that emits a banner, a sudo prompt, or any other
+        // noise ahead of the marker must not be read as "no" - that is the
+        // bug this branch exists to fix, one function over from where it was
+        // first found.
+        let err = parse_path_exists_probe("Last login: Tue Jan  1 00:00:00 2026\nyes")
+            .expect_err("noise ahead of the marker must not resolve to a boolean");
+        let message = format!("{err:#}");
+        assert!(
+            message.contains("unrecognised path_exists probe output"),
+            "error must name what was actually received, got: {message}"
+        );
     }
 
     #[test]

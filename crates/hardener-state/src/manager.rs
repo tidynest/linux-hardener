@@ -785,32 +785,7 @@ impl CheckpointManager {
         // instruction to delete. A path that is genuinely still absent needs no
         // action at all, and must not be reported as a failure.
         if matches!(action, FileRestoreAction::Removed) {
-            if UNDELETABLE_ROLLBACK_PATHS.contains(&path_str.as_str()) {
-                return match executor.path_exists(path).await {
-                    Ok(false) => (FileRestoreAction::Skipped, Ok(())),
-                    Ok(true) => (
-                        FileRestoreAction::Skipped,
-                        Err(HardeningError::Rollback(format!(
-                            "Refusing to delete {path_str}: the checkpoint records it as absent but \
-                             the file is present, so the checkpoint cannot be trusted for this path"
-                        ))),
-                    ),
-                    Err(e) => (
-                        FileRestoreAction::Skipped,
-                        Err(HardeningError::Rollback(format!(
-                            "Refusing to delete {path_str}: could not determine whether it exists: {e}"
-                        ))),
-                    ),
-                };
-            }
-
-            // Remove files that did not exist at checkpoint time.
-            let result = executor
-                .execute_command("rm", &["-f", path_str])
-                .await
-                .map(|_| ())
-                .map_err(|e| HardeningError::Executor(e.to_string()));
-            return (action, result);
+            return remove_or_refuse(executor, path, path_str).await;
         }
 
         // Restore file content.
@@ -1009,6 +984,50 @@ fn select_latest_named(
         .collect()
 }
 
+/// Handles a checkpoint row whose action is [`FileRestoreAction::Removed`]:
+/// `path` was recorded absent at capture time, and this decides whether that
+/// row may still be trusted.
+///
+/// `path_str` outside [`UNDELETABLE_ROLLBACK_PATHS`] is deleted unconditionally,
+/// matching an apply that created the file itself. A listed path is probed
+/// first, and is deleted only when that probe positively confirms it is still
+/// absent; a probe error fails closed rather than guessing. Kept as a free
+/// function (rather than nested `if`s inline in `restore_file_state_tracked`)
+/// so the two conditions it distinguishes, ordinary-removal versus
+/// protected-path, read as one flat decision instead of two levels of nesting.
+async fn remove_or_refuse(
+    executor: &dyn SystemExecutor,
+    path: &Path,
+    path_str: &str,
+) -> (FileRestoreAction, Result<()>) {
+    if !UNDELETABLE_ROLLBACK_PATHS.contains(&path_str) {
+        let result = executor
+            .execute_command("rm", &["-f", path_str])
+            .await
+            .map(|_| ())
+            .map_err(|e| HardeningError::Executor(e.to_string()));
+        return (FileRestoreAction::Removed, result);
+    }
+
+    match executor.path_exists(path).await {
+        Ok(false) => (FileRestoreAction::Skipped, Ok(())),
+        Ok(true) => (
+            FileRestoreAction::Skipped,
+            Err(HardeningError::Rollback(format!(
+                "Refusing to delete {path_str}: the checkpoint recorded this path as absent, but \
+                 it exists now. It may have arrived from a package installed after the checkpoint \
+                 was taken; this tool will not delete it."
+            ))),
+        ),
+        Err(e) => (
+            FileRestoreAction::Skipped,
+            Err(HardeningError::Rollback(format!(
+                "Refusing to delete {path_str}: could not determine whether it exists: {e}"
+            ))),
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1109,8 +1128,27 @@ mod tests {
         // path added to UNDELETABLE_ROLLBACK_PATHS is covered the moment it is
         // added rather than waiting for someone to remember a new test.
         let manager = test_manager().await;
+        let mut exercised = 0usize;
 
         for path in UNDELETABLE_ROLLBACK_PATHS {
+            // rollback()'s Phase 1 runs path.is_symlink()/canonicalize() against
+            // the real local filesystem before the guard under test is ever
+            // reached. If one of these paths happens to be a symlink on the
+            // machine running the test, resolving outside
+            // DEFAULT_ROLLBACK_PREFIXES, Phase 1 aborts the whole rollback for a
+            // reason unrelated to this guard, and the unwrap_or_else below would
+            // panic on a contributor's own /etc rather than on a real defect.
+            // Skip such a path rather than let the test depend on the local
+            // filesystem; every other entry is still exercised in full.
+            if Path::new(path).is_symlink() {
+                eprintln!(
+                    "rollback_refuses_to_delete_every_undeletable_path_recorded_as_absent: \
+                     skipping {path}, it is a symlink on this machine"
+                );
+                continue;
+            }
+            exercised += 1;
+
             // Capture believes the path is absent: nothing registered on the
             // mock, so file_metadata reports a confirmed absence and the row
             // stores 0.
@@ -1161,6 +1199,11 @@ mod tests {
                 "{path}: a refused deletion means the checkpoint is untrustworthy and must be reported, not silently swallowed"
             );
         }
+
+        assert!(
+            exercised > 0,
+            "every UNDELETABLE_ROLLBACK_PATHS entry was a symlink on this machine; the guard was never exercised"
+        );
     }
 
     #[tokio::test]
