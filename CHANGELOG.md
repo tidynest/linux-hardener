@@ -79,6 +79,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SshHardeningPlugin::validate` bound its config parameter as `_config` and
   never read it, so directive overrides and policy exceptions had no effect
   on the SSH preview and it could not agree with what `apply` then did.
+- A rollback that meets a protected path recorded as absent, but present on the
+  host, reports that file as skipped and the run as unsuccessful rather than
+  deleting it. The remaining files in the same checkpoint are still restored.
+  This can also happen for an innocent reason: a package installed after the
+  checkpoint was taken supplies a file that genuinely was not there before.
+- On a host whose file metadata cannot be read, `apply` now hardens the critical
+  permission paths and reports the outcome as unverified, rather than reporting
+  no changes at all. Directives with an exact target mode are set to that mode;
+  those whose target depends on the current mode are recorded as skipped with a
+  warning, since the target cannot be computed. Because the verification read
+  after each change also fails on such a host, these changes are reported as
+  unsuccessful even though they were applied.
+
+### Fixed
+- Rollback could delete the files it was meant to protect. Over SSH,
+  `file_metadata` ran `stat ... || echo 'NOTFOUND'`, so a host whose `stat`
+  output this tool cannot parse reported every path as missing. Checkpoint
+  capture records a missing path with permissions `0`, and rollback removes any
+  path recorded that way, so `apply` followed by `rollback` on such a host
+  deleted `/etc/passwd`, `/etc/group`, `/etc/shadow`, `/etc/gshadow` and
+  `/etc/sudoers`. The probe now confirms absence with `test -e` and reports a
+  path it cannot read as an error, which capture propagates, so the operation
+  stops instead of recording a file as absent. Hosts with a working `stat` are
+  unaffected.
+- Rollback now refuses to delete a protected system path that a checkpoint
+  records as absent while the file is present on the host. Fixing the probe
+  stops new checkpoints recording a false absence, but does not rewrite rows
+  already stored, so a checkpoint taken before this release can still carry one.
+  Deleting any of these paths is never a correct restore, because an apply never
+  creates them. A path that is genuinely still absent is a silent no-op, so
+  hosts legitimately lacking an optional file are unaffected.
+- `SshExecutor::path_exists` reported a path as absent whenever its probe
+  returned anything other than `yes`, so unexpected output from a remote shell
+  read as a missing file. It now reports output it cannot interpret as an error.
 
 ## [1.4.0] - 2026-07-19
 
