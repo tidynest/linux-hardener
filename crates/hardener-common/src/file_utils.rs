@@ -199,6 +199,22 @@ pub fn parse_config_value(
     None
 }
 
+/// Splits a configuration line into its key and the text that follows it.
+///
+/// `sshd_config(5)` and the `security/*.conf` files accept `Key=Value` as
+/// readily as `Key Value`, so a key ends at whitespace or at `=`, whichever
+/// comes first. Splitting on whitespace alone makes `deny=10` a single token
+/// that matches no directive: the writer then leaves the operator's line in
+/// place and defines the key a second time somewhere else, and the reader
+/// reports the directive as unset. An empty key means the line opens with a
+/// separator and defines nothing.
+fn split_key(line: &str) -> (&str, &str) {
+    let end = line
+        .find(|c: char| c.is_whitespace() || c == '=')
+        .unwrap_or(line.len());
+    line.split_at(end)
+}
+
 fn strip_prefix_with_case<'a>(s: &'a str, prefix: &str, case_sensitive: bool) -> Option<&'a str> {
     if case_sensitive {
         s.strip_prefix(prefix)
@@ -286,9 +302,10 @@ pub fn set_config_directive(
         }
         let is_comment = trimmed.starts_with('#');
         let check_line = trimmed.trim_start_matches('#').trim();
-        let Some(first) = check_line.split_whitespace().next() else {
+        let (first, _) = split_key(check_line);
+        if first.is_empty() {
             continue;
-        };
+        }
         // Everything below a live `Match` belongs to a conditional block and
         // is not a global setting. Without this stop, the writer would rewrite
         // a block scoped directive when that is the file's only live
@@ -763,6 +780,72 @@ PermitRootLogin yes
             Duplicates::Keep,
         );
         assert_eq!(out, "#Match Address 10.0.0.0/8\nPermitRootLogin no");
+    }
+
+    /// `faillock.conf` and its siblings ship their defaults commented out, and
+    /// an operator writes `deny=10` as readily as `deny = 10`. A key that ends
+    /// at the `=` rather than at whitespace is still the live definition, so it
+    /// is the line to rewrite: activating the comment above it would leave the
+    /// operator's own setting standing below the tool's.
+    #[test]
+    fn a_live_key_equals_value_line_beats_the_comment_above_it() {
+        let faillock = "\
+# deny = 3
+deny=10
+";
+        let out = set_config_directive(
+            faillock,
+            "deny",
+            "5",
+            ConfigFormat::KeyValue,
+            true,
+            Duplicates::Remove,
+        );
+        assert_eq!(out, "# deny = 3\ndeny = 5");
+    }
+
+    /// A file the writer cannot see through is rewritten on every run and never
+    /// converges: the tool reports the value it wrote while its own reader
+    /// still returns the one it left in place.
+    #[test]
+    fn rewriting_a_key_equals_value_line_converges_in_one_pass() {
+        let out = set_config_directive(
+            "minlen=8\n",
+            "minlen",
+            "14",
+            ConfigFormat::KeyValue,
+            true,
+            Duplicates::Remove,
+        );
+        assert_eq!(out, "minlen = 14");
+        assert_eq!(
+            parse_config_value(&out, "minlen", ConfigFormat::Auto, true),
+            Some("14".to_string()),
+            "the reader must agree with what the writer just wrote:\n{out}",
+        );
+    }
+
+    /// Ending the key at `=` must not end it anywhere else: `PASS_MAX` is not
+    /// a definition of `PASS_MAX_DAYS`, so the writer appends its own line
+    /// rather than rewriting the longer key's.
+    #[test]
+    fn the_writer_does_not_match_a_longer_key_that_starts_the_same() {
+        let out = set_config_directive(
+            REAL_LOGIN_DEFS,
+            "PASS_MAX",
+            "1",
+            ConfigFormat::SpaceSeparated,
+            true,
+            Duplicates::Keep,
+        );
+        assert!(
+            out.contains("PASS_MAX_DAYS\t99999"),
+            "the longer key is a different directive and must be untouched:\n{out}",
+        );
+        assert!(
+            out.ends_with("PASS_MAX 1"),
+            "the new directive is appended as its own line:\n{out}",
+        );
     }
 
     /// sshd reads `match` as readily as `Match`, so the boundary is ASCII
