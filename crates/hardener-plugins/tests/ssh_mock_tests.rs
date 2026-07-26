@@ -816,6 +816,39 @@ async fn ssh_remote_root_apply_leaves_existing_permitrootlogin_no_untouched() {
     );
 }
 
+/// `sshd_config(5)` accepts `Key=Value`, so an operator may well have written
+/// `PermitRootLogin=no`, which is already the strictest value there is. The
+/// never-loosen guard can only honour it if the reader sees it: a directive
+/// read as "not set" takes the downgrade branch, and the writer does see the
+/// `=` shape, so it would rewrite that very line to `prohibit-password`.
+#[tokio::test]
+async fn ssh_remote_root_apply_leaves_an_equals_separated_no_untouched() {
+    let executor = apply_ready_executor("PermitRootLogin=no\n")
+        .remote()
+        .with_command("id", &["-u"], ok_output("0\n"));
+
+    let result = run_ssh_apply(&executor).await;
+
+    assert!(result.apply_success, "apply should succeed: {result:?}");
+    let written = written_sshd_config(&executor);
+    assert!(
+        !written.contains("prohibit-password"),
+        "an existing 'no' must never be loosened, whichever separator it uses, got:\n{written}"
+    );
+    assert!(
+        written.lines().any(|l| l.trim() == "PermitRootLogin=no"),
+        "the operator's line is already compliant and must stand as written, got:\n{written}"
+    );
+    assert!(
+        !result
+            .apply_changes
+            .iter()
+            .any(|c| c.change_description.starts_with("PermitRootLogin:")),
+        "an already-compliant directive must emit no change, got: {:?}",
+        result.apply_changes
+    );
+}
+
 #[tokio::test]
 async fn ssh_remote_root_apply_skips_when_already_prohibit_password() {
     let executor = apply_ready_executor("PermitRootLogin prohibit-password\n")

@@ -144,16 +144,19 @@ pub fn parse_config_value(
 
         match format {
             ConfigFormat::SpaceSeparated => {
-                let parts: Vec<&str> = trimmed.split_whitespace().collect();
-                if parts.len() >= 2 {
-                    let matches = if case_sensitive {
-                        parts[0] == directive_name
-                    } else {
-                        parts[0].eq_ignore_ascii_case(directive_name)
-                    };
-                    if matches {
-                        return Some(parts[1].to_string());
-                    }
+                // The key boundary is shared with the writer: a directive the
+                // writer rewrites in place must not read as unset here, or the
+                // caller acts on a value the file does not hold. That gap is
+                // what let a remote root apply "downgrade" an operator's
+                // `PermitRootLogin=no` to `prohibit-password`.
+                let (key, value_text) = split_directive(trimmed);
+                let matches = if case_sensitive {
+                    key == directive_name
+                } else {
+                    key.eq_ignore_ascii_case(directive_name)
+                };
+                if matches && let Some(value) = value_text.split_whitespace().next() {
+                    return Some(value.to_string());
                 }
             }
             ConfigFormat::KeyValue => {
@@ -199,20 +202,23 @@ pub fn parse_config_value(
     None
 }
 
-/// Splits a configuration line into its key and the text that follows it.
+/// Splits a configuration line into its key and the text of its value.
 ///
 /// `sshd_config(5)` and the `security/*.conf` files accept `Key=Value` as
 /// readily as `Key Value`, so a key ends at whitespace or at `=`, whichever
-/// comes first. Splitting on whitespace alone makes `deny=10` a single token
-/// that matches no directive: the writer then leaves the operator's line in
-/// place and defines the key a second time somewhere else, and the reader
-/// reports the directive as unset. An empty key means the line opens with a
-/// separator and defines nothing.
-fn split_key(line: &str) -> (&str, &str) {
+/// comes first, and the separator is not part of the value. Splitting on
+/// whitespace alone makes `deny=10` a single token that matches no directive:
+/// the writer then leaves the operator's line in place and defines the key a
+/// second time somewhere else, and the reader calls the directive unset. An
+/// empty key means the line opens with a separator and defines nothing; empty
+/// value text means the key stands alone, which is not a definition either.
+fn split_directive(line: &str) -> (&str, &str) {
     let end = line
         .find(|c: char| c.is_whitespace() || c == '=')
         .unwrap_or(line.len());
-    line.split_at(end)
+    let (key, rest) = line.split_at(end);
+    let rest = rest.trim_start();
+    (key, rest.strip_prefix('=').map_or(rest, str::trim_start))
 }
 
 fn strip_prefix_with_case<'a>(s: &'a str, prefix: &str, case_sensitive: bool) -> Option<&'a str> {
@@ -302,7 +308,7 @@ pub fn set_config_directive(
         }
         let is_comment = trimmed.starts_with('#');
         let check_line = trimmed.trim_start_matches('#').trim();
-        let (first, _) = split_key(check_line);
+        let (first, _) = split_directive(check_line);
         if first.is_empty() {
             continue;
         }
@@ -544,6 +550,64 @@ mod tests {
         assert_eq!(
             parse_config_value("minlen=14\n", "minlen", ConfigFormat::Auto, true),
             Some("14".to_string())
+        );
+    }
+
+    /// `sshd_config(5)` accepts `Key=Value`, and `sshd -t` accepts it too, so
+    /// reading such a line as "not set" reports a directive the host plainly
+    /// holds as absent.
+    #[test]
+    fn space_separated_reads_an_equals_separated_directive() {
+        assert_eq!(
+            parse_config_value(
+                "PermitRootLogin=no\n",
+                "PermitRootLogin",
+                ConfigFormat::SpaceSeparated,
+                false
+            ),
+            Some("no".to_string()),
+        );
+    }
+
+    /// The value is what a caller compares against its target, so the
+    /// separator must never be returned in its place.
+    #[test]
+    fn space_separated_reads_a_spaced_equals_separator() {
+        assert_eq!(
+            parse_config_value(
+                "PermitRootLogin = no\n",
+                "PermitRootLogin",
+                ConfigFormat::SpaceSeparated,
+                false
+            ),
+            Some("no".to_string()),
+        );
+    }
+
+    /// Ending a key at `=` must not end it anywhere else.
+    #[test]
+    fn space_separated_does_not_match_a_longer_key_that_starts_the_same() {
+        assert_eq!(
+            parse_config_value(
+                "ClientAliveInterval=300\n",
+                "ClientAlive",
+                ConfigFormat::SpaceSeparated,
+                false
+            ),
+            None,
+        );
+    }
+
+    #[test]
+    fn space_separated_ignores_a_key_with_no_value() {
+        assert_eq!(
+            parse_config_value(
+                "PermitRootLogin\n",
+                "PermitRootLogin",
+                ConfigFormat::SpaceSeparated,
+                false
+            ),
+            None,
         );
     }
 
