@@ -140,6 +140,72 @@ Interactive step-by-step test with pauses between operations. Designed for manua
 
 ---
 
+## Differential Suite (Ask The System, Not The Tool)
+
+Every other suite compares the tool against itself: it applies a setting, reads
+the file back with the same parser that wrote it, and reports agreement. That is
+how a maximum password age of 99999 shipped as "compliant" from v1.0.0 onwards.
+The differential suite applies hardening and then asks each setting's real
+consumer what is in force:
+
+| Setting | Oracle | Why not read the file |
+|---------|--------|-----------------------|
+| The seven `sshd_config` directives | `sshd -T` | Resolves `Include` precedence and `Match` scoping, which our parser does not |
+| `PASS_MIN_DAYS`, `PASS_MAX_DAYS`, `PASS_WARN_AGE` | `useradd` then `chage -l` | `login.defs` supplies defaults for NEW accounts, so only a fresh account shows what the file means today |
+
+Two assertions per directive, because both have failed in production: the system
+holds the value the tool targeted, and `scan`'s verdict agrees with the system.
+
+### Full run (container + root)
+
+```bash
+sudo ./scripts/test/differential-suite.sh              # inside the container
+sudo ./scripts/test/run-cross-distro-tests.sh --differential --distro arch   # from the host
+```
+
+It refuses to start outside a container, and it refuses to start as a non-root
+user. It applies hardening and creates a probe account, so it is destructive by
+design and never safe on a real system. From the host it replaces the full suite
+for that run: `--differential` always applies, whether or not `--apply` is given,
+and results land in `test-results/<distro>.log` like any other run.
+
+`jq` is required, along with `sshd`, `ssh-keygen`, `useradd`, `userdel`, `chage`
+and `id`. A missing one aborts the run by name before any check runs. An oracle
+that cannot answer is a failure here, never a skip: a skipped check that reads as
+a pass is the disease being treated.
+
+### Self-test (safe anywhere)
+
+```bash
+bash scripts/test/differential-suite.sh --self-test
+```
+
+Needs neither root nor a container. It drives the text extractors, the freshness
+guard that refuses a capture taken before `apply`, the probe's create-and-remove
+safety, and both plugins' finding-id conventions against fixtures. `jq` is the
+only external command it needs.
+
+### What a failure means
+
+A failure means the operating system disagrees with what the tool reported, or
+that an oracle could not be read. Neither is a flaky test: a disagreement is a
+product defect and is exactly what this suite exists to find, and an oracle that
+cannot answer leaves a directive unproven, which is recorded as a failure rather
+than skipped. Each `FAIL` line names the directive, and where the two disagree,
+the value the system holds and the value the tool targeted:
+
+- `the system holds 'X' but the tool targets 'Y'`: `apply` did not take effect.
+- `the tool claims a compliance the system does not have`: `scan` reported
+  nothing while the system holds something other than the target. This is the
+  shape of the `login.defs` defect.
+- `the tool reports N finding(s) ... while the system holds the target value`:
+  `scan` is flagging a host that is in fact compliant.
+
+Investigate the plugin, not the harness. If the harness itself is wrong, the
+self-test is where the fix is proven.
+
+---
+
 ## Cross-Distro Testing
 
 Runs the full test suite across multiple distribution containers from the host.
@@ -179,6 +245,16 @@ sudo ./scripts/test/run-cross-distro-tests.sh --distro fedora
 sudo ./scripts/test/run-cross-distro-tests.sh --distro rhel
 sudo ./scripts/test/run-cross-distro-tests.sh --distro opensuse
 ```
+
+### Differential suite instead of the full suite
+
+```bash
+sudo ./scripts/test/run-cross-distro-tests.sh --differential
+```
+
+Runs `differential-suite.sh` in each container in place of `full-test-suite.sh`,
+through the same nspawn invocation and the same per-distro logs and summary
+table. See the differential suite section above; it is always destructive.
 
 ### With GUI tests
 
@@ -267,4 +343,4 @@ cargo build --release --target aarch64-unknown-linux-gnu -p hardener-cli
 
 Produces three release tarballs and creates a GitHub release.
 
-**Last Updated**: 2026-07-19
+**Last Updated**: 2026-07-27

@@ -21,6 +21,55 @@ Usage:
 EOF
 }
 
+# The tree this script sits in, and the CLI under test. Same resolution as
+# scripts/test/full-test-suite.sh: the musl build first, because that is what
+# the containers execute, then a host build, with $BINARY overriding both.
+# Resolved when the file loads, so --self-test still runs where neither exists;
+# the full run refuses before it applies anything.
+DIFF_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DIFF_PROJECT_DIR="$(cd "$DIFF_SCRIPT_DIR/../.." && pwd)"
+BINARY="${BINARY:-$DIFF_PROJECT_DIR/target/x86_64-unknown-linux-musl/release/hardener}"
+[[ -x "$BINARY" ]] || BINARY="$DIFF_PROJECT_DIR/target/release/hardener"
+
+# The plugins whose settings this suite compares. Applying only these keeps the
+# run to what is actually asserted.
+DIFF_PLUGINS=(ssh-hardening pam-hardening)
+
+# Every external command the full run depends on.
+#
+# jq is listed first because it is the newest of them and the likeliest to be
+# absent: the openSUSE package install in scripts/containers/create-container.sh
+# ends in `|| log_warn`, so a container can be built successfully with packages
+# missing. Without jq the scan comparison would find nothing, and finding
+# nothing is indistinguishable from "the tool reported no finding", which is the
+# pass condition. An oracle that cannot run is a failure, never a skip, so the
+# whole set is checked up front and named when it is incomplete.
+REQUIRED_COMMANDS=(jq grep sshd ssh-keygen useradd userdel chage id)
+
+# Refuse, naming every command that is missing rather than one per run.
+require_commands() {
+    local cmd missing=()
+    for cmd in "$@"; do
+        command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
+    done
+    if (( ${#missing[@]} > 0 )); then
+        echo "FATAL: required command(s) not found: ${missing[*]}" >&2
+        echo "  Every check depends on them, and a check that cannot run is a" >&2
+        echo "  failure here, not a skip. Install them and run the suite again." >&2
+        return 1
+    fi
+}
+
+# Refuse a binary that is absent or not executable, before apply rather than
+# after: half a destructive run tells nobody anything.
+require_binary() {
+    if [[ ! -x "$BINARY" ]]; then
+        echo "FATAL: no executable hardener binary at '$BINARY'" >&2
+        echo "  Build the musl CLI, or set BINARY to the one you want tested." >&2
+        return 1
+    fi
+}
+
 # The first line of captured output matching a pattern, or nothing when the
 # pattern matched nothing.
 # Matched case insensitively: sshd has printed its directives lowercased in the
@@ -147,6 +196,19 @@ require_fresh_capture() {
         return 1
     fi
 }
+
+# The ssh directives this suite checks and the value the tool targets for each,
+# verified against SSH_DIRECTIVES in crates/hardener-plugins/src/ssh/mod.rs.
+# Fields: directive|target.
+SSH_CHECKS=(
+    "PermitRootLogin|no"
+    "PasswordAuthentication|no"
+    "PermitEmptyPasswords|no"
+    "MaxAuthTries|3"
+    "X11Forwarding|no"
+    "ClientAliveInterval|300"
+    "ClientAliveCountMax|2"
+)
 
 # sshd -T refuses to run without host keys, so generate any that are missing.
 # This changes nothing the tool manages.
@@ -324,8 +386,248 @@ login_defs_system_value() {
     fi
 }
 
+# The two plugins spell their finding ids differently, and a filter written for
+# one convention matches NOTHING under the other. Matching nothing returns an
+# empty result, which reads as "the tool reported no finding", which is the pass
+# condition, so this is the single most likely way to build a harness that
+# passes on broken code. Each convention is derived in exactly one place and
+# pinned to a literal id by the self-test.
+
+# ssh lowercases the directive: format!("ssh-{}", name.to_lowercase()), so
+# PermitRootLogin becomes ssh-permitrootlogin.
+ssh_finding_id() {
+    printf 'ssh-%s' "${1,,}"
+}
+
+# pam does not: format!("pam-{}", name), so PASS_MAX_DAYS keeps its case and
+# becomes pam-PASS_MAX_DAYS.
+pam_finding_id() {
+    printf 'pam-%s' "$1"
+}
+
+# What the tool REPORTED, as against what the system holds. Captured by
+# scan_oracle_init, which must run after apply: a scan taken before it describes
+# the container as it was found, and the generation stamp catches that.
+SCAN_JSON=""
+SCAN_JSON_GENERATION=""
+
+# `scan --format json` prints an array of plugin objects on stdout; in JSON mode
+# its status, warning and error lines go to stderr, so stdout is the document
+# and nothing else. The command's own status is tested, never a pipeline's.
+#
+# Its stderr is deliberately left alone rather than discarded: it is where the
+# tool explains a failure, and the container run folds stderr into the same log.
+# It cannot reach stdout, so it cannot corrupt the document.
+capture_scan_json() {
+    local out args=() plugin
+    for plugin in "${DIFF_PLUGINS[@]}"; do
+        args+=(--plugin "$plugin")
+    done
+    if ! out="$("$BINARY" --format json scan "${args[@]}")"; then
+        echo "FATAL: scan --format json failed" >&2
+        return 1
+    fi
+    printf '%s' "$out"
+}
+
+scan_oracle_init() {
+    local out plugin count
+    if ! out="$(capture_scan_json)"; then
+        return 1
+    fi
+    # jq's own parse error is left visible above this message: "not an array"
+    # and "not JSON at all" are worth telling apart.
+    if ! jq -e 'type == "array"' >/dev/null <<<"$out"; then
+        echo "FATAL: scan did not print a JSON array" >&2
+        return 1
+    fi
+    # Every plugin being compared must appear exactly once. A plugin the config
+    # disabled, or one that failed to run, contributes no object at all, and
+    # then every finding filter against it matches nothing, which reads as a
+    # clean directive rather than as the missing evidence it is.
+    for plugin in "${DIFF_PLUGINS[@]}"; do
+        if ! count="$(jq -r --arg p "$plugin" '[.[] | select(.plugin_id == $p)] | length' <<<"$out")"; then
+            echo "FATAL: jq could not read the scan output" >&2
+            return 1
+        fi
+        if [[ "$count" != "1" ]]; then
+            echo "FATAL: scan reported $count object(s) for plugin '$plugin', expected exactly 1." >&2
+            echo "  Every finding filter for that plugin would match nothing, which reads as a pass." >&2
+            return 1
+        fi
+    done
+    SCAN_JSON="$out"
+    SCAN_JSON_GENERATION="$APPLY_GENERATION"
+}
+
+# How many findings the tool reported under one plugin for one finding id.
+# Prints the count, which is legitimately 0 for a directive the tool considers
+# compliant. Returns non-zero, loudly, when the oracle was never initialised,
+# its capture predates the last apply, or jq could not produce a number, so an
+# unreadable verdict is never mistaken for a clean one.
+scan_finding_count() {
+    local plugin="$1" finding="$2" count
+    require_fresh_capture scan "$SCAN_JSON" "$SCAN_JSON_GENERATION" || return 1
+    if ! count="$(jq -r --arg p "$plugin" --arg f "$finding" \
+        '[.[] | select(.plugin_id == $p) | (.findings // [])[] | select(.finding_id == $f)] | length' \
+        <<<"$SCAN_JSON")"; then
+        echo "FATAL: jq could not count findings for '$finding'" >&2
+        return 1
+    fi
+    if [[ ! "$count" =~ ^[0-9]+$ ]]; then
+        echo "FATAL: the finding count for '$finding' is not a number: '$count'" >&2
+        return 1
+    fi
+    printf '%s' "$count"
+}
+
+# The second assertion, on its own so it can be pinned in all four directions.
+# scan's verdict agrees with the system when a system that disagrees with the
+# target produces at least one finding, and one that agrees produces none.
+verdict_agrees() {
+    local system="$1" target="$2" findings="$3"
+    if [[ "$system" == "$target" ]]; then
+        (( findings == 0 ))
+    else
+        (( findings > 0 ))
+    fi
+}
+
+# Per-check bookkeeping. The summary vocabulary below is the one that
+# scripts/test/run-cross-distro-tests.sh already parses out of a suite's log,
+# so the host-side runner reports this suite through the machinery it has. No
+# line printed before the summary may repeat those labels.
+CHECKS_TOTAL=0
+CHECKS_PASSED=0
+CHECKS_FAILED=0
+
+record_pass() {
+    CHECKS_TOTAL=$((CHECKS_TOTAL + 1))
+    CHECKS_PASSED=$((CHECKS_PASSED + 1))
+    printf '  ok   %s\n' "$1"
+}
+
+record_fail() {
+    CHECKS_TOTAL=$((CHECKS_TOTAL + 1))
+    CHECKS_FAILED=$((CHECKS_FAILED + 1))
+    printf '  FAIL %s\n' "$1"
+}
+
+# The two assertions for one directive, given the value its oracle reported.
+# Both are always recorded, so every directive contributes the same two checks
+# whatever happens and one cannot quietly contribute fewer by going wrong.
+compare_directive() {
+    local plugin="$1" directive="$2" system="$3" target="$4" finding_id="$5" reported
+
+    if [[ "$system" == "$target" ]]; then
+        record_pass "$plugin $directive: the system holds '$system', the value the tool targets"
+    else
+        record_fail "$plugin $directive: the system holds '$system' but the tool targets '$target'; apply did not take effect"
+    fi
+
+    if ! reported="$(scan_finding_count "$plugin" "$finding_id")"; then
+        record_fail "$plugin $directive: the tool's verdict for '$finding_id' could not be read"
+        return 0
+    fi
+    if verdict_agrees "$system" "$target" "$reported"; then
+        record_pass "$plugin $directive: the tool agrees with the system ($reported finding(s) for '$finding_id')"
+    elif [[ "$system" == "$target" ]]; then
+        record_fail "$plugin $directive: the tool reports $reported finding(s) for '$finding_id' while the system holds the target value '$system'"
+    else
+        record_fail "$plugin $directive: the tool claims a compliance the system does not have: no finding for '$finding_id' while the system holds '$system' and the tool targets '$target'"
+    fi
+}
+
+# An oracle that cannot answer for one directive costs that directive both of
+# its checks, as failures. Recording two keeps the totals comparable between a
+# run where every oracle answered and one where some did not.
+record_unresolved() {
+    local plugin="$1" directive="$2" reason="$3"
+    record_fail "$plugin $directive: $reason"
+    record_fail "$plugin $directive: the tool's verdict was not compared, there is no system value to compare it against"
+}
+
+run_ssh_checks() {
+    local entry directive target system
+    for entry in "${SSH_CHECKS[@]}"; do
+        IFS='|' read -r directive target <<<"$entry"
+        if ! system="$(ssh_system_value "$directive")"; then
+            record_unresolved ssh-hardening "$directive" "sshd -T reported no usable value"
+            continue
+        fi
+        compare_directive ssh-hardening "$directive" "$system" "$target" \
+            "$(ssh_finding_id "$directive")"
+    done
+}
+
+run_login_defs_checks() {
+    local entry directive target system
+    for entry in "${LOGIN_DEFS_CHECKS[@]}"; do
+        IFS='|' read -r directive _ target <<<"$entry"
+        if ! system="$(login_defs_system_value "$directive")"; then
+            record_unresolved pam-hardening "$directive" "shadow reported no value for the probe account"
+            continue
+        fi
+        compare_directive pam-hardening "$directive" "$system" "$target" \
+            "$(pam_finding_id "$directive")"
+    done
+}
+
+# Apply the plugins this suite compares, then record that an apply happened.
+# Every oracle refuses to answer until this has run, and refuses any capture
+# taken above it.
+#
+# A non-zero apply is reported and does not stop the run. The pam plugin
+# reports failure when it declines to rewrite a file in /etc/pam.d by hand,
+# which is correct behaviour and says nothing about login.defs. The assertions
+# below are the evidence, not this exit status.
+apply_hardening() {
+    local args=() plugin out status=0 line
+    for plugin in "${DIFF_PLUGINS[@]}"; do
+        args+=(--plugin "$plugin")
+    done
+    out="$("$BINARY" apply "${args[@]}" 2>&1)" || status=$?
+    bump_apply_generation
+    echo "apply exit status $status (non-zero is expected when a plugin reports a manual action)"
+    # Prefixed, so no line of the tool's own output can be mistaken for one of
+    # this suite's summary counters by whatever parses the log.
+    while IFS= read -r line; do
+        printf '  apply| %s\n' "$line"
+    done <<<"$out"
+}
+
+# The run's own summary. The four labels match full-test-suite.sh so the
+# host-side runner parses this log with the machinery it already has. There is
+# no skip outcome to report: a check that could not be determined is recorded
+# as a failure, which is the whole point, so Skipped is always 0.
+print_summary() {
+    echo ""
+    echo "  Total Tests:  $CHECKS_TOTAL"
+    echo "  Passed:       $CHECKS_PASSED"
+    echo "  Failed:       $CHECKS_FAILED"
+    echo "  Skipped:      0"
+    echo ""
+    if (( CHECKS_TOTAL == 0 )); then
+        echo "No checks ran. Refusing to report success for a run that checked nothing."
+        return 1
+    fi
+    if (( CHECKS_FAILED > 0 )); then
+        echo "The system disagrees with what the tool reported, or an oracle could"
+        echo "not be read. Neither is a flaky test: a disagreement is a product"
+        echo "defect, and an oracle that cannot answer leaves a directive unproven."
+        echo "Each FAIL line above names the directive, and where the two disagree,"
+        echo "the value the system holds and the value the tool targets."
+        return 1
+    fi
+    echo "The system agrees with what the tool reported."
+}
+
 self_test() {
     local failures=0
+    # The filter proofs below run jq, so --self-test depends on it as well.
+    # Refusing beats skipping them: a proof that quietly did not run is worth
+    # less than no proof at all, because it still prints a clean summary.
+    require_commands jq || return 1
     local sshd_fixture="PermitRootLogin no
 MaxAuthTries 3
 X11Forwarding yes
@@ -538,6 +840,124 @@ Number of days of warning before password expires	: 11"
     LOGIN_DEFS_CHAGE_GENERATION=""
     unset -f useradd userdel id chage
 
+    # The preflight itself, both ways round. A guard that can never refuse is as
+    # useless as one that never runs.
+    check_status 0 "require_commands accepts a command that exists" \
+        require_commands jq
+    check_status 1 "require_commands refuses a command that does not exist" \
+        require_commands hardener-no-such-command
+    check_status 1 "require_commands refuses when one of several is missing" \
+        require_commands jq hardener-no-such-command
+
+    # The scan side. Its filters are where a harness most easily goes green on
+    # broken code: one that matches nothing returns an empty result, which is
+    # exactly what "the tool reported no finding" looks like, and that is the
+    # pass condition. So both id conventions are pinned to the literal ids the
+    # plugins emit, and each filter is proven to match, AND proven to match
+    # nothing when written under the other plugin's convention.
+    check_eq "$(ssh_finding_id PermitRootLogin)" "ssh-permitrootlogin" "ssh lowercases its finding id"
+    check_eq "$(ssh_finding_id MaxAuthTries)" "ssh-maxauthtries" "ssh lowercases a mixed-case directive"
+    check_eq "$(pam_finding_id PASS_MAX_DAYS)" "pam-PASS_MAX_DAYS" "pam keeps its directive's case"
+
+    # Shaped after real `scan --format json` output: an array of plugin objects
+    # carrying plugin_id, plugin_name, findings and unchecked. One finding under
+    # each plugin, so a filter can be proven to match; the directives absent
+    # from each findings array stand in for the compliant case, where matching
+    # nothing is the correct answer. The plugin order is deliberately not the
+    # order DIFF_PLUGINS lists, because the tool's own order is not that either.
+    local scan_fixture='[
+  {
+    "plugin_id": "pam-hardening",
+    "plugin_name": "PAM Hardening",
+    "findings": [
+      { "finding_id": "pam-PASS_MAX_DAYS", "finding_current_value": "99999" }
+    ],
+    "unchecked": []
+  },
+  {
+    "plugin_id": "ssh-hardening",
+    "plugin_name": "SSH Hardening",
+    "findings": [
+      { "finding_id": "ssh-permitrootlogin", "finding_current_value": "yes" }
+    ],
+    "unchecked": []
+  }
+]'
+
+    SCAN_JSON=""
+    SCAN_JSON_GENERATION=""
+    check_status 1 "uninitialised scan oracle returns non-zero" \
+        scan_finding_count ssh-hardening ssh-permitrootlogin
+
+    local scan_capture="$scan_fixture"
+    capture_scan_json() { printf '%s' "$scan_capture"; }
+
+    # The same freshness lifecycle as the two value oracles, for the same
+    # reason: a scan captured before apply describes the container as it was
+    # found, and on an unhardened container that is a document full of findings
+    # for directives apply has since fixed.
+    init_status=0
+    scan_oracle_init || init_status=$?
+    check_eq "$init_status" "0" "scan_oracle_init succeeds against the stubbed capture"
+    check_status 1 "scan read with no apply recorded returns non-zero" \
+        scan_finding_count ssh-hardening ssh-permitrootlogin
+    bump_apply_generation
+    check_status 1 "scan read from a capture older than the last apply returns non-zero" \
+        scan_finding_count ssh-hardening ssh-permitrootlogin
+    init_status=0
+    scan_oracle_init || init_status=$?
+    check_eq "$init_status" "0" "scan_oracle_init re-captures after apply"
+
+    check_eq "$(scan_finding_count ssh-hardening ssh-permitrootlogin)" "1" \
+        "the ssh filter matches a finding the tool emitted"
+    check_eq "$(scan_finding_count ssh-hardening "$(ssh_finding_id PermitRootLogin)")" "1" \
+        "the ssh filter matches through the id derivation"
+    check_eq "$(scan_finding_count pam-hardening "$(pam_finding_id PASS_MAX_DAYS)")" "1" \
+        "the pam filter matches through the id derivation"
+    check_eq "$(scan_finding_count ssh-hardening "$(ssh_finding_id MaxAuthTries)")" "0" \
+        "a directive the tool reported nothing for counts 0"
+    check_eq "$(scan_finding_count pam-hardening "pam-pass_max_days")" "0" \
+        "ssh's lowercasing applied to a pam id matches nothing"
+    check_eq "$(scan_finding_count ssh-hardening "ssh-PermitRootLogin")" "0" \
+        "pam's case preservation applied to an ssh id matches nothing"
+
+    # A plugin missing from the output must stop the run. Every filter against
+    # it would return 0, and 0 is the pass condition, so silence there would
+    # report a clean bill of health for a plugin that never ran.
+    scan_capture='[
+  {
+    "plugin_id": "ssh-hardening",
+    "plugin_name": "SSH Hardening",
+    "findings": [],
+    "unchecked": []
+  }
+]'
+    init_status=0
+    scan_oracle_init || init_status=$?
+    check_eq "$init_status" "1" "scan_oracle_init refuses output missing a compared plugin"
+
+    scan_capture='{ "error": "not an array" }'
+    init_status=0
+    scan_oracle_init || init_status=$?
+    check_eq "$init_status" "1" "scan_oracle_init refuses output that is not a JSON array"
+
+    APPLY_GENERATION=0
+    SCAN_JSON=""
+    SCAN_JSON_GENERATION=""
+    unset -f capture_scan_json
+
+    # The verdict rule itself, in all four directions. The last one is the shape
+    # of the defect this harness exists to catch: the system holds something
+    # other than the target and the tool reports nothing wrong.
+    check_status 0 "verdict agrees when the system holds the target and nothing is reported" \
+        verdict_agrees no no 0
+    check_status 1 "verdict disagrees when the system holds the target and a finding is reported" \
+        verdict_agrees no no 1
+    check_status 0 "verdict agrees when the system differs and a finding is reported" \
+        verdict_agrees yes no 1
+    check_status 1 "verdict disagrees when the system differs and nothing is reported" \
+        verdict_agrees yes no 0
+
     if (( failures > 0 )); then
         echo "self-test: $failures failure(s)"
         return 1
@@ -547,24 +967,45 @@ Number of days of warning before password expires	: 11"
 
 # The full run: gate, then apply, then the oracle captures, then the assertions.
 #
-# Apply and the assertions arrive with the remaining task. Until they do this
-# returns non-zero deliberately, because a suite that checks nothing and exits 0
-# is the exact failure this harness exists to catch.
+# The order is load-bearing. Every capture is taken BELOW apply_hardening, which
+# is what bumps the generation, so an init moved above it is caught at the first
+# read by require_fresh_capture rather than quietly answering from a snapshot of
+# the unhardened container.
 #
-# The order is load-bearing, so neither oracle is initialised here. Whatever runs
-# apply must call bump_apply_generation, and both ssh_oracle_init and
-# login_defs_oracle_init must run after it. An init left above apply is caught at
-# the first read by require_fresh_capture rather than quietly answering from a
-# snapshot of the unhardened container.
+# A failed capture ends the run rather than pressing on: printing a summary over
+# a subset of the directives would show a green count for a run that never
+# looked at the rest.
 run_full_suite() {
     require_container_root || return 1
-    echo "INCOMPLETE: apply, the oracle captures and the assertions are not wired yet." >&2
-    echo "  Refusing to report success for a run that checked nothing." >&2
-    return 1
+    require_commands "${REQUIRED_COMMANDS[@]}" || return 1
+    require_binary || return 1
+    # Checked before apply, not inside the probe that needs it: aborting halfway
+    # through a destructive run over a name collision helps nobody.
+    require_absent_probe_user || return 1
+
+    echo "Differential suite: $BINARY"
+    echo "Plugins: ${DIFF_PLUGINS[*]}"
+    apply_hardening
+
+    ssh_oracle_init || return 1
+    login_defs_oracle_init || return 1
+    scan_oracle_init || return 1
+
+    run_ssh_checks
+    run_login_defs_checks
+    print_summary
 }
 
 main() {
     set -euo pipefail
+    # Extra arguments are refused rather than ignored. `--self-test --anything`
+    # used to exit 0 having silently dropped everything after the first word,
+    # which reads as a clean run of whatever the caller believed it asked for.
+    if (( $# > 1 )); then
+        echo "Unexpected argument: $2" >&2
+        usage >&2
+        return 1
+    fi
     case "${1:-}" in
         --self-test)
             self_test

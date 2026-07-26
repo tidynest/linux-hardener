@@ -2,8 +2,9 @@
 # =============================================================================
 # CROSS-DISTRO TEST RUNNER - Linux System Hardener
 # =============================================================================
-# Runs full-test-suite.sh across all supported distributions using
-# systemd-nspawn --pipe (non-interactive, no boot/login needed).
+# Runs full-test-suite.sh, or differential-suite.sh with --differential, across
+# all supported distributions using systemd-nspawn --pipe (non-interactive, no
+# boot/login needed).
 # Serial by default; --parallel tests multiple distros simultaneously with
 # background processes (~5x faster when testing all 5 distros).
 #
@@ -11,6 +12,7 @@
 #
 # Options:
 #   --apply           Enable destructive tests (apply + rollback)
+#   --differential    Run differential-suite.sh instead of full-test-suite.sh
 #   --distro NAME     Run only one distro (arch|debian|fedora|rhel|opensuse)
 #   --gui             Run GUI tests (Playwright Web UI) after CLI tests
 #   --parallel        Run distros in parallel instead of serially
@@ -35,6 +37,7 @@ MUSL_BINARY="$TARGET_DIR/x86_64-unknown-linux-musl/release/hardener"
 
 # Options
 DO_APPLY=false
+DO_DIFFERENTIAL=false
 SINGLE_DISTRO=""
 DO_GUI=false
 DO_REBUILD=false
@@ -49,6 +52,10 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --apply)
             DO_APPLY=true
+            shift
+            ;;
+        --differential)
+            DO_DIFFERENTIAL=true
             shift
             ;;
         --distro)
@@ -84,12 +91,20 @@ Usage: sudo $0 [OPTIONS]
 
 Options:
   --apply           Enable destructive tests (apply + rollback)
+  --differential    Run differential-suite.sh instead of full-test-suite.sh
   --distro NAME     Run only one distro (arch|debian|fedora|rhel|opensuse)
   --gui             Run GUI tests (Playwright Web UI) after CLI tests
   --parallel        Run distros in parallel instead of serially (~5x speedup)
   --jobs N          Max parallel jobs (with --parallel; default: 3)
   --rebuild         Build musl binary before testing
   --help            Show usage
+
+--differential asks each setting's real consumer what the system is enforcing
+and compares that against what the tool reported. It ALWAYS applies hardening,
+whether or not --apply is given, and it creates and removes a probe account, so
+it replaces the full suite for that run rather than running alongside it. A
+failure means the system disagrees with the tool: a product defect, not a
+flaky test.
 
 Output:
   test-results/<distro>.log   Per-distro full output
@@ -154,17 +169,28 @@ fi
 # Track results for summary
 declare -A RESULT_PASSED RESULT_FAILED RESULT_SKIPPED RESULT_TOTAL RESULT_EXIT
 
-APPLY_FLAG=""
-[[ "$DO_APPLY" == "true" ]] && APPLY_FLAG="--apply"
+# The suite each container runs, and the arguments it takes. The differential
+# suite replaces the full suite rather than following it: it applies hardening
+# unconditionally, so a run of it is never the read-only run --apply gates.
+# It takes no arguments, and refuses any it is given.
+INNER_SUITE="/project/scripts/test/full-test-suite.sh"
+INNER_ARGS=()
+SUITE_LABEL="full"
+if [[ "$DO_DIFFERENTIAL" == "true" ]]; then
+    INNER_SUITE="/project/scripts/test/differential-suite.sh"
+    SUITE_LABEL="differential"
+elif [[ "$DO_APPLY" == "true" ]]; then
+    INNER_ARGS=(--apply)
+fi
 
 # The nspawn invocation shared by both execution modes.
-nspawn_full_suite() {
+nspawn_suite() {
     local container_path="$1"
     systemd-nspawn -D "$container_path" \
         --bind="$PROJECT_DIR:/project" \
         "${TARGET_BIND[@]}" \
         --pipe \
-        /bin/bash /project/scripts/test/full-test-suite.sh $APPLY_FLAG
+        /bin/bash "$INNER_SUITE" "${INNER_ARGS[@]}"
 }
 
 # Parse pass/fail/skip/total counts from a log (strips ANSI escape codes);
@@ -186,17 +212,17 @@ echo -e "${MAGENTA}╔$(printf '═%.0s' $(seq 1 $BOX_W))╗${NC}"
 print_boxline ""
 if [[ "$PARALLEL" == "true" ]]; then
     print_boxline "   PARALLEL CROSS-DISTRO TEST RUNNER"
-    print_boxline "   Distros: ${#DISTROS[@]}  |  Apply: $DO_APPLY  |  Max jobs: $MAX_JOBS"
+    print_boxline "   Distros: ${#DISTROS[@]}  |  Suite: $SUITE_LABEL  |  Apply: $DO_APPLY  |  Max jobs: $MAX_JOBS"
 else
     print_boxline "   CROSS-DISTRO TEST RUNNER"
-    print_boxline "   Distros: ${#DISTROS[@]}  |  Apply: $DO_APPLY  |  GUI: $DO_GUI"
+    print_boxline "   Distros: ${#DISTROS[@]}  |  Suite: $SUITE_LABEL  |  Apply: $DO_APPLY  |  GUI: $DO_GUI"
 fi
 print_boxline ""
 echo -e "${MAGENTA}╚$(printf '═%.0s' $(seq 1 $BOX_W))╝${NC}"
 echo ""
 
 # Defined once, used by both serial (foreground) and parallel (backgrounded)
-# execution. Runs full-test-suite.sh for one distro and prints an immediate
+# execution. Runs the selected suite for one distro and prints an immediate
 # one-line result. Result-array bookkeeping happens in the caller afterwards
 # (a backgrounded run_single_distro cannot mutate the parent's associative
 # arrays, so both modes re-derive counts from the persisted logfile there).
@@ -221,10 +247,10 @@ run_single_distro() {
     if [[ "$PARALLEL" == "true" ]]; then
         echo -e "[$distro] ${CYAN}Starting...${NC}"
     else
-        echo -e "  ${CYAN}[RUN]${NC}  systemd-nspawn --pipe -> full-test-suite.sh $APPLY_FLAG"
+        echo -e "  ${CYAN}[RUN]${NC}  systemd-nspawn --pipe -> $(basename "$INNER_SUITE") ${INNER_ARGS[*]}"
     fi
 
-    nspawn_full_suite "$container_path" > "$logfile" 2>&1
+    nspawn_suite "$container_path" > "$logfile" 2>&1
     local exit_code=$?
 
     local passed failed skipped total
@@ -296,12 +322,14 @@ SUMMARY_FILE="$RESULTS_DIR/summary.txt"
         echo "Parallel Cross-Distro Test Results"
         echo "==================================="
         echo "Date: $(date)"
+        echo "Suite: $SUITE_LABEL"
         echo "Apply mode: $DO_APPLY"
         echo "Max parallel jobs: $MAX_JOBS"
     else
         echo "Cross-Distro Test Results"
         echo "========================"
         echo "Date: $(date)"
+        echo "Suite: $SUITE_LABEL"
         echo "Apply mode: $DO_APPLY"
     fi
     echo ""
