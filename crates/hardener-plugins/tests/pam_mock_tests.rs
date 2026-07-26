@@ -4,13 +4,15 @@
 
 use hardener_common::types::{PluginId, Severity};
 use hardener_core::{
-    Context, MockExecutor, PluginConfig, PolicyException, SystemExecutor, plugin::HardeningPlugin,
+    Change, Context, MockExecutor, PluginConfig, PolicyException, SystemExecutor,
+    plugin::HardeningPlugin,
 };
 use hardener_plugins::PamHardeningPlugin;
 use std::sync::Arc;
 
-/// Creates a mock executor with secure PAM configuration.
-fn secure_pam_executor() -> MockExecutor {
+/// The secure fixture minus faillock.conf, so callers can model an absent or
+/// unreadable faillock file without duplicating the other compliant directives.
+fn secure_pam_executor_base() -> MockExecutor {
     MockExecutor::new()
         // pwquality.conf uses "key = value" format
         .with_file(
@@ -33,10 +35,62 @@ PASS_MIN_DAYS 1
 PASS_WARN_AGE 7
 "#,
         )
-        // faillock.conf: deny=3 is stricter than the threshold of 5, compliant
-        .with_file("/etc/security/faillock.conf", "deny = 3\n")
         // pwhistory.conf: remember=10 exceeds the minimum of 5, compliant
         .with_file("/etc/security/pwhistory.conf", "remember = 10\n")
+}
+
+/// Creates a mock executor with secure PAM configuration.
+fn secure_pam_executor() -> MockExecutor {
+    // faillock.conf: deny=3 is stricter than the threshold of 5, compliant
+    secure_pam_executor_base().with_file("/etc/security/faillock.conf", "deny = 3\n")
+}
+
+/// Asserts that a file apply refused to rewrite is named by exactly one change,
+/// the refusal, and that nothing recorded for it counts as a hardening success.
+/// A directive that could not be written must record nothing of its own, or
+/// "N change(s) applied" tallies writes that never happened.
+fn assert_refusal_is_the_only_change(changes: &[Change], label: &str) {
+    let named: Vec<&str> = changes
+        .iter()
+        .filter(|c| c.change_description.contains(label))
+        .map(|c| c.change_description.as_str())
+        .collect();
+    assert_eq!(
+        named.len(),
+        1,
+        "{label} must contribute exactly one change, the refusal, got: {named:?}"
+    );
+    assert!(
+        !changes
+            .iter()
+            .any(|c| c.change_success && !c.is_skipped() && c.change_description.contains(label)),
+        "no change for {label} may count as a hardening success, got: {named:?}"
+    );
+}
+
+/// Registers the `cp` that `create_config_backup` issues for `path`, across a
+/// three-second window so a clock tick between registration and call cannot
+/// break the test.
+fn with_backup_cp(mut executor: MockExecutor, path: &str) -> MockExecutor {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before the unix epoch")
+        .as_secs();
+    for t in now..now + 3 {
+        let backup = format!("{path}.backup-{t}");
+        executor = executor.with_command(
+            "cp",
+            &[path, &backup],
+            hardener_core::CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        );
+    }
+    executor
 }
 
 /// Creates a mock executor with insecure PAM configuration.
@@ -575,11 +629,35 @@ async fn test_pam_apply_never_loosens_stricter_thresholds() {
 /// tightened to the compliant boundary on apply.
 #[tokio::test]
 async fn test_pam_apply_tightens_looser_thresholds() {
-    let executor = Arc::new(
-        secure_pam_executor()
-            .with_file("/etc/security/faillock.conf", "deny = 10\n")
-            .with_file("/etc/security/pwhistory.conf", "remember = 2\n"),
-    );
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let mut executor = secure_pam_executor()
+        .with_file("/etc/security/faillock.conf", "deny = 10\n")
+        .with_file("/etc/security/pwhistory.conf", "remember = 2\n");
+    // Both files are rewritten, and the backup path embeds a unix timestamp;
+    // register cp for both across a small clock window.
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    for path in [
+        "/etc/security/faillock.conf",
+        "/etc/security/pwhistory.conf",
+    ] {
+        for t in now..now + 3 {
+            let backup = format!("{path}.backup-{t}");
+            executor = executor.with_command(
+                "cp",
+                &[path, &backup],
+                hardener_core::CommandOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            );
+        }
+    }
+    let executor = Arc::new(executor);
     let mut ctx = Context::with_executor(executor.clone());
     let plugin = PamHardeningPlugin::new();
 
@@ -979,6 +1057,264 @@ async fn pam_apply_one_drifted_rewrites_one_file_with_one_backup() {
     );
 }
 
+#[tokio::test]
+async fn apply_refuses_to_rewrite_an_unreadable_security_conf() {
+    // The file exists with a non-compliant value, so apply wants to rewrite it,
+    // but its contents cannot be read. Merging directives into an empty buffer
+    // would replace the host's file with ours, so the write must not happen.
+    // The refusal is detected, and the function returns, before any backup is
+    // attempted, so no `cp` is registered here: a registration that never runs
+    // would misleadingly suggest that path is exercised.
+    let path = "/etc/security/faillock.conf";
+    let executor = secure_pam_executor()
+        .with_file(path, "deny = 10\n")
+        .with_read_permission_denied(path);
+    let executor = Arc::new(executor);
+    let mut ctx = Context::with_executor(executor.clone());
+    let plugin = PamHardeningPlugin::new();
+
+    let result = plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply must run rather than abort");
+
+    let log = executor.log();
+    assert!(
+        !log.files_written
+            .iter()
+            .any(|(written, _)| written.to_str() == Some(path)),
+        "an unreadable config must never be rewritten, but got: {:?}",
+        log.files_written
+    );
+    assert!(
+        !result.apply_success,
+        "refusing to harden a file must be reported, not silently swallowed"
+    );
+    assert!(
+        result
+            .apply_changes
+            .iter()
+            .any(|change| { !change.change_success && change.change_description.contains(path) }),
+        "the refusal must be reported as a failed change naming {}, got: {:?}",
+        path,
+        result.apply_changes
+    );
+}
+
+#[tokio::test]
+async fn apply_still_creates_an_absent_security_conf() {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    // Guard against over-correction: a file that is simply not there has
+    // genuinely unset directives and must still be created. Built from the
+    // base fixture (no faillock.conf registration) rather than
+    // `secure_pam_executor()`, which registers a compliant faillock.conf.
+    let path = "/etc/security/faillock.conf";
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before the unix epoch")
+        .as_secs();
+    let mut executor = secure_pam_executor_base();
+    for t in now..now + 3 {
+        let backup = format!("{path}.backup-{t}");
+        // A missing source cannot be backed up: this is what `cp` actually
+        // does when the file is not there, and is why absence must skip the
+        // backup rather than attempt and fail it.
+        executor = executor.with_command(
+            "cp",
+            &[path, &backup],
+            hardener_core::CommandOutput {
+                stdout: String::new(),
+                stderr: format!("cp: cannot stat '{path}': No such file or directory\n"),
+                exit_code: 1,
+            },
+        );
+    }
+    let executor = Arc::new(executor);
+    let mut ctx = Context::with_executor(executor.clone());
+    let plugin = PamHardeningPlugin::new();
+
+    plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply must run");
+
+    let log = executor.log();
+    assert!(
+        log.files_written
+            .iter()
+            .any(|(written, _)| written.to_str() == Some(path)),
+        "an absent config must still be created, got: {:?}",
+        log.files_written
+    );
+}
+
+#[tokio::test]
+async fn apply_refuses_to_rewrite_an_unreadable_pwquality() {
+    // pwquality.conf exists with a drifted value, so apply wants to rewrite it,
+    // but cannot read it. Rewriting would discard every directive the host has.
+    // No `cp` is registered, for the reason given in
+    // `apply_refuses_to_rewrite_an_unreadable_security_conf`: the refusal is
+    // recorded at read time and every directive for the file is skipped, so no
+    // backup is ever attempted, and a registration that cannot run would
+    // misleadingly suggest that path is exercised.
+    let path = "/etc/security/pwquality.conf";
+    let executor = secure_pam_executor()
+        .with_file(path, "minlen 8\n")
+        .with_read_permission_denied(path);
+    let executor = Arc::new(executor);
+    let mut ctx = Context::with_executor(executor.clone());
+    let plugin = PamHardeningPlugin::new();
+
+    let result = plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply must run rather than abort");
+
+    let log = executor.log();
+    assert!(
+        !log.files_written
+            .iter()
+            .any(|(written, _)| written.to_str() == Some(path)),
+        "an unreadable pwquality.conf must never be rewritten, got: {:?}",
+        log.files_written
+    );
+    assert_refusal_is_the_only_change(&result.apply_changes, "pwquality.conf");
+    assert!(
+        !result.apply_success,
+        "refusing to harden a file must be reported"
+    );
+}
+
+/// Mirrors `apply_refuses_to_rewrite_an_unreadable_pwquality` for login.defs:
+/// a genuinely distinct code path (its own read, its own write gate), so it
+/// needs its own proof rather than relying on the pwquality coverage above.
+#[tokio::test]
+async fn apply_refuses_to_rewrite_an_unreadable_login_defs() {
+    // No `cp` is registered here either: the refusal returns before any backup
+    // is attempted, so a registration would only suggest a path that cannot run.
+    let path = "/etc/login.defs";
+    let executor = secure_pam_executor()
+        .with_file(path, "PASS_MAX_DAYS 99999\n")
+        .with_read_permission_denied(path);
+    let executor = Arc::new(executor);
+    let mut ctx = Context::with_executor(executor.clone());
+    let plugin = PamHardeningPlugin::new();
+
+    let result = plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply must run rather than abort");
+
+    let log = executor.log();
+    assert!(
+        !log.files_written
+            .iter()
+            .any(|(written, _)| written.to_str() == Some(path)),
+        "an unreadable login.defs must never be rewritten, got: {:?}",
+        log.files_written
+    );
+    assert_refusal_is_the_only_change(&result.apply_changes, "login.defs");
+    assert!(
+        !result.apply_success,
+        "refusing to harden a file must be reported"
+    );
+}
+
+/// Guard against over-correction on the other two files this task touches:
+/// neither pwquality.conf nor login.defs is registered, so both are Absent
+/// (a confirmed non-existence), which must still start from an empty buffer
+/// and be created, exactly as before this fix, distinct from the refusal
+/// above which requires a confirmed Unreadable classification.
+#[tokio::test]
+async fn apply_still_creates_absent_pwquality_and_login_defs() {
+    let executor = Arc::new(missing_pam_config_executor());
+    let mut ctx = Context::with_executor(executor.clone());
+    let plugin = PamHardeningPlugin::new();
+
+    plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply must run");
+
+    let log = executor.log();
+    for path in ["/etc/security/pwquality.conf", "/etc/login.defs"] {
+        assert!(
+            log.files_written
+                .iter()
+                .any(|(written, _)| written.to_str() == Some(path)),
+            "an absent {} must still be created, got: {:?}",
+            path,
+            log.files_written
+        );
+    }
+}
+
+/// The refusal is per file, not per run: one unreadable config must not stop
+/// the other three being hardened, and must contribute exactly one change, the
+/// refusal itself.
+///
+/// Built on a context with no checkpoint manager, which is the only place this
+/// fallback is reachable. Where a manager is present, which is every path a
+/// `hardener` command takes, the unreadable declared path fails the pre-apply
+/// capture and aborts the whole apply before this loop runs.
+#[tokio::test]
+async fn apply_refuses_only_the_unreadable_file_and_hardens_the_rest() {
+    let unreadable = "/etc/security/pwquality.conf";
+    let written = [
+        "/etc/login.defs",
+        "/etc/security/faillock.conf",
+        "/etc/security/pwhistory.conf",
+    ];
+
+    // Every file drifts, so apply wants to rewrite all four; only pwquality.conf
+    // cannot be read.
+    let mut executor = MockExecutor::new()
+        .with_file(unreadable, "minlen 8\n")
+        .with_read_permission_denied(unreadable)
+        .with_file(
+            "/etc/login.defs",
+            "PASS_MAX_DAYS 99999\nPASS_MIN_DAYS 0\nPASS_WARN_AGE 7\n",
+        )
+        .with_file("/etc/security/faillock.conf", "deny = 10\n")
+        .with_file("/etc/security/pwhistory.conf", "remember = 2\n");
+    for path in written {
+        executor = with_backup_cp(executor, path);
+    }
+    let executor = Arc::new(executor);
+    let mut ctx = Context::with_executor(executor.clone());
+
+    let result = PamHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply must run rather than abort");
+
+    let log = executor.log();
+    assert!(
+        !log.files_written
+            .iter()
+            .any(|(path, _)| path.to_str() == Some(unreadable)),
+        "the unreadable file must never be rewritten, got: {:?}",
+        log.files_written
+    );
+    for path in written {
+        assert!(
+            log.files_written
+                .iter()
+                .any(|(p, _)| p.to_str() == Some(path)),
+            "one unreadable file must not stop {} being hardened, got: {:?}",
+            path,
+            log.files_written
+        );
+    }
+
+    assert_refusal_is_the_only_change(&result.apply_changes, "pwquality.conf");
+    assert!(
+        !result.apply_success,
+        "refusing to harden a file must be reported, not silently swallowed"
+    );
+}
+
 /// State-aware validate: a fully compliant host lists zero pending directives;
 /// every checked directive is tallied in `validation_report_compliant_count`.
 #[tokio::test]
@@ -1308,7 +1644,12 @@ async fn pam_apply_refuses_inline_pamd_override() {
 /// scan. The permission failure surfaces as unchecked instead.
 #[tokio::test]
 async fn pam_scan_reports_unchecked_not_findings_when_pwquality_is_root_only() {
+    // Registered as an existing file, then marked unreadable: a root-only
+    // conf is still stat-able (its existence is not secret), only its
+    // content is blocked, so the mock must reflect both facts for the
+    // classifier's existence probe to land on Unreadable, not Absent.
     let mock = MockExecutor::new()
+        .with_file("/etc/security/pwquality.conf", "minlen 14\n")
         .with_read_permission_denied("/etc/security/pwquality.conf")
         .with_file("/etc/login.defs", "PASS_MAX_DAYS 365\n");
     let ctx = Context::with_executor(Arc::new(mock));
@@ -1340,6 +1681,10 @@ async fn pam_scan_reports_unchecked_not_findings_when_pwquality_is_root_only() {
 /// surface their threshold directives as unchecked, not as "not set" findings.
 #[tokio::test]
 async fn pam_scan_reports_unchecked_when_threshold_confs_are_root_only() {
+    // Both threshold confs are registered as existing files, then marked
+    // unreadable, so the classifier's existence probe lands on Unreadable
+    // rather than the Absent it would (wrongly) see for a path with no
+    // metadata at all.
     let mock = MockExecutor::new()
         .with_file(
             "/etc/security/pwquality.conf",
@@ -1349,7 +1694,9 @@ async fn pam_scan_reports_unchecked_when_threshold_confs_are_root_only() {
             "/etc/login.defs",
             "PASS_MAX_DAYS 90\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n",
         )
+        .with_file("/etc/security/faillock.conf", "deny = 3\n")
         .with_read_permission_denied("/etc/security/faillock.conf")
+        .with_file("/etc/security/pwhistory.conf", "remember = 10\n")
         .with_read_permission_denied("/etc/security/pwhistory.conf");
     let ctx = Context::with_executor(Arc::new(mock));
     let result = PamHardeningPlugin::new()
@@ -1401,6 +1748,12 @@ async fn pam_scan_inline_override_wins_over_permission_denied_conf() {
             "PASS_MAX_DAYS 90\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n",
         )
         .with_file("/etc/security/pwhistory.conf", "remember = 10\n")
+        // Registered as well as denied: an unregistered path reads as absent,
+        // which would model a host with no faillock.conf rather than the
+        // root-only one this test is named for. The compliant deny = 3 it holds
+        // is the value the finding must NOT carry, since the inline override
+        // wins before this file is ever read.
+        .with_file("/etc/security/faillock.conf", "deny = 3\n")
         .with_read_permission_denied("/etc/security/faillock.conf")
         .with_file(
             "/etc/pam.d/system-auth",
@@ -1434,20 +1787,39 @@ async fn pam_scan_inline_override_wins_over_permission_denied_conf() {
 /// Apply honours a stricter per-host override (clamped so it never loosens).
 #[tokio::test]
 async fn pam_apply_honours_stricter_override() {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
     // Case A: config override deny→"3", conf has deny=5 → apply should write deny=3.
-    let executor_tighten = Arc::new(
-        MockExecutor::new()
-            .with_file(
-                "/etc/security/pwquality.conf",
-                "minlen 14\ndcredit -1\nucredit -1\nlcredit -1\nocredit -1\nmaxrepeat 3\n",
-            )
-            .with_file(
-                "/etc/login.defs",
-                "PASS_MAX_DAYS 90\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n",
-            )
-            .with_file("/etc/security/faillock.conf", "deny = 5\n")
-            .with_file("/etc/security/pwhistory.conf", "remember = 10\n"),
-    );
+    let mut executor_tighten = MockExecutor::new()
+        .with_file(
+            "/etc/security/pwquality.conf",
+            "minlen 14\ndcredit -1\nucredit -1\nlcredit -1\nocredit -1\nmaxrepeat 3\n",
+        )
+        .with_file(
+            "/etc/login.defs",
+            "PASS_MAX_DAYS 90\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n",
+        )
+        .with_file("/etc/security/faillock.conf", "deny = 5\n")
+        .with_file("/etc/security/pwhistory.conf", "remember = 10\n");
+    // deny drifts from 5 to 3, so faillock.conf is rewritten; the backup path
+    // embeds a unix timestamp, so register cp across a small clock window.
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    for t in now..now + 3 {
+        let backup = format!("/etc/security/faillock.conf.backup-{t}");
+        executor_tighten = executor_tighten.with_command(
+            "cp",
+            &["/etc/security/faillock.conf", &backup],
+            hardener_core::CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        );
+    }
+    let executor_tighten = Arc::new(executor_tighten);
     let mut ctx_tighten = Context::with_executor(executor_tighten.clone());
     let plugin = PamHardeningPlugin::new();
 

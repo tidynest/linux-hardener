@@ -1,6 +1,6 @@
 # Configuration reference
 
-**Last Updated**: 2026-07-24
+**Last Updated**: 2026-07-26
 
 Complete reference for the hardener's configuration files. Configuration
 controls which plugins run, tightens directive targets beyond the built-in
@@ -248,6 +248,23 @@ only with `--format json`). Within a file that was read successfully,
 `"not set"` means the directive is genuinely absent. Do not write
 `value = "not set"` to mean "I do not know what this is": treat it as a
 matchable value like any other, for both sections.
+
+Outside exception matching, an unreadable file stops `[pam]`'s `apply`
+before anything is written, as it does for `[ssh]`. They stop at different
+points: `[ssh]` reads `sshd_config` itself and fails on that read, while
+`[pam]` fails one step earlier, at the pre-apply checkpoint, which refuses
+to record a file it was asked to protect but could not capture. Either way
+the command reports an error for that plugin and rewrites nothing, so
+`pwquality.conf`, `login.defs`, `faillock.conf` and `pwhistory.conf` are
+all left alone, not only the one that could not be read.
+
+The plugin also refuses per file, on its own, without relying on that
+checkpoint: it declines to rewrite whichever file it could not read,
+reports that one file as a failed change, and hardens the rest. No
+`hardener` command reaches that fallback, because every command that
+applies takes a checkpoint first and so stops at the capture above. It is
+what protects an embedding of the plugin crate that runs `apply` with no
+checkpoint manager configured.
 
 For `[services]`, `[mac]`, `[audit]`, and `[firewall]` this comparison does
 not apply on any path, including `apply`: the key itself names the deviating

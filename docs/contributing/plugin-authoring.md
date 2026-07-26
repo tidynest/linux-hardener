@@ -1,6 +1,6 @@
 # Plugin authoring guide
 
-**Last Updated**: 2026-07-19
+**Last Updated**: 2026-07-26
 
 How to write a new hardening plugin. The 8 existing plugins in
 `crates/hardener-plugins/src/` are the best worked examples; this page
@@ -109,6 +109,23 @@ count helpers exclude, so capturing a checkpoint never inflates the
 applied-change total. For plugins that only change modes or ownership,
 `create_checkpoint_metadata_only_for_apply` captures mode/uid/gid without
 file contents.
+
+**What you declare decides how strictly it is captured.** A regular file named
+in `paths` must be captured completely: if it exists and its content cannot be
+read, the capture fails, the error names the path, and `apply()` returns that
+error before writing anything. A file reached by recursing into a declared
+*directory* is best effort: an unreadable one is stored with no content and
+logged at warn level, and the capture succeeds. Metadata-only checkpoints read
+no content at all, so the distinction does not arise for them.
+
+So declaring `/etc/foo.conf` and declaring `/etc` are not two spellings of the
+same intent. Declare the individual files the plugin writes, so an unreadable
+one stops the apply rather than producing a checkpoint that cannot restore it.
+Declare a directory to record what was there, accepting that one odd file
+inside it will not fail the run: PAM declares `/etc/pam.d` on exactly that
+basis, since it refuses to auto-edit anything in the authentication stack. A
+plugin that declares a parent directory and then writes files inside it has
+the weakest guarantee of the three, and should declare those files as well.
 
 ## Graceful skip for absent subsystems
 

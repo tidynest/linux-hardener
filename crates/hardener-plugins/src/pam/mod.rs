@@ -694,16 +694,52 @@ impl HardeningPlugin for PamHardeningPlugin {
         // Step 1: Read current configuration files. Backups are created later,
         // and only for a file that will actually be rewritten, so a compliant
         // host accumulates no backup churn in /etc.
-        let mut pwquality_content = read_pwquality_config(ctx).await.unwrap_or_else(|e| {
-            warn!("Failed to read pwquality.conf, using empty content: {}", e);
-            String::new()
-        });
+        let pwquality_read = read_conf_classified(ctx, "/etc/security/pwquality.conf").await;
+        let pwquality_writable = match &pwquality_read {
+            ConfRead::Unreadable(e) => {
+                warn!("Refusing to rewrite /etc/security/pwquality.conf: {}", e);
+                all_success = false;
+                changes.push(Change {
+                    change_type: ChangeType::ConfigFile,
+                    change_description:
+                        "Refused to rewrite /etc/security/pwquality.conf: its current contents \
+                         could not be read, and rewriting it would discard them"
+                            .to_string(),
+                    change_success: false,
+                    change_error: Some(e.clone()),
+                });
+                false
+            }
+            _ => true,
+        };
+        let mut pwquality_content = match &pwquality_read {
+            ConfRead::Content(content) => content.clone(),
+            _ => String::new(),
+        };
         let mut pwquality_changed = false;
 
-        let mut login_defs_content = read_login_defs(ctx).await.unwrap_or_else(|e| {
-            warn!("Failed to read login.defs, using empty content: {}", e);
-            String::new()
-        });
+        let login_defs_read = read_conf_classified(ctx, "/etc/login.defs").await;
+        let login_defs_writable = match &login_defs_read {
+            ConfRead::Unreadable(e) => {
+                warn!("Refusing to rewrite /etc/login.defs: {}", e);
+                all_success = false;
+                changes.push(Change {
+                    change_type: ChangeType::ConfigFile,
+                    change_description:
+                        "Refused to rewrite /etc/login.defs: its current contents could not be \
+                         read, and rewriting it would discard them"
+                            .to_string(),
+                    change_success: false,
+                    change_error: Some(e.clone()),
+                });
+                false
+            }
+            _ => true,
+        };
+        let mut login_defs_content = match &login_defs_read {
+            ConfRead::Content(content) => content.clone(),
+            _ => String::new(),
+        };
         let mut login_defs_changed = false;
 
         // Pre-apply snapshots for the exception check below. Taken once, here,
@@ -716,7 +752,7 @@ impl HardeningPlugin for PamHardeningPlugin {
         // directive's `SecurityConf` path happens to collide with an earlier
         // one's, rather than relying on today's `PAM_DIRECTIVES` entries
         // pointing at distinct files.
-        let pwquality_observed = ConfRead::Content(pwquality_content.clone());
+        let pwquality_observed = pwquality_read;
         let login_defs_observed = login_defs_content.clone();
         let mut observed_values = Vec::with_capacity(PAM_DIRECTIVES.len());
         for directive in PAM_DIRECTIVES {
@@ -761,6 +797,22 @@ impl HardeningPlugin for PamHardeningPlugin {
                 .get(directive.pam_directive_name)
                 .map(|s| s.as_str())
                 .unwrap_or(directive.pam_secure_value);
+
+            // A file whose current contents could not be read is never
+            // rewritten, and that refusal was already recorded once, at read
+            // time. Skip its directives outright so none of them records a
+            // change for a write that cannot happen: "N change(s) applied"
+            // must only ever mean N hardening successes. The `SecurityConf`
+            // arm classifies its own read and refuses per directive below,
+            // which is the same rule applied at its own read site.
+            let file_writable = match directive.pam_config_file {
+                PamConfigFile::PwQuality => pwquality_writable,
+                PamConfigFile::LoginDefs => login_defs_writable,
+                _ => true,
+            };
+            if !file_writable {
+                continue;
+            }
 
             match directive.pam_config_file {
                 PamConfigFile::PwQuality => apply_exact_directive(
@@ -853,34 +905,34 @@ impl HardeningPlugin for PamHardeningPlugin {
                         continue;
                     }
 
-                    match create_config_backup(ctx, path).await {
-                        Ok(backup) => changes.push(Change {
-                            change_type: ChangeType::ConfigFile,
-                            change_description: format!("Created backup: {}", backup),
-                            change_success: true,
-                            change_error: None,
-                        }),
-                        Err(e) => {
-                            warn!("Failed to backup {}: {}", path, e);
+                    let current = match read_conf_classified(ctx, path).await {
+                        ConfRead::Content(content) => content,
+                        ConfRead::Absent => String::new(),
+                        ConfRead::Unreadable(e) => {
+                            warn!("Refusing to rewrite {}: {}", path, e);
                             all_success = false;
                             changes.push(Change {
                                 change_type: ChangeType::ConfigFile,
-                                change_description: format!("Failed to backup {}", path),
+                                change_description: format!(
+                                    "Refused to rewrite {path}: its current contents could not be \
+                                     read, and rewriting it would discard them",
+                                ),
                                 change_success: false,
-                                change_error: Some(e.to_string()),
+                                change_error: Some(e),
                             });
+                            continue;
                         }
-                    }
+                    };
 
-                    let content = read_security_conf(ctx, path).await;
                     let target_str = target.to_string();
                     let updated = apply_directive_to_content(
-                        &content,
+                        &current,
                         directive.pam_directive_name,
                         &target_str,
                     );
-                    match ctx.executor().write_file(Path::new(path), &updated).await {
-                        Ok(_) => changes.push(Change {
+
+                    if backup_and_write(ctx, path, path, &updated, &mut changes).await {
+                        changes.push(Change {
                             change_type: ChangeType::ConfigFile,
                             change_description: format!(
                                 "Set {} = {} in {}",
@@ -888,17 +940,9 @@ impl HardeningPlugin for PamHardeningPlugin {
                             ),
                             change_success: true,
                             change_error: None,
-                        }),
-                        Err(e) => {
-                            warn!("Failed to write {}: {}", path, e);
-                            all_success = false;
-                            changes.push(Change {
-                                change_type: ChangeType::ConfigFile,
-                                change_description: format!("Failed to write {}", path),
-                                change_success: false,
-                                change_error: Some(e.to_string()),
-                            });
-                        }
+                        });
+                    } else {
+                        all_success = false;
                     }
                 }
             }
@@ -906,8 +950,16 @@ impl HardeningPlugin for PamHardeningPlugin {
 
         // Step 3: Back up and rewrite only the files that actually changed.
         // As before, a failed backup blocks the write for that file.
+        //
+        // The `_writable` half of each guard is deliberate belt and braces, not
+        // load bearing: Step 2 skips every directive belonging to a file that
+        // could not be read, so nothing can set `_changed` for one. It stays
+        // because the write it guards destroys the host's settings if it ever
+        // runs on contents that were never read, and a second, local check
+        // costs nothing.
         if pwquality_changed
-            && !backup_and_write(
+            && pwquality_writable
+            && !write_changed_conf(
                 ctx,
                 "/etc/security/pwquality.conf",
                 "pwquality.conf",
@@ -920,7 +972,8 @@ impl HardeningPlugin for PamHardeningPlugin {
         }
 
         if login_defs_changed
-            && !backup_and_write(
+            && login_defs_writable
+            && !write_changed_conf(
                 ctx,
                 "/etc/login.defs",
                 "login.defs",
@@ -1037,14 +1090,17 @@ impl HardeningPlugin for PamHardeningPlugin {
         let mut estimated_changes = Vec::new();
         let mut compliant_count = 0usize;
 
-        // Plain content for the shared helper's login_defs argument: it
-        // carries no permission distinction, matching scan's and apply's
-        // existing lenient (always-content) read of /etc/login.defs. The
+        // Plain content for the shared helper's login_defs argument: it carries
+        // no permission distinction, so an unreadable /etc/login.defs renders
+        // its directives as "not set" here. That matches scan's lenient
+        // (always-content) read, and apply, which classifies its read but still
+        // seeds an empty buffer for a file it will then refuse to rewrite. The
         // classified `login_defs` above is still used, unchanged, by the
         // SecurityConf/PwQuality estimate below.
         let login_defs_str = match &login_defs {
             ConfRead::Content(c) => c.as_str(),
-            ConfRead::PermissionDenied => "",
+            ConfRead::Absent => "",
+            ConfRead::Unreadable(_) => "",
         };
 
         for d in PAM_DIRECTIVES {
@@ -1076,14 +1132,23 @@ impl HardeningPlugin for PamHardeningPlugin {
                         .get(d.pam_directive_name)
                         .map(|s| s.as_str())
                         .unwrap_or(d.pam_secure_value);
-                    let ConfRead::Content(content) = read else {
-                        // Root-only file: never claim "not set" for a value
-                        // that cannot be read at this privilege level.
-                        estimated_changes.push(format!(
-                            "Set {} = {} (current value requires root; applied only if it differs)",
-                            d.pam_directive_name, target_value
-                        ));
-                        continue;
+                    // Absent reads as empty content, same as a confirmed-missing
+                    // file always has: parsing finds nothing and the directive
+                    // is honestly reported "(currently not set)" below. Only an
+                    // Unreadable file (existing but blocked by privilege) must
+                    // avoid that claim, since it is not a fact this scan can see.
+                    let content = match read {
+                        ConfRead::Content(c) => c.as_str(),
+                        ConfRead::Absent => "",
+                        ConfRead::Unreadable(_) => {
+                            // Root-only file: never claim "not set" for a value
+                            // that cannot be read at this privilege level.
+                            estimated_changes.push(format!(
+                                "Set {} = {} (current value requires root; applied only if it differs)",
+                                d.pam_directive_name, target_value
+                            ));
+                            continue;
+                        }
                     };
                     match parse_config_value(
                         content,
@@ -1373,7 +1438,13 @@ fn pamd_module_for(arg: &str) -> Option<(&'static str, &'static [&'static str])>
 async fn read_pamd_inline(ctx: &Context, arg: &str) -> Option<String> {
     let (module, files) = pamd_module_for(arg)?;
     for file in files {
-        for line in read_security_conf(ctx, file).await.lines() {
+        // A scan writes nothing, so Absent and Unreadable both simply mean
+        // "no inline override here"; only Content is worth scanning.
+        let content = match read_conf_classified(ctx, file).await {
+            ConfRead::Content(c) => c,
+            ConfRead::Absent | ConfRead::Unreadable(_) => continue,
+        };
+        for line in content.lines() {
             let line = line.trim();
             if line.starts_with('#') || !line.contains(module) {
                 continue;
@@ -1389,23 +1460,31 @@ async fn read_pamd_inline(ctx: &Context, arg: &str) -> Option<String> {
     None
 }
 
-/// Outcome of reading a scan-relevant config file at the current privilege level.
+/// How a configuration file read turned out.
+///
+/// `Absent` and `Unreadable` are deliberately distinct: a file that is not
+/// there has genuinely unset directives and may be created, whereas a file
+/// whose contents could not be read tells us nothing, and merging directives
+/// into the empty string would replace the host's file with ours.
 enum ConfRead {
     Content(String),
-    PermissionDenied,
+    Absent,
+    Unreadable(String),
 }
 
-/// Reads a config file, distinguishing privilege failures from absence.
-/// A missing file reads as empty content (directives genuinely not set);
-/// a permission failure must not masquerade as "not set".
+/// Reads a config file, distinguishing absence from a failure to read.
+/// Fails closed: any read failure of a path that is not confirmed absent is
+/// `Unreadable`, including a failure to determine whether it exists at all.
 async fn read_conf_classified(ctx: &Context, path: &str) -> ConfRead {
     match ctx.executor().read_file(Path::new(path)).await {
         Ok(content) => ConfRead::Content(content),
-        Err(e) if hardener_common::error::is_permission_denied(&e) => ConfRead::PermissionDenied,
-        Err(e) => {
-            warn!("Failed to read {}: {}", path, e);
-            ConfRead::Content(String::new())
-        }
+        Err(e) => match ctx.executor().path_exists(Path::new(path)).await {
+            Ok(false) => ConfRead::Absent,
+            _ => {
+                warn!("Failed to read {}: {}", path, e);
+                ConfRead::Unreadable(e.to_string())
+            }
+        },
     }
 }
 
@@ -1424,7 +1503,9 @@ async fn read_effective_threshold(ctx: &Context, arg: &str, conf: &str) -> Thres
         return ThresholdRead::Value(inline);
     }
     match read_conf_classified(ctx, conf).await {
-        ConfRead::PermissionDenied => ThresholdRead::PermissionDenied,
+        ConfRead::Unreadable(_) => ThresholdRead::PermissionDenied,
+        // A missing file has no directives, same as today: empty content.
+        ConfRead::Absent => ThresholdRead::NotSet,
         ConfRead::Content(content) => {
             match parse_config_value(&content, arg, ConfigFormat::KeyValue, true) {
                 Some(v) => ThresholdRead::Value(v),
@@ -1487,7 +1568,9 @@ async fn observed_pam_value(
                 Some(v) => PamObserved::Value(v),
                 None => PamObserved::NotSet,
             },
-            ConfRead::PermissionDenied => {
+            // A missing file has no directives, same as today: empty content.
+            ConfRead::Absent => PamObserved::NotSet,
+            ConfRead::Unreadable(_) => {
                 PamObserved::PermissionDenied("/etc/security/pwquality.conf")
             }
         },
@@ -1544,9 +1627,10 @@ fn apply_exact_directive(
     });
 }
 
-/// Backs up `path` and writes `content` to it, recording both outcomes.
-/// A failed backup blocks the write (never modify a file without a backup).
-/// Returns false when either step failed so the caller can mark the run.
+/// Backs up `path` and writes `content` to it, recording the backup outcome
+/// and any failure. A failed backup blocks the write (never modify a file
+/// without a backup). Returns true on a successful write; callers push their
+/// own success change, since its wording varies by call site.
 async fn backup_and_write(
     ctx: &Context,
     path: &str,
@@ -1554,34 +1638,36 @@ async fn backup_and_write(
     content: &str,
     changes: &mut Vec<Change>,
 ) -> bool {
-    match create_config_backup(ctx, path).await {
-        Ok(backup) => changes.push(Change {
-            change_type: ChangeType::ConfigFile,
-            change_description: format!("Created backup: {}", backup),
-            change_success: true,
-            change_error: None,
-        }),
-        Err(e) => {
-            warn!("Failed to backup {}: {}", path, e);
-            changes.push(Change {
+    // A file that is not there has nothing to back up, and cp on a missing
+    // source fails. Absence is an ordinary case: creating the file is correct.
+    // Fail closed, so only a CONFIRMED absence skips the backup. An existence
+    // probe that errors, or that says the file is present, still requires one.
+    let needs_backup = !matches!(ctx.executor().path_exists(Path::new(path)).await, Ok(false));
+
+    if needs_backup {
+        match create_config_backup(ctx, path).await {
+            Ok(backup) => changes.push(Change {
                 change_type: ChangeType::ConfigFile,
-                change_description: format!("Failed to create {} backup", file_label),
-                change_success: false,
-                change_error: Some(e.to_string()),
-            });
-            return false;
+                change_description: format!("Created backup: {}", backup),
+                change_success: true,
+                change_error: None,
+            }),
+            Err(e) => {
+                warn!("Failed to backup {}: {}", path, e);
+                changes.push(Change {
+                    change_type: ChangeType::ConfigFile,
+                    change_description: format!("Failed to backup {}", file_label),
+                    change_success: false,
+                    change_error: Some(e.to_string()),
+                });
+                return false;
+            }
         }
     }
 
     match ctx.executor().write_file(Path::new(path), content).await {
         Ok(_) => {
             info!("Successfully wrote {}", path);
-            changes.push(Change {
-                change_type: ChangeType::ConfigFile,
-                change_description: format!("Wrote modified {}", file_label),
-                change_success: true,
-                change_error: None,
-            });
             true
         }
         Err(e) => {
@@ -1597,23 +1683,26 @@ async fn backup_and_write(
     }
 }
 
-/// Lenient config read: the file's contents, or an empty string on any
-/// failure (absence, privileges, or otherwise). Used where permission
-/// classification is not needed: the scan's pam.d inline-override lookups
-/// (world-readable files) and apply's /etc/security conf reads (root context).
-async fn read_security_conf(ctx: &Context, path: &str) -> String {
-    ctx.executor()
-        .read_file(Path::new(path))
-        .await
-        .unwrap_or_default()
-}
-
-/// Reads the pwquality configuration file.
-async fn read_pwquality_config(ctx: &Context) -> Result<String> {
-    ctx.executor()
-        .read_file(Path::new("/etc/security/pwquality.conf"))
-        .await
-        .map_err(|e| HardeningError::Plugin(e.to_string()))
+/// Rewrites a config file whose in-memory buffer the directive loop changed,
+/// recording the write. Returns false when no write happened, so the caller can
+/// mark the run unsuccessful; `backup_and_write` has already recorded why.
+async fn write_changed_conf(
+    ctx: &Context,
+    path: &str,
+    file_label: &str,
+    content: &str,
+    changes: &mut Vec<Change>,
+) -> bool {
+    if !backup_and_write(ctx, path, file_label, content, changes).await {
+        return false;
+    }
+    changes.push(Change {
+        change_type: ChangeType::ConfigFile,
+        change_description: format!("Wrote modified {}", file_label),
+        change_success: true,
+        change_error: None,
+    });
+    true
 }
 
 /// Reads the login.defs configuration file.
@@ -1635,10 +1724,19 @@ async fn create_config_backup(ctx: &Context, file_path: &str) -> Result<String> 
 
     let backup_path = format!("{}.backup-{}", file_path, timestamp);
 
-    ctx.executor()
+    let output = ctx
+        .executor()
         .execute_command("cp", &[file_path, &backup_path])
         .await
         .map_err(|e| HardeningError::Plugin(e.to_string()))?;
+
+    if !output.success() {
+        return Err(HardeningError::Plugin(format!(
+            "Failed to back up {file_path} to {backup_path}: cp exited {} ({})",
+            output.exit_code,
+            output.stderr.trim(),
+        )));
+    }
 
     Ok(backup_path)
 }
@@ -1827,6 +1925,89 @@ mod tests {
         assert!(
             fedramp_for("remember").is_none(),
             "pwhistory has no 800-53 source control and must not claim FedRAMP"
+        );
+    }
+
+    #[tokio::test]
+    async fn backup_reports_failure_when_cp_exits_non_zero() {
+        use hardener_common::executor::{CommandOutput, MockExecutor};
+        use std::sync::Arc;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        // The backup path embeds a unix timestamp, so register the cp across a
+        // small clock window (the idiom used in pam_mock_tests.rs).
+        let path = "/etc/security/faillock.conf";
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock before the unix epoch")
+            .as_secs();
+        let mut executor = MockExecutor::new();
+        for t in now..now + 3 {
+            let backup = format!("{path}.backup-{t}");
+            executor = executor.with_command(
+                "cp",
+                &[path, &backup],
+                CommandOutput {
+                    stdout: String::new(),
+                    stderr: "cp: cannot stat '/etc/security/faillock.conf': Permission denied\n"
+                        .to_string(),
+                    exit_code: 1,
+                },
+            );
+        }
+        let ctx = Context::with_executor(Arc::new(executor));
+
+        let result = create_config_backup(&ctx, path).await;
+
+        let err = result.expect_err("a cp that exits non-zero must not report a backup");
+        let message = err.to_string();
+        assert!(
+            message.contains(path),
+            "the error must name the file it failed to back up, got: {message}"
+        );
+        assert!(
+            message.contains("Permission denied"),
+            "the error must carry cp's own stderr so an operator can act on it, got: {message}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_read_error_is_not_reported_as_empty_content() {
+        use hardener_common::executor::MockExecutor;
+        use std::sync::Arc;
+
+        // A file that exists but cannot be read must never classify as content.
+        // Empty content means "the directive is genuinely not set", which is a
+        // different fact and drives a rewrite.
+        let path = "/etc/security/faillock.conf";
+        let executor = MockExecutor::new()
+            .with_file(path, "deny = 3\n")
+            .with_read_permission_denied(path);
+        let ctx = Context::with_executor(Arc::new(executor));
+
+        assert!(
+            matches!(
+                read_conf_classified(&ctx, path).await,
+                ConfRead::Unreadable(_)
+            ),
+            "an unreadable file must classify as Unreadable"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_absent_file_is_distinguishable_from_an_unreadable_one() {
+        use hardener_common::executor::MockExecutor;
+        use std::sync::Arc;
+
+        // Nothing registered: the mock reports a confirmed absence.
+        let ctx = Context::with_executor(Arc::new(MockExecutor::new()));
+
+        assert!(
+            matches!(
+                read_conf_classified(&ctx, "/etc/security/faillock.conf").await,
+                ConfRead::Absent
+            ),
+            "a file that is simply not there must classify as Absent, since creating it is correct"
         );
     }
 
