@@ -172,30 +172,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so that test was false for every possible input: the live line was never
   recognised and a new one was appended instead. The reader had the same
   fault, so a later scan skipped the live line, found the tool's own appended
-  line, and reported the host compliant while `PASS_MAX_DAYS`, `PASS_MIN_DAYS`
-  and `PASS_WARN_AGE` kept the values they already had. Both now recognise a
-  whitespace separated directive, `apply` writes the syntax the file accepts
-  and rewrites the line that is in force rather than a comment that names it,
-  and the line an earlier release appended is removed even where the live value
-  already matches the target and there is nothing else about the file to
-  change. A host hardened by an earlier release will report a violation it
-  previously reported as a pass; running `apply` repairs the file and the
-  report together.
-- `scan` and `apply` now recognise a directive written as `Key=Value`. Both
-  took a directive's name to end at whitespace, so `PermitRootLogin=yes` in
-  `/etc/ssh/sshd_config` and `deny=10` in `/etc/security/faillock.conf` matched
-  nothing, though `sshd_config(5)` and the `security/*.conf` files all accept
-  that syntax and `sshd -t` passes it. `scan` reported such a directive as not
-  set, and `apply` left the operator's line where it stood and defined the key
-  a second time elsewhere in the file, so the file carried two definitions of
-  the same directive, never converged however often `apply` ran, and the tool
-  could report a value the host does not enforce. A name now ends at whitespace
-  or at `=`, whichever comes first, for both reading and writing. On an
-  affected host the reported value changes from "not set" to the value the file
-  holds, which can turn a finding into a pass or the reverse, and the first
-  `apply` after this release rewrites that line rather than adding to it. An
-  exception written as `value = "not set"` for such a directive stops matching,
-  since the directive was never unset.
+  line, and reported `PASS_MAX_DAYS`, `PASS_MIN_DAYS` and `PASS_WARN_AGE`
+  compliant on the strength of a line the tool had written itself, in a syntax
+  `login.defs(5)` does not define, while the file's own syntax was left saying
+  exactly what it said before the apply. Both now recognise a whitespace
+  separated directive, `apply` writes the syntax the file accepts and rewrites
+  the line that is in force rather than a comment that names it, and the line
+  an earlier release appended is removed even where the live value already
+  matches the target and there is nothing else about the file to change. A host
+  hardened by an earlier release will report a violation it previously reported
+  as a pass; running `apply` repairs the file and the report together. A
+  definition that already holds the target value but is written in another form
+  the reader accepts, such as a tab separator in `login.defs` or a bare space
+  in `pwquality.conf`, is rewritten once into the form `apply` writes for that
+  file and converges there; only the separator changes, so the first run after
+  this release can report a change that hardens nothing.
+- `scan` and `apply` now recognise a directive written as `Key=Value`. The
+  writer took a directive's name to end at whitespace, so `PermitRootLogin=yes`
+  in `/etc/ssh/sshd_config` and `deny=10` in `/etc/security/faillock.conf`
+  matched nothing, though `sshd_config(5)` and the `security/*.conf` files all
+  accept that syntax and `sshd -t` passes it: `apply` left the operator's line
+  where it stood and defined the key a second time elsewhere in the file, so
+  the file carried two definitions of the same directive, never converged
+  however often `apply` ran, and the tool could report a value the host does
+  not enforce. Reading was blind to the same syntax only where a file is read
+  as space separated, which is `/etc/ssh/sshd_config` alone, so `scan` reported
+  an `=` separated directive there as not set; the PAM files are read as
+  key-value, which already accepted `deny=10`. A name now ends at whitespace or
+  at `=`, whichever comes first, for both reading and writing. On a host whose
+  `sshd_config` carries such a directive the reported value changes from "not
+  set" to the value the file holds, which can turn a finding into a pass or the
+  reverse, and the first `apply` after this release rewrites that line rather
+  than adding to it. An exception for such a directive written as
+  `value = "not set"` stops matching, since the directive was never unset.
 - `apply` could scope a global SSH setting to a single `Match` block. A
   directive `/etc/ssh/sshd_config` did not mention at all was appended to the
   end of the file, and because `sshd_config(5)` puts `Match` blocks last, that
