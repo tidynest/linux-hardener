@@ -14,16 +14,17 @@ use std::sync::Arc;
 /// unreadable faillock file without duplicating the other compliant directives.
 fn secure_pam_executor_base() -> MockExecutor {
     MockExecutor::new()
-        // pwquality.conf uses "key = value" format
+        // pwquality.conf uses "key = value" format, which is also the form
+        // apply writes: a compliant host in that form has nothing to rewrite.
         .with_file(
             "/etc/security/pwquality.conf",
             r#"# Password Quality Configuration
-minlen 14
-dcredit -1
-ucredit -1
-lcredit -1
-ocredit -1
-maxrepeat 3
+minlen = 14
+dcredit = -1
+ucredit = -1
+lcredit = -1
+ocredit = -1
+maxrepeat = 3
 "#,
         )
         // login.defs uses space-separated format
@@ -981,10 +982,10 @@ async fn pam_apply_all_compliant_writes_nothing_and_makes_no_backups() {
 async fn pam_apply_one_drifted_rewrites_one_file_with_one_backup() {
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    // minlen drifted to 8; everything else compliant.
+    // minlen drifted to 8; everything else compliant, in the form apply writes.
     let mut executor = secure_pam_executor().with_file(
         "/etc/security/pwquality.conf",
-        "minlen 8\ndcredit -1\nucredit -1\nlcredit -1\nocredit -1\nmaxrepeat 3\n",
+        "minlen = 8\ndcredit = -1\nucredit = -1\nlcredit = -1\nocredit = -1\nmaxrepeat = 3\n",
     );
     // The backup path embeds a unix timestamp; register the cp for a small
     // clock window (same idiom as the SSH mock tests).
@@ -1395,8 +1396,89 @@ PASS_WARN_AGE = 7
         "the surviving line must read `NAME VALUE`, with no `=`:\n{written}"
     );
     assert!(
-        written.contains("PASS_MAX_DAYS\t90"),
-        "a directive with nothing to repair must be left exactly as it stands:\n{written}"
+        written.contains("PASS_MAX_DAYS 90"),
+        "a directive with nothing else to repair keeps its value, in the file's own syntax:\n{written}"
+    );
+}
+
+/// The shape an earlier release left on a host where the key was absent or
+/// commented out: it appended `NAME = VALUE`, so the file's only definition of
+/// that key is in a syntax `login.defs(5)` does not define, carrying the value
+/// the tool still targets today. Nothing about the file's line count changes
+/// when the writer repairs it in place, so a skip that counts lines leaves the
+/// host broken and green for ever. Apply must repair the line, and a second
+/// apply must then find nothing to do.
+#[tokio::test]
+async fn apply_repairs_a_lone_definition_left_in_the_appended_syntax() {
+    const APPENDED_ONLY: &str = "\
+#PASS_MAX_DAYS\t99999
+PASS_MIN_DAYS 1
+PASS_WARN_AGE 7
+PASS_MAX_DAYS = 90
+";
+
+    let path = "/etc/login.defs";
+    let executor = Arc::new(with_backup_cp(
+        secure_pam_executor().with_file(path, APPENDED_ONLY),
+        path,
+    ));
+    let mut ctx = Context::with_executor(executor.clone());
+
+    PamHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply must run");
+
+    let log = executor.log();
+    let written = log
+        .files_written
+        .iter()
+        .find(|(p, _)| p.to_str() == Some(path))
+        .expect("login.defs must be rewritten: its only definition is unreadable to shadow")
+        .1
+        .clone();
+
+    assert!(
+        written.contains("PASS_MAX_DAYS 90"),
+        "the definition must be repaired to `NAME VALUE`:\n{written}"
+    );
+    assert!(
+        !written.contains("PASS_MAX_DAYS = 90"),
+        "`=` is not login.defs syntax:\n{written}"
+    );
+    let live: Vec<&str> = written
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .filter(|line| line.split_whitespace().next() == Some("PASS_MAX_DAYS"))
+        .collect();
+    assert_eq!(
+        live.len(),
+        1,
+        "repairing the line must not add a second definition:\n{written}"
+    );
+    assert!(
+        written.contains("#PASS_MAX_DAYS\t99999"),
+        "the commented stock line is documentation and must survive:\n{written}"
+    );
+
+    // Second pass over what the first one wrote: the backup command stays
+    // registered, so an empty write log means the repair converged, not that a
+    // failed backup blocked the write.
+    let second = Arc::new(with_backup_cp(
+        secure_pam_executor().with_file(path, &written),
+        path,
+    ));
+    let mut ctx = Context::with_executor(second.clone());
+
+    PamHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply must run");
+
+    assert!(
+        second.log().files_written.is_empty(),
+        "the repair must converge in one pass, got: {:?}",
+        second.log().files_written
     );
 }
 

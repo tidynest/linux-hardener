@@ -1635,11 +1635,17 @@ fn apply_exact_directive(
     // take one definition per key, and an earlier release appended a second
     // one in a syntax they do not parse. Skipping on the value would leave that
     // repair undone on every run, so the file never converges. With the value
-    // already correct the writer can only rewrite a line where it stands or
-    // drop a duplicate, and only the second changes how many lines carry text.
-    // Blank ones are excluded because joining the lines drops a trailing blank,
-    // which would otherwise read as a duplicate and rewrite a compliant file.
-    let lines_with_text = |text: &str| text.lines().filter(|l| !l.trim().is_empty()).count();
+    // already correct the writer can still rewrite a line where it stands,
+    // repair the syntax of that line, or drop a duplicate, and only comparing
+    // the lines themselves tells "nothing to do" apart from all three: a
+    // repaired line leaves the count of lines exactly as it was, which is how a
+    // file whose only definition is the appended one stayed broken and green.
+    // Blank lines are excluded because joining the lines drops a trailing
+    // blank, which would otherwise read as a change and rewrite a compliant
+    // file.
+    fn lines_with_text(text: &str) -> Vec<&str> {
+        text.lines().filter(|l| !l.trim().is_empty()).collect()
+    }
     if current.as_deref() == Some(target) && lines_with_text(&updated) == lines_with_text(content) {
         changes.push(Change {
             change_type: ChangeType::Skipped,
