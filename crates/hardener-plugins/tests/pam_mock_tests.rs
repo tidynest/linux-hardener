@@ -1482,6 +1482,80 @@ PASS_MAX_DAYS = 90
     );
 }
 
+/// The `pwquality.conf` analogue of the repair above. Its written form is
+/// `key = value`; a lone definition already at the target value but left
+/// bare-space separated must still be rewritten once to repair the
+/// separator, and a second apply must then find nothing to do.
+#[tokio::test]
+async fn apply_repairs_a_lone_pwquality_definition_left_space_separated() {
+    const SPACE_SEPARATED_MINLEN: &str = "\
+# Password Quality Configuration
+minlen 14
+dcredit = -1
+ucredit = -1
+lcredit = -1
+ocredit = -1
+maxrepeat = 3
+";
+
+    let path = "/etc/security/pwquality.conf";
+    let executor = Arc::new(with_backup_cp(
+        secure_pam_executor().with_file(path, SPACE_SEPARATED_MINLEN),
+        path,
+    ));
+    let mut ctx = Context::with_executor(executor.clone());
+
+    PamHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply must run");
+
+    let log = executor.log();
+    let written = log
+        .files_written
+        .iter()
+        .find(|(p, _)| p.to_str() == Some(path))
+        .expect("pwquality.conf must be rewritten: minlen is space separated, not key = value")
+        .1
+        .clone();
+
+    let live: Vec<&str> = written
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .filter(|line| line.split_whitespace().next() == Some("minlen"))
+        .collect();
+    assert_eq!(
+        live.len(),
+        1,
+        "repairing the line must not add a second definition:\n{written}"
+    );
+    assert_eq!(
+        live[0].split_whitespace().collect::<Vec<_>>(),
+        ["minlen", "=", "14"],
+        "the surviving line must read `key = value`:\n{written}"
+    );
+
+    // Second pass over what the first one wrote: the backup command stays
+    // registered, so an empty write log means the repair converged, not that a
+    // failed backup blocked the write.
+    let second = Arc::new(with_backup_cp(
+        secure_pam_executor().with_file(path, &written),
+        path,
+    ));
+    let mut ctx = Context::with_executor(second.clone());
+
+    PamHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply must run");
+
+    assert!(
+        second.log().files_written.is_empty(),
+        "the repair must converge in one pass, got: {:?}",
+        second.log().files_written
+    );
+}
+
 /// The refusal is per file, not per run: one unreadable config must not stop
 /// the other three being hardened, and must contribute exactly one change, the
 /// refusal itself.
