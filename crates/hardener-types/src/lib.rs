@@ -628,6 +628,29 @@ pub enum FileRestoreAction {
     Skipped,
 }
 
+/// Paths a rollback must never delete, whatever a checkpoint records.
+///
+/// A checkpoint stores an absent path with `file_permissions: 0`, which restore
+/// reads as "remove on rollback". Versions up to and including v1.4.0 could
+/// record an existing file that way when its metadata could not be read, and
+/// upgrading does not rewrite rows already in `checkpoints.db`. These paths are
+/// never created by an apply, so removing one is never a correct restore: the
+/// deletion is refused regardless of which version wrote the row.
+///
+/// Exact matches only. `/etc/sudoers.d` the directory is protected; a drop-in
+/// file inside it that an apply created stays removable.
+pub const UNDELETABLE_ROLLBACK_PATHS: &[&str] = &[
+    "/root",
+    "/boot",
+    "/etc/ssh",
+    "/etc/sudoers",
+    "/etc/sudoers.d",
+    "/etc/passwd",
+    "/etc/group",
+    "/etc/shadow",
+    "/etc/gshadow",
+];
+
 /// Outcome of a single file restore during rollback.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct FileRestoreResult {

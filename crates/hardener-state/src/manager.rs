@@ -6,6 +6,7 @@ use crate::checkpoint::{
 use crate::{Checkpoint, CheckpointSigner};
 use hardener_common::error::{HardeningError, Result};
 use hardener_common::executor::{SystemExecutor, host_key_for};
+use hardener_types::UNDELETABLE_ROLLBACK_PATHS;
 use sqlx::{Row, SqlitePool};
 use std::path::Path;
 
@@ -776,6 +777,24 @@ impl CheckpointManager {
             None => FileRestoreAction::Removed,
         };
 
+        // A mode-0 row means "absent at capture", but a checkpoint written by a
+        // version that could not read a path's metadata records an existing file
+        // the same way, and upgrading does not rewrite rows already stored. An
+        // apply never creates these paths, so deleting one is never a correct
+        // restore: refuse rather than trust the row.
+        if matches!(action, FileRestoreAction::Removed)
+            && UNDELETABLE_ROLLBACK_PATHS.contains(&path_str.as_str())
+        {
+            return (
+                FileRestoreAction::Skipped,
+                Err(HardeningError::Config(format!(
+                    "Refusing to delete {path_str} during rollback: the checkpoint records it as \
+                     absent, which for this path means the checkpoint is untrustworthy rather \
+                     than that the file should be removed"
+                ))),
+            );
+        }
+
         // Remove files that did not exist at checkpoint time.
         if matches!(action, FileRestoreAction::Removed) {
             let result = executor
@@ -1070,52 +1089,63 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rollback_never_removes_a_path_that_was_never_confirmed_absent() {
+    async fn rollback_refuses_to_delete_a_critical_path_recorded_as_absent() {
         use hardener_common::executor::FileMetadata;
 
-        // End-to-end guard for the deletion path. Capture now refuses to store an
-        // unverifiable path, so no checkpoint can carry the mode-0 "did not
-        // exist" marker for a file that is actually present, and rollback has
-        // nothing to delete.
+        // A checkpoint written by a version whose stat probe reported an
+        // existing file as absent stores it with mode 0, which restore reads
+        // as "remove on rollback". Fixing capture cannot disarm rows already
+        // on disk, so restore must refuse to delete an account file outright.
         let manager = test_manager().await;
         let passwd = "/etc/passwd";
-        let executor = MockExecutor::new().with_file_metadata(
+
+        // Capture believes the path is absent: nothing registered on the mock,
+        // so file_metadata reports a confirmed absence and the row stores 0.
+        let capturing = MockExecutor::new();
+        let cp_id = manager
+            .create_checkpoint_metadata_only(&capturing, "poisoned", &[Path::new(passwd)])
+            .await
+            .expect("capture of a confirmed-absent path must succeed");
+
+        // Rollback then runs against a host that does have the file, which is
+        // what an operator upgrading from v1.4.0 actually has.
+        let restoring = MockExecutor::new().with_file_metadata(
             passwd,
-            "root:x:0:0:root:/root:/bin/bash\n",
+            "root:x:0:0::/root:/bin/bash\n",
             FileMetadata {
                 exists: true,
                 is_file: true,
                 is_dir: false,
                 mode: 0o100644,
-                size: 32,
+                size: 0,
                 uid: 0,
                 gid: 0,
             },
         );
 
-        let checkpoint_id = manager
-            .create_checkpoint_metadata_only(
-                &executor,
-                "permissions-hardening",
-                &[Path::new(passwd)],
-            )
+        let result = manager
+            .rollback(&restoring, &cp_id)
             .await
-            .expect("capture of a readable path succeeds");
+            .expect("rollback must run rather than abort");
 
-        manager
-            .rollback(&executor, &checkpoint_id)
-            .await
-            .expect("rollback of a captured path succeeds");
-
-        let removed: Vec<_> = executor
-            .log()
+        let restoring_log = restoring.log();
+        let deletions: Vec<_> = restoring_log
             .commands_executed
-            .into_iter()
-            .filter(|(program, args)| program == "rm" && args.iter().any(|a| a == passwd))
+            .iter()
+            .filter(|(cmd, args)| cmd == "rm" && args.iter().any(|a| a == passwd))
             .collect();
         assert!(
-            removed.is_empty(),
-            "rollback must never rm a path that was present at capture, got: {removed:?}"
+            deletions.is_empty(),
+            "rollback must never delete {passwd}, but issued: {deletions:?}"
+        );
+        assert_eq!(
+            result.rollback_files[0].restore_action,
+            FileRestoreAction::Skipped,
+            "a refused deletion must be recorded as Skipped"
+        );
+        assert!(
+            !result.rollback_success,
+            "a refused deletion means the checkpoint is untrustworthy and must be reported, not silently swallowed"
         );
     }
 
