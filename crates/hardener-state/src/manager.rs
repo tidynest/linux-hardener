@@ -1069,6 +1069,56 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn rollback_never_removes_a_path_that_was_never_confirmed_absent() {
+        use hardener_common::executor::FileMetadata;
+
+        // End-to-end guard for the deletion path. Capture now refuses to store an
+        // unverifiable path, so no checkpoint can carry the mode-0 "did not
+        // exist" marker for a file that is actually present, and rollback has
+        // nothing to delete.
+        let manager = test_manager().await;
+        let passwd = "/etc/passwd";
+        let executor = MockExecutor::new().with_file_metadata(
+            passwd,
+            "root:x:0:0:root:/root:/bin/bash\n",
+            FileMetadata {
+                exists: true,
+                is_file: true,
+                is_dir: false,
+                mode: 0o100644,
+                size: 32,
+                uid: 0,
+                gid: 0,
+            },
+        );
+
+        let checkpoint_id = manager
+            .create_checkpoint_metadata_only(
+                &executor,
+                "permissions-hardening",
+                &[Path::new(passwd)],
+            )
+            .await
+            .expect("capture of a readable path succeeds");
+
+        manager
+            .rollback(&executor, &checkpoint_id)
+            .await
+            .expect("rollback of a captured path succeeds");
+
+        let removed: Vec<_> = executor
+            .log()
+            .commands_executed
+            .into_iter()
+            .filter(|(program, args)| program == "rm" && args.iter().any(|a| a == passwd))
+            .collect();
+        assert!(
+            removed.is_empty(),
+            "rollback must never rm a path that was present at capture, got: {removed:?}"
+        );
+    }
+
     /// Builds a CheckpointManager over a temporary in-memory SQLite database
     /// with a freshly generated signing key: no filesystem privileges needed.
     async fn test_manager() -> CheckpointManager {
@@ -1205,6 +1255,43 @@ mod tests {
         assert_eq!(file_states.len(), 1);
         assert!(file_states[0].file_content.is_none());
         assert_ne!(file_states[0].file_permissions, 0);
+    }
+
+    #[tokio::test]
+    async fn capture_refuses_to_record_an_unverifiable_path_as_absent() {
+        // The data-loss bug at its source. An unstat-able path recorded as
+        // absent (file_permissions: 0) is deleted by a later rollback, so
+        // capture must fail rather than record it.
+        let manager = test_manager().await;
+        let executor = MockExecutor::new()
+            .with_metadata_error("/etc/passwd")
+            .with_path_exists("/etc/passwd", true);
+
+        manager
+            .create_checkpoint_metadata_only(
+                &executor,
+                "permissions-hardening",
+                &[std::path::Path::new("/etc/passwd")],
+            )
+            .await
+            .expect_err("an unverifiable path must abort capture, not be stored as absent");
+    }
+
+    #[tokio::test]
+    async fn capture_still_records_a_genuinely_absent_path() {
+        // The other half: confirmed absence must stay an ordinary outcome, or
+        // every host lacking an optional path would fail to apply.
+        let manager = test_manager().await;
+        let executor = MockExecutor::new();
+
+        manager
+            .create_checkpoint_metadata_only(
+                &executor,
+                "permissions-hardening",
+                &[std::path::Path::new("/etc/sudoers.d")],
+            )
+            .await
+            .expect("a confirmed-absent path is not an error");
     }
 
     #[tokio::test]
