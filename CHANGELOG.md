@@ -185,25 +185,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   definition that already holds the target value but is written in another form
   the reader accepts, such as a tab separator in `login.defs` or a bare space
   in `pwquality.conf`, is rewritten once into the form `apply` writes for that
-  file and converges there; only the separator changes, so the first run after
-  this release can report a change that hardens nothing.
+  file and converges there; only that line's separator changes, so the first
+  run after this release can report a change that hardens nothing.
 - `scan` and `apply` now recognise a directive written as `Key=Value`. The
   writer took a directive's name to end at whitespace, so `PermitRootLogin=yes`
   in `/etc/ssh/sshd_config` and `deny=10` in `/etc/security/faillock.conf`
-  matched nothing, though `sshd_config(5)` and the `security/*.conf` files all
+  matched nothing, though `ssh_config(5)` and the `security/*.conf` files all
   accept that syntax and `sshd -t` passes it: `apply` left the operator's line
   where it stood and defined the key a second time elsewhere in the file, so
   the file carried two definitions of the same directive, never converged
   however often `apply` ran, and the tool could report a value the host does
   not enforce. Reading was blind to the same syntax only where a file is read
   as space separated, which is `/etc/ssh/sshd_config` alone, so `scan` reported
-  an `=` separated directive there as not set; the PAM files are read as
-  key-value, which already accepted `deny=10`. A name now ends at whitespace or
-  at `=`, whichever comes first, for both reading and writing. On a host whose
-  `sshd_config` carries such a directive the reported value changes from "not
-  set" to the value the file holds, which can turn a finding into a pass or the
-  reverse, and the first `apply` after this release rewrites that line rather
-  than adding to it. An exception for such a directive written as
+  an `=` separated directive there as not set; `faillock.conf` and
+  `pwhistory.conf` are read as key-value, which already accepted `deny=10`. A
+  name now ends at whitespace or at `=`, whichever comes first, for both
+  reading and writing. On a host whose `sshd_config` carries such a directive
+  the reported value changes from "not set" to the value the file holds, which
+  can turn a finding into a pass or the reverse, and the first `apply` after
+  this release rewrites that line rather than adding to it. An exception for
+  such a directive written as
   `value = "not set"` stops matching, since the directive was never unset.
 - `apply` could scope a global SSH setting to a single `Match` block. A
   directive `/etc/ssh/sshd_config` did not mention at all was appended to the
