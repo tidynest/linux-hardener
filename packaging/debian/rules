@@ -1,7 +1,7 @@
 #!/usr/bin/make -f
 export CARGO_HOME = $(CURDIR)/debian/.cargo
 
-# Strip GCC LTO from CFLAGS — incompatible with Rust linkers
+# Strip GCC LTO from CFLAGS - incompatible with Rust linkers
 export CFLAGS := $(CFLAGS:-flto=auto=)
 export CXXFLAGS := $(CXXFLAGS:-flto=auto=)
 

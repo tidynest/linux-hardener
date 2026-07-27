@@ -1,3 +1,33 @@
+linux-system-hardener (1.5.0-1) unstable; urgency=high
+
+  * SECURITY: rollback over SSH could delete /etc/passwd, /etc/group,
+    /etc/shadow, /etc/gshadow and /etc/sudoers on a remote host whose stat
+    output could not be parsed. The probe now fails closed, and rollback
+    refuses to delete a protected path that is present on the host.
+  * SECURITY: the PAM plugin could replace /etc/security/*.conf with a file
+    containing only its own directives when the original could not be read.
+    A read failure is now distinguished from an absent file, and apply
+    refuses to rewrite a file it could not read.
+  * SECURITY: password ageing was never applied, and was then reported as
+    compliant. /etc/login.defs was written as "KEY = value", which the file
+    does not accept, and the reader carried the matching fault, so the two
+    agreed with each other. PASS_MAX_DAYS, PASS_MIN_DAYS and PASS_WARN_AGE
+    now take effect. Re-apply on any host hardened by an earlier release.
+  * Desktop UI redesigned end to end: grouped left sidebar with a
+    collapsible rail, the Remote and Fleet screens merged into one Hosts
+    page, a staged Fleet Apply flow, and a new Settings page with a
+    seven-theme picker.
+  * hardener scan now honours the configuration file: directive overrides
+    apply, and a finding covered by a valid exception is annotated rather
+    than reported as a plain violation.
+  * Rollback is now reversible: the current state is captured as a signed
+    checkpoint before any restore, and a rollback whose current state cannot
+    be captured is refused rather than run.
+  * New differential test suite verifies hardening against the system's own
+    readers (sshd -T, chage -l) rather than against this tool's parser.
+
+ -- Eric Jingryd <tidynest@proton.me>  Mon, 27 Jul 2026 09:30:19 +0000
+
 linux-system-hardener (1.4.0-1) unstable; urgency=medium
 
   * Honest apply counts: "N applied" tallies only real changes; no-op
@@ -84,7 +114,7 @@ linux-system-hardener (1.1.0-1) unstable; urgency=medium
 
 linux-system-hardener (1.0.5-1) unstable; urgency=high
 
-  * v1.0.5: Security — patch tauri (CVE-2026-42184), lettre (RUSTSEC-2026-0141),
+  * v1.0.5: Security - patch tauri (CVE-2026-42184), lettre (RUSTSEC-2026-0141),
     and rustls-webpki (RUSTSEC-2026-0104) advisories
 
  -- Eric Jingryd <tidynest@proton.me>  Sun, 24 May 2026 00:00:00 +0000

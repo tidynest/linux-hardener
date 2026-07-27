@@ -1,5 +1,5 @@
 Name:           linux-system-hardener
-Version:        1.4.0
+Version:        1.5.0
 Release:        1%{?dist}
 Summary:        Linux security automation: scanning, hardening, and rollback
 License:        Apache-2.0
@@ -24,7 +24,7 @@ MAC, permissions, services) with multi-distribution support.
 %setup -q
 
 %build
-# Strip GCC LTO from CFLAGS — incompatible with Rust linkers
+# Strip GCC LTO from CFLAGS - incompatible with Rust linkers
 export CFLAGS="${CFLAGS//-flto=auto/}"
 export CXXFLAGS="${CXXFLAGS//-flto=auto/}"
 
@@ -103,6 +103,15 @@ systemctl daemon-reload || true
 %dir %{_libdir}/linux-hardener
 
 %changelog
+* Mon Jul 27 2026 Eric Jingryd <tidynest@proton.me> - 1.5.0-1
+- Security: rollback over SSH could delete /etc/passwd, /etc/group, /etc/shadow, /etc/gshadow and /etc/sudoers on a remote host whose stat output could not be parsed; the probe now fails closed and rollback refuses to delete a protected path that is present on the host
+- Security: the PAM plugin could replace /etc/security/*.conf with a file containing only its own directives when the original could not be read; a read failure is now distinguished from an absent file and apply refuses to rewrite what it could not read
+- Security: password ageing was never applied and was then reported as compliant; /etc/login.defs was written as "KEY = value", which the file does not accept, and the reader carried the matching fault. PASS_MAX_DAYS, PASS_MIN_DAYS and PASS_WARN_AGE now take effect. Re-apply on hosts hardened by an earlier release
+- Desktop UI redesigned end to end: grouped left sidebar with a collapsible rail, the Remote and Fleet screens merged into one Hosts page, a staged Fleet Apply flow, and a new Settings page with a seven-theme picker
+- hardener scan now honours the configuration file: directive overrides apply, and a finding covered by a valid exception is annotated rather than reported as a plain violation
+- Rollback is now reversible: the current state is captured as a signed checkpoint before any restore, and a rollback that cannot be captured is refused
+- New differential test suite verifies hardening against the system's own readers (sshd -T, chage -l) rather than against this tool's parser
+
 * Sun Jul 19 2026 Eric Jingryd <tidynest@proton.me> - 1.4.0-1
 - Honest apply counts: "N applied" tallies only real changes; no-op plugins read "no changes needed"; failures surfaced
 - Idempotent, state-aware apply across all 8 plugins (already-compliant settings skipped; no duplicate nftables rules; ssh/audit not rewritten when unchanged)
@@ -155,7 +164,7 @@ systemctl daemon-reload || true
 - Version alignment to 1.1.0
 
 * Sun May 24 2026 Eric Jingryd <tidynest@proton.me> - 1.0.5-1
-- v1.0.5: Security — patch tauri (CVE-2026-42184), lettre (RUSTSEC-2026-0141),
+- v1.0.5: Security - patch tauri (CVE-2026-42184), lettre (RUSTSEC-2026-0141),
   and rustls-webpki (RUSTSEC-2026-0104) advisories
 
 * Wed Apr 15 2026 Eric Jingryd <tidynest@proton.me> - 1.0.4-1
