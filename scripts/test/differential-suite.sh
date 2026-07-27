@@ -23,13 +23,30 @@ EOF
 
 # The tree this script sits in, and the CLI under test. Same resolution as
 # scripts/test/full-test-suite.sh: the musl build first, because that is what
-# the containers execute, then a host build, with $BINARY overriding both.
+# the containers execute, then a host build.
 # Resolved when the file loads, so --self-test still runs where neither exists;
 # the full run refuses before it applies anything.
 DIFF_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DIFF_PROJECT_DIR="$(cd "$DIFF_SCRIPT_DIR/../.." && pwd)"
-BINARY="${BINARY:-$DIFF_PROJECT_DIR/target/x86_64-unknown-linux-musl/release/hardener}"
-[[ -x "$BINARY" ]] || BINARY="$DIFF_PROJECT_DIR/target/release/hardener"
+
+# An explicit $BINARY is taken exactly as given, and is never replaced by a
+# build from the tree when it turns out not to be executable. Falling back there
+# runs a binary the operator did not name and reports the result as if it were
+# theirs, so a typo in the path silently moves the whole run onto whatever the
+# tree happens to hold. Kept in a function so --self-test can drive both
+# branches without a second copy of the resolution.
+BINARY_EXPLICIT=0
+
+resolve_binary() {
+    if [[ -n "${BINARY:-}" ]]; then
+        BINARY_EXPLICIT=1
+        return 0
+    fi
+    BINARY_EXPLICIT=0
+    BINARY="$DIFF_PROJECT_DIR/target/x86_64-unknown-linux-musl/release/hardener"
+    [[ -x "$BINARY" ]] || BINARY="$DIFF_PROJECT_DIR/target/release/hardener"
+}
+resolve_binary
 
 # The plugins whose settings this suite compares. Applying only these keeps the
 # run to what is actually asserted.
@@ -65,7 +82,12 @@ require_commands() {
 require_binary() {
     if [[ ! -x "$BINARY" ]]; then
         echo "FATAL: no executable hardener binary at '$BINARY'" >&2
-        echo "  Build the musl CLI, or set BINARY to the one you want tested." >&2
+        if (( BINARY_EXPLICIT == 1 )); then
+            echo "  BINARY names that path, so no build from the tree was substituted" >&2
+            echo "  for it. Correct the path, or unset BINARY to test the tree's build." >&2
+        else
+            echo "  Build the musl CLI, or set BINARY to the one you want tested." >&2
+        fi
         return 1
     fi
 }
@@ -386,6 +408,48 @@ login_defs_system_value() {
     fi
 }
 
+# The lengths of the three tables the run is sized by, pinned as literals.
+#
+# Every count this suite prints is derived from those tables, so a table edited
+# down still agrees with itself: with SSH_CHECKS emptied, a run over the three
+# login.defs directives alone prints "Total Tests: 3 / Passed: 3", exits 0, and
+# scripts/test/run-cross-distro-tests.sh reports the distro as PASS. Nothing
+# computed from the tables can notice that, so the expected sizes are written
+# out here instead, and adding a directive means changing the literal on
+# purpose.
+SSH_CHECKS_EXPECTED=7
+LOGIN_DEFS_CHECKS_EXPECTED=3
+DIFF_PLUGINS_EXPECTED=2
+
+require_check_tables() {
+    local entry name got want refused=0
+    for entry in \
+        "SSH_CHECKS ${#SSH_CHECKS[@]} $SSH_CHECKS_EXPECTED" \
+        "LOGIN_DEFS_CHECKS ${#LOGIN_DEFS_CHECKS[@]} $LOGIN_DEFS_CHECKS_EXPECTED" \
+        "DIFF_PLUGINS ${#DIFF_PLUGINS[@]} $DIFF_PLUGINS_EXPECTED"; do
+        read -r name got want <<<"$entry"
+        if [[ "$got" != "$want" ]]; then
+            echo "FATAL: $name holds $got, expected $want." >&2
+            refused=1
+        fi
+    done
+    if (( refused > 0 )); then
+        echo "  A shortened table makes a smaller run look like a complete one, because" >&2
+        echo "  every total printed below is counted off the tables themselves. Restore" >&2
+        echo "  the entry, or change the expected length beside the table if it was" >&2
+        echo "  removed deliberately." >&2
+        return 1
+    fi
+}
+
+# Two assertions per compared directive, plus one pre-apply control per plugin.
+# print_summary refuses a run whose totals do not come to this: a loop that
+# skipped a directive, or a check that recorded nothing at all, would otherwise
+# leave a partial run reading as a complete one.
+expected_check_total() {
+    printf '%s' "$(( 2 * (${#SSH_CHECKS[@]} + ${#LOGIN_DEFS_CHECKS[@]}) + ${#DIFF_PLUGINS[@]} ))"
+}
+
 # The two plugins spell their finding ids differently, and a filter written for
 # one convention matches NOTHING under the other. Matching nothing returns an
 # empty result, which reads as "the tool reported no finding", which is the pass
@@ -411,13 +475,35 @@ pam_finding_id() {
 SCAN_JSON=""
 SCAN_JSON_GENERATION=""
 
+# The same document captured BEFORE apply, which is this suite's positive
+# control. Its own variable and its own stamp, so neither rule has to be
+# loosened for the other: a post-apply capture is refused unless it carries the
+# current generation, and this one is refused unless it was taken at 0.
+#
+# Why it exists. After a successful apply every compared directive sits at its
+# target, so every second assertion expects zero findings and is given zero:
+# on a green run not one finding filter is ever asked to match anything. A
+# mistyped id, a renamed plugin_id and a plugin whose scan failed outright all
+# produce that same zero, and the JSON cannot even express the last of them.
+# `scan --format json` serialises plugin_id, plugin_name, findings and
+# unchecked, and neither scan_success nor scan_error, so a plugin that failed to
+# scan emits exactly what a fully compliant host emits. A capture taken while
+# the container is known to be unhardened is the only thing in reach that tells
+# those apart.
+PRE_APPLY_SCAN_JSON=""
+PRE_APPLY_SCAN_GENERATION=""
+
 # `scan --format json` prints an array of plugin objects on stdout; in JSON mode
-# its status, warning and error lines go to stderr, so stdout is the document
-# and nothing else. The command's own status is tested, never a pipeline's.
+# its status, warning and error lines go to stderr. The command's own status is
+# tested, never a pipeline's.
 #
 # Its stderr is deliberately left alone rather than discarded: it is where the
 # tool explains a failure, and the container run folds stderr into the same log.
 # It cannot reach stdout, so it cannot corrupt the document.
+#
+# What stdout carries is checked rather than assumed. Today the scan path prints
+# the array and nothing else, but output::info prints a JSON object on stdout in
+# JSON mode, so validate_scan_document requires exactly one document there.
 capture_scan_json() {
     local out args=() plugin
     for plugin in "${DIFF_PLUGINS[@]}"; do
@@ -430,15 +516,27 @@ capture_scan_json() {
     printf '%s' "$out"
 }
 
-scan_oracle_init() {
-    local out plugin count
-    if ! out="$(capture_scan_json)"; then
-        return 1
-    fi
+# Refuse a scan document this suite cannot read the way it intends to.
+#
+# Every refusal below covers a shape that would otherwise read as a clean bill
+# of health, because each filter here counts entries and zero is the pass
+# condition. The plugin object's key set is built by hand in
+# crates/hardener-cli/src/output.rs, is not a checked contract, and has already
+# changed once in this project's history: `unchecked` was added to it after the
+# first of these filters was written. A key that is absent or renamed counts
+# zero under a `// []` default, so the keys are required rather than defaulted.
+validate_scan_document() {
+    local document="$1" label="$2" plugin count
     # jq's own parse error is left visible above this message: "not an array"
     # and "not JSON at all" are worth telling apart.
-    if ! jq -e 'type == "array"' >/dev/null <<<"$out"; then
-        echo "FATAL: scan did not print a JSON array" >&2
+    #
+    # Slurped, so the whole of stdout is judged rather than its last value.
+    # `jq -e` reports on the last value a filter produced, and output::info
+    # prints a JSON object on stdout in JSON mode, so a document with an info
+    # line ahead of it would satisfy an unslurped guard. That call site is one
+    # command away from the scan path today.
+    if ! jq -e -s 'length == 1 and (.[0] | type == "array")' >/dev/null <<<"$document"; then
+        echo "FATAL: $label did not print exactly one JSON array on stdout" >&2
         return 1
     fi
     # Every plugin being compared must appear exactly once. A plugin the config
@@ -446,18 +544,108 @@ scan_oracle_init() {
     # then every finding filter against it matches nothing, which reads as a
     # clean directive rather than as the missing evidence it is.
     for plugin in "${DIFF_PLUGINS[@]}"; do
-        if ! count="$(jq -r --arg p "$plugin" '[.[] | select(.plugin_id == $p)] | length' <<<"$out")"; then
-            echo "FATAL: jq could not read the scan output" >&2
+        if ! count="$(jq -r --arg p "$plugin" '[.[] | select(.plugin_id == $p)] | length' <<<"$document")"; then
+            echo "FATAL: jq could not read the $label output" >&2
             return 1
         fi
         if [[ "$count" != "1" ]]; then
-            echo "FATAL: scan reported $count object(s) for plugin '$plugin', expected exactly 1." >&2
+            echo "FATAL: $label reported $count object(s) for plugin '$plugin', expected exactly 1." >&2
             echo "  Every finding filter for that plugin would match nothing, which reads as a pass." >&2
             return 1
         fi
+        # Compared against the single-element array rather than read through
+        # `jq -e`, so the result is one value whatever the document holds.
+        if ! jq --exit-status --arg p "$plugin" \
+            '[.[] | select(.plugin_id == $p)
+                  | has("findings") and (.findings | type == "array")
+                    and has("unchecked") and (.unchecked | type == "array")] == [true]' \
+            >/dev/null <<<"$document"; then
+            echo "FATAL: the $label object for plugin '$plugin' has no 'findings' and 'unchecked' arrays." >&2
+            echo "  Both are counted by id here, and a key that is absent or renamed counts" >&2
+            echo "  zero, which is this suite's pass condition. Rebuild the CLI from this" >&2
+            echo "  tree, or set BINARY to a build that carries both keys." >&2
+            return 1
+        fi
     done
+}
+
+scan_oracle_init() {
+    local out
+    if ! out="$(capture_scan_json)"; then
+        return 1
+    fi
+    validate_scan_document "$out" scan || return 1
     SCAN_JSON="$out"
     SCAN_JSON_GENERATION="$APPLY_GENERATION"
+}
+
+# The pre-apply capture, refused outright once an apply has been recorded. A
+# "before" capture taken afterwards is not weaker evidence, it is the wrong
+# document: it would report no finding for the directives apply has just fixed,
+# which is the very silence this control exists to detect.
+preapply_scan_oracle_init() {
+    local out
+    if (( APPLY_GENERATION != 0 )); then
+        echo "FATAL: the pre-apply scan capture was asked for at generation" \
+            "$APPLY_GENERATION, after apply had run." >&2
+        echo "  It is what proves the finding filters can match anything at all, so it" >&2
+        echo "  has to be taken while the container is still unhardened." >&2
+        return 1
+    fi
+    if ! out="$(capture_scan_json)"; then
+        return 1
+    fi
+    validate_scan_document "$out" "pre-apply scan" || return 1
+    PRE_APPLY_SCAN_JSON="$out"
+    PRE_APPLY_SCAN_GENERATION="$APPLY_GENERATION"
+}
+
+# The pre-apply capture's own freshness rule, the mirror image of
+# require_fresh_capture: the only stamp that can be right on a document
+# describing the system before apply is generation 0.
+require_preapply_capture() {
+    if [[ -z "$PRE_APPLY_SCAN_JSON" ]]; then
+        echo "FATAL: pre-apply scan oracle not initialised;" \
+            "preapply_scan_oracle_init must run before apply" >&2
+        return 1
+    fi
+    if [[ "$PRE_APPLY_SCAN_GENERATION" != "0" ]]; then
+        echo "FATAL: the pre-apply scan capture is stamped generation" \
+            "${PRE_APPLY_SCAN_GENERATION:-unset}, so it was taken after an apply" \
+            "and describes a system that had already been hardened." >&2
+        return 1
+    fi
+}
+
+# How many entries one of the document's two arrays holds for one id.
+#
+# `findings` and `unchecked` carry the same ids under different key names, and
+# both are counted here so neither name is spelled in more than one place. The
+# arrays are indexed directly rather than through `// []`: validate_scan_document
+# has already refused a document where either is missing, and defaulting here
+# would put back the very substitution of zero for "unreadable" that this suite
+# exists to refuse.
+count_scan_entries() {
+    local document="$1" plugin="$2" array="$3" id="$4" field count
+    case "$array" in
+        findings) field="finding_id" ;;
+        unchecked) field="unchecked_check_id" ;;
+        *)
+            echo "FATAL: no such scan array '$array'" >&2
+            return 1
+            ;;
+    esac
+    if ! count="$(jq -r --arg p "$plugin" --arg a "$array" --arg k "$field" --arg f "$id" \
+        '[.[] | select(.plugin_id == $p) | .[$a][] | select(.[$k] == $f)] | length' \
+        <<<"$document")"; then
+        echo "FATAL: jq could not count $array entries for '$id'" >&2
+        return 1
+    fi
+    if [[ ! "$count" =~ ^[0-9]+$ ]]; then
+        echo "FATAL: the $array count for '$id' is not a number: '$count'" >&2
+        return 1
+    fi
+    printf '%s' "$count"
 }
 
 # How many findings the tool reported under one plugin for one finding id.
@@ -466,19 +654,31 @@ scan_oracle_init() {
 # its capture predates the last apply, or jq could not produce a number, so an
 # unreadable verdict is never mistaken for a clean one.
 scan_finding_count() {
-    local plugin="$1" finding="$2" count
+    local plugin="$1" finding="$2"
     require_fresh_capture scan "$SCAN_JSON" "$SCAN_JSON_GENERATION" || return 1
-    if ! count="$(jq -r --arg p "$plugin" --arg f "$finding" \
-        '[.[] | select(.plugin_id == $p) | (.findings // [])[] | select(.finding_id == $f)] | length' \
-        <<<"$SCAN_JSON")"; then
-        echo "FATAL: jq could not count findings for '$finding'" >&2
-        return 1
-    fi
-    if [[ ! "$count" =~ ^[0-9]+$ ]]; then
-        echo "FATAL: the finding count for '$finding' is not a number: '$count'" >&2
-        return 1
-    fi
-    printf '%s' "$count"
+    count_scan_entries "$SCAN_JSON" "$plugin" findings "$finding"
+}
+
+# How many times the tool listed one id as a check it could NOT evaluate.
+#
+# The two arrays use identical ids on purpose, so this asks about the very id
+# the finding filter counts. A directive listed here has no finding, and no
+# finding is this suite's pass condition, which is its founding principle
+# inverted: the tool's own "I could not determine this" would be scored as
+# verification. The ssh plugin reaches that state for every one of its
+# directives at once when sshd_config cannot be read, and reports the scan as
+# successful while doing so.
+scan_unchecked_count() {
+    local plugin="$1" check="$2"
+    require_fresh_capture scan "$SCAN_JSON" "$SCAN_JSON_GENERATION" || return 1
+    count_scan_entries "$SCAN_JSON" "$plugin" unchecked "$check"
+}
+
+# How many findings the tool reported for one id BEFORE apply.
+preapply_finding_count() {
+    local plugin="$1" finding="$2"
+    require_preapply_capture || return 1
+    count_scan_entries "$PRE_APPLY_SCAN_JSON" "$plugin" findings "$finding"
 }
 
 # The second assertion, on its own so it can be pinned in all four directions.
@@ -517,7 +717,7 @@ record_fail() {
 # Both are always recorded, so every directive contributes the same two checks
 # whatever happens and one cannot quietly contribute fewer by going wrong.
 compare_directive() {
-    local plugin="$1" directive="$2" system="$3" target="$4" finding_id="$5" reported
+    local plugin="$1" directive="$2" system="$3" target="$4" finding_id="$5" reported unchecked
 
     if [[ "$system" == "$target" ]]; then
         record_pass "$plugin $directive: the system holds '$system', the value the tool targets"
@@ -525,6 +725,17 @@ compare_directive() {
         record_fail "$plugin $directive: the system holds '$system' but the tool targets '$target'; apply did not take effect"
     fi
 
+    # Asked before the findings are counted, because it decides whether that
+    # count means anything: the tool reports no finding for a check it never
+    # ran, and no finding is the pass condition here.
+    if ! unchecked="$(scan_unchecked_count "$plugin" "$finding_id")"; then
+        record_fail "$plugin $directive: the tool's unchecked list could not be read for '$finding_id'"
+        return 0
+    fi
+    if (( unchecked > 0 )); then
+        record_fail "$plugin $directive: the tool did not check '$finding_id'; it lists the id as unchecked, which is neither agreement with the system nor a contradiction of it"
+        return 0
+    fi
     if ! reported="$(scan_finding_count "$plugin" "$finding_id")"; then
         record_fail "$plugin $directive: the tool's verdict for '$finding_id' could not be read"
         return 0
@@ -545,6 +756,64 @@ record_unresolved() {
     local plugin="$1" directive="$2" reason="$3"
     record_fail "$plugin $directive: $reason"
     record_fail "$plugin $directive: the tool's verdict was not compared, there is no system value to compare it against"
+}
+
+# Every (plugin, finding id) pair this suite compares, one per line, derived
+# from the same two tables the checks below iterate, so a control cannot come to
+# cover something other than what is actually compared.
+compared_finding_ids() {
+    local entry directive
+    for entry in "${SSH_CHECKS[@]}"; do
+        IFS='|' read -r directive _ <<<"$entry"
+        printf '%s %s\n' ssh-hardening "$(ssh_finding_id "$directive")"
+    done
+    for entry in "${LOGIN_DEFS_CHECKS[@]}"; do
+        IFS='|' read -r directive _ <<<"$entry"
+        printf '%s %s\n' pam-hardening "$(pam_finding_id "$directive")"
+    done
+}
+
+# The positive control: one check per plugin, over the capture taken before
+# apply.
+#
+# After a successful apply every compared directive holds its target, so every
+# second assertion expects no finding and is given none. Nothing in a green run
+# then shows that these filters can match anything: a filter written under the
+# other plugin's id convention, one naming a plugin_id that no longer exists,
+# and a plugin whose scan failed all produce the same empty result. So the
+# pre-apply capture, taken while the container is still unhardened, is required
+# to have produced at least one finding for each plugin, counted through the
+# very filter the comparison uses.
+#
+# Per plugin rather than in total, because a scan fails one plugin at a time.
+# The JSON carries neither scan_success nor scan_error, so a plugin that failed
+# emits the same empty arrays a fully compliant host does, and only a control
+# scoped to that plugin can see the difference.
+run_preapply_control() {
+    local plugin entry_plugin id count matched total unreadable
+    for plugin in "${DIFF_PLUGINS[@]}"; do
+        matched=0
+        total=0
+        unreadable=0
+        while read -r entry_plugin id; do
+            [[ "$entry_plugin" == "$plugin" ]] || continue
+            total=$((total + 1))
+            if ! count="$(preapply_finding_count "$plugin" "$id")"; then
+                unreadable=1
+                break
+            fi
+            if (( count > 0 )); then
+                matched=$((matched + 1))
+            fi
+        done < <(compared_finding_ids)
+        if (( unreadable > 0 )); then
+            record_fail "$plugin: the pre-apply scan could not be read, so nothing shows this plugin's finding filter can match at all"
+        elif (( matched > 0 )); then
+            record_pass "$plugin: before apply the tool reported findings for $matched of the $total compared directives, so the filter is proven against live output"
+        else
+            record_fail "$plugin: before apply the tool reported no finding for any of the $total compared directives, on a container nothing had been applied to; either the filter matches nothing or this plugin's scan produced nothing, and the JSON cannot tell those apart"
+        fi
+    done
 }
 
 run_ssh_checks() {
@@ -601,6 +870,8 @@ apply_hardening() {
 # no skip outcome to report: a check that could not be determined is recorded
 # as a failure, which is the whole point, so Skipped is always 0.
 print_summary() {
+    local expected
+    expected="$(expected_check_total)"
     echo ""
     echo "  Total Tests:  $CHECKS_TOTAL"
     echo "  Passed:       $CHECKS_PASSED"
@@ -609,6 +880,13 @@ print_summary() {
     echo ""
     if (( CHECKS_TOTAL == 0 )); then
         echo "No checks ran. Refusing to report success for a run that checked nothing."
+        return 1
+    fi
+    if [[ "$CHECKS_TOTAL" != "$expected" ]]; then
+        echo "Recorded $CHECKS_TOTAL check(s) where the tables ask for $expected: two per"
+        echo "compared directive, plus one pre-apply control per plugin. A run that"
+        echo "checked less than it was asked to is not a pass, whatever its failure"
+        echo "count says, because the directives it skipped are simply unproven."
         return 1
     fi
     if (( CHECKS_FAILED > 0 )); then
@@ -849,6 +1127,44 @@ Number of days of warning before password expires	: 11"
     check_status 1 "require_commands refuses when one of several is missing" \
         require_commands jq hardener-no-such-command
 
+    # The binary the run tests. An explicit BINARY is the operator saying which
+    # one they mean, so a fallback to a build from the tree would report a run
+    # of one binary as a run of another. Both branches of the resolution are
+    # driven here, and the value in force is put back afterwards.
+    local saved_binary="$BINARY" saved_binary_explicit="$BINARY_EXPLICIT"
+    BINARY="/hardener/no/such/binary"
+    resolve_binary
+    check_eq "$BINARY" "/hardener/no/such/binary" \
+        "an explicit BINARY is not replaced by a build from the tree"
+    check_eq "$BINARY_EXPLICIT" "1" "an explicit BINARY is recorded as the operator's choice"
+    check_status 1 "require_binary refuses an explicit path that is not executable" \
+        require_binary
+    BINARY=""
+    resolve_binary
+    check_eq "$BINARY_EXPLICIT" "0" "an unset BINARY resolves against the tree"
+    BINARY="/bin/sh"
+    check_status 0 "require_binary accepts an executable binary" require_binary
+    BINARY="$saved_binary"
+    BINARY_EXPLICIT="$saved_binary_explicit"
+
+    # The tables the whole run is sized by, pinned as literals. Every total the
+    # suite prints is counted off them, so a shortened table agrees with itself
+    # and reads as a complete run; only a literal notices.
+    check_eq "${#SSH_CHECKS[@]}" "7" "the ssh table holds seven directives"
+    check_eq "${#LOGIN_DEFS_CHECKS[@]}" "3" "the login.defs table holds three directives"
+    check_eq "${#DIFF_PLUGINS[@]}" "2" "two plugins are compared"
+    check_eq "$(expected_check_total)" "22" \
+        "the run is sized at two checks per directive plus one control per plugin"
+    check_status 0 "require_check_tables accepts the tables as they stand" \
+        require_check_tables
+
+    local saved_ssh_checks=("${SSH_CHECKS[@]}")
+    SSH_CHECKS=("PermitRootLogin|no")
+    check_status 1 "require_check_tables refuses a table edited down" require_check_tables
+    SSH_CHECKS=("${saved_ssh_checks[@]}")
+    check_status 0 "require_check_tables accepts the table once it is restored" \
+        require_check_tables
+
     # The scan side. Its filters are where a harness most easily goes green on
     # broken code: one that matches nothing returns an empty result, which is
     # exactly what "the tool reported no finding" looks like, and that is the
@@ -941,10 +1257,191 @@ Number of days of warning before password expires	: 11"
     scan_oracle_init || init_status=$?
     check_eq "$init_status" "1" "scan_oracle_init refuses output that is not a JSON array"
 
+    # More than one document on stdout. output::info prints a JSON object there
+    # in JSON mode, so this is the shape stdout takes the moment the scan path
+    # calls it, and an unslurped guard would judge only the last value.
+    scan_capture="$(printf '{"info":"scanning"}\n%s' "$scan_fixture")"
+    init_status=0
+    scan_oracle_init || init_status=$?
+    check_eq "$init_status" "1" "scan_oracle_init refuses more than one document on stdout"
+
+    # The plugin object's key set, which output.rs builds by hand and which has
+    # already gained a key since these filters were written. Each mutation is
+    # derived from the good fixture rather than written out again, so what is
+    # being tested is visible as the mutation itself. Every one of them would
+    # have counted zero findings through a `// []` default, and zero is the pass
+    # condition.
+    scan_capture="$(jq 'map(if .plugin_id == "ssh-hardening" then del(.findings) else . end)' <<<"$scan_fixture")"
+    init_status=0
+    scan_oracle_init || init_status=$?
+    check_eq "$init_status" "1" "scan_oracle_init refuses a plugin object with no findings key"
+
+    scan_capture="$(jq 'map(if .plugin_id == "ssh-hardening" then .findings = {} else . end)' <<<"$scan_fixture")"
+    init_status=0
+    scan_oracle_init || init_status=$?
+    check_eq "$init_status" "1" "scan_oracle_init refuses a findings key that is not an array"
+
+    scan_capture="$(jq 'map(if .plugin_id == "pam-hardening" then del(.unchecked) else . end)' <<<"$scan_fixture")"
+    init_status=0
+    scan_oracle_init || init_status=$?
+    check_eq "$init_status" "1" "scan_oracle_init refuses a plugin object with no unchecked key"
+
+    # The tool's own "I could not check this". The ids in `unchecked` are
+    # identical to the finding ids by design, so an unchecked directive has no
+    # finding, and no finding is what this suite scores as agreement. The ssh
+    # plugin puts every one of its directives here at once when sshd_config
+    # cannot be read, and still reports the scan as successful.
+    scan_capture='[
+  {
+    "plugin_id": "pam-hardening",
+    "plugin_name": "PAM Hardening",
+    "findings": [],
+    "unchecked": [
+      { "unchecked_check_id": "pam-PASS_MAX_DAYS", "unchecked_reason": "reading /etc/login.defs requires root" }
+    ]
+  },
+  {
+    "plugin_id": "ssh-hardening",
+    "plugin_name": "SSH Hardening",
+    "findings": [],
+    "unchecked": [
+      { "unchecked_check_id": "ssh-permitrootlogin", "unchecked_reason": "reading /etc/ssh/sshd_config requires root" }
+    ]
+  }
+]'
+    init_status=0
+    scan_oracle_init || init_status=$?
+    check_eq "$init_status" "0" "scan_oracle_init accepts a document whose checks are all unchecked"
+    check_eq "$(scan_finding_count ssh-hardening "$(ssh_finding_id PermitRootLogin)")" "0" \
+        "a directive the tool did not check reports no finding"
+    check_eq "$(scan_unchecked_count ssh-hardening "$(ssh_finding_id PermitRootLogin)")" "1" \
+        "the unchecked filter matches through the ssh id derivation"
+    check_eq "$(scan_unchecked_count pam-hardening "$(pam_finding_id PASS_MAX_DAYS)")" "1" \
+        "the unchecked filter matches through the pam id derivation"
+    check_eq "$(scan_unchecked_count ssh-hardening "$(ssh_finding_id MaxAuthTries)")" "0" \
+        "a directive the tool did check is not in the unchecked list"
+
+    # The counters alone are not the point: the refusal has to reach the verdict.
+    # With the system holding the target and no finding reported, this pair used
+    # to record two passes. It must now record the system assertion as a pass and
+    # the tool's verdict as a failure, and still contribute exactly two checks,
+    # so the run's expected total does not move.
+    local before_total=$CHECKS_TOTAL before_passed=$CHECKS_PASSED before_failed=$CHECKS_FAILED
+    compare_directive ssh-hardening PermitRootLogin no no "$(ssh_finding_id PermitRootLogin)" >/dev/null
+    check_eq "$((CHECKS_TOTAL - before_total))" "2" "an unchecked directive still contributes two checks"
+    check_eq "$((CHECKS_PASSED - before_passed))" "1" "an unchecked directive still passes the system assertion"
+    check_eq "$((CHECKS_FAILED - before_failed))" "1" "a directive the tool did not check is recorded as a failure"
+    CHECKS_TOTAL=$before_total
+    CHECKS_PASSED=$before_passed
+    CHECKS_FAILED=$before_failed
+
+    # And the branch must not fire on a directive the tool did check, or every
+    # green run would fail here instead.
+    scan_capture="$scan_fixture"
+    init_status=0
+    scan_oracle_init || init_status=$?
+    check_eq "$init_status" "0" "scan_oracle_init re-captures the checked fixture"
+    before_total=$CHECKS_TOTAL
+    before_passed=$CHECKS_PASSED
+    before_failed=$CHECKS_FAILED
+    compare_directive ssh-hardening MaxAuthTries 3 3 "$(ssh_finding_id MaxAuthTries)" >/dev/null
+    check_eq "$((CHECKS_PASSED - before_passed))" "2" \
+        "a directive the tool checked and agreed on records two passes"
+    check_eq "$((CHECKS_FAILED - before_failed))" "0" "and records no failure"
+    CHECKS_TOTAL=$before_total
+    CHECKS_PASSED=$before_passed
+    CHECKS_FAILED=$before_failed
+
+    # The pre-apply capture: its own variable, its own stamp, and generation 0
+    # the only value either will accept. It is read after apply, which is why
+    # the rule is written the other way round from require_fresh_capture rather
+    # than borrowed from it.
+    PRE_APPLY_SCAN_JSON=""
+    PRE_APPLY_SCAN_GENERATION=""
+    check_status 1 "uninitialised pre-apply scan oracle returns non-zero" \
+        preapply_finding_count ssh-hardening ssh-permitrootlogin
+
+    APPLY_GENERATION=0
+    init_status=0
+    preapply_scan_oracle_init || init_status=$?
+    check_eq "$init_status" "0" "preapply_scan_oracle_init succeeds before any apply"
+    check_eq "$(preapply_finding_count ssh-hardening "$(ssh_finding_id PermitRootLogin)")" "1" \
+        "the pre-apply filter matches a finding the tool emitted"
+
+    bump_apply_generation
+    init_status=0
+    preapply_scan_oracle_init || init_status=$?
+    check_eq "$init_status" "1" "preapply_scan_oracle_init refuses to capture once apply has run"
+    check_eq "$(preapply_finding_count ssh-hardening "$(ssh_finding_id PermitRootLogin)")" "1" \
+        "a capture stamped before apply is still readable after one"
+    PRE_APPLY_SCAN_GENERATION="$APPLY_GENERATION"
+    check_status 1 "a pre-apply capture stamped after an apply returns non-zero" \
+        preapply_finding_count ssh-hardening ssh-permitrootlogin
+    PRE_APPLY_SCAN_GENERATION=0
+
+    # The control over the whole compared set. The ids come from the two tables,
+    # so a directive added to either is covered without touching this.
+    local compared_ids=()
+    mapfile -t compared_ids < <(compared_finding_ids)
+    check_eq "${#compared_ids[@]}" "10" "the control covers every compared directive"
+    check_eq "${compared_ids[0]}" "ssh-hardening ssh-permitrootlogin" \
+        "the control names each directive by the id its own plugin emits"
+
+    before_total=$CHECKS_TOTAL
+    before_passed=$CHECKS_PASSED
+    before_failed=$CHECKS_FAILED
+    run_preapply_control >/dev/null
+    check_eq "$((CHECKS_TOTAL - before_total))" "2" "the control records one check per plugin"
+    check_eq "$((CHECKS_PASSED - before_passed))" "2" \
+        "a plugin that reported a finding before apply passes its control"
+    CHECKS_TOTAL=$before_total
+    CHECKS_PASSED=$before_passed
+    CHECKS_FAILED=$before_failed
+
+    # A plugin with nothing to report before apply. That is what a plugin whose
+    # scan failed looks like in this JSON, which carries no scan_success and no
+    # scan_error to say otherwise, and it is also what a filter that matches
+    # nothing looks like. Neither may pass.
+    PRE_APPLY_SCAN_JSON="$(jq 'map(if .plugin_id == "ssh-hardening" then .findings = [] else . end)' <<<"$scan_fixture")"
+    before_total=$CHECKS_TOTAL
+    before_passed=$CHECKS_PASSED
+    before_failed=$CHECKS_FAILED
+    run_preapply_control >/dev/null
+    check_eq "$((CHECKS_PASSED - before_passed))" "1" \
+        "the plugin that did report findings still passes its control"
+    check_eq "$((CHECKS_FAILED - before_failed))" "1" \
+        "a plugin that reported nothing before apply fails its control"
+    CHECKS_TOTAL=$before_total
+    CHECKS_PASSED=$before_passed
+    CHECKS_FAILED=$before_failed
+
     APPLY_GENERATION=0
     SCAN_JSON=""
     SCAN_JSON_GENERATION=""
+    PRE_APPLY_SCAN_JSON=""
+    PRE_APPLY_SCAN_GENERATION=""
     unset -f capture_scan_json
+
+    # The summary is the last thing between a shortened run and a green exit
+    # status, so each of its refusals is pinned. The counters belong to the full
+    # run, so they are put back untouched afterwards.
+    local saved_total=$CHECKS_TOTAL saved_passed=$CHECKS_PASSED saved_failed=$CHECKS_FAILED
+    CHECKS_TOTAL=0
+    CHECKS_PASSED=0
+    CHECKS_FAILED=0
+    check_status 1 "print_summary refuses a run that checked nothing" print_summary
+    CHECKS_TOTAL=3
+    CHECKS_PASSED=3
+    check_status 1 "print_summary refuses a run shorter than the tables ask for" print_summary
+    CHECKS_TOTAL="$(expected_check_total)"
+    CHECKS_PASSED="$CHECKS_TOTAL"
+    check_status 0 "print_summary accepts a complete run with no failures" print_summary
+    CHECKS_FAILED=1
+    CHECKS_PASSED=$((CHECKS_TOTAL - 1))
+    check_status 1 "print_summary refuses a complete run carrying a failure" print_summary
+    CHECKS_TOTAL=$saved_total
+    CHECKS_PASSED=$saved_passed
+    CHECKS_FAILED=$saved_failed
 
     # The verdict rule itself, in all four directions. The last one is the shape
     # of the defect this harness exists to catch: the system holds something
@@ -965,12 +1462,17 @@ Number of days of warning before password expires	: 11"
     echo "self-test: all extractor checks passed"
 }
 
-# The full run: gate, then apply, then the oracle captures, then the assertions.
+# The full run: gate, the control capture, apply, the oracle captures, then the
+# assertions.
 #
-# The order is load-bearing. Every capture is taken BELOW apply_hardening, which
-# is what bumps the generation, so an init moved above it is caught at the first
-# read by require_fresh_capture rather than quietly answering from a snapshot of
-# the unhardened container.
+# The order is load-bearing. Every capture that describes the hardened system is
+# taken BELOW apply_hardening, which is what bumps the generation, so an init
+# moved above it is caught at the first read by require_fresh_capture rather
+# than quietly answering from a snapshot of the unhardened container.
+#
+# The pre-apply control is the one capture that must be taken above it, and it
+# is refused if it is not: it is the only evidence a green run carries that the
+# finding filters can match anything.
 #
 # A failed capture ends the run rather than pressing on: printing a summary over
 # a subset of the directives would show a green count for a run that never
@@ -979,18 +1481,22 @@ run_full_suite() {
     require_container_root || return 1
     require_commands "${REQUIRED_COMMANDS[@]}" || return 1
     require_binary || return 1
+    require_check_tables || return 1
     # Checked before apply, not inside the probe that needs it: aborting halfway
     # through a destructive run over a name collision helps nobody.
     require_absent_probe_user || return 1
 
     echo "Differential suite: $BINARY"
     echo "Plugins: ${DIFF_PLUGINS[*]}"
+    preapply_scan_oracle_init || return 1
+
     apply_hardening
 
     ssh_oracle_init || return 1
     login_defs_oracle_init || return 1
     scan_oracle_init || return 1
 
+    run_preapply_control
     run_ssh_checks
     run_login_defs_checks
     print_summary

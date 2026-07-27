@@ -156,6 +156,19 @@ consumer what is in force:
 Two assertions per directive, because both have failed in production: the system
 holds the value the tool targeted, and `scan`'s verdict agrees with the system.
 
+The second assertion is the harder one to state honestly, because after a
+successful apply it expects `scan` to report no finding, and no finding is also
+what the tool emits when it did not check. `scan --format json` carries a second
+array, `unchecked`, whose ids are identical to the finding ids, and a directive
+listed there is scored as a failure rather than as agreement: the ssh plugin
+moves all of its directives into it at once when `sshd_config` cannot be read,
+and still reports the scan as successful. The JSON also omits `scan_success`
+altogether, so a plugin whose scan failed emits exactly what a compliant host
+emits. Against that, the suite takes a second `scan` capture before `apply`, and
+requires each plugin to have reported at least one finding while the container
+was still unhardened. Without it, every finding filter would pass by matching
+nothing on every green run.
+
 ### Full run (container + root)
 
 ```bash
@@ -174,6 +187,13 @@ and `id`. A missing one aborts the run by name before any check runs. An oracle
 that cannot answer is a failure here, never a skip: a skipped check that reads as
 a pass is the disease being treated.
 
+The binary under test must be built from this tree. Its `scan --format json`
+output has to carry both a `findings` and an `unchecked` array per plugin, and a
+build old enough to predate `unchecked` is refused rather than counted as
+reporting nothing. Setting `BINARY` names the binary exactly: an explicit path
+that is not executable aborts the run instead of falling back to a build from the
+tree, which would report a run of one binary as a run of another.
+
 ### Self-test (safe anywhere)
 
 ```bash
@@ -184,6 +204,15 @@ Needs neither root nor a container. It drives the text extractors, the freshness
 guard that refuses a capture taken before `apply`, the probe's create-and-remove
 safety, and both plugins' finding-id conventions against fixtures. `jq` is the
 only external command it needs.
+
+It also pins the shapes of `scan` output that would otherwise read as a clean
+bill of health: a plugin object missing its `findings` or `unchecked` array, more
+than one JSON document on stdout, a directive the tool listed as unchecked, and a
+pre-apply capture in which a plugin reported nothing. The lengths of the check
+tables are pinned there as literals as well, because every total the suite prints
+is counted off those tables: with the ssh table emptied, a run over the three
+`login.defs` directives alone would print `Total Tests: 3 / Passed: 3` and exit
+0. Adding a directive means changing the expected length beside its table.
 
 ### What a failure means
 
@@ -200,6 +229,16 @@ the value the system holds and the value the tool targeted:
   shape of the `login.defs` defect.
 - `the tool reports N finding(s) ... while the system holds the target value`:
   `scan` is flagging a host that is in fact compliant.
+- `the tool did not check '<id>'`: the id came back in the `unchecked` array.
+  The tool verified nothing for that directive, which is neither agreement with
+  the system nor a contradiction of it, and the usual cause is a config file the
+  scan could not read.
+- `before apply the tool reported no finding for any of the N compared
+  directives`: the pre-apply control failed for that plugin. Either its scan
+  produced nothing, which this JSON cannot distinguish from a compliant host, or
+  the harness's filter for it matches nothing.
+- `Recorded N check(s) where the tables ask for M`: the run was shorter than the
+  tables it was built from, so some directives went unproven.
 
 Investigate the plugin, not the harness. If the harness itself is wrong, the
 self-test is where the fix is proven.
