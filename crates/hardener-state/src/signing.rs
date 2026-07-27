@@ -109,6 +109,12 @@ impl CheckpointSigner {
     fn load_key(key_path: &Path) -> Result<SigningKey> {
         let file_bytes = fs::read(key_path).map_err(HardeningError::System)?;
 
+        // Whether this file still needs migrating, decided from the bytes
+        // already in hand. Reading the file a second time to answer the same
+        // question meant a transient read failure was indistinguishable from
+        // "not yet encrypted", and the migration below then deleted the key.
+        let is_legacy_format = !file_bytes.starts_with(ENCRYPTED_KEY_MAGIC);
+
         // Detect format: encrypted keys have the magic header
         let raw_key = if file_bytes.starts_with(ENCRYPTED_KEY_MAGIC) {
             Self::decrypt_key(&file_bytes)?
@@ -134,16 +140,19 @@ impl CheckpointSigner {
         let signing_key = SigningKey::from_bytes(&key_array);
         key_array.zeroize();
 
-        // If the file was in legacy (unencrypted) format, re-save as encrypted
-        if !fs::read(key_path)
-            .map(|b| b.starts_with(ENCRYPTED_KEY_MAGIC))
-            .unwrap_or(false)
-        {
-            // Remove old file and save encrypted version
-            let _ = fs::remove_file(key_path);
-            if let Err(e) = Self::save_key(key_path, &signing_key) {
-                tracing::warn!("Failed to migrate key to encrypted format: {e}");
-            }
+        // Migrate a legacy plaintext key to the encrypted format, without ever
+        // leaving the host without one. The previous sequence removed the file
+        // and then created a new one, so a failure at the second step
+        // destroyed the key and only logged a warning, taking the
+        // tamper-evidence of every existing checkpoint with it. Writing a
+        // temporary file and renaming it over the original replaces the key in
+        // one atomic step, so a failure leaves the original untouched and the
+        // migration simply happens next time.
+        if is_legacy_format && let Err(e) = Self::replace_key_atomically(key_path, &signing_key) {
+            tracing::warn!(
+                "Could not migrate the signing key to the encrypted format, \
+                 leaving the existing key in place: {e}"
+            );
         }
 
         Ok(signing_key)
@@ -176,6 +185,47 @@ impl CheckpointSigner {
 
         file.write_all(&encrypted).map_err(HardeningError::System)?;
 
+        Ok(())
+    }
+
+    /// Replaces an existing key file with its encrypted form in one step.
+    ///
+    /// `save_key` opens with `create_new`, which is right for creating a key
+    /// that must never clobber an existing one, but means a replacement has to
+    /// delete first. Deleting first is what made a failed migration destroy the
+    /// key, so this writes a temporary file alongside and renames it over the
+    /// target: the original stays readable until the moment it is replaced, and
+    /// a failure anywhere leaves it exactly as it was.
+    fn replace_key_atomically(key_path: &Path, signing_key: &SigningKey) -> Result<()> {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+
+        // Deliberately neither creates nor re-permissions the parent: the key
+        // being replaced is already in it, so the directory exists, and
+        // silently widening an existing directory's permissions is not this
+        // function's business.
+        let encrypted = Self::encrypt_key(&signing_key.to_bytes())?;
+
+        // Same directory, so the rename below is a rename and not a copy.
+        let temp_path = key_path.with_extension("migrating");
+        // Not create_new: a temporary left behind by an interrupted earlier
+        // attempt must not block every future migration.
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o400)
+            .open(&temp_path)
+            .map_err(HardeningError::System)?;
+        file.write_all(&encrypted).map_err(HardeningError::System)?;
+        file.sync_all().map_err(HardeningError::System)?;
+        drop(file);
+
+        std::fs::rename(&temp_path, key_path).inspect_err(|_| {
+            // Leaving the temporary behind would keep a second copy of the key
+            // on disk at a path nothing manages.
+            let _ = std::fs::remove_file(&temp_path);
+        })?;
         Ok(())
     }
 
@@ -362,5 +412,73 @@ impl CheckpointSigner {
             signing_key: Some(new_key),
             verifying_key,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A legacy key file: 32 raw bytes, no magic header.
+    fn write_legacy_key(path: &Path) -> Vec<u8> {
+        let bytes: Vec<u8> = (0u8..32).collect();
+        fs::write(path, &bytes).expect("write legacy key");
+        bytes
+    }
+
+    #[test]
+    fn a_legacy_key_is_migrated_to_the_encrypted_format() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let key_path = dir.path().join("signing.key");
+        let original = write_legacy_key(&key_path);
+
+        let signer = CheckpointSigner::new_with_path(&key_path).expect("load legacy key");
+
+        let stored = fs::read(&key_path).expect("key still readable");
+        assert!(
+            stored.starts_with(ENCRYPTED_KEY_MAGIC),
+            "the migrated file must carry the encrypted magic"
+        );
+        assert_ne!(
+            stored, original,
+            "the plaintext key must not remain on disk"
+        );
+        // The key itself must survive the format change.
+        let reloaded = CheckpointSigner::new_with_path(&key_path).expect("reload migrated key");
+        assert_eq!(
+            signer.public_key_bytes(),
+            reloaded.public_key_bytes(),
+            "migration must preserve the key, not mint a new one"
+        );
+    }
+
+    #[test]
+    fn a_failed_migration_leaves_the_original_key_in_place() {
+        // The old sequence removed the key and then created a new one, so a
+        // failure at the second step destroyed it and only logged a warning,
+        // taking the tamper-evidence of every existing checkpoint with it.
+        // Migration must be all-or-nothing.
+        //
+        // The failure is induced by occupying the path the replacement is
+        // written to with a directory, which cannot be opened as a file. A
+        // read-only parent directory does NOT work here: it also blocks the
+        // deletion, so the old destructive code preserved the key too and the
+        // test passed against the very bug it was written for.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let key_path = dir.path().join("signing.key");
+        let original = write_legacy_key(&key_path);
+        fs::create_dir(key_path.with_extension("migrating")).expect("occupy the temporary path");
+
+        let result = CheckpointSigner::new_with_path(&key_path);
+
+        assert!(
+            result.is_ok(),
+            "a key that loaded fine must still be usable when only its migration failed"
+        );
+        assert_eq!(
+            fs::read(&key_path).expect("the key must still exist"),
+            original,
+            "a failed migration must leave the original key exactly as it was"
+        );
     }
 }

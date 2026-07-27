@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- The checkpoint signing key can no longer be destroyed by a failed migration.
+  Loading a legacy plaintext key re-read the file to decide whether it needed
+  migrating, folded any read failure into "not yet encrypted", then deleted the
+  key and wrote a new one. A failure at that second step left the host with no
+  signing key at all and logged only a warning, taking the tamper-evidence of
+  every existing checkpoint with it. The format is now decided from the bytes
+  already read, and the replacement is written alongside and renamed into place,
+  so a failure leaves the original key exactly as it was and the migration
+  simply happens next time.
 - A drop-in under `/etc/ssh/sshd_config.d/` no longer overrides the tool
   silently. The shipped `sshd_config` on several distributions carries
   `Include /etc/ssh/sshd_config.d/*.conf` on line 2, sshd uses the first value
