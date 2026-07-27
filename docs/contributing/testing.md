@@ -140,6 +140,125 @@ Interactive step-by-step test with pauses between operations. Designed for manua
 
 ---
 
+## Differential Suite (Ask The System, Not The Tool)
+
+Every other suite compares the tool against itself: it applies a setting, reads
+the file back with the same parser that wrote it, and reports agreement. That is
+how a maximum password age of 99999 shipped as "compliant" from v1.0.0 onwards.
+The differential suite applies hardening and then asks each setting's real
+consumer what is in force:
+
+| Setting | Oracle | Why not read the file |
+|---------|--------|-----------------------|
+| The `sshd_config` directives in `SSH_CHECKS` | `sshd -T` | Resolves `Include` precedence and `Match` scoping, which our parser does not |
+| `PASS_MIN_DAYS`, `PASS_MAX_DAYS`, `PASS_WARN_AGE` | `useradd` then `chage -l` | `login.defs` supplies defaults for NEW accounts, so only a fresh account shows what the file means today |
+
+Two assertions per directive, because both have failed in production: the system
+holds the value the tool targeted, and `scan`'s verdict agrees with the system.
+
+The second assertion is the harder one to state honestly, because after a
+successful apply it expects `scan` to report no finding, and no finding is also
+what the tool emits when it did not check. `scan --format json` carries a second
+array, `unchecked`, whose ids are identical to the finding ids, and a directive
+listed there is scored as a failure rather than as agreement: the ssh plugin
+moves all of its directives into it at once when `sshd_config` cannot be read,
+and still reports the scan as successful. The JSON also omits `scan_success`
+altogether, so a plugin whose scan failed emits exactly what a compliant host
+emits. Against that, the suite takes a second `scan` capture before `apply`, and
+requires each plugin to have reported at least one finding while the container
+was still unhardened. Without it, every finding filter would pass by matching
+nothing on every green run.
+
+### Full run (container + root)
+
+```bash
+sudo ./scripts/test/differential-suite.sh              # inside the container
+sudo ./scripts/test/run-cross-distro-tests.sh --differential --distro arch   # from the host
+```
+
+It refuses to start outside a container, and it refuses to start as a non-root
+user. It applies hardening and creates a probe account, so it is destructive by
+design and never safe on a real system. From the host it replaces the full suite
+for that run: `--differential` always applies, whether or not `--apply` is given,
+and results land in `test-results/<distro>.log` like any other run.
+
+`jq` is required, along with `sshd`, `ssh-keygen`, `useradd`, `userdel`, `chage`
+and `id`. A missing one aborts the run by name before any check runs. An oracle
+that cannot answer is a failure here, never a skip: a skipped check that reads as
+a pass is the disease being treated.
+
+The binary under test must be built from this tree. Its `scan --format json`
+output has to carry both a `findings` and an `unchecked` array per plugin, and
+each `unchecked` entry has to carry an `unchecked_check_id`; a build old enough
+to predate `unchecked` is refused rather than counted as reporting nothing.
+Setting `BINARY` names the binary exactly: an explicit path that is not
+executable aborts the run instead of falling back to a build from the tree, which
+would report a run of one binary as a run of another.
+
+### Self-test (safe anywhere)
+
+```bash
+bash scripts/test/differential-suite.sh --self-test
+```
+
+Needs neither root nor a container. It drives the text extractors, the freshness
+guard that refuses a capture taken before `apply`, the probe's create-and-remove
+safety, and both plugins' finding-id conventions against fixtures. `jq` is the
+only external command it needs.
+
+It also pins the shapes of `scan` output that would otherwise read as a clean
+bill of health: a plugin object missing its `findings` or `unchecked` array, an
+`unchecked` entry whose `unchecked_check_id` has been renamed, more than one JSON
+document on stdout, a directive the tool listed as unchecked, and a pre-apply
+capture in which a plugin reported nothing.
+
+The lengths of the check tables are pinned there as literals as well. A total
+counted off the tables cannot notice one of them being edited down: with the ssh
+table emptied, a run over the `login.defs` directives alone would agree with
+itself, exit 0, and be reported as a PASS. So the size the run is measured
+against is counted off `SSH_CHECKS_EXPECTED`, `LOGIN_DEFS_CHECKS_EXPECTED` and
+`DIFF_PLUGINS_EXPECTED`, which the tables are then checked against, rather than
+off the tables themselves.
+
+Adding a directive therefore means changing four literals in
+`scripts/test/differential-suite.sh`, not one: the `*_EXPECTED` constant beside
+its table, that same length re-pinned in the self-test (`the ssh table holds
+seven directives`), the total the run is sized at (`22`), and the number of
+directives the pre-apply control covers (`10`). Every one of them fails loudly,
+over two `--self-test` runs, because the total is counted off the constant and
+only moves once the constant has been raised.
+
+### What a failure means
+
+A failure means the operating system disagrees with what the tool reported, or
+that an oracle could not be read. Neither is a flaky test: a disagreement is a
+product defect and is exactly what this suite exists to find, and an oracle that
+cannot answer leaves a directive unproven, which is recorded as a failure rather
+than skipped. Each `FAIL` line names the directive, and where the two disagree,
+the value the system holds and the value the tool targeted:
+
+- `the system holds 'X' but the tool targets 'Y'`: `apply` did not take effect.
+- `the tool claims a compliance the system does not have`: `scan` reported
+  nothing while the system holds something other than the target. This is the
+  shape of the `login.defs` defect.
+- `the tool reports N finding(s) ... while the system holds the target value`:
+  `scan` is flagging a host that is in fact compliant.
+- `the tool did not check '<id>'`: the id came back in the `unchecked` array.
+  The tool verified nothing for that directive, which is neither agreement with
+  the system nor a contradiction of it, and the usual cause is a config file the
+  scan could not read.
+- `before apply the tool reported no finding for any of the N compared
+  directives`: the pre-apply control failed for that plugin. Either its scan
+  produced nothing, which this JSON cannot distinguish from a compliant host, or
+  the harness's filter for it matches nothing.
+- `Recorded N check(s) where the tables ask for M`: the run was shorter than the
+  tables it was built from, so some directives went unproven.
+
+Investigate the plugin, not the harness. If the harness itself is wrong, the
+self-test is where the fix is proven.
+
+---
+
 ## Cross-Distro Testing
 
 Runs the full test suite across multiple distribution containers from the host.
@@ -179,6 +298,16 @@ sudo ./scripts/test/run-cross-distro-tests.sh --distro fedora
 sudo ./scripts/test/run-cross-distro-tests.sh --distro rhel
 sudo ./scripts/test/run-cross-distro-tests.sh --distro opensuse
 ```
+
+### Differential suite instead of the full suite
+
+```bash
+sudo ./scripts/test/run-cross-distro-tests.sh --differential
+```
+
+Runs `differential-suite.sh` in each container in place of `full-test-suite.sh`,
+through the same nspawn invocation and the same per-distro logs and summary
+table. See the differential suite section above; it is always destructive.
 
 ### With GUI tests
 
@@ -267,4 +396,4 @@ cargo build --release --target aarch64-unknown-linux-gnu -p hardener-cli
 
 Produces three release tarballs and creates a GitHub release.
 
-**Last Updated**: 2026-07-19
+**Last Updated**: 2026-07-27

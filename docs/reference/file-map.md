@@ -684,7 +684,8 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 | `scripts/release/release.sh` | Automated version bumping and release |
 | `scripts/dev/tauri-dev.sh` | Tauri development launcher |
 | `scripts/test/full-test-suite.sh` | Complete 127-test validation suite (26 sections) |
-| `scripts/test/run-cross-distro-tests.sh` | Non-interactive cross-distro test orchestrator |
+| `scripts/test/differential-suite.sh` | Differential harness: applies hardening, then asks `sshd -T` and `chage -l` what the system enforces and compares that against `scan` (`--self-test` runs anywhere) |
+| `scripts/test/run-cross-distro-tests.sh` | Non-interactive cross-distro test orchestrator (`--differential` swaps in the differential suite) |
 | `scripts/test/root-test-suite.sh` | 36 root-level privilege tests |
 | `scripts/test/manual-verification-test.sh` | Interactive verification tests |
 | `scripts/containers/create-container.sh` | systemd-nspawn test containers for all five distros (`arch`, `debian`, `fedora`, `rhel`, `opensuse`) |

@@ -232,7 +232,7 @@ bootstrap_arch() {
     mkdir -p "$CONTAINER_PATH"
     pacstrap -c "$CONTAINER_PATH" base base-devel \
         openssh audit ufw iptables nftables \
-        sudo polkit --noconfirm
+        sudo polkit jq --noconfirm
 
     # Set up container
     log_info "Configuring container..."
@@ -283,7 +283,8 @@ bootstrap_debian() {
         sudo \
         policykit-1 \
         procps \
-        iproute2
+        iproute2 \
+        jq
 
     # Allow sudo without password for testuser
     echo "testuser ALL=(ALL:ALL) NOPASSWD: ALL" > "$CONTAINER_PATH/etc/sudoers.d/testuser"
@@ -344,7 +345,8 @@ bootstrap_dnf_family() {
         "$iptables_pkg" \
         polkit \
         procps-ng \
-        iproute
+        iproute \
+        jq
 
     # Allow sudo without password for testuser (wheel group)
     mkdir -p "$CONTAINER_PATH/etc/sudoers.d"
@@ -432,6 +434,7 @@ bootstrap_opensuse() {
         iptables \
         polkit \
         procps \
+        jq \
         iproute2 2>/dev/null || log_warn "Some packages may not have installed"
 
     # Allow sudo without password for testuser (wheel group)
