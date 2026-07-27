@@ -152,9 +152,23 @@ consumer what is in force:
 |---------|--------|-----------------------|
 | The `sshd_config` directives in `SSH_CHECKS` | `sshd -T` | Resolves `Include` precedence and `Match` scoping, which our parser does not |
 | `PASS_MIN_DAYS`, `PASS_MAX_DAYS`, `PASS_WARN_AGE` | `useradd` then `chage -l` | `login.defs` supplies defaults for NEW accounts, so only a fresh account shows what the file means today |
+| `ENCRYPT_METHOD`, `HOME_MODE`, `UMASK` | a probe account: the scheme prefix `crypt` wrote into its shadow field, `stat -c %a` on its home, `su - probe -c umask` | These are settings the tool does **not** manage, and the file they come from is the one a masked `/etc` copy silences. Reading that file back would ask the masked copy what it says |
 
 Two assertions per directive, because both have failed in production: the system
 holds the value the tool targeted, and `scan`'s verdict agrees with the system.
+
+One assertion per unmanaged setting, because there is no tool-reported
+counterpart: the value after apply must be the value before it. The tool claims
+nothing about these, so any change at all is damage whatever the new value is,
+and the check is written as that invariant rather than as an expected value.
+Hardcoding one would make it distribution-specific for no gain: the same run
+reads `$y$` on four distributions and `$6$` on openSUSE, `0022` on four and
+`0002` on debian.
+
+This family is the reason a green run was never proof on its own. Every other
+check asks whether a setting the tool targets reached its target; none asked
+whether the rest of the file survived, which is exactly how a masked
+`/etc/login.defs` stayed invisible.
 
 The second assertion is the harder one to state honestly, because after a
 successful apply it expects `scan` to report no finding, and no finding is also
@@ -182,8 +196,11 @@ design and never safe on a real system. From the host it replaces the full suite
 for that run: `--differential` always applies, whether or not `--apply` is given,
 and results land in `test-results/<distro>.log` like any other run.
 
-`jq` is required, along with `sshd`, `ssh-keygen`, `useradd`, `userdel`, `chage`
-and `id`. A missing one aborts the run by name before any check runs. An oracle
+`jq` is required, along with `sshd`, `ssh-keygen`, `useradd`, `userdel`,
+`chage`, `id`, `chpasswd`, `stat` and `su`. A missing one aborts the run by name
+before any check runs. The account rows the probe reads are parsed by the shell
+rather than by `awk`, which is in neither the dnf-family nor the openSUSE
+package set the container script installs. An oracle
 that cannot answer is a failure here, never a skip: a skipped check that reads as
 a pass is the disease being treated.
 
@@ -206,6 +223,14 @@ guard that refuses a capture taken before `apply`, the probe's create-and-remove
 safety, and both plugins' finding-id conventions against fixtures. `jq` is the
 only external command it needs.
 
+The vendor survival family is proven here in both directions, because its whole
+job is to notice a value changing: an unchanged value agrees, a changed one does
+not, a reading that could not be taken on either side fails the check rather
+than skipping it, and a shadow field carrying no usable hash (`!`, `*`, or a
+`!`-prefixed hash) is refused rather than reported, since those are stable
+across an apply and would otherwise pass as a setting that survived while
+proving nothing.
+
 It also pins the shapes of `scan` output that would otherwise read as a clean
 bill of health: a plugin object missing its `findings` or `unchecked` array, an
 `unchecked` entry whose `unchecked_check_id` has been renamed, more than one JSON
@@ -216,15 +241,16 @@ The lengths of the check tables are pinned there as literals as well. A total
 counted off the tables cannot notice one of them being edited down: with the ssh
 table emptied, a run over the `login.defs` directives alone would agree with
 itself, exit 0, and be reported as a PASS. So the size the run is measured
-against is counted off `SSH_CHECKS_EXPECTED`, `LOGIN_DEFS_CHECKS_EXPECTED` and
-`DIFF_PLUGINS_EXPECTED`, which the tables are then checked against, rather than
-off the tables themselves.
+against is counted off `SSH_CHECKS_EXPECTED`, `LOGIN_DEFS_CHECKS_EXPECTED`,
+`VENDOR_SURVIVAL_CHECKS_EXPECTED` and `DIFF_PLUGINS_EXPECTED`, which the tables
+are then checked against, rather than off the tables themselves.
 
 Adding a directive therefore means changing four literals in
 `scripts/test/differential-suite.sh`, not one: the `*_EXPECTED` constant beside
 its table, that same length re-pinned in the self-test (`the ssh table holds
-seven directives`), the total the run is sized at (`22`), and the number of
-directives the pre-apply control covers (`10`). Every one of them fails loudly,
+seven directives`), the total the run is sized at (`25`), and the number of
+directives the pre-apply control covers (`10`). `VENDOR_SURVIVAL_CHECKS` is
+sized the same way, and contributes one check per setting rather than two. Every one of them fails loudly,
 over two `--self-test` runs, because the total is counted off the constant and
 only moves once the constant has been raised.
 
@@ -396,4 +422,4 @@ cargo build --release --target aarch64-unknown-linux-gnu -p hardener-cli
 
 Produces three release tarballs and creates a GitHub release.
 
-**Last Updated**: 2026-07-27
+**Last Updated**: 2026-07-28

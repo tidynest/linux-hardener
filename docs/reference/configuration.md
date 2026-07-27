@@ -1,6 +1,6 @@
 # Configuration reference
 
-**Last Updated**: 2026-07-27
+**Last Updated**: 2026-07-28
 
 Complete reference for the hardener's configuration files. Configuration
 controls which plugins run, tightens directive targets beyond the built-in
@@ -123,6 +123,36 @@ MaxAuthTries = "3"
 ClientAliveInterval = "300"
 ClientAliveCountMax = "2"
 ```
+
+### Where `[ssh]` and `[pam]` write on layered distributions
+
+Two distribution families do not keep a setting in one file at one path, and
+`apply` writes differently on each. Nothing in the config selects this; it
+follows from what the host ships.
+
+**sshd fragments.** Fedora and RHEL ship `/etc/ssh/sshd_config.d/50-redhat.conf`
+and sshd takes the **first** value it obtains, so a fragment beats the main
+file. SSH hardening is therefore written to
+`/etc/ssh/sshd_config.d/00-hardener.conf`, which sorts before what
+distributions ship. The file carries a header marking it as managed, an empty
+directive set removes it rather than leaving an empty file behind, and the
+precedence is verified after writing by re-resolving the configuration rather
+than assumed from the name.
+
+**Vendor configuration under `/usr/etc`.** openSUSE Leap 15.6+, Tumbleweed and
+MicroOS reserve `/etc` for administrator overrides, and that override is
+whole-file rather than per directive: once `/etc/login.defs` exists, every key
+it omits stops applying. `scan` reads whichever copy is in force, and `apply`
+copies the vendor file into `/etc` first and edits the managed directives into
+that copy, so nothing the distribution set is lost. The vendor file itself is
+never written.
+
+An `/etc` file that already exists is the host's own, so `apply` edits the
+directives it manages and does not import keys that file omits. Where those
+omitted keys matter, `scan` reports them as
+`pam-login-defs-masked-keys`, a Medium finding naming each one. Restoring them
+is a manual step by design: this tool cannot tell a key an operator dropped on
+purpose from one an older release dropped for them.
 
 ### Directive value validation
 

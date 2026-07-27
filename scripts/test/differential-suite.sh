@@ -472,10 +472,11 @@ login_defs_system_value() {
 # the 35 keys the vendor file set, could reappear with every existing check
 # green.
 #
-# The assertion is the invariant, never a value. ENCRYPT_METHOD is yescrypt on
-# openSUSE and sha512 elsewhere, HOME_MODE differs between distributions and
-# UMASK differs with them; hardcoding any of them would make the check
-# distribution-specific for no gain. The tool does not manage these, so any
+# The assertion is the invariant, never a value. Measured across the five
+# containers, ENCRYPT_METHOD is yescrypt on arch, debian, fedora and rhel and
+# sha512 on openSUSE Leap, and UMASK is 0002 on debian against 0022 elsewhere;
+# hardcoding any of them would make the check distribution-specific for no gain,
+# and the obvious guess would have been wrong in both cases. The tool does not manage these, so any
 # change to them is damage whatever the value was, and comparing before against
 # after catches masking the suite has never seen as well as the one it has.
 VENDOR_SURVIVAL_CHECKS=(ENCRYPT_METHOD HOME_MODE UMASK)
