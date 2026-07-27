@@ -20,7 +20,6 @@ pub struct ScanOptions<'a> {
     pub quiet: bool,
     pub config_path: Option<&'a PathBuf>,
     pub audit: bool,
-    pub compliance: bool,
     pub exit_code: bool,
     pub timings: bool,
     pub executor: Arc<dyn SystemExecutor>,
@@ -30,8 +29,6 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
     // Determine scan mode
     let mode = if opts.audit {
         ScanMode::Audit
-    } else if opts.compliance {
-        ScanMode::Compliance
     } else {
         ScanMode::Default
     };

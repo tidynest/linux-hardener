@@ -833,6 +833,6 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | `hardener-core/src/config.rs` | Config structs: `HardenerConfig`, `GlobalConfig`, `PluginConfig`, `PolicyException` |
 | `hardener-core/src/config_loader.rs` | Config loading and merging from multiple sources |
 | `hardener-common/src/types.rs` | Added `FindingPolicyException` struct |
-| `hardener-cli/src/cli.rs` | Added `--config`, `--audit`, `--compliance`, `--exit-code` flags, `ScanMode` enum |
+| `hardener-cli/src/cli.rs` | Added `--config`, `--audit`, `--exit-code` flags, `ScanMode` enum |
 
 **Last Updated**: 2026-07-27

@@ -75,21 +75,6 @@ pub(crate) fn sort_sections_by_control_id<'a>(
     });
 }
 
-/// Label used in place of a severity on a finding line covered by a valid
-/// policy exception.
-pub(crate) const EXCEPTION_LABEL: &str = "POLICY EXCEPTION";
-
-/// The label for one evidence line under a control. An excepted finding is a
-/// documented deviation, not a violation, so it is never rendered as one; it is
-/// still rendered, so a control passed by an exception is distinguishable from
-/// a genuinely compliant one.
-pub(crate) fn finding_label(finding: &hardener_types::Finding) -> String {
-    match finding.finding_policy_exception {
-        Some(_) => EXCEPTION_LABEL.to_string(),
-        None => finding.finding_severity.to_string(),
-    }
-}
-
 /// Groups report controls by section name.
 pub(crate) fn group_controls_by_section<'a>(
     report: &'a ComplianceReport,

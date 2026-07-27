@@ -15,6 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rather than on one with new findings. `--format json` names which plugin and
   why.
 
+### Removed
+- `scan --compliance`, which never did anything. clap accepted it, it conflicted
+  with `--audit` as though the two were alternatives, and the behaviour it
+  documented ("only show findings without valid policy exceptions") was
+  implemented nowhere: the flag set a mode value no code read, so every run it
+  appeared in produced exactly the default scan. It was documented as a working
+  feature in the manual page, the CLI reference, the architecture overview, the
+  getting-started guide and the roadmap, and exercised by the cross-distro test
+  suite, none of which could tell that it did nothing. `hardener report
+  --framework <id>` is the real compliance output, and a finding covered by an
+  exception is now labelled everywhere rather than hidden anywhere.
+
 ### Fixed
 - The desktop could mark a compliance control as passed for a plugin that never
   ran, with nothing having failed. A compliance report decides `Pass` from
@@ -149,6 +161,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a mode that did not move (reporting the mode observed and the mode wanted),
   and a verification that failed (carrying its error, rather than implying the
   `chmod` did not work).
+- A finding covered by a policy exception is labelled rather than hidden, and
+  never mistaken for a violation. The compliance reports had this right all
+  along: they render a documented deviation as `POLICY EXCEPTION` in place of
+  its severity and keep it under the control it belongs to, so a pass resting on
+  an exception stays distinguishable from a genuinely clean one. Three other
+  places did not. The desktop's Compliance view dropped excepted findings
+  outright, so a deviation the operator had recorded was indistinguishable from
+  a finding that never existed. The desktop's audit view and the `scan` terminal
+  both kept them and labelled nothing, so a documented deviation read as a live
+  violation. The rule now lives once, in the crate both front ends share. The
+  desktop lists deviations in their own group below the severity groups, where
+  they can neither vanish nor inflate a severity count, and the expanded detail
+  carries the reason the deviation was accepted. The desktop's All/Compliance
+  view switch is gone: hiding them was its only function.
+- A damaged scan-history record is reported instead of read as a scan that
+  covered no plugins. The list of plugins a session covered is stored as JSON
+  and was parsed with a fallback to the empty list, so a row that would not
+  parse produced the same answer as a scan that genuinely ran nothing, and
+  `history show` printed the same empty line either way. Parsing is fallible now
+  and the reason is printed. A short list remains perfectly legitimate: a
+  session records the plugins the configuration selected, not everything in the
+  registry.
 - A plugin's own `enabled = false` now stops it running. The key existed in the
   config schema, was validated on load, and was read by nothing: only
   `[global] disabled_plugins` and `[global] enabled_plugins` were ever

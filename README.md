@@ -548,9 +548,8 @@ applies `directives` overrides and annotates any finding covered by a valid
 exception) and audit (`hardener scan --audit`, which ignores the config
 entirely and measures against the unmodified secure baseline).
 
-`hardener scan --compliance` is accepted but currently behaves identically to
-the default mode. It is `hardener report` that treats an annotated finding as
-satisfied for a compliance control, while still listing it as evidence.
+It is `hardener report` that treats an annotated finding as satisfied for a
+compliance control, while still listing it as evidence.
 
 Every section, key, default, and the scheduler/inventory files are
 documented in the

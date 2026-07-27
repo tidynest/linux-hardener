@@ -54,7 +54,6 @@ reason, an approver, and an expiry date. See the
 format, then use the scan modes to check your policy:
 
 ```bash
-hardener scan --compliance    # Only violations without a valid exception
 hardener scan --audit         # Ignore config entirely: the raw security truth
 hardener scan --exit-code     # Exit 1 on findings or an incomplete scan (CI gate)
 ```

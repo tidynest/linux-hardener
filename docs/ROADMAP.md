@@ -48,7 +48,7 @@ This document tracks the development progress and planned features for Linux Sys
 ### v0.2.0: CLI & Reporting Enhancements ✅
 
 - [x] Config file support (`~/.config/linux-hardener/`)
-- [x] CLI flags: `--config`, `--audit`, `--compliance`, `--exit-code`
+- [x] CLI flags: `--config`, `--audit`, `--exit-code`
 - [x] Policy exception system with audit trail
 - [x] Interactive report wizard
 - [x] CSV and HTML format support in CLI
@@ -426,7 +426,6 @@ User clicks "Apply"
 |---------|----------------|----------|--------|
 | Scan history | `history list/show` | P2 | ✅ Complete |
 | Audit mode toggle | `scan --audit` | P2 | ✅ Complete |
-| Compliance mode toggle | `scan --compliance` | P2 | ✅ Complete |
 | Plugin listing | `plugins` command | P2 | ✅ Complete |
 | Checkpoint details | `checkpoint show` | P2 | ✅ Complete |
 | Remote scanning UI | `--ssh` flags | P3 | ✅ Complete |
@@ -718,4 +717,4 @@ When working on new features:
 
 ---
 
-**Last Updated**: 2026-07-24
+**Last Updated**: 2026-07-27

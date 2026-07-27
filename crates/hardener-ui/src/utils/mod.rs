@@ -554,6 +554,21 @@ pub fn group_findings_by_severity(findings: &[Finding]) -> Vec<(Severity, Vec<Fi
     .collect()
 }
 
+/// Splits findings into live violations and documented deviations, preserving
+/// order within each half.
+///
+/// Both halves are rendered. A deviation the operator documented is evidence,
+/// so dropping it hides what their own policy records, and leaving it among the
+/// violations makes a severity count read higher than the number of real
+/// problems. `hardener report` resolves this the same way: an excepted finding
+/// is listed under its control rather than removed from it.
+pub fn split_policy_excepted(findings: &[Finding]) -> (Vec<Finding>, Vec<Finding>) {
+    findings
+        .iter()
+        .cloned()
+        .partition(|f| !f.is_policy_excepted())
+}
+
 /// Display label for a severity group header.
 pub fn severity_label(sev: Severity) -> &'static str {
     match sev {
@@ -1477,6 +1492,26 @@ mod tests {
         assert_eq!(groups[0].1.len(), 1);
         assert_eq!(groups[1].0, Severity::Low);
         assert_eq!(groups[1].1.len(), 2);
+    }
+
+    /// The shipped Compliance view dropped excepted findings outright, so a
+    /// deviation the operator had documented was invisible: indistinguishable
+    /// from a finding that never existed. Both halves must survive the split.
+    #[test]
+    fn a_documented_deviation_survives_the_split_instead_of_vanishing() {
+        let mut excepted = finding("2", Severity::Critical);
+        excepted.finding_policy_exception = Some(crate::types::FindingPolicyException::default());
+        let fs = vec![finding("1", Severity::High), excepted];
+
+        let (live, deviations) = split_policy_excepted(&fs);
+        assert_eq!(live.len(), 1, "live violations: {live:?}");
+        assert_eq!(live[0].finding_id, "1");
+        assert_eq!(
+            deviations.len(),
+            1,
+            "a documented deviation must not vanish: {deviations:?}"
+        );
+        assert_eq!(deviations[0].finding_id, "2");
     }
 
     #[test]

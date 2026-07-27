@@ -425,7 +425,14 @@ fn print_session_detail(session: &ScanSession, findings: &[ScanFindingRow], quie
         println!("  Finished: {}", format_timestamp(completed));
     }
 
-    println!("  Plugins:  {}", session.plugins().join(", "));
+    // A session records the plugins the config selected, so a short list is
+    // honest and an empty one is possible. A record that will not parse is
+    // neither, and must not print as though the scan covered nothing.
+    match session.plugins() {
+        Ok(plugins) if plugins.is_empty() => println!("  Plugins:  none"),
+        Ok(plugins) => println!("  Plugins:  {}", plugins.join(", ")),
+        Err(e) => println!("  Plugins:  record unreadable ({e})"),
+    }
     println!();
 
     // Severity summary

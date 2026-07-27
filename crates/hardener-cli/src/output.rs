@@ -189,7 +189,16 @@ fn scan_plugin_lines(metadata: &PluginMetadata, result: &ScanResult) -> Vec<Stri
             findings.len()
         ));
         for finding in findings {
-            let severity_str = format_severity(&finding.finding_severity);
+            // A documented deviation keeps its line, so a result resting on an
+            // exception stays distinguishable from a genuinely clean one, but
+            // it never wears a severity. The label is wider than the
+            // four-character severity column deliberately: the ragged line is
+            // what separates it from the violations around it.
+            let severity_str = if finding.is_policy_excepted() {
+                hardener_types::POLICY_EXCEPTION_LABEL.dimmed()
+            } else {
+                format_severity(&finding.finding_severity)
+            };
             lines.push(format!(
                 "  {} [{}] {}",
                 "•".dimmed(),
@@ -904,6 +913,31 @@ mod tests {
                 .iter()
                 .any(|l| l.contains("auditctl -l: permission denied")),
             "the reason must survive to the operator: {lines:?}"
+        );
+    }
+
+    /// A finding the configuration documents as an accepted deviation is not
+    /// a violation. The terminal rendered it with its severity, byte-identical
+    /// to a live finding, so an operator could not tell which of their
+    /// findings their own policy already accounts for. Every other renderer in
+    /// the project labels it.
+    #[test]
+    fn a_policy_excepted_finding_is_not_rendered_as_a_violation() {
+        let mut excepted = finding("Root login permitted");
+        excepted.finding_policy_exception = Some(hardener_types::FindingPolicyException::default());
+        let lines = scan_plugin_lines(
+            &metadata("Audit Rules Hardening"),
+            &scan_result(true, vec![excepted], vec![]),
+        );
+        let rendered = lines.join("\n");
+
+        assert!(
+            rendered.contains(hardener_types::POLICY_EXCEPTION_LABEL),
+            "a documented deviation must be labelled: {rendered:?}"
+        );
+        assert!(
+            !rendered.contains("[MED"),
+            "a documented deviation must not render as a severity: {rendered:?}"
         );
     }
 

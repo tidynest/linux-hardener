@@ -250,7 +250,6 @@ test_scan_filters() {
     done
 
     run_test "Scan --audit mode" "\"$BINARY\" scan --audit"
-    run_test "Scan --compliance mode" "\"$BINARY\" scan --compliance"
 
     log_test "Scan --exit-code"
     local exit_code=0

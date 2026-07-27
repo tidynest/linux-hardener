@@ -1,6 +1,6 @@
 # Distribution Validation Results
 
-**Last Updated**: 2026-07-24
+**Last Updated**: 2026-07-27
 
 This document tracks validation testing across supported Linux distributions.
 
@@ -214,13 +214,13 @@ All containers have: root/test, testuser/test (with passwordless sudo), and fire
 
 ---
 
-## Test Categories (26 Sections, 127 Tests)
+## Test Categories (26 Sections, 126 Tests)
 
 | Section | Name | Tests | Description |
 |---------|------|-------|-------------|
 | 1 | Basic Commands | varies | --version, --help, all subcommand help |
 | 2 | Scan All Plugins | 8 | Individual scan for all 8 plugins |
-| 3 | Scan Filters | varies | All 5 severity levels, --audit, --compliance, --exit-code |
+| 3 | Scan Filters | varies | All 5 severity levels, --audit, --exit-code |
 | 4 | Scan Output Formats | 4 | text, json, csv, html |
 | 5 | Reports All Frameworks | 7 | cis, stig, nist, pcidss, hipaa, gdpr, iso27001 |
 | 6 | Reports All Scenarios | 7 | server, workstation, government, healthcare, financial, gdpr, all |
@@ -775,4 +775,4 @@ test-results/gui/
 
 ---
 
-**Last Updated**: 2026-07-24
+**Last Updated**: 2026-07-27

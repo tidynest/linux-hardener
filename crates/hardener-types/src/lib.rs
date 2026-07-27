@@ -497,6 +497,38 @@ pub struct Finding {
     pub finding_policy_exception: Option<FindingPolicyException>,
 }
 
+/// Label shown in place of a severity when the configuration documents a
+/// finding as an accepted deviation.
+///
+/// A documented deviation is not a violation, so it is never rendered as one.
+/// It is still rendered, so a result resting on an exception stays
+/// distinguishable from a genuinely clean one. This lives here, in the crate
+/// every front end already depends on, because a renderer that quietly drops
+/// excepted findings reports a deviation as compliance.
+pub const POLICY_EXCEPTION_LABEL: &str = "POLICY EXCEPTION";
+
+impl Finding {
+    /// Whether the configuration documents this finding as an accepted
+    /// deviation rather than a live violation.
+    pub fn is_policy_excepted(&self) -> bool {
+        self.finding_policy_exception.is_some()
+    }
+
+    /// The label for this finding's evidence line: [`POLICY_EXCEPTION_LABEL`]
+    /// for a documented deviation, otherwise the finding's severity.
+    ///
+    /// Renderers that style the two cases differently, rather than only
+    /// labelling them, branch on [`Finding::is_policy_excepted`] and reach for
+    /// the constant themselves.
+    pub fn evidence_label(&self) -> String {
+        if self.is_policy_excepted() {
+            POLICY_EXCEPTION_LABEL.to_string()
+        } else {
+            self.finding_severity.to_string()
+        }
+    }
+}
+
 /// Result of applying hardening changes.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ApplyResult {
@@ -1244,5 +1276,43 @@ mod serde_compatibility_tests {
         let json = serde_json::to_string(&check).unwrap();
         let back: UncheckedCheck = serde_json::from_str(&json).unwrap();
         assert_eq!(back.unchecked_check_id, check.unchecked_check_id);
+    }
+}
+
+#[cfg(test)]
+mod policy_exception_tests {
+    use super::*;
+
+    fn finding(severity: Severity, excepted: bool) -> Finding {
+        Finding {
+            finding_category: FindingCategory::Network,
+            finding_current_value: String::new(),
+            finding_description: String::new(),
+            finding_explanation: String::new(),
+            finding_id: "test".to_string(),
+            finding_impact: String::new(),
+            finding_recommended_value: String::new(),
+            finding_remediation_steps: Vec::new(),
+            finding_severity: severity,
+            finding_title: "Test".to_string(),
+            finding_compliance: Vec::new(),
+            finding_policy_exception: excepted.then(FindingPolicyException::default),
+        }
+    }
+
+    /// The whole point of the label: a deviation the operator documented must
+    /// not read as a violation, and must not vanish either.
+    #[test]
+    fn a_documented_deviation_is_not_labelled_as_a_violation() {
+        let excepted = finding(Severity::Critical, true);
+        assert!(excepted.is_policy_excepted());
+        assert_eq!(excepted.evidence_label(), POLICY_EXCEPTION_LABEL);
+    }
+
+    #[test]
+    fn a_live_violation_keeps_its_severity() {
+        let live = finding(Severity::Critical, false);
+        assert!(!live.is_policy_excepted());
+        assert_eq!(live.evidence_label(), "CRITICAL");
     }
 }

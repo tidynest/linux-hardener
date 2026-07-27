@@ -58,7 +58,6 @@ async fn main() -> Result<()> {
             plugin,
             severity,
             audit,
-            compliance,
             exit_code,
             timings,
         } => {
@@ -69,7 +68,6 @@ async fn main() -> Result<()> {
                 quiet: cli.quiet,
                 config_path: cli.config.as_ref(),
                 audit,
-                compliance,
                 exit_code,
                 timings,
                 executor: executor.clone(),

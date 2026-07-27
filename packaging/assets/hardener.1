@@ -18,7 +18,7 @@ hardener \- comprehensive Linux security automation tool with multi-distribution
 .IR PLUGIN ]
 .RB [ \-s
 .IR SEVERITY ]
-.RB [ \-\-audit | \-\-compliance ]
+.RB [ \-\-audit ]
 .RB [ \-\-exit\-code ]
 .
 .br
@@ -327,9 +327,6 @@ May be given multiple times.
 .TP
 .B \-\-audit
 Audit mode: perform a pure security assessment without applying changes.
-.TP
-.B \-\-compliance
-Compliance mode: only report findings that violate policy.
 .TP
 .B \-\-exit\-code
 Exit with status 1 if any findings exist.

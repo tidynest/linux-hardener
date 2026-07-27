@@ -956,6 +956,11 @@ tbody tr:hover {
 .severity_low { background-color: rgba(34, 211, 238, 0.15); color: var(--color-info); }
 .severity_info { background-color: rgba(100, 116, 139, 0.2); color: var(--text-secondary); }
 
+/* A documented deviation is not a severity. It reads as neutral rather than
+   ranked, so it cannot be mistaken for the bottom rung of the severity scale
+   it sits below. */
+.severity_exception { background-color: rgba(148, 163, 184, 0.14); color: var(--text-muted); }
+
 /* ============================================================
    14. ANALYSIS PAGE
    ============================================================ */
@@ -3680,6 +3685,22 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 
 .finding-desc { margin: 0 0 var(--space-sm); color: var(--text-secondary); }
 .finding-explain { margin: 0 0 var(--space-md); color: var(--text-primary); }
+
+/* Why the deviation was accepted. Sits above the current/recommended pair so
+   the reason is read before the values it explains. */
+.finding-exception-reason {
+  margin: 0 0 var(--space-md);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.finding-exception-label {
+  margin-right: var(--space-xs);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-caption);
+  letter-spacing: 0.04em;
+}
 
 .finding-values {
   display: flex;

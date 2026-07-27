@@ -68,13 +68,12 @@ hardener scan [FLAGS]
 |------|-------------|---------|
 | `-p`, `--plugin <NAME>` | Scan only this plugin (repeatable for multiple) | all config-enabled plugins |
 | `--audit` | Ignore config file, run a pure security assessment | off |
-| `--compliance` | Accepted, but currently behaves exactly like the default mode | off |
 | `--exit-code` | Exit with code 1 if any findings exist, or if any plugin's scan did not complete (for CI/CD pipelines) | off |
 | `-s`, `--severity <LEVEL>` | Minimum severity to report: `info`, `low`, `medium`, `high`, `critical` | `info` |
 | `--timings` | Print a per-plugin timing table (slowest first) after the scan | off |
 
-`--audit` and `--compliance` are mutually exclusive. Plugins scan concurrently;
-`--timings` writes to stderr, so `--format json` stdout stays machine-parseable.
+Plugins scan concurrently; `--timings` writes to stderr, so `--format json`
+stdout stays machine-parseable.
 
 **`scan` honours the configuration file.** Three things follow from that:
 
