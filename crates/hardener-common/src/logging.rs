@@ -13,6 +13,13 @@ use tracing_subscriber::{EnvFilter, fmt};
 /// # Default Log Level
 /// If `RUST_LOG` is not set, defaults to info level.
 ///
+/// # Output Stream
+/// Records go to stderr, never stdout. `tracing-subscriber`'s own default is
+/// stdout, which would interleave log lines with the machine-readable payloads
+/// the CLI writes there under `--format json` and leave the output unparseable.
+/// Diagnostics belong on stderr regardless, alongside the CLI's own status and
+/// warning helpers.
+///
 /// # Examples
 /// ```no_run
 /// use hardener_common::logging::init_logger;
@@ -30,6 +37,7 @@ pub fn init_logger() {
         .with_target(true)
         .with_thread_ids(false)
         .with_line_number(true)
+        .with_writer(std::io::stderr)
         .init();
 }
 

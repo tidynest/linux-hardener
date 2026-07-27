@@ -18,8 +18,12 @@ pub fn status(format: &OutputFormat, message: &str) {
 
 pub fn info(format: &OutputFormat, message: &str) {
     match format {
+        // stderr, matching `error` and `warning` below. Writing this to stdout
+        // put a second top-level document in front of the payload, so a strict
+        // parser rejected the whole stream ("Extra data") even though the
+        // payload itself was well formed.
         OutputFormat::Json => {
-            println!("{}", serde_json::json!({ "info": message }));
+            eprintln!("{}", serde_json::json!({ "info": message }));
         }
         _ => println!("{} {}", "i".cyan(), message),
     }

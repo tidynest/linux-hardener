@@ -17,6 +17,12 @@ use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Without a subscriber the tracing macros are a no-op, so every warning the
+    // engine raises on the path where apply actually runs was being discarded.
+    // Some of those warnings have no `Change` counterpart and were the only
+    // record that a step degraded, which made them wholly silent.
+    hardener_common::logging::init_logger();
+
     let cli = Cli::parse();
 
     // Create executor based on SSH flags
