@@ -204,6 +204,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   also decides whether the fleet panel shows a Findings section at all, so
   filtering there would have made a host whose findings are all excepted read
   as a host with nothing wrong.
+- The apply preview shows a setting it is leaving alone because a policy
+  exception documents it. This was the same defect one surface further on:
+  each plugin's validation reached the exception check and skipped the setting
+  outright, so it entered neither the estimated changes nor anything else, and
+  a host whose only drift was excepted previewed as "0 change(s) to apply" over
+  an empty panel. That is byte-identical to a host needing nothing done, so an
+  operator could not see that a deviation was in play, nor notice a stale
+  exception still suppressing work they wanted done. Excepted settings are now
+  reported separately from the pending changes, in the terminal and in the
+  desktop, so they can neither be mistaken for changes nor inflate the count
+  the confirm button is named after. Seven sites across six plugins skipped an
+  exception this way; all now record it through one shared helper.
 - A damaged scan-history record is reported instead of read as a scan that
   covered no plugins. The list of plugins a session covered is stored as JSON
   and was parsed with a fallback to the empty list, so a row that would not
