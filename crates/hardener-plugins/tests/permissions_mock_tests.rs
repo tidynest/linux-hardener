@@ -1188,3 +1188,30 @@ async fn apply_records_a_skip_for_an_unverifiable_max_mask_directive() {
         .collect();
     assert!(chmods.is_empty(), "a max-mask target is uncomputable here");
 }
+
+#[tokio::test]
+async fn scan_reports_a_critical_path_it_cannot_read_instead_of_staying_silent() {
+    // /etc/shadow whose mode cannot be read used to produce neither a finding
+    // nor an unchecked entry: total silence, identical to a verified-compliant
+    // result. These are exactly the paths where that is least acceptable.
+    let executor = MockExecutor::new()
+        .with_path_exists("/etc/shadow", true)
+        .with_metadata_error("/etc/shadow");
+    let ctx = Context::with_executor(Arc::new(executor) as Arc<dyn SystemExecutor>);
+    let plugin = PermissionsHardeningPlugin::new();
+
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
+
+    assert!(
+        result
+            .scan_unchecked
+            .iter()
+            .any(|u| u.unchecked_reason.contains("/etc/shadow")),
+        "an unreadable /etc/shadow must be reported as unchecked, got unchecked={:?}",
+        result
+            .scan_unchecked
+            .iter()
+            .map(|u| &u.unchecked_check_id)
+            .collect::<Vec<_>>()
+    );
+}
