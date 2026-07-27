@@ -5,6 +5,8 @@
 //! - Account lockout policies (failed login attempts)
 //! - Password ageing policies (expiry, reuse prevention)
 
+mod login_defs;
+
 use async_trait::async_trait;
 use hardener_common::file_utils::{
     ConfigFormat, Duplicates, parse_config_value, set_config_directive,
@@ -697,7 +699,8 @@ impl HardeningPlugin for PamHardeningPlugin {
         // and only for a file that will actually be rewritten, so a compliant
         // host accumulates no backup churn in /etc.
         let pwquality_read = read_conf_classified(ctx, "/etc/security/pwquality.conf").await;
-        let pwquality_writable = conf_is_writable(
+        let pwquality_write = conf_is_writable(
+            ctx,
             "/etc/security/pwquality.conf",
             &pwquality_read,
             &mut changes,
@@ -711,7 +714,8 @@ impl HardeningPlugin for PamHardeningPlugin {
         let mut pwquality_changed = false;
 
         let login_defs_read = read_conf_classified(ctx, "/etc/login.defs").await;
-        let login_defs_writable = conf_is_writable(
+        let login_defs_write = conf_is_writable(
+            ctx,
             "/etc/login.defs",
             &login_defs_read,
             &mut changes,
@@ -790,8 +794,8 @@ impl HardeningPlugin for PamHardeningPlugin {
             // and refuses per directive below, which is the same rule applied
             // at its own read site.
             let file_writable = match directive.pam_config_file {
-                PamConfigFile::PwQuality => pwquality_writable,
-                PamConfigFile::LoginDefs => login_defs_writable,
+                PamConfigFile::PwQuality => pwquality_write.allowed,
+                PamConfigFile::LoginDefs => login_defs_write.allowed,
                 _ => true,
             };
             if !file_writable {
@@ -889,7 +893,9 @@ impl HardeningPlugin for PamHardeningPlugin {
                     }
 
                     let read = read_conf_classified(ctx, path).await;
-                    if !conf_is_writable(path, &read, &mut changes, &mut all_success).await {
+                    let write =
+                        conf_is_writable(ctx, path, &read, &mut changes, &mut all_success).await;
+                    if !write.allowed {
                         continue;
                     }
                     // Reachable only for a confirmed absence with no vendor
@@ -910,7 +916,9 @@ impl HardeningPlugin for PamHardeningPlugin {
                         Duplicates::Remove,
                     );
 
-                    if backup_and_write(ctx, path, path, &updated, &mut changes).await {
+                    if backup_and_write(ctx, path, path, &updated, write.create_mode, &mut changes)
+                        .await
+                    {
                         changes.push(Change {
                             change_type: ChangeType::ConfigFile,
                             change_description: format!(
@@ -937,12 +945,13 @@ impl HardeningPlugin for PamHardeningPlugin {
         // runs on contents that were never read, and a second, local check
         // costs nothing.
         if pwquality_changed
-            && pwquality_writable
+            && pwquality_write.allowed
             && !write_changed_conf(
                 ctx,
                 "/etc/security/pwquality.conf",
                 "pwquality.conf",
                 &pwquality_content,
+                pwquality_write.create_mode,
                 &mut changes,
             )
             .await
@@ -951,12 +960,13 @@ impl HardeningPlugin for PamHardeningPlugin {
         }
 
         if login_defs_changed
-            && login_defs_writable
+            && login_defs_write.allowed
             && !write_changed_conf(
                 ctx,
                 "/etc/login.defs",
                 "login.defs",
                 &login_defs_content,
+                login_defs_write.create_mode,
                 &mut changes,
             )
             .await
@@ -1537,45 +1547,50 @@ async fn read_conf_classified(ctx: &Context, path: &str) -> ConfRead {
     }
 }
 
-/// Whether apply may write `path`, recording the refusal when it may not.
+/// Whether apply may write `path`, and how, recording the refusal when it may
+/// not.
 ///
-/// Two refusals in one place, called by every site that could write one of this
+/// One decision in one place, called by every site that could write one of this
 /// plugin's configuration files. A file whose contents could not be read must
 /// not be rewritten, because merging directives into an empty buffer replaces
-/// the host's settings with ours. A file that is absent must not be created
-/// when its existence would mask a vendor file. Both mark the run unsuccessful:
-/// a run that hardened nothing has not earned a clean result.
+/// the host's settings with ours; that marks the run unsuccessful, since a run
+/// that hardened nothing has not earned a clean result. A file whose content
+/// came from the vendor layer is written, carrying that content with it, so the
+/// settings this plugin does not manage survive the edit.
 async fn conf_is_writable(
+    ctx: &Context,
     path: &str,
     read: &ConfRead,
     changes: &mut Vec<Change>,
     all_success: &mut bool,
-) -> bool {
+) -> ConfWrite {
     match read {
-        ConfRead::Content(_, ConfigLayer::Admin) => true,
-        // The content came from `/usr/etc`, so the file under `/etc` does not
-        // exist. Editing this buffer and writing it to `/etc` is exactly the
-        // materialise-then-edit path that preserves the vendor's settings, and
-        // it is deliberately not done here: it needs the file mode set
-        // explicitly, which is its own change. Until then this refuses, which
-        // is what 1.5.1 shipped and disclosed.
+        ConfRead::Content(_, ConfigLayer::Admin) => ConfWrite::allowed(),
+        // The content came from `/usr/etc`, so no file exists under `/etc` yet
+        // and the buffer the caller holds is the vendor's. Writing that buffer
+        // creates the `/etc` copy with every vendor setting intact, and the
+        // managed directives are edited into it, so the whole-file override
+        // masks nothing. 1.5.1 refused this write instead, which kept the
+        // vendor settings by leaving the host unhardened.
         ConfRead::Content(_, ConfigLayer::Vendor) => {
             let vendor = vendor_path_for(path).unwrap_or_else(|| path.to_string());
-            warn!("Refusing to create {}: it would mask {}", path, vendor);
-            *all_success = false;
+            info!("Creating {} from {} before editing it", path, vendor);
             changes.push(Change {
                 change_type: ChangeType::ConfigFile,
                 change_description: format!(
-                    "Refused to create {path}: this host keeps vendor configuration in \
-                     {vendor}, and {path} overrides it as a whole file rather than per \
-                     directive, so creating a short one would silence every setting \
-                     {vendor} makes. Copy {vendor} to {path} first, then re-run."
+                    "Creating {path} from {vendor} so the settings it makes survive: this \
+                     host keeps vendor configuration in {vendor}, and {path} overrides it as \
+                     a whole file rather than per directive"
                 ),
-                change_success: false,
-                change_error: Some(format!("would mask {vendor}")),
+                change_success: true,
+                change_error: None,
             });
-            false
+            ConfWrite {
+                allowed: true,
+                create_mode: Some(login_defs::mode_for_copy_of(ctx, &vendor).await),
+            }
         }
+        ConfRead::Absent => ConfWrite::allowed(),
         // Which layer failed decides the advice. An unreadable `/etc` file is
         // the one in force and rewriting it would discard settings this run
         // cannot see. A vendor layer whose existence could not be determined is
@@ -1597,7 +1612,7 @@ async fn conf_is_writable(
                 change_success: false,
                 change_error: Some(reason.clone()),
             });
-            false
+            ConfWrite::refused()
         }
         ConfRead::Unreadable {
             path: vendor,
@@ -1619,13 +1634,41 @@ async fn conf_is_writable(
                 change_success: false,
                 change_error: Some(reason.clone()),
             });
-            false
+            ConfWrite::refused()
         }
-        // Absence was confirmed at both layers, so there is no vendor file to
-        // mask and creating this one is correct. The separate existence probe
-        // that used to establish that is gone: the layered read already
-        // performed it, and two copies of one rule is how they diverge.
-        ConfRead::Absent => true,
+    }
+}
+
+/// Whether apply may write a file, and the mode to give it if the write creates
+/// it.
+///
+/// `create_mode` exists because
+/// [`hardener_common::file_utils::update_file_atomically`] restores an
+/// *original* mode, and a file being created has none, so it otherwise keeps
+/// whatever mode the temporary file happened to have. A copy of a vendor file
+/// that lands 0600 against the vendor's 0644 is unreadable to the ordinary-user
+/// tools that consume it, which is a configuration that appears to apply and
+/// does not.
+struct ConfWrite {
+    allowed: bool,
+    create_mode: Option<u32>,
+}
+
+impl ConfWrite {
+    /// Write it as it stands, keeping whatever mode it already has.
+    fn allowed() -> Self {
+        Self {
+            allowed: true,
+            create_mode: None,
+        }
+    }
+
+    /// Do not write it. The reason is already recorded as a failed change.
+    fn refused() -> Self {
+        Self {
+            allowed: false,
+            create_mode: None,
+        }
     }
 }
 
@@ -1832,13 +1875,15 @@ async fn backup_and_write(
     path: &str,
     file_label: &str,
     content: &str,
+    create_mode: Option<u32>,
     changes: &mut Vec<Change>,
 ) -> bool {
     // A file that is not there has nothing to back up, and cp on a missing
     // source fails. Absence is an ordinary case: creating the file is correct.
     // Fail closed, so only a CONFIRMED absence skips the backup. An existence
     // probe that errors, or that says the file is present, still requires one.
-    let needs_backup = !matches!(ctx.executor().path_exists(Path::new(path)).await, Ok(false));
+    let creating = matches!(ctx.executor().path_exists(Path::new(path)).await, Ok(false));
+    let needs_backup = !creating;
 
     if needs_backup {
         match create_config_backup(ctx, path).await {
@@ -1864,6 +1909,12 @@ async fn backup_and_write(
     match ctx.executor().write_file(Path::new(path), content).await {
         Ok(_) => {
             info!("Successfully wrote {}", path);
+            // A file that already existed keeps the mode it had, restored by
+            // `update_file_atomically`. One being created has no original mode
+            // to restore, so it wears the temporary file's until this sets it.
+            if let Some(mode) = create_mode.filter(|_| creating) {
+                apply_create_mode(ctx, path, mode, changes).await;
+            }
             true
         }
         Err(e) => {
@@ -1887,9 +1938,10 @@ async fn write_changed_conf(
     path: &str,
     file_label: &str,
     content: &str,
+    create_mode: Option<u32>,
     changes: &mut Vec<Change>,
 ) -> bool {
-    if !backup_and_write(ctx, path, file_label, content, changes).await {
+    if !backup_and_write(ctx, path, file_label, content, create_mode, changes).await {
         return false;
     }
     changes.push(Change {
@@ -1899,6 +1951,45 @@ async fn write_changed_conf(
         change_error: None,
     });
     true
+}
+
+/// Gives a newly created configuration file its intended mode.
+///
+/// Not fatal when it fails: the settings are in force either way, and refusing
+/// the whole apply over a permission bit would leave the host less hardened for
+/// a lesser problem. It is recorded rather than only logged, because a file
+/// that ordinary-user tools cannot read is a real gap and the operator has to
+/// be able to see it.
+async fn apply_create_mode(ctx: &Context, path: &str, mode: u32, changes: &mut Vec<Change>) {
+    let octal = format!("{mode:o}");
+    match ctx
+        .executor()
+        .execute_command("chmod", &[&octal, path])
+        .await
+    {
+        Ok(output) if output.success() => {}
+        Ok(output) => {
+            warn!(
+                "Could not set mode {} on {}: {}",
+                octal, path, output.stderr
+            );
+            changes.push(Change {
+                change_type: ChangeType::ConfigFile,
+                change_description: format!("Could not set mode {octal} on {path}"),
+                change_success: false,
+                change_error: Some(output.stderr.trim().to_string()),
+            });
+        }
+        Err(e) => {
+            warn!("Could not set mode {} on {}: {}", octal, path, e);
+            changes.push(Change {
+                change_type: ChangeType::ConfigFile,
+                change_description: format!("Could not set mode {octal} on {path}"),
+                change_success: false,
+                change_error: Some(e.to_string()),
+            });
+        }
+    }
 }
 
 /// Creates a timestamped backup of a configuration file.

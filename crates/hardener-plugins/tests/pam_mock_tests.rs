@@ -2203,43 +2203,105 @@ PASS_WARN_AGE   7
 ";
 
 #[tokio::test]
-async fn apply_refuses_to_create_an_etc_file_that_would_mask_a_vendor_file() {
+async fn apply_materialises_the_vendor_file_before_editing_it() {
     // openSUSE keeps vendor configuration in /usr/etc and reserves /etc for
     // administrator overrides, and that override is whole-file rather than per
     // directive. Creating a three-directive /etc/login.defs therefore silences
     // every other key the vendor file sets, including ENCRYPT_METHOD and
-    // UMASK. Hardening three settings by disabling the rest is not hardening.
-    let executor = secure_pam_executor_base()
-        .with_file("/etc/security/faillock.conf", "deny = 3\n")
-        .without_file("/etc/login.defs")
-        .with_file("/usr/etc/login.defs", VENDOR_LOGIN_DEFS);
-    let executor = Arc::new(executor);
+    // UMASK. Hardening three settings by disabling the rest is not hardening,
+    // so the vendor copy is carried over first and the managed directives are
+    // edited into that copy.
+    let executor = Arc::new(
+        secure_pam_executor_base()
+            .with_file("/etc/security/faillock.conf", "deny = 3\n")
+            .without_file("/etc/login.defs")
+            .with_file("/usr/etc/login.defs", VENDOR_LOGIN_DEFS)
+            .with_command_program(
+                "chmod",
+                hardener_core::CommandOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            ),
+    );
     let mut ctx = Context::with_executor(executor.clone());
-    let plugin = PamHardeningPlugin::new();
 
-    let result = plugin
+    let result = PamHardeningPlugin::new()
         .apply(&mut ctx, &PluginConfig::default())
         .await
         .expect("apply must run rather than abort");
 
     let log = executor.log();
+    let written = log
+        .files_written
+        .iter()
+        .find(|(path, _)| path.to_str() == Some("/etc/login.defs"))
+        .map(|(_, content)| content.clone())
+        .unwrap_or_else(|| {
+            panic!(
+                "login.defs must be written, not refused; wrote: {:?}",
+                log.files_written
+            )
+        });
+    for key in ["UMASK", "ENCRYPT_METHOD", "PASS_MIN_DAYS", "PASS_WARN_AGE"] {
+        assert!(
+            written.contains(key),
+            "materialising must preserve every vendor key; {key} is missing from: {written}"
+        );
+    }
     assert!(
-        !log.files_written
-            .iter()
-            .any(|(written, _)| written.to_str() == Some("/etc/login.defs")),
-        "creating /etc/login.defs masks the vendor file wholesale, but apply wrote: {:?}",
-        log.files_written
+        written.contains("PASS_MAX_DAYS 90"),
+        "the managed directive must still be applied to the copy: {written}"
     );
     assert!(
-        !result.apply_success,
-        "a refusal to harden must be reported, not silently swallowed"
-    );
-    assert!(
-        result.apply_changes.iter().any(|change| {
-            !change.change_success && change.change_description.contains("/usr/etc/login.defs")
-        }),
-        "the refusal must name the vendor file it would have masked, got: {:?}",
+        result.apply_success,
+        "the host is hardened and the vendor settings survive: {:?}",
         result.apply_changes
+    );
+}
+
+#[tokio::test]
+async fn a_materialised_file_wears_the_vendor_mode_not_the_temporary_file_s() {
+    // update_file_atomically restores an *original* mode, and a file being
+    // created has none, so it keeps whatever the temporary file had. That is
+    // how the tool's /etc/security/pwquality.conf landed 0600 on openSUSE
+    // against the vendor's 0644, and at 0600 pwscore and pwmake cannot read it
+    // and silently fall back to their built-in defaults: a configuration that
+    // appears to apply and does not.
+    let executor = Arc::new(
+        secure_pam_executor_base()
+            .with_file("/etc/security/faillock.conf", "deny = 3\n")
+            .without_file("/etc/login.defs")
+            .with_file("/usr/etc/login.defs", VENDOR_LOGIN_DEFS)
+            .with_command_program(
+                "chmod",
+                hardener_core::CommandOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            ),
+    );
+    let mut ctx = Context::with_executor(executor.clone());
+
+    PamHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply must run");
+
+    assert!(
+        executor
+            .log()
+            .commands_executed
+            .iter()
+            .any(|(command, args)| {
+                command == "chmod"
+                    && args.iter().any(|a| a == "/etc/login.defs")
+                    && args.iter().any(|a| a.contains("644"))
+            }),
+        "the created file must be given the vendor file's mode, commands: {:?}",
+        executor.log().commands_executed
     );
 }
 
@@ -2280,45 +2342,59 @@ async fn apply_refuses_when_it_cannot_tell_whether_a_vendor_file_exists() {
 }
 
 #[tokio::test]
-async fn apply_refuses_to_create_a_security_conf_that_would_mask_a_vendor_file() {
+async fn apply_materialises_a_vendor_security_conf_before_editing_it() {
     // The same door, on the other file kind. faillock.conf is written through
-    // the SecurityConf arm, which has its own read and its own absence branch,
-    // so guarding login.defs alone would leave this one open.
-    //
+    // the SecurityConf arm, which has its own read and its own write, so
+    // handling login.defs alone would leave this one masking its vendor copy.
     // The vendor value breaches the threshold, so a write is genuinely wanted
-    // and the refusal is what stops it. A compliant vendor value is a different
-    // case entirely, covered by the test below: nothing needs writing, so there
-    // is nothing to refuse.
-    let executor = secure_pam_executor_base().with_file(
-        "/usr/etc/security/faillock.conf",
-        "deny = 10\naudit\nsilent\n",
+    // and the vendor's other settings have to survive it.
+    let executor = Arc::new(
+        secure_pam_executor_base()
+            .with_file(
+                "/usr/etc/security/faillock.conf",
+                "deny = 10\naudit\nsilent\n",
+            )
+            .with_command_program(
+                "chmod",
+                hardener_core::CommandOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            ),
     );
-    let executor = Arc::new(executor);
     let mut ctx = Context::with_executor(executor.clone());
-    let plugin = PamHardeningPlugin::new();
 
-    let result = plugin
+    let result = PamHardeningPlugin::new()
         .apply(&mut ctx, &PluginConfig::default())
         .await
         .expect("apply must run rather than abort");
 
     let log = executor.log();
+    let written = log
+        .files_written
+        .iter()
+        .find(|(path, _)| path.to_str() == Some("/etc/security/faillock.conf"))
+        .map(|(_, content)| content.clone())
+        .unwrap_or_else(|| {
+            panic!(
+                "faillock.conf must be written, not refused; wrote: {:?}",
+                log.files_written
+            )
+        });
+    for key in ["audit", "silent"] {
+        assert!(
+            written.contains(key),
+            "the vendor's unmanaged settings must survive; {key} is missing from: {written}"
+        );
+    }
     assert!(
-        !log.files_written
-            .iter()
-            .any(|(written, _)| written.to_str() == Some("/etc/security/faillock.conf")),
-        "creating /etc/security/faillock.conf masks the vendor file, but apply wrote: {:?}",
-        log.files_written
+        written.contains("deny = 5"),
+        "the managed directive must be clamped into the copy: {written}"
     );
-    assert!(!result.apply_success, "the refusal must be reported");
     assert!(
-        result.apply_changes.iter().any(|change| {
-            !change.change_success
-                && change
-                    .change_description
-                    .contains("/usr/etc/security/faillock.conf")
-        }),
-        "the refusal must name the vendor file, got: {:?}",
+        result.apply_success,
+        "the host is hardened and the vendor settings survive: {:?}",
         result.apply_changes
     );
 }
