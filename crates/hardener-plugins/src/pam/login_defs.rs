@@ -85,10 +85,20 @@ fn keys_set_by(content: &str) -> impl Iterator<Item = &str> {
 /// The finding naming keys an `/etc/login.defs` masks, given a non-empty
 /// difference from [`masked_keys`].
 ///
-/// `Severity::Low` and no compliance mapping: the masked keys have reverted to
-/// shadow's built-in defaults, which is worth knowing and is occasionally
-/// deliberate, but no framework has a control for it and a mapping here would
-/// let a housekeeping observation drive a control to Fail.
+/// `Severity::Medium`, because reverting to shadow's built-in defaults is not
+/// housekeeping. Measured on an openSUSE Leap container: masking a vendor file
+/// that sets `ENCRYPT_METHOD SHA512` drops password hashing to DES, which
+/// truncates every password at eight characters. Every release up to 1.5.0
+/// wrote exactly such a file there, and this tool cannot repair the damage,
+/// because an `/etc` file that already exists is edited rather than replaced.
+/// This finding is the only thing that tells such an operator anything, and at
+/// `Low` it would not reach them: the scheduler drops findings below its
+/// `min_severity`, whose default is `medium` (`scheduler/src/runner.rs:376`,
+/// `config.rs:58`), so a fleet host with DES passwords would record nothing.
+///
+/// Still no compliance mapping. No framework has a control for a masked
+/// configuration file, and a mapping here would let this drive a control to
+/// Fail on evidence no framework asked for.
 ///
 /// The remediation is deliberately manual. `apply` carries the vendor file over
 /// only when `/etc` is confirmed absent; once the `/etc` file exists it is the
@@ -110,15 +120,17 @@ pub(super) fn masked_keys_finding(vendor_path: &str, keys: &[String]) -> Finding
              exists, every key it omits falls back to shadow's built-in default \
              rather than to the vendor's value."
             .to_string(),
-        finding_impact: "Settings the distribution chose are silently not in force, among them \
-             the password hashing method and the default umask for new sessions."
+        finding_impact: "Settings the distribution chose are silently not in force. Where \
+             ENCRYPT_METHOD is among them, shadow falls back to DES, which truncates every \
+             password set afterwards at eight characters however long it was typed; where \
+             HOME_MODE is, new home directories are created world readable."
             .to_string(),
         finding_recommended_value: format!("the values {vendor_path} sets for {named}"),
         finding_remediation_steps: vec![format!(
             "Copy {named} and their values from {vendor_path} into /etc/login.defs, \
              or remove from /etc/login.defs any key you did not mean to override"
         )],
-        finding_severity: Severity::Low,
+        finding_severity: Severity::Medium,
         finding_title: "Vendor login.defs keys masked by /etc/login.defs".to_string(),
         finding_compliance: vec![],
         // No directive to match an exception against: this names a set of keys

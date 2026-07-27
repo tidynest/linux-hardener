@@ -2592,9 +2592,10 @@ async fn scan_reports_vendor_keys_the_admin_file_masks() {
     );
     assert_eq!(
         drift.finding_severity,
-        Severity::Low,
-        "drift is worth telling the operator about, but it is not itself a \
-         misconfiguration this tool can rank against a benchmark"
+        Severity::Medium,
+        "masking a vendor login.defs was measured dropping password hashing to \
+         DES on openSUSE, and the scheduler drops anything below Medium, so at \
+         Low a fleet host with DES passwords would record nothing"
     );
     assert!(
         drift.finding_compliance.is_empty(),
