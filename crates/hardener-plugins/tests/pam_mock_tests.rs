@@ -2535,3 +2535,98 @@ async fn a_compliant_vendor_security_conf_needs_neither_a_write_nor_a_refusal() 
         result.apply_changes
     );
 }
+
+#[tokio::test]
+async fn scan_reports_vendor_keys_the_admin_file_masks() {
+    // The override is whole-file, so an /etc/login.defs setting one key silences
+    // every other key the vendor file sets. Nothing in the tool said so: the
+    // scan read the file in force, found the directives it manages, and reported
+    // a host whose ENCRYPT_METHOD and UMASK had quietly reverted to shadow's
+    // built-in defaults as clean.
+    //
+    // It fires whoever caused the masking. An operator's hand-rolled file, a
+    // vendor that adds a key in a later package, and an older release of this
+    // tool all produce the same drift, and the scan cannot tell them apart.
+    let executor = Arc::new(
+        secure_pam_executor()
+            .with_file("/etc/login.defs", "PASS_MAX_DAYS 90\n")
+            .with_file("/usr/etc/login.defs", VENDOR_LOGIN_DEFS),
+    );
+    let ctx = Context::with_executor(executor.clone());
+
+    let result = PamHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan runs");
+
+    let drift = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "pam-login-defs-masked-keys")
+        .unwrap_or_else(|| {
+            panic!(
+                "a masked vendor key must be reported; got: {:?}",
+                result
+                    .scan_findings
+                    .iter()
+                    .map(|f| f.finding_id.as_str())
+                    .collect::<Vec<_>>()
+            )
+        });
+
+    for key in ["ENCRYPT_METHOD", "UMASK", "PASS_MIN_DAYS", "PASS_WARN_AGE"] {
+        assert!(
+            drift.finding_current_value.contains(key),
+            "the finding must name every masked key; {key} is missing from: {}",
+            drift.finding_current_value
+        );
+    }
+    // PASS_MAX_DAYS is set in /etc, so the vendor's value is overridden rather
+    // than lost. Listing it would turn every layered host into a wall of keys
+    // that are working as intended, and would pass an implementation that
+    // reports the vendor file's contents instead of the difference.
+    assert!(
+        !drift.finding_current_value.contains("PASS_MAX_DAYS"),
+        "a key the admin file sets is overridden, not masked: {}",
+        drift.finding_current_value
+    );
+    assert_eq!(
+        drift.finding_severity,
+        Severity::Low,
+        "drift is worth telling the operator about, but it is not itself a \
+         misconfiguration this tool can rank against a benchmark"
+    );
+    assert!(
+        drift.finding_compliance.is_empty(),
+        "no framework maps this, and a mapping would let it drive a control to \
+         Fail: {:?}",
+        drift.finding_compliance
+    );
+}
+
+#[tokio::test]
+async fn nothing_is_reported_when_the_admin_file_sets_every_vendor_key() {
+    // Opposite direction: this passes against an implementation that never
+    // reports anything, so it is not evidence of the fix. It is here to stop the
+    // finding firing on the mere presence of a vendor file, which would put a
+    // permanent Low on every openSUSE host that has taken a full copy.
+    let executor = Arc::new(
+        secure_pam_executor()
+            .with_file("/etc/login.defs", VENDOR_LOGIN_DEFS)
+            .with_file("/usr/etc/login.defs", VENDOR_LOGIN_DEFS),
+    );
+    let ctx = Context::with_executor(executor.clone());
+
+    let result = PamHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan runs");
+
+    assert!(
+        !result
+            .scan_findings
+            .iter()
+            .any(|f| f.finding_id == "pam-login-defs-masked-keys"),
+        "an admin file that keeps every vendor key masks nothing"
+    );
+}

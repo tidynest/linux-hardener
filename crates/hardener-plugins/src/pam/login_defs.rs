@@ -13,7 +13,10 @@
 //! directives into that copy, so nothing the vendor set is lost. 1.5.1 refused
 //! the write instead, which was honest but left the host unhardened.
 
+use hardener_common::types::{FindingCategory, Severity};
 use hardener_core::context::Context;
+use hardener_core::plugin::Finding;
+use std::collections::BTreeSet;
 use std::path::Path;
 
 /// Mode given to a file created from a vendor copy whose own mode could not be
@@ -52,11 +55,144 @@ pub(super) async fn mode_for_copy_of(ctx: &Context, vendor_path: &str) -> u32 {
     }
 }
 
+/// The keys `vendor` sets that `admin` does not, sorted and named once each.
+///
+/// The comparison is a set difference over the first whitespace-delimited token
+/// of every line that sets something, which is the key in both the `NAME VALUE`
+/// form `login.defs` takes and the `name = value` form the `security/*.conf`
+/// files take. Case is significant, as it is to shadow: an `/etc` file writing
+/// `umask 022` sets nothing shadow reads, so the vendor's `UMASK` really is
+/// masked and naming it is correct.
+pub(super) fn masked_keys(admin: &str, vendor: &str) -> Vec<String> {
+    let admin_keys: BTreeSet<&str> = keys_set_by(admin).collect();
+    keys_set_by(vendor)
+        .filter(|key| !admin_keys.contains(key))
+        .map(str::to_string)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+/// The key of every line that sets one, skipping comments and blank lines.
+fn keys_set_by(content: &str) -> impl Iterator<Item = &str> {
+    content
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .filter_map(|line| line.split_whitespace().next())
+}
+
+/// The finding naming keys an `/etc/login.defs` masks, given a non-empty
+/// difference from [`masked_keys`].
+///
+/// `Severity::Low` and no compliance mapping: the masked keys have reverted to
+/// shadow's built-in defaults, which is worth knowing and is occasionally
+/// deliberate, but no framework has a control for it and a mapping here would
+/// let a housekeeping observation drive a control to Fail.
+///
+/// The remediation is deliberately manual. `apply` carries the vendor file over
+/// only when `/etc` is confirmed absent; once the `/etc` file exists it is the
+/// host's own and this tool edits the directives it manages rather than
+/// importing keys the operator may have dropped on purpose. Telling the
+/// operator to run `apply` would be advice that does nothing.
+pub(super) fn masked_keys_finding(vendor_path: &str, keys: &[String]) -> Finding {
+    let named = keys.join(", ");
+    Finding {
+        finding_id: "pam-login-defs-masked-keys".to_string(),
+        finding_category: FindingCategory::Authentication,
+        finding_current_value: named.clone(),
+        finding_description: format!(
+            "/etc/login.defs masks {count} key(s) that {vendor_path} sets: {named}",
+            count = keys.len(),
+        ),
+        finding_explanation: "A distribution that ships vendor configuration under /usr/etc is \
+             overridden whole-file, not per directive: once /etc/login.defs \
+             exists, every key it omits falls back to shadow's built-in default \
+             rather than to the vendor's value."
+            .to_string(),
+        finding_impact: "Settings the distribution chose are silently not in force, among them \
+             the password hashing method and the default umask for new sessions."
+            .to_string(),
+        finding_recommended_value: format!("the values {vendor_path} sets for {named}"),
+        finding_remediation_steps: vec![format!(
+            "Copy {named} and their values from {vendor_path} into /etc/login.defs, \
+             or remove from /etc/login.defs any key you did not mean to override"
+        )],
+        finding_severity: Severity::Low,
+        finding_title: "Vendor login.defs keys masked by /etc/login.defs".to_string(),
+        finding_compliance: vec![],
+        // No directive to match an exception against: this names a set of keys
+        // the tool does not manage, so there is no setting for a configured
+        // exception to be about.
+        finding_policy_exception: None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use hardener_common::executor::{FileMetadata, MockExecutor};
     use std::sync::Arc;
+
+    /// A vendor file of the shape openSUSE ships, trimmed to the keys the
+    /// assertions need.
+    const VENDOR: &str = "\
+UMASK           022
+ENCRYPT_METHOD  yescrypt
+PASS_MAX_DAYS   99999
+PASS_MIN_DAYS   0
+PASS_WARN_AGE   7
+";
+
+    #[test]
+    fn a_key_the_admin_file_omits_is_masked() {
+        assert_eq!(
+            masked_keys("PASS_MAX_DAYS 90\n", VENDOR),
+            vec![
+                "ENCRYPT_METHOD".to_string(),
+                "PASS_MIN_DAYS".to_string(),
+                "PASS_WARN_AGE".to_string(),
+                "UMASK".to_string(),
+            ],
+            "the difference is vendor minus admin, sorted, and PASS_MAX_DAYS is \
+             overridden rather than lost"
+        );
+    }
+
+    #[test]
+    fn a_commented_key_is_not_a_key_on_either_side() {
+        // Sharper than it looks. A commented key in /etc does not set anything,
+        // so the vendor's value is still masked and must still be named; a
+        // commented key in the vendor file was never in force, so naming it
+        // would invent drift. Blank and whitespace-only lines are neither.
+        assert_eq!(
+            masked_keys(
+                "# ENCRYPT_METHOD sha512\n\n   \n",
+                "ENCRYPT_METHOD yescrypt\n"
+            ),
+            vec!["ENCRYPT_METHOD".to_string()],
+            "a commented admin key sets nothing, so the vendor value is masked"
+        );
+        assert!(
+            masked_keys("", "  # UMASK 022\n\n").is_empty(),
+            "a commented vendor key is not in force and cannot be masked"
+        );
+    }
+
+    #[test]
+    fn a_key_the_vendor_repeats_is_named_once() {
+        assert_eq!(
+            masked_keys("", "UMASK 022\nUMASK 027\n"),
+            vec!["UMASK".to_string()]
+        );
+    }
+
+    #[test]
+    fn an_admin_file_keeping_every_vendor_key_masks_nothing() {
+        // Opposite direction: true of an implementation that reports nothing at
+        // all, so it is not evidence. It pins that a full copy stays quiet.
+        assert!(masked_keys(VENDOR, VENDOR).is_empty());
+    }
 
     #[tokio::test]
     async fn the_copy_takes_the_vendor_file_s_permission_bits() {

@@ -571,6 +571,36 @@ impl HardeningPlugin for PamHardeningPlugin {
         // it already had.
         let login_defs_read = read_conf_classified(ctx, "/etc/login.defs").await;
 
+        // Drift between the layers. Only an admin file in force can mask
+        // anything: if the vendor file is the one being read there is no
+        // override, and if there is no vendor file there is nothing to lose.
+        // Reported whoever caused it, so it also catches an operator's
+        // hand-rolled file and a vendor that adds a key in a later package.
+        if let ConfRead::Content(admin, ConfigLayer::Admin) = &login_defs_read
+            && let Some(vendor_path) = vendor_path_for("/etc/login.defs")
+        {
+            // The layer this read reports is meaningless: read_conf_classified
+            // attributes a layer by which probe answered, and this path names
+            // the vendor file directly. Its three outcomes are what is wanted.
+            match read_conf_classified(ctx, &vendor_path).await {
+                ConfRead::Content(vendor, _) => {
+                    let masked = login_defs::masked_keys(admin, &vendor);
+                    if !masked.is_empty() {
+                        findings.push(login_defs::masked_keys_finding(&vendor_path, &masked));
+                    }
+                }
+                // No vendor file, so the admin file masks nothing.
+                ConfRead::Absent => {}
+                // Whether anything is masked cannot be determined. Deliberately
+                // not an unchecked entry: those carry a plugin's declared
+                // coverage into ManualReview, which would let a housekeeping
+                // observation move compliance results.
+                ConfRead::Unreadable { path, reason, .. } => {
+                    warn!("Could not check {} for masked keys: {}", path, reason);
+                }
+            }
+        }
+
         // Check each PAM directive.
         for directive in PAM_DIRECTIVES {
             if directive.pam_config_file == PamConfigFile::PamAuth {
