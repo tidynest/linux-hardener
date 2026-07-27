@@ -7,6 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `hardener rollback` now restores what the services plugin changed. That
+  plugin checkpointed `/etc/systemd/system` and `/usr/lib/systemd/system`,
+  neither of which was in the rollback allow-list, and rollback validates every
+  captured path before writing anything, so it aborted with "path outside
+  allowed directories" and restored nothing at all. Services rollback had never
+  worked. `/etc/systemd/system` is now allow-listed, and the packaged unit
+  directory is no longer captured: nothing this tool does writes there, and
+  keeping it out means a restore can never overwrite a distribution's unit
+  files with copies taken before a package update.
+- An `sshd_config` directive inside a `Match` block is no longer read as the
+  host's global setting. `Match Address 10.0.0.0/8` followed by
+  `PermitRootLogin no` was read back as though root login were closed
+  everywhere. Apply then found the target value apparently in place, wrote
+  nothing and recorded no change at all, leaving the real global directive at
+  sshd's compiled default while the tool reported the host compliant.
+- `hardener apply --plugin <name>` refuses a name that matches no plugin,
+  as `scan` already did. It previously dropped such names, so
+  `hardener apply -p services` (the plural of a real plugin, matching nothing)
+  hardened nothing, printed nothing and exited 0. The same applies to
+  `batch apply` and `batch rollback`.
+- The audit plugin no longer overwrites its rules file after a backup that
+  failed. The backup ran only when an existence probe returned true, so a probe
+  that errored skipped it, and the `cp` exit code was never checked, so a failed
+  copy reported success and the write went ahead. A failed backup now aborts
+  before the write.
+- A failed service listing is reported instead of read as a clean host. It
+  degraded to zero findings, which is byte-identical to a host with nothing
+  wrong; every managed service is now reported as unchecked so a compliance
+  report renders ManualReview.
+- A critical path whose permissions cannot be read is reported as unchecked.
+  `/etc/shadow`, `/etc/gshadow`, `/etc/sudoers`, `/etc/passwd`, `/root` and
+  `/etc/ssh` previously produced neither a finding nor an unchecked entry when
+  unreadable, which is silence indistinguishable from a verified clean result.
+- `LocalExecutor::path_exists` distinguishes "absent" from "could not tell".
+  It answered with `Path::exists`, which folds every error into `false`, so a
+  path the process could not stat read as confirmed absence. That left the
+  rollback guard protecting the account databases unreachable on a local target.
+- A plugin that reports its own scan failed is named in the output rather than
+  rendering as a plugin with no findings.
+- The CLI installs a log subscriber. Without one the tracing macros were a
+  no-op, so every warning the engine raised was discarded, including warnings
+  that have no `Change` counterpart and were the only record that a step
+  degraded. Records go to stderr, so `--format json` stays parseable.
+- `--format json` output is a single document again. An informational message
+  was written to stdout ahead of the payload, so a strict parser rejected the
+  whole stream with "Extra data" even though the payload itself was well formed.
+
+### Known issues
+- **A drop-in under `/etc/ssh/sshd_config.d/` silently overrides what this tool
+  writes.** The shipped `sshd_config` on several distributions carries
+  `Include /etc/ssh/sshd_config.d/*.conf` on line 2, sshd uses the first value
+  it obtains for a keyword, and everything this tool writes lands below that
+  line. The tool reads only the main file, so it reports the value it wrote
+  while sshd enforces the drop-in's. Verified directly: with
+  `PermitRootLogin no` in the main file and a drop-in setting `yes`,
+  `sshd -T` reports `yes`, and `sshd -t` accepts the file without complaint.
+  Check your drop-ins with `sshd -T | grep -i <directive>` before trusting a
+  compliant result for `PermitRootLogin`, `PasswordAuthentication`,
+  `PermitEmptyPasswords`, `MaxAuthTries`, `X11Forwarding`,
+  `ClientAliveInterval`, `ClientAliveCountMax`, `KexAlgorithms`, `Ciphers` or
+  `MACs`.
+- `scan --format json` still omits `scan_success` and `scan_error`, so a
+  consumer of the JSON cannot yet distinguish a plugin whose scan failed from a
+  compliant host. The text output now names such a plugin.
+
 ## [1.5.0] - 2026-07-27
 
 ### Added

@@ -101,6 +101,23 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
         match scan {
             Ok(results) => {
                 plugin_timings.push((metadata.plugin_name.clone(), results.scan_duration_us));
+                // A plugin can return Ok while reporting that its own scan
+                // failed, and such a result carries no findings, which renders
+                // exactly like a clean host. Say so rather than let the
+                // operator read silence as a pass.
+                if !results.scan_success {
+                    output::error(
+                        &opts.format,
+                        &format!(
+                            "Scan of {} did not complete: {}",
+                            metadata.plugin_name,
+                            results
+                                .scan_error
+                                .as_deref()
+                                .unwrap_or("reason not reported")
+                        ),
+                    );
+                }
                 // Filter findings by severity
                 let filtered_findings: Vec<_> = results
                     .scan_findings
