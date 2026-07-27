@@ -1,9 +1,56 @@
-> ### Please update to 1.5.0
+> ### Please update to 1.5.1
 >
 > **1.4.0 and earlier can delete account files during a rollback on a remote
 > host.** If you manage remote hosts over SSH, do not run `hardener rollback`
 > until you have upgraded. Local-only use was never affected. Details:
 > [GHSA-x4xp-32mf-xwjh](https://github.com/tidynest/linux-system-hardener/security/advisories/GHSA-x4xp-32mf-xwjh).
+>
+> ### If you hardened an openSUSE host with 1.5.0 or earlier, check three files
+>
+> openSUSE keeps vendor configuration under `/usr/etc` and reserves `/etc` for
+> your overrides, and that override replaces the vendor file **whole**, not
+> setting by setting. Every release up to and including 1.5.0 created a
+> three-line `/etc/login.defs`, which silenced the other 35 settings the vendor
+> file makes, `ENCRYPT_METHOD` and `UMASK` among them. `ENCRYPT_METHOD` chooses
+> the hashing algorithm for every password set afterwards. The same happened to
+> `/etc/security/faillock.conf` and `/etc/security/pwhistory.conf`.
+>
+> Check whether any of the three is unexpectedly short:
+>
+> ```bash
+> wc -l /etc/login.defs /etc/security/faillock.conf /etc/security/pwhistory.conf
+> ```
+>
+> A file of a few lines where `/usr/etc` holds a long one is this bug. Restore
+> the vendor file, then re-apply your intended values:
+>
+> ```bash
+> sudo cp /usr/etc/login.defs /etc/login.defs
+> ```
+>
+> **1.5.1 refuses to create these files rather than masking the vendor copy**,
+> so openSUSE PAM hardening is declined until layered configuration is
+> supported. Other distributions were never affected.
+>
+> ### If you filed or sent a compliance report, regenerate it
+>
+> A compliance report decides `Pass` from what a plugin declares it covers plus
+> the absence of a finding. Up to and including 1.5.0, a plugin that produced no
+> evidence therefore passed every control it covers, on the silence its own
+> absence caused. From the command line this needed a plugin's scan to fail. **In
+> the desktop it needed no failure at all**: disabling a plugin, or scanning a
+> subset, was enough for every control of every plugin that did not run to be
+> reported as satisfied.
+>
+> Any report you have kept, filed or forwarded may therefore state passes that
+> were never assessed. Desktop users should regenerate unconditionally:
+>
+> ```bash
+> sudo hardener report --framework cis
+> ```
+>
+> From 1.5.1 a plugin that contributed no evidence reports its controls as
+> **Manual Review** instead.
 >
 > ### If you hardened a host with 1.4.0 or earlier, check its password ageing
 >
@@ -32,7 +79,7 @@
 > ```
 >
 > A large number such as 99999 means the ageing policy is not in force. After
-> re-applying on 1.5.0 it should read 90.
+> re-applying on 1.5.0 or later it should read 90.
 >
 > ### Known issue: rollback does not restore systemd unit files
 >
@@ -46,7 +93,7 @@
 > sudo systemctl enable --now <service>
 > ```
 >
-> Fixed in the next release.
+> Fixed in 1.5.1.
 >
 > ---
 >
