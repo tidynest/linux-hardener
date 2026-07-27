@@ -596,20 +596,14 @@ impl HardeningPlugin for PamHardeningPlugin {
             // ~761-766).
             let target: String = match directive.pam_compare {
                 PamCompare::Exact => config
-                    .directives
-                    .get(directive.pam_directive_name)
-                    .map(|s| s.as_str())
-                    .unwrap_or(directive.pam_secure_value)
+                    .resolve_str(directive.pam_directive_name, directive.pam_secure_value)
                     .to_string(),
                 compare => {
                     let secure: i64 = directive
                         .pam_secure_value
                         .parse()
                         .expect("pam_secure_value must be a valid integer");
-                    let over = config
-                        .directives
-                        .get(directive.pam_directive_name)
-                        .and_then(|s| s.parse::<i64>().ok());
+                    let over = config.resolve_i64(directive.pam_directive_name);
                     clamp_target(compare, secure, over).to_string()
                 }
             };
@@ -800,11 +794,8 @@ impl HardeningPlugin for PamHardeningPlugin {
             }
 
             // Determine target value: user directive override or hardcoded baseline
-            let target_value = config
-                .directives
-                .get(directive.pam_directive_name)
-                .map(|s| s.as_str())
-                .unwrap_or(directive.pam_secure_value);
+            let target_value =
+                config.resolve_str(directive.pam_directive_name, directive.pam_secure_value);
 
             // A file whose current contents could not be read is never
             // rewritten, and that refusal was already recorded once, at read
@@ -859,10 +850,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                         .pam_secure_value
                         .parse()
                         .expect("pam_secure_value must be a valid integer");
-                    let over = config
-                        .directives
-                        .get(directive.pam_directive_name)
-                        .and_then(|s| s.parse::<i64>().ok());
+                    let over = config.resolve_i64(directive.pam_directive_name);
                     // Clamp so a per-host override can tighten but never loosen.
                     let target = clamp_target(directive.pam_compare, secure, over);
 
@@ -1145,11 +1133,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                     } else {
                         &login_defs
                     };
-                    let target_value = config
-                        .directives
-                        .get(d.pam_directive_name)
-                        .map(|s| s.as_str())
-                        .unwrap_or(d.pam_secure_value);
+                    let target_value = config.resolve_str(d.pam_directive_name, d.pam_secure_value);
                     // Absent reads as empty content, same as a confirmed-missing
                     // file always has: parsing finds nothing and the directive
                     // is honestly reported "(currently not set)" below. Only an
@@ -1201,10 +1185,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                         .pam_secure_value
                         .parse()
                         .expect("pam_secure_value must be a valid integer");
-                    let over = config
-                        .directives
-                        .get(d.pam_directive_name)
-                        .and_then(|s| s.parse::<i64>().ok());
+                    let over = config.resolve_i64(d.pam_directive_name);
                     let target = clamp_target(d.pam_compare, secure, over);
                     match &observed {
                         PamObserved::Value(v)

@@ -726,11 +726,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
             match self.read_sysctl(param_name, ctx).await {
                 Ok(actual_value) => {
                     // Directive override takes precedence over the built-in baseline.
-                    let target = config
-                        .directives
-                        .get(*param_name)
-                        .map(|s| s.as_str())
-                        .unwrap_or(expected_value);
+                    let target = config.resolve_str(param_name, expected_value);
                     if actual_value != target {
                         let policy_exception = config
                             .matching_exception(param_name, &actual_value)
@@ -845,11 +841,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
             }
 
             // Determine target value: user directive override or hardcoded baseline
-            let target_value = config
-                .directives
-                .get(*param_name)
-                .map(|s| s.as_str())
-                .unwrap_or(expected_value);
+            let target_value = config.resolve_str(param_name, expected_value);
 
             let path = format!("/proc/sys/{}", param_name.replace('.', "/"));
 
@@ -1038,11 +1030,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
             }
 
             // Determine target value for preview
-            let target_value = config
-                .directives
-                .get(*param_name)
-                .map(|s| s.as_str())
-                .unwrap_or(expected_value);
+            let target_value = config.resolve_str(param_name, expected_value);
 
             let path = format!("/proc/sys/{}", param_name.replace('.', "/"));
 

@@ -987,11 +987,8 @@ impl HardeningPlugin for SshHardeningPlugin {
             let current_value = effective.as_ref().map(|e| e.value.clone());
 
             // Directive override takes precedence over the built-in baseline.
-            let target = config
-                .directives
-                .get(directive.ssh_directive_name)
-                .map(|s| s.as_str())
-                .unwrap_or(directive.ssh_secure_value);
+            let target =
+                config.resolve_str(directive.ssh_directive_name, directive.ssh_secure_value);
 
             let is_insecure = match current_value {
                 Some(ref value) => value != target,
@@ -1192,11 +1189,8 @@ impl HardeningPlugin for SshHardeningPlugin {
             }
 
             // Determine target value: user directive override or hardcoded baseline
-            let target_value = config
-                .directives
-                .get(directive.ssh_directive_name)
-                .map(|s| s.as_str())
-                .unwrap_or(directive.ssh_secure_value);
+            let target_value =
+                config.resolve_str(directive.ssh_directive_name, directive.ssh_secure_value);
 
             // A drop-in read before this file already answers this directive,
             // so writing here cannot change what sshd uses. Only a drop-in
@@ -1665,10 +1659,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                     // Resolve the target the way apply and scan do: a config
                     // directive override wins over the hardcoded baseline.
                     let target = config
-                        .directives
-                        .get(directive.ssh_directive_name)
-                        .map(|s| s.as_str())
-                        .unwrap_or(directive.ssh_secure_value);
+                        .resolve_str(directive.ssh_directive_name, directive.ssh_secure_value);
 
                     // SSHD config is space-separated and case-insensitive.
                     let current_value = parse_config_value(

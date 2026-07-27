@@ -13,10 +13,24 @@ use hardener_common::{
     error::{HardeningError, Result},
     types::Severity,
 };
-use hardener_core::{ConfigLoader, Context, PluginManager, ScanResult};
+use hardener_core::{ConfigLoader, Context, HardenerConfig, PluginManager, ScanResult};
 use serde::Serialize;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
+
+/// The plugin ids a scan will actually cover, narrowed to what the config
+/// enables.
+///
+/// The session row naming a scan's plugins is written before any plugin runs,
+/// so it must be derived from the rule the scan itself obeys. Anything looser
+/// files a history row claiming plugins that never ran, and their absent
+/// findings then read as a clean result.
+fn scannable_plugins(selected: Vec<String>, config: &HardenerConfig) -> Vec<String> {
+    selected
+        .into_iter()
+        .filter(|id| config.is_plugin_enabled(id))
+        .collect()
+}
 
 /// Trigger source for a scan session.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -229,8 +243,21 @@ impl ScanRunner {
     ) -> Result<ScanSummary> {
         info!("Starting {} scan on host '{}'", trigger.as_str(), self.host);
 
+        // Loaded before the session row is written, because the config decides
+        // which plugins run and that row records which plugins a scan covered.
+        // No HardenerConfig is threaded through the scheduler yet, so this
+        // loads the same on-disk sources the CLI honours. The daemon keeps
+        // running on a load failure rather than stopping scheduled scans, but
+        // it must say so: plugins consume the config now, so a silent fallback
+        // would scan the raw baseline while appearing to honour the operator's
+        // directives and exceptions.
+        let hardener_config = ConfigLoader::new().load().unwrap_or_else(|e| {
+            warn!("Config load failed, scanning the secure baseline instead: {e}");
+            Default::default()
+        });
+
         // Determines which plugins to scan
-        let plugins_to_scan: Vec<String> = if self.plugins.is_empty() {
+        let selected: Vec<String> = if self.plugins.is_empty() {
             plugin_manager
                 .execution_order()
                 .map_err(|e| HardeningError::Plugin(e.to_string()))?
@@ -240,6 +267,7 @@ impl ScanRunner {
         } else {
             self.plugins.clone()
         };
+        let plugins_to_scan = scannable_plugins(selected, &hardener_config);
 
         // Create database session
         let session_id = self
@@ -248,17 +276,6 @@ impl ScanRunner {
             .await?;
 
         debug!("Created scan session {}", session_id);
-
-        // Execute scans. No HardenerConfig is threaded through the scheduler
-        // yet, so this loads the same on-disk sources the CLI honours. The
-        // daemon keeps running on a load failure rather than stopping scheduled
-        // scans, but it must say so: plugins consume the config now, so a
-        // silent fallback would scan the raw baseline while appearing to honour
-        // the operator's directives and exceptions.
-        let hardener_config = ConfigLoader::new().load().unwrap_or_else(|e| {
-            warn!("Config load failed, scanning the secure baseline instead: {e}");
-            Default::default()
-        });
         let scan_results = match plugin_manager.execute_scan(ctx, &hardener_config).await {
             Ok(results) => results,
             Err(e) => {
@@ -452,6 +469,38 @@ mod tests {
     use hardener_common::types::FindingCategory;
     use hardener_core::Finding;
     use tempfile::tempdir;
+
+    /// The session row naming which plugins a scan covers is written before any
+    /// plugin runs, so it has to be derived from the same rule the scan itself
+    /// obeys. Derived from dependency order alone, it filed a history row
+    /// claiming plugins the config had disabled, and every consumer of that
+    /// row (trends, regressions, the fleet view) read the absent findings as a
+    /// clean result for a plugin that never ran.
+    #[test]
+    fn the_recorded_plugin_list_covers_only_what_the_config_enables() {
+        let mut config = HardenerConfig::default();
+        config.kernel.enabled = false;
+
+        let recorded = scannable_plugins(
+            vec!["ssh-hardening".to_string(), "kernel-hardening".to_string()],
+            &config,
+        );
+
+        assert_eq!(recorded, vec!["ssh-hardening".to_string()]);
+    }
+
+    /// An explicitly scheduled plugin list is narrowed by the same rule: naming
+    /// a plugin in the schedule does not outrank the config disabling it, or
+    /// the two ways of selecting plugins would disagree.
+    #[test]
+    fn an_explicit_schedule_list_is_narrowed_by_the_config_too() {
+        let mut config = HardenerConfig::default();
+        config.global.disabled_plugins = vec!["ssh-hardening".to_string()];
+
+        let recorded = scannable_plugins(vec!["ssh-hardening".to_string()], &config);
+
+        assert!(recorded.is_empty(), "got {recorded:?}");
+    }
 
     /// Creates a test finding with specified severity.
     fn make_finding(id: &str, severity: Severity) -> Finding {

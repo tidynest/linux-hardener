@@ -40,6 +40,58 @@ fn test_disabled_takes_precedence() {
 }
 
 #[test]
+fn section_enabled_false_disables_the_plugin() {
+    // `[ssh] enabled = false` is the obvious way to turn a plugin off, and it
+    // is the one an operator reaches for first. Reading only the [global]
+    // lists left such a host scanned and hardened anyway, with nothing said.
+    let mut config = HardenerConfig::default();
+    config.ssh.enabled = false;
+    assert!(!config.is_plugin_enabled("ssh-hardening"));
+    assert!(config.is_plugin_enabled("kernel-hardening"));
+}
+
+#[test]
+fn section_enabled_true_cannot_re_enable_a_globally_disabled_plugin() {
+    // Disabled anywhere is final. `enabled = true` is the default value of the
+    // key, so treating it as an override would let a config that never
+    // mentions the plugin silently defeat [global] disabled_plugins.
+    let mut config = HardenerConfig::default();
+    config.global.disabled_plugins = vec!["ssh-hardening".to_string()];
+    config.ssh.enabled = true;
+    assert!(!config.is_plugin_enabled("ssh-hardening"));
+}
+
+#[test]
+fn section_enabled_false_beats_a_global_enabled_list() {
+    // The other direction of the same rule: naming a plugin in
+    // [global] enabled_plugins does not outrank its own section turning it off.
+    let mut config = HardenerConfig::default();
+    config.global.enabled_plugins = vec!["ssh-hardening".to_string()];
+    config.ssh.enabled = false;
+    assert!(!config.is_plugin_enabled("ssh-hardening"));
+}
+
+#[test]
+fn resolve_str_prefers_a_directive_override() {
+    let mut config = PluginConfig::default();
+    config
+        .directives
+        .insert("MaxAuthTries".to_string(), "3".to_string());
+
+    assert_eq!(config.resolve_str("MaxAuthTries", "6"), "3");
+}
+
+#[test]
+fn resolve_str_falls_back_to_the_plugin_baseline() {
+    // The direction matters: falling back the other way would make every
+    // unset directive resolve to whatever the operator last configured
+    // elsewhere, or to nothing at all.
+    let config = PluginConfig::default();
+
+    assert_eq!(config.resolve_str("MaxAuthTries", "6"), "6");
+}
+
+#[test]
 fn test_policy_exception_valid() {
     let exception = PolicyException {
         value: "yes".to_string(),

@@ -8,6 +8,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- A plugin's own `enabled = false` now stops it running. The key existed in the
+  config schema, was validated on load, and was read by nothing: only
+  `[global] disabled_plugins` and `[global] enabled_plugins` were ever
+  consulted. Anyone who turned a plugin off in its own section has been scanned
+  and hardened by it ever since, without a word. `apply` carried a third,
+  narrower copy of the rule that consulted only `disabled_plugins`, so it also
+  ignored the `[global] enabled_plugins` allow-list that `scan` honoured, and
+  the two commands disagreed about which plugins the config selects. All three
+  call sites now share one predicate, and disabled anywhere is final: `enabled`
+  defaults to `true`, so it can only turn a plugin off, never re-enable one the
+  `[global]` lists have refused. **After upgrading, plugins you disabled in
+  their own section will disappear from your output.** That is the configuration
+  you asked for; if you did not intend it, remove the `enabled = false` line.
+- A compliance report can no longer pass controls for a plugin that assessed
+  nothing. The generator decides `Pass` from statically declared plugin coverage
+  plus the absence of a finding, so any plugin contributing no evidence passed
+  every control it covers on the silence its own absence caused. The desktop
+  reached this three ways: it discarded `scan_success` when flattening a stored
+  scan session (the value survives the database round trip, and was thrown
+  away), it swallowed a plugin whose scan returned an error, and it dropped
+  plugins the config disabled. A scan filtered to a single plugin did the same
+  for the other seven. Any plugin that did not contribute results now reports
+  its controls as **Manual Review**, and the rule lives in one place shared by
+  the CLI and the desktop instead of being reimplemented in each.
+- Scheduled scans honour plugin enablement. `PluginManager::execute_scan`, the
+  entry point the daemon runs scans through, resolved each plugin's settings
+  without ever asking whether the config enabled that plugin, so a daemon
+  scanned plugins the operator had turned off. The session row naming which
+  plugins a scan covered is written before any plugin runs and was derived from
+  dependency order alone, so it is now derived from the same rule the scan
+  obeys and can no longer name a plugin that never ran.
+- `hardener report` honours the plugin lists. It ran every registered plugin
+  regardless of configuration, while `scan` on the same host skipped the
+  disabled ones, so the two commands disagreed about which plugins the config
+  selects. Controls covered by a disabled plugin now report Manual Review
+  rather than being assessed by a plugin the operator turned off.
+- Every `batch` subcommand honours the global `-C`, `--config` flag. clap
+  accepted it and all four verbs threw it away. `batch scan` and `batch report`
+  went further and evaluated every host against the compiled-in defaults, so a
+  fleet was assessed against the raw baseline and then hardened to the
+  operator's actual policy: directive overrides, policy exceptions and the
+  plugin lists applied to `batch apply` but not to the scan that justified it.
+  Remote hosts are evaluated against the controller's configuration, matching
+  single-host `--ssh`.
+- `hardener apply` no longer exits 0 having hardened nothing when the config
+  disables every plugin selected. A clean exit is a positive claim about the
+  host, and `scan` already refused the same situation. Per host, `batch apply`
+  reported this as "0 ok, 0 failed", which reads as complete success.
+
 - The checkpoint signing key can no longer be destroyed by a failed migration.
   Loading a legacy plaintext key re-read the file to decide whether it needed
   migrating, folded any read failure into "not yet encrypted", then deleted the
@@ -74,11 +123,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--format json` output is a single document again. An informational message
   was written to stdout ahead of the payload, so a strict parser rejected the
   whole stream with "Extra data" even though the payload itself was well formed.
-
-### Known issues
-- `scan --format json` still omits `scan_success` and `scan_error`, so a
-  consumer of the JSON cannot yet distinguish a plugin whose scan failed from a
-  compliant host. The text output now names such a plugin.
 
 ## [1.5.0] - 2026-07-27
 

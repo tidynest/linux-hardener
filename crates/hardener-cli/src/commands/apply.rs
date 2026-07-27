@@ -20,6 +20,36 @@ pub(crate) struct ApplyHostResult {
     pub results: Vec<(PluginMetadata, ApplyResult)>,
     pub validation_reports: Vec<ValidationReport>,
     pub had_failure: bool,
+    /// Plugins the config disabled, returned rather than dropped so a caller
+    /// can tell "nothing needed changing" apart from "nothing was allowed to
+    /// run". Both otherwise render as a clean exit.
+    pub skipped: Vec<PluginId>,
+}
+
+impl ApplyHostResult {
+    /// Whether the config disabled every plugin the caller selected, leaving
+    /// this run with nothing to do.
+    ///
+    /// One rule, because `apply` and `batch apply` both need it and a second
+    /// copy is how the enablement check diverged in the first place. A plugin
+    /// that actually ran leaves a result, a validation report, or a failure, so
+    /// the absence of all three alongside a non-empty skip list is exactly the
+    /// no-op case.
+    pub fn nothing_ran(&self) -> bool {
+        !self.skipped.is_empty()
+            && self.results.is_empty()
+            && self.validation_reports.is_empty()
+            && !self.had_failure
+    }
+
+    /// The skipped plugin ids as an operator writes them in a config file.
+    pub fn skipped_list(&self) -> String {
+        self.skipped
+            .iter()
+            .map(|id| id.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
 }
 
 /// Core apply/validate loop over a single executor target.
@@ -52,6 +82,7 @@ pub(crate) async fn apply_host(
     let mut results = Vec::new();
     let mut validation_reports = Vec::new();
     let mut had_failure = false;
+    let mut skipped = Vec::new();
 
     for plugin_id in plugin_ids {
         let Ok(Some(plugin)) = registry.get(plugin_id) else {
@@ -63,16 +94,16 @@ pub(crate) async fn apply_host(
         };
 
         let id_str = plugin_id.as_str();
-        if !hardener_config.global.disabled_plugins.is_empty()
-            && hardener_config
-                .global
-                .disabled_plugins
-                .iter()
-                .any(|d| d == id_str)
-        {
+        // One predicate, shared with `scan`. This site used to carry its own
+        // narrower copy reading only `[global] disabled_plugins`, so a plugin
+        // its own section disabled, or one absent from a non-empty
+        // `enabled_plugins`, was hardened by a command that had already
+        // stopped showing it in a scan.
+        if !hardener_config.is_plugin_enabled(id_str) {
             if !quiet {
                 output::status(format, &format!("Skipping (disabled): {id_str}"));
             }
+            skipped.push(plugin_id.clone());
             continue;
         }
 
@@ -149,6 +180,7 @@ pub(crate) async fn apply_host(
         results,
         validation_reports,
         had_failure,
+        skipped,
     }
 }
 
@@ -226,6 +258,17 @@ pub async fn run(
         quiet,
     )
     .await;
+
+    // Exiting 0 having hardened nothing is a positive claim about the host that
+    // this run has not earned. `scan` already refuses the same situation.
+    if result.nothing_ran() {
+        bail!(
+            "Config disabled every selected plugin ({}). Nothing was applied. \
+             Remove them from [global] disabled_plugins, set enabled = true in \
+             their own section, or select a plugin the config enables.",
+            result.skipped_list()
+        );
+    }
 
     if dry_run {
         output::validation_reports(&format, &result.validation_reports);
@@ -358,5 +401,71 @@ mod tests {
             !result.validation_reports.is_empty(),
             "dry-run should validate at least one plugin (some plugins error on a bare MockExecutor)"
         );
+    }
+
+    /// `apply` carried its own narrower copy of the enablement rule, reading
+    /// only `[global] disabled_plugins`. A host whose config turned ssh off in
+    /// its own section was hardened anyway, and `scan` on that same host had
+    /// already stopped showing it.
+    ///
+    /// Neither outcome of running the plugin can pass here: a plugin that
+    /// validates contributes a report, and one that errors against the bare
+    /// MockExecutor sets `had_failure`. Only skipping it produces both.
+    #[tokio::test]
+    async fn a_section_disabled_plugin_is_skipped_by_apply() {
+        let mut config = HardenerConfig::default();
+        config.ssh.enabled = false;
+
+        let result = apply_host(
+            Arc::new(MockExecutor::new()),
+            &[PluginId::new("ssh-hardening")],
+            true,
+            &config,
+            None,
+            None,
+            &OutputFormat::Json,
+            true,
+        )
+        .await;
+
+        assert!(
+            result.validation_reports.is_empty(),
+            "a plugin its own section disables must never be validated"
+        );
+        assert!(
+            !result.had_failure,
+            "skipping a disabled plugin is not a failure"
+        );
+        // Named, not merely absent: `run` refuses to exit 0 when this accounts
+        // for every plugin the operator selected.
+        assert_eq!(result.skipped, vec![PluginId::new("ssh-hardening")]);
+    }
+
+    /// The `[global] enabled_plugins` allow-list is the other half of the same
+    /// divergence: `scan` narrowed its selection by it while `apply` ignored it
+    /// entirely, so the two commands disagreed about which plugins the config
+    /// selects.
+    #[tokio::test]
+    async fn a_global_allow_list_narrows_apply_too() {
+        let mut config = HardenerConfig::default();
+        config.global.enabled_plugins = vec!["kernel-hardening".to_string()];
+
+        let result = apply_host(
+            Arc::new(MockExecutor::new()),
+            &[PluginId::new("ssh-hardening")],
+            true,
+            &config,
+            None,
+            None,
+            &OutputFormat::Json,
+            true,
+        )
+        .await;
+
+        assert!(
+            result.validation_reports.is_empty(),
+            "a plugin absent from a non-empty allow-list must never be validated"
+        );
+        assert!(!result.had_failure);
     }
 }

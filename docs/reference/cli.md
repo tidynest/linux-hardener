@@ -294,14 +294,17 @@ All four subcommands share the same host-selection flags and accept the global
 `--format text|json` flag. `apply` and `rollback` are **dry-run by default**;
 pass `--execute` to mutate the remote hosts.
 
-> **`batch scan` and `batch report` do not honour the configuration file.**
-> Unlike local `hardener scan`, they evaluate every host against the unmodified
-> secure baseline: directive overrides do not apply, policy exceptions are not
-> annotated, and `enabled_plugins`/`disabled_plugins` are not consulted. The
-> desktop's fleet scan behaves the same way. Loading a config per remote host is
-> a separate design question and is deliberately deferred, so a fleet scan may
-> report findings that a local scan on the same host would annotate as accepted
-> deviations.
+All four subcommands honour the global `-C`, `--config` flag, and without it
+they load the controller's own system and user configuration, exactly as a
+local `hardener scan` does.
+
+> **Remote hosts are evaluated against the controller's configuration, not
+> their own.** Directive overrides, policy exceptions and the plugin lists all
+> come from the machine running `batch`, never from a file on the target. The
+> policy belongs where the operator maintains it: a target supplying its own
+> config could otherwise relax the very audit being run against it. This
+> matches single-host `--ssh`, which has always evaluated a remote host against
+> the local config file.
 
 Host selection (common to all four subcommands):
 

@@ -24,6 +24,7 @@ use hardener_types::ComplianceReport;
 use hardener_types::remote::{HostsConfig, RemoteHostProfile};
 use hardener_types::{ApplyOutcome, ApplyStatus, RollbackOutcome, RollbackStatus};
 use serde::Serialize;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Semaphore;
@@ -589,6 +590,7 @@ pub struct BatchReportOptions {
     pub host: Vec<String>,
     pub ssh: Vec<String>,
     pub concurrency: usize,
+    pub config: Option<PathBuf>,
     pub framework: Option<String>,
     pub profile: Option<String>,
     pub scenario: Option<String>,
@@ -631,6 +633,7 @@ pub async fn run_report(opts: BatchReportOptions) -> anyhow::Result<()> {
         }
     };
 
+    let config = Arc::new(load_batch_config(opts.config.as_ref(), opts.quiet));
     let outcomes = resolve_and_scan(
         opts.all,
         &opts.host,
@@ -641,6 +644,7 @@ pub async fn run_report(opts: BatchReportOptions) -> anyhow::Result<()> {
         opts.global_timeout,
         opts.global_no_verify,
         "Assessing",
+        config,
     )
     .await;
 
@@ -758,27 +762,19 @@ async fn scan_with_executor(
     host_key: String,
     executor: Arc<dyn SystemExecutor>,
     history: Option<Arc<ScanHistoryManager>>,
+    config: &HardenerConfig,
 ) -> HostOutcome {
-    // Fleet scan/report config-awareness is an explicit out-of-scope
-    // follow-up (Task 10 note): a real per-host/remote config load is a
-    // separate design question, so this stays on HardenerConfig::default(),
-    // matching the desktop's own remote/fleet scan path.
-    match scan_grouped(
-        true,
-        executor.clone(),
-        &CliOutputFormat::Json,
-        &HardenerConfig::default(),
-    )
-    .await
-    {
+    match scan_grouped(true, executor.clone(), &CliOutputFormat::Json, config).await {
         Ok(grouped) => {
             if let Some(history) = &history {
-                persist_host(history, &host_key, &grouped).await;
+                persist_host(history, &host_key, &grouped.results).await;
             }
             // Shared with the single-host path so a plugin whose scan did not
-            // complete contributes its unchecked entry here too, instead of
-            // this host reporting a clean fleet result it never verified.
-            let (findings, unchecked) = crate::commands::report::flatten_scans(&grouped);
+            // complete, or which the config never let run, contributes its
+            // unchecked entry here too, instead of this host reporting a clean
+            // fleet result it never verified.
+            let (findings, unchecked) =
+                crate::commands::report::flatten_scans(&grouped.results, &grouped.skipped);
             let counts = SeverityCounts::from_findings(&findings);
             HostOutcome {
                 name,
@@ -807,12 +803,21 @@ async fn scan_one(
     profile: RemoteHostProfile,
     timeout: u64,
     history: Option<Arc<ScanHistoryManager>>,
+    config: &HardenerConfig,
 ) -> HostOutcome {
     let target = display_target(&profile);
     let host_key = host_key_of(&profile, &target);
     match SshExecutor::connect(host_ssh_config(&profile, timeout)).await {
         Ok(exec) => {
-            scan_with_executor(profile.name, target, host_key, Arc::new(exec), history).await
+            scan_with_executor(
+                profile.name,
+                target,
+                host_key,
+                Arc::new(exec),
+                history,
+                config,
+            )
+            .await
         }
         Err(e) => HostOutcome {
             name: profile.name,
@@ -891,6 +896,7 @@ async fn scan_all(
     concurrency: usize,
     timeout: u64,
     history: Option<Arc<ScanHistoryManager>>,
+    config: Arc<HardenerConfig>,
 ) -> Vec<HostOutcome> {
     run_on_all(
         profiles,
@@ -905,7 +911,8 @@ async fn scan_all(
         },
         move |profile| {
             let history = history.clone();
-            async move { scan_one(profile, timeout, history).await }
+            let config = config.clone();
+            async move { scan_one(profile, timeout, history, &config).await }
         },
     )
     .await
@@ -917,6 +924,7 @@ pub struct BatchOptions {
     pub host: Vec<String>,
     pub ssh: Vec<String>,
     pub concurrency: usize,
+    pub config: Option<PathBuf>,
     pub format: CliOutputFormat,
     pub output: Option<String>,
     pub quiet: bool,
@@ -979,6 +987,33 @@ fn resolve_profiles(
     profiles
 }
 
+/// The config every batch verb evaluates its hosts against: the one the
+/// operator named with `--config`, else the controller's own system/user config.
+///
+/// Every `batch` subcommand dropped the global `--config` flag, and `batch scan`
+/// and `batch report` went further and stayed pinned to the compiled-in
+/// defaults, so a fleet was assessed against the raw baseline and then hardened
+/// to a different policy. Remote hosts are deliberately evaluated against the
+/// controller's config rather than their own: the policy belongs where the
+/// operator maintains it, and a target that supplied its own could otherwise
+/// weaken the audit reporting on it. Matches single-host `--ssh`, which already
+/// evaluates a remote host against the local config file.
+fn load_batch_config(config_path: Option<&PathBuf>, quiet: bool) -> HardenerConfig {
+    let loader = match config_path {
+        Some(path) => ConfigLoader::new().with_cli_config(path.clone()),
+        None => ConfigLoader::new(),
+    };
+    match loader.load() {
+        Ok(config) => config,
+        Err(e) => {
+            if !quiet {
+                eprintln!("config load failed, using defaults: {e}");
+            }
+            HardenerConfig::default()
+        }
+    }
+}
+
 /// Resolves hosts, opens history, and scans them all concurrently. Shared entry
 /// point for `batch scan` and `batch report`.
 #[allow(clippy::too_many_arguments)]
@@ -992,10 +1027,11 @@ async fn resolve_and_scan(
     global_timeout: u64,
     global_no_verify: bool,
     verb: &str,
+    config: Arc<HardenerConfig>,
 ) -> Vec<HostOutcome> {
     let profiles = resolve_profiles(all, host, ssh, global_key, global_no_verify, quiet, verb);
     let history = open_batch_history().await;
-    scan_all(profiles, concurrency, global_timeout, history).await
+    scan_all(profiles, concurrency, global_timeout, history, config).await
 }
 
 /// 0 = all clean, 1 = an apply/validation failure, 2 = a host-level error.
@@ -1017,6 +1053,18 @@ pub fn apply_exit_code(outcomes: &[ApplyOutcome]) -> i32 {
 /// Maps an `ApplyHostResult` to a host `ApplyStatus`. `execute` = true means the
 /// real apply path; false = dry-run (validation reports).
 fn status_from_result(execute: bool, result: &super::apply::ApplyHostResult) -> ApplyStatus {
+    // Nothing ran, so neither counter pair can describe this host: "0 ok, 0
+    // failed" and "0 plugins validated" both read as a clean result. The
+    // single-host `apply` refuses the same situation outright.
+    if result.nothing_ran() {
+        return ApplyStatus::Failed {
+            error: format!(
+                "config disabled every selected plugin ({})",
+                result.skipped_list()
+            ),
+        };
+    }
+
     if execute {
         let ok = result
             .results
@@ -1336,6 +1384,7 @@ pub struct BatchApplyOptions {
     pub plugin: Vec<String>,
     pub execute: bool,
     pub concurrency: usize,
+    pub config: Option<PathBuf>,
     pub format: CliOutputFormat,
     pub output: Option<String>,
     pub quiet: bool,
@@ -1365,15 +1414,7 @@ pub async fn run_apply(opts: BatchApplyOptions) -> anyhow::Result<()> {
     }
 
     let plugin_ids = Arc::new(resolve_plugin_ids(&opts.plugin)?);
-    let config = Arc::new(match ConfigLoader::new().load() {
-        Ok(c) => c,
-        Err(e) => {
-            if !opts.quiet {
-                eprintln!("config load failed, using defaults: {e}");
-            }
-            HardenerConfig::default()
-        }
-    });
+    let config = Arc::new(load_batch_config(opts.config.as_ref(), opts.quiet));
     let checkpoint = if opts.execute {
         Some(get_checkpoint_manager().await?)
     } else {
@@ -1527,6 +1568,7 @@ pub async fn run_rollback(opts: BatchRollbackOptions) -> anyhow::Result<()> {
 
 /// CLI entry point for `hardener batch scan`.
 pub async fn run(opts: BatchOptions) -> anyhow::Result<()> {
+    let config = Arc::new(load_batch_config(opts.config.as_ref(), opts.quiet));
     let outcomes = resolve_and_scan(
         opts.all,
         &opts.host,
@@ -1537,6 +1579,7 @@ pub async fn run(opts: BatchOptions) -> anyhow::Result<()> {
         opts.global_timeout,
         opts.global_no_verify,
         "Scanning",
+        config,
     )
     .await;
 
@@ -1559,6 +1602,83 @@ mod tests {
         ComplianceFramework, ComplianceMapping, FindingCategory, Severity,
     };
     use hardener_compliance::Scenario;
+
+    /// Every `batch` subcommand accepted the global `--config` flag and threw
+    /// it away, so a fleet was assessed and hardened against whatever config
+    /// the controller happened to have on disk, never the one the operator
+    /// named on the command line.
+    #[test]
+    fn batch_honours_an_explicit_config_path() {
+        use std::io::Write;
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        writeln!(file, "[global]\ndisabled_plugins = [\"ssh-hardening\"]").unwrap();
+
+        let config = load_batch_config(Some(&file.path().to_path_buf()), true);
+
+        assert!(
+            !config.is_plugin_enabled("ssh-hardening"),
+            "the config named by --config must be the one the fleet is judged against"
+        );
+    }
+
+    /// Fleet scan and report were pinned to the compiled-in defaults, so a
+    /// fleet was assessed against the raw baseline and then hardened to the
+    /// operator's actual policy: the two verbs disagreed about what compliant
+    /// even meant.
+    #[tokio::test]
+    async fn a_remote_host_is_scanned_against_the_config_it_is_given() {
+        use hardener_core::MockExecutor;
+        let mut config = HardenerConfig::default();
+        config.ssh.enabled = false;
+
+        let outcome = scan_with_executor(
+            "h".into(),
+            "u@h:22".into(),
+            "u@h:22".into(),
+            Arc::new(MockExecutor::new()),
+            None,
+            &config,
+        )
+        .await;
+
+        let HostStatus::Scanned { unchecked, .. } = outcome.status else {
+            panic!("a mock executor should yield a Scanned outcome");
+        };
+        // Disabled, so it never ran. Pinned to the defaults it would have run
+        // and failed against the bare mock, reported as an incomplete scan.
+        assert!(
+            unchecked
+                .iter()
+                .any(|u| u.unchecked_check_id == "ssh-hardening-not-assessed"),
+            "a plugin the config disables must be reported as unassessed: {:?}",
+            unchecked
+                .iter()
+                .map(|u| u.unchecked_check_id.as_str())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    /// A host where the config disabled every selected plugin applied nothing,
+    /// and "0 ok, 0 failed" is how a fleet row spells complete success. The
+    /// single-host `apply` refuses this situation outright, so the fleet row
+    /// has to carry it as an error rather than a tidy pair of zeroes.
+    #[test]
+    fn a_host_whose_config_disabled_every_plugin_is_not_a_clean_apply() {
+        let result = super::super::apply::ApplyHostResult {
+            results: vec![],
+            validation_reports: vec![],
+            had_failure: false,
+            skipped: vec![PluginId::new("ssh-hardening")],
+        };
+
+        match status_from_result(true, &result) {
+            ApplyStatus::Failed { error } => assert!(
+                error.contains("ssh-hardening"),
+                "the error must name what was skipped: {error}"
+            ),
+            other => panic!("a run that applied nothing must not report success: {other:?}"),
+        }
+    }
 
     #[test]
     #[ignore = "visual eyeball helper, run with --ignored --nocapture"]
@@ -2275,8 +2395,15 @@ mod tests {
         use hardener_core::MockExecutor;
         use std::sync::Arc;
         let exec = Arc::new(MockExecutor::new());
-        let outcome =
-            scan_with_executor("h".into(), "u@h:22".into(), "u@h:22".into(), exec, None).await;
+        let outcome = scan_with_executor(
+            "h".into(),
+            "u@h:22".into(),
+            "u@h:22".into(),
+            exec,
+            None,
+            &HardenerConfig::default(),
+        )
+        .await;
         assert!(
             matches!(outcome.status, HostStatus::Scanned { .. }),
             "a mock executor should yield a Scanned outcome, not a connection failure",
@@ -2295,7 +2422,15 @@ mod tests {
             "/etc/os-release",
             "NAME=\"Rocky Linux\"\nID=\"rocky\"\nVERSION_ID=\"10.0\"\n",
         ));
-        scan_with_executor("r10".into(), "u@r10:22".into(), "r10".into(), exec, None).await
+        scan_with_executor(
+            "r10".into(),
+            "u@r10:22".into(),
+            "r10".into(),
+            exec,
+            None,
+            &HardenerConfig::default(),
+        )
+        .await
     }
 
     #[tokio::test]
@@ -2332,7 +2467,7 @@ mod tests {
 
     #[tokio::test]
     async fn scan_all_empty_is_empty() {
-        let out = scan_all(vec![], 4, 1, None).await;
+        let out = scan_all(vec![], 4, 1, None, Arc::new(HardenerConfig::default())).await;
         assert!(out.is_empty());
     }
 
@@ -2519,7 +2654,7 @@ mod tests {
             })
             .collect();
 
-        let out = scan_all(hosts, 2, 1, None).await;
+        let out = scan_all(hosts, 2, 1, None, Arc::new(HardenerConfig::default())).await;
 
         assert_eq!(out.len(), 3, "every host appears, none dropped");
         assert_eq!(
@@ -2573,6 +2708,7 @@ mod tests {
             "web-01".into(),
             exec,
             Some(mgr.clone()),
+            &HardenerConfig::default(),
         )
         .await;
         assert!(matches!(outcome.status, HostStatus::Scanned { .. }));
@@ -2829,7 +2965,15 @@ mod tests {
             set.spawn(async move {
                 let exec = Arc::new(MockExecutor::new());
                 let key = format!("host-{i}");
-                scan_with_executor(key.clone(), format!("u@{key}:22"), key, exec, Some(mgr)).await
+                scan_with_executor(
+                    key.clone(),
+                    format!("u@{key}:22"),
+                    key,
+                    exec,
+                    Some(mgr),
+                    &HardenerConfig::default(),
+                )
+                .await
             });
         }
         while set.join_next().await.is_some() {}

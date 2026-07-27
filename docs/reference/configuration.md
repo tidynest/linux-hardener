@@ -94,15 +94,21 @@ Every section accepts the same four keys:
 
 | Key | Type | Default | Effect |
 |-----|------|---------|--------|
-| `enabled` | bool | `true` | Accepted and validated, but **not enforced**. To stop a plugin from running, list it in `[global] disabled_plugins`. |
+| `enabled` | bool | `true` | Set `false` to stop this plugin from running. Disabled anywhere is final: `enabled = true` is the key's default value, so it can only ever turn a plugin off and never re-enable one `[global] disabled_plugins` has already refused, or one a non-empty `[global] enabled_plugins` omits. |
 | `directives` | table of string to string | `{}` | Overrides the target value for a built-in check, typically to something stricter than the baseline. Applied as given for `[kernel]`, `[ssh]` and `[permissions]`, so an override can also loosen a check; only the `[pam]` thresholds are clamped tighten-only. See below. |
 | `custom_directives` | table of string to string | `{}` | Accepted and validated, but **not yet enforced** by any plugin. Reserved for checking directives beyond the built-in set. |
 | `exceptions` | table of exception entries | `{}` | Policy exceptions; see below. |
 
-`directives` and `exceptions`, together with the `[global]` plugin lists, take
-effect for `scan` (both default and compliance modes) and for `apply`.
-`scan --audit` ignores the config entirely and always evaluates the unmodified
-secure baseline.
+`directives` and `exceptions`, together with `enabled` and the `[global]`
+plugin lists, take effect for `scan`, `apply`, `report`, the scheduler daemon,
+and all four `batch` subcommands, which evaluate remote hosts against the
+controller's config. `scan --audit` ignores the config entirely and always
+evaluates the unmodified secure baseline.
+
+A plugin the config disables assesses nothing, so a compliance report lists
+every control it covers as **Manual Review** rather than as passing. Disabling
+a plugin therefore lowers a compliance score, which is the honest outcome: the
+tool cannot vouch for a control it never evaluated.
 
 Example, tightening SSH beyond the baseline:
 
