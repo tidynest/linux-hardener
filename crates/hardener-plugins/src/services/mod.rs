@@ -606,11 +606,17 @@ impl HardeningPlugin for ServicesHardeningPlugin {
 
         let mut changes = Vec::new();
 
-        // Create checkpoint for systemd unit files
-        let service_paths: Vec<&Path> = vec![
-            Path::new("/etc/systemd/system"),
-            Path::new("/usr/lib/systemd/system"),
-        ];
+        // Checkpoint where this plugin's changes actually land. `systemctl
+        // disable` removes wants/ symlinks here and `systemctl mask` adds a
+        // symlink to /dev/null here; neither touches the package-owned
+        // /usr/lib/systemd/system, which systemd.unit(5) reserves for units
+        // installed by the distribution.
+        //
+        // That directory used to be captured too. It holds 700+ unit files on a
+        // normal host, none of which this plugin can change, and because it sits
+        // outside the rollback allowlist its presence made rollback abort in
+        // Phase 1 before restoring anything at all.
+        let service_paths: Vec<&Path> = vec![Path::new("/etc/systemd/system")];
         // Name follows the `{plugin_id}-pre-apply` convention so `hardener batch
         // rollback` (which derives the name from the plugin id) can select it.
         let checkpoint_id = crate::create_checkpoint_for_apply(

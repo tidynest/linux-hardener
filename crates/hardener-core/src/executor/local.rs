@@ -66,7 +66,19 @@ impl SystemExecutor for LocalExecutor {
     }
 
     async fn path_exists(&self, path: &Path) -> Result<bool> {
-        Ok(path.exists())
+        // Not `path.exists()`: that folds every error into `false`, so a path
+        // this process may not stat (an unsearchable parent directory) reads as
+        // positive confirmation of absence. Callers that fail closed on "could
+        // not determine" then take the "confirmed absent" branch instead, which
+        // is how the rollback guard protecting /etc/shadow and friends became
+        // unreachable on a local target. Same rule as `file_metadata` below:
+        // only NotFound confirms absence.
+        match std::fs::metadata(path) {
+            Ok(_) => Ok(true),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(e) => Err(e)
+                .with_context(|| format!("Failed to determine whether {} exists", path.display())),
+        }
     }
 
     async fn file_metadata(&self, path: &Path) -> Result<FileMetadata> {
