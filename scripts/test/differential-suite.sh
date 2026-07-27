@@ -523,6 +523,19 @@ capture_scan_json() {
     printf '%s' "$out"
 }
 
+# One of the plugin object's two arrays, present and actually an array. Silent:
+# the caller names the array it asked about, because the two absences mean
+# different things and want different advice.
+#
+# Compared against the single-element array rather than read through `jq -e`, so
+# the result is one value whatever the document holds.
+has_scan_array() {
+    local document="$1" plugin="$2" array="$3"
+    jq --exit-status --arg p "$plugin" --arg a "$array" \
+        '[.[] | select(.plugin_id == $p) | has($a) and (.[$a] | type == "array")] == [true]' \
+        >/dev/null <<<"$document"
+}
+
 # Refuse a scan document this suite cannot read the way it intends to.
 #
 # Every refusal below covers a shape that would otherwise read as a clean bill
@@ -560,17 +573,25 @@ validate_scan_document() {
             echo "  Every finding filter for that plugin would match nothing, which reads as a pass." >&2
             return 1
         fi
-        # Compared against the single-element array rather than read through
-        # `jq -e`, so the result is one value whatever the document holds.
-        if ! jq --exit-status --arg p "$plugin" \
-            '[.[] | select(.plugin_id == $p)
-                  | has("findings") and (.findings | type == "array")
-                    and has("unchecked") and (.unchecked | type == "array")] == [true]' \
-            >/dev/null <<<"$document"; then
-            echo "FATAL: the $label object for plugin '$plugin' has no 'findings' and 'unchecked' arrays." >&2
-            echo "  Both are counted by id here, and a key that is absent or renamed counts" >&2
-            echo "  zero, which is this suite's pass condition. Rebuild the CLI from this" >&2
-            echo "  tree, or set BINARY to a build that carries both keys." >&2
+        # Asked one array at a time, so the refusal can name the one that is
+        # missing. The two absences are not the same fault: output with no
+        # `findings` is not the shape this suite reads at all, while output with
+        # no `unchecked` is a CLI built before 3c15dc2 added the key, and only
+        # the second is fixed by rebuilding.
+        if ! has_scan_array "$document" "$plugin" findings; then
+            echo "FATAL: the $label object for plugin '$plugin' has no 'findings' array." >&2
+            echo "  Findings are counted by id here, and a key that is absent or renamed" >&2
+            echo "  counts zero, which is this suite's pass condition. 'scan --format" >&2
+            echo "  json' does not emit this shape: the key set output.rs builds by hand" >&2
+            echo "  has changed." >&2
+            return 1
+        fi
+        if ! has_scan_array "$document" "$plugin" unchecked; then
+            echo "FATAL: the $label object for plugin '$plugin' has no 'unchecked' array." >&2
+            echo "  It is what tells a check the tool could not run from one it ran and" >&2
+            echo "  passed, and an absent key counts zero, which is this suite's pass" >&2
+            echo "  condition. Rebuild the CLI from this tree, or set BINARY to a build" >&2
+            echo "  that carries the key." >&2
             return 1
         fi
     done
