@@ -1059,16 +1059,16 @@ async fn apply_remote_chmod(
         Ok(output) if output.success() => {
             // Verify the change took effect: for max-mask directives, verify
             // no disallowed bits remain; for exact directives, verify equality.
+            //
+            // A failed metadata read and a mode that genuinely did not move
+            // are different outcomes and must not share a message. Folding
+            // them together with `unwrap_or(false)` made every verification
+            // failure blame vfat, a cause `scan` has already excluded: a path
+            // positively confirmed to be on a non-POSIX filesystem is diverted
+            // to `PermissionCheck::NonPosix` long before apply reaches here.
             let path = Path::new(directive.permission_path);
-            let verified = ctx
-                .executor()
-                .file_metadata(path)
-                .await
-                .map(|m| !violates(directive, m.mode & 0o777))
-                .unwrap_or(false);
-
-            if verified {
-                Some(Change {
+            match ctx.executor().file_metadata(path).await {
+                Ok(metadata) if !violates(directive, metadata.mode & 0o777) => Some(Change {
                     change_description: format!(
                         "Changed permissions on {} {}",
                         directive.permission_path,
@@ -1077,18 +1077,31 @@ async fn apply_remote_chmod(
                     change_type: ChangeType::Permissions,
                     change_success: true,
                     change_error: None,
-                })
-            } else {
-                Some(Change {
+                }),
+                // chmod exited 0 and the mode still does not satisfy the
+                // directive. State that, rather than guess at a reason.
+                Ok(metadata) => Some(Change {
                     change_description: format!(
-                        "Permissions on {} unchanged (filesystem may not support chmod, \
-                         e.g. vfat/FAT32 uses mount options fmask/dmask instead)",
-                        directive.permission_path
+                        "Permissions on {} are still {:04o} after chmod reported success \
+                         (wanted {:04o})",
+                        directive.permission_path,
+                        metadata.mode & 0o777,
+                        target
                     ),
                     change_type: ChangeType::Permissions,
                     change_success: false,
                     change_error: None,
-                })
+                }),
+                // The chmod may well have worked; what failed is the check.
+                Err(e) => Some(Change {
+                    change_description: format!(
+                        "Could not verify permissions on {} after chmod",
+                        directive.permission_path
+                    ),
+                    change_type: ChangeType::Permissions,
+                    change_success: false,
+                    change_error: Some(e.to_string()),
+                }),
             }
         }
         Ok(output) => Some(Change {

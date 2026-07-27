@@ -431,7 +431,7 @@ async fn test_permissions_scan_with_remote_executor() {
 /// post-chmod re-read. Uses `.remote()` because MockExecutor cannot support
 /// local fchmod.
 #[tokio::test]
-async fn test_permissions_apply_detects_vfat_noop() {
+async fn apply_reports_a_mode_that_did_not_move_after_a_successful_chmod() {
     // /boot at 0o755: chmod will "succeed" but mode stays 0o755
     let executor = MockExecutor::new()
         .remote()
@@ -473,11 +473,22 @@ async fn test_permissions_apply_detects_vfat_noop() {
 
     assert!(
         !boot_change.change_success,
-        "chmod on vfat should report failure"
+        "a mode that did not move must report failure"
+    );
+    // The message must state what was observed. It used to blame vfat, a
+    // cause `scan` has already excluded: a path positively confirmed to be on
+    // a non-POSIX filesystem is diverted to PermissionCheck::NonPosix long
+    // before apply runs, so naming it here sent operators to fstab for a
+    // problem that was not there.
+    assert!(
+        !boot_change.change_description.contains("vfat"),
+        "vfat is excluded before apply runs; it must not be named: {}",
+        boot_change.change_description
     );
     assert!(
-        boot_change.change_description.contains("unchanged"),
-        "Should explain permissions were unchanged, got: {}",
+        boot_change.change_description.contains("0755")
+            && boot_change.change_description.contains("0700"),
+        "the message must state the observed and wanted modes, got: {}",
         boot_change.change_description
     );
 }

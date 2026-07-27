@@ -38,8 +38,23 @@ pub fn update_file_atomically(path: &Path, content: &str) -> Result<()> {
         ))
     })?;
 
-    // Capture original permissions before overwriting (if file exists)
-    let original_permissions = fs::metadata(path).ok().map(|m| m.permissions());
+    // Capture original permissions before overwriting. Only a genuinely
+    // missing file has none to restore; folding every other stat failure into
+    // that case left the rewritten file wearing the temp file's mode instead
+    // of the original's, with no error and no log line. This runs before the
+    // temp file is created, so refusing here leaves the target untouched.
+    let original_permissions = match fs::metadata(path) {
+        Ok(metadata) => Some(metadata.permissions()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => {
+            return Err(crate::error::HardeningError::Plugin(format!(
+                "Refusing to rewrite {}: its current permissions could not be read ({}), \
+                 and rewriting it would silently change them",
+                path.display(),
+                e
+            )));
+        }
+    };
 
     // Create temp file in same directory (same filesystem) for atomic rename
     let mut temp = NamedTempFile::new_in(dir).map_err(|e| {
@@ -557,6 +572,63 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `update_file_atomically` replaces the inode, so it re-applies the
+    /// original mode afterwards. A stat failure used to be indistinguishable
+    /// from "the file did not exist", leaving the rewritten file wearing the
+    /// temp file's 0600 instead of the original's mode, silently. Refusing is
+    /// safe here because nothing has been written yet.
+    #[test]
+    fn a_stat_failure_refuses_the_write_instead_of_changing_the_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        // A regular file standing where a directory belongs: stat on a path
+        // below it fails with ENOTDIR, which is emphatically not NotFound.
+        let not_a_dir = dir.path().join("not-a-dir");
+        std::fs::write(&not_a_dir, "regular file").unwrap();
+        let target = not_a_dir.join("config");
+
+        let kind = std::fs::metadata(&target).unwrap_err().kind();
+        assert_ne!(
+            kind,
+            std::io::ErrorKind::NotFound,
+            "test needs a non-NotFound stat failure, got {kind:?}"
+        );
+
+        let err = update_file_atomically(&target, "key = value\n")
+            .expect_err("an unreadable mode must not be silently replaced");
+        let message = err.to_string();
+        assert!(
+            message.contains("permissions could not be read"),
+            "the refusal must name the cause: {message}"
+        );
+    }
+
+    /// The genuinely-absent case still creates the file, since a file that
+    /// does not exist has no mode to preserve.
+    #[test]
+    fn a_missing_file_is_still_created() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("new.conf");
+
+        update_file_atomically(&target, "key = value\n").expect("creating a new file must work");
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "key = value\n");
+    }
+
+    /// The mode of an existing file survives the inode swap.
+    #[test]
+    fn an_existing_files_mode_survives_the_rewrite() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("existing.conf");
+        std::fs::write(&target, "old\n").unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        update_file_atomically(&target, "new\n").unwrap();
+
+        let mode = std::fs::metadata(&target).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o644, "the original mode must be restored");
+    }
 
     #[test]
     fn auto_parses_key_equals_value_with_spaces() {

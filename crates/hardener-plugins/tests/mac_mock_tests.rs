@@ -893,3 +893,94 @@ async fn test_mac_scan_apparmor_permission_denied_is_unchecked_not_silent() {
         "the unchecked entry must carry the same compliance mappings the finding would have"
     );
 }
+
+/// A probe that failed is not a host without a MAC system.
+///
+/// `detect_mac_system` folded `path_exists` errors to `false`, so a transient
+/// probe failure took the "nothing here" path: apply recorded
+/// `change_success: true` with "No MAC system detected - nothing to
+/// configure", which reads as a deliberate, clean no-op on a host that may
+/// have a real and misconfigured SELinux or AppArmor.
+fn undetectable_mac_executor() -> MockExecutor {
+    MockExecutor::new()
+        .with_path_exists_error("/sys/fs/selinux")
+        .with_path_exists_error("/sys/kernel/security/apparmor")
+}
+
+#[tokio::test]
+async fn mac_apply_does_not_report_success_when_detection_failed() {
+    let mut ctx = Context::with_executor(Arc::new(undetectable_mac_executor()));
+    let plugin = MacHardeningPlugin::new();
+
+    let result = plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(
+        !result.apply_success,
+        "an undetectable MAC system must not report a successful apply"
+    );
+    assert!(
+        !result.apply_changes.iter().any(|c| {
+            c.change_description.contains("No MAC system detected") && c.change_success
+        }),
+        "a failed probe must not be recorded as a clean skip: {:?}",
+        result.apply_changes
+    );
+    let failed = result
+        .apply_changes
+        .iter()
+        .find(|c| !c.change_success)
+        .expect("the failed probe must be recorded as a change that did not succeed");
+    assert!(
+        failed.change_error.is_some(),
+        "the reason must reach the operator"
+    );
+}
+
+#[tokio::test]
+async fn mac_scan_reports_undetectable_as_unchecked_not_absent() {
+    let ctx = Context::with_executor(Arc::new(undetectable_mac_executor()));
+    let plugin = MacHardeningPlugin::new();
+
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
+
+    assert!(
+        !result
+            .scan_findings
+            .iter()
+            .any(|f| f.finding_id == "no-mac-system"),
+        "absence must not be asserted from a probe that failed"
+    );
+    let unchecked = result
+        .scan_unchecked
+        .iter()
+        .find(|u| u.unchecked_check_id == "no-mac-system")
+        .expect("an undetermined MAC system must be reported unchecked");
+    assert!(
+        !unchecked.unchecked_compliance.is_empty(),
+        "the unchecked entry must carry the mappings, so its controls reach manual review"
+    );
+}
+
+#[tokio::test]
+async fn mac_validate_raises_an_issue_when_detection_failed() {
+    let ctx = Context::with_executor(Arc::new(undetectable_mac_executor()));
+    let plugin = MacHardeningPlugin::new();
+
+    let report = plugin
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(
+        !report.validation_report_is_valid,
+        "a dry run that could not detect the MAC system is not valid"
+    );
+    let issue = report
+        .validation_report_issues
+        .first()
+        .expect("the failure must be raised as an issue");
+    assert_eq!(issue.validation_issue_severity, Severity::High);
+}
