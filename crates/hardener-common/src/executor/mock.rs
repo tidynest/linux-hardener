@@ -133,6 +133,26 @@ impl MockExecutor {
         self
     }
 
+    /// Removes a previously registered file, so a shared fixture can model a
+    /// host on which it is absent without duplicating everything else it sets
+    /// up.
+    ///
+    /// Both stores are cleared: `read_file` reads `files` while `path_exists`
+    /// reads `file_metadata`, so removing from one alone would leave the path
+    /// half present, which is a fixture that lies about the host.
+    pub fn without_file(self, path: &str) -> Self {
+        let path_buf = PathBuf::from(path);
+        self.files
+            .lock()
+            .expect("files mutex poisoned")
+            .remove(&path_buf);
+        self.file_metadata
+            .lock()
+            .expect("metadata mutex poisoned")
+            .remove(&path_buf);
+        self
+    }
+
     /// Adds a file with custom metadata.
     pub fn with_file_metadata(self, path: &str, content: &str, metadata: FileMetadata) -> Self {
         let path_buf = PathBuf::from(path);

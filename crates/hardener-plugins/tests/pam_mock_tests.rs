@@ -2191,3 +2191,129 @@ async fn pam_apply_honours_stricter_override() {
         "clamped looser override should produce an 'already meets threshold' change"
     );
 }
+
+/// A vendor `login.defs` of the shape openSUSE ships under `/usr/etc`. Only
+/// the keys the assertions need are present; the real file sets 38.
+const VENDOR_LOGIN_DEFS: &str = "\
+UMASK           022
+ENCRYPT_METHOD  yescrypt
+PASS_MAX_DAYS   99999
+PASS_MIN_DAYS   0
+PASS_WARN_AGE   7
+";
+
+#[tokio::test]
+async fn apply_refuses_to_create_an_etc_file_that_would_mask_a_vendor_file() {
+    // openSUSE keeps vendor configuration in /usr/etc and reserves /etc for
+    // administrator overrides, and that override is whole-file rather than per
+    // directive. Creating a three-directive /etc/login.defs therefore silences
+    // every other key the vendor file sets, including ENCRYPT_METHOD and
+    // UMASK. Hardening three settings by disabling the rest is not hardening.
+    let executor = secure_pam_executor_base()
+        .with_file("/etc/security/faillock.conf", "deny = 3\n")
+        .without_file("/etc/login.defs")
+        .with_file("/usr/etc/login.defs", VENDOR_LOGIN_DEFS);
+    let executor = Arc::new(executor);
+    let mut ctx = Context::with_executor(executor.clone());
+    let plugin = PamHardeningPlugin::new();
+
+    let result = plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply must run rather than abort");
+
+    let log = executor.log();
+    assert!(
+        !log.files_written
+            .iter()
+            .any(|(written, _)| written.to_str() == Some("/etc/login.defs")),
+        "creating /etc/login.defs masks the vendor file wholesale, but apply wrote: {:?}",
+        log.files_written
+    );
+    assert!(
+        !result.apply_success,
+        "a refusal to harden must be reported, not silently swallowed"
+    );
+    assert!(
+        result.apply_changes.iter().any(|change| {
+            !change.change_success && change.change_description.contains("/usr/etc/login.defs")
+        }),
+        "the refusal must name the vendor file it would have masked, got: {:?}",
+        result.apply_changes
+    );
+}
+
+#[tokio::test]
+async fn apply_refuses_when_it_cannot_tell_whether_a_vendor_file_exists() {
+    // Fail closed. A probe that errors is not evidence of absence, and
+    // authorising the write on it would mask the vendor file exactly as
+    // confidently as ignoring the layer altogether.
+    let executor = secure_pam_executor_base()
+        .with_file("/etc/security/faillock.conf", "deny = 3\n")
+        .without_file("/etc/login.defs")
+        .with_path_exists_error("/usr/etc/login.defs");
+    let executor = Arc::new(executor);
+    let mut ctx = Context::with_executor(executor.clone());
+    let plugin = PamHardeningPlugin::new();
+
+    let result = plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply must run rather than abort");
+
+    let log = executor.log();
+    assert!(
+        !log.files_written
+            .iter()
+            .any(|(written, _)| written.to_str() == Some("/etc/login.defs")),
+        "an unverifiable vendor layer must not authorise the write, but apply wrote: {:?}",
+        log.files_written
+    );
+    assert!(!result.apply_success, "the refusal must be reported");
+    assert!(
+        result.apply_changes.iter().any(|change| {
+            !change.change_success && change.change_description.contains("could not be checked")
+        }),
+        "an indeterminate probe must read differently from a confirmed vendor file, got: {:?}",
+        result.apply_changes
+    );
+}
+
+#[tokio::test]
+async fn apply_refuses_to_create_a_security_conf_that_would_mask_a_vendor_file() {
+    // The same door, on the other file kind. faillock.conf is written through
+    // the SecurityConf arm, which has its own read and its own absence branch,
+    // so guarding login.defs alone would leave this one open.
+    let executor = secure_pam_executor_base().with_file(
+        "/usr/etc/security/faillock.conf",
+        "deny = 3\naudit\nsilent\n",
+    );
+    let executor = Arc::new(executor);
+    let mut ctx = Context::with_executor(executor.clone());
+    let plugin = PamHardeningPlugin::new();
+
+    let result = plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply must run rather than abort");
+
+    let log = executor.log();
+    assert!(
+        !log.files_written
+            .iter()
+            .any(|(written, _)| written.to_str() == Some("/etc/security/faillock.conf")),
+        "creating /etc/security/faillock.conf masks the vendor file, but apply wrote: {:?}",
+        log.files_written
+    );
+    assert!(!result.apply_success, "the refusal must be reported");
+    assert!(
+        result.apply_changes.iter().any(|change| {
+            !change.change_success
+                && change
+                    .change_description
+                    .contains("/usr/etc/security/faillock.conf")
+        }),
+        "the refusal must name the vendor file, got: {:?}",
+        result.apply_changes
+    );
+}
