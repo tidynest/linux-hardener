@@ -14,7 +14,9 @@ use async_trait::async_trait;
 use chrono::Utc;
 use hardener_common::{
     error::Result,
-    file_utils::{ConfigFormat, Duplicates, parse_config_value, set_config_directive},
+    file_utils::{
+        ConfigFormat, Duplicates, global_scope, parse_config_value, set_config_directive,
+    },
     types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
@@ -956,7 +958,7 @@ impl HardeningPlugin for SshHardeningPlugin {
         // Check each SSH directive
         for directive in SSH_DIRECTIVES {
             let current_value = parse_config_value(
-                &config_content,
+                global_scope(&config_content),
                 directive.ssh_directive_name,
                 ConfigFormat::SpaceSeparated,
                 false,
@@ -1017,7 +1019,7 @@ impl HardeningPlugin for SshHardeningPlugin {
         // cipher, KEX or MAC is enabled).
         for crypto in SSH_CRYPTO_DIRECTIVES {
             let current_value = parse_config_value(
-                &config_content,
+                global_scope(&config_content),
                 crypto.crypto_directive_name,
                 ConfigFormat::SpaceSeparated,
                 false,
@@ -1121,7 +1123,7 @@ impl HardeningPlugin for SshHardeningPlugin {
             // An absent directive reads as "not set", matching scan's rendering
             // and therefore what an operator writes in the config.
             let observed = parse_config_value(
-                &original_content,
+                global_scope(&original_content),
                 directive.ssh_directive_name,
                 ConfigFormat::SpaceSeparated,
                 false,
@@ -1154,7 +1156,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                 .unwrap_or(directive.ssh_secure_value);
 
             let original_value = parse_config_value(
-                &config_content,
+                global_scope(&config_content),
                 directive.ssh_directive_name,
                 ConfigFormat::SpaceSeparated,
                 false,
@@ -1264,7 +1266,7 @@ impl HardeningPlugin for SshHardeningPlugin {
             // directive override, but the exception itself still only applies
             // when it documents the value actually on the host.
             let observed = parse_config_value(
-                &original_content,
+                global_scope(&original_content),
                 crypto.crypto_directive_name,
                 ConfigFormat::SpaceSeparated,
                 false,
@@ -1315,7 +1317,7 @@ impl HardeningPlugin for SshHardeningPlugin {
 
             let target_value = selected.join(",");
             let original_value = parse_config_value(
-                &config_content,
+                global_scope(&config_content),
                 crypto.crypto_directive_name,
                 ConfigFormat::SpaceSeparated,
                 false,
@@ -1583,7 +1585,7 @@ impl HardeningPlugin for SshHardeningPlugin {
 
                     // SSHD config is space-separated and case-insensitive.
                     let current_value = parse_config_value(
-                        &content,
+                        global_scope(&content),
                         directive.ssh_directive_name,
                         ConfigFormat::SpaceSeparated,
                         false, // case-insensitive

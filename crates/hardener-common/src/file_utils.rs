@@ -118,7 +118,41 @@ pub enum ConfigFormat {
     Auto,
 }
 
+/// The part of an sshd_config that applies to every connection: everything
+/// above the first live `Match` line.
+///
+/// A directive inside a `Match` block applies only to connections the block
+/// selects, so reading one and presenting it as the host's setting is a false
+/// pass. `Match Address 10.0.0.0/8` followed by `PermitRootLogin no` says
+/// nothing about root login from anywhere else, yet a whole-file read returns
+/// `no` and the caller concludes the host is hardened. Worse, apply then sees
+/// the target value already in place, writes nothing, and records no change at
+/// all, leaving the real global directive at sshd's compiled default.
+///
+/// The writer already stops at the same boundary. This is its counterpart, so
+/// the two agree on what "global" means rather than each deciding separately.
+///
+/// A commented `Match` opens no block and does not stop anything.
+pub fn global_scope(content: &str) -> &str {
+    let mut offset = 0;
+    for line in content.split_inclusive('\n') {
+        let trimmed = line.trim();
+        if !trimmed.starts_with('#') {
+            let (first, _) = split_directive(trimmed);
+            if first.eq_ignore_ascii_case(MATCH_KEYWORD) {
+                return &content[..offset];
+            }
+        }
+        offset += line.len();
+    }
+    content
+}
+
 /// Parses a configuration directive value from file content.
+///
+/// Reads the whole content. For sshd_config, where a `Match` block scopes the
+/// lines below it to particular connections, wrap the input in
+/// [`global_scope`] before calling this.
 ///
 /// # Arguments
 /// * `content` - The file content to search
@@ -938,5 +972,88 @@ match address 10.0.0.0/8
             out.contains("    PermitRootLogin yes"),
             "the block line must survive:\n{out}",
         );
+    }
+}
+
+#[cfg(test)]
+mod global_scope_tests {
+    use super::*;
+
+    const MATCH_ONLY: &str = "\
+PasswordAuthentication no
+Match Address 10.0.0.0/8
+    PermitRootLogin no
+";
+
+    #[test]
+    fn a_directive_only_inside_a_match_block_is_not_a_global_value() {
+        // The whole-file read returns "no" and the caller concludes root login
+        // is closed, when the block scopes that to one subnet and the global
+        // setting is still sshd's compiled default.
+        assert_eq!(
+            parse_config_value(
+                MATCH_ONLY,
+                "PermitRootLogin",
+                ConfigFormat::SpaceSeparated,
+                false
+            )
+            .as_deref(),
+            Some("no"),
+            "whole-file read is the behaviour global_scope exists to correct"
+        );
+        assert_eq!(
+            parse_config_value(
+                global_scope(MATCH_ONLY),
+                "PermitRootLogin",
+                ConfigFormat::SpaceSeparated,
+                false
+            ),
+            None,
+            "a Match-scoped directive must not be read as the global value"
+        );
+    }
+
+    #[test]
+    fn directives_above_the_match_block_are_still_global() {
+        assert_eq!(
+            parse_config_value(
+                global_scope(MATCH_ONLY),
+                "PasswordAuthentication",
+                ConfigFormat::SpaceSeparated,
+                false
+            )
+            .as_deref(),
+            Some("no")
+        );
+    }
+
+    #[test]
+    fn a_commented_match_opens_no_block() {
+        let content = "# Match Address 10.0.0.0/8\nPermitRootLogin no\n";
+        assert_eq!(
+            parse_config_value(
+                global_scope(content),
+                "PermitRootLogin",
+                ConfigFormat::SpaceSeparated,
+                false
+            )
+            .as_deref(),
+            Some("no"),
+            "a commented Match must not truncate the global scope"
+        );
+    }
+
+    #[test]
+    fn a_file_with_no_match_block_is_entirely_global() {
+        let content = "PermitRootLogin no\nMaxAuthTries 3\n";
+        assert_eq!(global_scope(content), content);
+    }
+
+    #[test]
+    fn the_match_keyword_is_matched_case_insensitively() {
+        // sshd accepts any case for keywords, so a lowercase `match` opens a
+        // block just as a capitalised one does.
+        let content = "match Address 10.0.0.0/8\n    PermitRootLogin no\n";
+        assert_eq!(global_scope(content), "");
     }
 }

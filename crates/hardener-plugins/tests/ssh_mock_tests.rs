@@ -1665,3 +1665,41 @@ async fn validate_honours_an_exception_whose_value_matches() {
         report.validation_report_estimated_changes
     );
 }
+
+#[tokio::test]
+async fn ssh_apply_hardens_a_global_directive_a_match_block_appears_to_satisfy() {
+    // PermitRootLogin exists only inside the Match block, already at the secure
+    // value. A whole-file read returned "no", apply concluded there was nothing
+    // to do, wrote nothing and recorded no change at all, and the real global
+    // directive stayed at sshd's compiled default (prohibit-password) for every
+    // connection outside 10.0.0.0/8. The tool reported the host compliant.
+    const BLOCK: &str = "Match Address 10.0.0.0/8\n    PermitRootLogin no";
+    let executor = apply_ready_executor(&format!(
+        "PasswordAuthentication no\n\
+         PermitEmptyPasswords no\n\
+         MaxAuthTries 3\n\
+         X11Forwarding no\n\
+         ClientAliveInterval 300\n\
+         ClientAliveCountMax 2\n\
+         \n\
+         {BLOCK}\n"
+    ));
+
+    let result = run_ssh_apply(&executor).await;
+
+    assert!(result.apply_success, "apply should succeed: {result:?}");
+    let written = written_sshd_config(&executor);
+    let block_start = written
+        .find("Match Address")
+        .unwrap_or_else(|| panic!("the Match block must survive:\n{written}"));
+
+    assert!(
+        written[..block_start].contains("PermitRootLogin no"),
+        "the global directive must be written above the Match block:\n{written}"
+    );
+    assert_eq!(
+        written[block_start..].trim_end(),
+        BLOCK,
+        "the block itself must be untouched:\n{written}"
+    );
+}
