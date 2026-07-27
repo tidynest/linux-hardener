@@ -410,13 +410,14 @@ login_defs_system_value() {
 
 # The lengths of the three tables the run is sized by, pinned as literals.
 #
-# Every count this suite prints is derived from those tables, so a table edited
-# down still agrees with itself: with SSH_CHECKS emptied, a run over the three
-# login.defs directives alone prints "Total Tests: 3 / Passed: 3", exits 0, and
-# scripts/test/run-cross-distro-tests.sh reports the distro as PASS. Nothing
-# computed from the tables can notice that, so the expected sizes are written
-# out here instead, and adding a directive means changing the literal on
-# purpose.
+# A count derived from a table cannot notice that table being edited down: with
+# SSH_CHECKS emptied, a run over the login.defs directives alone would agree
+# with itself, exit 0, and be reported as a PASS by
+# scripts/test/run-cross-distro-tests.sh. So the sizes are written out here, and
+# every expectation below is counted off these literals rather than off the
+# tables, which is what keeps the two independent: the tables are what the run
+# iterates, and these are what it is measured against. Adding a directive means
+# changing the literal on purpose.
 SSH_CHECKS_EXPECTED=7
 LOGIN_DEFS_CHECKS_EXPECTED=3
 DIFF_PLUGINS_EXPECTED=2
@@ -446,8 +447,14 @@ require_check_tables() {
 # print_summary refuses a run whose totals do not come to this: a loop that
 # skipped a directive, or a check that recorded nothing at all, would otherwise
 # leave a partial run reading as a complete one.
+#
+# Counted off the pinned lengths above, never off the tables themselves. Read
+# from ${#SSH_CHECKS[@]} the expectation would follow the table it exists to
+# police: emptying that table would drop the number from 22 to 8 and
+# print_summary would then accept the shorter run, which is the guard asking the
+# tables whether the tables are right.
 expected_check_total() {
-    printf '%s' "$(( 2 * (${#SSH_CHECKS[@]} + ${#LOGIN_DEFS_CHECKS[@]}) + ${#DIFF_PLUGINS[@]} ))"
+    printf '%s' "$(( 2 * (SSH_CHECKS_EXPECTED + LOGIN_DEFS_CHECKS_EXPECTED) + DIFF_PLUGINS_EXPECTED ))"
 }
 
 # The two plugins spell their finding ids differently, and a filter written for
@@ -1153,7 +1160,9 @@ Number of days of warning before password expires	: 11"
     check_eq "${#SSH_CHECKS[@]}" "7" "the ssh table holds seven directives"
     check_eq "${#LOGIN_DEFS_CHECKS[@]}" "3" "the login.defs table holds three directives"
     check_eq "${#DIFF_PLUGINS[@]}" "2" "two plugins are compared"
-    check_eq "$(expected_check_total)" "22" \
+    local pinned_total
+    pinned_total="$(expected_check_total)"
+    check_eq "$pinned_total" "22" \
         "the run is sized at two checks per directive plus one control per plugin"
     check_status 0 "require_check_tables accepts the tables as they stand" \
         require_check_tables
@@ -1161,6 +1170,12 @@ Number of days of warning before password expires	: 11"
     local saved_ssh_checks=("${SSH_CHECKS[@]}")
     SSH_CHECKS=("PermitRootLogin|no")
     check_status 1 "require_check_tables refuses a table edited down" require_check_tables
+    # And the size the run is measured against does not follow the table down.
+    # Counted off ${#SSH_CHECKS[@]} it would, and print_summary would then accept
+    # a run that skipped six directives as a complete one. Compared against the
+    # value taken while the tables were whole, which the literal above pins.
+    check_eq "$(expected_check_total)" "$pinned_total" \
+        "the expected total does not move when a table is edited down"
     SSH_CHECKS=("${saved_ssh_checks[@]}")
     check_status 0 "require_check_tables accepts the table once it is restored" \
         require_check_tables
