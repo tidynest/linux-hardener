@@ -633,7 +633,16 @@ fn ssh_stig_crypto_ids_match_the_rhel8_v2r7_benchmark() {
 /// of findings.
 #[tokio::test]
 async fn scan_reports_directives_unchecked_when_sshd_config_is_root_only() {
-    let mock = MockExecutor::new().with_read_permission_denied("/etc/ssh/sshd_config");
+    // The file is registered as well as denied, because that is what a
+    // root-only file is: present, and refusing to open. Declaring the denial
+    // alone described a path that does not exist, which no executor produces:
+    // LocalExecutor::path_exists returns an error for a denied probe and
+    // confirms absence only on NotFound. A layered read consults that probe to
+    // decide whether to fall through to /usr/etc, so the gentler fixture made
+    // this test pass for a reason the real code path does not have.
+    let mock = MockExecutor::new()
+        .with_file("/etc/ssh/sshd_config", "PermitRootLogin no\n")
+        .with_read_permission_denied("/etc/ssh/sshd_config");
     let ctx = Context::with_executor(Arc::new(mock));
     let result = SshHardeningPlugin::new()
         .scan(&ctx, &PluginConfig::default())
@@ -1856,5 +1865,121 @@ async fn validate_reports_a_directive_left_alone_by_a_policy_exception() {
             .any(|c| c.contains("PermitRootLogin")),
         "an excepted directive is not a pending change and must not inflate the count, got: {:?}",
         report.validation_report_estimated_changes
+    );
+}
+
+/// openSUSE's shape: no `/etc/ssh/sshd_config` at all, the real one under
+/// `/usr/etc`, and its Include of the `/etc` drop-in directory six lines above
+/// its own.
+fn opensuse_ssh_executor() -> MockExecutor {
+    MockExecutor::new()
+        .with_file(
+            "/usr/etc/ssh/sshd_config",
+            "# vendor config\n\
+             Include /etc/ssh/sshd_config.d/*.conf\n\
+             Include /usr/etc/ssh/sshd_config.d/*.conf\n\
+             PermitRootLogin yes\n\
+             PasswordAuthentication yes\n",
+        )
+        .with_directory("/etc/ssh/sshd_config.d")
+        .with_directory("/usr/etc/ssh/sshd_config.d")
+}
+
+#[tokio::test]
+async fn scan_reads_the_vendor_config_when_etc_has_none() {
+    // Before this change the scan reported "Failed to read
+    // /etc/ssh/sshd_config" and assessed nothing, so every SSH control on
+    // openSUSE routed to Manual Review and the host was never checked.
+    let ctx = Context::with_executor(Arc::new(opensuse_ssh_executor()));
+    let plugin = SshHardeningPlugin::new();
+
+    let result = plugin
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan must run");
+
+    assert!(
+        result.scan_success,
+        "the vendor config is readable, so the scan completed: {:?}",
+        result.scan_error
+    );
+    assert!(
+        result
+            .scan_findings
+            .iter()
+            .any(|f| f.finding_id == "ssh-permitrootlogin"),
+        "PermitRootLogin yes in the vendor file is a real finding, got: {:?}",
+        result
+            .scan_findings
+            .iter()
+            .map(|f| f.finding_id.as_str())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn an_unreadable_etc_config_is_not_answered_from_the_vendor_copy() {
+    // /etc/ssh/sshd_config exists and is what sshd reads, so reporting the
+    // vendor file's values because ours could not be read would describe a
+    // configuration that is not in force. Asserts the opposite direction: it
+    // guards the fix against over-reaching and is not evidence of the defect.
+    let ctx = Context::with_executor(Arc::new(
+        opensuse_ssh_executor()
+            .with_file("/etc/ssh/sshd_config", "PermitRootLogin no\n")
+            .with_read_permission_denied("/etc/ssh/sshd_config"),
+    ));
+    let plugin = SshHardeningPlugin::new();
+
+    let result = plugin
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan must run");
+
+    assert!(
+        result.scan_findings.is_empty(),
+        "an unreadable config must produce unchecked entries, never findings \
+         derived from the vendor copy, got: {:?}",
+        result.scan_findings
+    );
+    assert!(
+        !result.scan_unchecked.is_empty(),
+        "the privilege failure must be reported as unchecked"
+    );
+}
+
+#[tokio::test]
+async fn remediation_never_advises_creating_a_file_that_would_mask_the_vendor_config() {
+    // Making the scan work on openSUSE is what first renders these findings
+    // there, and every one of them carried "Edit /etc/ssh/sshd_config". On a
+    // host whose sshd_config lives under /usr/etc, creating that file makes
+    // sshd stop reading the vendor one, discarding both its Include lines. The
+    // advice would have instructed the operator to cause the masking defect
+    // this workstream exists to remove.
+    let ctx = Context::with_executor(Arc::new(opensuse_ssh_executor()));
+    let plugin = SshHardeningPlugin::new();
+
+    let result = plugin
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan must run");
+
+    let steps: Vec<&str> = result
+        .scan_findings
+        .iter()
+        .flat_map(|f| f.finding_remediation_steps.iter().map(|s| s.as_str()))
+        .collect();
+    assert!(!steps.is_empty(), "the scan must have produced findings");
+    assert!(
+        !steps
+            .iter()
+            .any(|s| s.contains("Edit /etc/ssh/sshd_config")
+                && !s.contains("/etc/ssh/sshd_config.d")),
+        "advising the operator to create /etc/ssh/sshd_config masks the vendor \
+         file wholesale, got: {steps:?}"
+    );
+    assert!(
+        steps.iter().any(|s| s.contains("/etc/ssh/sshd_config.d")),
+        "the drop-in directory is where openSUSE's own vendor config directs \
+         administrators, got: {steps:?}"
     );
 }

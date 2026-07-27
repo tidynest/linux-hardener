@@ -12,9 +12,15 @@
 
 mod include;
 
-/// The file this plugin reads and edits. Files it Includes are read too, but
-/// only this one is ever written.
-const SSHD_CONFIG_PATH: &str = "/etc/ssh/sshd_config";
+/// Where an administrator's sshd_config lives. Not necessarily where the one
+/// in force lives: openSUSE ships no `/etc/ssh/sshd_config` and keeps the
+/// vendor copy at `/usr/etc/ssh/sshd_config`, so every read goes through
+/// `read_layered` and only the write path names this constant directly.
+const SSHD_ADMIN_CONFIG_PATH: &str = "/etc/ssh/sshd_config";
+
+/// The drop-in directory sshd reads before the main configuration, and the one
+/// openSUSE's own vendor config directs administrators to.
+const SSHD_DROPIN_DIR: &str = "/etc/ssh/sshd_config.d";
 
 use async_trait::async_trait;
 use chrono::Utc;
@@ -24,6 +30,7 @@ use hardener_common::{
         ConfigFormat, Duplicates, global_scope, parse_config_value, set_config_directive,
     },
     types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
+    vendor_config::{ConfigLayer, LayeredRead, read_layered},
 };
 use hardener_core::{
     ApplyResult, Change, ChangeType, Checkpoint, PluginConfig, ValidationIssue, ValidationReport,
@@ -879,9 +886,39 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
     }
 }
 
+/// The sshd_config actually in force, with the layer that supplied it.
+struct MainConfig {
+    path: String,
+    layer: ConfigLayer,
+    content: String,
+}
+
+impl MainConfig {
+    /// Where an operator should put a directive so sshd obeys it.
+    ///
+    /// Never the vendor file: writing `/etc/ssh/sshd_config` on a host whose
+    /// configuration lives under `/usr/etc` makes sshd stop reading the vendor
+    /// copy, discarding its Include lines and the crypto-policy fragment with
+    /// them. sshd takes the first value it obtains and reads the drop-in
+    /// directory before the main file, so the drop-in is the mechanism that
+    /// works on every distribution and the one openSUSE documents in the
+    /// vendor file itself.
+    fn edit_target(&self) -> String {
+        match self.layer {
+            ConfigLayer::Admin => self.path.clone(),
+            ConfigLayer::Vendor => format!("{SSHD_DROPIN_DIR}/00-hardener.conf"),
+        }
+    }
+}
+
 /// Unchecked entries for every sshd_config check when the file itself cannot
 /// be read at the current privilege level. Ids mirror the finding ids.
-fn unchecked_ssh_checks() -> Vec<UncheckedCheck> {
+///
+/// `path` names the file that could not be read, which is not always
+/// `/etc/ssh/sshd_config`: on a host that layers its configuration it may be
+/// the vendor copy under `/usr/etc`, and naming the wrong file sends the
+/// operator to a path that is not the problem.
+fn unchecked_ssh_checks(path: &str) -> Vec<UncheckedCheck> {
     SSH_DIRECTIVES
         .iter()
         .map(|d| {
@@ -900,7 +937,7 @@ fn unchecked_ssh_checks() -> Vec<UncheckedCheck> {
             unchecked_check_id: format!("ssh-{}", name.to_lowercase()),
             unchecked_title: format!("SSH setting: {}", name),
             unchecked_category: FindingCategory::Network,
-            unchecked_reason: "reading /etc/ssh/sshd_config requires root".to_string(),
+            unchecked_reason: format!("reading {path} requires root"),
             unchecked_compliance: compliance,
         })
         .collect()
@@ -928,20 +965,36 @@ impl HardeningPlugin for SshHardeningPlugin {
         let mut findings = Vec::new();
         let plugin_id = PluginId::new("ssh-hardening");
 
-        // Read the SSH configuration file using executor
-        let config_content = match ctx.executor().read_file(Path::new(SSHD_CONFIG_PATH)).await {
-            Ok(content) => content,
-            Err(e) => {
+        // Read whichever sshd_config is in force, which is not always the one
+        // under /etc: openSUSE keeps the vendor copy at /usr/etc and the scan
+        // used to report it could not read /etc/ssh/sshd_config and assess
+        // nothing at all.
+        let main = match read_layered(ctx.executor().as_ref(), SSHD_ADMIN_CONFIG_PATH).await {
+            LayeredRead::Found {
+                path,
+                layer,
+                content,
+            } => MainConfig {
+                path,
+                layer,
+                content,
+            },
+            // A root-only sshd_config must not read as "every directive
+            // missing": that would falsely flag a hardened host. Surface the
+            // privilege failure as unchecked entries instead, naming the file
+            // that could not be read rather than assuming it was the /etc one.
+            LayeredRead::Unreadable {
+                path,
+                reason,
+                permission_denied,
+            } => {
                 let duration_us = start_time.elapsed().as_micros() as u64;
-                // A root-only sshd_config must not read as "every directive
-                // missing": that would falsely flag a hardened host. Surface
-                // the privilege failure as unchecked entries instead.
-                if hardener_common::error::is_permission_denied(&e) {
+                if permission_denied {
                     return Ok(ScanResult {
                         scan_plugin_id: plugin_id,
                         scan_success: true,
                         scan_findings: vec![],
-                        scan_unchecked: unchecked_ssh_checks(),
+                        scan_unchecked: unchecked_ssh_checks(&path),
                         scan_duration_us: duration_us,
                         scan_error: None,
                     });
@@ -952,16 +1005,31 @@ impl HardeningPlugin for SshHardeningPlugin {
                     scan_findings: vec![],
                     scan_unchecked: vec![],
                     scan_duration_us: duration_us,
-                    scan_error: Some(format!("Failed to read /etc/ssh/sshd_config: {}", e)),
+                    scan_error: Some(format!("Failed to read {path}: {reason}")),
+                });
+            }
+            LayeredRead::Absent => {
+                let duration_us = start_time.elapsed().as_micros() as u64;
+                return Ok(ScanResult {
+                    scan_plugin_id: plugin_id,
+                    scan_success: false,
+                    scan_findings: vec![],
+                    scan_unchecked: vec![],
+                    scan_duration_us: duration_us,
+                    scan_error: Some(format!(
+                        "Failed to read {SSHD_ADMIN_CONFIG_PATH}: no sshd_config exists there \
+                         or at its /usr/etc counterpart"
+                    )),
                 });
             }
         };
+        let config_content = main.content.clone();
 
         // sshd uses the first value it obtains, and the shipped config
         // Includes /etc/ssh/sshd_config.d/*.conf above everything this tool
         // writes, so a drop-in silently wins. Reading only the main file
         // reported the value we wrote while sshd enforced the drop-in's.
-        let resolved = match include::resolve(ctx, SSHD_CONFIG_PATH, &config_content).await {
+        let resolved = match include::resolve(ctx, &main.path, &config_content).await {
             Ok(resolved) => resolved,
             Err(e) => {
                 // Without the included files the effective configuration is
@@ -972,7 +1040,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                     scan_plugin_id: plugin_id,
                     scan_success: false,
                     scan_findings: vec![],
-                    scan_unchecked: unchecked_ssh_checks(),
+                    scan_unchecked: unchecked_ssh_checks(&main.path),
                     scan_duration_us: duration_us,
                     scan_error: Some(format!(
                         "Cannot resolve sshd_config Include directives: {e}"
@@ -1011,14 +1079,14 @@ impl HardeningPlugin for SshHardeningPlugin {
                         // Naming the file matters when it is not the one this
                         // tool edits: editing sshd_config would not change what
                         // sshd uses, because the drop-in is read first.
-                        Some(e) if e.source != SSHD_CONFIG_PATH => format!(
+                        Some(e) if e.source != main.path => format!(
                             "The SSH directive '{}' is not configured securely. {} \
                              The value in force comes from {}, which sshd reads before \
                              {}, so it overrides anything set there.",
                             directive.ssh_directive_name,
                             directive.ssh_description,
                             e.source,
-                            SSHD_CONFIG_PATH,
+                            main.path,
                         ),
                         _ => format!(
                             "The SSH directive '{}' is not configured securely. {}",
@@ -1031,8 +1099,10 @@ impl HardeningPlugin for SshHardeningPlugin {
                     finding_recommended_value: target.to_string(),
                     finding_remediation_steps: vec![
                         format!(
-                            "Edit /etc/ssh/sshd_config and set: {} {}",
-                            directive.ssh_directive_name, target,
+                            "Edit {} and set: {} {}",
+                            main.edit_target(),
+                            directive.ssh_directive_name,
+                            target,
                         ),
                         "Restart SSH service: systemctl restart sshd".to_string(),
                     ],
@@ -1108,7 +1178,12 @@ impl HardeningPlugin for SshHardeningPlugin {
 
     async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult> {
         let plugin_id = PluginId::new("ssh-hardening");
-        let config_path = SSHD_CONFIG_PATH;
+        // Apply still edits the admin-layer file unconditionally, so it remains
+        // broken on a host whose sshd_config lives under /usr/etc: the lock
+        // below opens a path that does not exist there. The drop-in writer and
+        // the lock fix land together, because fixing the lock alone would let
+        // apply create /etc/ssh/sshd_config and mask the vendor file wholesale.
+        let config_path = SSHD_ADMIN_CONFIG_PATH;
 
         // Step 1: Acquire an advisory lock on the config so the whole
         // read-compute-write cycle is atomic against other processes editing
@@ -1619,7 +1694,17 @@ impl HardeningPlugin for SshHardeningPlugin {
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {
         let mut issues = Vec::new();
         let plugin_id = PluginId::new("ssh-hardening");
-        let config_path = Path::new(SSHD_CONFIG_PATH);
+        // Validate whichever sshd_config is in force. Where neither layer has
+        // one, the admin path is the right file to name: it is where an
+        // operator would look, and where a working host would keep it.
+        let main = read_layered(ctx.executor().as_ref(), SSHD_ADMIN_CONFIG_PATH).await;
+        let resolved_path = match &main {
+            LayeredRead::Found { path, .. } => path.clone(),
+            LayeredRead::Absent | LayeredRead::Unreadable { .. } => {
+                SSHD_ADMIN_CONFIG_PATH.to_string()
+            }
+        };
+        let config_path = Path::new(&resolved_path);
 
         // Check if SSH config file exists and is readable using executor.
         match ctx.executor().file_metadata(config_path).await {
@@ -1656,8 +1741,10 @@ impl HardeningPlugin for SshHardeningPlugin {
         // deviation is deliberate and documented.
         let mut exceptions = Vec::new();
 
-        match ctx.executor().read_file(config_path).await {
-            Ok(content) => {
+        // The content already came back from the layered read above; reading it
+        // a second time would be a second round trip against a remote host.
+        match &main {
+            LayeredRead::Found { content, .. } => {
                 // Check each directive to see if it needs updating.
                 for directive in SSH_DIRECTIVES {
                     // Resolve the target the way apply and scan do: a config
@@ -1667,7 +1754,7 @@ impl HardeningPlugin for SshHardeningPlugin {
 
                     // SSHD config is space-separated and case-insensitive.
                     let current_value = parse_config_value(
-                        global_scope(&content),
+                        global_scope(content),
                         directive.ssh_directive_name,
                         ConfigFormat::SpaceSeparated,
                         false, // case-insensitive
@@ -1711,14 +1798,21 @@ impl HardeningPlugin for SshHardeningPlugin {
                     }
                 }
             }
-            Err(e) => {
+            LayeredRead::Absent => {
                 issues.push(ValidationIssue {
                     validation_issue_severity: Severity::Critical,
                     validation_issue_message: format!(
-                        "Cannot read {}: {}",
-                        config_path.display(),
-                        e
+                        "Cannot read {}: no sshd_config exists there or at its /usr/etc \
+                         counterpart",
+                        config_path.display()
                     ),
+                    validation_issue_config_key: None,
+                });
+            }
+            LayeredRead::Unreadable { path, reason, .. } => {
+                issues.push(ValidationIssue {
+                    validation_issue_severity: Severity::Critical,
+                    validation_issue_message: format!("Cannot read {path}: {reason}"),
                     validation_issue_config_key: None,
                 });
             }
