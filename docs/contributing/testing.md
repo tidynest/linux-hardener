@@ -150,7 +150,7 @@ consumer what is in force:
 
 | Setting | Oracle | Why not read the file |
 |---------|--------|-----------------------|
-| The seven `sshd_config` directives | `sshd -T` | Resolves `Include` precedence and `Match` scoping, which our parser does not |
+| The `sshd_config` directives in `SSH_CHECKS` | `sshd -T` | Resolves `Include` precedence and `Match` scoping, which our parser does not |
 | `PASS_MIN_DAYS`, `PASS_MAX_DAYS`, `PASS_WARN_AGE` | `useradd` then `chage -l` | `login.defs` supplies defaults for NEW accounts, so only a fresh account shows what the file means today |
 
 Two assertions per directive, because both have failed in production: the system
@@ -188,11 +188,12 @@ that cannot answer is a failure here, never a skip: a skipped check that reads a
 a pass is the disease being treated.
 
 The binary under test must be built from this tree. Its `scan --format json`
-output has to carry both a `findings` and an `unchecked` array per plugin, and a
-build old enough to predate `unchecked` is refused rather than counted as
-reporting nothing. Setting `BINARY` names the binary exactly: an explicit path
-that is not executable aborts the run instead of falling back to a build from the
-tree, which would report a run of one binary as a run of another.
+output has to carry both a `findings` and an `unchecked` array per plugin, and
+each `unchecked` entry has to carry an `unchecked_check_id`; a build old enough
+to predate `unchecked` is refused rather than counted as reporting nothing.
+Setting `BINARY` names the binary exactly: an explicit path that is not
+executable aborts the run instead of falling back to a build from the tree, which
+would report a run of one binary as a run of another.
 
 ### Self-test (safe anywhere)
 
@@ -206,13 +207,26 @@ safety, and both plugins' finding-id conventions against fixtures. `jq` is the
 only external command it needs.
 
 It also pins the shapes of `scan` output that would otherwise read as a clean
-bill of health: a plugin object missing its `findings` or `unchecked` array, more
-than one JSON document on stdout, a directive the tool listed as unchecked, and a
-pre-apply capture in which a plugin reported nothing. The lengths of the check
-tables are pinned there as literals as well, because every total the suite prints
-is counted off those tables: with the ssh table emptied, a run over the three
-`login.defs` directives alone would print `Total Tests: 3 / Passed: 3` and exit
-0. Adding a directive means changing the expected length beside its table.
+bill of health: a plugin object missing its `findings` or `unchecked` array, an
+`unchecked` entry whose `unchecked_check_id` has been renamed, more than one JSON
+document on stdout, a directive the tool listed as unchecked, and a pre-apply
+capture in which a plugin reported nothing.
+
+The lengths of the check tables are pinned there as literals as well. A total
+counted off the tables cannot notice one of them being edited down: with the ssh
+table emptied, a run over the `login.defs` directives alone would agree with
+itself, exit 0, and be reported as a PASS. So the size the run is measured
+against is counted off `SSH_CHECKS_EXPECTED`, `LOGIN_DEFS_CHECKS_EXPECTED` and
+`DIFF_PLUGINS_EXPECTED`, which the tables are then checked against, rather than
+off the tables themselves.
+
+Adding a directive therefore means changing four literals in
+`scripts/test/differential-suite.sh`, not one: the `*_EXPECTED` constant beside
+its table, that same length re-pinned in the self-test (`the ssh table holds
+seven directives`), the total the run is sized at (`22`), and the number of
+directives the pre-apply control covers (`10`). Every one of them fails loudly,
+over two `--self-test` runs, because the total is counted off the constant and
+only moves once the constant has been raised.
 
 ### What a failure means
 
