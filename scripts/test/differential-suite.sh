@@ -61,7 +61,15 @@ DIFF_PLUGINS=(ssh-hardening pam-hardening)
 # nothing is indistinguishable from "the tool reported no finding", which is the
 # pass condition. An oracle that cannot run is a failure, never a skip, so the
 # whole set is checked up front and named when it is incomplete.
-REQUIRED_COMMANDS=(jq grep sshd ssh-keygen useradd userdel chage id)
+#
+# chpasswd, stat and su belong to the vendor survival probe: it sets a password
+# so the hashing scheme can be read, asks the filesystem for the home
+# directory's mode, and asks a login session for its umask. Each is listed for
+# the same reason as jq, that a missing one would leave a reading empty, and an
+# empty reading compared against another empty reading is a check that agrees
+# with itself. The account rows themselves are read by the shell, so that probe
+# adds no command of its own.
+REQUIRED_COMMANDS=(jq grep sshd ssh-keygen useradd userdel chage id chpasswd stat su)
 
 # Refuse, naming every command that is missing rather than one per run.
 require_commands() {
@@ -454,7 +462,265 @@ login_defs_system_value() {
     fi
 }
 
-# The lengths of the three tables the run is sized by, pinned as literals.
+# Settings this tool does not manage, and must therefore leave exactly as it
+# found them.
+#
+# This is the check the suite was missing, and the reason 110/110 was never
+# proof. Every other check here asks whether a setting the tool targets reached
+# its target. None asked whether the settings it does not target survived the
+# run, so the openSUSE defect, where a three-directive /etc/login.defs masked
+# the 35 keys the vendor file set, could reappear with every existing check
+# green.
+#
+# The assertion is the invariant, never a value. ENCRYPT_METHOD is yescrypt on
+# openSUSE and sha512 elsewhere, HOME_MODE differs between distributions and
+# UMASK differs with them; hardcoding any of them would make the check
+# distribution-specific for no gain. The tool does not manage these, so any
+# change to them is damage whatever the value was, and comparing before against
+# after catches masking the suite has never seen as well as the one it has.
+VENDOR_SURVIVAL_CHECKS=(ENCRYPT_METHOD HOME_MODE UMASK)
+
+# The password the probe account is given so ENCRYPT_METHOD has something to
+# hash. Long, mixed-case, with a digit and a symbol, because the apply under
+# test hardens pwquality and a password chpasswd rejected after apply but
+# accepted before would read as damage this suite invented.
+# shellcheck disable=SC2016  # a literal password, not an expression to expand
+DIFF_PROBE_PASSWORD='Qv7#tRm2!xLb9$Zk'
+
+# The hashing scheme a shadow password field was written with, as `$id$`.
+#
+# ENCRYPT_METHOD is read this way rather than out of login.defs because the
+# hash is what the setting produced: crypt wrote the prefix, so it is the
+# consumer's own answer, and it stays readable when the file that chose it has
+# been masked away.
+#
+# A field carrying no usable hash is refused rather than reported. "!", "!!",
+# "*" and a "!"-prefixed hash all mean the account cannot authenticate, and all
+# of them are stable across an apply, so returning one would let a reading that
+# proves nothing pass as a setting that survived.
+shadow_hash_scheme() {
+    local field="$1" scheme_pattern='^(\$[^$]+\$)'
+    if [[ -z "$field" ]]; then
+        echo "FATAL: the probe account has no shadow password field" >&2
+        return 1
+    fi
+    if [[ "$field" == '!'* || "$field" == '*'* ]]; then
+        echo "FATAL: the probe account's password field is '$field', which is a" \
+            "locked or empty password and names no hashing scheme" >&2
+        return 1
+    fi
+    if [[ "$field" =~ $scheme_pattern ]]; then
+        printf '%s' "${BASH_REMATCH[1]}"
+        return 0
+    fi
+    # No "$id$" prefix at all is the historic DES format, which is a real
+    # answer and a different one from every prefixed scheme.
+    printf 'descrypt'
+}
+
+# One field of the probe account's row in a colon-separated account file.
+#
+# Read with the shell rather than through awk. gawk is not in the package set
+# scripts/containers/create-container.sh installs for the dnf family or for
+# openSUSE, and a command that turns out to be missing would refuse the entire
+# run over a reading bash can take unaided.
+#
+# Returns non-zero when the account has no row, which is a different thing from
+# a row whose field is empty: the first means the probe is not there at all.
+probe_account_field() {
+    local file="$1" field="$2" line fields
+    while IFS= read -r line; do
+        IFS=: read -r -a fields <<<"$line"
+        # Exact match. A prefix match would read the row of any account whose
+        # name merely starts the same way.
+        [[ "${fields[0]:-}" == "$DIFF_PROBE_USER" ]] || continue
+        printf '%s' "${fields[$((field - 1))]:-}"
+        return 0
+    done <"$file"
+    return 1
+}
+
+# The three readings, taken from an existing probe account.
+#
+# Each asks the setting's consumer: crypt for the hashing scheme, the
+# filesystem for the mode useradd gave the home directory, and a login session
+# for the umask it starts with. None of them re-reads login.defs, which is the
+# file whose masking these checks exist to catch.
+vendor_survival_probe_readings() {
+    local field scheme home mode session_umask octal='^[0-7]{3,4}$'
+    # A here-string rather than a pipe: chpasswd's own status is what matters,
+    # and a pipeline reports its last stage's.
+    if ! chpasswd <<<"$DIFF_PROBE_USER:$DIFF_PROBE_PASSWORD"; then
+        echo "FATAL: chpasswd failed for the probe account" >&2
+        return 1
+    fi
+    if ! field="$(probe_account_field /etc/shadow 2)"; then
+        echo "FATAL: /etc/shadow holds no row for the probe account" >&2
+        return 1
+    fi
+    scheme="$(shadow_hash_scheme "$field")" || return 1
+    if ! home="$(probe_account_field /etc/passwd 6)"; then
+        echo "FATAL: /etc/passwd holds no row for the probe account" >&2
+        return 1
+    fi
+    if [[ -z "$home" || ! -d "$home" ]]; then
+        echo "FATAL: the probe account has no home directory to read a mode from" >&2
+        return 1
+    fi
+    if ! mode="$(stat -c %a "$home")"; then
+        echo "FATAL: stat could not read the mode of $home" >&2
+        return 1
+    fi
+    # The umask a login session starts with, which is what login.defs UMASK
+    # feeds through pam_umask. Where a distribution's su stack does not load
+    # pam_umask this reports the shell's own default, and the comparison then
+    # says that default did not move: a weaker claim than the other two, and
+    # still a true one, because it is what a user's session actually gets.
+    if ! session_umask="$(su - "$DIFF_PROBE_USER" -c umask)"; then
+        echo "FATAL: su could not open a login session for the probe account" >&2
+        return 1
+    fi
+    session_umask="${session_umask//[[:space:]]/}"
+    # Both are printed into a KEY value line, so a value carrying whitespace or
+    # an error string would silently reshape the capture the extractor reads.
+    if [[ ! "$mode" =~ $octal ]]; then
+        echo "FATAL: the home directory mode '$mode' is not an octal mode" >&2
+        return 1
+    fi
+    if [[ ! "$session_umask" =~ $octal ]]; then
+        echo "FATAL: the session umask '$session_umask' is not an octal mask" >&2
+        return 1
+    fi
+    printf '%s\n' "ENCRYPT_METHOD $scheme" "HOME_MODE $mode" "UMASK $session_umask"
+}
+
+# Whether an unmanaged setting survived: the value after apply is the value
+# before it, and both were actually read.
+#
+# An empty side never agrees. Two silences comparing equal is the shape this
+# whole family exists to refuse, and it is reachable: a reading that could not
+# be taken twice in a row would otherwise report the setting as untouched.
+vendor_survival_agrees() {
+    local before="$1" after="$2"
+    [[ -n "$before" && -n "$after" && "$before" == "$after" ]]
+}
+
+# Create the probe account, take the three readings, remove it again. Prints
+# one `KEY value` line per check, the shape sshd -T uses, so the extractor below
+# is the one the ssh oracle already has rather than a second reader.
+#
+# The account is removed on the failure path too, exactly as the login.defs
+# probe does it: a leaked account aborts every later run at the guard above.
+vendor_survival_values() {
+    require_absent_probe_user || return 1
+    # The shell is pinned rather than inherited from /etc/default/useradd. The
+    # umask reading needs a login session, and a default of nologin would make
+    # the probe fail on the distribution rather than report on it.
+    if ! useradd -m -s /bin/sh "$DIFF_PROBE_USER" >/dev/null 2>&1; then
+        echo "FATAL: could not create probe user for the vendor survival checks" >&2
+        return 1
+    fi
+    local out status=0
+    out="$(vendor_survival_probe_readings)" || status=$?
+    if (( status != 0 )); then
+        remove_probe_user || true
+        return 1
+    fi
+    remove_probe_user || return 1
+    printf '%s' "$out"
+}
+
+# The capture taken BEFORE apply, and the one taken after.
+#
+# The before capture is this family's positive control as well as half of its
+# comparison: it is taken while the container is known to be untouched, and
+# every reading in it must have been read for real, so a probe that silently
+# answers nothing fails the run at the start rather than agreeing with itself
+# at the end.
+VENDOR_SURVIVAL_BEFORE=""
+VENDOR_SURVIVAL_BEFORE_GENERATION=""
+VENDOR_SURVIVAL_AFTER=""
+VENDOR_SURVIVAL_AFTER_GENERATION=""
+
+# Taken above apply, and refused once one has run: a "before" capture taken
+# afterwards describes the system this suite is trying to compare against.
+preapply_vendor_survival_init() {
+    local out
+    if (( APPLY_GENERATION != 0 )); then
+        echo "FATAL: the pre-apply vendor survival capture was asked for at generation" \
+            "$APPLY_GENERATION, after apply had run." >&2
+        echo "  It is the value these checks compare against, so it has to be taken" >&2
+        echo "  while the container is still unhardened." >&2
+        return 1
+    fi
+    if ! out="$(vendor_survival_values)"; then
+        return 1
+    fi
+    if [[ -z "$out" ]]; then
+        echo "FATAL: the vendor survival probe succeeded but read nothing" >&2
+        return 1
+    fi
+    VENDOR_SURVIVAL_BEFORE="$out"
+    VENDOR_SURVIVAL_BEFORE_GENERATION="$APPLY_GENERATION"
+}
+
+vendor_survival_oracle_init() {
+    local out
+    if ! out="$(vendor_survival_values)"; then
+        return 1
+    fi
+    if [[ -z "$out" ]]; then
+        echo "FATAL: the vendor survival probe succeeded but read nothing" >&2
+        return 1
+    fi
+    VENDOR_SURVIVAL_AFTER="$out"
+    VENDOR_SURVIVAL_AFTER_GENERATION="$APPLY_GENERATION"
+}
+
+# One reading out of a capture. The capture is written in the `KEY value` shape
+# sshd -T prints, so the ssh extractor reads it: one reader, and its absent and
+# valueless paths are already pinned by the self-test.
+vendor_survival_reading() {
+    local capture="$1" key="$2" value
+    if ! value="$(extract_sshd_value "$capture" "$key")"; then
+        echo "FATAL: the vendor survival capture does not report '$key'" >&2
+        return 1
+    fi
+    if [[ -z "$value" ]]; then
+        echo "FATAL: the vendor survival capture reports '$key' with no value" >&2
+        return 1
+    fi
+    printf '%s' "$value"
+}
+
+# What the system holds now, refused unless the capture followed the last apply.
+vendor_survival_system_value() {
+    local key="$1"
+    require_fresh_capture vendor_survival "$VENDOR_SURVIVAL_AFTER" \
+        "$VENDOR_SURVIVAL_AFTER_GENERATION" || return 1
+    vendor_survival_reading "$VENDOR_SURVIVAL_AFTER" "$key"
+}
+
+# What it held before, refused unless the capture predates every apply. The
+# mirror image of the rule above, written out rather than borrowed, for the
+# same reason the pre-apply scan capture has its own.
+vendor_survival_baseline_value() {
+    local key="$1"
+    if [[ -z "$VENDOR_SURVIVAL_BEFORE" ]]; then
+        echo "FATAL: vendor survival baseline not captured;" \
+            "preapply_vendor_survival_init must run before apply" >&2
+        return 1
+    fi
+    if [[ "$VENDOR_SURVIVAL_BEFORE_GENERATION" != "0" ]]; then
+        echo "FATAL: the vendor survival baseline is stamped generation" \
+            "${VENDOR_SURVIVAL_BEFORE_GENERATION:-unset}, so it was taken after an" \
+            "apply and describes a system that had already been changed." >&2
+        return 1
+    fi
+    vendor_survival_reading "$VENDOR_SURVIVAL_BEFORE" "$key"
+}
+
+# The lengths of the four tables the run is sized by, pinned as literals.
 #
 # A count derived from a table cannot notice that table being edited down: with
 # SSH_CHECKS emptied, a run over the login.defs directives alone would agree
@@ -466,6 +732,7 @@ login_defs_system_value() {
 # changing the literal on purpose.
 SSH_CHECKS_EXPECTED=7
 LOGIN_DEFS_CHECKS_EXPECTED=3
+VENDOR_SURVIVAL_CHECKS_EXPECTED=3
 DIFF_PLUGINS_EXPECTED=2
 
 require_check_tables() {
@@ -473,6 +740,7 @@ require_check_tables() {
     for entry in \
         "SSH_CHECKS ${#SSH_CHECKS[@]} $SSH_CHECKS_EXPECTED" \
         "LOGIN_DEFS_CHECKS ${#LOGIN_DEFS_CHECKS[@]} $LOGIN_DEFS_CHECKS_EXPECTED" \
+        "VENDOR_SURVIVAL_CHECKS ${#VENDOR_SURVIVAL_CHECKS[@]} $VENDOR_SURVIVAL_CHECKS_EXPECTED" \
         "DIFF_PLUGINS ${#DIFF_PLUGINS[@]} $DIFF_PLUGINS_EXPECTED"; do
         read -r name got want <<<"$entry"
         if [[ "$got" != "$want" ]]; then
@@ -489,18 +757,24 @@ require_check_tables() {
     fi
 }
 
-# Two assertions per compared directive, plus one pre-apply control per plugin.
-# print_summary refuses a run whose totals do not come to this: a loop that
-# skipped a directive, or a check that recorded nothing at all, would otherwise
-# leave a partial run reading as a complete one.
+# Two assertions per compared directive, plus one pre-apply control per plugin,
+# plus one per unmanaged setting. print_summary refuses a run whose totals do
+# not come to this: a loop that skipped a directive, or a check that recorded
+# nothing at all, would otherwise leave a partial run reading as a complete one.
+#
+# The vendor survival checks are one assertion each, not two: there is no
+# tool-reported counterpart to compare against, because the tool claims nothing
+# about settings it does not manage. That is what takes the per-distribution
+# total from 22 to 25, and the five-distribution total from 110 to 125.
 #
 # Counted off the pinned lengths above, never off the tables themselves. Read
 # from ${#SSH_CHECKS[@]} the expectation would follow the table it exists to
-# police: emptying that table would drop the number from 22 to 8 and
+# police: emptying that table would drop the number from 25 to 11 and
 # print_summary would then accept the shorter run, which is the guard asking the
 # tables whether the tables are right.
 expected_check_total() {
-    printf '%s' "$(( 2 * (SSH_CHECKS_EXPECTED + LOGIN_DEFS_CHECKS_EXPECTED) + DIFF_PLUGINS_EXPECTED ))"
+    printf '%s' "$(( 2 * (SSH_CHECKS_EXPECTED + LOGIN_DEFS_CHECKS_EXPECTED) \
+        + VENDOR_SURVIVAL_CHECKS_EXPECTED + DIFF_PLUGINS_EXPECTED ))"
 }
 
 # The two plugins spell their finding ids differently, and a filter written for
@@ -938,6 +1212,31 @@ run_login_defs_checks() {
     done
 }
 
+# One check per unmanaged setting: it holds what it held before apply.
+#
+# A reading that could not be taken on either side is a failure, never a skip,
+# and costs that setting its single check. Recording exactly one either way
+# keeps the totals comparable between a run where the probe answered and one
+# where it did not.
+run_vendor_survival_checks() {
+    local key before after
+    for key in "${VENDOR_SURVIVAL_CHECKS[@]}"; do
+        if ! before="$(vendor_survival_baseline_value "$key")"; then
+            record_fail "vendor survival $key: the value before apply could not be read, so nothing can be shown to have survived"
+            continue
+        fi
+        if ! after="$(vendor_survival_system_value "$key")"; then
+            record_fail "vendor survival $key: the value after apply could not be read"
+            continue
+        fi
+        if vendor_survival_agrees "$before" "$after"; then
+            record_pass "vendor survival $key: still '$after', the value the system held before apply"
+        else
+            record_fail "vendor survival $key: was '$before' before apply and is '$after' now; this tool does not manage $key, so the change is damage whatever the new value is"
+        fi
+    done
+}
+
 # Apply the plugins this suite compares, then record that an apply happened.
 # Every oracle refuses to answer until this has run, and refuses any capture
 # taken above it.
@@ -1214,6 +1513,217 @@ Number of days of warning before password expires	: 11"
     LOGIN_DEFS_CHAGE_GENERATION=""
     unset -f useradd userdel id chage
 
+    # The vendor survival family. Its whole job is to notice a value changing,
+    # so the assertions that matter are the ones where something changed and
+    # the ones where a reading could not be taken at all.
+    #
+    # The scheme extraction first. A yescrypt field and a sha512 field must
+    # yield different answers, or a comparison between them would agree; and a
+    # field that carries no password at all must be refused, because "!" is
+    # stable across an apply and would otherwise pass as a setting that
+    # survived while proving nothing.
+    # Named once, because every one of them is a literal crypt string that must
+    # reach the function exactly as written.
+    # shellcheck disable=SC2016  # crypt prefixes are data, not expressions
+    local scheme_yescrypt='$y$' scheme_sha512='$6$' scheme_bcrypt='$2b$' \
+        field_yescrypt='$y$j9T$LdI4nQ7$3xKq' field_sha512='$6$rounds=5000$abc$def' \
+        field_bcrypt='$2b$10$abcdef' field_locked_hash='!$6$abc$def'
+
+    check_eq "$(shadow_hash_scheme "$field_yescrypt")" "$scheme_yescrypt" \
+        "yescrypt reads as its own scheme"
+    check_eq "$(shadow_hash_scheme "$field_sha512")" "$scheme_sha512" \
+        "sha512 reads as its own scheme"
+    check_eq "$(shadow_hash_scheme "$field_bcrypt")" "$scheme_bcrypt" \
+        "bcrypt reads as its own scheme"
+    check_eq "$(shadow_hash_scheme 'K3vY8qP1sT.xU')" "descrypt" \
+        "a field with no scheme prefix is legacy descrypt, not an absent value"
+    check_status 1 "an empty shadow field is refused" shadow_hash_scheme ""
+    check_status 1 "a locked account is refused rather than read" shadow_hash_scheme "!"
+    check_status 1 "an account with no password is refused" shadow_hash_scheme "*"
+    check_status 1 "a locked account that keeps its hash is still refused" \
+        shadow_hash_scheme "$field_locked_hash"
+
+    # The account row reader, against a file rather than the real /etc. The
+    # decoy row is an account whose name starts with the probe's: a prefix
+    # match would read its fields and report another account's settings as the
+    # probe's, and both of its fields are values the assertions would notice.
+    local account_root="${TMPDIR:-/tmp}/diffsuite-accounts-$$"
+    mkdir -p "$account_root"
+    printf '%s\n' \
+        "root:x:0:0:root:/root:/bin/bash" \
+        "${DIFF_PROBE_USER}extra:x:1001:1001::/home/decoy:/bin/sh" \
+        "${DIFF_PROBE_USER}:x:1002:1002::/home/${DIFF_PROBE_USER}:/bin/sh" \
+        >"$account_root/passwd"
+    check_eq "$(probe_account_field "$account_root/passwd" 6)" "/home/$DIFF_PROBE_USER" \
+        "the account reader takes the probe's own row, not one that merely starts the same"
+    check_eq "$(probe_account_field "$account_root/passwd" 1)" "$DIFF_PROBE_USER" \
+        "the account reader counts fields from one"
+    printf '%s\n' "root:!:20000:0:99999:7:::" >"$account_root/noprobe"
+    check_status 1 "a file with no row for the probe account returns non-zero" \
+        probe_account_field "$account_root/noprobe" 2
+    rm -rf "$account_root"
+
+    # The capture is written in the KEY value shape sshd -T prints, so the ssh
+    # extractor reads it. Pinned here so that reuse cannot quietly stop being
+    # true: a capture format that drifted would leave every reading absent, and
+    # an absent reading on both sides of the comparison is two silences
+    # agreeing.
+    local survival_fixture
+    survival_fixture="$(printf 'ENCRYPT_METHOD %s\nHOME_MODE 750\nUMASK 0027\n' "$scheme_yescrypt")"
+    check_eq "$(vendor_survival_reading "$survival_fixture" HOME_MODE)" "750" \
+        "a vendor survival reading is read out of the capture by key"
+    check_eq "$(vendor_survival_reading "$survival_fixture" ENCRYPT_METHOD)" "$scheme_yescrypt" \
+        "a reading whose value looks like a shell variable survives the capture"
+    check_status 1 "a key absent from the capture returns non-zero" \
+        vendor_survival_reading "$survival_fixture" NO_SUCH_KEY
+    check_status 1 "a key present with no value returns non-zero" \
+        vendor_survival_reading "$(printf 'HOME_MODE \n')" HOME_MODE
+
+    # The comparison itself, in every direction. The third is the defect this
+    # family exists to catch: a setting the tool does not manage holding a
+    # different value after the run than before it.
+    check_status 0 "an unchanged value agrees" vendor_survival_agrees 750 750
+    check_status 1 "a changed value does not agree" vendor_survival_agrees 750 700
+    check_status 1 "a missing before value does not agree" vendor_survival_agrees "" 750
+    check_status 1 "a missing after value does not agree" vendor_survival_agrees 750 ""
+
+    # The two freshness rules, which are mirror images: the after capture is
+    # refused unless it followed the last apply, the before capture unless it
+    # predates every apply.
+    APPLY_GENERATION=0
+    VENDOR_SURVIVAL_AFTER=""
+    VENDOR_SURVIVAL_AFTER_GENERATION=""
+    VENDOR_SURVIVAL_BEFORE=""
+    VENDOR_SURVIVAL_BEFORE_GENERATION=""
+    check_status 1 "uninitialised vendor survival oracle returns non-zero" \
+        vendor_survival_system_value HOME_MODE
+    check_status 1 "uninitialised vendor survival baseline returns non-zero" \
+        vendor_survival_baseline_value HOME_MODE
+
+    VENDOR_SURVIVAL_BEFORE="$survival_fixture"
+    VENDOR_SURVIVAL_BEFORE_GENERATION=0
+    check_eq "$(vendor_survival_baseline_value UMASK)" "0027" \
+        "a baseline stamped before any apply reads"
+    VENDOR_SURVIVAL_AFTER="$survival_fixture"
+    VENDOR_SURVIVAL_AFTER_GENERATION=0
+    check_status 1 "a vendor survival capture with no apply recorded returns non-zero" \
+        vendor_survival_system_value UMASK
+    bump_apply_generation
+    check_status 1 "a vendor survival capture older than the last apply returns non-zero" \
+        vendor_survival_system_value UMASK
+    VENDOR_SURVIVAL_AFTER_GENERATION="$APPLY_GENERATION"
+    check_eq "$(vendor_survival_system_value UMASK)" "0027" \
+        "a capture taken after apply reads"
+    VENDOR_SURVIVAL_BEFORE_GENERATION="$APPLY_GENERATION"
+    check_status 1 "a baseline stamped after an apply returns non-zero" \
+        vendor_survival_baseline_value UMASK
+    VENDOR_SURVIVAL_BEFORE_GENERATION=0
+
+    # The checks as the run records them. One per setting whatever happens, and
+    # a damaged setting must cost a failure rather than a silence.
+    before_total=$CHECKS_TOTAL
+    before_passed=$CHECKS_PASSED
+    before_failed=$CHECKS_FAILED
+    run_vendor_survival_checks >/dev/null
+    check_eq "$((CHECKS_TOTAL - before_total))" "3" \
+        "the vendor survival family records one check per setting"
+    check_eq "$((CHECKS_PASSED - before_passed))" "3" \
+        "settings that survived the run pass"
+    CHECKS_TOTAL=$before_total
+    CHECKS_PASSED=$before_passed
+    CHECKS_FAILED=$before_failed
+
+    VENDOR_SURVIVAL_AFTER="$(printf 'ENCRYPT_METHOD %s\nHOME_MODE 750\nUMASK 0027\n' "$scheme_sha512")"
+    before_total=$CHECKS_TOTAL
+    before_passed=$CHECKS_PASSED
+    before_failed=$CHECKS_FAILED
+    run_vendor_survival_checks >/dev/null
+    check_eq "$((CHECKS_FAILED - before_failed))" "1" \
+        "a setting the run changed fails its check"
+    check_eq "$((CHECKS_PASSED - before_passed))" "2" \
+        "the settings that did survive still pass"
+    CHECKS_TOTAL=$before_total
+    CHECKS_PASSED=$before_passed
+    CHECKS_FAILED=$before_failed
+
+    # A reading missing from the after capture is a failure, not a skip, and
+    # not a pass by comparison with a silence.
+    VENDOR_SURVIVAL_AFTER="$(printf 'HOME_MODE 750\nUMASK 0027\n')"
+    before_total=$CHECKS_TOTAL
+    before_passed=$CHECKS_PASSED
+    before_failed=$CHECKS_FAILED
+    run_vendor_survival_checks >/dev/null
+    check_eq "$((CHECKS_FAILED - before_failed))" "1" \
+        "a reading that could not be taken fails its check"
+    check_eq "$((CHECKS_TOTAL - before_total))" "3" \
+        "a failed reading still costs exactly one check"
+    CHECKS_TOTAL=$before_total
+    CHECKS_PASSED=$before_passed
+    CHECKS_FAILED=$before_failed
+
+    APPLY_GENERATION=0
+    VENDOR_SURVIVAL_AFTER=""
+    VENDOR_SURVIVAL_AFTER_GENERATION=""
+    VENDOR_SURVIVAL_BEFORE=""
+    VENDOR_SURVIVAL_BEFORE_GENERATION=""
+
+    # The probe's two safety properties, the same pair the login.defs probe has
+    # and for the same reason: it creates a real account. The account database
+    # stubs from that block are gone by here, so they are rebuilt around the
+    # readings, which are stubbed as a unit because chpasswd, su and stat all
+    # want a real account to talk about.
+    local survival_stub_exists=0 survival_stub_readings=0
+    useradd() { survival_stub_exists=1; }
+    userdel() { survival_stub_exists=0; }
+    id() { [[ "$survival_stub_exists" == 1 ]]; }
+    vendor_survival_probe_readings() {
+        if (( survival_stub_readings != 0 )); then
+            return "$survival_stub_readings"
+        fi
+        printf '%s' "$survival_fixture"
+    }
+
+    survival_stub_exists=1
+    check_status 1 "the survival probe refuses when the probe user already exists" \
+        vendor_survival_values
+    check_eq "$survival_stub_exists" "1" "the survival probe leaves a pre-existing user alone"
+
+    survival_stub_exists=0
+    survival_stub_readings=1
+    check_status 1 "the survival probe returns non-zero when a reading fails" \
+        vendor_survival_values
+    check_eq "$survival_stub_exists" "0" "the survival probe removes the user after a failed reading"
+
+    survival_stub_readings=0
+    check_eq "$(vendor_survival_values)" "$survival_fixture" \
+        "the survival probe prints its readings on the success path"
+    check_eq "$survival_stub_exists" "0" "the survival probe removes the user on the success path"
+
+    # The before capture is taken above apply, and refused below it.
+    APPLY_GENERATION=0
+    init_status=0
+    preapply_vendor_survival_init || init_status=$?
+    check_eq "$init_status" "0" "preapply_vendor_survival_init succeeds before any apply"
+    check_eq "$(vendor_survival_baseline_value HOME_MODE)" "750" \
+        "the baseline capture feeds the accessor"
+    bump_apply_generation
+    init_status=0
+    preapply_vendor_survival_init || init_status=$?
+    check_eq "$init_status" "1" \
+        "preapply_vendor_survival_init refuses to capture once apply has run"
+    init_status=0
+    vendor_survival_oracle_init || init_status=$?
+    check_eq "$init_status" "0" "vendor_survival_oracle_init captures after apply"
+    check_eq "$(vendor_survival_system_value HOME_MODE)" "750" \
+        "the after capture feeds the accessor"
+
+    APPLY_GENERATION=0
+    VENDOR_SURVIVAL_AFTER=""
+    VENDOR_SURVIVAL_AFTER_GENERATION=""
+    VENDOR_SURVIVAL_BEFORE=""
+    VENDOR_SURVIVAL_BEFORE_GENERATION=""
+    unset -f useradd userdel id vendor_survival_probe_readings
+
     # The privilege separation directory guard. The stub reports the directory
     # missing only while it really is missing, so a second call after the guard
     # has run answers the way real sshd would.
@@ -1327,11 +1837,12 @@ Number of days of warning before password expires	: 11"
     # and reads as a complete run; only a literal notices.
     check_eq "${#SSH_CHECKS[@]}" "7" "the ssh table holds seven directives"
     check_eq "${#LOGIN_DEFS_CHECKS[@]}" "3" "the login.defs table holds three directives"
+    check_eq "${#VENDOR_SURVIVAL_CHECKS[@]}" "3" "the vendor survival table holds three settings"
     check_eq "${#DIFF_PLUGINS[@]}" "2" "two plugins are compared"
     local pinned_total
     pinned_total="$(expected_check_total)"
-    check_eq "$pinned_total" "22" \
-        "the run is sized at two checks per directive plus one control per plugin"
+    check_eq "$pinned_total" "25" \
+        "the run is sized at two checks per directive, one per unmanaged setting, plus one control per plugin"
     check_status 0 "require_check_tables accepts the tables as they stand" \
         require_check_tables
 
@@ -1688,16 +2199,22 @@ run_full_suite() {
     echo "Differential suite: $BINARY"
     echo "Plugins: ${DIFF_PLUGINS[*]}"
     preapply_scan_oracle_init || return 1
+    # The other capture that must be taken above apply, and for a second
+    # reason: it is not a control over the checks below, it is half of what
+    # they compare. Taken after apply it would agree with itself.
+    preapply_vendor_survival_init || return 1
 
     apply_hardening
 
     ssh_oracle_init || return 1
     login_defs_oracle_init || return 1
+    vendor_survival_oracle_init || return 1
     scan_oracle_init || return 1
 
     run_preapply_control
     run_ssh_checks
     run_login_defs_checks
+    run_vendor_survival_checks
     print_summary
 }
 
