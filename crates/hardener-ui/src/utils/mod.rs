@@ -1514,6 +1514,27 @@ mod tests {
         assert_eq!(deviations[0].finding_id, "2");
     }
 
+    /// The input class that blanks a section if a caller gates rendering on
+    /// the severity groups alone: every finding excepted, so the live half is
+    /// empty while there is still evidence to show. Both `findings_tab` and
+    /// `host_panel` gate on both halves because of this. A contract pin, not a
+    /// regression test: it passes against the fixed split by construction.
+    #[test]
+    fn an_all_excepted_host_still_has_evidence_to_render() {
+        let mut a = finding("1", Severity::Critical);
+        let mut b = finding("2", Severity::Low);
+        a.finding_policy_exception = Some(crate::types::FindingPolicyException::default());
+        b.finding_policy_exception = Some(crate::types::FindingPolicyException::default());
+
+        let (live, deviations) = split_policy_excepted(&[a, b]);
+        assert!(live.is_empty(), "no live violations: {live:?}");
+        assert_eq!(
+            deviations.len(),
+            2,
+            "both deviations survive: {deviations:?}"
+        );
+    }
+
     #[test]
     fn severity_label_and_class_map() {
         assert_eq!(severity_label(Severity::Critical), "Critical");

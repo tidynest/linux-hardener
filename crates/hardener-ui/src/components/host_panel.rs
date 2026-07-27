@@ -1,16 +1,52 @@
 //! Expanded per-host panel: connection strip, collapsible Compliance detail,
-//! collapsible Findings (with collapsible severity subgroups), and the
-//! per-host scan-history timeline. Rendered only when a `HostRow` is expanded.
+//! collapsible Findings (severity subgroups, then a policy-exception subgroup),
+//! and the per-host scan-history timeline. Rendered only when a `HostRow` is
+//! expanded.
 
 use crate::components::ConfirmDeleteButton;
 use crate::tauri_bindings::invoke_get_host_history;
-use crate::types::FleetHostScan;
+use crate::types::{Finding, FleetHostScan};
 use crate::utils::{
     checkpoint_time, framework_short_label, group_findings_by_severity, score_band,
-    score_band_class, severity_class, severity_label,
+    score_band_class, severity_class, severity_label, split_policy_excepted,
 };
 use hardener_types::remote::{HostSessionInfo, RemoteHostProfile};
 use leptos::prelude::*;
+
+/// One collapsible findings subgroup in a host panel: a severity, or the
+/// policy-exception group that sits below them. Shared so the exception
+/// subgroup cannot drift from the severity ones it sits with.
+fn host_finding_subgroup(
+    class: &'static str,
+    name: &'static str,
+    findings: Vec<Finding>,
+    open: bool,
+) -> impl IntoView {
+    let count = findings.len();
+    let rows = findings
+        .into_iter()
+        .map(|f| {
+            view! {
+                <div class="host-finding-row">
+                    <span class=format!("host-finding-dot {class}")></span>
+                    <span class="host-finding-title">{f.finding_title}</span>
+                    <span class="host-finding-plugin">{f.finding_category.to_string()}</span>
+                </div>
+            }
+        })
+        .collect_view();
+    view! {
+        <details class="host-collapse host-collapse-sub" open=open>
+            <summary>
+                <span class="host-collapse-chev" aria-hidden="true"></span>
+                <span class=format!("host-severity-label {class}")>
+                    {format!("{name} ({count})")}
+                </span>
+            </summary>
+            {rows}
+        </details>
+    }
+}
 
 /// Connection state for one host (the backend holds a single session, so at
 /// most one host is ever `Connected`).
@@ -175,31 +211,37 @@ pub fn HostPanel(
                 let findings = scan.get().map(|s| {
                     s.scan_results.iter().flat_map(|r| r.scan_findings.iter().cloned()).collect::<Vec<_>>()
                 }).unwrap_or_default();
-                let groups = group_findings_by_severity(&findings);
-                (!groups.is_empty()).then(|| {
-                    let rendered = groups.into_iter().enumerate().map(|(i, (sev, group))| {
-                        let count = group.len();
+                // Documented deviations are separated, never dropped: the
+                // severity subgroups then count real problems only, and a host
+                // whose findings are all excepted still renders a section
+                // rather than reading as a host with nothing wrong.
+                let (live, excepted) = split_policy_excepted(&findings);
+                let groups = group_findings_by_severity(&live);
+                (!groups.is_empty() || !excepted.is_empty()).then(|| {
+                    let mut rendered: Vec<_> = groups
+                        .into_iter()
+                        .enumerate()
                         // Lead severity (first group) open; the rest collapsed.
-                        let open = i == 0;
-                        let rows = group.into_iter().map(|f| view! {
-                            <div class="host-finding-row">
-                                <span class=format!("host-finding-dot {}", severity_class(sev))></span>
-                                <span class="host-finding-title">{f.finding_title}</span>
-                                <span class="host-finding-plugin">{f.finding_category.to_string()}</span>
-                            </div>
-                        }).collect_view();
-                        view! {
-                            <details class="host-collapse host-collapse-sub" open=open>
-                                <summary>
-                                    <span class="host-collapse-chev" aria-hidden="true"></span>
-                                    <span class=format!("host-severity-label {}", severity_class(sev))>
-                                        {format!("{} ({count})", severity_label(sev))}
-                                    </span>
-                                </summary>
-                                {rows}
-                            </details>
-                        }
-                    }).collect_view();
+                        .map(|(i, (sev, group))| {
+                            host_finding_subgroup(
+                                severity_class(sev),
+                                severity_label(sev),
+                                group,
+                                i == 0,
+                            )
+                        })
+                        .collect();
+                    if !excepted.is_empty() {
+                        // Open only when there is no severity group above it to
+                        // lead with, so deviations never outrank real findings.
+                        let open = rendered.is_empty();
+                        rendered.push(host_finding_subgroup(
+                            "severity_exception",
+                            "Policy Exceptions",
+                            excepted,
+                            open,
+                        ));
+                    }
                     view! {
                         <details class="host-collapse" open=true>
                             <summary>

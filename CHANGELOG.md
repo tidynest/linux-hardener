@@ -174,7 +174,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   desktop lists deviations in their own group below the severity groups, where
   they can neither vanish nor inflate a severity count, and the expanded detail
   carries the reason the deviation was accepted. The desktop's All/Compliance
-  view switch is gone: hiding them was its only function.
+  view switch is gone: hiding them was its only function. The fleet host panel
+  gets the same treatment, and it is the reason the split happens where each
+  view renders rather than inside the shared severity grouping: that grouping
+  also decides whether the fleet panel shows a Findings section at all, so
+  filtering there would have made a host whose findings are all excepted read
+  as a host with nothing wrong.
 - A damaged scan-history record is reported instead of read as a scan that
   covered no plugins. The list of plugins a session covered is stored as JSON
   and was parsed with a fallback to the empty list, so a row that would not
