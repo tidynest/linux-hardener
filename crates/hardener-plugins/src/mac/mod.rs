@@ -840,12 +840,23 @@ impl HardeningPlugin for MacHardeningPlugin {
         let validation_plugin_id = PluginId::new("mac-hardening");
         let mut issues = Vec::new();
         let mut estimated_changes = Vec::new();
+        // Excepted settings are recorded rather than dropped: a preview that
+        // omits them shows a documented deviation as nothing at all.
+        let mut exceptions: Vec<String> = Vec::new();
 
         // Detect which MAC system is present
         match self.detect_mac_system(ctx).await {
             MacDetection::Found(MacSystem::SELinux) => {
-                // Skip if SELinux enforcement is excepted
-                if config.has_valid_exception("selinux-enforcing").is_none() {
+                // An excepted enforcement mode is recorded rather than skipped
+                // silently, so the preview cannot render a documented
+                // deviation as an empty panel.
+                if let Some(exception) = config.has_valid_exception("selinux-enforcing") {
+                    exceptions.push(hardener_common::types::exception_preview_line(
+                        "selinux-enforcing",
+                        &exception.value,
+                        &exception.reason,
+                    ));
+                } else {
                     match self.get_selinux_mode(ctx).await {
                         Ok(mode) => {
                             if mode != "Enforcing" {
@@ -869,6 +880,13 @@ impl HardeningPlugin for MacHardeningPlugin {
             // the nested `if` stays.
             #[allow(clippy::collapsible_match)]
             MacDetection::Found(MacSystem::AppArmor) => {
+                if let Some(exception) = config.has_valid_exception("apparmor-enforce") {
+                    exceptions.push(hardener_common::types::exception_preview_line(
+                        "apparmor-enforce",
+                        &exception.value,
+                        &exception.reason,
+                    ));
+                }
                 // Skip if AppArmor enforcement is excepted
                 if config.has_valid_exception("apparmor-enforce").is_none()
                     && matches!(
@@ -911,6 +929,7 @@ impl HardeningPlugin for MacHardeningPlugin {
             validation_report_issues: issues,
             validation_report_estimated_changes: estimated_changes,
             validation_report_compliant_count: 0,
+            validation_report_exceptions: exceptions,
         })
     }
 }

@@ -1639,6 +1639,35 @@ tbody tr:hover {
   font-family: var(--font-mono);
 }
 
+/* Settings this run leaves alone because a policy exception documents them.
+   Rendered below the estimated changes, and deliberately quieter: a documented
+   deviation is not pending work, so it must not compete with the changes, and
+   it is not nothing either, so it must not be omitted. Without this block a
+   plugin whose every drift is excepted rendered as "0 changes" over an empty
+   panel, which is exactly what a host with nothing to do looks like.
+   `:empty` collapses it entirely so a group with no exceptions gains no
+   stray padding, matching how the issues list behaves. */
+.review-group-exceptions {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--space-md) var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.review-group-exceptions:empty {
+  display: none;
+}
+
+.review-group-exceptions li {
+  font-size: var(--font-size-small);
+  color: var(--text-tertiary, var(--text-secondary));
+  padding: var(--space-sm) var(--space-md);
+  border-left: 2px solid var(--border-subtle, var(--border));
+  font-family: var(--font-mono);
+}
+
 /* Validation issues raised while producing a preview. Rendered above the
    estimated changes because they qualify them: a plugin that could not read
    its config lists no changes, and without this block that reads as a host

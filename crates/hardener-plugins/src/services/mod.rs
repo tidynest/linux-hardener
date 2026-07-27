@@ -855,6 +855,9 @@ impl HardeningPlugin for ServicesHardeningPlugin {
 
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {
         let mut estimated_changes = Vec::new();
+        // Excepted settings are recorded rather than dropped: a preview that
+        // omits them shows a documented deviation as nothing at all.
+        let mut exceptions: Vec<String> = Vec::new();
         let mut issues = Vec::new();
 
         // Check if systemctl is available
@@ -867,8 +870,15 @@ impl HardeningPlugin for ServicesHardeningPlugin {
                     .await
                     .unwrap_or(false)
                 {
-                    // Skip services with valid exceptions
-                    if config.has_valid_exception(directive.service_name).is_some() {
+                    // A service left running because it is excepted is
+                    // recorded, not dropped: a preview that omits it reports a
+                    // documented deviation as nothing at all.
+                    if let Some(exception) = config.has_valid_exception(directive.service_name) {
+                        exceptions.push(hardener_common::types::exception_preview_line(
+                            directive.service_name,
+                            &exception.value,
+                            &exception.reason,
+                        ));
                         continue;
                     }
 
@@ -898,6 +908,7 @@ impl HardeningPlugin for ServicesHardeningPlugin {
         Ok(ValidationReport {
             validation_report_estimated_changes: estimated_changes,
             validation_report_compliant_count: 0,
+            validation_report_exceptions: exceptions,
             validation_report_is_valid: issues.is_empty(),
             validation_report_issues: issues,
             validation_report_plugin_id: self.metadata().plugin_id,

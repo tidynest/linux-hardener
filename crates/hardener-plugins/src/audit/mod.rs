@@ -1176,6 +1176,9 @@ impl HardeningPlugin for AuditHardeningPlugin {
 
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {
         let mut estimated_changes = Vec::new();
+        // Excepted settings are recorded rather than dropped: a preview that
+        // omits them shows a documented deviation as nothing at all.
+        let mut exceptions: Vec<String> = Vec::new();
         let mut issues = Vec::new();
 
         // Check if auditd is installed
@@ -1194,6 +1197,25 @@ impl HardeningPlugin for AuditHardeningPlugin {
                 // Estimate rule changes
                 if let AuditRulesResult::Rules(current_rules) = read_current_audit_rules(ctx).await
                 {
+                    // A category left out because it is excepted is recorded
+                    // rather than merely subtracted from the count: a smaller
+                    // number with no explanation is how a deliberate deviation
+                    // came to look like nothing at all.
+                    for rule in AUDIT_RULES {
+                        if let Some(exception) =
+                            config.has_valid_exception(rule.audit_rule_category)
+                            && !exceptions
+                                .iter()
+                                .any(|e: &String| e.starts_with(rule.audit_rule_category))
+                        {
+                            exceptions.push(hardener_common::types::exception_preview_line(
+                                rule.audit_rule_category,
+                                &exception.value,
+                                &exception.reason,
+                            ));
+                        }
+                    }
+
                     let missing_rules = AUDIT_RULES
                         .iter()
                         .filter(|rule| {
@@ -1234,6 +1256,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
         Ok(ValidationReport {
             validation_report_estimated_changes: estimated_changes,
             validation_report_compliant_count: 0,
+            validation_report_exceptions: exceptions,
             validation_report_is_valid: issues.is_empty(),
             validation_report_issues: issues,
             validation_report_plugin_id: self.metadata().plugin_id,

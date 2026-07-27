@@ -1651,6 +1651,10 @@ impl HardeningPlugin for SshHardeningPlugin {
 
         // Try to read the configuration and check which directives need changing.
         let mut estimated_changes = Vec::new();
+        // Excepted directives are recorded rather than dropped: the preview
+        // must not show "0 changes" over an empty panel on a host where a
+        // deviation is deliberate and documented.
+        let mut exceptions = Vec::new();
 
         match ctx.executor().read_file(config_path).await {
             Ok(content) => {
@@ -1675,10 +1679,14 @@ impl HardeningPlugin for SshHardeningPlugin {
                     let observed = current_value
                         .clone()
                         .unwrap_or_else(|| "not set".to_string());
-                    if config
-                        .matching_exception(directive.ssh_directive_name, &observed)
-                        .is_some()
+                    if let Some(exception) =
+                        config.matching_exception(directive.ssh_directive_name, &observed)
                     {
+                        exceptions.push(hardener_common::types::exception_preview_line(
+                            directive.ssh_directive_name,
+                            &observed,
+                            &exception.reason,
+                        ));
                         continue;
                     }
 
@@ -1723,6 +1731,7 @@ impl HardeningPlugin for SshHardeningPlugin {
             validation_report_issues: issues,
             validation_report_estimated_changes: estimated_changes,
             validation_report_compliant_count: 0,
+            validation_report_exceptions: exceptions,
         })
     }
 }

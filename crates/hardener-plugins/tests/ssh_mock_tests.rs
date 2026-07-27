@@ -1813,3 +1813,48 @@ async fn ssh_apply_refuses_to_claim_success_for_a_write_a_drop_in_overrides() {
         change.change_description
     );
 }
+
+#[tokio::test]
+async fn validate_reports_a_directive_left_alone_by_a_policy_exception() {
+    // The preview dropped an excepted directive entirely: `validate` hit
+    // `continue` before it could record anything, so a host with a documented
+    // deviation rendered as "0 changes" over an empty panel, with no hint the
+    // exception existed. Every other renderer labels a deviation rather than
+    // hiding it; this one hid it.
+    let executor = insecure_ssh_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = SshHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "PermitRootLogin".to_string(),
+        PolicyException {
+            value: "yes".to_string(),
+            allowed: true,
+            reason: "Legacy jump host".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let report = plugin.validate(&ctx, &config).await.unwrap();
+
+    assert!(
+        report
+            .validation_report_exceptions
+            .iter()
+            .any(|e| e.contains("PermitRootLogin") && e.contains("Legacy jump host")),
+        "an excepted directive must be reported, naming its reason, got: {:?}",
+        report.validation_report_exceptions
+    );
+    assert!(
+        !report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("PermitRootLogin")),
+        "an excepted directive is not a pending change and must not inflate the count, got: {:?}",
+        report.validation_report_estimated_changes
+    );
+}

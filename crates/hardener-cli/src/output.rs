@@ -572,6 +572,13 @@ fn validation_report_lines(report: &ValidationReport) -> Vec<String> {
         lines.push(format!("  {} {}", "•".dimmed(), item));
     }
 
+    // A setting left alone because it is excepted is neither a pending change
+    // nor nothing: printing the count alone would report a documented
+    // deviation as an absence.
+    for item in &report.validation_report_exceptions {
+        lines.push(format!("  {} {}", "~".dimmed(), item.dimmed()));
+    }
+
     for issue in &report.validation_report_issues {
         let key = issue
             .validation_issue_config_key
@@ -757,7 +764,30 @@ mod tests {
             validation_report_issues: issues,
             validation_report_estimated_changes: vec![],
             validation_report_compliant_count: 0,
+            validation_report_exceptions: vec![],
         }
+    }
+
+    /// The same ambiguity from the other direction: a plugin whose only drift
+    /// is documented by an exception also reports zero pending changes.
+    /// Printing the count alone reports a deliberate deviation as an absence.
+    #[test]
+    fn validation_lines_surface_settings_left_alone_by_an_exception() {
+        let mut report = validation_report(vec![]);
+        report.validation_report_exceptions =
+            vec!["PermitRootLogin: left at 'yes' (POLICY EXCEPTION: Legacy jump host)".to_string()];
+
+        let lines = validation_report_lines(&report);
+        let joined = lines.join("\n");
+
+        assert!(
+            joined.contains("PermitRootLogin") && joined.contains("Legacy jump host"),
+            "the excepted setting must be printed, got: {joined}"
+        );
+        assert!(
+            joined.contains("0 change(s) to apply"),
+            "an exception must not be counted as a pending change, got: {joined}"
+        );
     }
 
     /// A plugin that could not read its config reports zero pending changes,

@@ -1114,6 +1114,17 @@ pub fn ConfigureSection() -> impl IntoView {
                                                         view! { <li>{change.clone()}</li> }
                                                     }).collect::<Vec<_>>()}
                                                 </ul>
+                                                // A setting left alone because
+                                                // a policy exception documents
+                                                // it. Rendered below the
+                                                // pending changes, in its own
+                                                // list, so it can neither be
+                                                // mistaken for one nor vanish.
+                                                <ul class="review-group-exceptions">
+                                                    {decision.exceptions.iter().map(|exception| {
+                                                        view! { <li>{exception.clone()}</li> }
+                                                    }).collect::<Vec<_>>()}
+                                                </ul>
                                             </details>
                                         }.into_any()
                                     }
@@ -1457,12 +1468,14 @@ mod tests {
                 verified_compliant: false,
                 estimated_changes: vec!["a".to_string(), "b".to_string(), "c".to_string()],
                 issues: vec![],
+                exceptions: vec![],
             },
             PreviewDecision {
                 plugin_id: "permissions-hardening".to_string(),
                 verified_compliant: true,
                 estimated_changes: vec![],
                 issues: vec![],
+                exceptions: vec![],
             },
         ];
         assert_eq!(total_estimated_changes(&decisions), 3);
@@ -1475,6 +1488,7 @@ mod tests {
             verified_compliant: true,
             estimated_changes: vec![],
             issues: vec![],
+            exceptions: vec![],
         }];
         assert_eq!(total_estimated_changes(&decisions), 0);
     }

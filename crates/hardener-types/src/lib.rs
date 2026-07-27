@@ -507,6 +507,17 @@ pub struct Finding {
 /// excepted findings reports a deviation as compliance.
 pub const POLICY_EXCEPTION_LABEL: &str = "POLICY EXCEPTION";
 
+/// One line for `validation_report_exceptions`, naming the setting, the value
+/// the host keeps, and why.
+///
+/// Every plugin whose `validate` skips an excepted setting builds its line
+/// here. Seven hand-written copies of the same sentence is how one of them ends
+/// up worded differently, or omitted altogether, which is the defect this field
+/// exists to close.
+pub fn exception_preview_line(setting: &str, observed: &str, reason: &str) -> String {
+    format!("{setting}: left at '{observed}' ({POLICY_EXCEPTION_LABEL}: {reason})")
+}
+
 impl Finding {
     /// Whether the configuration documents this finding as an accepted
     /// deviation rather than a live violation.
@@ -757,6 +768,18 @@ pub struct ValidationReport {
     /// Plugins with no compliant-count concept leave this 0.
     #[serde(default)]
     pub validation_report_compliant_count: usize,
+    /// Settings this run will leave alone because a policy exception documents
+    /// the value the host already has, one line per setting, carrying the
+    /// reason.
+    ///
+    /// Surfaced separately for the same reason as
+    /// `validation_report_compliant_count`: an excepted setting is not a
+    /// pending change and must not inflate the count, but it is not nothing
+    /// either. Dropping it is how a preview came to show "0 changes" and an
+    /// empty panel on a host where a directive was deliberately exempt, which
+    /// is the one thing a documented deviation must never look like.
+    #[serde(default)]
+    pub validation_report_exceptions: Vec<String>,
 }
 
 /// A single validation issue.

@@ -1066,6 +1066,9 @@ impl HardeningPlugin for PamHardeningPlugin {
         let login_defs = read_conf_classified(ctx, "/etc/login.defs").await;
 
         let mut estimated_changes = Vec::new();
+        // Excepted settings are recorded rather than dropped: a preview that
+        // omits them shows a documented deviation as nothing at all.
+        let mut exceptions: Vec<String> = Vec::new();
         let mut compliant_count = 0usize;
 
         // Plain content for the shared helper's login_defs argument: it carries
@@ -1091,10 +1094,14 @@ impl HardeningPlugin for PamHardeningPlugin {
             // unreadable directive as "not set" so neither trusts an
             // exception on faith.
             let observed = observed_pam_value(ctx, d, &pwquality, login_defs_str).await;
-            if config
-                .matching_exception(d.pam_directive_name, observed.value_or_not_set())
-                .is_some()
+            if let Some(exception) =
+                config.matching_exception(d.pam_directive_name, observed.value_or_not_set())
             {
+                exceptions.push(hardener_common::types::exception_preview_line(
+                    d.pam_directive_name,
+                    observed.value_or_not_set(),
+                    &exception.reason,
+                ));
                 continue;
             }
 
@@ -1202,6 +1209,7 @@ impl HardeningPlugin for PamHardeningPlugin {
             validation_report_issues: issues,
             validation_report_estimated_changes: estimated_changes,
             validation_report_compliant_count: compliant_count,
+            validation_report_exceptions: exceptions,
         })
     }
 }

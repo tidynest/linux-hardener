@@ -1015,17 +1015,23 @@ impl HardeningPlugin for KernelHardeningPlugin {
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {
         let mut issues = Vec::new();
         let mut estimated_changes = Vec::new();
+        // Excepted settings are recorded rather than dropped: a preview that
+        // omits them shows a documented deviation as nothing at all.
+        let mut exceptions: Vec<String> = Vec::new();
         let mut compliant_count = 0usize;
 
         for (param_name, expected_value, _expected_description, _severity) in KERNEL_PARAMS {
             // Honour an exception only when it documents the value the host
             // actually has; an unreadable value is not a match (fail closed).
             let observed = self.read_sysctl(param_name, ctx).await.ok();
-            if observed
-                .as_deref()
-                .and_then(|value| config.matching_exception(param_name, value))
-                .is_some()
+            if let Some(value) = observed.as_deref()
+                && let Some(exception) = config.matching_exception(param_name, value)
             {
+                exceptions.push(hardener_common::types::exception_preview_line(
+                    param_name,
+                    value,
+                    &exception.reason,
+                ));
                 continue;
             }
 
@@ -1073,6 +1079,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
             validation_report_issues: issues,
             validation_report_estimated_changes: estimated_changes,
             validation_report_compliant_count: compliant_count,
+            validation_report_exceptions: exceptions,
         })
     }
 }

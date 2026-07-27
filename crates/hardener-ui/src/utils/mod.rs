@@ -33,6 +33,15 @@ pub struct PreviewDecision {
     /// renders identically to a host that needs none. These are what tell the
     /// two apart.
     pub issues: Vec<ValidationIssue>,
+    /// Settings this run will leave alone because a policy exception documents
+    /// the value the host already has.
+    ///
+    /// The third reason `estimated_changes` can be empty, and the one that was
+    /// missing: a plugin whose every drifted setting is excepted rendered as
+    /// "0 changes" over an empty panel, so a deliberate deviation looked
+    /// exactly like a host with nothing to do. Every other renderer labels a
+    /// documented deviation rather than hiding it.
+    pub exceptions: Vec<String>,
 }
 
 /// Annotates a dry-run preview with the latest scan's verdict per plugin.
@@ -82,6 +91,10 @@ pub fn annotate_preview(
                 verified_compliant,
                 estimated_changes,
                 issues: report.validation_report_issues.clone(),
+                // Kept even when the plugin is verified compliant: an
+                // exception is why a setting is being left alone, and that
+                // stays true whether or not anything else needs changing.
+                exceptions: report.validation_report_exceptions.clone(),
             }
         })
         .collect()
@@ -867,6 +880,7 @@ mod tests {
             validation_report_issues: vec![],
             validation_report_estimated_changes: changes.iter().map(|c| c.to_string()).collect(),
             validation_report_compliant_count: 0,
+            validation_report_exceptions: vec![],
         }
     }
 
@@ -911,6 +925,33 @@ mod tests {
             unchecked_reason: "needs root".to_string(),
             unchecked_compliance: vec![],
         }
+    }
+
+    /// A plugin whose only drift is documented by a policy exception has no
+    /// pending changes, which is byte-identical to a host that needs none.
+    /// Dropping the exception is how the preview came to render a deliberate
+    /// deviation as an empty panel under "0 changes".
+    #[test]
+    fn preview_carries_a_setting_left_alone_by_an_exception() {
+        let mut excepted = report("ssh-hardening", &[]);
+        excepted.validation_report_exceptions =
+            vec!["PermitRootLogin: left at 'yes' (POLICY EXCEPTION: Legacy jump host)".to_string()];
+        let scans = [scan("ssh-hardening", true, vec![a_finding()], vec![])];
+
+        let decisions = annotate_preview(&[excepted], &scans);
+
+        assert!(
+            decisions[0]
+                .exceptions
+                .iter()
+                .any(|e| e.contains("PermitRootLogin") && e.contains("Legacy jump host")),
+            "the excepted setting must survive into the preview, got: {:?}",
+            decisions[0].exceptions
+        );
+        assert!(
+            decisions[0].estimated_changes.is_empty(),
+            "an exception is not a pending change"
+        );
     }
 
     #[test]
