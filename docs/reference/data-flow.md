@@ -472,20 +472,24 @@ a checkpoint or a skip is never counted as a hardening change.
 │  └─ For each control:                                        │
 │      ├─ Find related findings via ComplianceMapping          │
 │      │   (finding.finding_compliance contains mappings)      │
-│      ├─ Determine status:                                    │
-│      │   • Fail: has related findings (always wins, even if  │
-│      │     the same control is also unchecked elsewhere)     │
-│      │   • ManualReview: no findings, and either the control │
-│      │     is NOT in the coverage set (curated CIS/ISO       │
-│      │     controls the engine can't assess) OR it is only   │
-│      │     covered by an UncheckedCheck (root-only source,   │
-│      │     never auto-Pass on an unprivileged scan)          │
-│      │   • Pass: no findings, control in coverage set, and   │
-│      │     not covered by any UncheckedCheck                 │
+│      ├─ Determine status (a finding carrying a matching      │
+│      │   policy exception is a documented deviation, not a   │
+│      │   failure, so only LIVE findings count below):        │
+│      │   • Fail: has a live related finding (always wins,    │
+│      │     even if the control is also unchecked elsewhere)  │
+│      │   • ManualReview: no live findings, and either the    │
+│      │     control is NOT in the coverage set (curated       │
+│      │     CIS/ISO controls the engine can't assess) OR it   │
+│      │     is only covered by an UncheckedCheck (root-only   │
+│      │     source, never auto-Pass on an unprivileged scan)  │
+│      │   • Pass: no live findings, control in coverage set,  │
+│      │     and not covered by any UncheckedCheck             │
 │      │   • NotApplicable: not relevant to this system        │
 │      └─ Create ControlResult                                 │
-│  Safe-failure net: a finding-referenced id absent from the   │
-│  catalogue is appended as Fail (never dropped/false-passed).  │
+│  Safe-failure net: a live-finding-referenced id absent from  │
+│  the catalogue is appended as Fail (never dropped or         │
+│  false-passed). An id referenced only by excepted findings   │
+│  is skipped, not appended.                                   │
 └────────┬─────────────────────────────────────────────────────┘
          │
          ▼

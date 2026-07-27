@@ -7,12 +7,12 @@
 
 <p align="center">
   <a href="https://github.com/tidynest/linux-system-hardener/actions/workflows/ci.yml"><img src="https://github.com/tidynest/linux-system-hardener/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
-  <img src="docs/assets/badges/version.svg" alt="Version 1.4.0">
+  <img src="docs/assets/badges/version.svg" alt="Version 1.5.0">
   <img src="docs/assets/badges/license.svg" alt="License Apache-2.0">
   <img src="docs/assets/badges/rust.svg" alt="Rust 1.85+">
   <a href="https://aur.archlinux.org/packages/linux-system-hardener"><img src="docs/assets/badges/aur.svg" alt="AUR package"></a>
   <img src="docs/assets/badges/platform.svg" alt="Platform Linux">
-  <img src="docs/assets/badges/tests.svg" alt="900+ tests (918 passing, 43 ignored)">
+  <img src="docs/assets/badges/tests.svg" alt="1100+ tests (1105 passing, 43 ignored)">
 </p>
 
 A comprehensive Linux security automation tool with multi-distribution support, built in Rust. Provides automated security scanning, hardening, and compliance reporting with full rollback capabilities.
@@ -25,14 +25,18 @@ A comprehensive Linux security automation tool with multi-distribution support, 
 ## Screenshots
 
 <p align="center">
-  <img src="docs/assets/screenshots/dashboard.png" alt="System Security Dashboard: security score and quick actions" width="820">
+  <img src="docs/assets/screenshots/dashboard.png" alt="Dashboard: security score, per-framework compliance, and recent activity" width="820">
 </p>
 <p align="center">
-  <img src="docs/assets/screenshots/analysis-findings.png" alt="Security Analysis: findings colour-coded by severity" width="49%">
-  <img src="docs/assets/screenshots/hardening.png" alt="System Hardening: security profiles and per-plugin control" width="49%">
+  <img src="docs/assets/screenshots/hardening.png" alt="System Hardening: security profiles and per-plugin selection" width="49%">
+  <img src="docs/assets/screenshots/settings.png" alt="Settings: theme picker and build information" width="49%">
+</p>
+<p align="center">
+  <img src="docs/assets/screenshots/fleet-apply.png" alt="Fleet Apply: staged preview and execute across hosts" width="49%">
+  <img src="docs/assets/screenshots/analysis-findings.png" alt="Security Analysis: findings grouped by severity" width="49%">
 </p>
 
-<p align="center"><sub>Desktop app (Tauri + Leptos) on the Midnight Teal theme: Dashboard, Security Analysis, and System Hardening from a live host scan.</sub></p>
+<p align="center"><sub>Desktop app (Tauri + Leptos) on the Midnight Teal theme, from a live scan of the author's workstation. The Hosts and Scheduler screens are in <a href="docs/assets/screenshots/">docs/assets/screenshots</a>.</sub></p>
 
 ---
 
@@ -84,16 +88,16 @@ The tool is designed for system administrators, DevOps engineers, and security p
 | **Firewall Hardening** | nftables/firewalld/ufw rule management | ✅ |
 | **PAM Authentication Hardening** | Pluggable Authentication Modules | ✅ |
 | **Service Minimisation** | Disable unnecessary services | ✅ |
-| **Audit Rules Hardening** | auditd rules and configuration | ✅ |
+| **Audit Rules Hardening** | auditd rule files (`auditd.conf` is checkpointed but not modified) | ✅ |
 | **File Permissions Hardening** | File permission security | ✅ |
-| **MAC System Hardening** | SELinux/AppArmor configuration | ✅ |
+| **MAC System Hardening** | SELinux and AppArmor detection and status; SELinux changes are runtime-only and AppArmor apply reports manual steps rather than editing profiles | ✅ |
 
 <sub>✅ = complete</sub>
 
 ### Core Infrastructure
 
 - **Checkpoint System**: SQLite-backed state snapshots with Ed25519 cryptographic signatures
-- **Full Rollback Support**: All plugins integrate with checkpoint system for safe rollback
+- **Rollback Support**: Plugins that edit configuration files checkpoint them before writing, and a rollback captures the current state first so it can itself be undone. Three limits are documented under [Known Limitations](#known-limitations): systemd unit files are not restored, permission changes are captured as metadata only, and runtime-only firewall and MAC changes are not file state
 - **Hash Chain Audit Logging**: Tamper-evident audit trail with cryptographic linking
 - **Plugin Manager**: Dependency-aware plugin execution with topological sorting
 - **Distribution Detection**: Automatic detection of Debian, Red Hat, Arch, and SUSE families
@@ -123,7 +127,7 @@ The tool is designed for system administrators, DevOps engineers, and security p
 - **Desktop Application**: Tauri-based native app with Leptos (Rust) frontend
 - **Web Interface**: Runs in browser via Trunk (WASM)
 - **Themes**: Seven built-in colour themes, including a light theme (Daywatch) and a WCAG AAA High Contrast theme, with colour-coded severity states throughout
-- **Keyboard Navigation**: Full keyboard control: Ctrl+1-5 (pages), Alt+T (themes), Escape (close), F11 (fullscreen), Arrow keys (tabs and grids)
+- **Keyboard Navigation**: Ctrl+1-5 (pages), Alt+T (themes), Escape (close), F11 (fullscreen), Arrow keys (tab bars and segmented controls). Findings expand with Enter or Space
 - **ARIA Accessibility**: WAI-ARIA tabs, skip link, `aria-selected`, `aria-live` regions, focus management
 - **Progressive Disclosure**: Simple overview with drill-down for details
 - **Real-time Feedback**: Live scan progress and results
@@ -131,26 +135,32 @@ The tool is designed for system administrators, DevOps engineers, and security p
   single-host Remote (connect to and scan one host) and Fleet (bulk scan
   several inventory hosts) screens. It scans several saved inventory hosts
   concurrently and shows each host's severity posture (per-host
-  critical/high/medium/low/info tallies and a colour-coded CIS compliance
-  score) and expands to reveal that host's findings plus a per-framework
-  compliance breakdown (pass/fail/manual/NA counts).
+  critical/high/medium/low tallies and a colour-coded CIS compliance score)
+  and expands to reveal that host's findings plus a per-framework compliance
+  breakdown (pass/fail/manual/NA counts).
 - **Settings Page** (desktop): A theme picker (swatch grid across all seven
   colour themes) plus an About block showing the application version and
-  build identity. Themes can also be switched from the sidebar quick-switch
-  or cycled with Alt+T.
+  build identity. Themes can also be cycled with Alt+T from anywhere, or
+  picked from the sidebar quick-switch when the sidebar is expanded (the
+  collapsed icon rail hides it, since the Settings icon leads to the full
+  picker).
 
 ---
 
 ## Project Status
 
-**Current Phase**: Production Release (v1.4.0)
+**Current Phase**: Production Release (v1.5.0)
 
 ### Test Coverage
 
 ```
-Rust workspace:  918 passed · 0 failed · 43 ignored   (>90% coverage)
+Rust workspace:  1105 passed · 0 failed · 43 ignored
 GUI / desktop:   113 Playwright (Web UI, 5 distros) · 95 desktop (UX + functional) · 21 Node.js
 ```
+
+The 43 ignored tests are the ones that need root, a live SSH host, or a
+specific firewall backend, so they run only inside the test containers. See
+[docs/contributing/testing.md](docs/contributing/testing.md).
 
 ### Build Status
 
@@ -162,10 +172,12 @@ GUI / desktop:   113 Playwright (Web UI, 5 distros) · 95 desktop (UX + function
 
 ## Architecture
 
-Workspace crate dependencies, grouped by layer. Every crate also depends on
-`hardener-common` and `hardener-types`; those edges are omitted for clarity.
-Dotted edges are an optional feature or WASM bundling rather than a Cargo
-dependency.
+Workspace crate dependencies, grouped by layer. Most crates also depend on
+`hardener-common`, `hardener-types`, or both, and those edges are omitted for
+clarity; the exceptions are `hardener-ui`, which takes only `hardener-types`
+because it compiles to WASM, and `hardener-distro`, which takes only
+`hardener-common`. Dotted edges are an optional feature, a WASM bundle, or a
+dev-dependency rather than a production Cargo dependency.
 
 ```mermaid
 graph TD
@@ -189,9 +201,11 @@ graph TD
 
     CLI --> PLUGINS & COMPLIANCE & SCHEDULER & CORE & STATE & DISTRO
     DESKTOP --> PLUGINS & COMPLIANCE & SCHEDULER & CORE & STATE & DISTRO
-    COMPLIANCE --> PLUGINS & CORE & DISTRO
-    PLUGINS --> CORE & STATE
+    COMPLIANCE --> CORE & DISTRO
+    PLUGINS --> CORE
     SCHEDULER --> CORE
+    COMPLIANCE -. "dev-dependency (tests)" .-> PLUGINS
+    PLUGINS -. "dev-dependency (tests)" .-> STATE
     CORE -. "optional (system feature)" .-> STATE
     DESKTOP -. "bundles prebuilt WASM dist" .-> UI
     COMMON --> TYPES
@@ -363,7 +377,7 @@ hardener scan --format json             # Machine-readable scan output
 hardener report --framework cis         # Compliance report (10 frameworks)
 sudo hardener apply --dry-run --all     # Preview hardening without changing anything
 sudo hardener apply --all               # Apply all recommended hardening
-hardener checkpoint list                # List rollback checkpoints
+sudo hardener checkpoint list           # List rollback checkpoints
 sudo hardener rollback <checkpoint-id>  # Roll back to a checkpoint
 hardener history list                   # Recent scan sessions
 ```
@@ -374,8 +388,8 @@ the [CLI reference](docs/reference/cli.md)):
 ```bash
 # Checkpoints: create, inspect, prune
 sudo hardener checkpoint create "before-hardening"
-hardener checkpoint show <checkpoint-id>
-hardener checkpoint delete <checkpoint-id>
+sudo hardener checkpoint show <checkpoint-id>
+sudo hardener checkpoint delete <checkpoint-id>
 
 # History: sessions, per-host trends, CI regression gate
 hardener history show <session-id>
@@ -403,8 +417,10 @@ sudo hardener batch rollback --host web-01,web-02 --plugin ssh --execute
 ```
 
 `batch apply` and `batch rollback` are **dry-run by default**: they validate
-and preview without changing anything until `--execute` is given, and every
-host is privilege-probed first so an unprivileged host fails in isolation.
+and preview without changing anything until `--execute` is given. Under
+`--execute`, every host is privilege-probed first so an unprivileged host
+fails in isolation; the dry run itself does not probe, since it changes
+nothing.
 Remote details: [SSH remote scanning](docs/guide/ssh-remote-scanning.md).
 Fleet host inventory: `~/.config/linux-hardener/hosts.toml`
 ([configuration reference](docs/reference/configuration.md)).
@@ -413,10 +429,11 @@ Fleet host inventory: `~/.config/linux-hardener/hosts.toml`
 
 1. Launch the application
 2. Click "Run Security Scan" to analyse your system
-3. Review findings by severity (Critical, High, Medium, Low, Info)
-4. Select hardening recommendations to apply
-5. Click "Apply Selected" (requires root password)
-6. Use "Checkpoints" to rollback if needed
+3. Review findings by severity (Critical, High, Medium, Low)
+4. Select hardening recommendations to apply on the **Hardening** page
+5. Click "Apply N Changes" (requires root password; the button reads
+   "Nothing to Apply" when the selection would change nothing)
+6. Use the **Hardening History** tab to roll back if needed
 
 **Keyboard shortcuts:**
 
@@ -427,14 +444,14 @@ Fleet host inventory: `~/.config/linux-hardener/hosts.toml`
 | Alt+T | Cycle through themes |
 | Escape | Close detail panels, exit fullscreen |
 | F11 | Toggle fullscreen |
-| Arrow keys | Navigate tab bars and findings grid |
+| Arrow keys | Navigate tab bars and segmented controls |
 | Enter/Space | Open finding detail |
 
 The desktop app has seven pages, reached from the grouped left sidebar.
-`Ctrl+1`-`5` cover Dashboard, Analysis, Hardening, Hosts, and Scheduler
-(`Ctrl+4` lands on Hosts via the retained `/remote` redirect); **Fleet Apply**
-(apply/roll back across hosts) and **Settings** (theme picker and About) have
-no dedicated shortcut yet.
+`Ctrl+1`-`5` cover Dashboard, Analysis, Hardening, Hosts, and Scheduler;
+**Fleet Apply** (apply/roll back across hosts) and **Settings** (theme picker
+and About) have no dedicated shortcut yet. The old `/remote` route still
+redirects to Hosts for existing links.
 
 ---
 
@@ -443,12 +460,20 @@ no dedicated shortcut yet.
 Configuration is loaded from multiple sources (later overrides earlier):
 
 1. **System config**: `/etc/linux-hardener/config.toml`
-2. **User config**: `~/.config/linux-hardener/config.toml`
+2. **User config**: `~/.config/linux-hardener/config.toml`, **read only when
+   not running as root**
 3. **CLI config**: `--config /path/to/file.toml`
 4. **Environment**: `HARDENER_*` variables
 
+> The user config is deliberately skipped under root so that an unprivileged
+> user's file cannot steer a privileged hardening run. This means
+> `sudo hardener apply` ignores `~/.config/linux-hardener/config.toml`
+> entirely. To apply a config with root, put it in `/etc/linux-hardener/` or
+> pass it explicitly with `--config`, which is always honoured.
+
 ```toml
-# ~/.config/linux-hardener/config.toml
+# /etc/linux-hardener/config.toml
+# (or pass this file with --config; see the note above about sudo)
 
 [global]
 disabled_plugins = ["mac-hardening"]
@@ -461,10 +486,14 @@ reason = "Legacy LDAP integration until Q2 2027 migration"
 expires = "2027-06-30"
 ```
 
-Three scan modes interact with the config: default (`hardener scan`,
-findings with policy annotations), audit (`hardener scan --audit`, config
-ignored), and compliance (`hardener scan --compliance`, only violations
-without a valid exception).
+Two scan modes interact with the config: default (`hardener scan`, which
+applies `directives` overrides and annotates any finding covered by a valid
+exception) and audit (`hardener scan --audit`, which ignores the config
+entirely and measures against the unmodified secure baseline).
+
+`hardener scan --compliance` is accepted but currently behaves identically to
+the default mode. It is `hardener report` that treats an annotated finding as
+satisfied for a compliance control, while still listing it as evidence.
 
 Every section, key, default, and the scheduler/inventory files are
 documented in the
@@ -478,7 +507,12 @@ documented in the
 
 - **Scanning**: Runs as regular user where possible
 - **Applying Changes**: Requires root privileges
-- **Checkpoint Storage**: User-owned SQLite database with signed entries
+- **Checkpoint Storage**: SQLite database with Ed25519-signed entries. The
+  location depends on who runs the command: root uses
+  `/var/lib/linux-hardener/checkpoints.db`, a normal user gets a separate
+  database under their own data directory. Run every `checkpoint` and
+  `rollback` command with the same privilege you used to apply, or you will be
+  reading a different database than the one that was written
 
 ### Threat Model
 
@@ -494,6 +528,14 @@ This tool is designed to harden systems against:
 - Changes require system reboot to fully take effect in some cases
 - Some hardening may break specific applications (test in staging first)
 - SELinux/AppArmor policies are detected but not fully managed
+- Rollback does not restore systemd unit files. The services plugin records
+  them in its checkpoint, but the rollback allow-list does not cover the
+  systemd unit directories, so they are skipped at restore time. Nothing is
+  lost, but a service disabled by `hardener apply` must be re-enabled by hand
+  with `systemctl enable --now <service>`
+- `scan --format json` reports a plugin whose scan failed identically to one
+  that passed, because the per-plugin success flag is not serialised. Use the
+  text output to confirm a scan actually completed
 
 ---
 
@@ -536,4 +578,4 @@ This project draws inspiration from established security tools including:
 **Contact**: tidynest@proton.me
 **Repository**: https://github.com/tidynest/linux-system-hardener
 
-**Last Updated**: 2026-07-24
+**Last Updated**: 2026-07-27

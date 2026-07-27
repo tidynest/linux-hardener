@@ -38,12 +38,20 @@ These names are used with `--plugin` in `scan` and `apply`:
 | `ssh` | SSH daemon configuration |
 | `firewall` | Firewall rules (nftables, firewalld, ufw backends) |
 | `pam` | PAM password quality and aging policies |
-| `services` | Unnecessary service minimisation |
+| `service` | Unnecessary service minimisation |
 | `permissions` | File and directory permission auditing |
 | `audit` | Audit daemon (auditd) rule configuration |
 | `mac` | Mandatory Access Control (SELinux, AppArmor) |
 
-Short names (above) and full names (e.g. `kernel-hardening`, `ssh-hardening`) are both accepted.
+Short names (above) and full names (e.g. `kernel-hardening`, `ssh-hardening`) are
+both accepted. A short name matches by prefix up to the first hyphen, so the
+service plugin is `service`, not `services`: its full id is
+`service-minimisation`.
+
+> `scan` rejects an unrecognised `--plugin` value with an error. `apply` does
+> not: it drops names it cannot match, so a typo narrows the selection instead
+> of failing. Check the plugin list in the output when using `--plugin` with
+> `apply`.
 
 ---
 
@@ -57,15 +65,33 @@ hardener scan [FLAGS]
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-p`, `--plugin <NAME>` | Scan only this plugin (repeatable for multiple) | all plugins |
+| `-p`, `--plugin <NAME>` | Scan only this plugin (repeatable for multiple) | all config-enabled plugins |
 | `--audit` | Ignore config file, run a pure security assessment | off |
-| `--compliance` | Only show findings that violate policy (no informational) | off |
+| `--compliance` | Accepted, but currently behaves exactly like the default mode | off |
 | `--exit-code` | Exit with code 1 if any findings exist (for CI/CD pipelines) | off |
 | `-s`, `--severity <LEVEL>` | Minimum severity to report: `info`, `low`, `medium`, `high`, `critical` | `info` |
 | `--timings` | Print a per-plugin timing table (slowest first) after the scan | off |
 
 `--audit` and `--compliance` are mutually exclusive. Plugins scan concurrently;
 `--timings` writes to stderr, so `--format json` stdout stays machine-parseable.
+
+**`scan` honours the configuration file.** Three things follow from that:
+
+- A `directives` entry overrides the target value a check is measured against,
+  so a check is judged against your policy rather than the shipped baseline.
+- A finding covered by a valid policy exception is **annotated** with that
+  exception rather than hidden. `scan` never removes a finding; it is
+  `hardener report` that treats an annotated finding as satisfied for a
+  compliance control, while still listing it as evidence.
+- `[global] enabled_plugins` and `disabled_plugins` gate which plugins run.
+  A plugin you asked for that the config disables is named in a
+  `Skipped by config:` line rather than silently omitted, because silence
+  there would read as a clean host. If the config disables **every** selected
+  plugin, `scan` exits with an error instead of reporting an empty, clean-looking
+  result.
+
+`scan --audit` opts out of all of the above and measures against the unmodified
+secure baseline.
 
 **Unprivileged runs and unchecked checks:** some checks (root-only config
 files such as `/etc/security/pwquality.conf` or `/etc/ssh/sshd_config`,
@@ -266,6 +292,15 @@ Scan, assess, apply, or roll back hardening across multiple hosts concurrently.
 All four subcommands share the same host-selection flags and accept the global
 `--format text|json` flag. `apply` and `rollback` are **dry-run by default**;
 pass `--execute` to mutate the remote hosts.
+
+> **`batch scan` and `batch report` do not honour the configuration file.**
+> Unlike local `hardener scan`, they evaluate every host against the unmodified
+> secure baseline: directive overrides do not apply, policy exceptions are not
+> annotated, and `enabled_plugins`/`disabled_plugins` are not consulted. The
+> desktop's fleet scan behaves the same way. Loading a config per remote host is
+> a separate design question and is deliberately deferred, so a fleet scan may
+> report findings that a local scan on the same host would annotate as accepted
+> deviations.
 
 Host selection (common to all four subcommands):
 

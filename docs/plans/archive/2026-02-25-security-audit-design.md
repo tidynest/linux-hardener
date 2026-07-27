@@ -70,4 +70,4 @@ Each finding uses:
 4. Fix phase (user adds code in portions)
 5. Re-verification pass updates remediation tracker
 
-**Last Updated**: 2026-02-25
+**Last Updated**: 2026-07-27

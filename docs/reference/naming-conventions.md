@@ -555,7 +555,7 @@ pub fn sysctl(&self, p: &str, v: &str) { }        // Unclear action, abbreviatio
 // Pattern: verb describing action
 
 // ✅ GOOD (Plugin trait methods):
-fn scan(&self, ctx: &Context) -> Result<ScanResult> { }
+fn scan(&self, ctx: &Context, config: &PluginConfig) -> Result<ScanResult> { }
 fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult> { }
 fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> { }
 fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> { }
@@ -1089,7 +1089,7 @@ pub struct ScanResult {
 impl HardeningPlugin for KernelHardeningPlugin {
     fn metadata(&self) -> PluginMetadata { }
     fn dependencies(&self) -> Vec<PluginId> { }
-    fn scan(&self, ctx: &Context) -> Result<ScanResult> { }
+    fn scan(&self, ctx: &Context, config: &PluginConfig) -> Result<ScanResult> { }
     fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult> { }
     fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> { }
     fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> { }

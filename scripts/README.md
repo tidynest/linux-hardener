@@ -1,6 +1,6 @@
 # Project Scripts
 
-**Last Updated**: 2026-07-18
+**Last Updated**: 2026-07-27
 
 This directory contains utility scripts for the Linux Hardening Tool project.
 
@@ -15,6 +15,8 @@ This directory contains utility scripts for the Linux Hardening Tool project.
 | `validate/` | Documentation and naming validators (`validate_*.py`) plus the auto-updater `update_all_docs.py` |
 | `release/` | `release.sh` (version bumping, changelog, release gate) |
 | `dev/` | `tauri-dev.sh` (Tauri development launcher) |
+| `badges/` | `generate.js` (regenerates the README status badges as local SVGs under `docs/assets/badges/`, using shields.io's renderer offline) plus the vendored logo glyphs |
+| `lib/` | Shared shell helpers sourced by the test scripts: `common.sh` (logging, colours, guards) and `parallel.sh` (job control for `--parallel`) |
 
 `build_identity.rs` stays at the `scripts/` root: it is referenced as a
 `build =` script by both `crates/hardener-cli/Cargo.toml` and
@@ -1218,7 +1220,22 @@ sudo ./scripts/test/run-cross-distro-tests.sh
 | `--parallel` | Run distros in parallel instead of serially (~5x speedup) |
 | `--jobs N` | Max parallel jobs (with `--parallel`; default: 3) |
 | `--rebuild` | Build musl static binary before testing |
+| `--differential` | Run `differential-suite.sh` instead of `full-test-suite.sh` |
 | `--help` | Show usage |
+
+**`--differential`** runs a different kind of test. Instead of comparing the
+tool against itself, it applies hardening inside the container and then asks
+each setting's real consumer what is in force: `sshd -T` for SSH, and
+`chage -l` on an account created after the apply for `/etc/login.defs`. Every
+directive is checked twice, that the system holds the target value and that
+`scan` agrees with the system. A value that cannot be determined is a failure
+rather than a skip, and a pre-apply control proves the checks match real
+output rather than passing by matching nothing.
+
+It needs a container that has never been hardened, because that pre-apply
+control requires findings to exist, and it needs `jq` (the suite refuses
+loudly if it is missing). `differential-suite.sh --self-test` runs the pure
+text extractors and every refusal path with no root and no container.
 
 **How It Works**:
 
@@ -1245,7 +1262,7 @@ test-results/
   arch.log           # Full output from Arch container
   debian.log         # Full output from Debian container
   fedora.log         # Full output from Fedora container
-  rhel.log           # Full output from Rocky 9 container
+  rhel.log           # Full output from Rocky 10 container
   opensuse.log       # Full output from openSUSE container
   summary.txt        # Aggregated results table
 ```
@@ -1504,7 +1521,7 @@ sudo ./scripts/test/run-cross-distro-tests.sh --gui
 | Arch | `/usr/bin/chromium` | -- |
 | Debian | `/usr/bin/chromium` | -- |
 | Fedora | `/usr/lib64/chromium-browser/headless_shell` | `chromium-headless` package |
-| Rocky 9 | `/usr/bin/chromium-browser` | EPEL + CRB repos, Node.js 20 module |
+| Rocky 10 | `/usr/bin/chromium-browser` | EPEL + CRB repos, Node.js 20 module |
 | openSUSE | `/usr/bin/chromium` | `--gpg-auto-import-keys`, specific lib names |
 
 **Dependencies** (installed inside container):
@@ -1648,7 +1665,7 @@ test-results/
   pkg-arch.log         # Package test output for Arch
   pkg-debian.log       # Package test output for Debian
   pkg-fedora.log       # Package test output for Fedora
-  pkg-rhel.log         # Package test output for Rocky 9
+  pkg-rhel.log         # Package test output for Rocky 10
   pkg-opensuse.log     # Package test output for openSUSE
   pkg-summary.txt      # Aggregated results table
 ```

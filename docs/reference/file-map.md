@@ -1,6 +1,6 @@
 # Linux System Hardener - File Map
 
-**Last Updated:** 2026-07-24
+**Last Updated:** 2026-07-27
 
 This document lists all source files with their purpose and key exports.
 
@@ -98,7 +98,7 @@ pub struct FleetHostScan { host_name: String, status: FleetHostStatus, tallies: 
 pub trait HardeningPlugin: Send + Sync {
     fn metadata(&self) -> PluginMetadata;
     fn dependencies(&self) -> Vec<PluginId>;
-    async fn scan(&self, ctx: &Context) -> Result<ScanResult>;
+    async fn scan(&self, ctx: &Context, config: &PluginConfig) -> Result<ScanResult>;
     async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult>;
     async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()>;
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport>;
@@ -441,6 +441,7 @@ pub struct ScanRunner {
 | `src/components/configure_section.rs` | Profile selection and plugin toggles | `ConfigureSection` |
 | `src/components/segmented_control.rs` | Reusable WAI-ARIA segmented control (roving-tabindex radiogroup); shared by the Fleet Apply mode toggle and the Hardening protection-level control | `SegmentedControl` |
 | `src/components/history_section.rs` | Apply results and checkpoint management with refresh button | `HistorySection` |
+| `src/components/modal.rs` | Shared modal shell used by every dialog: backdrop, Escape and backdrop-click dismissal, dialog ARIA, and focus-on-mount. Swallows Escape so dismissing a dialog cannot also advance the global `keyboard.rs` priority chain and discard a pending apply review | `Modal` |
 | `src/components/rollback_modal.rs` | Rollback confirmation modal for the Hardening History timeline (confirm, restoring, and per-file result stages) | `RollbackModal` |
 | `src/components/card.rs` | Reusable card container component | `Card`, `CardVariant`, `HeadingLevel` |
 | `src/components/theme_toggle.rs` | Theme quick-switch `<select>` in the sidebar, bound to the shared `AppState.theme` signal (presentational only; the App `Effect` applies/persists it) | `ThemeToggle` |

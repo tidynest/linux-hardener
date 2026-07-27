@@ -12,6 +12,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   seven themes, Midnight Teal, Fortress, Sentinel, Command, Guardian,
   Daywatch and High Contrast) applies a theme live on selection, plus an
   About block naming the application, version and build identity.
+- Differential test suite (`scripts/test/differential-suite.sh`, run inside a
+  container via `run-cross-distro-tests.sh --differential`). It applies
+  hardening and then asks each setting's real consumer what is in force,
+  `sshd -T` for SSH and `chage -l` on an account created after the apply for
+  `/etc/login.defs`, rather than re-reading the file with this tool's own
+  parser. Every directive is checked twice: the system holds the target value,
+  and `scan` agrees with the system. A value that cannot be determined is a
+  failure rather than a skip, including the tool's own "could not check", and
+  a pre-apply control proves the checks match real output rather than passing
+  by matching nothing. This is the first test in the project that can catch a
+  defect where the reader and the writer share one mistake and therefore agree
+  with each other, which is how the `/etc/login.defs` fault below survived
+  every release since 1.0.0.
 
 ### Changed
 - `hardener scan` now honours the configuration file. `Plugin::scan` receives
@@ -28,7 +41,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still ignores the config entirely and evaluates the unmodified secure
   baseline. `scan` also names the plugins the config kept it from running, and
   fails instead of reporting an empty scan when the config disables every
-  selected plugin.
+  selected plugin. This covers the local scan path only: `batch scan`,
+  `batch report` and the desktop's fleet scan still evaluate every host against
+  the unmodified baseline, because loading a config per remote host is a
+  separate design question.
 - Desktop UI redesigned end to end. The flat top navigation bar is gone,
   replaced by a grouped left sidebar (Local: Dashboard, Analysis,
   Hardening; Fleet: Hosts, Fleet Apply, Scheduler; plus a pinned Settings
@@ -1705,4 +1721,4 @@ Configuration file support with layered loading, compliance framework reporting 
 [0.2.0]: https://github.com/tidynest/linux-system-hardener/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tidynest/linux-system-hardener/releases/tag/v0.1.0
 
-**Last Updated**: 2026-07-24
+**Last Updated**: 2026-07-27

@@ -2,15 +2,15 @@
 
 ---
 
-## Current State (as of 2026-07-24)
+## Current State (as of 2026-07-27)
 
-**Since v1.4.0 (on `main`, unreleased):** the reversible-rollback fix landed
+**Everything below shipped in v1.5.0.** The reversible-rollback fix landed
 (`303c4d0`) - `hardener rollback` (CLI, desktop and fleet) now snapshots the
 current state before restoring a checkpoint, so a rollback is itself
 reversible; see
 `docs/superpowers/specs/2026-07-21-rollback-auto-snapshot-design.md`.
-Separately, on branch `feat/gui-ux-redesign` (80+ commits ahead of `main`,
-not yet merged), the desktop GUI has been redesigned end to end and is now
+
+The desktop GUI redesign **merged into `main` as PR #25** (`6e861b7`) and is
 content-complete (Phases 0-6, frontend-only - no backend, IPC or CLI
 behaviour changed): a grouped left sidebar (Local: Dashboard, Analysis,
 Hardening; Fleet: Hosts, Fleet Apply, Scheduler; plus a pinned Settings
@@ -20,8 +20,13 @@ there); Fleet Apply is a staged Preview/Execute flow with a sticky summary
 bar; Scheduler is a single-Save form over schedule presets; and a new
 **Settings** page adds a seven-theme swatch grid (Midnight Teal, Fortress,
 Sentinel, Command, Guardian, Daywatch, High Contrast) plus an About block.
-All six phases are final-reviewed and eyeballed clean; the epic awaits the
-maintainer's push and a single reviewed pull request into `main`.
+
+Three security fixes shipped alongside it: rollback could delete account files
+on a remote host, the PAM plugin could destroy a config it failed to read, and
+password ageing was never applied while being reported as compliant. A new
+differential test suite (`scripts/test/differential-suite.sh`) verifies
+hardening against the system's own readers rather than against this tool's
+parser, which is what caught the third one.
 
 **v1.4.0 released** (2026-07-19) to GitHub + GitLab: the honesty, idempotency
 and coherence arc on top of v1.3.2 - honest apply counts (only real changes
@@ -120,16 +125,18 @@ DE test tooling. `cargo test --workspace` = **660 passed / 0 failed / 38 ignored
 
 > Refreshed 2026-07-01. Items are open unless marked Done.
 
-### P0: GUI/UX redesign - merge to main (in progress)
+### Done: GUI/UX redesign (shipped in v1.5.0)
 
-Content-complete on branch `feat/gui-ux-redesign` (Phases 0-6 - Dashboard,
-Analysis, Hardening restyle; the Fleet cluster: Hosts, Fleet Apply,
-Scheduler; and the new Settings page). Every phase is final-reviewed and
-eyeballed clean across all seven themes. Remaining steps: push the epic
-branch, open a single reviewed pull request into `main`, and land it - the
-GUI/CLI/backend contract is unchanged throughout, so this is a docs-plus-
-frontend merge, not a behavioural one. See "Current State" above for what
-changed.
+Merged as PR #25 (`6e861b7`). Phases 0-6 covered the Dashboard, Analysis and
+Hardening restyle, the Fleet cluster (Hosts, Fleet Apply, Scheduler) and the
+new Settings page; every phase was final-reviewed and eyeballed clean across
+all seven themes. The GUI/CLI/backend contract was unchanged throughout. See
+"Current State" above.
+
+Still open from that arc: the E2E Playwright suite under `gui-tests/` is stale
+against the redesign (`remote.spec.js` targets a screen that no longer exists,
+there are no Hosts or Settings specs, and redesigned selectors broke others).
+It needs its own rewrite.
 
 ### P0: Compliance assessment coverage (phase 2)
 
@@ -377,9 +384,9 @@ See `docs/plans/archive/2026-02-24-gui-cli-parity.md`: all 6 phases complete.
 
 - **11 Crates** (10 core + 1 Tauri app)
 - **8 Security Plugins**: Kernel, SSH, Firewall, PAM, Services, Audit, Permissions, MAC
-- **918 Passing Tests**
+- **1105 Passing Tests** (plus 43 ignored: root-, SSH- or backend-gated)
 - **Multi-Distribution Support**: Debian, Red Hat, Arch, SUSE families
-- **Current Version**: 1.4.0 (code, tag and repo packaging; AUR bump follows the tag)
+- **Current Version**: 1.5.0 (code, tag and repo packaging; AUR bump follows the tag)
 - **WASM Support**: GUI frontend compiles to `wasm32-unknown-unknown`
 
 For version history and detailed feature tracking, see [ROADMAP.md](ROADMAP.md).

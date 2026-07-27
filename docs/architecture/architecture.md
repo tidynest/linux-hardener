@@ -325,7 +325,7 @@ The core interface all plugins implement:
 pub trait HardeningPlugin: Send + Sync {
     fn metadata(&self) -> PluginMetadata;
     fn dependencies(&self) -> Vec<PluginId>;
-    async fn scan(&self, ctx: &Context) -> Result<ScanResult>;
+    async fn scan(&self, ctx: &Context, config: &PluginConfig) -> Result<ScanResult>;
     async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult>;
     async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()>;
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport>;

@@ -21,7 +21,7 @@ Every plugin implements `HardeningPlugin`
 pub trait HardeningPlugin: Send + Sync {
     fn metadata(&self) -> PluginMetadata;
     fn dependencies(&self) -> Vec<PluginId>;
-    async fn scan(&self, ctx: &Context) -> Result<ScanResult>;
+    async fn scan(&self, ctx: &Context, config: &PluginConfig) -> Result<ScanResult>;
     async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult>;
     async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()>;
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport>;
@@ -141,17 +141,34 @@ count, so the plugin honestly reads "no changes needed". Reserve
 
 ## Policy exceptions
 
-Before enforcing a check in `apply()`, honour configured exceptions:
+Before enforcing a check in `apply()`, honour configured exceptions. Match on
+the value the system actually holds, not on the mere presence of an exception:
 
 ```rust
-if let Some(exception) = config.has_valid_exception("selinux-enforcing") {
+// `actual` is the value you just read from the system.
+if let Some(exception) = config.matching_exception("selinux-enforcing", actual) {
+    // record a skipped Change mentioning exception.reason
+}
+
+// Permission modes compare numerically, so "644" and "0644" both match:
+if let Some(exception) = config.matching_mode_exception("/etc/shadow", actual_mode) {
     // record a skipped Change mentioning exception.reason
 }
 ```
 
-`has_valid_exception` already filters out `allowed = false` and expired
-entries. See the [configuration reference](../reference/configuration.md)
-for the user-facing format.
+**Do not reach for `has_valid_exception` on its own.** It checks only that the
+entry is allowed and unexpired, so an exception describing a deviation the host
+does not actually have would still suppress hardening, leaving a genuinely
+insecure setting in place and reporting it as an accepted deviation. That was a
+real defect, fixed in `7a29f7d`; `matching_exception` and
+`matching_mode_exception` are the same check plus the value comparison, and they
+are what `[ssh]`, `[kernel]`, `[pam]` and `[permissions]` use.
+
+`scan()` has the matching obligation on the read side: annotate a finding
+covered by a matching exception rather than dropping it, so a pass carried by a
+documented deviation is never presented as a clean pass. See the
+[configuration reference](../reference/configuration.md) for the user-facing
+format.
 
 ## Compliance coverage
 

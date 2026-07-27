@@ -485,4 +485,4 @@ This design ensures:
 
 The key insight: **config is for policy management, not security filtering**.
 
-**Last Updated**: 2026-02-25
+**Last Updated**: 2026-07-27
