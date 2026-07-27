@@ -111,12 +111,12 @@
 
 <p align="center">
   <a href="https://github.com/tidynest/linux-system-hardener/actions/workflows/ci.yml"><img src="https://github.com/tidynest/linux-system-hardener/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
-  <img src="docs/assets/badges/version.svg" alt="Version 1.5.0">
+  <img src="docs/assets/badges/version.svg" alt="Version 1.5.1">
   <img src="docs/assets/badges/license.svg" alt="License Apache-2.0">
   <img src="docs/assets/badges/rust.svg" alt="Rust 1.85+">
   <a href="https://aur.archlinux.org/packages/linux-system-hardener"><img src="docs/assets/badges/aur.svg" alt="AUR package"></a>
   <img src="docs/assets/badges/platform.svg" alt="Platform Linux">
-  <img src="docs/assets/badges/tests.svg" alt="1100+ tests (1105 passing, 43 ignored)">
+  <img src="docs/assets/badges/tests.svg" alt="1191+ tests (1191 passing, 43 ignored)">
 </p>
 
 A comprehensive Linux security automation tool with multi-distribution support, built in Rust. Provides automated security scanning, hardening, and compliance reporting with full rollback capabilities.
@@ -268,7 +268,7 @@ The tool is designed for system administrators, DevOps engineers, and security p
 ### Test Coverage
 
 ```
-Rust workspace:  1105 passed · 0 failed · 43 ignored
+Rust workspace:  1191 passed · 0 failed · 43 ignored
 GUI / desktop:   113 Playwright (Web UI, 5 distros) · 95 desktop (UX + functional) · 21 Node.js
 ```
 

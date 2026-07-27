@@ -287,11 +287,35 @@ if $DRY_RUN; then
     echo "Would update test count to ${TEST_COUNT}+ in README.md"
 else
     if [[ "$TEST_COUNT" =~ ^[0-9]+$ ]]; then
-        # Update "Total Tests: XXX+ passing" line
-        sed -i "s/^Total Tests: [0-9]\+/Total Tests: ${TEST_COUNT}/" README.md
-        echo "  Updated test count to ${TEST_COUNT}+"
+        # Asserts on the match count rather than trusting the substitution.
+        # This step used to `sed` for a "Total Tests:" line that README.md
+        # stopped having in ea1a0c4, so it matched nothing, exited 0 and
+        # printed a success it had not achieved. The count silently fell 86
+        # tests behind across several releases. A rewrite that finds nothing
+        # is now a failure, which is the whole point of running it.
+        python3 - "$TEST_COUNT" <<'PYEOF' || exit 1
+import re, sys
+from pathlib import Path
+
+count = sys.argv[1]
+targets = [
+    (Path("README.md"), r'(alt=")\d+\+ tests \(\d+ passing', rf'\g<1>{count}+ tests ({count} passing'),
+    (Path("README.md"), r'(Rust workspace:\s+)\d+( passed)', rf'\g<1>{count}\g<2>'),
+    (Path("docs/assets/badges/tests.svg"), r'\d+\+', f'{count}+'),
+]
+total = 0
+for path, pattern, replacement in targets:
+    text = path.read_text()
+    text, hits = re.subn(pattern, replacement, text)
+    if hits == 0:
+        sys.exit(f"  {path}: no test-count reference matched /{pattern}/; update release.sh")
+    path.write_text(text)
+    total += hits
+print(f"  Updated {total} test-count reference(s) to {count}")
+PYEOF
     else
-        echo -e "  ${YELLOW}Skipped: Could not determine test count${NC}"
+        echo -e "  ${RED}Error: could not determine test count from the suite output${NC}"
+        exit 1
     fi
 fi
 
