@@ -143,22 +143,6 @@ pub(crate) async fn apply_host(
     }
 }
 
-/// Expands a plugin filter (short names like "kernel" or full ids like
-/// "kernel-hardening") against the available plugin metadata. Callers decide
-/// what an empty filter means (all vs none), so this only maps the explicit list.
-pub(crate) fn expand_plugin_ids(all: &[PluginMetadata], filter: &[String]) -> Vec<PluginId> {
-    filter
-        .iter()
-        .filter_map(|f| {
-            all.iter()
-                .find(|p| {
-                    p.plugin_id.as_str() == f || p.plugin_id.as_str().starts_with(&format!("{f}-"))
-                })
-                .map(|p| p.plugin_id.clone())
-        })
-        .collect()
-}
-
 pub async fn run(
     plugin_filter: &[String],
     all: bool,
@@ -194,7 +178,7 @@ pub async fn run(
     let plugin_ids: Vec<PluginId> = if all {
         plugins.iter().map(|m| m.plugin_id.clone()).collect()
     } else {
-        expand_plugin_ids(&plugins, plugin_filter)
+        super::plugin_filter::expand(&plugins, plugin_filter)?
     };
 
     if dry_run {

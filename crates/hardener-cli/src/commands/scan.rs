@@ -44,7 +44,7 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
     let ctx = Context::with_executor(opts.executor.clone());
 
     let plugins = registry.list()?;
-    validate_plugin_filter(opts.plugin_filter, &plugins)?;
+    super::plugin_filter::validate(opts.plugin_filter, &plugins)?;
     let min_severity = severity_filter_to_severity(&opts.severity_filter);
 
     // Resolve the selected plugin handles up front (registry hands out Arcs).
@@ -170,42 +170,6 @@ fn severity_filter_to_severity(filter: &SeverityFilter) -> Severity {
     }
 }
 
-/// Validates plugin filter entries and returns error if any are invalid.
-/// Accepts both full IDs (e.g., "kernel-hardening") and short names (e.g., "kernel").
-fn validate_plugin_filter(
-    filter: &[String],
-    valid_plugins: &[hardener_core::PluginMetadata],
-) -> Result<()> {
-    if filter.is_empty() {
-        return Ok(());
-    }
-
-    let valid_ids: Vec<&str> = valid_plugins.iter().map(|p| p.plugin_id.as_str()).collect();
-
-    let invalid: Vec<&str> = filter
-        .iter()
-        .filter(|f| !is_valid_plugin_name(f, &valid_ids))
-        .map(|s| s.as_str())
-        .collect();
-
-    if invalid.is_empty() {
-        Ok(())
-    } else {
-        anyhow::bail!(
-            "Unknown plugin(s): {}. Valid plugins: {}",
-            invalid.join(", "),
-            valid_ids.join(", ")
-        )
-    }
-}
-
-/// Checks if a filter entry matches a valid plugin (full ID or short name).
-fn is_valid_plugin_name(name: &str, valid_ids: &[&str]) -> bool {
-    valid_ids
-        .iter()
-        .any(|id| *id == name || id.starts_with(&format!("{}-", name)))
-}
-
 /// Splits the plugins matching the CLI `--plugin` filter (an empty filter
 /// selects everything) into those the config enables and those it disables.
 /// The skipped half is returned rather than dropped so the caller can say why
@@ -221,7 +185,7 @@ fn select_enabled_plugins<'a>(
             plugin_filter.is_empty()
                 || plugin_filter
                     .iter()
-                    .any(|p| is_valid_plugin_name(p, &[metadata.plugin_id.as_str()]))
+                    .any(|p| super::plugin_filter::matches(p, metadata.plugin_id.as_str()))
         })
         .partition(|metadata| config.is_plugin_enabled(metadata.plugin_id.as_str()))
 }
@@ -295,24 +259,30 @@ mod tests {
         "service-minimisation",
     ];
 
-    #[test]
-    fn test_valid_full_id() {
-        assert!(is_valid_plugin_name("kernel-hardening", ALL_IDS));
+    /// Whether any real plugin id answers to this `--plugin` entry.
+    fn names_a_plugin(entry: &str) -> bool {
+        ALL_IDS
+            .iter()
+            .any(|id| crate::commands::plugin_filter::matches(entry, id))
     }
 
     #[test]
-    fn test_valid_short_name() {
-        assert!(is_valid_plugin_name("kernel", ALL_IDS));
-    }
-
-    #[test]
-    fn test_valid_service_short() {
-        assert!(is_valid_plugin_name("service", ALL_IDS));
-    }
-
-    #[test]
-    fn test_invalid_name() {
-        assert!(!is_valid_plugin_name("nonexistent", ALL_IDS));
+    fn plugin_filter_entries_resolve_against_the_real_id_set() {
+        for entry in [
+            "kernel-hardening",
+            "kernel",
+            "service",
+            "ssh",
+            "permissions",
+        ] {
+            assert!(names_a_plugin(entry), "{entry} should name a plugin");
+        }
+        // "services" is the plural an operator reaches for; it matches nothing,
+        // which is exactly why an unmatched entry must be refused rather than
+        // dropped. The empty string is the degenerate case of the same rule.
+        for entry in ["nonexistent", "services", ""] {
+            assert!(!names_a_plugin(entry), "{entry} names no plugin");
+        }
     }
 
     #[test]

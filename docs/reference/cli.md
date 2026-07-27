@@ -48,10 +48,11 @@ both accepted. A short name matches by prefix up to the first hyphen, so the
 service plugin is `service`, not `services`: its full id is
 `service-minimisation`.
 
-> `scan` rejects an unrecognised `--plugin` value with an error. `apply` does
-> not: it drops names it cannot match, so a typo narrows the selection instead
-> of failing. Check the plugin list in the output when using `--plugin` with
-> `apply`.
+> Every command rejects an unrecognised `--plugin` value with an error naming
+> the valid ids, and exits non-zero. This applies to `scan`, `apply`,
+> `batch apply` and `batch rollback` alike: a name that matches nothing is
+> never dropped, so a typo cannot narrow the selection to nothing while the
+> command still reports success.
 
 ---
 

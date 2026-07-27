@@ -1241,13 +1241,20 @@ async fn apply_one(
 
 /// Resolves a plugin filter to ids. Empty filter = every plugin. Short names
 /// (e.g. "kernel") expand to the full id ("kernel-hardening").
-fn resolve_plugin_ids(filter: &[String]) -> Vec<PluginId> {
+///
+/// An entry naming no plugin is an error rather than a silent omission: a
+/// filter that quietly shrinks let `batch apply --plugin services` report
+/// success across the fleet having hardened nothing on any host.
+fn resolve_plugin_ids(filter: &[String]) -> Result<Vec<PluginId>> {
     let registry = hardener_plugins::create_plugin_registry();
-    let all = registry.list().unwrap_or_default();
+    // Not `unwrap_or_default()`: an empty registry and a registry that failed
+    // to enumerate are different things, and treating the failure as "no
+    // plugins" would silently turn the whole batch into a no-op.
+    let all = registry.list()?;
     if filter.is_empty() {
-        return all.iter().map(|m| m.plugin_id.clone()).collect();
+        return Ok(all.iter().map(|m| m.plugin_id.clone()).collect());
     }
-    super::apply::expand_plugin_ids(&all, filter)
+    super::plugin_filter::expand(&all, filter)
 }
 
 /// Maps plugin ids to their apply-checkpoint names. Apply captures each plugin's
@@ -1355,7 +1362,7 @@ pub async fn run_apply(opts: BatchApplyOptions) -> anyhow::Result<()> {
         eprintln!("--execute: applying to {} host(s)", profiles.len());
     }
 
-    let plugin_ids = Arc::new(resolve_plugin_ids(&opts.plugin));
+    let plugin_ids = Arc::new(resolve_plugin_ids(&opts.plugin)?);
     let config = Arc::new(match ConfigLoader::new().load() {
         Ok(c) => c,
         Err(e) => {
@@ -1461,7 +1468,7 @@ pub async fn run_rollback(opts: BatchRollbackOptions) -> anyhow::Result<()> {
         eprintln!("--execute: rolling back {} host(s)", profiles.len());
     }
 
-    let names = Arc::new(pre_apply_names(&resolve_plugin_ids(&opts.plugin)));
+    let names = Arc::new(pre_apply_names(&resolve_plugin_ids(&opts.plugin)?));
     let mgr = get_checkpoint_manager().await?;
     let timeout = opts.global_timeout;
     let execute = opts.execute;
@@ -2631,11 +2638,20 @@ mod tests {
 
     #[test]
     fn resolve_plugin_ids_empty_means_all() {
-        let all = resolve_plugin_ids(&[]);
+        let all = resolve_plugin_ids(&[]).expect("empty filter is valid");
         assert!(!all.is_empty(), "empty filter selects every plugin");
-        let one = resolve_plugin_ids(&["kernel".to_string()]);
+        let one = resolve_plugin_ids(&["kernel".to_string()]).expect("kernel is a real plugin");
         assert_eq!(one.len(), 1, "short name resolves to one plugin");
         assert!(one[0].as_str().starts_with("kernel"));
+    }
+
+    #[test]
+    fn resolve_plugin_ids_refuses_a_name_that_matches_nothing() {
+        // A fleet-wide apply that silently hardened nothing on every host is
+        // the failure this refusal exists to prevent.
+        let err = resolve_plugin_ids(&["services".to_string()])
+            .expect_err("an unmatched name must fail, not select nothing");
+        assert!(err.to_string().contains("services"), "{err}");
     }
 
     #[test]
