@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-07-27
+
 ### Changed
 - `scan --exit-code` exits non-zero on an incomplete scan as well as on
   findings. A clean exit is a positive claim about the host, and a plugin that
