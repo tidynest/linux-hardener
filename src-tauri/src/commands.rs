@@ -678,19 +678,27 @@ struct CliScanEntry {
     findings: Vec<Finding>,
     #[serde(default)]
     unchecked: Vec<UncheckedCheck>,
+    /// Absent only in output from a CLI predating the field. Defaulting to
+    /// `false` there keeps the fail-closed direction: an unknown outcome is
+    /// reported as unverified rather than silently claimed as a pass.
+    #[serde(default)]
+    scan_success: bool,
+    #[serde(default)]
+    scan_error: Option<String>,
 }
 
 impl CliScanEntry {
-    /// The CLI shape omits duration and per-plugin errors; a parsed entry is
-    /// a successful scan by construction.
+    /// The CLI shape omits duration, so that alone is synthesised. The scan
+    /// outcome is read from the payload: assuming success here was how a
+    /// failed plugin scan reached the desktop as a clean result.
     fn into_scan_result(self) -> ScanResult {
         ScanResult {
             scan_plugin_id: PluginId::new(self.plugin_id),
-            scan_success: true,
+            scan_success: self.scan_success,
             scan_findings: self.findings,
             scan_unchecked: self.unchecked,
             scan_duration_us: 0,
-            scan_error: None,
+            scan_error: self.scan_error,
         }
     }
 }
@@ -2769,7 +2777,9 @@ mod fleet_tests {
                 "unchecked_category": "Authentication",
                 "unchecked_reason": "reading /etc/security/pwquality.conf requires root",
                 "unchecked_compliance": []
-            }]
+            }],
+            "scan_success": true,
+            "scan_error": null
         }]"#;
         let entries: Vec<CliScanEntry> = serde_json::from_str(json).unwrap();
         let results: Vec<ScanResult> = entries
@@ -2778,6 +2788,49 @@ mod fleet_tests {
             .collect();
         assert_eq!(results[0].scan_unchecked.len(), 1);
         assert!(results[0].scan_success);
+    }
+
+    /// The desktop used to hardcode `scan_success: true`, so a plugin whose
+    /// scan failed arrived as a clean, finding-free result and the GUI showed
+    /// a compliant host. The outcome must come from the payload.
+    #[test]
+    fn a_failed_cli_scan_entry_stays_failed_through_the_desktop_parser() {
+        let json = r#"[{
+            "plugin_id": "ssh-hardening",
+            "plugin_name": "SSH Hardening",
+            "findings": [],
+            "unchecked": [],
+            "scan_success": false,
+            "scan_error": "Failed to read /etc/ssh/sshd_config"
+        }]"#;
+        let entries: Vec<CliScanEntry> = serde_json::from_str(json).unwrap();
+        let result = entries
+            .into_iter()
+            .map(CliScanEntry::into_scan_result)
+            .next()
+            .unwrap();
+
+        assert!(
+            !result.scan_success,
+            "a failed scan must not arrive at the desktop as a success"
+        );
+        assert_eq!(
+            result.scan_error.as_deref(),
+            Some("Failed to read /etc/ssh/sshd_config")
+        );
+    }
+
+    /// Output from a CLI predating the field must not be read as a pass.
+    #[test]
+    fn a_scan_entry_without_the_field_is_not_assumed_successful() {
+        let json = r#"[{"plugin_id": "ssh-hardening", "findings": [], "unchecked": []}]"#;
+        let entries: Vec<CliScanEntry> = serde_json::from_str(json).unwrap();
+        let result = entries
+            .into_iter()
+            .map(CliScanEntry::into_scan_result)
+            .next()
+            .unwrap();
+        assert!(!result.scan_success, "an unknown outcome must fail closed");
     }
 }
 

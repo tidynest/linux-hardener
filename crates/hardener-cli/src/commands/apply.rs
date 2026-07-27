@@ -3,7 +3,7 @@
 use crate::cli::OutputFormat;
 use crate::output;
 use anyhow::{Result, bail};
-use hardener_common::types::PluginId;
+use hardener_common::types::{PluginId, Severity};
 use hardener_core::{
     ApplyResult, ConfigLoader, Context, HardenerConfig, PluginMetadata, SystemExecutor,
     ValidationReport,
@@ -86,7 +86,16 @@ pub(crate) async fn apply_host(
 
         if dry_run {
             match plugin.validate(&ctx, plugin_config).await {
-                Ok(report) => validation_reports.push(report),
+                Ok(report) => {
+                    // A dry run that could not validate is not a clean dry
+                    // run. Without this, an unreadable config renders as
+                    // "0 change(s) to apply" and exits 0, so the operator is
+                    // told the host needs nothing when it was never read.
+                    if blocking_validation_issue(&report) {
+                        had_failure = true;
+                    }
+                    validation_reports.push(report);
+                }
                 Err(e) => {
                     had_failure = true;
                     if !quiet {
@@ -141,6 +150,21 @@ pub(crate) async fn apply_host(
         validation_reports,
         had_failure,
     }
+}
+
+/// Whether a validation report carries an issue serious enough to fail the
+/// dry run.
+///
+/// Critical and High only. Lower severities are advisory, and promoting them
+/// would turn an informational note into a non-zero exit, which trains
+/// operators to ignore the exit code entirely.
+fn blocking_validation_issue(report: &ValidationReport) -> bool {
+    report.validation_report_issues.iter().any(|issue| {
+        matches!(
+            issue.validation_issue_severity,
+            Severity::Critical | Severity::High
+        )
+    })
 }
 
 pub async fn run(
@@ -259,6 +283,45 @@ mod tests {
             message.contains("--ssh"),
             "message should mention the remote case: {message}"
         );
+    }
+
+    fn report_with(severity: Severity) -> ValidationReport {
+        ValidationReport {
+            validation_report_plugin_id: PluginId::new("ssh-hardening"),
+            validation_report_is_valid: false,
+            validation_report_issues: vec![hardener_core::ValidationIssue {
+                validation_issue_severity: severity,
+                validation_issue_message: "Failed to read /etc/ssh/sshd_config".to_string(),
+                validation_issue_config_key: None,
+            }],
+            validation_report_estimated_changes: vec![],
+            validation_report_compliant_count: 0,
+        }
+    }
+
+    /// `--dry-run` on an unreadable config produced "0 change(s) to apply"
+    /// and exit 0, which an operator reads as "this host needs nothing".
+    /// A serious validation issue has to reach the exit code.
+    #[test]
+    fn a_serious_validation_issue_fails_the_dry_run() {
+        assert!(blocking_validation_issue(&report_with(Severity::Critical)));
+        assert!(blocking_validation_issue(&report_with(Severity::High)));
+    }
+
+    /// Advisory severities must not flip the exit code, or the signal becomes
+    /// noise and operators learn to ignore it.
+    #[test]
+    fn an_advisory_validation_issue_does_not_fail_the_dry_run() {
+        assert!(!blocking_validation_issue(&report_with(Severity::Medium)));
+        assert!(!blocking_validation_issue(&report_with(Severity::Low)));
+        assert!(!blocking_validation_issue(&report_with(Severity::Info)));
+
+        let clean = ValidationReport {
+            validation_report_issues: vec![],
+            validation_report_is_valid: true,
+            ..report_with(Severity::High)
+        };
+        assert!(!blocking_validation_issue(&clean));
     }
 
     #[tokio::test]

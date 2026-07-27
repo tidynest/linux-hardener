@@ -728,7 +728,7 @@ pub struct ValidationReport {
 }
 
 /// A single validation issue.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct ValidationIssue {
     /// Severity of the validation issue.
     pub validation_issue_severity: Severity,

@@ -1068,8 +1068,14 @@ pub fn ConfigureSection() -> impl IntoView {
                                     let name = plugin_display_name(&decision.plugin_id);
                                     let pill = lockout_class(&decision.plugin_id);
                                     let count = decision.estimated_changes.len();
+                                    // An issue means the estimate is not a
+                                    // clean bill of health: the plugin may
+                                    // have produced no changes because it
+                                    // could not read anything. Never let such
+                                    // a group claim "Already compliant".
+                                    let issues = decision.issues.clone();
 
-                                    if decision.verified_compliant {
+                                    if decision.verified_compliant && issues.is_empty() {
                                         view! {
                                             <div class="review-group review-group-compliant">
                                                 <IconMinus class="review-group-minus-icon".to_string() />
@@ -1088,6 +1094,21 @@ pub fn ConfigureSection() -> impl IntoView {
                                                         {format!("{} change{}", count, if count == 1 { "" } else { "s" })}
                                                     </span>
                                                 </summary>
+                                                <ul class="review-group-issues">
+                                                    {issues.iter().map(|issue| {
+                                                        let label = issue.validation_issue_severity.to_string();
+                                                        let key = issue.validation_issue_config_key.clone();
+                                                        view! {
+                                                            <li class="review-group-issue">
+                                                                <span class="review-group-issue-severity">{label}</span>
+                                                                <span>{issue.validation_issue_message.clone()}</span>
+                                                                {key.map(|k| view! {
+                                                                    <span class="review-group-issue-key">{k}</span>
+                                                                })}
+                                                            </li>
+                                                        }
+                                                    }).collect::<Vec<_>>()}
+                                                </ul>
                                                 <ul class="review-group-changes">
                                                     {decision.estimated_changes.iter().map(|change| {
                                                         view! { <li>{change.clone()}</li> }
@@ -1435,11 +1456,13 @@ mod tests {
                 plugin_id: "ssh-hardening".to_string(),
                 verified_compliant: false,
                 estimated_changes: vec!["a".to_string(), "b".to_string(), "c".to_string()],
+                issues: vec![],
             },
             PreviewDecision {
                 plugin_id: "permissions-hardening".to_string(),
                 verified_compliant: true,
                 estimated_changes: vec![],
+                issues: vec![],
             },
         ];
         assert_eq!(total_estimated_changes(&decisions), 3);
@@ -1451,6 +1474,7 @@ mod tests {
             plugin_id: "kernel-hardening".to_string(),
             verified_compliant: true,
             estimated_changes: vec![],
+            issues: vec![],
         }];
         assert_eq!(total_estimated_changes(&decisions), 0);
     }

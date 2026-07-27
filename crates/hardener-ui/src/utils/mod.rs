@@ -6,7 +6,8 @@ pub mod theme;
 use crate::types::{ApplyOutcome as FleetApplyOutcome, RollbackOutcome as FleetRollbackOutcome};
 use crate::types::{
     ApplyResult, Change, CheckpointInfo, ComplianceFramework, FileRestoreAction, Finding,
-    FleetFrameworkPosture, RollbackResult, ScanResult, ScanSessionInfo, Severity, ValidationReport,
+    FleetFrameworkPosture, RollbackResult, ScanResult, ScanSessionInfo, Severity, ValidationIssue,
+    ValidationReport,
 };
 use hardener_types::{ApplyStatus, RollbackStatus};
 
@@ -25,6 +26,13 @@ pub struct PreviewDecision {
     pub verified_compliant: bool,
     /// Estimated changes to show; empty when `verified_compliant`.
     pub estimated_changes: Vec<String>,
+    /// Validation issues the plugin reported while producing this estimate.
+    ///
+    /// Carried because an empty `estimated_changes` is ambiguous on its own: a
+    /// plugin that could not read its config reports no pending changes, which
+    /// renders identically to a host that needs none. These are what tell the
+    /// two apart.
+    pub issues: Vec<ValidationIssue>,
 }
 
 /// Annotates a dry-run preview with the latest scan's verdict per plugin.
@@ -73,6 +81,7 @@ pub fn annotate_preview(
                 plugin_id,
                 verified_compliant,
                 estimated_changes,
+                issues: report.validation_report_issues.clone(),
             }
         })
         .collect()
@@ -953,6 +962,51 @@ mod tests {
         let decisions = annotate_preview(&reports, &scans);
         assert!(!decisions[0].verified_compliant);
         assert_eq!(decisions[0].estimated_changes.len(), 1);
+    }
+
+    /// The desktop half of the dry-run honesty problem: a plugin that could
+    /// not read its config reports no estimated changes, which renders exactly
+    /// like a host needing none. The issue is the only thing that separates
+    /// them, so the preview has to carry it.
+    #[test]
+    fn preview_carries_validation_issues_to_the_desktop() {
+        let mut failed = report("ssh-hardening", &[]);
+        failed.validation_report_is_valid = false;
+        failed.validation_report_issues = vec![ValidationIssue {
+            validation_issue_severity: Severity::High,
+            validation_issue_message: "Failed to read /etc/ssh/sshd_config".to_string(),
+            validation_issue_config_key: Some("sshd_config".to_string()),
+        }];
+
+        let decisions = annotate_preview(&[failed], &[]);
+
+        assert_eq!(decisions[0].issues.len(), 1, "the issue must survive");
+        assert_eq!(
+            decisions[0].issues[0].validation_issue_message,
+            "Failed to read /etc/ssh/sshd_config"
+        );
+    }
+
+    /// A scan-verified plugin whose validation still reported an issue must
+    /// not be presented as compliant: the estimate was not produced from a
+    /// successful read.
+    #[test]
+    fn an_issue_survives_even_when_the_scan_verified_the_plugin() {
+        let mut failed = report("ssh-hardening", &[]);
+        failed.validation_report_is_valid = false;
+        failed.validation_report_issues = vec![ValidationIssue {
+            validation_issue_severity: Severity::Critical,
+            validation_issue_message: "sshd_config is unreadable".to_string(),
+            validation_issue_config_key: None,
+        }];
+        let scans = [scan("ssh-hardening", true, vec![], vec![])];
+
+        let decisions = annotate_preview(&[failed], &scans);
+
+        assert!(
+            !decisions[0].issues.is_empty(),
+            "a clean scan must not erase a validation issue"
+        );
     }
 
     fn change(change_type: ChangeType, success: bool) -> Change {

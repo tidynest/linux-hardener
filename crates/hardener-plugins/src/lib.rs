@@ -182,20 +182,45 @@ pub fn create_plugin_registry() -> hardener_core::PluginRegistry {
 /// `ReportGenerator` so the compliance crate stays independent of the plugins.
 pub fn compliance_coverage() -> Vec<hardener_common::types::ComplianceMapping> {
     let mut seen = std::collections::HashSet::new();
+    coverage_table()
+        .into_iter()
+        .flat_map(|(_, mappings)| mappings)
+        .filter(|m| seen.insert((m.compliance_framework, m.compliance_control_id.clone())))
+        .collect()
+}
+
+/// The controls one named plugin declares it assesses, or `None` for an id no
+/// plugin answers to.
+///
+/// `compliance_coverage` answers "which controls does the engine assess at
+/// all". This answers the narrower question the failure path needs: which
+/// controls stop being assessable when *this* plugin's scan does not complete.
+/// Without it a failed scan is indistinguishable from a clean one, because the
+/// generator reads coverage statically and a control with no finding passes.
+pub fn coverage_for(plugin_id: &str) -> Option<Vec<hardener_common::types::ComplianceMapping>> {
+    coverage_table()
+        .into_iter()
+        .find(|(id, _)| *id == plugin_id)
+        .map(|(_, mappings)| mappings)
+}
+
+/// Every plugin id paired with the coverage its module declares.
+///
+/// One list, so `compliance_coverage` and `coverage_for` can never disagree
+/// about which plugin assesses which control.
+/// `every_registered_plugin_declares_its_coverage` keeps it in step with the
+/// registry.
+fn coverage_table() -> [(&'static str, Vec<hardener_common::types::ComplianceMapping>); 8] {
     [
-        audit::coverage(),
-        firewall::coverage(),
-        kernel::coverage(),
-        mac::coverage(),
-        pam::coverage(),
-        permissions::coverage(),
-        services::coverage(),
-        ssh::coverage(),
+        ("audit-hardening", audit::coverage()),
+        ("firewall-hardening", firewall::coverage()),
+        ("kernel-hardening", kernel::coverage()),
+        ("mac-hardening", mac::coverage()),
+        ("pam-hardening", pam::coverage()),
+        ("permissions-hardening", permissions::coverage()),
+        ("service-minimisation", services::coverage()),
+        ("ssh-hardening", ssh::coverage()),
     ]
-    .into_iter()
-    .flatten()
-    .filter(|m| seen.insert((m.compliance_framework, m.compliance_control_id.clone())))
-    .collect()
 }
 
 #[cfg(test)]
@@ -234,6 +259,22 @@ mod tests {
         // Test dependencies
         let deps = plugin.dependencies();
         assert_eq!(deps.len(), 0);
+    }
+
+    /// `coverage_for` returning `None` for a real plugin would silently strip
+    /// that plugin's controls from the failure path, handing them back the Pass
+    /// this table exists to prevent. A new plugin must therefore appear here,
+    /// and this test is what says so.
+    #[test]
+    fn every_registered_plugin_declares_its_coverage() {
+        let registry = crate::create_plugin_registry();
+        for metadata in registry.list().unwrap() {
+            assert!(
+                crate::coverage_for(metadata.plugin_id.as_str()).is_some(),
+                "plugin '{}' is registered but absent from coverage_table",
+                metadata.plugin_id.as_str()
+            );
+        }
     }
 
     #[test]

@@ -9,8 +9,8 @@ use hardener_compliance::{
     TextFormatter, profile_label,
 };
 use hardener_core::{
-    ConfigLoader, Context, Finding, HardenerConfig, PluginMetadata, executor::SystemExecutor,
-    plugin::UncheckedCheck,
+    ConfigLoader, Context, Finding, HardenerConfig, PluginMetadata, ScanResult,
+    executor::SystemExecutor, plugin::UncheckedCheck,
 };
 use hardener_plugins::create_plugin_registry;
 use hardener_scheduler::db::ScanFinding;
@@ -154,18 +154,19 @@ pub async fn run(
     Ok(())
 }
 
-/// Scans every plugin and returns findings grouped by their source plugin.
+/// Scans every plugin and returns each plugin's result alongside its metadata.
 ///
-/// Keeping the `(PluginMetadata, Vec<Finding>, Vec<UncheckedCheck>)` triples
-/// preserves `plugin_id`, which history persistence needs, and the unchecked
-/// entries the desktop deep-scan flow consumes. `run_scan_with_unchecked`
-/// flattens this for callers that only want the findings and unchecked lists.
+/// Pairing the whole `ScanResult` with its `PluginMetadata` preserves
+/// `plugin_id`, which history persistence needs, the unchecked entries the
+/// desktop deep-scan flow consumes, and `scan_success`/`scan_error`, which a
+/// bare findings triple could not carry. A plugin that failed must stay
+/// distinguishable from one that found nothing all the way to the renderer.
 pub async fn scan_grouped(
     quiet: bool,
     executor: Arc<dyn SystemExecutor>,
     cli_format: &CliOutputFormat,
     config: &HardenerConfig,
-) -> Result<Vec<(PluginMetadata, Vec<Finding>, Vec<UncheckedCheck>)>> {
+) -> Result<Vec<(PluginMetadata, ScanResult)>> {
     let registry = create_plugin_registry();
     let ctx = Context::with_executor(executor);
 
@@ -201,16 +202,16 @@ pub async fn scan_grouped(
                         result.scan_findings.len()
                     );
                 }
-                grouped.push((
-                    metadata.clone(),
-                    result.scan_findings,
-                    result.scan_unchecked,
-                ));
+                grouped.push((metadata.clone(), result));
             }
             Err(e) => {
                 if show_progress {
                     eprintln!("  Scanned {}: error: {}", metadata.plugin_name, e);
                 }
+                // Dropping the plugin here is what let a failed scan read as a
+                // clean one: absent from the group list, it contributes no
+                // findings, and the generator passes every control it covers.
+                grouped.push((metadata.clone(), failed_scan(metadata, &e.to_string())));
             }
         }
     }
@@ -218,10 +219,29 @@ pub async fn scan_grouped(
     Ok(grouped)
 }
 
+/// The `ScanResult` standing in for a plugin whose `scan` call itself errored,
+/// so the failure travels the same path as a plugin that returned `Ok` while
+/// reporting `scan_success: false`.
+fn failed_scan(metadata: &PluginMetadata, error: &str) -> ScanResult {
+    ScanResult {
+        scan_plugin_id: metadata.plugin_id.clone(),
+        scan_success: false,
+        scan_findings: Vec::new(),
+        scan_unchecked: Vec::new(),
+        scan_duration_us: 0,
+        scan_error: Some(error.to_string()),
+    }
+}
+
 /// Scans every plugin and returns findings and unchecked checks, each
 /// flattened across plugins. The compliance report generator needs both: a
 /// control whose covering check landed in `unchecked` must never auto-pass
 /// on the mere absence of a finding.
+///
+/// A plugin whose scan did not complete contributes an unchecked entry of its
+/// own, because the generator reads coverage statically: without one, the
+/// controls that plugin covers would pass on the very silence its failure
+/// caused.
 pub async fn run_scan_with_unchecked(
     quiet: bool,
     executor: Arc<dyn SystemExecutor>,
@@ -229,13 +249,52 @@ pub async fn run_scan_with_unchecked(
     config: &HardenerConfig,
 ) -> Result<(Vec<Finding>, Vec<UncheckedCheck>)> {
     let grouped = scan_grouped(quiet, executor, cli_format, config).await?;
+    Ok(flatten_scans(&grouped))
+}
+
+/// Flattens grouped scan results into the findings and unchecked lists the
+/// compliance generator consumes.
+///
+/// Shared with `batch`, which needs the grouped form for per-host persistence
+/// and the flat form for its severity counts. Keeping one implementation is
+/// what stops the two paths disagreeing about whether a failed scan is
+/// reported, which is precisely how this defect reached two call sites.
+pub(crate) fn flatten_scans(
+    grouped: &[(PluginMetadata, ScanResult)],
+) -> (Vec<Finding>, Vec<UncheckedCheck>) {
     let mut findings = Vec::new();
     let mut unchecked = Vec::new();
-    for (_, group_findings, group_unchecked) in grouped {
-        findings.extend(group_findings);
-        unchecked.extend(group_unchecked);
+    for (metadata, result) in grouped {
+        if !result.scan_success {
+            unchecked.push(incomplete_scan_check(
+                metadata,
+                result.scan_error.as_deref(),
+            ));
+        }
+        findings.extend(result.scan_findings.iter().cloned());
+        unchecked.extend(result.scan_unchecked.iter().cloned());
     }
-    Ok((findings, unchecked))
+    (findings, unchecked)
+}
+
+/// The unchecked entry standing in for a plugin whose scan did not complete.
+///
+/// It carries that plugin's entire declared coverage, so every control the
+/// plugin would have assessed reports `ManualReview` rather than passing on an
+/// absence of findings the failure itself produced.
+fn incomplete_scan_check(metadata: &PluginMetadata, error: Option<&str>) -> UncheckedCheck {
+    UncheckedCheck {
+        unchecked_check_id: format!("{}-scan-incomplete", metadata.plugin_id.as_str()),
+        unchecked_title: format!("{} scan did not complete", metadata.plugin_name),
+        unchecked_category: metadata.plugin_category,
+        unchecked_reason: error.unwrap_or("reason not reported").to_string(),
+        // A plugin absent from the coverage table declares no coverage, so its
+        // controls sit outside the generator's assessed set and already report
+        // ManualReview. `every_registered_plugin_declares_its_coverage` is what
+        // keeps that true as plugins are added.
+        unchecked_compliance: hardener_plugins::coverage_for(metadata.plugin_id.as_str())
+            .unwrap_or_default(),
+    }
 }
 
 /// Converts a core `Finding` + plugin metadata into a scheduler `ScanFinding`.
@@ -412,19 +471,88 @@ mod tests {
             .await
             .unwrap();
         // Every group carries its plugin metadata (so plugin_id is preserved).
-        for (meta, _findings, _unchecked) in &grouped {
+        for (meta, _result) in &grouped {
             assert!(!meta.plugin_id.as_str().is_empty(), "group has a plugin id");
         }
+        // Every registered plugin appears, including any whose scan failed:
+        // dropping one is what let a failure read as a clean result.
+        assert_eq!(
+            grouped.len(),
+            create_plugin_registry().list().unwrap().len(),
+            "no plugin may be missing from the grouped results"
+        );
+
         // run_scan_with_unchecked returns the same findings and unchecked
-        // entries, each flattened across plugins.
+        // entries, each flattened across plugins, plus one synthesised
+        // unchecked entry per plugin whose scan did not complete.
         let (findings, unchecked) =
             run_scan_with_unchecked(true, exec, &CliOutputFormat::Json, &default_config)
                 .await
                 .unwrap();
-        let grouped_findings: usize = grouped.iter().map(|(_, f, _)| f.len()).sum();
-        let grouped_unchecked: usize = grouped.iter().map(|(_, _, u)| u.len()).sum();
+        let grouped_findings: usize = grouped.iter().map(|(_, r)| r.scan_findings.len()).sum();
+        let grouped_unchecked: usize = grouped.iter().map(|(_, r)| r.scan_unchecked.len()).sum();
+        let failed = grouped.iter().filter(|(_, r)| !r.scan_success).count();
         assert_eq!(findings.len(), grouped_findings, "findings flatten");
-        assert_eq!(unchecked.len(), grouped_unchecked, "unchecked flatten");
+        assert_eq!(
+            unchecked.len(),
+            grouped_unchecked + failed,
+            "unchecked flatten, plus one entry per incomplete scan"
+        );
+        // The bare MockExecutor has no fixture data, so this exercises the
+        // failure path rather than asserting a vacuous equality.
+        assert!(failed > 0, "expected at least one plugin scan to fail here");
+    }
+
+    /// A plugin whose scan did not complete must not hand its controls a Pass.
+    ///
+    /// The generator decides Pass from static plugin-declared coverage plus the
+    /// absence of a finding. A failed scan produces no findings, so without the
+    /// failure reaching the report the two are indistinguishable and every
+    /// control that plugin covers passes on evidence nobody collected. This is
+    /// the compliance-report face of the same conflation `scan` hit: silence
+    /// standing for both "verified" and "never checked".
+    #[tokio::test]
+    async fn a_failed_plugin_scan_cannot_pass_its_compliance_controls() {
+        // No sshd_config on this executor, so the ssh plugin's scan reports
+        // scan_success = false and returns no findings.
+        let executor: Arc<dyn SystemExecutor> = Arc::new(MockExecutor::new());
+        let report_config = ReportConfig {
+            scenario: Scenario::Custom(vec![ComplianceFramework::CIS]),
+            formats: vec![OutputFormat::Json],
+            output_dir: None,
+            profile: ComplianceProfile::default(),
+        };
+
+        let (findings, unchecked) = run_scan_with_unchecked(
+            true,
+            executor,
+            &CliOutputFormat::Json,
+            &HardenerConfig::default(),
+        )
+        .await
+        .unwrap();
+
+        let report = ReportGenerator::new(report_config, hardener_plugins::compliance_coverage())
+            .generate(&findings, &unchecked)
+            .into_iter()
+            .next()
+            .expect("one report");
+        let control = report
+            .report_controls
+            .iter()
+            .find(|c| c.control_id == "5.2.10")
+            .expect("CIS 5.2.10 is covered by the ssh plugin");
+
+        assert_ne!(
+            control.control_status,
+            ControlStatus::Pass,
+            "CIS 5.2.10 passed on a host whose ssh scan never completed"
+        );
+        assert_eq!(
+            control.control_status,
+            ControlStatus::ManualReview,
+            "a control whose covering scan failed is exactly the manual-review case"
+        );
     }
 
     #[test]

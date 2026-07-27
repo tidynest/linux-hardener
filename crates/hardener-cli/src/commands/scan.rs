@@ -7,9 +7,7 @@ use crate::output;
 use anyhow::Result;
 use hardener_common::types::Severity;
 use hardener_core::{
-    ConfigLoader, Context, HardenerConfig, PluginMetadata,
-    executor::SystemExecutor,
-    plugin::{Finding, UncheckedCheck},
+    ConfigLoader, Context, HardenerConfig, PluginMetadata, ScanResult, executor::SystemExecutor,
 };
 use hardener_scheduler::ScanHistoryManager;
 use hardener_scheduler::db::ScanFinding;
@@ -118,7 +116,9 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
                         ),
                     );
                 }
-                // Filter findings by severity
+                // Filter findings by severity, keeping the rest of the result
+                // intact so scan_success and scan_error survive to the
+                // renderer instead of dying at the tuple boundary.
                 let filtered_findings: Vec<_> = results
                     .scan_findings
                     .iter()
@@ -127,8 +127,10 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
                     .collect();
                 all_results.push((
                     metadata.clone(),
-                    filtered_findings,
-                    results.scan_unchecked.clone(),
+                    ScanResult {
+                        scan_findings: filtered_findings,
+                        ..results
+                    },
                 ));
             }
             Err(e) => {
@@ -136,11 +138,25 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
                     &opts.format,
                     &format!("Failed to scan {}: {e}", metadata.plugin_name),
                 );
+                // Recorded rather than dropped: a plugin missing from the
+                // results renders as one that was never selected, and the
+                // JSON consumer cannot tell it apart from a clean scan.
+                all_results.push((
+                    metadata.clone(),
+                    ScanResult {
+                        scan_plugin_id: metadata.plugin_id.clone(),
+                        scan_success: false,
+                        scan_findings: Vec::new(),
+                        scan_unchecked: Vec::new(),
+                        scan_duration_us: 0,
+                        scan_error: Some(e.to_string()),
+                    },
+                ));
             }
         }
     }
 
-    output::scan_results(&opts.format, &all_results, mode);
+    output::scan_results(&opts.format, &all_results);
 
     if opts.timings {
         output::scan_timings(&plugin_timings, wall_elapsed);
@@ -149,12 +165,15 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
     // Persist scan session to history database
     persist_scan_session(&all_results).await;
 
-    // Handle exit code flag
+    // Handle exit code flag. An incomplete scan exits non-zero too: a clean
+    // exit is a positive claim about the host, and a plugin that never ran
+    // has not earned it.
     if opts.exit_code {
         let has_findings = all_results
             .iter()
-            .any(|(_, findings, _)| !findings.is_empty());
-        if has_findings {
+            .any(|(_, result)| !result.scan_findings.is_empty());
+        let incomplete = all_results.iter().any(|(_, result)| !result.scan_success);
+        if has_findings || incomplete {
             std::process::exit(1);
         }
     }
@@ -220,7 +239,7 @@ fn plugin_id_list(plugins: &[&PluginMetadata]) -> String {
 ///
 /// Failures are logged but do not propagate; scan output is already displayed,
 /// so history persistence is best-effort.
-async fn persist_scan_session(results: &[(PluginMetadata, Vec<Finding>, Vec<UncheckedCheck>)]) {
+async fn persist_scan_session(results: &[(PluginMetadata, ScanResult)]) {
     let db = match open_history_db().await {
         Ok(db) => db,
         Err(_) => return,
@@ -228,7 +247,7 @@ async fn persist_scan_session(results: &[(PluginMetadata, Vec<Finding>, Vec<Unch
 
     let plugins: Vec<String> = results
         .iter()
-        .map(|(m, _, _)| m.plugin_id.to_string())
+        .map(|(m, _)| m.plugin_id.to_string())
         .collect();
     let hostname = std::fs::read_to_string("/etc/hostname")
         .map(|h| h.trim().to_string())
@@ -241,8 +260,9 @@ async fn persist_scan_session(results: &[(PluginMetadata, Vec<Finding>, Vec<Unch
 
     let findings: Vec<ScanFinding> = results
         .iter()
-        .flat_map(|(meta, findings, _)| {
-            findings
+        .flat_map(|(meta, result)| {
+            result
+                .scan_findings
                 .iter()
                 .map(move |f| finding_to_scan_finding(meta, f))
         })

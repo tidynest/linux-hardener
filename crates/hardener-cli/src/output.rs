@@ -3,11 +3,11 @@
 use colored::Colorize;
 use hardener_common::types::Severity;
 use hardener_core::{
-    ApplyResult, Finding, PluginMetadata, ValidationReport, plugin::UncheckedCheck,
+    ApplyResult, PluginMetadata, ScanResult, ValidationReport, plugin::UncheckedCheck,
 };
 use hardener_state::{Checkpoint, FileState, RollbackResult};
 
-use crate::cli::{OutputFormat, ScanMode};
+use crate::cli::OutputFormat;
 
 pub fn status(format: &OutputFormat, message: &str) {
     match format {
@@ -47,38 +47,21 @@ pub fn warning(format: &OutputFormat, message: &str) {
     }
 }
 
-pub fn scan_results(
-    format: &OutputFormat,
-    results: &[(PluginMetadata, Vec<Finding>, Vec<UncheckedCheck>)],
-    _mode: ScanMode,
-) {
+pub fn scan_results(format: &OutputFormat, results: &[(PluginMetadata, ScanResult)]) {
     match format {
-        OutputFormat::Json => {
-            let json_results: Vec<_> = results
-                .iter()
-                .map(|(m, f, u)| {
-                    serde_json::json!({
-                        "plugin_id": m.plugin_id.as_str(),
-                        "plugin_name": m.plugin_name,
-                        "findings": f,
-                        "unchecked": u,
-                    })
-                })
-                .collect();
-            match serde_json::to_string_pretty(&json_results) {
-                Ok(json) => println!("{json}"),
-                Err(e) => eprintln!("{{\"error\": \"serialisation failed: {e}\"}}"),
-            }
-        }
+        OutputFormat::Json => match serde_json::to_string_pretty(&scan_json(results)) {
+            Ok(json) => println!("{json}"),
+            Err(e) => eprintln!("{{\"error\": \"serialisation failed: {e}\"}}"),
+        },
         _ => {
             println!("\n{}", "═══ Scan Results ═══".bold());
 
             let mut total_findings = 0;
-            for (metadata, findings, unchecked) in results {
-                for line in scan_plugin_lines(metadata, findings, unchecked) {
+            for (metadata, result) in results {
+                for line in scan_plugin_lines(metadata, result) {
                     println!("{line}");
                 }
-                total_findings += findings.len();
+                total_findings += result.scan_findings.len();
             }
 
             println!("\n{}", "═══════════════════".dimmed());
@@ -88,7 +71,10 @@ pub fn scan_results(
                 results.len()
             );
 
-            let total_unchecked: usize = results.iter().map(|(_, _, u)| u.len()).sum();
+            let total_unchecked: usize = results
+                .iter()
+                .map(|(_, r)| r.scan_unchecked.len())
+                .sum::<usize>();
             if total_unchecked > 0 {
                 println!(
                     "{}",
@@ -99,8 +85,42 @@ pub fn scan_results(
                     .dimmed()
                 );
             }
+
+            let failed = results.iter().filter(|(_, r)| !r.scan_success).count();
+            if failed > 0 {
+                println!(
+                    "{}",
+                    format!(
+                        "{failed} plugin scan(s) did not complete; \
+                         findings above are not a complete picture"
+                    )
+                    .yellow()
+                );
+            }
         }
     }
+}
+
+/// Builds the `--format json` payload for a scan.
+///
+/// Split out so the machine-facing contract is testable without capturing
+/// stdout. `scan_success` and `scan_error` are part of that contract: without
+/// them a plugin whose scan failed is byte-identical to a compliant host for
+/// every machine consumer.
+fn scan_json(results: &[(PluginMetadata, ScanResult)]) -> Vec<serde_json::Value> {
+    results
+        .iter()
+        .map(|(m, r)| {
+            serde_json::json!({
+                "plugin_id": m.plugin_id.as_str(),
+                "plugin_name": m.plugin_name,
+                "findings": r.scan_findings,
+                "unchecked": r.scan_unchecked,
+                "scan_success": r.scan_success,
+                "scan_error": r.scan_error,
+            })
+        })
+        .collect()
 }
 
 /// Builds the terminal lines for one plugin's scan section, returned as
@@ -114,11 +134,28 @@ pub fn scan_results(
 /// id), mirroring the GUI's findings-tab dedupe; headers keep the honest
 /// raw count and collapsed lines carry an `(xN)` multiplier so no check
 /// appears to have vanished.
-fn scan_plugin_lines(
-    metadata: &PluginMetadata,
-    findings: &[Finding],
-    unchecked: &[UncheckedCheck],
-) -> Vec<String> {
+fn scan_plugin_lines(metadata: &PluginMetadata, result: &ScanResult) -> Vec<String> {
+    let findings = &result.scan_findings;
+    let unchecked = &result.scan_unchecked;
+
+    // A plugin whose own scan failed carries no findings, which is exactly
+    // what a compliant host looks like. Never let that render as a tick.
+    if !result.scan_success {
+        return vec![format!(
+            "\n{} {} - {}",
+            "✗".red(),
+            metadata.plugin_name.bold(),
+            format!(
+                "scan did not complete: {}",
+                result
+                    .scan_error
+                    .as_deref()
+                    .unwrap_or("reason not reported")
+            )
+            .red()
+        )];
+    }
+
     if findings.is_empty() && unchecked.is_empty() {
         return vec![format!(
             "{} {} - {}",
@@ -493,19 +530,54 @@ pub fn validation_reports(format: &OutputFormat, reports: &[ValidationReport]) {
         },
         _ => {
             for report in reports {
-                println!(
-                    "{} {} - {} change(s) to apply{}",
-                    "○".blue(),
-                    report.validation_report_plugin_id.as_str(),
-                    report.validation_report_estimated_changes.len(),
-                    compliant_suffix(report.validation_report_compliant_count),
-                );
-                for item in &report.validation_report_estimated_changes {
-                    println!("  {} {}", "•".dimmed(), item);
+                for line in validation_report_lines(report) {
+                    println!("{line}");
                 }
             }
         }
     }
+}
+
+/// Builds the terminal lines for one plugin's dry-run section.
+///
+/// Issues are rendered alongside the estimated changes, not dropped. A plugin
+/// that could not read its config reports zero pending changes, which is
+/// character-for-character what a host needing none reports; without the
+/// issues an unreadable `sshd_config` reads as "0 change(s) to apply".
+/// Severity is shown so an operator can tell a blocking problem from a note.
+fn validation_report_lines(report: &ValidationReport) -> Vec<String> {
+    let marker = if report.validation_report_is_valid {
+        "○".blue()
+    } else {
+        "✗".red()
+    };
+    let mut lines = vec![format!(
+        "{} {} - {} change(s) to apply{}",
+        marker,
+        report.validation_report_plugin_id.as_str(),
+        report.validation_report_estimated_changes.len(),
+        compliant_suffix(report.validation_report_compliant_count),
+    )];
+
+    for item in &report.validation_report_estimated_changes {
+        lines.push(format!("  {} {}", "•".dimmed(), item));
+    }
+
+    for issue in &report.validation_report_issues {
+        let key = issue
+            .validation_issue_config_key
+            .as_deref()
+            .map(|k| format!(" ({k})"))
+            .unwrap_or_default();
+        lines.push(format!(
+            "  {} [{}] {}{}",
+            "!".yellow(),
+            format_severity(&issue.validation_issue_severity),
+            issue.validation_issue_message,
+            key.dimmed(),
+        ));
+    }
+    lines
 }
 
 /// The " (N already compliant)" tail appended to dry-run summaries, or an empty
@@ -560,6 +632,7 @@ fn format_timestamp(timestamp: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hardener_core::Finding;
 
     #[test]
     fn test_format_severity_critical() {
@@ -668,6 +741,51 @@ mod tests {
         assert_eq!(apply_summary(&result), "2 change(s) applied");
     }
 
+    fn validation_report(issues: Vec<hardener_core::ValidationIssue>) -> ValidationReport {
+        ValidationReport {
+            validation_report_plugin_id: PluginId::new("ssh-hardening"),
+            validation_report_is_valid: issues.is_empty(),
+            validation_report_issues: issues,
+            validation_report_estimated_changes: vec![],
+            validation_report_compliant_count: 0,
+        }
+    }
+
+    /// A plugin that could not read its config reports zero pending changes,
+    /// which is exactly what a host needing none reports. The issue is the
+    /// only thing distinguishing them, so it must reach the operator.
+    #[test]
+    fn validation_lines_surface_issues_not_just_pending_changes() {
+        let lines =
+            validation_report_lines(&validation_report(vec![hardener_core::ValidationIssue {
+                validation_issue_severity: Severity::High,
+                validation_issue_message: "Failed to read /etc/ssh/sshd_config".to_string(),
+                validation_issue_config_key: Some("sshd_config".to_string()),
+            }]));
+
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("Failed to read /etc/ssh/sshd_config")),
+            "the issue must be rendered: {lines:?}"
+        );
+        assert!(
+            lines.iter().any(|l| l.contains("HIGH")),
+            "severity must be shown so a blocking problem is distinguishable: {lines:?}"
+        );
+        assert!(
+            lines.iter().any(|l| l.contains("sshd_config")),
+            "the config key must be shown: {lines:?}"
+        );
+    }
+
+    #[test]
+    fn a_valid_report_renders_unchanged() {
+        let lines = validation_report_lines(&validation_report(vec![]));
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("0 change(s) to apply"));
+    }
+
     #[test]
     fn compliant_suffix_only_appears_when_positive() {
         assert_eq!(compliant_suffix(0), "");
@@ -723,6 +841,72 @@ mod tests {
         }
     }
 
+    fn scan_result(
+        success: bool,
+        findings: Vec<Finding>,
+        unchecked: Vec<UncheckedCheck>,
+    ) -> ScanResult {
+        ScanResult {
+            scan_plugin_id: PluginId::new("audit-hardening"),
+            scan_success: success,
+            scan_findings: findings,
+            scan_unchecked: unchecked,
+            scan_duration_us: 0,
+            scan_error: (!success).then(|| "auditctl -l: permission denied".to_string()),
+        }
+    }
+
+    /// The machine-facing half of the same honesty problem. Without these two
+    /// keys a plugin whose scan failed serialises identically to a compliant
+    /// one, so every JSON consumer reads a failure as a pass.
+    #[test]
+    fn json_entry_carries_scan_success_and_error() {
+        let entries = scan_json(&[(
+            metadata("Audit Rules Hardening"),
+            scan_result(false, vec![], vec![]),
+        )]);
+
+        assert_eq!(entries[0]["scan_success"], serde_json::json!(false));
+        assert_eq!(
+            entries[0]["scan_error"],
+            serde_json::json!("auditctl -l: permission denied")
+        );
+
+        // A successful scan still says so explicitly, so a consumer can trust
+        // the key's presence rather than inferring from its absence.
+        let clean = scan_json(&[(
+            metadata("Audit Rules Hardening"),
+            scan_result(true, vec![], vec![]),
+        )]);
+        assert_eq!(clean[0]["scan_success"], serde_json::json!(true));
+        assert_eq!(clean[0]["scan_error"], serde_json::json!(null));
+    }
+
+    /// A failed scan carries no findings, which is exactly what a compliant
+    /// host looks like. The terminal must never render that as a tick.
+    #[test]
+    fn a_failed_scan_never_renders_as_a_clean_plugin() {
+        let lines = scan_plugin_lines(
+            &metadata("Audit Rules Hardening"),
+            &scan_result(false, vec![], vec![]),
+        );
+
+        assert!(
+            !lines.iter().any(|l| l.contains("No issues found")),
+            "a failed scan must not claim a clean result: {lines:?}"
+        );
+        assert!(
+            lines.iter().any(|l| l.contains("scan did not complete")),
+            "the failure must be stated: {lines:?}"
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("auditctl -l: permission denied")),
+            "the reason must survive to the operator: {lines:?}"
+        );
+    }
+
     #[test]
     fn unchecked_only_plugin_gets_a_named_header_and_deduped_lines() {
         let entries = vec![
@@ -732,7 +916,10 @@ mod tests {
             unchecked("audit-time-change", "Audit rule: time-change"),
             unchecked("audit-identity", "Audit rule: identity"),
         ];
-        let lines = scan_plugin_lines(&metadata("Audit Rules Hardening"), &[], &entries);
+        let lines = scan_plugin_lines(
+            &metadata("Audit Rules Hardening"),
+            &scan_result(true, vec![], entries),
+        );
 
         let header = &lines[0];
         assert!(
@@ -764,8 +951,11 @@ mod tests {
     fn mixed_plugin_nests_findings_and_unchecked_under_one_header() {
         let lines = scan_plugin_lines(
             &metadata("PAM Hardening"),
-            &[finding("Password history not enforced")],
-            &[unchecked("pam-minlen", "PAM setting: minlen")],
+            &scan_result(
+                true,
+                vec![finding("Password history not enforced")],
+                vec![unchecked("pam-minlen", "PAM setting: minlen")],
+            ),
         );
 
         let named: Vec<_> = lines
@@ -789,7 +979,10 @@ mod tests {
 
     #[test]
     fn clean_plugin_line_is_unchanged() {
-        let lines = scan_plugin_lines(&metadata("SSH Hardening"), &[], &[]);
+        let lines = scan_plugin_lines(
+            &metadata("SSH Hardening"),
+            &scan_result(true, vec![], vec![]),
+        );
         assert_eq!(lines.len(), 1);
         assert!(lines[0].contains("SSH Hardening"));
         assert!(lines[0].contains("No issues found"));

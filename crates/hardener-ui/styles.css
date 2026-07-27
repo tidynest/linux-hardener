@@ -1634,6 +1634,53 @@ tbody tr:hover {
   font-family: var(--font-mono);
 }
 
+/* Validation issues raised while producing a preview. Rendered above the
+   estimated changes because they qualify them: a plugin that could not read
+   its config lists no changes, and without this block that reads as a host
+   needing none. Warning-toned, not critical-toned, so it reads as "this
+   estimate is incomplete" rather than "your system is broken". */
+.review-group-issues {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.review-group-issues:empty {
+  display: none;
+}
+
+.review-group-issue {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  font-size: var(--font-size-body);
+  color: var(--text-primary);
+  padding: var(--space-sm) var(--space-md);
+  background-color: var(--color-warning-bg);
+  border-left: 2px solid var(--color-warning);
+  border-radius: 4px;
+}
+
+.review-group-issue-severity {
+  flex-shrink: 0;
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--color-warning-bright);
+}
+
+.review-group-issue-key {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+}
+
 /* Step 3 - the calm accent confirm box (never red/warning), holding the
    checkpoint/password reassurance directly beside the count-named confirm,
    plus Step 4's single lockout tick when it applies. */
