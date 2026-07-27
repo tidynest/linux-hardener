@@ -1,5 +1,5 @@
 Name:           linux-system-hardener
-Version:        1.5.0
+Version:        1.5.1
 Release:        1%{?dist}
 Summary:        Linux security automation: scanning, hardening, and rollback
 License:        Apache-2.0
@@ -103,6 +103,16 @@ systemctl daemon-reload || true
 %dir %{_libdir}/linux-hardener
 
 %changelog
+* Mon Jul 27 2026 Eric Jingryd <tidynest@proton.me> - 1.5.1-1
+- Security: compliance reports could mark controls as passed for a plugin that produced no evidence. From the command line this needed a plugin's scan to fail; in the desktop it needed no failure at all, as disabling a plugin or scanning a subset was enough. Regenerate any report kept, filed or forwarded
+- Security: on openSUSE, apply created a short /etc/login.defs, /etc/security/faillock.conf and /etc/security/pwhistory.conf, which mask the vendor files under /usr/etc whole rather than per setting; 35 settings including ENCRYPT_METHOD and UMASK silently stopped applying. Apply now refuses to create these files rather than masking the vendor copy
+- A drop-in under /etc/ssh/sshd_config.d/ no longer silently overrides what the tool wrote; scan reports the value sshd will actually use and names the file supplying it
+- An sshd_config directive inside a Match block is no longer read as the host's global setting
+- hardener rollback now restores what the services plugin changed; the systemd unit directory was missing from the rollback allow-list, so it aborted without restoring anything
+- A failed signing-key migration can no longer destroy the key, taking the tamper-evidence of every existing checkpoint with it
+- Changed: scan --exit-code exits non-zero on an incomplete scan as well as on findings, so a CI gate can fail where it previously passed
+- Changed: a plugin disabled in its own config section now actually stops running
+- Removed: scan --compliance, which never did anything; hardener report --framework <id> is the compliance path
 * Mon Jul 27 2026 Eric Jingryd <tidynest@proton.me> - 1.5.0-1
 - Security: rollback over SSH could delete /etc/passwd, /etc/group, /etc/shadow, /etc/gshadow and /etc/sudoers on a remote host whose stat output could not be parsed; the probe now fails closed and rollback refuses to delete a protected path that is present on the host
 - Security: the PAM plugin could replace /etc/security/*.conf with a file containing only its own directives when the original could not be read; a read failure is now distinguished from an absent file and apply refuses to rewrite what it could not read

@@ -1,3 +1,34 @@
+linux-system-hardener (1.5.1-1) unstable; urgency=high
+
+  * SECURITY: compliance reports could mark controls as passed for a plugin
+    that produced no evidence, on the silence its own absence caused. From
+    the command line this needed a plugin's scan to fail; in the desktop it
+    needed no failure at all, as disabling a plugin or scanning a subset was
+    enough. Regenerate any report kept, filed or forwarded.
+  * SECURITY: on openSUSE, apply created a short /etc/login.defs,
+    /etc/security/faillock.conf and /etc/security/pwhistory.conf. That
+    distribution's /etc files mask the vendor copies under /usr/etc whole
+    rather than per setting, so 35 settings including ENCRYPT_METHOD and
+    UMASK silently stopped applying. Apply now refuses to create these files
+    rather than masking the vendor copy.
+  * A drop-in under /etc/ssh/sshd_config.d/ no longer silently overrides what
+    the tool wrote. Scan reports the value sshd will actually use and names
+    the file supplying it.
+  * An sshd_config directive inside a Match block is no longer read as the
+    host's global setting.
+  * hardener rollback now restores what the services plugin changed; the
+    systemd unit directory was missing from the rollback allow-list, so it
+    aborted without restoring anything.
+  * A failed signing-key migration can no longer destroy the key, taking the
+    tamper-evidence of every existing checkpoint with it.
+  * scan --exit-code exits non-zero on an incomplete scan as well as on
+    findings, so a CI gate can fail where it previously passed.
+  * A plugin disabled in its own config section now actually stops running.
+  * scan --compliance is removed; it never did anything. Use
+    hardener report --framework <id>.
+
+ -- Eric Jingryd <tidynest@proton.me>  Mon, 27 Jul 2026 19:50:00 +0000
+
 linux-system-hardener (1.5.0-1) unstable; urgency=high
 
   * SECURITY: rollback over SSH could delete /etc/passwd, /etc/group,
