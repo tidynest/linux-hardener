@@ -28,6 +28,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exception is now labelled everywhere rather than hidden anywhere.
 
 ### Fixed
+- Hardening no longer destroys vendor configuration on openSUSE. That
+  distribution keeps vendor files in `/usr/etc` and reserves `/etc` for
+  administrator overrides, and the override is whole-file rather than per
+  directive: the first file found wins entirely. None of the PAM plugin's
+  configuration files exists under `/etc` on such a host, so `apply` treated
+  each as absent, merged its directives into an empty buffer and wrote it. The
+  three-directive `/etc/login.defs` that produced silenced the other 35 keys
+  `/usr/etc/login.defs` sets, among them `ENCRYPT_METHOD`, which selects the
+  password hashing algorithm for every password set afterwards, and `UMASK`,
+  `HOME_MODE`, `FAIL_DELAY`, `LOGIN_RETRIES` and `LOGIN_TIMEOUT`. Four of those
+  are login-hardening settings, so the tool was disabling controls in its own
+  subject area, and it defeated itself as well: it set `PASS_MAX_DAYS` while
+  clearing `PASS_WARN_AGE`, so accounts expired with no warning. `apply` now
+  refuses to create a file under `/etc` when a vendor counterpart exists, names
+  it, and asks the operator to copy it first; the run is reported unsuccessful
+  rather than clean. **If you have run this tool on openSUSE, check
+  `/etc/login.defs`: a file of a few lines is this defect, and restoring the
+  vendor settings means copying `/usr/etc/login.defs` over it and re-applying
+  your intended values.** Hardening those directives on openSUSE is refused
+  rather than done until layered vendor configuration is supported; scanning is
+  unaffected.
 - The desktop could mark a compliance control as passed for a plugin that never
   ran, with nothing having failed. A compliance report decides `Pass` from
   statically declared plugin coverage plus the absence of a finding, so a plugin

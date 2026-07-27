@@ -168,9 +168,9 @@ The tool is designed for system administrators, DevOps engineers, and security p
 | Fedora 40+ (incl. 44) | dnf | systemd | ✅ |
 | RHEL 9+ (incl. 10) | dnf | systemd | ✅ |
 | Arch Linux (rolling) | pacman | systemd | ✅ |
-| openSUSE Leap 15.6 / 16, Tumbleweed | zypper | systemd | ✅ |
+| openSUSE Leap 15.6 / 16, Tumbleweed | zypper | systemd | ⚠️ |
 
-<sub>✅ = supported</sub>
+<sub>✅ = supported, ⚠️ = partially supported, see the note below</sub>
 
 > Support is **family-based**: detection maps any release of the Debian, Red Hat,
 > Arch or SUSE families to the same hardening behaviour, so current releases
@@ -178,6 +178,16 @@ The tool is designed for system administrators, DevOps engineers, and security p
 > automatically. openSUSE Leap 15.x reached end-of-life in April 2026; use Leap
 > 16. See [docs/reference/distribution-validation.md](docs/reference/distribution-validation.md) for
 > the specific versions last validated end-to-end.
+
+> **openSUSE is partially supported.** It keeps vendor configuration under
+> `/usr/etc` and reserves `/etc` for administrator overrides, a layout this tool
+> does not yet read. SSH is therefore neither scanned nor hardened there, since
+> `sshd_config` lives at `/usr/etc/ssh/sshd_config`, and PAM hardening is
+> refused rather than applied wherever writing to `/etc` would mask a vendor
+> file. Every other plugin works normally, and scanning is unaffected outside
+> SSH. **If you ran an earlier release on openSUSE, see the CHANGELOG: hardening
+> could leave a short `/etc/login.defs` masking the vendor file, and that needs
+> undoing by hand.**
 
 ### User Interface
 
