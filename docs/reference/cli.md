@@ -69,7 +69,7 @@ hardener scan [FLAGS]
 | `-p`, `--plugin <NAME>` | Scan only this plugin (repeatable for multiple) | all config-enabled plugins |
 | `--audit` | Ignore config file, run a pure security assessment | off |
 | `--compliance` | Accepted, but currently behaves exactly like the default mode | off |
-| `--exit-code` | Exit with code 1 if any findings exist (for CI/CD pipelines) | off |
+| `--exit-code` | Exit with code 1 if any findings exist, or if any plugin's scan did not complete (for CI/CD pipelines) | off |
 | `-s`, `--severity <LEVEL>` | Minimum severity to report: `info`, `low`, `medium`, `high`, `critical` | `info` |
 | `--timings` | Print a per-plugin timing table (slowest first) after the scan | off |
 
@@ -114,7 +114,7 @@ hardener scan                                # Scan all plugins, show everything
 hardener scan --plugin kernel --plugin ssh   # Scan only kernel and SSH
 hardener scan --severity high                # Only show high and critical findings
 hardener scan --audit                        # Ignore config, pure security check
-hardener scan --exit-code                    # Return 1 if findings exist (CI use)
+hardener scan --exit-code                    # Return 1 on findings or an incomplete scan
 hardener scan --timings                      # Show where scan time is spent
 hardener --format json scan                  # JSON output for automation
 hardener --ssh user@server scan              # Scan a remote host via SSH
