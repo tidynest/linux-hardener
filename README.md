@@ -34,25 +34,6 @@
 > A large number such as 99999 means the ageing policy is not in force. After
 > re-applying on 1.5.0 it should read 90.
 >
-> ### Known issue: an SSH drop-in silently overrides what the tool writes
->
-> Several distributions ship an `/etc/ssh/sshd_config` whose second line is
-> `Include /etc/ssh/sshd_config.d/*.conf`. sshd uses the first value it obtains
-> for a keyword, and everything this tool writes lands below that line, so any
-> drop-in setting the same keyword wins. The tool reads only the main file, so
-> it reports the value it wrote while sshd enforces the drop-in's. `sshd -t`
-> does not flag this.
->
-> Until it is fixed, ask sshd itself rather than trusting a compliant result:
->
-> ```bash
-> sudo sshd -T | grep -iE 'permitrootlogin|passwordauthentication|maxauthtries'
-> ```
->
-> Affects `PermitRootLogin`, `PasswordAuthentication`, `PermitEmptyPasswords`,
-> `MaxAuthTries`, `X11Forwarding`, `ClientAliveInterval`,
-> `ClientAliveCountMax`, `KexAlgorithms`, `Ciphers` and `MACs`.
->
 > ### Known issue: rollback does not restore systemd unit files
 >
 > In 1.5.0 and earlier, the services plugin records unit files in its
@@ -604,17 +585,6 @@ This tool is designed to harden systems against:
 - Changes require system reboot to fully take effect in some cases
 - Some hardening may break specific applications (test in staging first)
 - SELinux/AppArmor policies are detected but not fully managed
-- **A drop-in under `/etc/ssh/sshd_config.d/` overrides what this tool writes,
-  and the tool will still report the host compliant.** Several distributions
-  ship an `sshd_config` whose second line is
-  `Include /etc/ssh/sshd_config.d/*.conf`. sshd uses the first value it obtains
-  for a keyword, and everything this tool writes lands below that line, so a
-  drop-in setting the same keyword always wins. The tool reads only the main
-  file. Before trusting a compliant result, ask sshd itself:
-  `sudo sshd -T | grep -i permitrootlogin`. Affects `PermitRootLogin`,
-  `PasswordAuthentication`, `PermitEmptyPasswords`, `MaxAuthTries`,
-  `X11Forwarding`, `ClientAliveInterval`, `ClientAliveCountMax`,
-  `KexAlgorithms`, `Ciphers` and `MACs`
 - `scan --format json` reports a plugin whose scan failed identically to one
   that passed, because the per-plugin success flag is not serialised. The text
   output does name such a plugin

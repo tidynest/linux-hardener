@@ -1703,3 +1703,113 @@ async fn ssh_apply_hardens_a_global_directive_a_match_block_appears_to_satisfy()
         "the block itself must be untouched:\n{written}"
     );
 }
+
+/// The layout every affected distribution ships: an `Include` on line 2, above
+/// everything this tool writes.
+const SHIPPED_LAYOUT: &str = "\
+# Include drop-in configurations
+Include /etc/ssh/sshd_config.d/*.conf
+
+PermitRootLogin no
+PasswordAuthentication no
+PermitEmptyPasswords no
+MaxAuthTries 3
+X11Forwarding no
+ClientAliveInterval 300
+ClientAliveCountMax 2
+";
+
+#[tokio::test]
+async fn ssh_scan_reports_the_value_a_drop_in_forces_not_the_one_in_the_main_file() {
+    // Verified against sshd itself: with this exact layout, `PermitRootLogin no`
+    // in the main file and `yes` in the drop-in, `sshd -T` reports yes, and
+    // `sshd -t` accepts the file without complaint. Reading only the main file
+    // reported the host compliant while sshd allowed root login.
+    let executor = MockExecutor::new()
+        .with_file("/etc/ssh/sshd_config", SHIPPED_LAYOUT)
+        .with_directory("/etc/ssh/sshd_config.d")
+        .with_file(
+            "/etc/ssh/sshd_config.d/99-evil.conf",
+            "PermitRootLogin yes\n",
+        );
+    let ctx = Context::with_executor(Arc::new(executor) as Arc<dyn SystemExecutor>);
+    let plugin = SshHardeningPlugin::new();
+
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "ssh-permitrootlogin")
+        .expect("the drop-in forces an insecure value, so this must be a finding");
+    assert_eq!(
+        finding.finding_current_value, "yes",
+        "the reported value must be the one sshd uses, not the one in the main file"
+    );
+    assert!(
+        finding
+            .finding_explanation
+            .contains("/etc/ssh/sshd_config.d/99-evil.conf"),
+        "the finding must name the file that actually governs it: {}",
+        finding.finding_explanation
+    );
+}
+
+#[tokio::test]
+async fn ssh_scan_accepts_a_drop_in_that_holds_the_secure_value() {
+    // The mirror image: a drop-in supplying the target value leaves the host
+    // compliant, and must not be reported as a problem just because it is not
+    // the main file.
+    let executor = MockExecutor::new()
+        .with_file("/etc/ssh/sshd_config", SHIPPED_LAYOUT)
+        .with_directory("/etc/ssh/sshd_config.d")
+        .with_file(
+            "/etc/ssh/sshd_config.d/10-good.conf",
+            "PermitRootLogin no\n",
+        );
+    let ctx = Context::with_executor(Arc::new(executor) as Arc<dyn SystemExecutor>);
+    let plugin = SshHardeningPlugin::new();
+
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
+
+    assert!(
+        !result
+            .scan_findings
+            .iter()
+            .any(|f| f.finding_id == "ssh-permitrootlogin"),
+        "a drop-in already holding the target value is compliant"
+    );
+}
+
+#[tokio::test]
+async fn ssh_apply_refuses_to_claim_success_for_a_write_a_drop_in_overrides() {
+    // Writing sshd_config cannot change a directive a drop-in answers first,
+    // so reporting the write as applied would be a false pass. The operator is
+    // told which file actually governs it instead.
+    let executor = apply_ready_executor(SHIPPED_LAYOUT)
+        .with_directory("/etc/ssh/sshd_config.d")
+        .with_file(
+            "/etc/ssh/sshd_config.d/99-evil.conf",
+            "PermitRootLogin yes\n",
+        );
+
+    let result = run_ssh_apply(&executor).await;
+
+    let change = result
+        .apply_changes
+        .iter()
+        .find(|c| c.change_description.contains("PermitRootLogin"))
+        .expect("the shadowed directive must still be reported");
+    assert!(
+        !change.change_success,
+        "an inert write must not be reported as applied: {}",
+        change.change_description
+    );
+    assert!(
+        change
+            .change_description
+            .contains("/etc/ssh/sshd_config.d/99-evil.conf"),
+        "the operator must be told which file to edit: {}",
+        change.change_description
+    );
+}

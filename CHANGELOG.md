@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- A drop-in under `/etc/ssh/sshd_config.d/` no longer overrides the tool
+  silently. The shipped `sshd_config` on several distributions carries
+  `Include /etc/ssh/sshd_config.d/*.conf` on line 2, sshd uses the first value
+  it obtains for a keyword, and everything this tool writes lands below that
+  line, so a drop-in always won while the tool reported the value it had
+  written. `sshd -t` does not object to this. Scan now resolves `Include`
+  directives in sshd's own order and reports the value sshd will actually use,
+  naming the file that supplies it; apply refuses to claim success for a write
+  a drop-in overrides and tells the operator which file to edit. A pattern that
+  cannot be expanded faithfully, or a drop-in directory that cannot be listed,
+  is an error rather than an assumption that there are no drop-ins.
 - `hardener rollback` now restores what the services plugin changed. That
   plugin checkpointed `/etc/systemd/system` and `/usr/lib/systemd/system`,
   neither of which was in the rollback allow-list, and rollback validates every
@@ -56,19 +67,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   whole stream with "Extra data" even though the payload itself was well formed.
 
 ### Known issues
-- **A drop-in under `/etc/ssh/sshd_config.d/` silently overrides what this tool
-  writes.** The shipped `sshd_config` on several distributions carries
-  `Include /etc/ssh/sshd_config.d/*.conf` on line 2, sshd uses the first value
-  it obtains for a keyword, and everything this tool writes lands below that
-  line. The tool reads only the main file, so it reports the value it wrote
-  while sshd enforces the drop-in's. Verified directly: with
-  `PermitRootLogin no` in the main file and a drop-in setting `yes`,
-  `sshd -T` reports `yes`, and `sshd -t` accepts the file without complaint.
-  Check your drop-ins with `sshd -T | grep -i <directive>` before trusting a
-  compliant result for `PermitRootLogin`, `PasswordAuthentication`,
-  `PermitEmptyPasswords`, `MaxAuthTries`, `X11Forwarding`,
-  `ClientAliveInterval`, `ClientAliveCountMax`, `KexAlgorithms`, `Ciphers` or
-  `MACs`.
 - `scan --format json` still omits `scan_success` and `scan_error`, so a
   consumer of the JSON cannot yet distinguish a plugin whose scan failed from a
   compliant host. The text output now names such a plugin.
