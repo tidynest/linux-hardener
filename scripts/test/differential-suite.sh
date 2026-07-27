@@ -594,6 +594,28 @@ validate_scan_document() {
             echo "  that carries the key." >&2
             return 1
         fi
+        # And the inner key those entries are read by, which nothing else can
+        # prove. `finding_id` is exercised against live output on every run by
+        # the pre-apply control; `unchecked_check_id` cannot be, because under
+        # root the array is expected to be empty, and an empty array is what a
+        # filter reading the wrong key returns as well. Renamed, every unchecked
+        # lookup counts zero, and a directive the tool has stated it did not
+        # check records two passes.
+        #
+        # Vacuously true while the array is empty, so it costs a correct run
+        # nothing and bites only where there is something to read.
+        if ! jq --exit-status --arg p "$plugin" \
+            '[.[] | select(.plugin_id == $p)
+                  | all(.unchecked[]; has("unchecked_check_id"))] == [true]' \
+            >/dev/null <<<"$document"; then
+            echo "FATAL: an 'unchecked' entry in the $label object for plugin '$plugin'" \
+                "carries no 'unchecked_check_id'." >&2
+            echo "  That id is the only thing that tells a check the tool could not run" >&2
+            echo "  from one it ran and passed, and under a renamed key it counts zero," >&2
+            echo "  which is this suite's pass condition. Rebuild the CLI from this tree," >&2
+            echo "  or set BINARY to a build that carries the key." >&2
+            return 1
+        fi
     done
 }
 
@@ -1327,7 +1349,7 @@ Number of days of warning before password expires	: 11"
     # finding, and no finding is what this suite scores as agreement. The ssh
     # plugin puts every one of its directives here at once when sshd_config
     # cannot be read, and still reports the scan as successful.
-    scan_capture='[
+    local unchecked_fixture='[
   {
     "plugin_id": "pam-hardening",
     "plugin_name": "PAM Hardening",
@@ -1345,6 +1367,7 @@ Number of days of warning before password expires	: 11"
     ]
   }
 ]'
+    scan_capture="$unchecked_fixture"
     init_status=0
     scan_oracle_init || init_status=$?
     check_eq "$init_status" "0" "scan_oracle_init accepts a document whose checks are all unchecked"
@@ -1370,6 +1393,19 @@ Number of days of warning before password expires	: 11"
     CHECKS_TOTAL=$before_total
     CHECKS_PASSED=$before_passed
     CHECKS_FAILED=$before_failed
+
+    # The inner key everything above depends on, renamed and nothing else
+    # touched. It is the one key in this document no run can prove: the
+    # pre-apply control exercises `finding_id` against live output every time,
+    # while `unchecked` is expected to be empty under root, and an empty result
+    # is also what a filter reading the wrong key returns. Accepted, this
+    # document scores the pair above as two passes for a directive the tool
+    # states it did not check.
+    scan_capture="$(jq 'map(.unchecked |= map(.check_id = .unchecked_check_id | del(.unchecked_check_id)))' <<<"$unchecked_fixture")"
+    init_status=0
+    scan_oracle_init || init_status=$?
+    check_eq "$init_status" "1" \
+        "scan_oracle_init refuses an unchecked entry whose id key was renamed"
 
     # And the branch must not fire on a directive the tool did check, or every
     # green run would fail here instead.
