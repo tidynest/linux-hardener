@@ -57,7 +57,8 @@ pub struct FleetHostScan { host_name: String, status: FleetHostStatus, tallies: 
 | `src/cli.rs` | Clap argument definitions | `Cli`, `Command`, `BatchAction`, `CheckpointAction`, `DaemonAction`, `HistoryAction`, `SystemdAction`, `OutputFormat` |
 | `src/output.rs` | Output formatting utilities | `status()`, `info()`, `error()`, `warning()`, `scan_results()`, `scan_timings()`, `apply_results()`, `plugin_list()`, `checkpoint_list()`, `checkpoint_created()`, `checkpoint_details()`, `rollback_result()`, `validation_reports()` |
 | `src/commands/mod.rs` | Command module exports | - |
-| `src/commands/scan.rs` | Scan command implementation | `run()`, `validate_plugin_filter()`, `is_valid_plugin_name()`, `persist_scan_session()` |
+| `src/commands/scan.rs` | Scan command implementation | `run()`, `persist_scan_session()` |
+| `src/commands/plugin_filter.rs` | Shared `--plugin` filter resolution, so `scan`, `apply` and `batch` agree on which names are valid and what order they run in. A filter entry naming no plugin is refused rather than dropped, which is what let `apply -p services` harden nothing and exit 0 | `matches()`, `validate()`, `expand()` |
 | `src/commands/apply.rs` | Apply command implementation | `run()` |
 | `src/commands/checkpoint.rs` | Checkpoint management | `list()`, `create()`, `show()`, `delete()`, `rollback()` |
 | `src/commands/plugins.rs` | List plugins command | `run()` |
@@ -130,12 +131,14 @@ pub trait HardeningPlugin: Send + Sync {
 |------|---------|---------------|
 | `src/lib.rs` | Module exports, helpers | `create_checkpoint_for_apply()`, `create_checkpoint_metadata_only_for_apply()`, `checkpoint_change()` (shared `ChangeType::Checkpoint` bookkeeping change), `rollback_files_from_checkpoint()`, `create_plugin_registry()`, `compliance_coverage()` |
 | `src/macros.rs` | Plugin definition macro | `define_plugin!` |
+| `src/scan_outcome.rs` | Turns per-plugin scan results into the flat lists a compliance report consumes. A plugin that contributed no evidence gets an entry carrying its whole declared coverage, so its controls route to Manual Review instead of passing on the silence its own absence caused. Shared by the CLI and the desktop, beside the coverage table it depends on | `Unassessed`, `flatten_scans()`, `flatten_persisted_scans()`, `failed_scan()`, `unassessed_check()` |
 
 ### Individual Plugins
 
 | Plugin File | Category | Key Checks |
 |-------------|----------|------------|
 | `src/ssh/mod.rs` | Network | PermitRootLogin, PasswordAuthentication, MaxAuthTries, X11Forwarding, Protocol, ClientAliveInterval |
+| `src/ssh/include.rs` | Network | Resolves `Include` directives in sshd's own order, so scan reports the value sshd will actually use and names the file supplying it. sshd takes the **first** value it obtains and distributions put the Include above everything this tool writes, so a drop-in silently won while the tool reported its own write |
 | `src/kernel/mod.rs` | Kernel | ASLR, kptr_restrict, dmesg_restrict, ptrace_scope, suid_dumpable, rp_filter, tcp_syncookies |
 | `src/firewall/mod.rs` | Network | Firewall enabled, baseline rules |
 | `src/firewall/nftables.rs` | Network | nftables backend |
