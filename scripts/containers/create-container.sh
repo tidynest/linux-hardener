@@ -247,6 +247,15 @@ bootstrap_arch() {
     # Allow wheel group sudo
     echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > "$CONTAINER_PATH/etc/sudoers.d/wheel"
 
+
+    # Generate SSH host keys. Without them `sshd -t` exits with "no hostkeys
+    # available", and the ssh plugin validates its candidate config with
+    # `sshd -t` before writing, so it aborts every apply and the differential
+    # suite reports the whole plugin as "apply did not take effect". A
+    # container that has been booted once picks these up on its own, which is
+    # why this only ever bit a freshly created one.
+    chroot "$CONTAINER_PATH" ssh-keygen -A 2>/dev/null || log_warn "ssh-keygen -A failed; sshd -t will reject configs"
+
     # Enable services that hardener tests
     chroot "$CONTAINER_PATH" systemctl enable sshd auditd 2>/dev/null || true
 }
@@ -281,7 +290,8 @@ bootstrap_debian() {
         iptables \
         nftables \
         sudo \
-        policykit-1 \
+        polkitd \
+        pkexec \
         procps \
         iproute2 \
         jq
@@ -289,6 +299,14 @@ bootstrap_debian() {
     # Allow sudo without password for testuser
     echo "testuser ALL=(ALL:ALL) NOPASSWD: ALL" > "$CONTAINER_PATH/etc/sudoers.d/testuser"
     chmod 440 "$CONTAINER_PATH/etc/sudoers.d/testuser"
+
+    # Generate SSH host keys. Without them `sshd -t` exits with "no hostkeys
+    # available", and the ssh plugin validates its candidate config with
+    # `sshd -t` before writing, so it aborts every apply and the differential
+    # suite reports the whole plugin as "apply did not take effect". A
+    # container that has been booted once picks these up on its own, which is
+    # why this only ever bit a freshly created one.
+    chroot "$CONTAINER_PATH" ssh-keygen -A 2>/dev/null || log_warn "ssh-keygen -A failed; sshd -t will reject configs"
 
     # Enable services that hardener tests
     chroot "$CONTAINER_PATH" systemctl enable ssh auditd 2>/dev/null || true
@@ -352,6 +370,15 @@ bootstrap_dnf_family() {
     mkdir -p "$CONTAINER_PATH/etc/sudoers.d"
     echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > "$CONTAINER_PATH/etc/sudoers.d/wheel-nopasswd"
     chmod 440 "$CONTAINER_PATH/etc/sudoers.d/wheel-nopasswd"
+
+
+    # Generate SSH host keys. Without them `sshd -t` exits with "no hostkeys
+    # available", and the ssh plugin validates its candidate config with
+    # `sshd -t` before writing, so it aborts every apply and the differential
+    # suite reports the whole plugin as "apply did not take effect". A
+    # container that has been booted once picks these up on its own, which is
+    # why this only ever bit a freshly created one.
+    chroot "$CONTAINER_PATH" ssh-keygen -A 2>/dev/null || log_warn "ssh-keygen -A failed; sshd -t will reject configs"
 
     # Enable services that hardener tests
     chroot "$CONTAINER_PATH" systemctl enable sshd auditd 2>/dev/null || true
@@ -441,6 +468,16 @@ bootstrap_opensuse() {
     mkdir -p "$CONTAINER_PATH/etc/sudoers.d"
     echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > "$CONTAINER_PATH/etc/sudoers.d/wheel-nopasswd"
     chmod 440 "$CONTAINER_PATH/etc/sudoers.d/wheel-nopasswd"
+
+
+    # Generate SSH host keys. Without them `sshd -t` exits with "no hostkeys
+    # available", and the ssh plugin validates its candidate config with
+    # `sshd -t` before writing, so it aborts every apply and the differential
+    # suite reports the whole plugin as "apply did not take effect". A
+    # container that has been booted once picks these up on its own, which is
+    # why this only ever bit a freshly created one.
+    systemd-nspawn --quiet --directory="$CONTAINER_PATH" \
+        ssh-keygen -A 2>/dev/null || log_warn "ssh-keygen -A failed; sshd -t will reject configs"
 
     # Enable services that hardener tests
     systemd-nspawn --quiet --directory="$CONTAINER_PATH" \
