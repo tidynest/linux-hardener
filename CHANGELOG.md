@@ -44,11 +44,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refuses to create a file under `/etc` when a vendor counterpart exists, names
   it, and asks the operator to copy it first; the run is reported unsuccessful
   rather than clean. **If you have run this tool on openSUSE, check
-  `/etc/login.defs`: a file of a few lines is this defect, and restoring the
-  vendor settings means copying `/usr/etc/login.defs` over it and re-applying
-  your intended values.** Hardening those directives on openSUSE is refused
-  rather than done until layered vendor configuration is supported; scanning is
-  unaffected.
+  `/etc/login.defs`, `/etc/security/faillock.conf` and
+  `/etc/security/pwhistory.conf`. All three have vendor counterparts under
+  `/usr/etc`, and a file of a few lines is this defect. Restoring the vendor
+  settings means copying the `/usr/etc` version over each short file and
+  re-applying your intended values.** `/etc/security/pwquality.conf` is not
+  affected: openSUSE ships no vendor copy of it, so creating it masks nothing.
+  Hardening the refused directives on openSUSE is declined rather than done
+  until layered vendor configuration is supported; scanning is unaffected.
 - The desktop could mark a compliance control as passed for a plugin that never
   ran, with nothing having failed. A compliance report decides `Pass` from
   statically declared plugin coverage plus the absence of a finding, so a plugin
@@ -262,6 +265,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--format json` output is a single document again. An informational message
   was written to stdout ahead of the payload, so a strict parser rejected the
   whole stream with "Extra data" even though the payload itself was well formed.
+
+### Known Limitations
+- **SSH cannot be hardened on openSUSE, and could not be in any earlier release
+  either.** That distribution ships `sshd_config` at
+  `/usr/etc/ssh/sshd_config`, and every path in this tool is a hardcoded
+  constant under `/etc`, so the scan reports that it could not read
+  `/etc/ssh/sshd_config` and `apply` fails outright. Nothing is damaged and
+  nothing is falsely reported as hardened; the plugin simply does not work
+  there. This is disclosed now rather than at the fix because a user running
+  the tool on openSUSE should know that a clean SSH section means the check did
+  not run, not that the host is secure. Every other distribution is unaffected,
+  and the other plugins work on openSUSE.
+- Where a drop-in under `/etc/ssh/sshd_config.d/` sets a directive this tool
+  manages, on Fedora and RHEL typically `50-redhat.conf`, `apply` reports that
+  it cannot make the change and names the file to edit, rather than writing a
+  value sshd will ignore. The host is left unhardened for that directive until
+  the drop-in is edited by hand. Writing a drop-in that wins is the fix, and it
+  is not in this release.
 
 ## [1.5.0] - 2026-07-27
 
