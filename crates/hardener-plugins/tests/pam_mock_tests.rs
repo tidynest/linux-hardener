@@ -2284,9 +2284,14 @@ async fn apply_refuses_to_create_a_security_conf_that_would_mask_a_vendor_file()
     // The same door, on the other file kind. faillock.conf is written through
     // the SecurityConf arm, which has its own read and its own absence branch,
     // so guarding login.defs alone would leave this one open.
+    //
+    // The vendor value breaches the threshold, so a write is genuinely wanted
+    // and the refusal is what stops it. A compliant vendor value is a different
+    // case entirely, covered by the test below: nothing needs writing, so there
+    // is nothing to refuse.
     let executor = secure_pam_executor_base().with_file(
         "/usr/etc/security/faillock.conf",
-        "deny = 3\naudit\nsilent\n",
+        "deny = 10\naudit\nsilent\n",
     );
     let executor = Arc::new(executor);
     let mut ctx = Context::with_executor(executor.clone());
@@ -2314,6 +2319,143 @@ async fn apply_refuses_to_create_a_security_conf_that_would_mask_a_vendor_file()
                     .contains("/usr/etc/security/faillock.conf")
         }),
         "the refusal must name the vendor file, got: {:?}",
+        result.apply_changes
+    );
+}
+
+/// A vendor `login.defs` whose password-ageing keys already meet this tool's
+/// targets, so a scan that reads the layer it lives in has nothing to report.
+const COMPLIANT_VENDOR_LOGIN_DEFS: &str = "\
+UMASK           022
+ENCRYPT_METHOD  yescrypt
+PASS_MAX_DAYS   90
+PASS_MIN_DAYS   1
+PASS_WARN_AGE   7
+";
+
+#[tokio::test]
+async fn scan_reads_login_defs_from_the_vendor_layer() {
+    // openSUSE ships no /etc/login.defs. Reading only that path made every
+    // directive it sets read as unset, so the scan reported findings against a
+    // host whose vendor file already held compliant values.
+    let executor = Arc::new(
+        secure_pam_executor()
+            .without_file("/etc/login.defs")
+            .with_file("/usr/etc/login.defs", COMPLIANT_VENDOR_LOGIN_DEFS),
+    );
+    let ctx = Context::with_executor(executor.clone());
+
+    let result = PamHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan runs");
+
+    let reported: Vec<&str> = result
+        .scan_findings
+        .iter()
+        .map(|f| f.finding_id.as_str())
+        .collect();
+    for key in ["PASS_MAX_DAYS", "PASS_MIN_DAYS", "PASS_WARN_AGE"] {
+        assert!(
+            !reported.iter().any(|id| id.contains(key)),
+            "the vendor file already sets a compliant {key}, so there is nothing to \
+             report; got: {reported:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn scan_does_not_report_an_unreadable_login_defs_as_unset() {
+    // A root-only /etc/login.defs is not an empty one. Folding the read failure
+    // into an empty buffer made every directive it sets read as unset, so an
+    // unprivileged scan reported findings against a host that is hardened.
+    let executor = Arc::new(secure_pam_executor().with_read_permission_denied("/etc/login.defs"));
+    let ctx = Context::with_executor(executor.clone());
+
+    let result = PamHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan runs");
+
+    let reported: Vec<&str> = result
+        .scan_findings
+        .iter()
+        .map(|f| f.finding_id.as_str())
+        .collect();
+    for key in ["PASS_MAX_DAYS", "PASS_MIN_DAYS", "PASS_WARN_AGE"] {
+        assert!(
+            !reported.iter().any(|id| id.contains(key)),
+            "a file this scan could not read must never be reported as unset; got: \
+             {reported:?}"
+        );
+    }
+    assert!(
+        !result.scan_unchecked.is_empty(),
+        "the privilege failure must surface as unchecked entries instead"
+    );
+}
+
+#[tokio::test]
+async fn an_inline_pam_argument_in_a_vendor_stack_file_is_honoured() {
+    // pam.d layers per service file. A vendor system-auth with an inline deny=
+    // overrides /etc/security/faillock.conf, so missing that layer makes the
+    // tool report a threshold that is not the one in force.
+    let executor = Arc::new(secure_pam_executor().with_file(
+        "/usr/etc/pam.d/system-auth",
+        "auth required pam_faillock.so deny=10\n",
+    ));
+    let ctx = Context::with_executor(executor.clone());
+
+    let result = PamHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan runs");
+
+    assert!(
+        result
+            .scan_findings
+            .iter()
+            .any(|f| f.finding_id.contains("deny")),
+        "deny=10 inline exceeds the threshold and is what sshd's PAM stack \
+         actually enforces, so it must be reported; got: {:?}",
+        result
+            .scan_findings
+            .iter()
+            .map(|f| f.finding_id.as_str())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn a_compliant_vendor_security_conf_needs_neither_a_write_nor_a_refusal() {
+    // Reading the layer the value lives in is what makes this case visible at
+    // all. While the tool could only see /etc it read the directive as unset,
+    // wanted to write, and the vendor-mask guard had to stop it; the host was
+    // reported unsuccessful for being already compliant. Now the value is
+    // observed, nothing needs writing, and there is nothing to refuse.
+    let executor = Arc::new(secure_pam_executor_base().with_file(
+        "/usr/etc/security/faillock.conf",
+        "deny = 3\naudit\nsilent\n",
+    ));
+    let mut ctx = Context::with_executor(executor.clone());
+
+    let result = PamHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply must run");
+
+    assert!(
+        !executor
+            .log()
+            .files_written
+            .iter()
+            .any(|(written, _)| written.to_str() == Some("/etc/security/faillock.conf")),
+        "a compliant vendor value must not be copied into /etc, wrote: {:?}",
+        executor.log().files_written
+    );
+    assert!(
+        result.apply_success,
+        "being already compliant is not a failure: {:?}",
         result.apply_changes
     );
 }
