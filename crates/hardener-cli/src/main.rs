@@ -17,6 +17,12 @@ use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Without a subscriber the tracing macros are a no-op, so every warning the
+    // engine raises on the path where apply actually runs was being discarded.
+    // Some of those warnings have no `Change` counterpart and were the only
+    // record that a step degraded, which made them wholly silent.
+    hardener_common::logging::init_logger();
+
     let cli = Cli::parse();
 
     // Create executor based on SSH flags
@@ -52,7 +58,6 @@ async fn main() -> Result<()> {
             plugin,
             severity,
             audit,
-            compliance,
             exit_code,
             timings,
         } => {
@@ -63,7 +68,6 @@ async fn main() -> Result<()> {
                 quiet: cli.quiet,
                 config_path: cli.config.as_ref(),
                 audit,
-                compliance,
                 exit_code,
                 timings,
                 executor: executor.clone(),
@@ -143,6 +147,7 @@ async fn main() -> Result<()> {
                     host,
                     ssh,
                     concurrency,
+                    config: cli.config.clone(),
                     format: cli.format,
                     output,
                     quiet: cli.quiet,
@@ -170,6 +175,7 @@ async fn main() -> Result<()> {
                     host,
                     ssh,
                     concurrency,
+                    config: cli.config.clone(),
                     framework,
                     profile,
                     scenario,
@@ -201,6 +207,7 @@ async fn main() -> Result<()> {
                     plugin,
                     execute,
                     concurrency,
+                    config: cli.config.clone(),
                     format: cli.format,
                     output,
                     quiet: cli.quiet,

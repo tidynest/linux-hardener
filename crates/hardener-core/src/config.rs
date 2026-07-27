@@ -69,6 +69,35 @@ impl Default for PluginConfig {
 }
 
 impl PluginConfig {
+    /// The target value for `key`: the operator's directive override if the
+    /// config sets one, otherwise the plugin's built-in `baseline`.
+    ///
+    /// Scan, apply and dry-run each resolve every directive this way, so the
+    /// three must agree on what the target is; nine hand-written copies of the
+    /// same expression is an invitation for one of them to drift. Plain
+    /// resolution only: pam's threshold directives additionally clamp so an
+    /// override can tighten but never loosen, and that rule is deliberately not
+    /// folded in here, because applying it to the string directives would
+    /// silently change what an override means.
+    pub fn resolve_str<'a>(&'a self, key: &str, baseline: &'a str) -> &'a str {
+        self.directives
+            .get(key)
+            .map(|value| value.as_str())
+            .unwrap_or(baseline)
+    }
+
+    /// The integer directive override for `key`, if the config sets a parseable
+    /// one.
+    ///
+    /// Separate from [`resolve_str`](Self::resolve_str) because its callers do
+    /// not fall back to a baseline here: they hand the `Option` to a clamp that
+    /// decides whether the override may move the target at all. An unparseable
+    /// value reads as no override, which leaves the plugin's own secure value
+    /// standing rather than letting a typo relax a threshold.
+    pub fn resolve_i64(&self, key: &str) -> Option<i64> {
+        self.directives.get(key).and_then(|v| v.parse::<i64>().ok())
+    }
+
     /// Returns a valid, non-expired exception for the given key, if one exists.
     pub fn has_valid_exception(&self, key: &str) -> Option<&PolicyException> {
         self.exceptions.get(key).filter(|e| e.is_valid())
@@ -120,23 +149,26 @@ fn default_true() -> bool {
 }
 
 impl HardenerConfig {
-    /// Check if a plugin is enabled based on global and plugin-specific settings
+    /// Whether a plugin should run, given the `[global]` lists and its own
+    /// section's `enabled` key.
+    ///
+    /// Disabled anywhere is final. A plugin runs only when its own section
+    /// leaves it enabled, the global deny list does not name it, and either the
+    /// global allow list is empty or names it. `enabled` defaults to `true`, so
+    /// it can only ever turn a plugin off: reading it as an override would let a
+    /// config that never mentions the plugin defeat `disabled_plugins`.
     pub fn is_plugin_enabled(&self, plugin_id: &str) -> bool {
-        if self
-            .global
-            .disabled_plugins
-            .contains(&plugin_id.to_string())
-        {
+        if !self.get_plugin_config(plugin_id).enabled {
             return false;
         }
 
-        // If enabled_plugin is empty, all plugins are enabled by default
-        if self.global.enabled_plugins.is_empty() {
-            return true;
+        if self.global.disabled_plugins.iter().any(|p| p == plugin_id) {
+            return false;
         }
 
-        // Otherwise, check if plugin is in enabled list.
-        self.global.enabled_plugins.contains(&plugin_id.to_string())
+        // An empty allow list enables everything the two checks above left.
+        self.global.enabled_plugins.is_empty()
+            || self.global.enabled_plugins.iter().any(|p| p == plugin_id)
     }
 
     /// Get plugin-specific configuration by plugin ID.

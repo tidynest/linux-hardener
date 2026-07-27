@@ -9,13 +9,13 @@
 
 use async_trait::async_trait;
 use hardener_common::{
-    error::Result,
+    error::{HardeningError, Result},
     types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
     ApplyResult, Change, ChangeType, Checkpoint, PluginConfig, ValidationIssue, ValidationReport,
     context::Context,
-    plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult},
+    plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedCheck},
 };
 use std::time::Instant;
 use tracing::{info, warn};
@@ -215,6 +215,25 @@ pub fn coverage() -> Vec<ComplianceMapping> {
         .collect()
 }
 
+/// Every managed service reported as unchecked, for the case where the service
+/// listing itself failed.
+///
+/// Ids and compliance mappings match the findings these checks would otherwise
+/// produce, so the compliance report turns each control into ManualReview
+/// rather than counting it as satisfied by an absent finding.
+fn unchecked_all_services(reason: &str) -> Vec<UncheckedCheck> {
+    UNNECESSARY_SERVICES
+        .iter()
+        .map(|directive| UncheckedCheck {
+            unchecked_check_id: format!("service_{}", directive.service_name.replace('-', "_")),
+            unchecked_title: format!("Unnecessary service {}", directive.service_name),
+            unchecked_category: FindingCategory::Services,
+            unchecked_reason: format!("could not list services: {reason}"),
+            unchecked_compliance: get_service_compliance_mappings(directive.service_name),
+        })
+        .collect()
+}
+
 fn get_service_compliance_mappings(service_name: &str) -> Vec<ComplianceMapping> {
     match service_name {
         // SSG: package_xinetd_removed
@@ -380,6 +399,20 @@ impl ServiceStates {
             .executor()
             .execute_command("systemctl", &unit_file_args)
             .await?;
+        // `list-unit-files` exits 1 when none of the named units exist, which
+        // is the ordinary answer on a host that simply has none of them
+        // installed, and it says so with an empty stderr. A real failure
+        // (unknown option, unusable systemd) also exits non-zero but writes to
+        // stderr. Verified against systemd on this machine: no match gives
+        // exit 1 with empty stderr, a bad option gives exit 1 with a message.
+        // Checking `.success()` alone would turn a clean host into an error.
+        if !unit_files.success() && !unit_files.stderr.trim().is_empty() {
+            return Err(HardeningError::Plugin(format!(
+                "systemctl list-unit-files failed with exit {}: {}",
+                unit_files.exit_code,
+                unit_files.stderr.trim(),
+            )));
+        }
 
         let mut unit_args = vec![
             "list-units",
@@ -393,6 +426,15 @@ impl ServiceStates {
             .executor()
             .execute_command("systemctl", &unit_args)
             .await?;
+        // `list-units` returns 0 even when nothing matches, so any non-zero
+        // exit here is abnormal rather than an empty result.
+        if !loaded_units.success() {
+            return Err(HardeningError::Plugin(format!(
+                "systemctl list-units failed with exit {}: {}",
+                loaded_units.exit_code,
+                loaded_units.stderr.trim(),
+            )));
+        }
 
         Ok(Self {
             unit_files: parse_unit_column(&unit_files.stdout, 1),
@@ -537,9 +579,25 @@ impl HardeningPlugin for ServicesHardeningPlugin {
         let start = Instant::now();
         let mut findings = Vec::new();
 
-        // Two spawns cover every service; a failed listing degrades to "no
-        // findings", matching the old per-service probes' error handling.
-        let states = ServiceStates::load(ctx).await.unwrap_or_default();
+        // A failed listing used to degrade to "no findings", which is the same
+        // output a fully compliant host produces: the one case where the tool
+        // knows least looked exactly like the case where there is nothing to
+        // report. Every service is now reported as unchecked instead, so the
+        // compliance report renders ManualReview rather than a silent pass.
+        let states = match ServiceStates::load(ctx).await {
+            Ok(states) => states,
+            Err(e) => {
+                warn!("Could not list services: {e}");
+                return Ok(ScanResult {
+                    scan_duration_us: start.elapsed().as_micros() as u64,
+                    scan_error: Some(e.to_string()),
+                    scan_findings: vec![],
+                    scan_unchecked: unchecked_all_services(&e.to_string()),
+                    scan_plugin_id: self.metadata().plugin_id,
+                    scan_success: false,
+                });
+            }
+        };
 
         // Check each service in our list
         for directive in UNNECESSARY_SERVICES {
@@ -606,11 +664,17 @@ impl HardeningPlugin for ServicesHardeningPlugin {
 
         let mut changes = Vec::new();
 
-        // Create checkpoint for systemd unit files
-        let service_paths: Vec<&Path> = vec![
-            Path::new("/etc/systemd/system"),
-            Path::new("/usr/lib/systemd/system"),
-        ];
+        // Checkpoint where this plugin's changes actually land. `systemctl
+        // disable` removes wants/ symlinks here and `systemctl mask` adds a
+        // symlink to /dev/null here; neither touches the package-owned
+        // /usr/lib/systemd/system, which systemd.unit(5) reserves for units
+        // installed by the distribution.
+        //
+        // That directory used to be captured too. It holds 700+ unit files on a
+        // normal host, none of which this plugin can change, and because it sits
+        // outside the rollback allowlist its presence made rollback abort in
+        // Phase 1 before restoring anything at all.
+        let service_paths: Vec<&Path> = vec![Path::new("/etc/systemd/system")];
         // Name follows the `{plugin_id}-pre-apply` convention so `hardener batch
         // rollback` (which derives the name from the plugin id) can select it.
         let checkpoint_id = crate::create_checkpoint_for_apply(
@@ -791,6 +855,9 @@ impl HardeningPlugin for ServicesHardeningPlugin {
 
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {
         let mut estimated_changes = Vec::new();
+        // Excepted settings are recorded rather than dropped: a preview that
+        // omits them shows a documented deviation as nothing at all.
+        let mut exceptions: Vec<String> = Vec::new();
         let mut issues = Vec::new();
 
         // Check if systemctl is available
@@ -803,8 +870,15 @@ impl HardeningPlugin for ServicesHardeningPlugin {
                     .await
                     .unwrap_or(false)
                 {
-                    // Skip services with valid exceptions
-                    if config.has_valid_exception(directive.service_name).is_some() {
+                    // A service left running because it is excepted is
+                    // recorded, not dropped: a preview that omits it reports a
+                    // documented deviation as nothing at all.
+                    if let Some(exception) = config.has_valid_exception(directive.service_name) {
+                        exceptions.push(hardener_common::types::exception_preview_line(
+                            directive.service_name,
+                            &exception.value,
+                            &exception.reason,
+                        ));
                         continue;
                     }
 
@@ -834,6 +908,7 @@ impl HardeningPlugin for ServicesHardeningPlugin {
         Ok(ValidationReport {
             validation_report_estimated_changes: estimated_changes,
             validation_report_compliant_count: 0,
+            validation_report_exceptions: exceptions,
             validation_report_is_valid: issues.is_empty(),
             validation_report_issues: issues,
             validation_report_plugin_id: self.metadata().plugin_id,

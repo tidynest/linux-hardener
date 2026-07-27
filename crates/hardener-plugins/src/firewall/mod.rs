@@ -797,6 +797,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
             validation_report_issues: issues,
             validation_report_estimated_changes: estimated_changes,
             validation_report_compliant_count: 0,
+            validation_report_exceptions: vec![],
         })
     }
 }

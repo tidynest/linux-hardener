@@ -75,7 +75,7 @@ impl ReportFormatter for TextFormatter {
                 for finding in &control.control_findings {
                     output.push_str(&format!(
                         "        → {}: {}\n",
-                        super::finding_label(finding),
+                        finding.evidence_label(),
                         finding.finding_title
                     ));
                 }

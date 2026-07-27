@@ -10,11 +10,19 @@
 //! The plugin reads the sshd_config file, compares against secure baselines,
 //! and can apply hardening configurations with automatic backup support.
 
+mod include;
+
+/// The file this plugin reads and edits. Files it Includes are read too, but
+/// only this one is ever written.
+const SSHD_CONFIG_PATH: &str = "/etc/ssh/sshd_config";
+
 use async_trait::async_trait;
 use chrono::Utc;
 use hardener_common::{
     error::Result,
-    file_utils::{ConfigFormat, Duplicates, parse_config_value, set_config_directive},
+    file_utils::{
+        ConfigFormat, Duplicates, global_scope, parse_config_value, set_config_directive,
+    },
     types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
@@ -921,11 +929,7 @@ impl HardeningPlugin for SshHardeningPlugin {
         let plugin_id = PluginId::new("ssh-hardening");
 
         // Read the SSH configuration file using executor
-        let config_content = match ctx
-            .executor()
-            .read_file(Path::new("/etc/ssh/sshd_config"))
-            .await
-        {
+        let config_content = match ctx.executor().read_file(Path::new(SSHD_CONFIG_PATH)).await {
             Ok(content) => content,
             Err(e) => {
                 let duration_us = start_time.elapsed().as_micros() as u64;
@@ -953,21 +957,38 @@ impl HardeningPlugin for SshHardeningPlugin {
             }
         };
 
+        // sshd uses the first value it obtains, and the shipped config
+        // Includes /etc/ssh/sshd_config.d/*.conf above everything this tool
+        // writes, so a drop-in silently wins. Reading only the main file
+        // reported the value we wrote while sshd enforced the drop-in's.
+        let resolved = match include::resolve(ctx, SSHD_CONFIG_PATH, &config_content).await {
+            Ok(resolved) => resolved,
+            Err(e) => {
+                // Without the included files the effective configuration is
+                // unknown, and guessing from the main file alone is the false
+                // pass this replaces.
+                let duration_us = start_time.elapsed().as_micros() as u64;
+                return Ok(ScanResult {
+                    scan_plugin_id: plugin_id,
+                    scan_success: false,
+                    scan_findings: vec![],
+                    scan_unchecked: unchecked_ssh_checks(),
+                    scan_duration_us: duration_us,
+                    scan_error: Some(format!(
+                        "Cannot resolve sshd_config Include directives: {e}"
+                    )),
+                });
+            }
+        };
+
         // Check each SSH directive
         for directive in SSH_DIRECTIVES {
-            let current_value = parse_config_value(
-                &config_content,
-                directive.ssh_directive_name,
-                ConfigFormat::SpaceSeparated,
-                false,
-            );
+            let effective = resolved.effective(directive.ssh_directive_name);
+            let current_value = effective.as_ref().map(|e| e.value.clone());
 
             // Directive override takes precedence over the built-in baseline.
-            let target = config
-                .directives
-                .get(directive.ssh_directive_name)
-                .map(|s| s.as_str())
-                .unwrap_or(directive.ssh_secure_value);
+            let target =
+                config.resolve_str(directive.ssh_directive_name, directive.ssh_secure_value);
 
             let is_insecure = match current_value {
                 Some(ref value) => value != target,
@@ -986,10 +1007,24 @@ impl HardeningPlugin for SshHardeningPlugin {
                     finding_category: FindingCategory::Network,
                     finding_current_value: current_display.clone(),
                     finding_description: directive.ssh_description.to_string(),
-                    finding_explanation: format!(
-                        "The SSH directive '{}' is not configured securely. {}",
-                        directive.ssh_directive_name, directive.ssh_description,
-                    ),
+                    finding_explanation: match effective.as_ref() {
+                        // Naming the file matters when it is not the one this
+                        // tool edits: editing sshd_config would not change what
+                        // sshd uses, because the drop-in is read first.
+                        Some(e) if e.source != SSHD_CONFIG_PATH => format!(
+                            "The SSH directive '{}' is not configured securely. {} \
+                             The value in force comes from {}, which sshd reads before \
+                             {}, so it overrides anything set there.",
+                            directive.ssh_directive_name,
+                            directive.ssh_description,
+                            e.source,
+                            SSHD_CONFIG_PATH,
+                        ),
+                        _ => format!(
+                            "The SSH directive '{}' is not configured securely. {}",
+                            directive.ssh_directive_name, directive.ssh_description,
+                        ),
+                    },
                     finding_id: format!("ssh-{}", directive.ssh_directive_name.to_lowercase()),
                     finding_impact: "May allow unauthorised access or weaken SSH security"
                         .to_string(),
@@ -1017,7 +1052,7 @@ impl HardeningPlugin for SshHardeningPlugin {
         // cipher, KEX or MAC is enabled).
         for crypto in SSH_CRYPTO_DIRECTIVES {
             let current_value = parse_config_value(
-                &config_content,
+                global_scope(&config_content),
                 crypto.crypto_directive_name,
                 ConfigFormat::SpaceSeparated,
                 false,
@@ -1073,7 +1108,7 @@ impl HardeningPlugin for SshHardeningPlugin {
 
     async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult> {
         let plugin_id = PluginId::new("ssh-hardening");
-        let config_path = "/etc/ssh/sshd_config";
+        let config_path = SSHD_CONFIG_PATH;
 
         // Step 1: Acquire an advisory lock on the config so the whole
         // read-compute-write cycle is atomic against other processes editing
@@ -1115,13 +1150,20 @@ impl HardeningPlugin for SshHardeningPlugin {
         let mut changes = Vec::new();
         let remote_root_session = is_remote_root_session(ctx.executor().as_ref()).await;
 
+        // Which directives a drop-in already answers. sshd reads the Include
+        // above everything written here, and uses the first value it obtains,
+        // so writing this file cannot change those. Refusing to resolve is
+        // fail-closed: without the included files there is no way to tell
+        // whether a write would take effect.
+        let resolved = include::resolve(ctx, config_path, &original_content).await?;
+
         for directive in SSH_DIRECTIVES {
             // The exception is honoured only when it documents the value the
             // host actually has, so a stale exception cannot stop hardening.
             // An absent directive reads as "not set", matching scan's rendering
             // and therefore what an operator writes in the config.
             let observed = parse_config_value(
-                &original_content,
+                global_scope(&original_content),
                 directive.ssh_directive_name,
                 ConfigFormat::SpaceSeparated,
                 false,
@@ -1147,14 +1189,55 @@ impl HardeningPlugin for SshHardeningPlugin {
             }
 
             // Determine target value: user directive override or hardcoded baseline
-            let target_value = config
-                .directives
-                .get(directive.ssh_directive_name)
-                .map(|s| s.as_str())
-                .unwrap_or(directive.ssh_secure_value);
+            let target_value =
+                config.resolve_str(directive.ssh_directive_name, directive.ssh_secure_value);
+
+            // A drop-in read before this file already answers this directive,
+            // so writing here cannot change what sshd uses. Only a drop-in
+            // holding the wrong value is a problem: one that already holds the
+            // target leaves the host compliant, and reporting that as a
+            // failure would be a false alarm. Where it is wrong, an inert
+            // write must not be reported as success, so the operator is told
+            // which file actually governs it.
+            if let Some(effective) = resolved.effective(directive.ssh_directive_name)
+                && effective.source != config_path
+            {
+                let compliant = effective.value == target_value;
+                changes.push(Change {
+                    change_description: if compliant {
+                        format!(
+                            "{}: already '{}' via {}, which sshd reads before {}",
+                            directive.ssh_directive_name,
+                            effective.value,
+                            effective.source,
+                            config_path,
+                        )
+                    } else {
+                        format!(
+                            "{}: not written. {} sets it to '{}' and sshd reads that before {}. \
+                             Edit {} instead, then re-run.",
+                            directive.ssh_directive_name,
+                            effective.source,
+                            effective.value,
+                            config_path,
+                            effective.source,
+                        )
+                    },
+                    change_type: if compliant {
+                        ChangeType::Skipped
+                    } else {
+                        ChangeType::ConfigFile
+                    },
+                    change_success: compliant,
+                    change_error: (!compliant).then(|| {
+                        format!("overridden by {}, which sshd reads first", effective.source)
+                    }),
+                });
+                continue;
+            }
 
             let original_value = parse_config_value(
-                &config_content,
+                global_scope(&config_content),
                 directive.ssh_directive_name,
                 ConfigFormat::SpaceSeparated,
                 false,
@@ -1264,7 +1347,7 @@ impl HardeningPlugin for SshHardeningPlugin {
             // directive override, but the exception itself still only applies
             // when it documents the value actually on the host.
             let observed = parse_config_value(
-                &original_content,
+                global_scope(&original_content),
                 crypto.crypto_directive_name,
                 ConfigFormat::SpaceSeparated,
                 false,
@@ -1315,7 +1398,7 @@ impl HardeningPlugin for SshHardeningPlugin {
 
             let target_value = selected.join(",");
             let original_value = parse_config_value(
-                &config_content,
+                global_scope(&config_content),
                 crypto.crypto_directive_name,
                 ConfigFormat::SpaceSeparated,
                 false,
@@ -1536,7 +1619,7 @@ impl HardeningPlugin for SshHardeningPlugin {
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {
         let mut issues = Vec::new();
         let plugin_id = PluginId::new("ssh-hardening");
-        let config_path = Path::new("/etc/ssh/sshd_config");
+        let config_path = Path::new(SSHD_CONFIG_PATH);
 
         // Check if SSH config file exists and is readable using executor.
         match ctx.executor().file_metadata(config_path).await {
@@ -1568,6 +1651,10 @@ impl HardeningPlugin for SshHardeningPlugin {
 
         // Try to read the configuration and check which directives need changing.
         let mut estimated_changes = Vec::new();
+        // Excepted directives are recorded rather than dropped: the preview
+        // must not show "0 changes" over an empty panel on a host where a
+        // deviation is deliberate and documented.
+        let mut exceptions = Vec::new();
 
         match ctx.executor().read_file(config_path).await {
             Ok(content) => {
@@ -1576,14 +1663,11 @@ impl HardeningPlugin for SshHardeningPlugin {
                     // Resolve the target the way apply and scan do: a config
                     // directive override wins over the hardcoded baseline.
                     let target = config
-                        .directives
-                        .get(directive.ssh_directive_name)
-                        .map(|s| s.as_str())
-                        .unwrap_or(directive.ssh_secure_value);
+                        .resolve_str(directive.ssh_directive_name, directive.ssh_secure_value);
 
                     // SSHD config is space-separated and case-insensitive.
                     let current_value = parse_config_value(
-                        &content,
+                        global_scope(&content),
                         directive.ssh_directive_name,
                         ConfigFormat::SpaceSeparated,
                         false, // case-insensitive
@@ -1595,10 +1679,14 @@ impl HardeningPlugin for SshHardeningPlugin {
                     let observed = current_value
                         .clone()
                         .unwrap_or_else(|| "not set".to_string());
-                    if config
-                        .matching_exception(directive.ssh_directive_name, &observed)
-                        .is_some()
+                    if let Some(exception) =
+                        config.matching_exception(directive.ssh_directive_name, &observed)
                     {
+                        exceptions.push(hardener_common::types::exception_preview_line(
+                            directive.ssh_directive_name,
+                            &observed,
+                            &exception.reason,
+                        ));
                         continue;
                     }
 
@@ -1643,6 +1731,7 @@ impl HardeningPlugin for SshHardeningPlugin {
             validation_report_issues: issues,
             validation_report_estimated_changes: estimated_changes,
             validation_report_compliant_count: 0,
+            validation_report_exceptions: exceptions,
         })
     }
 }

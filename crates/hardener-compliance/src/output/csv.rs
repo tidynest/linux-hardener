@@ -60,7 +60,7 @@ fn write_report_rows(output: &mut String, report: &ComplianceReport) {
         let live_findings = control
             .control_findings
             .iter()
-            .filter(|f| f.finding_policy_exception.is_none())
+            .filter(|f| !f.is_policy_excepted())
             .count();
 
         output.push_str(&format!(

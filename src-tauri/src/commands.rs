@@ -597,7 +597,15 @@ pub async fn run_scan(
                 match plugin.scan(&ctx, plugin_config).await {
                     Ok(result) => results.push(result),
                     Err(e) => {
+                        // Recorded, not merely logged. These results are what
+                        // gets persisted and later built into a compliance
+                        // report, so a plugin dropped here is a plugin whose
+                        // controls pass on the silence its own failure caused.
                         error!("Scan failed for plugin {}: {}", metadata.plugin_id, e);
+                        results.push(hardener_plugins::failed_scan(
+                            &metadata.plugin_id,
+                            &e.to_string(),
+                        ));
                     }
                 }
             }
@@ -678,19 +686,27 @@ struct CliScanEntry {
     findings: Vec<Finding>,
     #[serde(default)]
     unchecked: Vec<UncheckedCheck>,
+    /// Absent only in output from a CLI predating the field. Defaulting to
+    /// `false` there keeps the fail-closed direction: an unknown outcome is
+    /// reported as unverified rather than silently claimed as a pass.
+    #[serde(default)]
+    scan_success: bool,
+    #[serde(default)]
+    scan_error: Option<String>,
 }
 
 impl CliScanEntry {
-    /// The CLI shape omits duration and per-plugin errors; a parsed entry is
-    /// a successful scan by construction.
+    /// The CLI shape omits duration, so that alone is synthesised. The scan
+    /// outcome is read from the payload: assuming success here was how a
+    /// failed plugin scan reached the desktop as a clean result.
     fn into_scan_result(self) -> ScanResult {
         ScanResult {
             scan_plugin_id: PluginId::new(self.plugin_id),
-            scan_success: true,
+            scan_success: self.scan_success,
             scan_findings: self.findings,
             scan_unchecked: self.unchecked,
             scan_duration_us: 0,
-            scan_error: None,
+            scan_error: self.scan_error,
         }
     }
 }
@@ -989,31 +1005,43 @@ async fn collect_findings() -> Result<(Vec<Finding>, Vec<UncheckedCheck>), Strin
     // back to defaults rather than failing a background compliance refresh.
     let config = ConfigLoader::new().load().unwrap_or_default();
 
-    let mut findings = Vec::new();
-    let mut unchecked = Vec::new();
+    let mut results = Vec::new();
     for metadata in plugin_list {
-        if let Ok(Some(plugin)) = registry.get(&metadata.plugin_id)
-            && let Ok(result) = plugin
-                .scan(&ctx, config.get_plugin_config(metadata.plugin_id.as_str()))
-                .await
+        // A plugin the config disables contributes no result at all, and
+        // `flatten_persisted_scans` reads that absence as "not assessed"
+        // rather than as a clean pass.
+        if !config.is_plugin_enabled(metadata.plugin_id.as_str()) {
+            continue;
+        }
+        let Ok(Some(plugin)) = registry.get(&metadata.plugin_id) else {
+            continue;
+        };
+        match plugin
+            .scan(&ctx, config.get_plugin_config(metadata.plugin_id.as_str()))
+            .await
         {
-            findings.extend(result.scan_findings);
-            unchecked.extend(result.scan_unchecked);
+            Ok(result) => results.push(result),
+            // A scan that errored used to be swallowed by an `if let Ok`,
+            // which is indistinguishable from a plugin that found nothing.
+            Err(e) => results.push(hardener_plugins::failed_scan(
+                &metadata.plugin_id,
+                &e.to_string(),
+            )),
         }
     }
-    Ok((findings, unchecked))
+    Ok(hardener_plugins::flatten_persisted_scans(&results))
 }
 
 /// Flattens per-plugin scan results into the flat findings and unchecked
 /// lists the report generator consumes.
+///
+/// This kept its own copy of a rule the CLI had already corrected, and so it
+/// threw away `scan_success` (which does survive the round trip through the
+/// database) and said nothing about plugins the session never covered. Both
+/// gaps end the same way: the generator reads coverage statically, so a plugin
+/// that contributed nothing passed every control it covers.
 fn flatten_scan_results(results: Vec<ScanResult>) -> (Vec<Finding>, Vec<UncheckedCheck>) {
-    let mut findings = Vec::new();
-    let mut unchecked = Vec::new();
-    for result in results {
-        findings.extend(result.scan_findings);
-        unchecked.extend(result.scan_unchecked);
-    }
-    (findings, unchecked)
+    hardener_plugins::flatten_persisted_scans(&results)
 }
 
 /// Decides whether a persisted scan session's results should stand as the
@@ -2377,18 +2405,51 @@ mod fleet_tests {
 
         let finding_ids: Vec<&str> = findings.iter().map(|f| f.finding_id.as_str()).collect();
         assert_eq!(finding_ids, ["K-1", "K-2", "P-1"]);
+        // Each result's own unchecked entries survive, in order. The list also
+        // carries an entry per registered plugin this session never covered
+        // (these fixtures use stand-in ids, so that is all of them), which is
+        // the subject of `flattening_no_results_leaves_every_plugin_unassessed`.
         let unchecked_ids: Vec<&str> = unchecked
             .iter()
             .map(|u| u.unchecked_check_id.as_str())
             .collect();
-        assert_eq!(unchecked_ids, ["P-2", "F-1"]);
+        let carried: Vec<&str> = unchecked_ids
+            .iter()
+            .copied()
+            .filter(|id| ["P-2", "F-1"].contains(id))
+            .collect();
+        assert_eq!(carried, ["P-2", "F-1"]);
     }
 
+    /// A session that covered nothing must not hand every control a Pass.
+    ///
+    /// This previously asserted the opposite, that flattening no results
+    /// yields no unchecked entries. The generator reads coverage statically,
+    /// so an empty unchecked list is exactly what makes every control the
+    /// engine assesses report `Pass` on evidence nobody collected. The same
+    /// rule covers a scan filtered to one plugin: the other seven assessed
+    /// nothing, whatever the reason.
     #[test]
-    fn flatten_scan_results_of_nothing_is_empty() {
+    fn flattening_no_results_leaves_every_plugin_unassessed() {
+        let registered = create_plugin_registry().list().unwrap();
+
         let (findings, unchecked) = flatten_scan_results(vec![]);
+
         assert!(findings.is_empty());
-        assert!(unchecked.is_empty());
+        assert_eq!(
+            unchecked.len(),
+            registered.len(),
+            "every registered plugin must account for itself"
+        );
+        for metadata in &registered {
+            assert!(
+                unchecked.iter().any(|u| u
+                    .unchecked_check_id
+                    .starts_with(metadata.plugin_id.as_str())),
+                "no entry for {}",
+                metadata.plugin_id
+            );
+        }
     }
 
     fn completed_session() -> ScanSession {
@@ -2407,9 +2468,8 @@ mod fleet_tests {
         let results = vec![plugin_result("kernel", vec![finding("K-1")], vec![])];
         let source = persisted_scan_source(Some((completed_session(), results)));
 
-        let (findings, unchecked) = source.expect("a non-empty session must be used");
+        let (findings, _unchecked) = source.expect("a non-empty session must be used");
         assert_eq!(findings.len(), 1);
-        assert!(unchecked.is_empty());
     }
 
     #[test]
@@ -2769,7 +2829,9 @@ mod fleet_tests {
                 "unchecked_category": "Authentication",
                 "unchecked_reason": "reading /etc/security/pwquality.conf requires root",
                 "unchecked_compliance": []
-            }]
+            }],
+            "scan_success": true,
+            "scan_error": null
         }]"#;
         let entries: Vec<CliScanEntry> = serde_json::from_str(json).unwrap();
         let results: Vec<ScanResult> = entries
@@ -2778,6 +2840,49 @@ mod fleet_tests {
             .collect();
         assert_eq!(results[0].scan_unchecked.len(), 1);
         assert!(results[0].scan_success);
+    }
+
+    /// The desktop used to hardcode `scan_success: true`, so a plugin whose
+    /// scan failed arrived as a clean, finding-free result and the GUI showed
+    /// a compliant host. The outcome must come from the payload.
+    #[test]
+    fn a_failed_cli_scan_entry_stays_failed_through_the_desktop_parser() {
+        let json = r#"[{
+            "plugin_id": "ssh-hardening",
+            "plugin_name": "SSH Hardening",
+            "findings": [],
+            "unchecked": [],
+            "scan_success": false,
+            "scan_error": "Failed to read /etc/ssh/sshd_config"
+        }]"#;
+        let entries: Vec<CliScanEntry> = serde_json::from_str(json).unwrap();
+        let result = entries
+            .into_iter()
+            .map(CliScanEntry::into_scan_result)
+            .next()
+            .unwrap();
+
+        assert!(
+            !result.scan_success,
+            "a failed scan must not arrive at the desktop as a success"
+        );
+        assert_eq!(
+            result.scan_error.as_deref(),
+            Some("Failed to read /etc/ssh/sshd_config")
+        );
+    }
+
+    /// Output from a CLI predating the field must not be read as a pass.
+    #[test]
+    fn a_scan_entry_without_the_field_is_not_assumed_successful() {
+        let json = r#"[{"plugin_id": "ssh-hardening", "findings": [], "unchecked": []}]"#;
+        let entries: Vec<CliScanEntry> = serde_json::from_str(json).unwrap();
+        let result = entries
+            .into_iter()
+            .map(CliScanEntry::into_scan_result)
+            .next()
+            .unwrap();
+        assert!(!result.scan_success, "an unknown outcome must fail closed");
     }
 }
 
@@ -2830,5 +2935,72 @@ mod fail_session_on_err_tests {
         let sessions = history_manager.list_sessions(10).await.unwrap();
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].session_status, ScanStatus::Running);
+    }
+}
+
+#[cfg(test)]
+mod compliance_source_tests {
+    use super::*;
+    use hardener_types::ControlStatus;
+
+    fn failed_scan_of(plugin_id: &str) -> ScanResult {
+        ScanResult {
+            scan_plugin_id: PluginId::new(plugin_id),
+            scan_success: false,
+            scan_findings: vec![],
+            scan_unchecked: vec![],
+            scan_duration_us: 0,
+            scan_error: Some("reading /etc/ssh/sshd_config requires root".to_string()),
+        }
+    }
+
+    /// The CIS controls `plugin_id` declares it assesses that this evidence
+    /// makes the generator report as `Pass`.
+    ///
+    /// Asserting through the real generator rather than on the unchecked list
+    /// is deliberate: the defect is not a missing entry, it is a control
+    /// reported as satisfied on evidence nobody collected.
+    fn controls_passed_on_behalf_of(
+        plugin_id: &str,
+        findings: &[Finding],
+        unchecked: &[UncheckedCheck],
+    ) -> Vec<String> {
+        let covered: std::collections::HashSet<String> = hardener_plugins::coverage_for(plugin_id)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|m| m.compliance_framework == ComplianceFramework::CIS)
+            .map(|m| m.compliance_control_id)
+            .collect();
+
+        let config = ReportConfig {
+            scenario: Scenario::Custom(vec![ComplianceFramework::CIS]),
+            formats: vec![OutputFormat::Text],
+            output_dir: None,
+            profile: ComplianceProfile::Generic,
+        };
+
+        ReportGenerator::new(config, hardener_plugins::compliance_coverage())
+            .generate(findings, unchecked)
+            .into_iter()
+            .flat_map(|report| report.report_controls)
+            .filter(|c| c.control_status == ControlStatus::Pass && covered.contains(&c.control_id))
+            .map(|c| c.control_id)
+            .collect()
+    }
+
+    /// The desktop sources its compliance report from the latest persisted
+    /// session. `scan_success` survives the round trip through the database,
+    /// and flattening threw it away, so a plugin whose scan failed contributed
+    /// no findings and the generator passed every control it covers on the
+    /// silence that failure caused.
+    #[test]
+    fn a_failed_plugin_in_a_persisted_session_cannot_pass_its_controls() {
+        let (findings, unchecked) = flatten_scan_results(vec![failed_scan_of("ssh-hardening")]);
+
+        let passed = controls_passed_on_behalf_of("ssh-hardening", &findings, &unchecked);
+        assert!(
+            passed.is_empty(),
+            "controls reported Pass for a scan that never completed: {passed:?}"
+        );
     }
 }

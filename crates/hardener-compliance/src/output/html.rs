@@ -98,14 +98,15 @@ impl ReportFormatter for HtmlFormatter {
                 // still listed (in their own style) so the pass is not mistaken
                 // for a clean one.
                 for finding in &control.control_findings {
-                    let row_class = match finding.finding_policy_exception {
-                        Some(_) => "exception",
-                        None => "finding",
+                    let row_class = if finding.is_policy_excepted() {
+                        "exception"
+                    } else {
+                        "finding"
                     };
                     html.push_str(&format!(
                         "<tr class=\"{}\"><td></td><td colspan=\"2\">→ [{}] {}</td></tr>\n",
                         row_class,
-                        html_escape(&super::finding_label(finding)),
+                        html_escape(&finding.evidence_label()),
                         html_escape(&finding.finding_title)
                     ));
                 }

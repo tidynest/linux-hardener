@@ -3,7 +3,7 @@
 use crate::cli::OutputFormat;
 use crate::output;
 use anyhow::{Result, bail};
-use hardener_common::types::PluginId;
+use hardener_common::types::{PluginId, Severity};
 use hardener_core::{
     ApplyResult, ConfigLoader, Context, HardenerConfig, PluginMetadata, SystemExecutor,
     ValidationReport,
@@ -20,6 +20,36 @@ pub(crate) struct ApplyHostResult {
     pub results: Vec<(PluginMetadata, ApplyResult)>,
     pub validation_reports: Vec<ValidationReport>,
     pub had_failure: bool,
+    /// Plugins the config disabled, returned rather than dropped so a caller
+    /// can tell "nothing needed changing" apart from "nothing was allowed to
+    /// run". Both otherwise render as a clean exit.
+    pub skipped: Vec<PluginId>,
+}
+
+impl ApplyHostResult {
+    /// Whether the config disabled every plugin the caller selected, leaving
+    /// this run with nothing to do.
+    ///
+    /// One rule, because `apply` and `batch apply` both need it and a second
+    /// copy is how the enablement check diverged in the first place. A plugin
+    /// that actually ran leaves a result, a validation report, or a failure, so
+    /// the absence of all three alongside a non-empty skip list is exactly the
+    /// no-op case.
+    pub fn nothing_ran(&self) -> bool {
+        !self.skipped.is_empty()
+            && self.results.is_empty()
+            && self.validation_reports.is_empty()
+            && !self.had_failure
+    }
+
+    /// The skipped plugin ids as an operator writes them in a config file.
+    pub fn skipped_list(&self) -> String {
+        self.skipped
+            .iter()
+            .map(|id| id.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
 }
 
 /// Core apply/validate loop over a single executor target.
@@ -52,6 +82,7 @@ pub(crate) async fn apply_host(
     let mut results = Vec::new();
     let mut validation_reports = Vec::new();
     let mut had_failure = false;
+    let mut skipped = Vec::new();
 
     for plugin_id in plugin_ids {
         let Ok(Some(plugin)) = registry.get(plugin_id) else {
@@ -63,16 +94,16 @@ pub(crate) async fn apply_host(
         };
 
         let id_str = plugin_id.as_str();
-        if !hardener_config.global.disabled_plugins.is_empty()
-            && hardener_config
-                .global
-                .disabled_plugins
-                .iter()
-                .any(|d| d == id_str)
-        {
+        // One predicate, shared with `scan`. This site used to carry its own
+        // narrower copy reading only `[global] disabled_plugins`, so a plugin
+        // its own section disabled, or one absent from a non-empty
+        // `enabled_plugins`, was hardened by a command that had already
+        // stopped showing it in a scan.
+        if !hardener_config.is_plugin_enabled(id_str) {
             if !quiet {
                 output::status(format, &format!("Skipping (disabled): {id_str}"));
             }
+            skipped.push(plugin_id.clone());
             continue;
         }
 
@@ -86,7 +117,16 @@ pub(crate) async fn apply_host(
 
         if dry_run {
             match plugin.validate(&ctx, plugin_config).await {
-                Ok(report) => validation_reports.push(report),
+                Ok(report) => {
+                    // A dry run that could not validate is not a clean dry
+                    // run. Without this, an unreadable config renders as
+                    // "0 change(s) to apply" and exits 0, so the operator is
+                    // told the host needs nothing when it was never read.
+                    if blocking_validation_issue(&report) {
+                        had_failure = true;
+                    }
+                    validation_reports.push(report);
+                }
                 Err(e) => {
                     had_failure = true;
                     if !quiet {
@@ -140,23 +180,23 @@ pub(crate) async fn apply_host(
         results,
         validation_reports,
         had_failure,
+        skipped,
     }
 }
 
-/// Expands a plugin filter (short names like "kernel" or full ids like
-/// "kernel-hardening") against the available plugin metadata. Callers decide
-/// what an empty filter means (all vs none), so this only maps the explicit list.
-pub(crate) fn expand_plugin_ids(all: &[PluginMetadata], filter: &[String]) -> Vec<PluginId> {
-    filter
-        .iter()
-        .filter_map(|f| {
-            all.iter()
-                .find(|p| {
-                    p.plugin_id.as_str() == f || p.plugin_id.as_str().starts_with(&format!("{f}-"))
-                })
-                .map(|p| p.plugin_id.clone())
-        })
-        .collect()
+/// Whether a validation report carries an issue serious enough to fail the
+/// dry run.
+///
+/// Critical and High only. Lower severities are advisory, and promoting them
+/// would turn an informational note into a non-zero exit, which trains
+/// operators to ignore the exit code entirely.
+fn blocking_validation_issue(report: &ValidationReport) -> bool {
+    report.validation_report_issues.iter().any(|issue| {
+        matches!(
+            issue.validation_issue_severity,
+            Severity::Critical | Severity::High
+        )
+    })
 }
 
 pub async fn run(
@@ -194,7 +234,7 @@ pub async fn run(
     let plugin_ids: Vec<PluginId> = if all {
         plugins.iter().map(|m| m.plugin_id.clone()).collect()
     } else {
-        expand_plugin_ids(&plugins, plugin_filter)
+        super::plugin_filter::expand(&plugins, plugin_filter)?
     };
 
     if dry_run {
@@ -218,6 +258,17 @@ pub async fn run(
         quiet,
     )
     .await;
+
+    // Exiting 0 having hardened nothing is a positive claim about the host that
+    // this run has not earned. `scan` already refuses the same situation.
+    if result.nothing_ran() {
+        bail!(
+            "Config disabled every selected plugin ({}). Nothing was applied. \
+             Remove them from [global] disabled_plugins, set enabled = true in \
+             their own section, or select a plugin the config enables.",
+            result.skipped_list()
+        );
+    }
 
     if dry_run {
         output::validation_reports(&format, &result.validation_reports);
@@ -277,6 +328,46 @@ mod tests {
         );
     }
 
+    fn report_with(severity: Severity) -> ValidationReport {
+        ValidationReport {
+            validation_report_plugin_id: PluginId::new("ssh-hardening"),
+            validation_report_is_valid: false,
+            validation_report_issues: vec![hardener_core::ValidationIssue {
+                validation_issue_severity: severity,
+                validation_issue_message: "Failed to read /etc/ssh/sshd_config".to_string(),
+                validation_issue_config_key: None,
+            }],
+            validation_report_estimated_changes: vec![],
+            validation_report_compliant_count: 0,
+            validation_report_exceptions: vec![],
+        }
+    }
+
+    /// `--dry-run` on an unreadable config produced "0 change(s) to apply"
+    /// and exit 0, which an operator reads as "this host needs nothing".
+    /// A serious validation issue has to reach the exit code.
+    #[test]
+    fn a_serious_validation_issue_fails_the_dry_run() {
+        assert!(blocking_validation_issue(&report_with(Severity::Critical)));
+        assert!(blocking_validation_issue(&report_with(Severity::High)));
+    }
+
+    /// Advisory severities must not flip the exit code, or the signal becomes
+    /// noise and operators learn to ignore it.
+    #[test]
+    fn an_advisory_validation_issue_does_not_fail_the_dry_run() {
+        assert!(!blocking_validation_issue(&report_with(Severity::Medium)));
+        assert!(!blocking_validation_issue(&report_with(Severity::Low)));
+        assert!(!blocking_validation_issue(&report_with(Severity::Info)));
+
+        let clean = ValidationReport {
+            validation_report_issues: vec![],
+            validation_report_is_valid: true,
+            ..report_with(Severity::High)
+        };
+        assert!(!blocking_validation_issue(&clean));
+    }
+
     #[tokio::test]
     async fn apply_host_dry_run_validates_without_mutation() {
         let executor = Arc::new(MockExecutor::new());
@@ -311,5 +402,71 @@ mod tests {
             !result.validation_reports.is_empty(),
             "dry-run should validate at least one plugin (some plugins error on a bare MockExecutor)"
         );
+    }
+
+    /// `apply` carried its own narrower copy of the enablement rule, reading
+    /// only `[global] disabled_plugins`. A host whose config turned ssh off in
+    /// its own section was hardened anyway, and `scan` on that same host had
+    /// already stopped showing it.
+    ///
+    /// Neither outcome of running the plugin can pass here: a plugin that
+    /// validates contributes a report, and one that errors against the bare
+    /// MockExecutor sets `had_failure`. Only skipping it produces both.
+    #[tokio::test]
+    async fn a_section_disabled_plugin_is_skipped_by_apply() {
+        let mut config = HardenerConfig::default();
+        config.ssh.enabled = false;
+
+        let result = apply_host(
+            Arc::new(MockExecutor::new()),
+            &[PluginId::new("ssh-hardening")],
+            true,
+            &config,
+            None,
+            None,
+            &OutputFormat::Json,
+            true,
+        )
+        .await;
+
+        assert!(
+            result.validation_reports.is_empty(),
+            "a plugin its own section disables must never be validated"
+        );
+        assert!(
+            !result.had_failure,
+            "skipping a disabled plugin is not a failure"
+        );
+        // Named, not merely absent: `run` refuses to exit 0 when this accounts
+        // for every plugin the operator selected.
+        assert_eq!(result.skipped, vec![PluginId::new("ssh-hardening")]);
+    }
+
+    /// The `[global] enabled_plugins` allow-list is the other half of the same
+    /// divergence: `scan` narrowed its selection by it while `apply` ignored it
+    /// entirely, so the two commands disagreed about which plugins the config
+    /// selects.
+    #[tokio::test]
+    async fn a_global_allow_list_narrows_apply_too() {
+        let mut config = HardenerConfig::default();
+        config.global.enabled_plugins = vec!["kernel-hardening".to_string()];
+
+        let result = apply_host(
+            Arc::new(MockExecutor::new()),
+            &[PluginId::new("ssh-hardening")],
+            true,
+            &config,
+            None,
+            None,
+            &OutputFormat::Json,
+            true,
+        )
+        .await;
+
+        assert!(
+            result.validation_reports.is_empty(),
+            "a plugin absent from a non-empty allow-list must never be validated"
+        );
+        assert!(!result.had_failure);
     }
 }

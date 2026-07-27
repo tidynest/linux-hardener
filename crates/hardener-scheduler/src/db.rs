@@ -427,9 +427,16 @@ impl ScanSession {
             .and_then(|ts| DateTime::from_timestamp(ts, 0))
     }
 
-    /// Returns the list of scanned plugins.
-    pub fn plugins(&self) -> Vec<String> {
-        serde_json::from_str(&self.plugins_scanned).unwrap_or_default()
+    /// The plugins this scan covered, or the parse error if the stored record
+    /// cannot be read.
+    ///
+    /// A short list is legitimate: the runner writes the config-filtered set,
+    /// so a session may honestly cover fewer plugins than the registry holds.
+    /// What is not legitimate is a record that will not parse reading as an
+    /// empty one, because "this scan covered nothing" and "this row is damaged"
+    /// are different facts and only one of them is about the host.
+    pub fn plugins(&self) -> std::result::Result<Vec<String>, serde_json::Error> {
+        serde_json::from_str(&self.plugins_scanned)
     }
 }
 
@@ -557,7 +564,7 @@ mod tests {
         let session = manager.get_session(&id).await.unwrap().unwrap();
         assert_eq!(session.status, "running");
         assert_eq!(session.host_identifier, "localhost");
-        assert_eq!(session.plugins(), vec!["kernel", "ssh"]);
+        assert_eq!(session.plugins().unwrap(), vec!["kernel", "ssh"]);
     }
 
     #[tokio::test]
@@ -706,6 +713,51 @@ mod tests {
         assert!(is_worse((0, 0, 0, 0, 0), (1, 0, 0, 0, 0))); // a new critical
         assert!(!is_worse((1, 0, 0, 0, 0), (0, 9, 9, 9, 9))); // fewer criticals is not worse
         assert!(!is_worse((2, 1, 0, 0, 0), (2, 1, 0, 0, 0))); // unchanged
+    }
+
+    fn session_covering(plugins_scanned: &str) -> ScanSession {
+        ScanSession {
+            id: "x".into(),
+            started_at: 0,
+            completed_at: None,
+            status: "completed".into(),
+            trigger_type: "daemon".into(),
+            host_identifier: "h".into(),
+            plugins_scanned: plugins_scanned.into(),
+            total_findings: 0,
+            critical_count: 0,
+            high_count: 0,
+            medium_count: 0,
+            low_count: 0,
+            info_count: 0,
+            error_message: None,
+            json_file_path: None,
+            hash: None,
+        }
+    }
+
+    /// A damaged record used to read as a scan that covered no plugins, which
+    /// is a claim about the host rather than about the row.
+    #[test]
+    fn a_damaged_plugin_record_is_an_error_not_an_empty_scan() {
+        let damaged = session_covering("{not json");
+        assert!(
+            damaged.plugins().is_err(),
+            "a record that will not parse must not read as an empty scan: {:?}",
+            damaged.plugins()
+        );
+    }
+
+    /// The counterpart, and the reason this cannot simply treat "fewer plugins
+    /// than the registry has" as damage: the runner writes the config-filtered
+    /// set, so a one-plugin or empty session is a real thing to record.
+    #[test]
+    fn a_short_or_empty_plugin_record_is_read_as_written() {
+        assert_eq!(
+            session_covering(r#"["kernel"]"#).plugins().unwrap(),
+            vec!["kernel".to_string()]
+        );
+        assert!(session_covering("[]").plugins().unwrap().is_empty());
     }
 
     #[test]

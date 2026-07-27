@@ -431,7 +431,7 @@ async fn test_permissions_scan_with_remote_executor() {
 /// post-chmod re-read. Uses `.remote()` because MockExecutor cannot support
 /// local fchmod.
 #[tokio::test]
-async fn test_permissions_apply_detects_vfat_noop() {
+async fn apply_reports_a_mode_that_did_not_move_after_a_successful_chmod() {
     // /boot at 0o755: chmod will "succeed" but mode stays 0o755
     let executor = MockExecutor::new()
         .remote()
@@ -473,11 +473,22 @@ async fn test_permissions_apply_detects_vfat_noop() {
 
     assert!(
         !boot_change.change_success,
-        "chmod on vfat should report failure"
+        "a mode that did not move must report failure"
+    );
+    // The message must state what was observed. It used to blame vfat, a
+    // cause `scan` has already excluded: a path positively confirmed to be on
+    // a non-POSIX filesystem is diverted to PermissionCheck::NonPosix long
+    // before apply runs, so naming it here sent operators to fstab for a
+    // problem that was not there.
+    assert!(
+        !boot_change.change_description.contains("vfat"),
+        "vfat is excluded before apply runs; it must not be named: {}",
+        boot_change.change_description
     );
     assert!(
-        boot_change.change_description.contains("unchanged"),
-        "Should explain permissions were unchanged, got: {}",
+        boot_change.change_description.contains("0755")
+            && boot_change.change_description.contains("0700"),
+        "the message must state the observed and wanted modes, got: {}",
         boot_change.change_description
     );
 }
@@ -1187,4 +1198,31 @@ async fn apply_records_a_skip_for_an_unverifiable_max_mask_directive() {
         .filter(|(program, args)| program == "chmod" && args.iter().any(|a| a == "/etc/shadow"))
         .collect();
     assert!(chmods.is_empty(), "a max-mask target is uncomputable here");
+}
+
+#[tokio::test]
+async fn scan_reports_a_critical_path_it_cannot_read_instead_of_staying_silent() {
+    // /etc/shadow whose mode cannot be read used to produce neither a finding
+    // nor an unchecked entry: total silence, identical to a verified-compliant
+    // result. These are exactly the paths where that is least acceptable.
+    let executor = MockExecutor::new()
+        .with_path_exists("/etc/shadow", true)
+        .with_metadata_error("/etc/shadow");
+    let ctx = Context::with_executor(Arc::new(executor) as Arc<dyn SystemExecutor>);
+    let plugin = PermissionsHardeningPlugin::new();
+
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
+
+    assert!(
+        result
+            .scan_unchecked
+            .iter()
+            .any(|u| u.unchecked_reason.contains("/etc/shadow")),
+        "an unreadable /etc/shadow must be reported as unchecked, got unchecked={:?}",
+        result
+            .scan_unchecked
+            .iter()
+            .map(|u| &u.unchecked_check_id)
+            .collect::<Vec<_>>()
+    );
 }

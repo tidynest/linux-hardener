@@ -7,6 +7,295 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `scan --exit-code` exits non-zero on an incomplete scan as well as on
+  findings. A clean exit is a positive claim about the host, and a plugin that
+  never ran has not earned it. **A CI gate built on this flag can now fail where
+  it previously passed**, on a host where a plugin cannot complete its scan
+  rather than on one with new findings. `--format json` names which plugin and
+  why.
+
+### Removed
+- `scan --compliance`, which never did anything. clap accepted it, it conflicted
+  with `--audit` as though the two were alternatives, and the behaviour it
+  documented ("only show findings without valid policy exceptions") was
+  implemented nowhere: the flag set a mode value no code read, so every run it
+  appeared in produced exactly the default scan. It was documented as a working
+  feature in the manual page, the CLI reference, the architecture overview, the
+  getting-started guide and the roadmap, and exercised by the cross-distro test
+  suite, none of which could tell that it did nothing. `hardener report
+  --framework <id>` is the real compliance output, and a finding covered by an
+  exception is now labelled everywhere rather than hidden anywhere.
+
+### Fixed
+- Hardening no longer destroys vendor configuration on openSUSE. That
+  distribution keeps vendor files in `/usr/etc` and reserves `/etc` for
+  administrator overrides, and the override is whole-file rather than per
+  directive: the first file found wins entirely. None of the PAM plugin's
+  configuration files exists under `/etc` on such a host, so `apply` treated
+  each as absent, merged its directives into an empty buffer and wrote it. The
+  three-directive `/etc/login.defs` that produced silenced the other 35 keys
+  `/usr/etc/login.defs` sets, among them `ENCRYPT_METHOD`, which selects the
+  password hashing algorithm for every password set afterwards, and `UMASK`,
+  `HOME_MODE`, `FAIL_DELAY`, `LOGIN_RETRIES` and `LOGIN_TIMEOUT`. Four of those
+  are login-hardening settings, so the tool was disabling controls in its own
+  subject area, and it defeated itself as well: it set `PASS_MAX_DAYS` while
+  clearing `PASS_WARN_AGE`, so accounts expired with no warning. `apply` now
+  refuses to create a file under `/etc` when a vendor counterpart exists, names
+  it, and asks the operator to copy it first; the run is reported unsuccessful
+  rather than clean. **If you have run this tool on openSUSE, check
+  `/etc/login.defs`, `/etc/security/faillock.conf` and
+  `/etc/security/pwhistory.conf`. All three have vendor counterparts under
+  `/usr/etc`, and a file of a few lines is this defect. Restoring the vendor
+  settings means copying the `/usr/etc` version over each short file and
+  re-applying your intended values.** `/etc/security/pwquality.conf` is not
+  affected: openSUSE ships no vendor copy of it, so creating it masks nothing.
+  Hardening the refused directives on openSUSE is declined rather than done
+  until layered vendor configuration is supported; scanning is unaffected.
+- The desktop could mark a compliance control as passed for a plugin that never
+  ran, with nothing having failed. A compliance report decides `Pass` from
+  statically declared plugin coverage plus the absence of a finding, so a plugin
+  contributing no evidence passes every control it covers on the silence its own
+  absence caused. The desktop reached that state three ways, and none of them
+  needs an error: it discarded `scan_success` when flattening a stored scan
+  session, so the value survived the database round trip and was then thrown
+  away; it swallowed a plugin whose scan returned an error; and it dropped the
+  plugins the configuration had disabled, so **turning a plugin off was on its
+  own enough to pass every control that plugin covers**. A scan filtered to a
+  single plugin did the same for the other seven. Any plugin that contributed no
+  results now reports its controls as **Manual Review**, and the rule lives in
+  one place shared with the CLI rather than being reimplemented on each side.
+  Regenerate any compliance report the desktop produced, whether or not you ever
+  saw a scan fail.
+- A plugin whose scan did not complete passed its compliance controls. The same
+  mechanism from the command line: `report` dropped an errored plugin entirely
+  and kept no record of one that returned successfully while reporting
+  `scan_success: false`, so neither failure reached the generator and every
+  control that plugin covers was marked `Pass` on evidence nobody collected. A
+  plugin that did not complete now contributes an unchecked entry carrying its
+  whole declared coverage, which routes those controls to Manual Review through
+  the mechanism already built for checks that could not run. A report filed or
+  forwarded from a host where a plugin's scan failed states passes that were
+  never assessed, so regenerate it rather than trusting the copy you have.
+- A drop-in under `/etc/ssh/sshd_config.d/` no longer overrides the tool
+  silently. The shipped `sshd_config` on several distributions carries
+  `Include /etc/ssh/sshd_config.d/*.conf` on line 2, sshd uses the first value
+  it obtains for a keyword, and everything this tool writes lands below that
+  line, so a drop-in always won while the tool reported the value it had
+  written. `sshd -t` does not object to this. Scan now resolves `Include`
+  directives in sshd's own order and reports the value sshd will actually use,
+  naming the file that supplies it; apply refuses to claim success for a write
+  a drop-in overrides and tells the operator which file to edit. A pattern that
+  cannot be expanded faithfully, or a drop-in directory that cannot be listed,
+  is an error rather than an assumption that there are no drop-ins.
+- An `sshd_config` directive inside a `Match` block is no longer read as the
+  host's global setting. `Match Address 10.0.0.0/8` followed by
+  `PermitRootLogin no` was read back as though root login were closed
+  everywhere. Apply then found the target value apparently in place, wrote
+  nothing and recorded no change at all, leaving the real global directive at
+  sshd's compiled default while the tool reported the host compliant.
+- `apply --dry-run` shows the validation issues it found. Every operator-facing
+  renderer read the estimated changes and never the issues alongside them, so a
+  plugin that could not read its own configuration file rendered as
+  "0 change(s) to apply" and exited 0, which is byte-identical to a host that
+  needs nothing: an unreadable `sshd_config` looked exactly like a compliant
+  one. Issues now render with their severity and the configuration key they
+  concern, in the CLI and in the desktop preview. A Critical or High issue fails
+  the run while lower severities stay advisory, and a group carrying an issue
+  can no longer present itself as already compliant.
+- The MAC plugin no longer reports success when it merely failed to detect
+  SELinux or AppArmor. Detection folded a failed filesystem probe into "no MAC
+  system present", so `apply` recorded a successful change reading "nothing to
+  configure": a deliberate-looking no-op on a host that may have carried a real
+  and misconfigured SELinux or AppArmor installation. Detection now
+  distinguishes absent from indeterminate. Scan reports the latter as unchecked,
+  carrying the plugin's coverage so its controls reach Manual Review, apply
+  records a failed change, and validation raises a High issue, which the dry run
+  treats as blocking.
+- `hardener apply --plugin <name>` refuses a name that matches no plugin,
+  as `scan` already did. It previously dropped such names, so
+  `hardener apply -p services` (the plural of a real plugin, matching nothing)
+  hardened nothing, printed nothing and exited 0. The same applies to
+  `batch apply` and `batch rollback`.
+- `hardener apply` no longer exits 0 having hardened nothing when the config
+  disables every plugin selected. A clean exit is a positive claim about the
+  host, and `scan` already refused the same situation. Per host, `batch apply`
+  reported this as "0 ok, 0 failed", which reads as complete success.
+- The checkpoint signing key can no longer be destroyed by a failed migration.
+  Loading a legacy plaintext key re-read the file to decide whether it needed
+  migrating, folded any read failure into "not yet encrypted", then deleted the
+  key and wrote a new one. A failure at that second step left the host with no
+  signing key at all and logged only a warning, taking the tamper-evidence of
+  every existing checkpoint with it. The format is now decided from the bytes
+  already read, and the replacement is written alongside and renamed into place,
+  so a failure leaves the original key exactly as it was and the migration
+  simply happens next time.
+- The audit plugin no longer overwrites its rules file after a backup that
+  failed. The backup ran only when an existence probe returned true, so a probe
+  that errored skipped it, and the `cp` exit code was never checked, so a failed
+  copy reported success and the write went ahead. A failed backup now aborts
+  before the write.
+- `hardener rollback` now restores what the services plugin changed. That
+  plugin checkpointed `/etc/systemd/system` and `/usr/lib/systemd/system`,
+  neither of which was in the rollback allow-list, and rollback validates every
+  captured path before writing anything, so it aborted with "path outside
+  allowed directories" and restored nothing at all. Services rollback had never
+  worked. `/etc/systemd/system` is now allow-listed, and the packaged unit
+  directory is no longer captured: nothing this tool does writes there, and
+  keeping it out means a restore can never overwrite a distribution's unit
+  files with copies taken before a package update.
+- `LocalExecutor::path_exists` distinguishes "absent" from "could not tell".
+  It answered with `Path::exists`, which folds every error into `false`, so a
+  path the process could not stat read as confirmed absence. That left the
+  rollback guard protecting the account databases unreachable on a local target.
+- `scan --format json` reports whether each plugin's scan completed. The
+  renderer took a findings triple, so `scan_success` and `scan_error` had
+  nowhere to live and could not have reached the JSON even in principle, and the
+  desktop's parser hardcoded `scan_success: true`. A machine consumer therefore
+  could not distinguish a plugin that found nothing wrong from a plugin that
+  never ran. Both fields are part of the JSON contract now, the terminal prints
+  a trailing count of incomplete scans, and an entry arriving without the field
+  fails closed rather than being assumed successful.
+- A critical path whose permissions cannot be read is reported as unchecked.
+  `/etc/shadow`, `/etc/gshadow`, `/etc/sudoers`, `/etc/passwd`, `/root` and
+  `/etc/ssh` previously produced neither a finding nor an unchecked entry when
+  unreadable, which is silence indistinguishable from a verified clean result.
+- A failed service listing is reported instead of read as a clean host. It
+  degraded to zero findings, which is byte-identical to a host with nothing
+  wrong; every managed service is now reported as unchecked so a compliance
+  report renders ManualReview.
+- A plugin that reports its own scan failed is named in the output rather than
+  rendering as a plugin with no findings.
+- A rewritten configuration file keeps its own permissions. The shared write
+  path for every non-kernel configuration file captured the original mode with a
+  call that folded a failed `stat` into "the file does not exist", so a stat
+  failure left the rewritten file wearing the temporary file's 0600 rather than
+  the mode it had before, with no error and no log line. Only a genuinely
+  missing file now means there is nothing to restore; any other stat failure
+  refuses the write and names the path. **On a host where stat fails but writes
+  succeed, hardening now stops where it previously appeared to succeed.** The
+  refusal happens before anything is written, so the target is left exactly as
+  it was.
+- A permissions change that could not be verified is no longer blamed on a vfat
+  filesystem. `apply` named a non-POSIX filesystem whenever verification came
+  back unsatisfied, including when the verification read itself failed, and scan
+  diverts a path positively confirmed to be on a non-POSIX filesystem long
+  before apply runs, so the one cause the message named had already been
+  excluded by the time it could fire. Three outcomes are now distinct: verified,
+  a mode that did not move (reporting the mode observed and the mode wanted),
+  and a verification that failed (carrying its error, rather than implying the
+  `chmod` did not work).
+- A finding covered by a policy exception is labelled rather than hidden, and
+  never mistaken for a violation. The compliance reports had this right all
+  along: they render a documented deviation as `POLICY EXCEPTION` in place of
+  its severity and keep it under the control it belongs to, so a pass resting on
+  an exception stays distinguishable from a genuinely clean one. Three other
+  places did not. The desktop's Compliance view dropped excepted findings
+  outright, so a deviation the operator had recorded was indistinguishable from
+  a finding that never existed. The desktop's audit view and the `scan` terminal
+  both kept them and labelled nothing, so a documented deviation read as a live
+  violation. The rule now lives once, in the crate both front ends share. The
+  desktop lists deviations in their own group below the severity groups, where
+  they can neither vanish nor inflate a severity count, and the expanded detail
+  carries the reason the deviation was accepted. The desktop's All/Compliance
+  view switch is gone: hiding them was its only function. The fleet host panel
+  gets the same treatment, and it is the reason the split happens where each
+  view renders rather than inside the shared severity grouping: that grouping
+  also decides whether the fleet panel shows a Findings section at all, so
+  filtering there would have made a host whose findings are all excepted read
+  as a host with nothing wrong.
+- The apply preview shows a setting it is leaving alone because a policy
+  exception documents it. This was the same defect one surface further on:
+  each plugin's validation reached the exception check and skipped the setting
+  outright, so it entered neither the estimated changes nor anything else, and
+  a host whose only drift was excepted previewed as "0 change(s) to apply" over
+  an empty panel. That is byte-identical to a host needing nothing done, so an
+  operator could not see that a deviation was in play, nor notice a stale
+  exception still suppressing work they wanted done. Excepted settings are now
+  reported separately from the pending changes, in the terminal and in the
+  desktop, so they can neither be mistaken for changes nor inflate the count
+  the confirm button is named after. Seven sites across six plugins skipped an
+  exception this way; all now record it through one shared helper.
+- A damaged scan-history record is reported instead of read as a scan that
+  covered no plugins. The list of plugins a session covered is stored as JSON
+  and was parsed with a fallback to the empty list, so a row that would not
+  parse produced the same answer as a scan that genuinely ran nothing, and
+  `history show` printed the same empty line either way. Parsing is fallible now
+  and the reason is printed. A short list remains perfectly legitimate: a
+  session records the plugins the configuration selected, not everything in the
+  registry.
+- A plugin's own `enabled = false` now stops it running. The key existed in the
+  config schema, was validated on load, and was read by nothing: only
+  `[global] disabled_plugins` and `[global] enabled_plugins` were ever
+  consulted. Anyone who turned a plugin off in its own section has been scanned
+  and hardened by it ever since, without a word. `apply` carried a third,
+  narrower copy of the rule that consulted only `disabled_plugins`, so it also
+  ignored the `[global] enabled_plugins` allow-list that `scan` honoured, and
+  the two commands disagreed about which plugins the config selects. All three
+  call sites now share one predicate, and disabled anywhere is final: `enabled`
+  defaults to `true`, so it can only turn a plugin off, never re-enable one the
+  `[global]` lists have refused. **After upgrading, plugins you disabled in
+  their own section will disappear from your output.** That is the configuration
+  you asked for; if you did not intend it, remove the `enabled = false` line.
+- Scheduled scans honour plugin enablement. `PluginManager::execute_scan`, the
+  entry point the daemon runs scans through, resolved each plugin's settings
+  without ever asking whether the config enabled that plugin, so a daemon
+  scanned plugins the operator had turned off. The session row naming which
+  plugins a scan covered is written before any plugin runs and was derived from
+  dependency order alone, so it is now derived from the same rule the scan
+  obeys and can no longer name a plugin that never ran.
+- `hardener report` honours the plugin lists. It ran every registered plugin
+  regardless of configuration, while `scan` on the same host skipped the
+  disabled ones, so the two commands disagreed about which plugins the config
+  selects. Controls covered by a disabled plugin now report Manual Review
+  rather than being assessed by a plugin the operator turned off.
+- Every `batch` subcommand honours the global `-C`, `--config` flag. clap
+  accepted it and all four verbs threw it away. `batch scan` and `batch report`
+  went further and evaluated every host against the compiled-in defaults, so a
+  fleet was assessed against the raw baseline and then hardened to the
+  operator's actual policy: directive overrides, policy exceptions and the
+  plugin lists applied to `batch apply` but not to the scan that justified it.
+  Remote hosts are evaluated against the controller's configuration, matching
+  single-host `--ssh`.
+- The PAM plugin no longer reports every read failure as needing root. An I/O
+  error, or a configuration file that is not valid UTF-8, sent the operator to
+  `sudo`, which cannot help with either. Reads are classified with the same
+  permission-denied helper the SSH plugin already used, and the wording follows
+  the actual cause in the unchecked reason and in both dry-run estimates.
+- A privileged operation no longer runs with its audit trail silently absent.
+  Resolving the audit log path folded every failure into "no logger" and every
+  caller matched on exactly that, so `apply`, `checkpoint` and `batch` could run
+  unlogged on a host whose log directory could not be created or opened, and say
+  nothing about it. Path resolution now reports the directory it could not use.
+  Callers still continue without a logger, deliberately: refusing to harden a
+  host because its log directory is unwritable would be the worse failure. The
+  operator is told either way.
+- The CLI installs a log subscriber. Without one the tracing macros were a
+  no-op, so every warning the engine raised was discarded, including warnings
+  that have no `Change` counterpart and were the only record that a step
+  degraded. Records go to stderr, so `--format json` stays parseable.
+- `--format json` output is a single document again. An informational message
+  was written to stdout ahead of the payload, so a strict parser rejected the
+  whole stream with "Extra data" even though the payload itself was well formed.
+
+### Known Limitations
+- **SSH cannot be hardened on openSUSE, and could not be in any earlier release
+  either.** That distribution ships `sshd_config` at
+  `/usr/etc/ssh/sshd_config`, and every path in this tool is a hardcoded
+  constant under `/etc`, so the scan reports that it could not read
+  `/etc/ssh/sshd_config` and `apply` fails outright. Nothing is damaged and
+  nothing is falsely reported as hardened; the plugin simply does not work
+  there. This is disclosed now rather than at the fix because a user running
+  the tool on openSUSE should know that a clean SSH section means the check did
+  not run, not that the host is secure. Every other distribution is unaffected,
+  and the other plugins work on openSUSE.
+- Where a drop-in under `/etc/ssh/sshd_config.d/` sets a directive this tool
+  manages, on Fedora and RHEL typically `50-redhat.conf`, `apply` reports that
+  it cannot make the change and names the file to edit, rather than writing a
+  value sshd will ignore. The host is left unhardened for that directive until
+  the drop-in is edited by hand. Writing a drop-in that wins is the fix, and it
+  is not in this release.
+
 ## [1.5.0] - 2026-07-27
 
 ### Added

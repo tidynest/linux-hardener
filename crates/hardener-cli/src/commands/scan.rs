@@ -7,9 +7,7 @@ use crate::output;
 use anyhow::Result;
 use hardener_common::types::Severity;
 use hardener_core::{
-    ConfigLoader, Context, HardenerConfig, PluginMetadata,
-    executor::SystemExecutor,
-    plugin::{Finding, UncheckedCheck},
+    ConfigLoader, Context, HardenerConfig, PluginMetadata, ScanResult, executor::SystemExecutor,
 };
 use hardener_scheduler::ScanHistoryManager;
 use hardener_scheduler::db::ScanFinding;
@@ -22,7 +20,6 @@ pub struct ScanOptions<'a> {
     pub quiet: bool,
     pub config_path: Option<&'a PathBuf>,
     pub audit: bool,
-    pub compliance: bool,
     pub exit_code: bool,
     pub timings: bool,
     pub executor: Arc<dyn SystemExecutor>,
@@ -32,8 +29,6 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
     // Determine scan mode
     let mode = if opts.audit {
         ScanMode::Audit
-    } else if opts.compliance {
-        ScanMode::Compliance
     } else {
         ScanMode::Default
     };
@@ -44,7 +39,7 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
     let ctx = Context::with_executor(opts.executor.clone());
 
     let plugins = registry.list()?;
-    validate_plugin_filter(opts.plugin_filter, &plugins)?;
+    super::plugin_filter::validate(opts.plugin_filter, &plugins)?;
     let min_severity = severity_filter_to_severity(&opts.severity_filter);
 
     // Resolve the selected plugin handles up front (registry hands out Arcs).
@@ -101,7 +96,26 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
         match scan {
             Ok(results) => {
                 plugin_timings.push((metadata.plugin_name.clone(), results.scan_duration_us));
-                // Filter findings by severity
+                // A plugin can return Ok while reporting that its own scan
+                // failed, and such a result carries no findings, which renders
+                // exactly like a clean host. Say so rather than let the
+                // operator read silence as a pass.
+                if !results.scan_success {
+                    output::error(
+                        &opts.format,
+                        &format!(
+                            "Scan of {} did not complete: {}",
+                            metadata.plugin_name,
+                            results
+                                .scan_error
+                                .as_deref()
+                                .unwrap_or("reason not reported")
+                        ),
+                    );
+                }
+                // Filter findings by severity, keeping the rest of the result
+                // intact so scan_success and scan_error survive to the
+                // renderer instead of dying at the tuple boundary.
                 let filtered_findings: Vec<_> = results
                     .scan_findings
                     .iter()
@@ -110,8 +124,10 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
                     .collect();
                 all_results.push((
                     metadata.clone(),
-                    filtered_findings,
-                    results.scan_unchecked.clone(),
+                    ScanResult {
+                        scan_findings: filtered_findings,
+                        ..results
+                    },
                 ));
             }
             Err(e) => {
@@ -119,11 +135,25 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
                     &opts.format,
                     &format!("Failed to scan {}: {e}", metadata.plugin_name),
                 );
+                // Recorded rather than dropped: a plugin missing from the
+                // results renders as one that was never selected, and the
+                // JSON consumer cannot tell it apart from a clean scan.
+                all_results.push((
+                    metadata.clone(),
+                    ScanResult {
+                        scan_plugin_id: metadata.plugin_id.clone(),
+                        scan_success: false,
+                        scan_findings: Vec::new(),
+                        scan_unchecked: Vec::new(),
+                        scan_duration_us: 0,
+                        scan_error: Some(e.to_string()),
+                    },
+                ));
             }
         }
     }
 
-    output::scan_results(&opts.format, &all_results, mode);
+    output::scan_results(&opts.format, &all_results);
 
     if opts.timings {
         output::scan_timings(&plugin_timings, wall_elapsed);
@@ -132,12 +162,15 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
     // Persist scan session to history database
     persist_scan_session(&all_results).await;
 
-    // Handle exit code flag
+    // Handle exit code flag. An incomplete scan exits non-zero too: a clean
+    // exit is a positive claim about the host, and a plugin that never ran
+    // has not earned it.
     if opts.exit_code {
         let has_findings = all_results
             .iter()
-            .any(|(_, findings, _)| !findings.is_empty());
-        if has_findings {
+            .any(|(_, result)| !result.scan_findings.is_empty());
+        let incomplete = all_results.iter().any(|(_, result)| !result.scan_success);
+        if has_findings || incomplete {
             std::process::exit(1);
         }
     }
@@ -170,42 +203,6 @@ fn severity_filter_to_severity(filter: &SeverityFilter) -> Severity {
     }
 }
 
-/// Validates plugin filter entries and returns error if any are invalid.
-/// Accepts both full IDs (e.g., "kernel-hardening") and short names (e.g., "kernel").
-fn validate_plugin_filter(
-    filter: &[String],
-    valid_plugins: &[hardener_core::PluginMetadata],
-) -> Result<()> {
-    if filter.is_empty() {
-        return Ok(());
-    }
-
-    let valid_ids: Vec<&str> = valid_plugins.iter().map(|p| p.plugin_id.as_str()).collect();
-
-    let invalid: Vec<&str> = filter
-        .iter()
-        .filter(|f| !is_valid_plugin_name(f, &valid_ids))
-        .map(|s| s.as_str())
-        .collect();
-
-    if invalid.is_empty() {
-        Ok(())
-    } else {
-        anyhow::bail!(
-            "Unknown plugin(s): {}. Valid plugins: {}",
-            invalid.join(", "),
-            valid_ids.join(", ")
-        )
-    }
-}
-
-/// Checks if a filter entry matches a valid plugin (full ID or short name).
-fn is_valid_plugin_name(name: &str, valid_ids: &[&str]) -> bool {
-    valid_ids
-        .iter()
-        .any(|id| *id == name || id.starts_with(&format!("{}-", name)))
-}
-
 /// Splits the plugins matching the CLI `--plugin` filter (an empty filter
 /// selects everything) into those the config enables and those it disables.
 /// The skipped half is returned rather than dropped so the caller can say why
@@ -221,7 +218,7 @@ fn select_enabled_plugins<'a>(
             plugin_filter.is_empty()
                 || plugin_filter
                     .iter()
-                    .any(|p| is_valid_plugin_name(p, &[metadata.plugin_id.as_str()]))
+                    .any(|p| super::plugin_filter::matches(p, metadata.plugin_id.as_str()))
         })
         .partition(|metadata| config.is_plugin_enabled(metadata.plugin_id.as_str()))
 }
@@ -239,7 +236,7 @@ fn plugin_id_list(plugins: &[&PluginMetadata]) -> String {
 ///
 /// Failures are logged but do not propagate; scan output is already displayed,
 /// so history persistence is best-effort.
-async fn persist_scan_session(results: &[(PluginMetadata, Vec<Finding>, Vec<UncheckedCheck>)]) {
+async fn persist_scan_session(results: &[(PluginMetadata, ScanResult)]) {
     let db = match open_history_db().await {
         Ok(db) => db,
         Err(_) => return,
@@ -247,7 +244,7 @@ async fn persist_scan_session(results: &[(PluginMetadata, Vec<Finding>, Vec<Unch
 
     let plugins: Vec<String> = results
         .iter()
-        .map(|(m, _, _)| m.plugin_id.to_string())
+        .map(|(m, _)| m.plugin_id.to_string())
         .collect();
     let hostname = std::fs::read_to_string("/etc/hostname")
         .map(|h| h.trim().to_string())
@@ -260,8 +257,9 @@ async fn persist_scan_session(results: &[(PluginMetadata, Vec<Finding>, Vec<Unch
 
     let findings: Vec<ScanFinding> = results
         .iter()
-        .flat_map(|(meta, findings, _)| {
-            findings
+        .flat_map(|(meta, result)| {
+            result
+                .scan_findings
                 .iter()
                 .map(move |f| finding_to_scan_finding(meta, f))
         })
@@ -295,24 +293,30 @@ mod tests {
         "service-minimisation",
     ];
 
-    #[test]
-    fn test_valid_full_id() {
-        assert!(is_valid_plugin_name("kernel-hardening", ALL_IDS));
+    /// Whether any real plugin id answers to this `--plugin` entry.
+    fn names_a_plugin(entry: &str) -> bool {
+        ALL_IDS
+            .iter()
+            .any(|id| crate::commands::plugin_filter::matches(entry, id))
     }
 
     #[test]
-    fn test_valid_short_name() {
-        assert!(is_valid_plugin_name("kernel", ALL_IDS));
-    }
-
-    #[test]
-    fn test_valid_service_short() {
-        assert!(is_valid_plugin_name("service", ALL_IDS));
-    }
-
-    #[test]
-    fn test_invalid_name() {
-        assert!(!is_valid_plugin_name("nonexistent", ALL_IDS));
+    fn plugin_filter_entries_resolve_against_the_real_id_set() {
+        for entry in [
+            "kernel-hardening",
+            "kernel",
+            "service",
+            "ssh",
+            "permissions",
+        ] {
+            assert!(names_a_plugin(entry), "{entry} should name a plugin");
+        }
+        // "services" is the plural an operator reaches for; it matches nothing,
+        // which is exactly why an unmatched entry must be refused rather than
+        // dropped. The empty string is the degenerate case of the same rule.
+        for entry in ["nonexistent", "services", ""] {
+            assert!(!names_a_plugin(entry), "{entry} names no plugin");
+        }
     }
 
     #[test]

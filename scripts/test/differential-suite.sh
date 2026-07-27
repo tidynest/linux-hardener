@@ -77,6 +77,52 @@ require_commands() {
     fi
 }
 
+# sshd refuses to parse a configuration without its compiled-in privilege
+# separation directory, and on a booted host systemd creates that directory
+# through `RuntimeDirectory=sshd`. This suite runs under `nspawn --pipe`, where
+# nothing boots, so on Debian the directory is simply absent and every ssh
+# oracle dies on "Missing privilege separation directory" before it can read a
+# single value. The container is not wrong; it has just never been booted.
+#
+# Create exactly the directory sshd names, and only when sshd names one: a
+# container that already has it is left untouched, and any other sshd complaint
+# is left for the oracle to report rather than being second-guessed here.
+require_sshd_privsep_dir() {
+    local complaint dir
+    # `if` rather than `sshd -t && return 0`: under `set -e` the exemption for a
+    # failing left operand does not extend to the status of the list itself.
+    if complaint=$(sshd -t 2>&1); then
+        return 0
+    fi
+    # sshd's message arrives carriage-return terminated under nspawn's console
+    # handling, and `mkdir "/run/sshd\r"` creates a directory sshd will never
+    # look for while the line reporting it reads exactly right. Strip the
+    # carriage returns, and any other surrounding blank, before the path is used
+    # for anything at all.
+    dir=$(printf '%s\n' "$complaint" | tr -d '\r' |
+        sed -n 's/^Missing privilege separation directory:[[:space:]]*//p' |
+        sed 's/[[:space:]]*$//' | head -1)
+    [[ -n "$dir" ]] || return 0
+    if ! mkdir -p "$dir" || ! chmod 0755 "$dir"; then
+        echo "FATAL: sshd needs the privilege separation directory $dir, and it" >&2
+        echo "  could not be created. Every ssh oracle reads through sshd, so a" >&2
+        echo "  run without it would compare nothing and print a clean summary." >&2
+        return 1
+    fi
+    # Creating it is not the same as fixing it. Ask sshd again rather than
+    # assume, and carry what it still says: a guard that reports a success it
+    # never observed is the exact failure this suite exists to catch, and the
+    # first version of this function shipped with that defect.
+    if complaint=$(sshd -t 2>&1); then
+        echo "Created sshd privilege separation directory $dir (nothing booted to create it)"
+        return 0
+    fi
+    echo "FATAL: created $dir, and sshd still refuses to parse a configuration:" >&2
+    printf '  %s\n' "$complaint" >&2
+    ls -ld "$dir" >&2 || echo "  and $dir does not stat" >&2
+    return 1
+}
+
 # Refuse a binary that is absent or not executable, before apply rather than
 # after: half a destructive run tells nobody anything.
 require_binary() {
@@ -1168,6 +1214,85 @@ Number of days of warning before password expires	: 11"
     LOGIN_DEFS_CHAGE_GENERATION=""
     unset -f useradd userdel id chage
 
+    # The privilege separation directory guard. The stub reports the directory
+    # missing only while it really is missing, so a second call after the guard
+    # has run answers the way real sshd would.
+    local privsep_root="${TMPDIR:-/tmp}/diffsuite-privsep-$$"
+    mkdir -p "$privsep_root"
+    local sshd_stub_missing_dir="" sshd_stub_other=0 sshd_stub_unfixable=0
+    local sshd_stub_crlf=0
+    # `printf` rather than `echo` so the carriage return is emitted literally:
+    # this is how the message really arrives under nspawn's console handling.
+    sshd_complain() {
+        if (( sshd_stub_crlf == 1 )); then
+            printf 'Missing privilege separation directory: %s\r\n' "$1" >&2
+        else
+            printf 'Missing privilege separation directory: %s\n' "$1" >&2
+        fi
+    }
+    sshd() {
+        if (( sshd_stub_other == 1 )); then
+            echo "/etc/ssh/sshd_config: No such file or directory" >&2
+            return 1
+        fi
+        if (( sshd_stub_unfixable == 1 )); then
+            sshd_complain "$sshd_stub_missing_dir"
+            return 1
+        fi
+        [[ -n "$sshd_stub_missing_dir" && ! -d "$sshd_stub_missing_dir" ]] || return 0
+        sshd_complain "$sshd_stub_missing_dir"
+        return 1
+    }
+
+    check_status 0 "privsep guard leaves a healthy sshd alone" \
+        require_sshd_privsep_dir
+
+    sshd_stub_missing_dir="$privsep_root/run-sshd"
+    check_status 0 "privsep guard accepts the directory it can create" \
+        require_sshd_privsep_dir
+    check_eq "$([[ -d "$privsep_root/run-sshd" ]] && echo created || echo absent)" \
+        "created" "privsep guard creates the directory sshd names"
+
+    # An unrelated sshd failure is the oracle's to report. Creating something
+    # here on the strength of a message this guard does not understand would be
+    # guessing.
+    sshd_stub_missing_dir=""
+    sshd_stub_other=1
+    check_status 0 "privsep guard defers an unrelated sshd complaint" \
+        require_sshd_privsep_dir
+    sshd_stub_other=0
+
+    # mkdir cannot create a directory below a regular file, as root or anyone
+    # else, so this refusal is deterministic rather than permission-dependent.
+    : > "$privsep_root/not-a-dir"
+    sshd_stub_missing_dir="$privsep_root/not-a-dir/sshd"
+    check_status 1 "privsep guard refuses when it cannot create the directory" \
+        require_sshd_privsep_dir
+
+    # Creating the directory is not the same as fixing the problem. This is the
+    # case seen live on debian: the guard created /run/sshd, reported success it
+    # had not observed, and the run died at the first oracle anyway.
+    sshd_stub_unfixable=1
+    sshd_stub_missing_dir="$privsep_root/still-refused"
+    check_status 1 "privsep guard refuses when sshd still objects after creating it" \
+        require_sshd_privsep_dir
+    sshd_stub_unfixable=0
+
+    # The live debian failure. sshd's message arrives with a trailing carriage
+    # return, so the path captured from it names a directory sshd will never
+    # look for, while the log line reporting it looks exactly right.
+    sshd_stub_crlf=1
+    sshd_stub_missing_dir="$privsep_root/crlf-sshd"
+    check_status 0 "privsep guard survives a carriage return in sshd's message" \
+        require_sshd_privsep_dir
+    check_eq "$([[ -d "$privsep_root/crlf-sshd" ]] && echo created || echo absent)" \
+        "created" "privsep guard strips the carriage return before creating"
+    sshd_stub_crlf=0
+
+    sshd_stub_missing_dir=""
+    unset -f sshd sshd_complain
+    rm -rf "$privsep_root"
+
     # The preflight itself, both ways round. A guard that can never refuse is as
     # useless as one that never runs.
     check_status 0 "require_commands accepts a command that exists" \
@@ -1552,6 +1677,8 @@ Number of days of warning before password expires	: 11"
 run_full_suite() {
     require_container_root || return 1
     require_commands "${REQUIRED_COMMANDS[@]}" || return 1
+    # After require_commands, which is what guarantees there is an sshd to ask.
+    require_sshd_privsep_dir || return 1
     require_binary || return 1
     require_check_tables || return 1
     # Checked before apply, not inside the probe that needs it: aborting halfway

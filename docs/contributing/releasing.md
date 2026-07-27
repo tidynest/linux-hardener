@@ -72,7 +72,7 @@ We use [Conventional Commits](https://www.conventionalcommits.org/) for automate
 
 ```bash
 # Feature
-feat(cli): add --compliance flag for scan command
+feat(cli): add --timings flag for scan command
 
 # Bug fix
 fix(plugins): correct SSH directive parsing for comments
@@ -372,4 +372,4 @@ For release issues:
 3. Consult this document
 4. Open an issue if needed
 
-**Last Updated**: 2026-07-19
+**Last Updated**: 2026-07-27

@@ -755,3 +755,91 @@ async fn test_services_validate_skips_exceptions() {
         "non-excepted services should still appear"
     );
 }
+
+/// `list-unit-files` stub that fails the way a broken systemd does: a non-zero
+/// exit that also writes to stderr.
+fn with_unit_files_failing(executor: MockExecutor) -> MockExecutor {
+    let mut args = vec!["list-unit-files", "--type=service", "--no-legend"];
+    args.extend(ASSESSED_UNITS);
+    executor.with_command(
+        "systemctl",
+        &args,
+        CommandOutput {
+            stdout: String::new(),
+            stderr: "Failed to connect to bus: No such file or directory".to_string(),
+            exit_code: 1,
+        },
+    )
+}
+
+/// `list-unit-files` stub for the ordinary case where none of the named units
+/// are installed: systemd exits 1 with an empty stderr.
+fn with_unit_files_no_matches(executor: MockExecutor) -> MockExecutor {
+    let mut args = vec!["list-unit-files", "--type=service", "--no-legend"];
+    args.extend(ASSESSED_UNITS);
+    executor.with_command(
+        "systemctl",
+        &args,
+        CommandOutput {
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: 1,
+        },
+    )
+}
+
+#[tokio::test]
+async fn scan_reports_unchecked_when_the_service_listing_fails() {
+    // A failed listing used to produce zero findings, which is byte-identical
+    // to a host with nothing wrong. The scan must say it could not look.
+    let executor = with_units(
+        with_unit_files_failing(MockExecutor::new().with_command_exists("systemctl", true)),
+        "",
+    );
+    let ctx = Context::with_executor(Arc::new(executor) as Arc<dyn SystemExecutor>);
+    let plugin = ServicesHardeningPlugin::new();
+
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
+
+    assert!(
+        !result.scan_success,
+        "a listing failure must not be reported as a successful scan"
+    );
+    assert!(
+        result.scan_error.is_some(),
+        "the failure reason must reach the result"
+    );
+    assert!(
+        result.scan_findings.is_empty(),
+        "nothing was observed, so nothing may be asserted as a finding"
+    );
+    assert!(
+        !result.scan_unchecked.is_empty(),
+        "every managed service must be reported as unchecked, not silently dropped"
+    );
+}
+
+#[tokio::test]
+async fn scan_treats_no_installed_units_as_a_clean_host_not_a_failure() {
+    // systemd exits 1 when none of the named units exist. That is the ordinary
+    // answer on a minimal host and must not be mistaken for a broken probe,
+    // which is why the check looks at stderr rather than the exit code alone.
+    let executor = with_units(
+        with_unit_files_no_matches(MockExecutor::new().with_command_exists("systemctl", true)),
+        "",
+    );
+    let ctx = Context::with_executor(Arc::new(executor) as Arc<dyn SystemExecutor>);
+    let plugin = ServicesHardeningPlugin::new();
+
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
+
+    assert!(
+        result.scan_success,
+        "a host with none of these services installed is a successful scan"
+    );
+    assert!(result.scan_findings.is_empty());
+    assert!(
+        result.scan_unchecked.is_empty(),
+        "nothing was unverifiable: the listing answered, it just listed nothing"
+    );
+}

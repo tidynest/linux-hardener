@@ -370,3 +370,45 @@ async fn test_execute_apply_workflow() {
         "Should have result for plugin-c"
     );
 }
+
+/// `execute_scan` is the entry point the scheduler daemon runs scans through,
+/// and it resolved each plugin's `PluginConfig` without ever asking whether the
+/// config enables that plugin at all. A scheduled scan therefore ran plugins
+/// the operator had turned off, and every host in the fleet kept reporting
+/// findings for them.
+///
+/// Registered under real plugin IDs so `is_plugin_enabled` and
+/// `get_plugin_config` route to `config.kernel` and `config.ssh` exactly as
+/// they would for the real plugins.
+#[tokio::test]
+async fn execute_scan_skips_a_plugin_the_config_disables() {
+    let registry = PluginRegistry::new();
+    registry
+        .register(Box::new(MockPlugin::new("kernel-hardening")))
+        .unwrap();
+    registry
+        .register(Box::new(MockPlugin::new("ssh-hardening")))
+        .unwrap();
+
+    let mut manager = PluginManager::new(registry);
+    manager.resolve_dependencies().unwrap();
+    let ctx = Context::new();
+
+    let mut config = HardenerConfig::default();
+    config.kernel.enabled = false;
+
+    let results = manager.execute_scan(&ctx, &config).await.unwrap();
+
+    let scanned: Vec<String> = results
+        .iter()
+        .map(|r| r.scan_plugin_id.to_string())
+        .collect();
+    assert!(
+        !scanned.contains(&"kernel-hardening".to_string()),
+        "a disabled plugin must not be scanned: {scanned:?}"
+    );
+    assert!(
+        scanned.contains(&"ssh-hardening".to_string()),
+        "an enabled plugin must still be scanned: {scanned:?}"
+    );
+}

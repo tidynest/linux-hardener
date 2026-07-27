@@ -1,6 +1,6 @@
 # Getting started
 
-**Last Updated**: 2026-07-24
+**Last Updated**: 2026-07-27
 
 A task-oriented tour of the hardener for new users: scan a system, read the
 findings, preview and apply hardening, roll it back, and produce a first
@@ -54,9 +54,8 @@ reason, an approver, and an expiry date. See the
 format, then use the scan modes to check your policy:
 
 ```bash
-hardener scan --compliance    # Only violations without a valid exception
 hardener scan --audit         # Ignore config entirely: the raw security truth
-hardener scan --exit-code     # Exit 1 if findings exist (CI gate)
+hardener scan --exit-code     # Exit 1 on findings or an incomplete scan (CI gate)
 ```
 
 ## 3. Preview changes with a dry-run

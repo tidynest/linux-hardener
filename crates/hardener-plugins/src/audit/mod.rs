@@ -14,7 +14,7 @@
 
 use async_trait::async_trait;
 use hardener_common::{
-    error::Result,
+    error::{HardeningError, Result},
     types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
@@ -300,8 +300,13 @@ async fn read_current_audit_rules(ctx: &Context) -> AuditRulesResult {
     AuditRulesResult::Rules(rules)
 }
 
-/// Writes audit rules to the hardening rules file with backup.
-async fn write_audit_rules_file(ctx: &Context, content: &str) -> Result<String> {
+/// Writes audit rules to the hardening rules file, backing up any existing one
+/// first.
+///
+/// Returns the backup path, or `None` when there was no existing file to back
+/// up. A failed backup aborts before the write: overwriting a file this tool
+/// could not copy destroys rules with no way back.
+async fn write_audit_rules_file(ctx: &Context, content: &str) -> Result<Option<String>> {
     // Create backup with timestamp + random suffix to prevent symlink attacks
     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
     let nonce = std::time::SystemTime::now()
@@ -310,26 +315,49 @@ async fn write_audit_rules_file(ctx: &Context, content: &str) -> Result<String> 
         .subsec_nanos();
     let backup_path = format!("{}.backup.{}.{:08x}", AUDIT_RULES_PATH, timestamp, nonce);
 
-    // Backup existing file if it exists
-    if ctx
+    // Back up whatever is there. Only a confirmed `Ok(false)` means "nothing to
+    // copy": an existence probe that errored is not evidence of absence, and
+    // treating it as such skipped the backup and then overwrote the file
+    // anyway. Ambiguity has to fail towards making a copy.
+    let existing = ctx
         .executor()
         .path_exists(Path::new(AUDIT_RULES_PATH))
-        .await
-        .unwrap_or(false)
-    {
-        ctx.executor()
+        .await;
+    let backup = if matches!(existing, Ok(false)) {
+        None
+    } else {
+        // `execute_command` returns Ok for a command that ran and failed, so
+        // `?` alone only catches a spawn failure. An unchecked exit code let a
+        // failed cp report success and the write proceed over an unsaved file.
+        let output = ctx
+            .executor()
             .execute_command("cp", &["--no-dereference", AUDIT_RULES_PATH, &backup_path])
             .await?;
-    }
+        if !output.success() {
+            return Err(HardeningError::Plugin(format!(
+                "Failed to back up {AUDIT_RULES_PATH} to {backup_path}: cp exited {} ({})",
+                output.exit_code,
+                output.stderr.trim(),
+            )));
+        }
+        Some(backup_path)
+    };
 
-    // Ensure directory exists
+    // Ensure directory exists. Same rule: a failed mkdir must not be followed
+    // by a write that reports success.
     if let Some(parent) = Path::new(AUDIT_RULES_PATH).parent() {
-        ctx.executor()
-            .execute_command(
-                "mkdir",
-                &["-p", parent.to_str().unwrap_or("/etc/audit/rules.d")],
-            )
+        let parent_path = parent.to_str().unwrap_or("/etc/audit/rules.d");
+        let output = ctx
+            .executor()
+            .execute_command("mkdir", &["-p", parent_path])
             .await?;
+        if !output.success() {
+            return Err(HardeningError::Plugin(format!(
+                "Failed to create {parent_path}: mkdir exited {} ({})",
+                output.exit_code,
+                output.stderr.trim(),
+            )));
+        }
     }
 
     // Write new rules file
@@ -337,7 +365,7 @@ async fn write_audit_rules_file(ctx: &Context, content: &str) -> Result<String> 
         .write_file(Path::new(AUDIT_RULES_PATH), content)
         .await?;
 
-    Ok(backup_path)
+    Ok(backup)
 }
 
 /// Reloads audit rules into the running daemon.
@@ -1043,13 +1071,17 @@ impl HardeningPlugin for AuditHardeningPlugin {
         } else {
             // Write rules file
             match write_audit_rules_file(ctx, &rules_content).await {
-                Ok(backup_path) => {
+                Ok(backup) => {
                     changes.push(Change {
                         change_type: ChangeType::ConfigFile,
-                        change_description: format!(
-                            "Created audit rules file (backup: {})",
-                            backup_path
-                        ),
+                        // Naming a backup that was never taken sends an
+                        // operator looking for a file that does not exist.
+                        change_description: match &backup {
+                            Some(path) => format!("Created audit rules file (backup: {path})"),
+                            None => {
+                                "Created audit rules file (no previous file to back up)".to_string()
+                            }
+                        },
                         change_error: None,
                         change_success: true,
                     });
@@ -1144,6 +1176,9 @@ impl HardeningPlugin for AuditHardeningPlugin {
 
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {
         let mut estimated_changes = Vec::new();
+        // Excepted settings are recorded rather than dropped: a preview that
+        // omits them shows a documented deviation as nothing at all.
+        let mut exceptions: Vec<String> = Vec::new();
         let mut issues = Vec::new();
 
         // Check if auditd is installed
@@ -1162,6 +1197,25 @@ impl HardeningPlugin for AuditHardeningPlugin {
                 // Estimate rule changes
                 if let AuditRulesResult::Rules(current_rules) = read_current_audit_rules(ctx).await
                 {
+                    // A category left out because it is excepted is recorded
+                    // rather than merely subtracted from the count: a smaller
+                    // number with no explanation is how a deliberate deviation
+                    // came to look like nothing at all.
+                    for rule in AUDIT_RULES {
+                        if let Some(exception) =
+                            config.has_valid_exception(rule.audit_rule_category)
+                            && !exceptions
+                                .iter()
+                                .any(|e: &String| e.starts_with(rule.audit_rule_category))
+                        {
+                            exceptions.push(hardener_common::types::exception_preview_line(
+                                rule.audit_rule_category,
+                                &exception.value,
+                                &exception.reason,
+                            ));
+                        }
+                    }
+
                     let missing_rules = AUDIT_RULES
                         .iter()
                         .filter(|rule| {
@@ -1202,6 +1256,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
         Ok(ValidationReport {
             validation_report_estimated_changes: estimated_changes,
             validation_report_compliant_count: 0,
+            validation_report_exceptions: exceptions,
             validation_report_is_valid: issues.is_empty(),
             validation_report_issues: issues,
             validation_report_plugin_id: self.metadata().plugin_id,
@@ -1212,6 +1267,48 @@ impl HardeningPlugin for AuditHardeningPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use hardener_core::{CommandOutput, MockExecutor, SystemExecutor};
+    use std::sync::Arc;
+
+    /// A backup that fails must stop the write. Overwriting a rules file this
+    /// tool could not copy destroys the operator's audit rules with nothing to
+    /// restore from, and `execute_command` returns Ok for a command that ran
+    /// and failed, so the exit code is the only signal there is.
+    #[tokio::test]
+    async fn a_failed_backup_aborts_before_the_rules_file_is_written() {
+        let backup_failed = CommandOutput {
+            stdout: String::new(),
+            stderr: "cp: cannot create regular file: Read-only file system".to_string(),
+            exit_code: 1,
+        };
+        let executor = MockExecutor::new()
+            .with_file(AUDIT_RULES_PATH, "-w /etc/passwd -p wa -k identity\n")
+            .with_path_exists(AUDIT_RULES_PATH, true)
+            // mkdir must succeed, otherwise removing the cp check under test
+            // would still abort the write via an unregistered command and the
+            // test would pass without exercising anything.
+            .with_command_program("cp", backup_failed)
+            .with_command_program(
+                "mkdir",
+                CommandOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            );
+        let executor = Arc::new(executor);
+        let ctx = Context::with_executor(executor.clone() as Arc<dyn SystemExecutor>);
+
+        let result = write_audit_rules_file(&ctx, "-w /etc/new -p wa -k new").await;
+
+        assert!(result.is_err(), "a failed cp must surface as an error");
+        assert!(
+            executor.log().files_written.is_empty(),
+            "the rules file must not be written when its backup failed, but these writes happened: {:?}",
+            executor.log().files_written
+        );
+    }
 
     /// A representative audit check (`not_installed`) must now carry
     /// multi-framework mappings: the existing CIS control plus NIST 800-53,

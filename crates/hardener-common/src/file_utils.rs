@@ -38,8 +38,23 @@ pub fn update_file_atomically(path: &Path, content: &str) -> Result<()> {
         ))
     })?;
 
-    // Capture original permissions before overwriting (if file exists)
-    let original_permissions = fs::metadata(path).ok().map(|m| m.permissions());
+    // Capture original permissions before overwriting. Only a genuinely
+    // missing file has none to restore; folding every other stat failure into
+    // that case left the rewritten file wearing the temp file's mode instead
+    // of the original's, with no error and no log line. This runs before the
+    // temp file is created, so refusing here leaves the target untouched.
+    let original_permissions = match fs::metadata(path) {
+        Ok(metadata) => Some(metadata.permissions()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => {
+            return Err(crate::error::HardeningError::Plugin(format!(
+                "Refusing to rewrite {}: its current permissions could not be read ({}), \
+                 and rewriting it would silently change them",
+                path.display(),
+                e
+            )));
+        }
+    };
 
     // Create temp file in same directory (same filesystem) for atomic rename
     let mut temp = NamedTempFile::new_in(dir).map_err(|e| {
@@ -118,7 +133,41 @@ pub enum ConfigFormat {
     Auto,
 }
 
+/// The part of an sshd_config that applies to every connection: everything
+/// above the first live `Match` line.
+///
+/// A directive inside a `Match` block applies only to connections the block
+/// selects, so reading one and presenting it as the host's setting is a false
+/// pass. `Match Address 10.0.0.0/8` followed by `PermitRootLogin no` says
+/// nothing about root login from anywhere else, yet a whole-file read returns
+/// `no` and the caller concludes the host is hardened. Worse, apply then sees
+/// the target value already in place, writes nothing, and records no change at
+/// all, leaving the real global directive at sshd's compiled default.
+///
+/// The writer already stops at the same boundary. This is its counterpart, so
+/// the two agree on what "global" means rather than each deciding separately.
+///
+/// A commented `Match` opens no block and does not stop anything.
+pub fn global_scope(content: &str) -> &str {
+    let mut offset = 0;
+    for line in content.split_inclusive('\n') {
+        let trimmed = line.trim();
+        if !trimmed.starts_with('#') {
+            let (first, _) = split_directive(trimmed);
+            if first.eq_ignore_ascii_case(MATCH_KEYWORD) {
+                return &content[..offset];
+            }
+        }
+        offset += line.len();
+    }
+    content
+}
+
 /// Parses a configuration directive value from file content.
+///
+/// Reads the whole content. For sshd_config, where a `Match` block scopes the
+/// lines below it to particular connections, wrap the input in
+/// [`global_scope`] before calling this.
 ///
 /// # Arguments
 /// * `content` - The file content to search
@@ -523,6 +572,63 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `update_file_atomically` replaces the inode, so it re-applies the
+    /// original mode afterwards. A stat failure used to be indistinguishable
+    /// from "the file did not exist", leaving the rewritten file wearing the
+    /// temp file's 0600 instead of the original's mode, silently. Refusing is
+    /// safe here because nothing has been written yet.
+    #[test]
+    fn a_stat_failure_refuses_the_write_instead_of_changing_the_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        // A regular file standing where a directory belongs: stat on a path
+        // below it fails with ENOTDIR, which is emphatically not NotFound.
+        let not_a_dir = dir.path().join("not-a-dir");
+        std::fs::write(&not_a_dir, "regular file").unwrap();
+        let target = not_a_dir.join("config");
+
+        let kind = std::fs::metadata(&target).unwrap_err().kind();
+        assert_ne!(
+            kind,
+            std::io::ErrorKind::NotFound,
+            "test needs a non-NotFound stat failure, got {kind:?}"
+        );
+
+        let err = update_file_atomically(&target, "key = value\n")
+            .expect_err("an unreadable mode must not be silently replaced");
+        let message = err.to_string();
+        assert!(
+            message.contains("permissions could not be read"),
+            "the refusal must name the cause: {message}"
+        );
+    }
+
+    /// The genuinely-absent case still creates the file, since a file that
+    /// does not exist has no mode to preserve.
+    #[test]
+    fn a_missing_file_is_still_created() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("new.conf");
+
+        update_file_atomically(&target, "key = value\n").expect("creating a new file must work");
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "key = value\n");
+    }
+
+    /// The mode of an existing file survives the inode swap.
+    #[test]
+    fn an_existing_files_mode_survives_the_rewrite() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("existing.conf");
+        std::fs::write(&target, "old\n").unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        update_file_atomically(&target, "new\n").unwrap();
+
+        let mode = std::fs::metadata(&target).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o644, "the original mode must be restored");
+    }
 
     #[test]
     fn auto_parses_key_equals_value_with_spaces() {
@@ -938,5 +1044,88 @@ match address 10.0.0.0/8
             out.contains("    PermitRootLogin yes"),
             "the block line must survive:\n{out}",
         );
+    }
+}
+
+#[cfg(test)]
+mod global_scope_tests {
+    use super::*;
+
+    const MATCH_ONLY: &str = "\
+PasswordAuthentication no
+Match Address 10.0.0.0/8
+    PermitRootLogin no
+";
+
+    #[test]
+    fn a_directive_only_inside_a_match_block_is_not_a_global_value() {
+        // The whole-file read returns "no" and the caller concludes root login
+        // is closed, when the block scopes that to one subnet and the global
+        // setting is still sshd's compiled default.
+        assert_eq!(
+            parse_config_value(
+                MATCH_ONLY,
+                "PermitRootLogin",
+                ConfigFormat::SpaceSeparated,
+                false
+            )
+            .as_deref(),
+            Some("no"),
+            "whole-file read is the behaviour global_scope exists to correct"
+        );
+        assert_eq!(
+            parse_config_value(
+                global_scope(MATCH_ONLY),
+                "PermitRootLogin",
+                ConfigFormat::SpaceSeparated,
+                false
+            ),
+            None,
+            "a Match-scoped directive must not be read as the global value"
+        );
+    }
+
+    #[test]
+    fn directives_above_the_match_block_are_still_global() {
+        assert_eq!(
+            parse_config_value(
+                global_scope(MATCH_ONLY),
+                "PasswordAuthentication",
+                ConfigFormat::SpaceSeparated,
+                false
+            )
+            .as_deref(),
+            Some("no")
+        );
+    }
+
+    #[test]
+    fn a_commented_match_opens_no_block() {
+        let content = "# Match Address 10.0.0.0/8\nPermitRootLogin no\n";
+        assert_eq!(
+            parse_config_value(
+                global_scope(content),
+                "PermitRootLogin",
+                ConfigFormat::SpaceSeparated,
+                false
+            )
+            .as_deref(),
+            Some("no"),
+            "a commented Match must not truncate the global scope"
+        );
+    }
+
+    #[test]
+    fn a_file_with_no_match_block_is_entirely_global() {
+        let content = "PermitRootLogin no\nMaxAuthTries 3\n";
+        assert_eq!(global_scope(content), content);
+    }
+
+    #[test]
+    fn the_match_keyword_is_matched_case_insensitively() {
+        // sshd accepts any case for keywords, so a lowercase `match` opens a
+        // block just as a capitalised one does.
+        let content = "match Address 10.0.0.0/8\n    PermitRootLogin no\n";
+        assert_eq!(global_scope(content), "");
     }
 }

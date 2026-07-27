@@ -36,15 +36,17 @@
 >
 > ### Known issue: rollback does not restore systemd unit files
 >
-> The services plugin records unit files in its checkpoint, but rollback's
-> allow-list does not cover the systemd unit directories, so those files are
-> skipped at restore time. Nothing is lost or damaged, but a service disabled
-> by `hardener apply` will not be re-enabled by `hardener rollback`, and must
+> In 1.5.0 and earlier, the services plugin records unit files in its
+> checkpoint but the rollback allow-list does not cover the systemd unit
+> directories, so `hardener rollback` aborts without restoring anything.
+> Nothing is lost or damaged, but a service disabled by `hardener apply` must
 > be re-enabled by hand:
 >
 > ```bash
 > sudo systemctl enable --now <service>
 > ```
+>
+> Fixed in the next release.
 >
 > ---
 >
@@ -152,7 +154,7 @@ The tool is designed for system administrators, DevOps engineers, and security p
 ### Core Infrastructure
 
 - **Checkpoint System**: SQLite-backed state snapshots with Ed25519 cryptographic signatures
-- **Rollback Support**: Plugins that edit configuration files checkpoint them before writing, and a rollback captures the current state first so it can itself be undone. Three limits are documented under [Known Limitations](#known-limitations): systemd unit files are not restored, permission changes are captured as metadata only, and runtime-only firewall and MAC changes are not file state
+- **Rollback Support**: Plugins that edit configuration files checkpoint them before writing, and a rollback captures the current state first so it can itself be undone. Two limits are documented under [Known Limitations](#known-limitations): permission changes are captured as metadata only, and runtime-only firewall and MAC changes are not file state
 - **Hash Chain Audit Logging**: Tamper-evident audit trail with cryptographic linking
 - **Plugin Manager**: Dependency-aware plugin execution with topological sorting
 - **Distribution Detection**: Automatic detection of Debian, Red Hat, Arch, and SUSE families
@@ -166,9 +168,9 @@ The tool is designed for system administrators, DevOps engineers, and security p
 | Fedora 40+ (incl. 44) | dnf | systemd | ✅ |
 | RHEL 9+ (incl. 10) | dnf | systemd | ✅ |
 | Arch Linux (rolling) | pacman | systemd | ✅ |
-| openSUSE Leap 15.6 / 16, Tumbleweed | zypper | systemd | ✅ |
+| openSUSE Leap 15.6 / 16, Tumbleweed | zypper | systemd | ⚠️ |
 
-<sub>✅ = supported</sub>
+<sub>✅ = supported, ⚠️ = partially supported, see the note below</sub>
 
 > Support is **family-based**: detection maps any release of the Debian, Red Hat,
 > Arch or SUSE families to the same hardening behaviour, so current releases
@@ -176,6 +178,16 @@ The tool is designed for system administrators, DevOps engineers, and security p
 > automatically. openSUSE Leap 15.x reached end-of-life in April 2026; use Leap
 > 16. See [docs/reference/distribution-validation.md](docs/reference/distribution-validation.md) for
 > the specific versions last validated end-to-end.
+
+> **openSUSE is partially supported.** It keeps vendor configuration under
+> `/usr/etc` and reserves `/etc` for administrator overrides, a layout this tool
+> does not yet read. SSH is therefore neither scanned nor hardened there, since
+> `sshd_config` lives at `/usr/etc/ssh/sshd_config`, and PAM hardening is
+> refused rather than applied wherever writing to `/etc` would mask a vendor
+> file. Every other plugin works normally, and scanning is unaffected outside
+> SSH. **If you ran an earlier release on openSUSE, see the CHANGELOG: hardening
+> could leave a short `/etc/login.defs` masking the vendor file, and that needs
+> undoing by hand.**
 
 ### User Interface
 
@@ -546,9 +558,8 @@ applies `directives` overrides and annotates any finding covered by a valid
 exception) and audit (`hardener scan --audit`, which ignores the config
 entirely and measures against the unmodified secure baseline).
 
-`hardener scan --compliance` is accepted but currently behaves identically to
-the default mode. It is `hardener report` that treats an annotated finding as
-satisfied for a compliance control, while still listing it as evidence.
+It is `hardener report` that treats an annotated finding as satisfied for a
+compliance control, while still listing it as evidence.
 
 Every section, key, default, and the scheduler/inventory files are
 documented in the
@@ -583,14 +594,9 @@ This tool is designed to harden systems against:
 - Changes require system reboot to fully take effect in some cases
 - Some hardening may break specific applications (test in staging first)
 - SELinux/AppArmor policies are detected but not fully managed
-- Rollback does not restore systemd unit files. The services plugin records
-  them in its checkpoint, but the rollback allow-list does not cover the
-  systemd unit directories, so they are skipped at restore time. Nothing is
-  lost, but a service disabled by `hardener apply` must be re-enabled by hand
-  with `systemctl enable --now <service>`
 - `scan --format json` reports a plugin whose scan failed identically to one
-  that passed, because the per-plugin success flag is not serialised. Use the
-  text output to confirm a scan actually completed
+  that passed, because the per-plugin success flag is not serialised. The text
+  output does name such a plugin
 
 ---
 

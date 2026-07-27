@@ -34,6 +34,14 @@ const DEFAULT_ROLLBACK_PREFIXES: &[&str] = &[
     "/etc/group",
     "/etc/shadow",
     "/etc/gshadow",
+    // Where `systemctl disable` and `systemctl mask` record their state: the
+    // wants/ symlinks and the mask symlinks to /dev/null. systemd.unit(5) calls
+    // this the directory for "system units created by the administrator", and
+    // it is the only unit directory the services plugin's changes reach. Its
+    // package-owned counterpart /usr/lib/systemd/system is deliberately absent:
+    // nothing this tool does writes there, so restoring into it could only
+    // overwrite packaged unit files with stale copies.
+    "/etc/systemd/system",
     "/root",
     "/boot",
 ];
@@ -1078,6 +1086,38 @@ mod tests {
                     .iter()
                     .any(|p| path.starts_with(p)),
                 "{path} not covered by DEFAULT_ROLLBACK_PREFIXES (rollback would abort)"
+            );
+        }
+    }
+
+    #[test]
+    fn default_prefixes_cover_the_systemd_paths_the_services_plugin_checkpoints() {
+        // The services plugin checkpoints /etc/systemd/system before disabling
+        // or masking a unit. An uncovered path does not degrade to a partial
+        // restore: Phase 1 validates every entry up front and returns Err on
+        // the first one outside the allowlist, so the whole rollback aborts
+        // having touched nothing. That was the state of services rollback from
+        // the beginning, and no test covered it.
+        let path = "/etc/systemd/system/multi-user.target.wants/example.service";
+        assert!(
+            DEFAULT_ROLLBACK_PREFIXES
+                .iter()
+                .any(|p| path.starts_with(p)),
+            "{path} not covered by DEFAULT_ROLLBACK_PREFIXES (rollback would abort)"
+        );
+    }
+
+    #[test]
+    fn default_prefixes_exclude_package_owned_unit_directories() {
+        // Nothing this tool does writes to the packaged unit directory, so
+        // restoring into it could only overwrite a distribution's unit files
+        // with copies captured before a package update.
+        for path in ["/usr/lib/systemd/system/sshd.service", "/usr/bin/systemctl"] {
+            assert!(
+                !DEFAULT_ROLLBACK_PREFIXES
+                    .iter()
+                    .any(|p| path.starts_with(p)),
+                "{path} must stay outside the rollback allowlist"
             );
         }
     }

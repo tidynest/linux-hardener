@@ -48,10 +48,11 @@ both accepted. A short name matches by prefix up to the first hyphen, so the
 service plugin is `service`, not `services`: its full id is
 `service-minimisation`.
 
-> `scan` rejects an unrecognised `--plugin` value with an error. `apply` does
-> not: it drops names it cannot match, so a typo narrows the selection instead
-> of failing. Check the plugin list in the output when using `--plugin` with
-> `apply`.
+> Every command rejects an unrecognised `--plugin` value with an error naming
+> the valid ids, and exits non-zero. This applies to `scan`, `apply`,
+> `batch apply` and `batch rollback` alike: a name that matches nothing is
+> never dropped, so a typo cannot narrow the selection to nothing while the
+> command still reports success.
 
 ---
 
@@ -67,13 +68,12 @@ hardener scan [FLAGS]
 |------|-------------|---------|
 | `-p`, `--plugin <NAME>` | Scan only this plugin (repeatable for multiple) | all config-enabled plugins |
 | `--audit` | Ignore config file, run a pure security assessment | off |
-| `--compliance` | Accepted, but currently behaves exactly like the default mode | off |
-| `--exit-code` | Exit with code 1 if any findings exist (for CI/CD pipelines) | off |
+| `--exit-code` | Exit with code 1 if any findings exist, or if any plugin's scan did not complete (for CI/CD pipelines) | off |
 | `-s`, `--severity <LEVEL>` | Minimum severity to report: `info`, `low`, `medium`, `high`, `critical` | `info` |
 | `--timings` | Print a per-plugin timing table (slowest first) after the scan | off |
 
-`--audit` and `--compliance` are mutually exclusive. Plugins scan concurrently;
-`--timings` writes to stderr, so `--format json` stdout stays machine-parseable.
+Plugins scan concurrently; `--timings` writes to stderr, so `--format json`
+stdout stays machine-parseable.
 
 **`scan` honours the configuration file.** Three things follow from that:
 
@@ -113,7 +113,7 @@ hardener scan                                # Scan all plugins, show everything
 hardener scan --plugin kernel --plugin ssh   # Scan only kernel and SSH
 hardener scan --severity high                # Only show high and critical findings
 hardener scan --audit                        # Ignore config, pure security check
-hardener scan --exit-code                    # Return 1 if findings exist (CI use)
+hardener scan --exit-code                    # Return 1 on findings or an incomplete scan
 hardener scan --timings                      # Show where scan time is spent
 hardener --format json scan                  # JSON output for automation
 hardener --ssh user@server scan              # Scan a remote host via SSH
@@ -293,14 +293,17 @@ All four subcommands share the same host-selection flags and accept the global
 `--format text|json` flag. `apply` and `rollback` are **dry-run by default**;
 pass `--execute` to mutate the remote hosts.
 
-> **`batch scan` and `batch report` do not honour the configuration file.**
-> Unlike local `hardener scan`, they evaluate every host against the unmodified
-> secure baseline: directive overrides do not apply, policy exceptions are not
-> annotated, and `enabled_plugins`/`disabled_plugins` are not consulted. The
-> desktop's fleet scan behaves the same way. Loading a config per remote host is
-> a separate design question and is deliberately deferred, so a fleet scan may
-> report findings that a local scan on the same host would annotate as accepted
-> deviations.
+All four subcommands honour the global `-C`, `--config` flag, and without it
+they load the controller's own system and user configuration, exactly as a
+local `hardener scan` does.
+
+> **Remote hosts are evaluated against the controller's configuration, not
+> their own.** Directive overrides, policy exceptions and the plugin lists all
+> come from the machine running `batch`, never from a file on the target. The
+> policy belongs where the operator maintains it: a target supplying its own
+> config could otherwise relax the very audit being run against it. This
+> matches single-host `--ssh`, which has always evaluated a remote host against
+> the local config file.
 
 Host selection (common to all four subcommands):
 

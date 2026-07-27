@@ -31,6 +31,19 @@ pub enum MacSystem {
     SELinux,
 }
 
+/// Outcome of probing the host for a MAC system.
+///
+/// `Absent` and `Indeterminate` are deliberately distinct. Many distributions
+/// ship with neither SELinux nor AppArmor, so absence is a normal, reportable
+/// state; a failed probe is not, and reporting it as absence turns "we could
+/// not look" into "there is nothing there".
+#[derive(Clone, Debug, PartialEq)]
+enum MacDetection {
+    Found(MacSystem),
+    Absent,
+    Indeterminate(String),
+}
+
 /// Main MAC (Mandatory Access Control) hardening plugin.
 ///
 /// Automatically detects whether the system uses AppArmor or SELinux
@@ -54,31 +67,30 @@ impl MacHardeningPlugin {
     /// 1. Check for SELinux (/sys/fs/selinux directory exists)
     /// 2. Check for AppArmor (/sys/kernel/security/apparmor directory exists)
     /// 3. Return None if neither is found
-    async fn detect_mac_system(&self, ctx: &Context) -> Option<MacSystem> {
-        // Check for SELinux first
-        if ctx
-            .executor()
-            .path_exists(Path::new("/sys/fs/selinux"))
-            .await
-            .unwrap_or(false)
-        {
-            info!("Detected SELinux MAC system");
-            return Some(MacSystem::SELinux);
-        }
-
-        // Check for AppArmor second
-        if ctx
-            .executor()
-            .path_exists(Path::new("/sys/kernel/security/apparmor"))
-            .await
-            .unwrap_or(false)
-        {
-            info!("Detected AppArmor MAC system");
-            return Some(MacSystem::AppArmor);
+    async fn detect_mac_system(&self, ctx: &Context) -> MacDetection {
+        for (path, system) in [
+            ("/sys/fs/selinux", MacSystem::SELinux),
+            ("/sys/kernel/security/apparmor", MacSystem::AppArmor),
+        ] {
+            match ctx.executor().path_exists(Path::new(path)).await {
+                Ok(true) => {
+                    info!("Detected MAC system at {}", path);
+                    return MacDetection::Found(system);
+                }
+                Ok(false) => {}
+                // A probe that failed proves nothing. Folding it into "not
+                // present" is what let a transient failure read as a
+                // deliberate no-op on a host that may have a real, and
+                // possibly misconfigured, SELinux or AppArmor.
+                Err(e) => {
+                    warn!("Could not probe {} for a MAC system: {}", path, e);
+                    return MacDetection::Indeterminate(format!("probing {path} failed: {e}"));
+                }
+            }
         }
 
         info!("No MAC system detected (checked SELinux and AppArmor)");
-        None
+        MacDetection::Absent
     }
 
     /// Checks if SELinux is enabled and gets its current mode.
@@ -481,7 +493,7 @@ impl HardeningPlugin for MacHardeningPlugin {
 
         // Detect which MAC system is present
         match self.detect_mac_system(ctx).await {
-            Some(MacSystem::SELinux) => {
+            MacDetection::Found(MacSystem::SELinux) => {
                 // Check SELinux mode
                 match self.get_selinux_mode(ctx).await {
                     Ok(mode) => {
@@ -512,7 +524,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                     }
                 }
             }
-            Some(MacSystem::AppArmor) => {
+            MacDetection::Found(MacSystem::AppArmor) => {
                 // Check AppArmor profile status
                 match self.probe_apparmor(ctx).await {
                     ApparmorProbe::Profiles(_enforce_count, complain_count, total_loaded) => {
@@ -595,7 +607,22 @@ impl HardeningPlugin for MacHardeningPlugin {
                     }
                 }
             }
-            None => {
+            // The probe failed, so absence is not a fact this scan can assert.
+            // Reported unchecked rather than as a "no MAC system" finding, so
+            // the covered controls reach manual review instead of resting on
+            // a conclusion nothing supports.
+            MacDetection::Indeterminate(reason) => {
+                unchecked.push(UncheckedCheck {
+                    unchecked_check_id: "no-mac-system".to_string(),
+                    unchecked_title: "MAC system presence".to_string(),
+                    unchecked_category: FindingCategory::Kernel,
+                    unchecked_reason: format!(
+                        "could not determine whether a MAC system is present: {reason}"
+                    ),
+                    unchecked_compliance: get_mac_compliance_mappings("no-mac-system"),
+                });
+            }
+            MacDetection::Absent => {
                 // No MAC system detected
                 findings.push(Finding {
                     finding_category: FindingCategory::Kernel,
@@ -644,7 +671,7 @@ impl HardeningPlugin for MacHardeningPlugin {
 
         // Detect which MAC system is present
         match self.detect_mac_system(ctx).await {
-            Some(MacSystem::SELinux) => {
+            MacDetection::Found(MacSystem::SELinux) => {
                 // Check for exception before enforcing
                 if let Some(exception) = config.has_valid_exception("selinux-enforcing") {
                     info!(
@@ -681,7 +708,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                     }
                 }
             }
-            Some(MacSystem::AppArmor) => {
+            MacDetection::Found(MacSystem::AppArmor) => {
                 // Check for exception before AppArmor enforcement guidance
                 if let Some(exception) = config.has_valid_exception("apparmor-enforce") {
                     info!(
@@ -710,7 +737,22 @@ impl HardeningPlugin for MacHardeningPlugin {
                     });
                 }
             }
-            None => {
+            // A failed probe is not a clean no-op. Recording it as a
+            // successful skip told the operator this host needs no MAC
+            // configuration, on a host that may have a real and
+            // misconfigured SELinux or AppArmor nobody managed to look at.
+            MacDetection::Indeterminate(reason) => {
+                warn!("Could not determine the MAC system: {}", reason);
+                apply_changes.push(Change {
+                    change_description:
+                        "Could not determine whether a MAC system is present - nothing was changed"
+                            .to_string(),
+                    change_type: ChangeType::ConfigFile,
+                    change_success: false,
+                    change_error: Some(reason),
+                });
+            }
+            MacDetection::Absent => {
                 // Many distributions ship without SELinux or AppArmor; an
                 // absent MAC system is a normal state, not a plugin failure.
                 info!("No MAC system detected - nothing to apply");
@@ -798,12 +840,23 @@ impl HardeningPlugin for MacHardeningPlugin {
         let validation_plugin_id = PluginId::new("mac-hardening");
         let mut issues = Vec::new();
         let mut estimated_changes = Vec::new();
+        // Excepted settings are recorded rather than dropped: a preview that
+        // omits them shows a documented deviation as nothing at all.
+        let mut exceptions: Vec<String> = Vec::new();
 
         // Detect which MAC system is present
         match self.detect_mac_system(ctx).await {
-            Some(MacSystem::SELinux) => {
-                // Skip if SELinux enforcement is excepted
-                if config.has_valid_exception("selinux-enforcing").is_none() {
+            MacDetection::Found(MacSystem::SELinux) => {
+                // An excepted enforcement mode is recorded rather than skipped
+                // silently, so the preview cannot render a documented
+                // deviation as an empty panel.
+                if let Some(exception) = config.has_valid_exception("selinux-enforcing") {
+                    exceptions.push(hardener_common::types::exception_preview_line(
+                        "selinux-enforcing",
+                        &exception.value,
+                        &exception.reason,
+                    ));
+                } else {
                     match self.get_selinux_mode(ctx).await {
                         Ok(mode) => {
                             if mode != "Enforcing" {
@@ -826,7 +879,14 @@ impl HardeningPlugin for MacHardeningPlugin {
             // here (guarded arms do not count as covering their pattern), so
             // the nested `if` stays.
             #[allow(clippy::collapsible_match)]
-            Some(MacSystem::AppArmor) => {
+            MacDetection::Found(MacSystem::AppArmor) => {
+                if let Some(exception) = config.has_valid_exception("apparmor-enforce") {
+                    exceptions.push(hardener_common::types::exception_preview_line(
+                        "apparmor-enforce",
+                        &exception.value,
+                        &exception.reason,
+                    ));
+                }
                 // Skip if AppArmor enforcement is excepted
                 if config.has_valid_exception("apparmor-enforce").is_none()
                     && matches!(
@@ -843,7 +903,18 @@ impl HardeningPlugin for MacHardeningPlugin {
                     });
                 }
             }
-            None => {
+            // Apply will refuse to conclude anything here, so the dry run has
+            // to say so rather than present an empty, reassuring preview.
+            MacDetection::Indeterminate(reason) => {
+                issues.push(ValidationIssue {
+                    validation_issue_severity: Severity::High,
+                    validation_issue_message: format!(
+                        "Cannot determine whether a MAC system is present: {reason}"
+                    ),
+                    validation_issue_config_key: Some("mac.system".to_string()),
+                });
+            }
+            MacDetection::Absent => {
                 // No MAC system - this is expected on some distributions.
                 // Apply will record a skip, not a change, so the preview
                 // must not list it as one either (see ChangeType::Skipped).
@@ -858,6 +929,7 @@ impl HardeningPlugin for MacHardeningPlugin {
             validation_report_issues: issues,
             validation_report_estimated_changes: estimated_changes,
             validation_report_compliant_count: 0,
+            validation_report_exceptions: exceptions,
         })
     }
 }

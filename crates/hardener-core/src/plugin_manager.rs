@@ -203,6 +203,15 @@ impl PluginManager {
         let mut all_scan_results = Vec::new();
 
         for plugin_id in execution_order {
+            // The config decides which plugins run, not merely how they behave.
+            // This loop resolved each plugin's settings without ever asking
+            // whether the config enables it, so a scheduled scan ran plugins
+            // the operator had turned off.
+            if !config.is_plugin_enabled(plugin_id.as_str()) {
+                debug!("Skipping disabled plugin: {}", plugin_id);
+                continue;
+            }
+
             let plugin = self
                 .registry
                 .get(&plugin_id)?

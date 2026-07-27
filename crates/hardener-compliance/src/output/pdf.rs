@@ -562,7 +562,7 @@ fn draw_control(
     if !control.control_findings.is_empty() {
         y.advance(BODY_SIZE * LINE_HEIGHT * 0.5);
         for finding in &control.control_findings {
-            let excepted = finding.finding_policy_exception.is_some();
+            let excepted = finding.is_policy_excepted();
             surface.set_fill(Some(Fill {
                 paint: if excepted {
                     colour_dark_grey().into()
@@ -575,7 +575,7 @@ fn draw_control(
 
             let finding_text = format!(
                 " -> [{}] {}",
-                super::finding_label(finding),
+                finding.evidence_label(),
                 truncate_string(&finding.finding_title, 60)
             );
 

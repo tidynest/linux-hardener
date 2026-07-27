@@ -14,6 +14,7 @@ use super::{CommandOutput, FileMetadata, SystemExecutor};
 type FileStore = Arc<Mutex<HashMap<PathBuf, String>>>;
 type MetadataStore = Arc<Mutex<HashMap<PathBuf, FileMetadata>>>;
 type CommandStore = Arc<Mutex<HashMap<(String, Vec<String>), CommandOutput>>>;
+type CommandProgramStore = Arc<Mutex<HashMap<String, CommandOutput>>>;
 type CommandSequenceStore = Arc<Mutex<HashMap<(String, Vec<String>), VecDeque<CommandOutput>>>>;
 type CommandExistsStore = Arc<Mutex<HashMap<String, bool>>>;
 type LogStore = Arc<Mutex<MockExecutorLog>>;
@@ -55,6 +56,7 @@ pub struct MockExecutor {
     files: FileStore,
     file_metadata: MetadataStore,
     commands: CommandStore,
+    command_programs: CommandProgramStore,
     command_sequences: CommandSequenceStore,
     command_exists: CommandExistsStore,
     read_permission_denied: PermissionDeniedStore,
@@ -79,6 +81,7 @@ impl MockExecutor {
             files: Arc::new(Mutex::new(HashMap::new())),
             file_metadata: Arc::new(Mutex::new(HashMap::new())),
             commands: Arc::new(Mutex::new(HashMap::new())),
+            command_programs: Arc::new(Mutex::new(HashMap::new())),
             command_sequences: Arc::new(Mutex::new(HashMap::new())),
             command_exists: Arc::new(Mutex::new(HashMap::new())),
             read_permission_denied: Arc::new(Mutex::new(HashSet::new())),
@@ -130,6 +133,26 @@ impl MockExecutor {
         self
     }
 
+    /// Removes a previously registered file, so a shared fixture can model a
+    /// host on which it is absent without duplicating everything else it sets
+    /// up.
+    ///
+    /// Both stores are cleared: `read_file` reads `files` while `path_exists`
+    /// reads `file_metadata`, so removing from one alone would leave the path
+    /// half present, which is a fixture that lies about the host.
+    pub fn without_file(self, path: &str) -> Self {
+        let path_buf = PathBuf::from(path);
+        self.files
+            .lock()
+            .expect("files mutex poisoned")
+            .remove(&path_buf);
+        self.file_metadata
+            .lock()
+            .expect("metadata mutex poisoned")
+            .remove(&path_buf);
+        self
+    }
+
     /// Adds a file with custom metadata.
     pub fn with_file_metadata(self, path: &str, content: &str, metadata: FileMetadata) -> Self {
         let path_buf = PathBuf::from(path);
@@ -175,6 +198,23 @@ impl MockExecutor {
             .lock()
             .expect("commands mutex poisoned")
             .insert(key, output);
+        self
+    }
+
+    /// Registers a response for any invocation of `program`, whatever its
+    /// arguments, used only when no exact [`with_command`](Self::with_command)
+    /// registration matches.
+    ///
+    /// Exact matching cannot express a command whose arguments the test cannot
+    /// predict, such as a backup path carrying a timestamp. Without this, the
+    /// only way to make such a command fail was to leave it unregistered, which
+    /// produces a spawn error rather than a non-zero exit and so exercises a
+    /// different branch than the one under test.
+    pub fn with_command_program(self, program: &str, output: CommandOutput) -> Self {
+        self.command_programs
+            .lock()
+            .expect("command_programs mutex poisoned")
+            .insert(program.to_string(), output);
         self
     }
 
@@ -432,10 +472,21 @@ impl SystemExecutor for MockExecutor {
         {
             return Ok(output);
         }
-        self.commands
+        if let Some(output) = self
+            .commands
             .lock()
             .expect("commands mutex poisoned")
             .get(&key)
+            .cloned()
+        {
+            return Ok(output);
+        }
+        // Fall back to a program-level registration for commands whose exact
+        // arguments a test cannot predict.
+        self.command_programs
+            .lock()
+            .expect("command_programs mutex poisoned")
+            .get(program)
             .cloned()
             .ok_or_else(|| anyhow!("Mock: command not registered: {} {:?}", program, args))
     }

@@ -1,6 +1,6 @@
 # Linux System Hardener - Architecture Documentation
 
-**Last Updated:** 2026-07-24
+**Last Updated:** 2026-07-27
 **Version:** 1.5.0
 
 ---
@@ -516,7 +516,6 @@ The configuration system follows a security-first design where **configuration a
 |------|------|-----------|
 | Default | (none) | Shows all findings with policy annotations |
 | Audit | `--audit` | Ignores all config, pure security assessment |
-| Compliance | `--compliance` | Only shows findings without valid policy exceptions |
 
 ### Key Types
 

@@ -267,6 +267,21 @@ fn non_posix_unchecked(directive: &PermissionDirective, fstype: &str) -> Uncheck
     }
 }
 
+/// Unchecked entry for a path whose permissions could not be read.
+///
+/// Shares the id and compliance mappings of the finding this check would
+/// otherwise produce, so the compliance report renders ManualReview instead of
+/// counting the control as satisfied by an absent finding.
+fn unverifiable_unchecked(directive: &PermissionDirective, reason: &str) -> UncheckedCheck {
+    UncheckedCheck {
+        unchecked_check_id: permission_check_id(directive.permission_path),
+        unchecked_title: format!("Permissions on {}", directive.permission_path),
+        unchecked_category: FindingCategory::FileSystem,
+        unchecked_reason: reason.to_string(),
+        unchecked_compliance: get_permissions_compliance_mappings(directive.permission_path),
+    }
+}
+
 /// The `Skipped` change emitted when apply meets a violating path on a non-POSIX
 /// filesystem: no chmod is attempted (which would silently no-op), the fstab
 /// guidance is recorded instead.
@@ -281,8 +296,13 @@ fn non_posix_skip_change(path: &str, fstype: &str) -> Change {
 
 /// Outcome of assessing one critical path during a scan.
 enum PermissionCheck {
-    /// Compliant, missing or unreadable: nothing to report.
+    /// Compliant, or confirmed absent: nothing to report.
     Clear,
+    /// Present, but its permissions could not be read, so nothing can be said
+    /// about them. Reported as unchecked rather than folded into `Clear`:
+    /// these are paths like /etc/shadow and /etc/sudoers, and silence about
+    /// them is indistinguishable from a clean result.
+    Unverifiable(Box<UncheckedCheck>),
     /// Violates the directive and can be remediated by chmod.
     Insecure(Box<Finding>),
     /// Violates, but sits on a filesystem that cannot hold POSIX permissions,
@@ -310,15 +330,35 @@ async fn check_path_permissions(
 ) -> PermissionCheck {
     let path = Path::new(directive.permission_path);
 
-    // Skip if path doesn't exist
-    if !ctx.executor().path_exists(path).await.unwrap_or(false) {
-        return PermissionCheck::Clear;
+    // Only a confirmed absence is nothing to report. An existence probe that
+    // errored says nothing either way, and treating it as absence made the
+    // scan silent about a path it never managed to look at.
+    match ctx.executor().path_exists(path).await {
+        Ok(false) => return PermissionCheck::Clear,
+        Ok(true) => {}
+        Err(e) => {
+            return PermissionCheck::Unverifiable(Box::new(unverifiable_unchecked(
+                directive,
+                &format!(
+                    "could not determine whether {} exists: {e}",
+                    directive.permission_path
+                ),
+            )));
+        }
     }
 
     // Get file metadata
     let metadata = match ctx.executor().file_metadata(path).await {
         Ok(metadata) => metadata,
-        Err(_) => return PermissionCheck::Clear, // Can't read, skip it
+        Err(e) => {
+            return PermissionCheck::Unverifiable(Box::new(unverifiable_unchecked(
+                directive,
+                &format!(
+                    "could not read permissions on {}: {e}",
+                    directive.permission_path
+                ),
+            )));
+        }
     };
 
     // Get current permissions (only last 9 bits = rwxrwxrwx)
@@ -1019,16 +1059,16 @@ async fn apply_remote_chmod(
         Ok(output) if output.success() => {
             // Verify the change took effect: for max-mask directives, verify
             // no disallowed bits remain; for exact directives, verify equality.
+            //
+            // A failed metadata read and a mode that genuinely did not move
+            // are different outcomes and must not share a message. Folding
+            // them together with `unwrap_or(false)` made every verification
+            // failure blame vfat, a cause `scan` has already excluded: a path
+            // positively confirmed to be on a non-POSIX filesystem is diverted
+            // to `PermissionCheck::NonPosix` long before apply reaches here.
             let path = Path::new(directive.permission_path);
-            let verified = ctx
-                .executor()
-                .file_metadata(path)
-                .await
-                .map(|m| !violates(directive, m.mode & 0o777))
-                .unwrap_or(false);
-
-            if verified {
-                Some(Change {
+            match ctx.executor().file_metadata(path).await {
+                Ok(metadata) if !violates(directive, metadata.mode & 0o777) => Some(Change {
                     change_description: format!(
                         "Changed permissions on {} {}",
                         directive.permission_path,
@@ -1037,18 +1077,31 @@ async fn apply_remote_chmod(
                     change_type: ChangeType::Permissions,
                     change_success: true,
                     change_error: None,
-                })
-            } else {
-                Some(Change {
+                }),
+                // chmod exited 0 and the mode still does not satisfy the
+                // directive. State that, rather than guess at a reason.
+                Ok(metadata) => Some(Change {
                     change_description: format!(
-                        "Permissions on {} unchanged (filesystem may not support chmod, \
-                         e.g. vfat/FAT32 uses mount options fmask/dmask instead)",
-                        directive.permission_path
+                        "Permissions on {} are still {:04o} after chmod reported success \
+                         (wanted {:04o})",
+                        directive.permission_path,
+                        metadata.mode & 0o777,
+                        target
                     ),
                     change_type: ChangeType::Permissions,
                     change_success: false,
                     change_error: None,
-                })
+                }),
+                // The chmod may well have worked; what failed is the check.
+                Err(e) => Some(Change {
+                    change_description: format!(
+                        "Could not verify permissions on {} after chmod",
+                        directive.permission_path
+                    ),
+                    change_type: ChangeType::Permissions,
+                    change_success: false,
+                    change_error: Some(e.to_string()),
+                }),
             }
         }
         Ok(output) => Some(Change {
@@ -1099,6 +1152,7 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
             match check_path_permissions(ctx, directive, config).await {
                 PermissionCheck::Insecure(finding) => findings.push(*finding),
                 PermissionCheck::NonPosix(check) => unchecked.push(*check),
+                PermissionCheck::Unverifiable(check) => unchecked.push(*check),
                 PermissionCheck::Clear => {}
             }
         }
@@ -1252,6 +1306,7 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
             validation_report_issues: issues,
             validation_report_estimated_changes: estimated_changes,
             validation_report_compliant_count: 0,
+            validation_report_exceptions: vec![],
         })
     }
 }

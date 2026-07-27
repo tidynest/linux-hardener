@@ -62,10 +62,6 @@ pub enum Command {
         #[arg(long)]
         audit: bool,
 
-        /// Compliance mode: only show policy violations.
-        #[arg(long, conflicts_with = "audit")]
-        compliance: bool,
-
         /// Exit with code 1 if findings exist (useful for CI/CD).
         #[arg(long)]
         exit_code: bool,
@@ -446,8 +442,6 @@ pub enum ScanMode {
     Default,
     /// Audit mode: ignore config, pure security assessment.
     Audit,
-    /// Compliance mode: only show findings without valid policy exceptions.
-    Compliance,
 }
 
 #[cfg(test)]
@@ -600,6 +594,20 @@ mod tests {
     fn test_cli_global_quiet() {
         let cli = Cli::parse_from(["hardener", "--quiet", "scan"]);
         assert!(cli.quiet);
+    }
+
+    /// `--compliance` was accepted and did nothing: it built a `ScanMode`
+    /// variant no code read, so it produced the default scan while its help
+    /// text and the manual promised a filtered one. Accepting it is the
+    /// defect, so rejecting it is the fix. `report --framework X` is the real
+    /// compliance output.
+    #[test]
+    fn scan_rejects_the_removed_compliance_flag() {
+        let parsed = Cli::try_parse_from(["hardener", "scan", "--compliance"]);
+        assert!(
+            parsed.is_err(),
+            "--compliance must no longer be accepted, but clap parsed it"
+        );
     }
 
     #[test]

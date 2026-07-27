@@ -1097,13 +1097,13 @@ sudo ./scripts/test/full-test-suite.sh
 sudo ./scripts/test/full-test-suite.sh --apply
 ```
 
-**What It Tests** (26 test sections, 127 individual tests):
+**What It Tests** (26 test sections, 126 individual tests):
 
 | Section | Tests |
 |---------|-------|
 | 1. Basic Commands | --version, --help, all subcommand help |
 | 2. Scan All Plugins | Individual scan for all 8 plugins |
-| 3. Scan Filters | All 5 severity levels, --audit, --compliance, --exit-code |
+| 3. Scan Filters | All 5 severity levels, --audit, --exit-code |
 | 4. Scan Output Formats | text, json, csv, html |
 | 5. Reports All Frameworks | cis, stig, nist, pcidss, hipaa, gdpr, iso27001 |
 | 6. Reports All Scenarios | server, workstation, government, healthcare, financial, gdpr, all |

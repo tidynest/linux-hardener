@@ -580,8 +580,11 @@ impl HardeningPlugin for PamHardeningPlugin {
                 match observed_pam_value(ctx, directive, &pwquality, &login_defs_content).await {
                     PamObserved::Value(v) => Some(v),
                     PamObserved::NotSet => None,
-                    PamObserved::PermissionDenied(path) => {
-                        unchecked.push(unchecked_pam_directive(directive, path));
+                    PamObserved::Unreadable {
+                        path,
+                        permission_denied,
+                    } => {
+                        unchecked.push(unchecked_pam_directive(directive, path, permission_denied));
                         continue;
                     }
                 };
@@ -593,20 +596,14 @@ impl HardeningPlugin for PamHardeningPlugin {
             // ~761-766).
             let target: String = match directive.pam_compare {
                 PamCompare::Exact => config
-                    .directives
-                    .get(directive.pam_directive_name)
-                    .map(|s| s.as_str())
-                    .unwrap_or(directive.pam_secure_value)
+                    .resolve_str(directive.pam_directive_name, directive.pam_secure_value)
                     .to_string(),
                 compare => {
                     let secure: i64 = directive
                         .pam_secure_value
                         .parse()
                         .expect("pam_secure_value must be a valid integer");
-                    let over = config
-                        .directives
-                        .get(directive.pam_directive_name)
-                        .and_then(|s| s.parse::<i64>().ok());
+                    let over = config.resolve_i64(directive.pam_directive_name);
                     clamp_target(compare, secure, over).to_string()
                 }
             };
@@ -697,23 +694,14 @@ impl HardeningPlugin for PamHardeningPlugin {
         // and only for a file that will actually be rewritten, so a compliant
         // host accumulates no backup churn in /etc.
         let pwquality_read = read_conf_classified(ctx, "/etc/security/pwquality.conf").await;
-        let pwquality_writable = match &pwquality_read {
-            ConfRead::Unreadable(e) => {
-                warn!("Refusing to rewrite /etc/security/pwquality.conf: {}", e);
-                all_success = false;
-                changes.push(Change {
-                    change_type: ChangeType::ConfigFile,
-                    change_description:
-                        "Refused to rewrite /etc/security/pwquality.conf: its current contents \
-                         could not be read, and rewriting it would discard them"
-                            .to_string(),
-                    change_success: false,
-                    change_error: Some(e.clone()),
-                });
-                false
-            }
-            _ => true,
-        };
+        let pwquality_writable = conf_is_writable(
+            ctx,
+            "/etc/security/pwquality.conf",
+            &pwquality_read,
+            &mut changes,
+            &mut all_success,
+        )
+        .await;
         let mut pwquality_content = match &pwquality_read {
             ConfRead::Content(content) => content.clone(),
             _ => String::new(),
@@ -721,23 +709,14 @@ impl HardeningPlugin for PamHardeningPlugin {
         let mut pwquality_changed = false;
 
         let login_defs_read = read_conf_classified(ctx, "/etc/login.defs").await;
-        let login_defs_writable = match &login_defs_read {
-            ConfRead::Unreadable(e) => {
-                warn!("Refusing to rewrite /etc/login.defs: {}", e);
-                all_success = false;
-                changes.push(Change {
-                    change_type: ChangeType::ConfigFile,
-                    change_description:
-                        "Refused to rewrite /etc/login.defs: its current contents could not be \
-                         read, and rewriting it would discard them"
-                            .to_string(),
-                    change_success: false,
-                    change_error: Some(e.clone()),
-                });
-                false
-            }
-            _ => true,
-        };
+        let login_defs_writable = conf_is_writable(
+            ctx,
+            "/etc/login.defs",
+            &login_defs_read,
+            &mut changes,
+            &mut all_success,
+        )
+        .await;
         let mut login_defs_content = match &login_defs_read {
             ConfRead::Content(content) => content.clone(),
             _ => String::new(),
@@ -794,11 +773,8 @@ impl HardeningPlugin for PamHardeningPlugin {
             }
 
             // Determine target value: user directive override or hardcoded baseline
-            let target_value = config
-                .directives
-                .get(directive.pam_directive_name)
-                .map(|s| s.as_str())
-                .unwrap_or(directive.pam_secure_value);
+            let target_value =
+                config.resolve_str(directive.pam_directive_name, directive.pam_secure_value);
 
             // A file whose current contents could not be read is never
             // rewritten, and that refusal was already recorded once, at read
@@ -853,10 +829,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                         .pam_secure_value
                         .parse()
                         .expect("pam_secure_value must be a valid integer");
-                    let over = config
-                        .directives
-                        .get(directive.pam_directive_name)
-                        .and_then(|s| s.parse::<i64>().ok());
+                    let over = config.resolve_i64(directive.pam_directive_name);
                     // Clamp so a per-host override can tighten but never loosen.
                     let target = clamp_target(directive.pam_compare, secure, over);
 
@@ -914,23 +887,16 @@ impl HardeningPlugin for PamHardeningPlugin {
                         continue;
                     }
 
-                    let current = match read_conf_classified(ctx, path).await {
+                    let read = read_conf_classified(ctx, path).await;
+                    if !conf_is_writable(ctx, path, &read, &mut changes, &mut all_success).await {
+                        continue;
+                    }
+                    // Reachable only for a confirmed absence with no vendor
+                    // file behind it, which is the case where creating the
+                    // file is correct.
+                    let current = match read {
                         ConfRead::Content(content) => content,
-                        ConfRead::Absent => String::new(),
-                        ConfRead::Unreadable(e) => {
-                            warn!("Refusing to rewrite {}: {}", path, e);
-                            all_success = false;
-                            changes.push(Change {
-                                change_type: ChangeType::ConfigFile,
-                                change_description: format!(
-                                    "Refused to rewrite {path}: its current contents could not be \
-                                     read, and rewriting it would discard them",
-                                ),
-                                change_success: false,
-                                change_error: Some(e),
-                            });
-                            continue;
-                        }
+                        _ => String::new(),
                     };
 
                     let target_str = target.to_string();
@@ -1100,6 +1066,9 @@ impl HardeningPlugin for PamHardeningPlugin {
         let login_defs = read_conf_classified(ctx, "/etc/login.defs").await;
 
         let mut estimated_changes = Vec::new();
+        // Excepted settings are recorded rather than dropped: a preview that
+        // omits them shows a documented deviation as nothing at all.
+        let mut exceptions: Vec<String> = Vec::new();
         let mut compliant_count = 0usize;
 
         // Plain content for the shared helper's login_defs argument: it carries
@@ -1112,7 +1081,7 @@ impl HardeningPlugin for PamHardeningPlugin {
         let login_defs_str = match &login_defs {
             ConfRead::Content(c) => c.as_str(),
             ConfRead::Absent => "",
-            ConfRead::Unreadable(_) => "",
+            ConfRead::Unreadable { .. } => "",
         };
 
         for d in PAM_DIRECTIVES {
@@ -1125,10 +1094,14 @@ impl HardeningPlugin for PamHardeningPlugin {
             // unreadable directive as "not set" so neither trusts an
             // exception on faith.
             let observed = observed_pam_value(ctx, d, &pwquality, login_defs_str).await;
-            if config
-                .matching_exception(d.pam_directive_name, observed.value_or_not_set())
-                .is_some()
+            if let Some(exception) =
+                config.matching_exception(d.pam_directive_name, observed.value_or_not_set())
             {
+                exceptions.push(hardener_common::types::exception_preview_line(
+                    d.pam_directive_name,
+                    observed.value_or_not_set(),
+                    &exception.reason,
+                ));
                 continue;
             }
 
@@ -1139,11 +1112,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                     } else {
                         &login_defs
                     };
-                    let target_value = config
-                        .directives
-                        .get(d.pam_directive_name)
-                        .map(|s| s.as_str())
-                        .unwrap_or(d.pam_secure_value);
+                    let target_value = config.resolve_str(d.pam_directive_name, d.pam_secure_value);
                     // Absent reads as empty content, same as a confirmed-missing
                     // file always has: parsing finds nothing and the directive
                     // is honestly reported "(currently not set)" below. Only an
@@ -1152,12 +1121,16 @@ impl HardeningPlugin for PamHardeningPlugin {
                     let content = match read {
                         ConfRead::Content(c) => c.as_str(),
                         ConfRead::Absent => "",
-                        ConfRead::Unreadable(_) => {
-                            // Root-only file: never claim "not set" for a value
-                            // that cannot be read at this privilege level.
+                        ConfRead::Unreadable {
+                            permission_denied, ..
+                        } => {
+                            // Unreadable file: never claim "not set" for a
+                            // value this run could not see.
                             estimated_changes.push(format!(
-                                "Set {} = {} (current value requires root; applied only if it differs)",
-                                d.pam_directive_name, target_value
+                                "Set {} = {} ({}; applied only if it differs)",
+                                d.pam_directive_name,
+                                target_value,
+                                current_value_caveat(*permission_denied)
                             ));
                             continue;
                         }
@@ -1191,10 +1164,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                         .pam_secure_value
                         .parse()
                         .expect("pam_secure_value must be a valid integer");
-                    let over = config
-                        .directives
-                        .get(d.pam_directive_name)
-                        .and_then(|s| s.parse::<i64>().ok());
+                    let over = config.resolve_i64(d.pam_directive_name);
                     let target = clamp_target(d.pam_compare, secure, over);
                     match &observed {
                         PamObserved::Value(v)
@@ -1210,14 +1180,19 @@ impl HardeningPlugin for PamHardeningPlugin {
                             "Set {} = {} (currently not set)",
                             d.pam_directive_name, target
                         )),
-                        PamObserved::PermissionDenied(_) => {
+                        PamObserved::Unreadable {
+                            permission_denied, ..
+                        } => {
                             let op = match d.pam_compare {
                                 PamCompare::AtMost => "<=",
                                 _ => ">=",
                             };
                             estimated_changes.push(format!(
-                                "{} {} {} (current value requires root; applied only if currently looser)",
-                                d.pam_directive_name, op, target
+                                "{} {} {} ({}; applied only if currently looser)",
+                                d.pam_directive_name,
+                                op,
+                                target,
+                                current_value_caveat(*permission_denied)
                             ));
                         }
                     }
@@ -1234,19 +1209,47 @@ impl HardeningPlugin for PamHardeningPlugin {
             validation_report_issues: issues,
             validation_report_estimated_changes: estimated_changes,
             validation_report_compliant_count: compliant_count,
+            validation_report_exceptions: exceptions,
         })
     }
 }
 
 /// Builds the unchecked entry for a PAM directive whose config file cannot be
 /// read at the current privilege level. The check id mirrors the finding id.
-fn unchecked_pam_directive(directive: &PamDirective, path: &str) -> UncheckedCheck {
+fn unchecked_pam_directive(
+    directive: &PamDirective,
+    path: &str,
+    permission_denied: bool,
+) -> UncheckedCheck {
     UncheckedCheck {
         unchecked_check_id: format!("pam-{}", directive.pam_directive_name),
         unchecked_title: format!("PAM setting: {}", directive.pam_directive_name),
         unchecked_category: FindingCategory::Authentication,
-        unchecked_reason: format!("reading {} requires root", path),
+        unchecked_reason: unreadable_reason(path, permission_denied),
         unchecked_compliance: get_pam_compliance_mappings(directive.pam_directive_name),
+    }
+}
+
+/// Why a PAM config file could not be read, phrased for an operator.
+///
+/// Every failure used to render as "requires root". An I/O error or non-UTF-8
+/// content does not improve with sudo, so saying it does sends the operator
+/// somewhere that cannot help.
+fn unreadable_reason(path: &str, permission_denied: bool) -> String {
+    if permission_denied {
+        format!("reading {path} requires root")
+    } else {
+        format!("{path} could not be read")
+    }
+}
+
+/// The parenthetical describing an unknown current value in a dry-run
+/// estimate, matching [`unreadable_reason`]'s distinction.
+fn current_value_caveat(permission_denied: bool) -> &'static str {
+    if permission_denied {
+        "current value requires root"
+    } else {
+        "current value could not be read"
     }
 }
 
@@ -1466,7 +1469,7 @@ async fn read_pamd_inline(ctx: &Context, arg: &str) -> Option<String> {
         // "no inline override here"; only Content is worth scanning.
         let content = match read_conf_classified(ctx, file).await {
             ConfRead::Content(c) => c,
-            ConfRead::Absent | ConfRead::Unreadable(_) => continue,
+            ConfRead::Absent | ConfRead::Unreadable { .. } => continue,
         };
         for line in content.lines() {
             let line = line.trim();
@@ -1493,7 +1496,13 @@ async fn read_pamd_inline(ctx: &Context, arg: &str) -> Option<String> {
 enum ConfRead {
     Content(String),
     Absent,
-    Unreadable(String),
+    /// Present (or of indeterminate existence) but unreadable.
+    /// `permission_denied` separates a privilege failure, which sudo fixes,
+    /// from an I/O or encoding failure, which it does not.
+    Unreadable {
+        reason: String,
+        permission_denied: bool,
+    },
 }
 
 /// Reads a config file, distinguishing absence from a failure to read.
@@ -1506,7 +1515,128 @@ async fn read_conf_classified(ctx: &Context, path: &str) -> ConfRead {
             Ok(false) => ConfRead::Absent,
             _ => {
                 warn!("Failed to read {}: {}", path, e);
-                ConfRead::Unreadable(e.to_string())
+                // Only a genuine privilege failure is worth telling the
+                // operator to re-run with sudo. An I/O error or non-UTF-8
+                // content will not improve with root, and every failure used
+                // to render as "requires root", sending them down a dead end.
+                // `ssh/mod.rs` classifies with the same helper.
+                ConfRead::Unreadable {
+                    reason: e.to_string(),
+                    permission_denied: hardener_common::error::is_permission_denied(&e),
+                }
+            }
+        },
+    }
+}
+
+/// Whether creating a file under `/etc` would mask a vendor file under
+/// `/usr/etc`.
+///
+/// openSUSE (Leap 15.6+, Tumbleweed, MicroOS) ships vendor configuration in
+/// `/usr/etc` and reserves `/etc` for administrator overrides. That override is
+/// whole-file, not per directive: the first file found wins entirely. So a
+/// three-directive `/etc/login.defs` silences the other 35 keys
+/// `/usr/etc/login.defs` sets, among them `ENCRYPT_METHOD`, which chooses the
+/// password hashing algorithm for every password set afterwards, and `UMASK`,
+/// `FAIL_DELAY`, `LOGIN_RETRIES` and `LOGIN_TIMEOUT`, which are login-hardening
+/// settings this plugin exists to strengthen.
+enum VendorMask {
+    /// No vendor file, so creating the `/etc` file masks nothing.
+    None,
+    /// A vendor file exists and would be masked.
+    Masks(String),
+    /// Existence could not be determined. Deliberately distinct from `Masks`:
+    /// the operator is told something different, and folding the two together
+    /// would be the same conflation this guard exists to remove.
+    Indeterminate { vendor: String, reason: String },
+}
+
+/// Classifies an `/etc` path against its `/usr/etc` counterpart.
+///
+/// Fails closed. A probe that errors yields `Indeterminate` and callers refuse
+/// on it: absence must be positively confirmed before authorising a write that
+/// would discard the host's settings.
+async fn vendor_mask(ctx: &Context, path: &str) -> VendorMask {
+    let Some(rest) = path.strip_prefix("/etc/") else {
+        return VendorMask::None;
+    };
+    let vendor = format!("/usr/etc/{rest}");
+    match ctx.executor().path_exists(Path::new(&vendor)).await {
+        Ok(false) => VendorMask::None,
+        Ok(true) => VendorMask::Masks(vendor),
+        Err(e) => VendorMask::Indeterminate {
+            vendor,
+            reason: e.to_string(),
+        },
+    }
+}
+
+/// Whether apply may write `path`, recording the refusal when it may not.
+///
+/// Two refusals in one place, called by every site that could write one of this
+/// plugin's configuration files. A file whose contents could not be read must
+/// not be rewritten, because merging directives into an empty buffer replaces
+/// the host's settings with ours. A file that is absent must not be created
+/// when its existence would mask a vendor file. Both mark the run unsuccessful:
+/// a run that hardened nothing has not earned a clean result.
+async fn conf_is_writable(
+    ctx: &Context,
+    path: &str,
+    read: &ConfRead,
+    changes: &mut Vec<Change>,
+    all_success: &mut bool,
+) -> bool {
+    match read {
+        ConfRead::Content(_) => true,
+        ConfRead::Unreadable { reason, .. } => {
+            warn!("Refusing to rewrite {}: {}", path, reason);
+            *all_success = false;
+            changes.push(Change {
+                change_type: ChangeType::ConfigFile,
+                change_description: format!(
+                    "Refused to rewrite {path}: its current contents could not be read, and \
+                     rewriting it would discard them"
+                ),
+                change_success: false,
+                change_error: Some(reason.clone()),
+            });
+            false
+        }
+        ConfRead::Absent => match vendor_mask(ctx, path).await {
+            VendorMask::None => true,
+            VendorMask::Masks(vendor) => {
+                warn!("Refusing to create {}: it would mask {}", path, vendor);
+                *all_success = false;
+                changes.push(Change {
+                    change_type: ChangeType::ConfigFile,
+                    change_description: format!(
+                        "Refused to create {path}: this host keeps vendor configuration in \
+                         {vendor}, and {path} overrides it as a whole file rather than per \
+                         directive, so creating a short one would silence every setting \
+                         {vendor} makes. Copy {vendor} to {path} first, then re-run."
+                    ),
+                    change_success: false,
+                    change_error: Some(format!("would mask {vendor}")),
+                });
+                false
+            }
+            VendorMask::Indeterminate { vendor, reason } => {
+                warn!(
+                    "Refusing to create {}: whether {} exists could not be checked",
+                    path, vendor
+                );
+                *all_success = false;
+                changes.push(Change {
+                    change_type: ChangeType::ConfigFile,
+                    change_description: format!(
+                        "Refused to create {path}: whether this host keeps vendor configuration \
+                         in {vendor} could not be checked, and creating {path} would silence it \
+                         if it is there"
+                    ),
+                    change_success: false,
+                    change_error: Some(reason.clone()),
+                });
+                false
             }
         },
     }
@@ -1516,7 +1646,11 @@ async fn read_conf_classified(ctx: &Context, path: &str) -> ConfRead {
 enum ThresholdRead {
     Value(String),
     NotSet,
-    PermissionDenied,
+    /// The conf file could not be read. `permission_denied` decides whether
+    /// telling the operator to use sudo is honest advice or a dead end.
+    Unreadable {
+        permission_denied: bool,
+    },
 }
 
 /// Effective value of a threshold directive: an inline PAM-stack override wins
@@ -1527,7 +1661,9 @@ async fn read_effective_threshold(ctx: &Context, arg: &str, conf: &str) -> Thres
         return ThresholdRead::Value(inline);
     }
     match read_conf_classified(ctx, conf).await {
-        ConfRead::Unreadable(_) => ThresholdRead::PermissionDenied,
+        ConfRead::Unreadable {
+            permission_denied, ..
+        } => ThresholdRead::Unreadable { permission_denied },
         // A missing file has no directives, same as today: empty content.
         ConfRead::Absent => ThresholdRead::NotSet,
         ConfRead::Content(content) => {
@@ -1553,7 +1689,13 @@ async fn read_effective_threshold(ctx: &Context, arg: &str, conf: &str) -> Thres
 enum PamObserved {
     Value(String),
     NotSet,
-    PermissionDenied(&'static str),
+    /// The file holding this directive could not be read, so its value is
+    /// unknown. `permission_denied` separates "run with sudo" from a failure
+    /// root will not fix.
+    Unreadable {
+        path: &'static str,
+        permission_denied: bool,
+    },
 }
 
 impl PamObserved {
@@ -1565,7 +1707,7 @@ impl PamObserved {
     fn value_or_not_set(&self) -> &str {
         match self {
             PamObserved::Value(v) => v,
-            PamObserved::NotSet | PamObserved::PermissionDenied(_) => "not set",
+            PamObserved::NotSet | PamObserved::Unreadable { .. } => "not set",
         }
     }
 }
@@ -1594,9 +1736,12 @@ async fn observed_pam_value(
             },
             // A missing file has no directives, same as today: empty content.
             ConfRead::Absent => PamObserved::NotSet,
-            ConfRead::Unreadable(_) => {
-                PamObserved::PermissionDenied("/etc/security/pwquality.conf")
-            }
+            ConfRead::Unreadable {
+                permission_denied, ..
+            } => PamObserved::Unreadable {
+                path: "/etc/security/pwquality.conf",
+                permission_denied: *permission_denied,
+            },
         },
         PamConfigFile::LoginDefs => match parse_config_value(
             login_defs,
@@ -1612,7 +1757,10 @@ async fn observed_pam_value(
             match read_effective_threshold(ctx, directive.pam_directive_name, path).await {
                 ThresholdRead::Value(v) => PamObserved::Value(v),
                 ThresholdRead::NotSet => PamObserved::NotSet,
-                ThresholdRead::PermissionDenied => PamObserved::PermissionDenied(path),
+                ThresholdRead::Unreadable { permission_denied } => PamObserved::Unreadable {
+                    path,
+                    permission_denied,
+                },
             }
         }
     }
@@ -1791,6 +1939,61 @@ async fn create_config_backup(ctx: &Context, file_path: &str) -> Result<String> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every read failure used to render as "requires root", so an I/O error
+    /// or non-UTF-8 content told the operator to reach for sudo, which cannot
+    /// help. Only a genuine privilege failure earns that wording.
+    #[test]
+    fn only_a_privilege_failure_tells_the_operator_to_use_root() {
+        let denied = unreadable_reason("/etc/security/pwquality.conf", true);
+        assert!(
+            denied.contains("requires root"),
+            "a privilege failure is exactly the sudo case: {denied}"
+        );
+
+        let broken = unreadable_reason("/etc/security/pwquality.conf", false);
+        assert!(
+            !broken.contains("requires root"),
+            "an I/O or encoding failure must not be blamed on privilege: {broken}"
+        );
+        assert!(
+            broken.contains("/etc/security/pwquality.conf"),
+            "the path must still be named: {broken}"
+        );
+    }
+
+    /// The dry-run parenthetical carries the same distinction, so a preview
+    /// cannot claim a value is root-only when root would not reveal it.
+    #[test]
+    fn the_dry_run_caveat_matches_the_actual_cause() {
+        assert_eq!(current_value_caveat(true), "current value requires root");
+        assert!(!current_value_caveat(false).contains("root"));
+    }
+
+    /// The unchecked entry a scan emits inherits the same wording, and keeps
+    /// its compliance mappings either way so the control still reaches manual
+    /// review rather than passing.
+    #[test]
+    fn an_unchecked_pam_directive_reports_the_real_cause() {
+        let directive = PAM_DIRECTIVES
+            .iter()
+            .find(|d| d.pam_directive_name == "minlen")
+            .expect("minlen is a known PAM directive");
+
+        let denied = unchecked_pam_directive(directive, "/etc/security/pwquality.conf", true);
+        assert!(denied.unchecked_reason.contains("requires root"));
+
+        let broken = unchecked_pam_directive(directive, "/etc/security/pwquality.conf", false);
+        assert!(
+            !broken.unchecked_reason.contains("requires root"),
+            "a non-privilege failure must not claim root would fix it: {}",
+            broken.unchecked_reason
+        );
+        assert!(
+            !broken.unchecked_compliance.is_empty(),
+            "the mappings must survive so the control still reaches manual review"
+        );
+    }
 
     /// Confirms a representative PAM finding (minimum password length) now
     /// carries multi-framework mappings: CIS (existing) plus STIG, NIST and
@@ -1990,7 +2193,7 @@ mod tests {
         assert!(
             matches!(
                 read_conf_classified(&ctx, path).await,
-                ConfRead::Unreadable(_)
+                ConfRead::Unreadable { .. }
             ),
             "an unreadable file must classify as Unreadable"
         );

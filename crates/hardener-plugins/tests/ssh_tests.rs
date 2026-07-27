@@ -28,24 +28,50 @@ async fn test_ssh_scan_reads_configuration() {
     let plugin = SshHardeningPlugin::new();
     let ctx = Context::new();
 
-    let result = plugin.scan(&ctx, &PluginConfig::default()).await;
+    // This runs against whatever `/etc/ssh` the host actually has, so what it
+    // can assert is limited to what is true on every host.
+    //
+    // It used to assert `scan_success` outright, with an `Err` arm excusing a
+    // machine that has no `sshd_config`. That arm has been unreachable since
+    // the scan started reporting an incomplete run through `ScanResult`
+    // instead of `Err`: a host the scan cannot complete on now lands in the
+    // `Ok` arm and fails the success assertion. So the test really asserted
+    // "this machine has a readable sshd_config and readable drop-ins", which
+    // is a property of the machine, not of the plugin, and it duly passed on a
+    // developer host and failed on a CI runner.
+    //
+    // The property that holds everywhere is that the two outcomes stay
+    // distinguishable: a completed scan carries no error, and an incomplete one
+    // says why. That is the whole point of `scan_success` existing, and it is
+    // what a machine consumer relies on. The fixture-driven coverage of what
+    // the scan finds lives in `ssh_mock_tests.rs`, where the config is known.
+    let scan_result = plugin
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("the ssh scan reports an incomplete run through ScanResult, never as Err");
 
-    match result {
-        Ok(scan_result) => {
-            assert_eq!(scan_result.scan_plugin_id, PluginId::new("ssh-hardening"));
-            assert!(
-                scan_result.scan_duration_us > 0,
-                "Scan should take measurable time"
-            );
+    assert_eq!(scan_result.scan_plugin_id, PluginId::new("ssh-hardening"));
+    assert!(
+        scan_result.scan_duration_us > 0,
+        "Scan should take measurable time"
+    );
 
-            // The scan should succeed even if it finds insecure settings
-            assert!(scan_result.scan_success, "Scan operation should succeed");
-
-            assert!(scan_result.scan_error.is_none(), "Should not have errors");
-        }
-        Err(_) => {
-            // If /etc/ssh/sshd_config doesn't exist, that's acceptable for test environments.
-        }
+    if scan_result.scan_success {
+        assert!(
+            scan_result.scan_error.is_none(),
+            "a completed scan must carry no error, got: {:?}",
+            scan_result.scan_error
+        );
+    } else {
+        // Printed rather than merely counted: an incomplete scan here is a
+        // fact about this host, and the next person to see it in CI needs the
+        // reason without having to reproduce the environment.
+        let reason = scan_result.scan_error.as_deref().unwrap_or_default();
+        assert!(
+            !reason.is_empty(),
+            "an incomplete scan must say why it did not complete, or it is \
+             indistinguishable from a clean one"
+        );
     }
 }
 

@@ -5,6 +5,7 @@ pub mod batch;
 pub mod checkpoint;
 pub mod daemon;
 pub mod history;
+pub(crate) mod plugin_filter;
 pub mod plugins;
 pub(crate) mod privilege;
 pub mod report;

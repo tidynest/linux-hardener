@@ -726,11 +726,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
             match self.read_sysctl(param_name, ctx).await {
                 Ok(actual_value) => {
                     // Directive override takes precedence over the built-in baseline.
-                    let target = config
-                        .directives
-                        .get(*param_name)
-                        .map(|s| s.as_str())
-                        .unwrap_or(expected_value);
+                    let target = config.resolve_str(param_name, expected_value);
                     if actual_value != target {
                         let policy_exception = config
                             .matching_exception(param_name, &actual_value)
@@ -845,11 +841,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
             }
 
             // Determine target value: user directive override or hardcoded baseline
-            let target_value = config
-                .directives
-                .get(*param_name)
-                .map(|s| s.as_str())
-                .unwrap_or(expected_value);
+            let target_value = config.resolve_str(param_name, expected_value);
 
             let path = format!("/proc/sys/{}", param_name.replace('.', "/"));
 
@@ -1023,26 +1015,28 @@ impl HardeningPlugin for KernelHardeningPlugin {
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {
         let mut issues = Vec::new();
         let mut estimated_changes = Vec::new();
+        // Excepted settings are recorded rather than dropped: a preview that
+        // omits them shows a documented deviation as nothing at all.
+        let mut exceptions: Vec<String> = Vec::new();
         let mut compliant_count = 0usize;
 
         for (param_name, expected_value, _expected_description, _severity) in KERNEL_PARAMS {
             // Honour an exception only when it documents the value the host
             // actually has; an unreadable value is not a match (fail closed).
             let observed = self.read_sysctl(param_name, ctx).await.ok();
-            if observed
-                .as_deref()
-                .and_then(|value| config.matching_exception(param_name, value))
-                .is_some()
+            if let Some(value) = observed.as_deref()
+                && let Some(exception) = config.matching_exception(param_name, value)
             {
+                exceptions.push(hardener_common::types::exception_preview_line(
+                    param_name,
+                    value,
+                    &exception.reason,
+                ));
                 continue;
             }
 
             // Determine target value for preview
-            let target_value = config
-                .directives
-                .get(*param_name)
-                .map(|s| s.as_str())
-                .unwrap_or(expected_value);
+            let target_value = config.resolve_str(param_name, expected_value);
 
             let path = format!("/proc/sys/{}", param_name.replace('.', "/"));
 
@@ -1085,6 +1079,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
             validation_report_issues: issues,
             validation_report_estimated_changes: estimated_changes,
             validation_report_compliant_count: compliant_count,
+            validation_report_exceptions: exceptions,
         })
     }
 }
