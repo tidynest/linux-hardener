@@ -1,3 +1,58 @@
+> ### Please update to 1.5.0
+>
+> **1.4.0 and earlier can delete account files during a rollback on a remote
+> host.** If you manage remote hosts over SSH, do not run `hardener rollback`
+> until you have upgraded. Local-only use was never affected. Details:
+> [GHSA-x4xp-32mf-xwjh](https://github.com/tidynest/linux-system-hardener/security/advisories/GHSA-x4xp-32mf-xwjh).
+>
+> ### If you hardened a host with 1.4.0 or earlier, check its password ageing
+>
+> Every release up to and including 1.4.0 wrote `/etc/login.defs` in a syntax
+> the file does not accept, so `PASS_MAX_DAYS`, `PASS_MIN_DAYS` and
+> `PASS_WARN_AGE` were left unchanged. A later scan read the tool's own
+> discarded line and reported the host as compliant. **1.5.0 fixes both the
+> writing and the reading**, and the fix is verified against the system itself
+> rather than against the tool.
+>
+> Upgrading does not repair a host that was already hardened. The old file is
+> still on disk, so you need to re-apply:
+>
+> ```bash
+> sudo hardener apply -p pam-hardening
+> ```
+>
+> To confirm, ask the system rather than the tool. Create a throwaway account
+> and read what the system gave it, since `/etc/login.defs` supplies defaults
+> for new accounts only:
+>
+> ```bash
+> sudo useradd --no-create-home ageing-probe
+> sudo chage -l ageing-probe | grep -i maximum
+> sudo userdel ageing-probe
+> ```
+>
+> A large number such as 99999 means the ageing policy is not in force. After
+> re-applying on 1.5.0 it should read 90.
+>
+> ### Known issue: rollback does not restore systemd unit files
+>
+> The services plugin records unit files in its checkpoint, but rollback's
+> allow-list does not cover the systemd unit directories, so those files are
+> skipped at restore time. Nothing is lost or damaged, but a service disabled
+> by `hardener apply` will not be re-enabled by `hardener rollback`, and must
+> be re-enabled by hand:
+>
+> ```bash
+> sudo systemctl enable --now <service>
+> ```
+>
+> ---
+>
+> I am sorry for all of this. This is a tool you install to make a system
+> safer, and in these cases it did the opposite. If any of it has cost you
+> anything, I apologise. Known problems will be listed here as they are found,
+> including the ones not yet fixed, so you can judge the risk yourself.
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
