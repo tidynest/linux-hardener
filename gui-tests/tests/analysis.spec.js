@@ -1,5 +1,5 @@
 // =============================================================================
-// ANALYSIS TESTS — Findings (T-FIND-01..10) + Compliance (T-COMP-01..08)
+// ANALYSIS TESTS - Findings (T-FIND-01..10) + Compliance (T-COMP-01..08)
 // =============================================================================
 
 const { test, expect } = require('@playwright/test');

@@ -1,5 +1,5 @@
 // =============================================================================
-// TAURI IPC MOCK — Linux System Hardener GUI Tests
+// TAURI IPC MOCK - Linux System Hardener GUI Tests
 // =============================================================================
 // Injected before WASM loads to simulate window.__TAURI__.core.invoke().
 // Field names match Rust struct definitions exactly (serde snake_case).

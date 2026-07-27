@@ -64,7 +64,7 @@ test.describe('Themes', () => {
 });
 
 // ---------------------------------------------------------------------------
-// SCREENSHOT CAPTURES — 5 states x 6 themes = 30 screenshots
+// SCREENSHOT CAPTURES - 5 states x 6 themes = 30 screenshots
 // ---------------------------------------------------------------------------
 
 const STATES = [
@@ -109,7 +109,7 @@ const STATES = [
 ];
 
 test.describe('Theme Screenshots', () => {
-  // Longer timeout for screenshot captures — Chromium slows under memory
+  // Longer timeout for screenshot captures - Chromium slows under memory
   // pressure after 70+ prior tests in containerised environments
   test.describe.configure({ timeout: 60000 });
 

@@ -1,5 +1,5 @@
 // =============================================================================
-// HARDENING TESTS — Configure (T-CONF-01..10) + History (T-HIST-01..06)
+// HARDENING TESTS - Configure (T-CONF-01..10) + History (T-HIST-01..06)
 // =============================================================================
 
 const { test, expect } = require('@playwright/test');
@@ -44,7 +44,7 @@ test.describe('Configure', () => {
     expect(joined).toContain('MAC');
   });
 
-  // T-CONF-04: Secure profile (default) — 5 plugins on, 3 off
+  // T-CONF-04: Secure profile (default) - 5 plugins on, 3 off
   test('T-CONF-04: Secure profile enables kernel, ssh, firewall, pam, services', async ({ page }) => {
     await expect(page.locator('input[value="secure"]')).toBeChecked();
     const checkboxes = page.locator('.plugin-grid input[type="checkbox"]');
@@ -56,7 +56,7 @@ test.describe('Configure', () => {
     expect(checked).toBe(5);
   });
 
-  // T-CONF-05: Baseline profile — only ssh and firewall
+  // T-CONF-05: Baseline profile - only ssh and firewall
   test('T-CONF-05: Baseline profile enables only ssh and firewall', async ({ page }) => {
     await page.locator('input[value="baseline"]').check();
     const checkboxes = page.locator('.plugin-grid input[type="checkbox"]');
@@ -68,7 +68,7 @@ test.describe('Configure', () => {
     expect(checked).toBe(2);
   });
 
-  // T-CONF-06: High Security profile — all 8 on
+  // T-CONF-06: High Security profile - all 8 on
   test('T-CONF-06: High Security profile enables all 8 plugins', async ({ page }) => {
     await page.locator('input[value="high"]').check();
     const checkboxes = page.locator('.plugin-grid input[type="checkbox"]');
@@ -95,13 +95,13 @@ test.describe('Configure', () => {
       }
     }
     // No profile radio should match exactly now
-    // (The Secure radio may or may not be unchecked — depends on implementation)
+    // (The Secure radio may or may not be unchecked - depends on implementation)
     // At minimum, verify the checkbox state changed
     let checked = 0;
     for (let i = 0; i < count; i++) {
       if (await checkboxes.nth(i).isChecked()) checked++;
     }
-    // Was 5, now 6 — not matching any preset
+    // Was 5, now 6 - not matching any preset
     expect(checked).toBe(6);
   });
 
@@ -176,7 +176,7 @@ test.describe('History', () => {
     await expect(btn).toBeVisible();
     await btn.click();
     // Button should show refreshing state briefly
-    // Then return to normal — verify table still has data
+    // Then return to normal - verify table still has data
     await page.waitForSelector('.checkpoints-section table tbody tr', { timeout: 10000 });
     const rows = page.locator('.checkpoints-section table tbody tr');
     const count = await rows.count();

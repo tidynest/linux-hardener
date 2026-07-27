@@ -20,7 +20,7 @@ test.describe('Error Handling', () => {
   // T-ERR-02: Apply error shows error banner
   test('T-ERR-02: apply error shows error banner', async ({ page }) => {
     await loadApp(page, '/hardening', 'error_mode=apply');
-    // Trigger preview (which calls dry_run — also errored in apply mode)
+    // Trigger preview (which calls dry_run - also errored in apply mode)
     await page.getByRole('button', { name: /Preview Changes/i }).click();
     // Should get error
     const banner = page.locator('.error-banner');

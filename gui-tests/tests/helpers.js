@@ -1,5 +1,5 @@
 // =============================================================================
-// SHARED TEST HELPERS — Linux System Hardener GUI Tests
+// SHARED TEST HELPERS - Linux System Hardener GUI Tests
 // =============================================================================
 
 const { expect } = require('@playwright/test');

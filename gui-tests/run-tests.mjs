@@ -11,7 +11,7 @@ import { chromium } from 'playwright';
 
   function log(msg) { console.log(msg); }
   function pass(name) { results.passed.push(name); log(`PASS: ${name}`); }
-  function fail(name, err) { results.failed.push(name); log(`FAIL: ${name} — ${err}`); }
+  function fail(name, err) { results.failed.push(name); log(`FAIL: ${name} - ${err}`); }
 
   try {
     // 1. Dashboard loads
@@ -120,11 +120,11 @@ import { chromium } from 'playwright';
       await page.screenshot({ path: '/tmp/test-grouped/14-escape-close-detail.png' });
       detailClosed ? pass('Escape closes detail') : fail('Escape closes detail', 'still visible');
     } else {
-      log('No findings — skipping grid tests (need scan data)');
+      log('No findings - skipping grid tests (need scan data)');
       await page.screenshot({ path: '/tmp/test-grouped/10-no-findings.png' });
     }
 
-    // 15-18. Tab keyboard navigation — use Analysis page (3 tabs with proper IDs)
+    // 15-18. Tab keyboard navigation - use Analysis page (3 tabs with proper IDs)
     // Navigate to Analysis if not already there
     if (!page.url().includes('/analysis')) {
       await page.keyboard.press('Control+2');
@@ -239,7 +239,7 @@ import { chromium } from 'playwright';
         gone ? pass('Cancel dismisses confirmation') : fail('Cancel dismisses', 'still visible');
       }
     } else {
-      log('No delete buttons (no saved hosts) — skipping');
+      log('No delete buttons (no saved hosts) - skipping');
       await page.screenshot({ path: '/tmp/test-grouped/20-no-hosts.png' });
     }
 

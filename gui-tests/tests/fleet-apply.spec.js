@@ -1,5 +1,5 @@
 // =============================================================================
-// FLEET APPLY TESTS (T-FAPPLY-01..09) — Linux System Hardener GUI Tests
+// FLEET APPLY TESTS (T-FAPPLY-01..09) - Linux System Hardener GUI Tests
 // =============================================================================
 // Mutating fleet page. Execute is gated behind a mandatory dry-run for the EXACT
 // current selection plus a confirm modal; any selection change re-arms the gate.
@@ -54,7 +54,7 @@ test.describe('Fleet Apply', () => {
     await expect(executeBtn(page)).toBeEnabled();
   });
 
-  // T-FAPPLY-05: THE GATE — changing the selection after a dry-run re-disables Execute
+  // T-FAPPLY-05: THE GATE - changing the selection after a dry-run re-disables Execute
   test('T-FAPPLY-05: changing selection re-arms the dry-run gate', async ({ page }) => {
     await host(page, 'web-01').locator('input[type=checkbox]').check();
     await dryRun(page);
