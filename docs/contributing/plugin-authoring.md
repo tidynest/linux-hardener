@@ -1,6 +1,6 @@
 # Plugin authoring guide
 
-**Last Updated**: 2026-07-26
+**Last Updated**: 2026-07-27
 
 How to write a new hardening plugin. The 8 existing plugins in
 `crates/hardener-plugins/src/` are the best worked examples; this page

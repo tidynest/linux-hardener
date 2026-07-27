@@ -1,7 +1,7 @@
 # Linux System Hardener - Architecture Documentation
 
 **Last Updated:** 2026-07-24
-**Version:** 1.4.0
+**Version:** 1.5.0
 
 ---
 

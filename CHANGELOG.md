@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-07-27
+
 ### Added
 - Desktop Settings page: a visual theme picker (a swatch grid across all
   seven themes, Midnight Teal, Fortress, Sentinel, Command, Guardian,
