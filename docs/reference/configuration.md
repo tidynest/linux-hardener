@@ -42,9 +42,8 @@ Rules worth knowing:
 - Directive and exception maps **merge** across sources (later keys override
   same-named earlier keys). The `[global]` plugin lists **replace** rather than
   merge: a non-empty list in a later source wins outright.
-- Size limits: a config file may be at most 1 MiB, with at most 500 directives
-  (`directives` and `custom_directives` counted together) and 200 exceptions per
-  plugin section.
+- Size limits: a config file may be at most 1 MiB, with at most 500 `directives`
+  and 200 exceptions per plugin section.
 
 ---
 
@@ -96,8 +95,14 @@ Every section accepts the same four keys:
 |-----|------|---------|--------|
 | `enabled` | bool | `true` | Set `false` to stop this plugin from running. Disabled anywhere is final: `enabled = true` is the key's default value, so it can only ever turn a plugin off and never re-enable one `[global] disabled_plugins` has already refused, or one a non-empty `[global] enabled_plugins` omits. |
 | `directives` | table of string to string | `{}` | Overrides the target value for a built-in check, typically to something stricter than the baseline. Applied as given for `[kernel]`, `[ssh]` and `[permissions]`, so an override can also loosen a check; only the `[pam]` thresholds are clamped tighten-only. See below. |
-| `custom_directives` | table of string to string | `{}` | Accepted and validated, but **not yet enforced** by any plugin. Reserved for checking directives beyond the built-in set. |
 | `exceptions` | table of exception entries | `{}` | Policy exceptions; see below. |
+
+> **Removed: `custom_directives`.** Earlier releases accepted and validated a
+> `custom_directives` table that no plugin ever read, so anything set there had
+> no effect. It has been removed rather than implemented. A file that still
+> names it loads unchanged, because the key is simply ignored, but the table
+> can be deleted. If it holds a directive the plugin does support, move that
+> entry into `directives`, where it will take effect.
 
 `directives` and `exceptions`, together with `enabled` and the `[global]`
 plugin lists, take effect for `scan`, `apply`, `report`, the scheduler daemon,
@@ -118,8 +123,6 @@ enabled = true
 
 [ssh.directives]
 MaxAuthTries = "3"
-
-[ssh.custom_directives]
 ClientAliveInterval = "300"
 ClientAliveCountMax = "2"
 ```

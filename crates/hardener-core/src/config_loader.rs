@@ -202,15 +202,13 @@ impl ConfigLoader {
     fn merge_plugin(base: PluginConfig, overlay: PluginConfig) -> Result<PluginConfig> {
         let mut directives = base.directives;
         directives.extend(overlay.directives);
-        let mut custom_directives = base.custom_directives;
-        custom_directives.extend(overlay.custom_directives);
         let mut exceptions = base.exceptions;
         exceptions.extend(overlay.exceptions);
 
-        let total_directives = directives.len() + custom_directives.len();
-        if total_directives > Self::MAX_DIRECTIVES_PER_PLUGIN {
+        if directives.len() > Self::MAX_DIRECTIVES_PER_PLUGIN {
             return Err(HardeningError::Config(format!(
-                "Plugin config exceeds directive limit ({total_directives} > {})",
+                "Plugin config exceeds directive limit ({} > {})",
+                directives.len(),
                 Self::MAX_DIRECTIVES_PER_PLUGIN
             )));
         }
@@ -225,7 +223,6 @@ impl ConfigLoader {
         Ok(PluginConfig {
             enabled: overlay.enabled,
             directives,
-            custom_directives,
             exceptions,
         })
     }
@@ -284,6 +281,48 @@ mod tests {
         let config = loader.load().unwrap();
         assert!(config.global.enabled_plugins.is_empty());
         assert!(config.ssh.enabled);
+    }
+
+    /// `custom_directives` was accepted and validated for several releases
+    /// while no plugin ever read it, and it has now been removed rather than
+    /// implemented. An operator's file still carries the table, so the loader
+    /// has to keep ignoring it: nothing here sets `deny_unknown_fields`, and
+    /// this is what says so out loud, because adding that attribute would turn
+    /// every such file into a hard load failure.
+    #[test]
+    fn a_config_still_naming_the_removed_custom_directives_loads() {
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(
+            file,
+            r#"
+  [ssh]
+  enabled = true
+
+  [ssh.directives]
+  PermitRootLogin = "no"
+
+  [ssh.custom_directives]
+  SomeSettingNoPluginEverRead = "yes"
+  "#
+        )
+        .unwrap();
+
+        let config = ConfigLoader::new()
+            .skip_defaults()
+            .with_cli_config(file.path().to_path_buf())
+            .load()
+            .expect("a file naming the removed table must still load");
+
+        assert!(config.ssh.enabled);
+        assert_eq!(
+            config
+                .ssh
+                .directives
+                .get("PermitRootLogin")
+                .map(String::as_str),
+            Some("no"),
+            "the surviving directives must be read, not discarded with the removed table"
+        );
     }
 
     #[test]

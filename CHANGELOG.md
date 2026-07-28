@@ -72,6 +72,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every existing check green. The per-distribution total moves from 22 checks
   to 25, and the five-distribution total from 110 to 125.
 
+### Removed
+- `custom_directives`, the per-plugin config table that was accepted, merged
+  across config sources, counted towards the directive limit and validated at
+  load time, while no plugin ever read it. Anything set there had no effect,
+  and the configuration reference's own SSH example put `ClientAliveInterval`
+  and `ClientAliveCountMax` in it, two directives the SSH plugin does support,
+  so an operator following the documentation set two real settings in the one
+  place they could not take effect. The table has been removed rather than
+  implemented. **A config file that still names it loads unchanged**, because
+  nothing sets `deny_unknown_fields` and an unknown key is ignored. Move any
+  entry the plugin does support into `directives`, where it takes effect.
+
 ## [1.5.1] - 2026-07-27
 
 ### Changed

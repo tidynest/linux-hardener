@@ -50,25 +50,6 @@ pub fn validate_config(config: &HardenerConfig) -> Result<()> {
         &mut errors,
     );
 
-    // Binary plugins (audit, mac, services) have no directive values to validate,
-    // but still check for universal violations in custom_directives.
-    for (section, plugin) in [
-        ("kernel", &config.kernel),
-        ("ssh", &config.ssh),
-        ("firewall", &config.firewall),
-        ("pam", &config.pam),
-        ("audit", &config.audit),
-        ("mac", &config.mac),
-        ("permissions", &config.permissions),
-        ("services", &config.services),
-    ] {
-        for (key, value) in &plugin.custom_directives {
-            if let Err(reason) = check_universal(value) {
-                errors.push(format!("[{section}.custom_directives] {key}: {reason}"));
-            }
-        }
-    }
-
     if errors.is_empty() {
         Ok(())
     } else {

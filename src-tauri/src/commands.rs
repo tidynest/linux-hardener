@@ -2027,9 +2027,7 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String> {
 
             let directive_count: u32 = plugin_sections
                 .iter()
-                .map(|(_, plugin_config)| {
-                    (plugin_config.directives.len() + plugin_config.custom_directives.len()) as u32
-                })
+                .map(|(_, plugin_config)| plugin_config.directives.len() as u32)
                 .sum();
 
             let exception_count: u32 = plugin_sections
