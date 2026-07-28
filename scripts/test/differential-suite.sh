@@ -728,7 +728,161 @@ vendor_survival_baseline_value() {
     vendor_survival_reading "$VENDOR_SURVIVAL_BEFORE" "$key"
 }
 
-# The lengths of the four tables the run is sized by, pinned as literals.
+# Applying twice must change nothing the second time.
+#
+# The scheduler applies on a cadence, so a second apply that undoes the first is
+# a fleet host returning to an unhardened state on a timer while reporting
+# success at every step. A single-apply oracle structurally cannot see that,
+# which is how the defect fixed in 2f10089 and 4c715fe reached a released
+# branch: every check in this suite was green after one apply, and the tool
+# removed its own drop-in on the next run.
+#
+# The readings are whole, not per directive. A directive nobody thought to list
+# is exactly what this class of defect moves, so each reading is the consumer's
+# entire answer and the comparison is byte equality.
+IDEMPOTENCE_CHECKS=(sshd-effective sshd-dropins login-defs)
+
+# The fragment directory as names and contents.
+#
+# sshd -T answers what the daemon enforces, which is the more important
+# question, but a fragment can be rewritten or removed without moving any
+# effective value, and "the second apply changed nothing" is a claim about the
+# files as well. Every branch prints something: two empty readings compare equal
+# and would pass by saying nothing at all.
+sshd_dropin_listing() {
+    local dir="${1:-/etc/ssh/sshd_config.d}" file found=0
+    if [[ ! -d "$dir" ]]; then
+        printf 'directory absent'
+        return 0
+    fi
+    # Glob expansion is sorted, so this describes the directory rather than the
+    # order the filesystem happened to return it in.
+    for file in "$dir"/*; do
+        [[ -f "$file" ]] || continue
+        found=$((found + 1))
+        printf '=== %s\n' "$file"
+        cat -- "$file" || return 1
+    done
+    if (( found == 0 )); then
+        printf 'directory empty'
+    fi
+}
+
+# One idempotency reading, by key, delegating to the same consumer the rest of
+# the suite asks so a reading cannot come to mean something different here than
+# it does there.
+idempotence_reading() {
+    local key="$1" reading line
+    case "$key" in
+        sshd-effective)
+            ensure_host_keys || return 1
+            capture_sshd_effective
+            ;;
+        sshd-dropins)
+            sshd_dropin_listing
+            ;;
+        login-defs)
+            # A fresh probe account is created for each reading, so the date it
+            # records is a property of when the reading was taken rather than of
+            # what login.defs means. Left in, a run straddling midnight would
+            # report a change the tool did not make. Assigned before filtering
+            # rather than piped, because a pipeline reports its last stage's
+            # status and would swallow a probe that failed.
+            reading="$(login_defs_system_values)" || return 1
+            while IFS= read -r line; do
+                if [[ "$line" != "Last password change"* ]]; then
+                    printf '%s\n' "$line"
+                fi
+            done <<<"$reading"
+            ;;
+        *)
+            echo "FATAL: no idempotency reading known for '$key'" >&2
+            return 1
+            ;;
+    esac
+}
+
+# The readings taken between the two applies, keyed by check name, and the
+# generation they were taken at.
+declare -A IDEMPOTENCE_BEFORE=()
+IDEMPOTENCE_BEFORE_GENERATION=""
+
+# Capture every reading after the first apply and before the second.
+#
+# Refused unless exactly one apply has happened. Taken any later, the comparison
+# is a reading against itself, which is the shape of a check that cannot fail.
+# An empty reading is refused for the same reason.
+first_apply_idempotence_init() {
+    local key reading
+    if (( APPLY_GENERATION != 1 )); then
+        echo "FATAL: the idempotency baseline must be taken between the first apply" \
+            "and the second; apply is at generation $APPLY_GENERATION." >&2
+        return 1
+    fi
+    for key in "${IDEMPOTENCE_CHECKS[@]}"; do
+        if ! reading="$(idempotence_reading "$key")"; then
+            echo "FATAL: the idempotency baseline for '$key' could not be read" >&2
+            return 1
+        fi
+        if [[ -z "$reading" ]]; then
+            echo "FATAL: the idempotency baseline for '$key' is empty, so it would" \
+                "compare equal to any other empty reading" >&2
+            return 1
+        fi
+        IDEMPOTENCE_BEFORE["$key"]="$reading"
+    done
+    IDEMPOTENCE_BEFORE_GENERATION="$APPLY_GENERATION"
+}
+
+# The reading taken after the first apply.
+#
+# Refused when it was never taken, when it carries any generation other than the
+# first apply's, and when no second apply has happened. Each of those turns the
+# comparison into a reading against itself.
+idempotence_baseline() {
+    local key="$1"
+    if [[ -z "$IDEMPOTENCE_BEFORE_GENERATION" ]]; then
+        echo "FATAL: idempotency baseline not captured;" \
+            "first_apply_idempotence_init must run between the two applies" >&2
+        return 1
+    fi
+    if [[ "$IDEMPOTENCE_BEFORE_GENERATION" != "1" ]]; then
+        echo "FATAL: the idempotency baseline is stamped generation" \
+            "$IDEMPOTENCE_BEFORE_GENERATION, so it does not describe what one apply" \
+            "produced." >&2
+        return 1
+    fi
+    if (( APPLY_GENERATION < 2 )); then
+        echo "FATAL: the idempotency comparison needs a second apply; apply is at" \
+            "generation $APPLY_GENERATION." >&2
+        return 1
+    fi
+    if [[ -z "${IDEMPOTENCE_BEFORE[$key]+set}" ]]; then
+        echo "FATAL: no idempotency baseline was captured for '$key'" >&2
+        return 1
+    fi
+    printf '%s' "${IDEMPOTENCE_BEFORE[$key]}"
+}
+
+# The lines one reading has and the other does not, both ways round, prefixed so
+# no line of a reading can be mistaken for one of this suite's own counters by
+# whatever parses the log.
+#
+# grep rather than diff: diff is not in the package set
+# scripts/containers/create-container.sh installs, and a FAIL that cannot say
+# what moved sends the next person to hand-run containers, which is the cost
+# this suite exists to remove.
+idempotence_report_difference() {
+    local key="$1" before="$2" after="$3" line
+    while IFS= read -r line; do
+        printf '  diff| %s only after the first apply: %s\n' "$key" "$line"
+    done < <(grep -Fxv -f <(printf '%s\n' "$after") <(printf '%s\n' "$before") || true)
+    while IFS= read -r line; do
+        printf '  diff| %s only after the second apply: %s\n' "$key" "$line"
+    done < <(grep -Fxv -f <(printf '%s\n' "$before") <(printf '%s\n' "$after") || true)
+}
+
+# The lengths of the five tables the run is sized by, pinned as literals.
 #
 # A count derived from a table cannot notice that table being edited down: with
 # SSH_CHECKS emptied, a run over the login.defs directives alone would agree
@@ -741,6 +895,7 @@ vendor_survival_baseline_value() {
 SSH_CHECKS_EXPECTED=7
 LOGIN_DEFS_CHECKS_EXPECTED=3
 VENDOR_SURVIVAL_CHECKS_EXPECTED=3
+IDEMPOTENCE_CHECKS_EXPECTED=3
 DIFF_PLUGINS_EXPECTED=2
 
 require_check_tables() {
@@ -749,6 +904,7 @@ require_check_tables() {
         "SSH_CHECKS ${#SSH_CHECKS[@]} $SSH_CHECKS_EXPECTED" \
         "LOGIN_DEFS_CHECKS ${#LOGIN_DEFS_CHECKS[@]} $LOGIN_DEFS_CHECKS_EXPECTED" \
         "VENDOR_SURVIVAL_CHECKS ${#VENDOR_SURVIVAL_CHECKS[@]} $VENDOR_SURVIVAL_CHECKS_EXPECTED" \
+        "IDEMPOTENCE_CHECKS ${#IDEMPOTENCE_CHECKS[@]} $IDEMPOTENCE_CHECKS_EXPECTED" \
         "DIFF_PLUGINS ${#DIFF_PLUGINS[@]} $DIFF_PLUGINS_EXPECTED"; do
         read -r name got want <<<"$entry"
         if [[ "$got" != "$want" ]]; then
@@ -770,19 +926,22 @@ require_check_tables() {
 # not come to this: a loop that skipped a directive, or a check that recorded
 # nothing at all, would otherwise leave a partial run reading as a complete one.
 #
-# The vendor survival checks are one assertion each, not two: there is no
-# tool-reported counterpart to compare against, because the tool claims nothing
-# about settings it does not manage. That is what takes the per-distribution
-# total from 22 to 25, and the five-distribution total from 110 to 125.
+# The vendor survival and idempotency checks are one assertion each, not two:
+# there is no tool-reported counterpart to compare against, because the tool
+# claims nothing about settings it does not manage and nothing about what a
+# second run of itself would do. Vendor survival took the per-distribution total
+# from 22 to 25 and the five-distribution total from 110 to 125; idempotency
+# takes them to 28 and 140.
 #
 # Counted off the pinned lengths above, never off the tables themselves. Read
 # from ${#SSH_CHECKS[@]} the expectation would follow the table it exists to
-# police: emptying that table would drop the number from 25 to 11 and
+# police: emptying that table would drop the number from 28 to 14 and
 # print_summary would then accept the shorter run, which is the guard asking the
 # tables whether the tables are right.
 expected_check_total() {
     printf '%s' "$(( 2 * (SSH_CHECKS_EXPECTED + LOGIN_DEFS_CHECKS_EXPECTED) \
-        + VENDOR_SURVIVAL_CHECKS_EXPECTED + DIFF_PLUGINS_EXPECTED ))"
+        + VENDOR_SURVIVAL_CHECKS_EXPECTED + IDEMPOTENCE_CHECKS_EXPECTED \
+        + DIFF_PLUGINS_EXPECTED ))"
 }
 
 # The two plugins spell their finding ids differently, and a filter written for
@@ -1241,6 +1400,31 @@ run_vendor_survival_checks() {
             record_pass "vendor survival $key: still '$after', the value the system held before apply"
         else
             record_fail "vendor survival $key: was '$before' before apply and is '$after' now; this tool does not manage $key, so the change is damage whatever the new value is"
+        fi
+    done
+}
+
+# One check per reading: the second apply left it exactly as the first one did.
+#
+# A reading that cannot be taken on either side is a failure, never a skip, and
+# costs that key its single check, so the totals stay comparable between a run
+# where every reading answered and one where some did not.
+run_idempotence_checks() {
+    local key before after
+    for key in "${IDEMPOTENCE_CHECKS[@]}"; do
+        if ! before="$(idempotence_baseline "$key")"; then
+            record_fail "idempotency $key: the reading taken after the first apply could not be used, so nothing can be shown to be unchanged"
+            continue
+        fi
+        if ! after="$(idempotence_reading "$key")"; then
+            record_fail "idempotency $key: the reading after the second apply could not be taken"
+            continue
+        fi
+        if [[ "$before" == "$after" ]]; then
+            record_pass "idempotency $key: the second apply left this exactly as the first one did"
+        else
+            record_fail "idempotency $key: the second apply changed it, so applying on a cadence does not hold the host where one apply put it"
+            idempotence_report_difference "$key" "$before" "$after"
         fi
     done
 }
@@ -1846,11 +2030,12 @@ Number of days of warning before password expires	: 11"
     check_eq "${#SSH_CHECKS[@]}" "7" "the ssh table holds seven directives"
     check_eq "${#LOGIN_DEFS_CHECKS[@]}" "3" "the login.defs table holds three directives"
     check_eq "${#VENDOR_SURVIVAL_CHECKS[@]}" "3" "the vendor survival table holds three settings"
+    check_eq "${#IDEMPOTENCE_CHECKS[@]}" "3" "the idempotency table holds three readings"
     check_eq "${#DIFF_PLUGINS[@]}" "2" "two plugins are compared"
     local pinned_total
     pinned_total="$(expected_check_total)"
-    check_eq "$pinned_total" "25" \
-        "the run is sized at two checks per directive, one per unmanaged setting, plus one control per plugin"
+    check_eq "$pinned_total" "28" \
+        "the run is sized at two checks per directive, one per unmanaged setting, one per idempotency reading, plus one control per plugin"
     check_status 0 "require_check_tables accepts the tables as they stand" \
         require_check_tables
 
@@ -2171,6 +2356,106 @@ Number of days of warning before password expires	: 11"
     check_status 1 "verdict disagrees when the system differs and nothing is reported" \
         verdict_agrees yes no 0
 
+    # The idempotency checks. Their readings want root and a container, so what
+    # is pinned here is everything around them: the fragment listing, the
+    # dispatch, every refusal that keeps the baseline from becoming a reading
+    # against itself, and the comparison driven through a stub so it is watched
+    # both passing and failing.
+    local dropin_fixture
+    dropin_fixture="$(mktemp -d)"
+    check_eq "$(sshd_dropin_listing "$dropin_fixture/missing")" "directory absent" \
+        "a missing fragment directory reads as absent rather than as nothing"
+    check_eq "$(sshd_dropin_listing "$dropin_fixture")" "directory empty" \
+        "an empty fragment directory reads as empty rather than as nothing"
+    printf 'X11Forwarding no\n' >"$dropin_fixture/00-hardener.conf"
+    printf 'X11Forwarding yes\n' >"$dropin_fixture/50-redhat.conf"
+    check_eq "$(sshd_dropin_listing "$dropin_fixture")" \
+        "=== $dropin_fixture/00-hardener.conf
+X11Forwarding no
+=== $dropin_fixture/50-redhat.conf
+X11Forwarding yes" \
+        "the fragment listing names every file and carries its contents"
+    rm -rf "$dropin_fixture"
+
+    check_status 1 "an unknown idempotency key is refused, never read as an empty reading" \
+        idempotence_reading no-such-reading
+
+    login_defs_system_values() {
+        printf 'Last password change : Jul 28, 2026\nMinimum number of days : 1\n'
+    }
+    check_eq "$(idempotence_reading login-defs)" "Minimum number of days : 1" \
+        "the login.defs reading drops the probe account's own creation date"
+    # shellcheck disable=SC2329  # called indirectly, through idempotence_reading
+    login_defs_system_values() { return 1; }
+    check_status 1 "a probe that failed is not filtered down to an empty reading" \
+        idempotence_reading login-defs
+    unset -f login_defs_system_values
+
+    check_eq "$(idempotence_report_difference sshd-dropins "kept
+gone" "kept
+added")" \
+        "  diff| sshd-dropins only after the first apply: gone
+  diff| sshd-dropins only after the second apply: added" \
+        "the difference report names the line each side has and the other does not"
+
+    local saved_generation=$APPLY_GENERATION
+    IDEMPOTENCE_BEFORE=()
+    IDEMPOTENCE_BEFORE_GENERATION=""
+    APPLY_GENERATION=0
+    check_status 1 "the idempotency baseline refuses to be taken before any apply" \
+        first_apply_idempotence_init
+    APPLY_GENERATION=2
+    check_status 1 "the idempotency baseline refuses to be taken after the second apply" \
+        first_apply_idempotence_init
+    check_status 1 "an uncaptured idempotency baseline is refused" \
+        idempotence_baseline sshd-effective
+    IDEMPOTENCE_BEFORE[sshd-effective]="a reading"
+    IDEMPOTENCE_BEFORE_GENERATION=2
+    check_status 1 "a baseline stamped after the second apply is refused" \
+        idempotence_baseline sshd-effective
+    IDEMPOTENCE_BEFORE_GENERATION=1
+    check_status 1 "a baseline for a key that was never captured is refused" \
+        idempotence_baseline no-such-reading
+    APPLY_GENERATION=1
+    check_status 1 "the comparison is refused until a second apply has happened" \
+        idempotence_baseline sshd-effective
+    APPLY_GENERATION=2
+    check_eq "$(idempotence_baseline sshd-effective)" "a reading" \
+        "a baseline taken between the two applies is returned"
+
+    # Watched failing, which is the only thing that makes it evidence: a
+    # comparison of one reading against itself passes whatever the tool did.
+    # The stub replaces the reading for the rest of this function, so nothing
+    # below may use the real one.
+    local idempotence_saved_total=$CHECKS_TOTAL
+    local idempotence_saved_passed=$CHECKS_PASSED
+    local idempotence_saved_failed=$CHECKS_FAILED
+    local idempotence_key
+    IDEMPOTENCE_BEFORE=()
+    IDEMPOTENCE_BEFORE_GENERATION=1
+    for idempotence_key in "${IDEMPOTENCE_CHECKS[@]}"; do
+        IDEMPOTENCE_BEFORE["$idempotence_key"]="what one apply produced"
+    done
+    idempotence_reading() { printf 'what one apply produced'; }
+    CHECKS_TOTAL=0
+    CHECKS_PASSED=0
+    CHECKS_FAILED=0
+    run_idempotence_checks >/dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "$IDEMPOTENCE_CHECKS_EXPECTED/0" \
+        "a second apply that changes nothing passes every idempotency check"
+    idempotence_reading() { printf 'something the second apply moved'; }
+    CHECKS_TOTAL=0
+    CHECKS_PASSED=0
+    CHECKS_FAILED=0
+    run_idempotence_checks >/dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/$IDEMPOTENCE_CHECKS_EXPECTED" \
+        "a second apply that moves a reading fails every idempotency check"
+    unset -f idempotence_reading
+    CHECKS_TOTAL=$idempotence_saved_total
+    CHECKS_PASSED=$idempotence_saved_passed
+    CHECKS_FAILED=$idempotence_saved_failed
+    APPLY_GENERATION=$saved_generation
+
     if (( failures > 0 )); then
         echo "self-test: $failures failure(s)"
         return 1
@@ -2214,6 +2499,17 @@ run_full_suite() {
 
     apply_hardening
 
+    # Between the two applies: what one apply produced, which is what the second
+    # must not move.
+    first_apply_idempotence_init || return 1
+
+    apply_hardening
+
+    # Every capture below is therefore taken after TWO applies, which is
+    # deliberate and strengthens the checks that were already here: they now
+    # assert that the hardening holds on the run after the one that established
+    # it, not merely that one apply reached its targets. A directive a second
+    # apply un-hardens now fails its own check as well as the idempotency one.
     ssh_oracle_init || return 1
     login_defs_oracle_init || return 1
     vendor_survival_oracle_init || return 1
@@ -2223,6 +2519,7 @@ run_full_suite() {
     run_ssh_checks
     run_login_defs_checks
     run_vendor_survival_checks
+    run_idempotence_checks
     print_summary
 }
 

@@ -165,6 +165,22 @@ Hardcoding one would make it distribution-specific for no gain: the same run
 reads `$y$` on four distributions and `$6$` on openSUSE, `0022` on four and
 `0002` on debian.
 
+**The run applies twice**, and one assertion per reading in
+`IDEMPOTENCE_CHECKS` says the second apply changed nothing: `sshd -T` in full,
+`/etc/ssh/sshd_config.d` as filenames and contents, and what `login.defs` means
+to a fresh account. Idempotency is an invariant rather than a nicety, because
+the scheduler applies on a cadence: an apply that undoes the previous one is a
+fleet host returning to an unhardened state on a timer while reporting success
+every time. A single-apply oracle structurally cannot see that, which is how a
+defect that deleted the tool's own `sshd_config.d` fragment on the second run
+survived a green 125/125.
+
+The readings are whole rather than per directive, because the defect this
+catches need not touch a directive anyone thought to list. A consequence worth
+knowing: every other check now runs against the state after **two** applies, so
+a directive a second apply un-hardens fails its own check as well as the
+idempotency one.
+
 This family is the reason a green run was never proof on its own. Every other
 check asks whether a setting the tool targets reached its target; none asked
 whether the rest of the file survived, which is exactly how a masked
@@ -231,6 +247,14 @@ guard that refuses a capture taken before `apply`, the probe's create-and-remove
 safety, and both plugins' finding-id conventions against fixtures. `jq` is the
 only external command it needs.
 
+The idempotency family is proven here too, because its readings want root and a
+container: the fragment listing against a temporary directory that is missing,
+empty and then populated, the refusal of an unknown reading key, and each of the
+four ways a baseline can fail to describe what one apply produced. The
+comparison itself is driven through a stubbed reading and watched in both
+directions, since a reading compared against itself passes whatever the tool
+did.
+
 The vendor survival family is proven here in both directions, because its whole
 job is to notice a value changing: an unchanged value agrees, a changed one does
 not, a reading that could not be taken on either side fails the check rather
@@ -250,17 +274,21 @@ counted off the tables cannot notice one of them being edited down: with the ssh
 table emptied, a run over the `login.defs` directives alone would agree with
 itself, exit 0, and be reported as a PASS. So the size the run is measured
 against is counted off `SSH_CHECKS_EXPECTED`, `LOGIN_DEFS_CHECKS_EXPECTED`,
-`VENDOR_SURVIVAL_CHECKS_EXPECTED` and `DIFF_PLUGINS_EXPECTED`, which the tables
-are then checked against, rather than off the tables themselves.
+`VENDOR_SURVIVAL_CHECKS_EXPECTED`, `IDEMPOTENCE_CHECKS_EXPECTED` and
+`DIFF_PLUGINS_EXPECTED`, which the tables are then checked against, rather than
+off the tables themselves.
 
 Adding a directive therefore means changing four literals in
 `scripts/test/differential-suite.sh`, not one: the `*_EXPECTED` constant beside
 its table, that same length re-pinned in the self-test (`the ssh table holds
-seven directives`), the total the run is sized at (`25`), and the number of
-directives the pre-apply control covers (`10`). `VENDOR_SURVIVAL_CHECKS` is
-sized the same way, and contributes one check per setting rather than two. Every one of them fails loudly,
-over two `--self-test` runs, because the total is counted off the constant and
-only moves once the constant has been raised.
+seven directives`), the total the run is sized at (`28`), and the number of
+directives the pre-apply control covers (`10`). `VENDOR_SURVIVAL_CHECKS` and
+`IDEMPOTENCE_CHECKS` are sized the same way, and contribute one check each
+rather than two. Every one of them fails loudly, over two `--self-test` runs,
+because the total is counted off the constant and only moves once the constant
+has been raised. Adding the idempotency table did exactly that: the self-test
+refused the run at `got '28', want '25'` until the literal was raised on
+purpose.
 
 ### What a failure means
 
