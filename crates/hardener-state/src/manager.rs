@@ -851,22 +851,18 @@ impl CheckpointManager {
         // is owned by the `batch apply` slice (the apply.rs euid gate); revisit
         // there if non-root remote restore is required.
         let mode_str = format!("{:o}", file_state.file_permissions & 0o7777);
-        let chmod_warn = executor
-            .execute_command("chmod", &[mode_str.as_str(), path_str])
-            .await
-            .err()
-            .map(|e| format!("chmod {path_str}: {e}"));
+        let chmod_warn =
+            restore_command_refusal(executor, "chmod", &[mode_str.as_str(), path_str], path_str)
+                .await;
 
         // Restore ownership: best-effort.
         let owner_str = format!(
             "{}:{}",
             file_state.file_owner_uid, file_state.file_owner_gid
         );
-        let chown_warn = executor
-            .execute_command("chown", &[owner_str.as_str(), path_str])
-            .await
-            .err()
-            .map(|e| format!("chown {path_str}: {e}"));
+        let chown_warn =
+            restore_command_refusal(executor, "chown", &[owner_str.as_str(), path_str], path_str)
+                .await;
 
         // Surface the first best-effort warning (if any) as a non-fatal error so
         // it appears in the per-file restore_error field of RollbackResult.
@@ -1037,17 +1033,47 @@ fn select_latest_named(
 /// function (rather than nested `if`s inline in `restore_file_state_tracked`)
 /// so the two conditions it distinguishes, ordinary-removal versus
 /// protected-path, read as one flat decision instead of two levels of nesting.
+/// Runs one restore command and describes why it did not happen, or `None` if
+/// it did.
+///
+/// `execute_command` returns `Ok` for a process that started and exited
+/// non-zero, so a transport error is only half of what can go wrong: a `chmod`
+/// the target refuses and a `chmod` that never ran are different outcomes and
+/// both mean the file is not as the checkpoint recorded it. Every restore
+/// command in this module goes through here so the two cannot be told apart at
+/// one site and conflated at the next.
+///
+/// A refusal that says nothing on stderr is still reported, by its exit status.
+/// An empty description would put the caller back where it started, unable to
+/// distinguish a failure from a success.
+async fn restore_command_refusal(
+    executor: &dyn SystemExecutor,
+    program: &str,
+    args: &[&str],
+    path_str: &str,
+) -> Option<String> {
+    let detail = match executor.execute_command(program, args).await {
+        Ok(output) if output.success() => return None,
+        Ok(output) if output.stderr.trim().is_empty() => {
+            format!("exited {}", output.exit_code)
+        }
+        Ok(output) => output.stderr.trim().to_string(),
+        Err(e) => e.to_string(),
+    };
+    Some(format!("{program} {path_str}: {detail}"))
+}
+
 async fn remove_or_refuse(
     executor: &dyn SystemExecutor,
     path: &Path,
     path_str: &str,
 ) -> (FileRestoreAction, Result<()>) {
     if !UNDELETABLE_ROLLBACK_PATHS.contains(&path_str) {
-        let result = executor
-            .execute_command("rm", &["-f", path_str])
-            .await
-            .map(|_| ())
-            .map_err(|e| HardeningError::Executor(e.to_string()));
+        let result =
+            match restore_command_refusal(executor, "rm", &["-f", path_str], path_str).await {
+                None => Ok(()),
+                Some(refusal) => Err(HardeningError::Executor(refusal)),
+            };
         return (FileRestoreAction::Removed, result);
     }
 
@@ -1342,6 +1368,152 @@ mod tests {
             result.rollback_success,
             "deleting a path the apply created is an ordinary success: {result:?}"
         );
+    }
+
+    /// A command that ran and refused is not a command that worked.
+    ///
+    /// `execute_command` returns `Ok` for a process that started and exited
+    /// non-zero, so a removal blocked by a read-only mount or an unwritable
+    /// parent directory arrived here as success. Rollback then reported the
+    /// file removed, `rollback_success` stayed true, and the operator was told
+    /// the host was back at the checkpoint while the file the apply created was
+    /// still on disk still doing its job.
+    #[tokio::test]
+    async fn a_removal_the_host_refused_is_not_a_successful_rollback() {
+        use hardener_common::executor::FileMetadata;
+
+        let manager = test_manager().await;
+        let drop_in = "/etc/sysctl.d/99-hardener.conf";
+
+        let capturing = MockExecutor::new();
+        let cp_id = manager
+            .create_checkpoint_metadata_only(&capturing, "pre-apply", &[Path::new(drop_in)])
+            .await
+            .expect("capture of a confirmed-absent path must succeed");
+
+        let restoring = MockExecutor::new()
+            .with_file_metadata(
+                drop_in,
+                "",
+                FileMetadata {
+                    exists: true,
+                    is_file: true,
+                    is_dir: false,
+                    mode: 0o100644,
+                    size: 0,
+                    uid: 0,
+                    gid: 0,
+                },
+            )
+            .with_command(
+                "rm",
+                &["-f", drop_in],
+                hardener_common::executor::CommandOutput {
+                    stdout: String::new(),
+                    stderr: "rm: cannot remove '/etc/sysctl.d/99-hardener.conf': Read-only \
+                             file system"
+                        .to_string(),
+                    exit_code: 1,
+                },
+            );
+
+        let result = manager
+            .rollback(&restoring, &cp_id)
+            .await
+            .expect("rollback must run rather than abort");
+
+        assert!(
+            !result.rollback_success,
+            "a file the host refused to remove is still hardening it: {result:?}"
+        );
+        assert!(
+            result.rollback_files[0]
+                .restore_error
+                .as_deref()
+                .is_some_and(|e| e.contains("Read-only file system")),
+            "the reason the host gave must reach the operator, got: {:?}",
+            result.rollback_files[0].restore_error
+        );
+    }
+
+    /// The same conflation on the metadata half of a restore.
+    ///
+    /// These two are best-effort by design, and the comment above them names
+    /// the case they are expected to lose: a remote restore by a user who does
+    /// not own the target. That is precisely a command that runs and is
+    /// refused, so the one failure the design anticipates was the one it could
+    /// not see, and a restore that recovered content but no permissions
+    /// reported itself as complete.
+    #[tokio::test]
+    async fn permissions_the_host_refused_to_restore_are_reported() {
+        use hardener_common::executor::{CommandOutput, FileMetadata};
+
+        for refused in ["chmod", "chown"] {
+            let manager = test_manager().await;
+            let path = "/etc/shadow";
+            let denied = || CommandOutput {
+                stdout: String::new(),
+                stderr: "Operation not permitted".to_string(),
+                exit_code: 1,
+            };
+
+            let executor = MockExecutor::new()
+                .with_file_metadata(
+                    path,
+                    "",
+                    FileMetadata {
+                        exists: true,
+                        is_file: true,
+                        is_dir: false,
+                        mode: 0o100000,
+                        size: 0,
+                        uid: 0,
+                        gid: 0,
+                    },
+                )
+                .with_command(
+                    "chmod",
+                    &["0", path],
+                    if refused == "chmod" {
+                        denied()
+                    } else {
+                        ok_output()
+                    },
+                )
+                .with_command(
+                    "chown",
+                    &["0:0", path],
+                    if refused == "chown" {
+                        denied()
+                    } else {
+                        ok_output()
+                    },
+                );
+
+            let cp_id = manager
+                .create_checkpoint_metadata_only(&executor, "perm-test", &[Path::new(path)])
+                .await
+                .expect("checkpoint");
+
+            let result = manager
+                .rollback(&executor, &cp_id)
+                .await
+                .expect("rollback must not abort on an allow-listed path");
+
+            assert!(
+                !result.rollback_success,
+                "{refused} was refused, so the mode on {path} is not what the checkpoint \
+                 recorded: {result:?}"
+            );
+            assert!(
+                result.rollback_files[0]
+                    .restore_error
+                    .as_deref()
+                    .is_some_and(|e| e.contains(refused) && e.contains("Operation not permitted")),
+                "the refusal must name the command and the reason, got: {:?}",
+                result.rollback_files[0].restore_error
+            );
+        }
     }
 
     #[tokio::test]
