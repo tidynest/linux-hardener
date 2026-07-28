@@ -146,11 +146,6 @@ impl SystemExecutor for LocalExecutor {
             exit_code: output.status.code().unwrap_or(-1),
         })
     }
-
-    async fn command_exists(&self, program: &str) -> Result<bool> {
-        let output = self.execute_command("which", &[program]).await?;
-        Ok(output.success())
-    }
 }
 
 #[cfg(test)]
@@ -256,6 +251,32 @@ mod tests {
             meta.mode & 0o777,
             0,
             "permission bits must still read as 0000"
+        );
+    }
+
+    /// Guards the probe string against a real shell rather than a fake
+    /// executor. It passes against the shipped `which` probe too, because this
+    /// host has `which`; what it adds is proof that the replacement asks a
+    /// real shell the same question and gets the same three answers.
+    #[tokio::test]
+    async fn command_exists_answers_against_a_real_shell() {
+        let executor = LocalExecutor::new();
+
+        assert!(
+            executor.command_exists("sh").await.unwrap(),
+            "sh is spawnable here or nothing in this suite could have run"
+        );
+        assert!(
+            !executor
+                .command_exists("__no_such_program__")
+                .await
+                .unwrap(),
+            "an absent program is an answer, not an error"
+        );
+        assert!(
+            !executor.command_exists("cd").await.unwrap(),
+            "`cd` is a shell builtin with no binary behind it: execute_command \
+             could not spawn it, so command_exists must not claim it is there"
         );
     }
 }

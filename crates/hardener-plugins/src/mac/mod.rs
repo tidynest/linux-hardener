@@ -582,25 +582,21 @@ impl HardeningPlugin for MacHardeningPlugin {
                         );
                         // aa-status ran and refused for lack of privilege, so
                         // AppArmor is genuinely installed: a root-only probe
-                        // must not read as "no profiles loaded".
-                        if ctx
-                            .executor()
-                            .command_exists("aa-status")
-                            .await
-                            .unwrap_or(false)
-                        {
-                            unchecked.push(UncheckedCheck {
-                                unchecked_check_id: "apparmor-no-profiles".to_string(),
-                                unchecked_title: "AppArmor profile enforcement".to_string(),
-                                unchecked_category: FindingCategory::Kernel,
-                                unchecked_reason:
-                                    "reading the AppArmor profile set (aa-status) requires root"
-                                        .to_string(),
-                                unchecked_compliance: get_mac_compliance_mappings(
-                                    "apparmor-no-profiles",
-                                ),
-                            });
-                        }
+                        // must not read as "no profiles loaded". Its having run
+                        // is the whole proof, so nothing is asked a second
+                        // time; an existence probe here could only contradict
+                        // it, and a contradiction used to delete the gap.
+                        unchecked.push(UncheckedCheck {
+                            unchecked_check_id: "apparmor-no-profiles".to_string(),
+                            unchecked_title: "AppArmor profile enforcement".to_string(),
+                            unchecked_category: FindingCategory::Kernel,
+                            unchecked_reason:
+                                "reading the AppArmor profile set (aa-status) requires root"
+                                    .to_string(),
+                            unchecked_compliance: get_mac_compliance_mappings(
+                                "apparmor-no-profiles",
+                            ),
+                        });
                     }
                     ApparmorProbe::Unavailable => {
                         warn!("Failed to check AppArmor status: aa-status unavailable");

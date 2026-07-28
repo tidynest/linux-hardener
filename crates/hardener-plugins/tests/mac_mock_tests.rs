@@ -894,6 +894,32 @@ async fn test_mac_scan_apparmor_permission_denied_is_unchecked_not_silent() {
     );
 }
 
+/// The evidence gap survives an existence probe that disagrees with the probe
+/// that already ran.
+///
+/// Reaching the permission-denied arm means `aa-status` executed and refused,
+/// which is proof it is installed. Asking again whether it exists can only
+/// contradict that, and the contradiction used to delete the unchecked entry:
+/// the scan then rendered a host whose AppArmor state nobody could read
+/// exactly like a host with nothing left to check.
+#[tokio::test]
+async fn test_mac_scan_apparmor_permission_denied_unchecked_survives_a_denying_existence_probe() {
+    let executor = apparmor_permission_denied_executor().with_command_exists("aa-status", false);
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = MacHardeningPlugin::new();
+
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
+
+    assert!(
+        result
+            .scan_unchecked
+            .iter()
+            .any(|u| u.unchecked_check_id == "apparmor-no-profiles"),
+        "aa-status ran and refused for lack of privilege, so the evidence gap \
+         is real however a second existence probe answers"
+    );
+}
+
 /// A probe that failed is not a host without a MAC system.
 ///
 /// `detect_mac_system` folded `path_exists` errors to `false`, so a transient

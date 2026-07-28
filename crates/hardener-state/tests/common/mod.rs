@@ -85,14 +85,6 @@ impl SystemExecutor for DiskExecutor {
         })
     }
 
-    async fn command_exists(&self, program: &str) -> Result<bool> {
-        Ok(std::process::Command::new("which")
-            .arg(program)
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false))
-    }
-
     async fn read_dir(&self, path: &Path) -> Result<Vec<PathBuf>> {
         let entries = std::fs::read_dir(path).map_err(|e| anyhow!(e))?;
         Ok(entries.flatten().map(|e| e.path()).collect())

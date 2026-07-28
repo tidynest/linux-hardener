@@ -243,11 +243,6 @@ impl SystemExecutor for SshExecutor {
             exit_code: output.status.code().unwrap_or(-1),
         })
     }
-
-    async fn command_exists(&self, program: &str) -> Result<bool> {
-        let output = self.execute_command("which", &[program]).await?;
-        Ok(output.success())
-    }
 }
 
 /// Classifies the trimmed output of `path_exists`'s `test -e {path} && echo
