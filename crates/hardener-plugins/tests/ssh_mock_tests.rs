@@ -9,7 +9,8 @@ use hardener_core::{
     plugin::HardeningPlugin,
 };
 use hardener_plugins::ssh::{
-    SshHardeningPlugin, select_algorithms, supported_algorithms, validate_sshd_config,
+    SshHardeningPlugin, select_algorithms, sshd_validate_scratch_path, supported_algorithms,
+    validate_sshd_config,
 };
 use std::sync::Arc;
 
@@ -511,17 +512,12 @@ async fn test_supported_algorithms_unavailable_returns_empty() {
     );
 }
 
-/// Reconstructs the deterministic temp path `validate_sshd_config` writes to so
-/// the exact `sshd -t -f <path>` invocation can be registered with MockExecutor.
-/// Mirrors the implementation: `<temp_dir>/linux-hardener-sshd-validate-<pid>.conf`.
+/// The path `validate_sshd_config` stages the candidate at, so the exact
+/// `sshd -t -f <path>` invocation can be registered with MockExecutor. Asks the
+/// implementation rather than reconstructing it: the reconstruction this
+/// replaced was a second copy free to drift from the one under test.
 fn sshd_validate_temp_path() -> String {
-    std::env::temp_dir()
-        .join(format!(
-            "linux-hardener-sshd-validate-{}.conf",
-            std::process::id()
-        ))
-        .to_string_lossy()
-        .to_string()
+    sshd_validate_scratch_path().to_string_lossy().to_string()
 }
 
 #[tokio::test]
@@ -559,6 +555,102 @@ async fn test_validate_sshd_config_err_when_sshd_t_fails() {
     assert!(
         err.to_string().contains("sshd -t rejected"),
         "error should describe the rejection, got: {err}"
+    );
+}
+
+/// A MockExecutor that answers every command `validate_sshd_config` issues,
+/// so what the test asserts is which commands were run rather than which ones
+/// the mock happened to know about.
+fn sshd_validate_executor(sshd: CommandOutput) -> MockExecutor {
+    let temp = sshd_validate_temp_path();
+    MockExecutor::new()
+        .with_command("sshd", &["-t", "-f", &temp], sshd)
+        .with_command("chmod", &["600", &temp], ok_output(""))
+        .with_command("rm", &["-f", &temp], ok_output(""))
+}
+
+/// The candidate is staged on whichever host the executor targets, so it has to
+/// be removed there too.
+///
+/// Removing it with a bare `std::fs` call deleted a path on the controller
+/// while the file itself sat on the target, so every remote apply left a full
+/// copy of the incoming configuration behind on the host it had just hardened,
+/// and the controller was asked to delete a path of its own that it never wrote.
+#[tokio::test]
+async fn test_validate_sshd_config_removes_the_candidate_through_the_executor() {
+    let executor = sshd_validate_executor(ok_output(""));
+
+    validate_sshd_config(&executor, "PermitRootLogin no\n")
+        .await
+        .expect("validation should succeed when sshd -t exits 0");
+
+    let temp = sshd_validate_temp_path();
+    assert!(
+        executor
+            .log()
+            .commands_executed
+            .iter()
+            .any(|(program, args)| program == "rm" && args.iter().any(|a| a == &temp)),
+        "the candidate must be removed on the host it was staged on, got: {:?}",
+        executor.log().commands_executed
+    );
+}
+
+/// The candidate carries the configuration about to be applied and is staged
+/// under a predictable name in a world-writable directory, so it states its own
+/// mode instead of inheriting whichever default the shared writer currently has.
+///
+/// It used to inherit 0600 from the temporary file the atomic writer renames
+/// into place. Giving a created file 0644 fixed a real defect elsewhere and
+/// silently widened this one, which is why a call site that needs something
+/// other than the default has to say so.
+#[tokio::test]
+async fn test_validate_sshd_config_stages_the_candidate_unreadable_by_others() {
+    let executor = sshd_validate_executor(ok_output(""));
+
+    validate_sshd_config(&executor, "PermitRootLogin no\n")
+        .await
+        .expect("validation should succeed when sshd -t exits 0");
+
+    let temp = sshd_validate_temp_path();
+    assert!(
+        executor
+            .log()
+            .commands_executed
+            .iter()
+            .any(|(program, args)| program == "chmod"
+                && args.first().is_some_and(|mode| mode == "600")
+                && args.iter().any(|a| a == &temp)),
+        "the staged candidate must be restricted to its owner, got: {:?}",
+        executor.log().commands_executed
+    );
+}
+
+/// The candidate is removed even when the daemon rejects it.
+///
+/// The rejection path is the one that matters: a candidate `sshd -t` refused is
+/// exactly the content an operator would least like left readable on the host.
+#[tokio::test]
+async fn test_validate_sshd_config_removes_the_candidate_after_a_rejection() {
+    let executor = sshd_validate_executor(CommandOutput {
+        stdout: String::new(),
+        stderr: "bad configuration line 1".to_string(),
+        exit_code: 255,
+    });
+
+    validate_sshd_config(&executor, "ThisIsNotAValidDirective\n")
+        .await
+        .expect_err("validation must fail when sshd -t exits non-zero");
+
+    let temp = sshd_validate_temp_path();
+    assert!(
+        executor
+            .log()
+            .commands_executed
+            .iter()
+            .any(|(program, args)| program == "rm" && args.iter().any(|a| a == &temp)),
+        "a rejected candidate must not be left behind, got: {:?}",
+        executor.log().commands_executed
     );
 }
 

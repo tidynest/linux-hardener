@@ -223,6 +223,30 @@ pub fn select_algorithms(desired: &[&str], supported: &[String]) -> Vec<String> 
         .collect()
 }
 
+/// Mode the staged candidate is restricted to. It holds the configuration about
+/// to be applied, under a predictable name in a world-writable directory, so it
+/// states its own mode rather than inheriting the shared writer's default for a
+/// created file.
+const SCRATCH_MODE: &str = "600";
+
+/// Path the candidate config is staged at while `sshd -t` reads it.
+///
+/// `/tmp` is named outright rather than taken from `std::env::temp_dir`, which
+/// reads the controller's `TMPDIR`. This path is written and read on whichever
+/// host the executor targets, so a directory that exists only in the operator's
+/// own environment would send a remote apply somewhere the target has never
+/// heard of.
+///
+/// One definition, called by both the implementation and the tests that
+/// register the expected `sshd -t -f <path>` invocation: a test mirroring this
+/// construction by hand is a second copy that can drift from the first.
+pub fn sshd_validate_scratch_path() -> std::path::PathBuf {
+    std::path::PathBuf::from("/tmp").join(format!(
+        "linux-hardener-sshd-validate-{}.conf",
+        std::process::id()
+    ))
+}
+
 /// Validates a candidate sshd_config by writing it to a temporary path and
 /// running `sshd -t -f <temp>`.
 ///
@@ -233,10 +257,7 @@ pub async fn validate_sshd_config(
     executor: &dyn hardener_core::SystemExecutor,
     candidate: &str,
 ) -> Result<()> {
-    let temp_path = std::env::temp_dir().join(format!(
-        "linux-hardener-sshd-validate-{}.conf",
-        std::process::id()
-    ));
+    let temp_path = sshd_validate_scratch_path();
 
     executor
         .write_file(&temp_path, candidate)
@@ -249,17 +270,45 @@ pub async fn validate_sshd_config(
         })?;
 
     let temp_str = temp_path.to_string_lossy().to_string();
+
+    // Narrowed before `sshd -t` is told about it, and not treated as fatal: the
+    // same content is about to become the host's own sshd_config, so refusing
+    // the apply over the mode of a scratch copy would cost more than it saves.
+    // The window between the write and this is the same one every chmod-after-
+    // write site here carries.
+    match executor
+        .execute_command("chmod", &[SCRATCH_MODE, &temp_str])
+        .await
+    {
+        Ok(output) if output.success() => {}
+        Ok(output) => warn!(
+            "Could not restrict {} to mode {}: {}",
+            temp_str,
+            SCRATCH_MODE,
+            output.stderr.trim()
+        ),
+        Err(e) => warn!(
+            "Could not restrict {} to mode {}: {}",
+            temp_str, SCRATCH_MODE, e
+        ),
+    }
+
     let result = executor
         .execute_command("sshd", &["-t", "-f", &temp_str])
         .await;
 
-    // Best-effort cleanup; never let cleanup failure mask the validation result.
-    if let Err(e) = std::fs::remove_file(&temp_path) {
-        warn!(
+    // Removed on the host it was staged on. Best-effort: cleanup must never
+    // mask the validation result, which is the answer the caller acts on. Both
+    // failure shapes are reported, because a command that ran and failed comes
+    // back as `Ok` carrying a non-zero status.
+    match executor.execute_command("rm", &["-f", &temp_str]).await {
+        Ok(output) if output.success() => {}
+        Ok(output) => warn!(
             "Failed to remove temp sshd_config {}: {}",
-            temp_path.display(),
-            e
-        );
+            temp_str,
+            output.stderr.trim()
+        ),
+        Err(e) => warn!("Failed to remove temp sshd_config {}: {}", temp_str, e),
     }
 
     match result {
