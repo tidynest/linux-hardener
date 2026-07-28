@@ -479,18 +479,29 @@ test_apply_other_plugins() {
         if [[ "$CONTAINER_MODE" == "true" ]]; then
             log_test "Apply $plugin"
             local apply_json="$REPORT_DIR/apply-$plugin.json"
-            # stdout carries the result document, stderr the tracing. Keeping
-            # them apart is what leaves the document parseable, and appending
-            # the tracing to the log is what makes a real failure diagnosable
-            # rather than merely reported.
+            local apply_err="$REPORT_DIR/apply-$plugin.err"
+            # stdout carries the result document, stderr the reason it is not
+            # there. Keeping them apart is what leaves the document parseable.
             if "$BINARY" apply --plugin "$plugin" --format json \
-                > "$apply_json" 2>>"$LOG_FILE"; then
+                > "$apply_json" 2>"$apply_err"; then
                 log_pass "Apply $plugin"
+                cat "$apply_err" >> "$LOG_FILE"
             elif apply_produced_results "$apply_json"; then
                 log_pass "Apply $plugin (partial apply: expected in container)"
+                cat "$apply_err" >> "$LOG_FILE"
             else
-                log_fail "Apply $plugin (no result document: the apply never ran)"
-                cat "$apply_json" >> "$LOG_FILE"
+                log_fail "Apply $plugin (the plugin reported no result at all)"
+                # Through log_info, which tees to the output the cross-distro
+                # runner captures. $LOG_FILE lives inside the container and is
+                # never collected, so a failure explained only there is a
+                # failure reported without its evidence.
+                if [[ -s "$apply_err" ]]; then
+                    head -20 "$apply_err" | while IFS= read -r line; do
+                        log_info "  $line"
+                    done
+                else
+                    log_info "  the tool wrote nothing to stderr either"
+                fi
             fi
         else
             run_test "Apply $plugin" "\"$BINARY\" apply --plugin \"$plugin\"" || true
