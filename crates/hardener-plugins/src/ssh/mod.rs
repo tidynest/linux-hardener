@@ -1427,12 +1427,16 @@ impl HardeningPlugin for SshHardeningPlugin {
             //
             // A directive our own fragment already answers is not an override
             // to route around: it is this tool's own previous write, and the
-            // rewrite below refreshes it.
+            // rewrite below refreshes it. What matters is therefore what would
+            // win if the fragment were not there, because that is what decides
+            // whether writing the main file can take effect. Discarding the
+            // fragment and reading the empty result as "nobody overrides this"
+            // instead would hand a second apply the main file as its target
+            // while the vendor fragment underneath still outranks it, and prune
+            // the fragment that was holding the host.
             let overridden = resolved
-                .effective(directive.ssh_directive_name)
-                .filter(|effective| {
-                    effective.source != config_path && effective.source != dropin::DROPIN_PATH
-                });
+                .effective_without(directive.ssh_directive_name, dropin::DROPIN_PATH)
+                .filter(|effective| effective.source != config_path);
             if let Some(effective) = overridden {
                 if effective.value == target_value || already_safe_enough {
                     changes.push(Change {

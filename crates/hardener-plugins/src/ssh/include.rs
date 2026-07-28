@@ -53,18 +53,47 @@ impl ResolvedConfig {
     /// Only the global scope of each segment is consulted: a value inside a
     /// `Match` block applies to particular connections, not to the host.
     pub(super) fn effective(&self, directive_name: &str) -> Option<EffectiveValue> {
-        self.segments.iter().find_map(|(path, content)| {
-            parse_config_value(
-                global_scope(content),
-                directive_name,
-                ConfigFormat::SpaceSeparated,
-                false,
-            )
-            .map(|value| EffectiveValue {
-                value,
-                source: path.clone(),
+        self.first_value(directive_name, |_| true)
+    }
+
+    /// The effective global value a directive would have if one file were not
+    /// there.
+    ///
+    /// Apply needs this to decide where a directive belongs. Once this tool has
+    /// written its own fragment, that fragment supplies the value, so asking
+    /// only "does anything other than us win" answers "no" on a host where a
+    /// vendor fragment is still waiting underneath it. The question that
+    /// decides whether the main file is a usable target is what would win
+    /// without the fragment, which is this.
+    pub(super) fn effective_without(
+        &self,
+        directive_name: &str,
+        ignored_path: &str,
+    ) -> Option<EffectiveValue> {
+        self.first_value(directive_name, |path| path != ignored_path)
+    }
+
+    /// The first segment satisfying `considered` that supplies the directive.
+    fn first_value(
+        &self,
+        directive_name: &str,
+        considered: impl Fn(&str) -> bool,
+    ) -> Option<EffectiveValue> {
+        self.segments
+            .iter()
+            .filter(|(path, _)| considered(path))
+            .find_map(|(path, content)| {
+                parse_config_value(
+                    global_scope(content),
+                    directive_name,
+                    ConfigFormat::SpaceSeparated,
+                    false,
+                )
+                .map(|value| EffectiveValue {
+                    value,
+                    source: path.clone(),
+                })
             })
-        })
     }
 }
 

@@ -2202,3 +2202,64 @@ async fn apply_prunes_a_fragment_nothing_needs_any_more() {
         executor.log().commands_executed
     );
 }
+
+#[tokio::test]
+async fn applying_twice_keeps_the_fragment_that_beats_a_vendor_drop_in() {
+    // Fedora and RHEL. The first apply routes X11Forwarding to the fragment
+    // because 50-redhat.conf outranks sshd_config. On the second apply the
+    // effective value comes from the fragment this tool wrote, and unless the
+    // plugin can tell "the winner is us" apart from "nothing overrides the main
+    // file" it writes the directive where 50-redhat.conf still beats it and
+    // prunes the fragment holding the host, leaving it less hardened after two
+    // runs than after one. The scheduler applies on a cadence, so that is a
+    // fleet host silently unhardening itself and reporting success.
+    let executor = dropin_apply_commands(
+        MockExecutor::new()
+            .with_file(
+                "/etc/ssh/sshd_config",
+                "Include /etc/ssh/sshd_config.d/*.conf\n",
+            )
+            .with_directory("/etc/ssh/sshd_config.d")
+            .with_file(
+                "/etc/ssh/sshd_config.d/50-redhat.conf",
+                "X11Forwarding yes\n",
+            )
+            .with_command_program("rm", ok_output("")),
+    );
+
+    run_ssh_apply(&executor).await;
+    assert!(
+        dropin_written(&executor).is_some_and(|dropin| dropin.contains("X11Forwarding no")),
+        "positive control: the first apply must write the fragment, wrote: {:?}",
+        executor.log().files_written
+    );
+    executor.clear_log();
+
+    let second = run_ssh_apply(&executor).await;
+
+    assert!(
+        !executor
+            .log()
+            .commands_executed
+            .iter()
+            .any(|(command, args)| command == "rm"
+                && args.contains(&"/etc/ssh/sshd_config.d/00-hardener.conf".to_string())),
+        "the second apply removed the fragment that is still the only thing beating \
+         50-redhat.conf, commands: {:?}",
+        executor.log().commands_executed
+    );
+    assert!(
+        !written_sshd_config(&executor).contains("X11Forwarding"),
+        "50-redhat.conf is read before sshd_config, so writing the directive there is \
+         inert, got:\n{}",
+        written_sshd_config(&executor)
+    );
+    assert!(
+        second
+            .apply_changes
+            .iter()
+            .any(|change| change.change_description.contains("already compliant")),
+        "a host the previous run hardened has nothing left to change, got: {:?}",
+        second.apply_changes
+    );
+}
