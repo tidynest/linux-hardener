@@ -868,7 +868,12 @@ sudo ./scripts/containers/create-container.sh arch enter
 
 # Clean up container
 sudo ./scripts/containers/create-container.sh arch clean
+
+# Clean up without the confirmation prompt
+sudo ./scripts/containers/create-container.sh arch clean --no-confirm
 ```
+
+**Options**: `--no-confirm` answers the `clean` deletion prompt with yes, and may appear in any argument position. It exists for the recreate-then-measure loop: a measurement taken against a container that survived the loop is not a baseline, and five prompts in a row is where that gets skipped. Any other unrecognised option is refused rather than ignored, so a mistyped flag cannot leave the loop waiting on a keypress.
 
 **What It Does**:
 1. Creates an Arch Linux rootfs at `/var/lib/machines/hardener-test`
@@ -918,6 +923,12 @@ sudo ./scripts/containers/create-container.sh <distro> enter
 
 # Clean up
 sudo ./scripts/containers/create-container.sh <distro> clean
+
+# Recreate all five for a clean baseline, no prompts
+for d in arch debian fedora rhel opensuse; do
+    sudo ./scripts/containers/create-container.sh "$d" clean --no-confirm
+    sudo ./scripts/containers/create-container.sh "$d" || { echo "CREATE FAILED: $d"; break; }
+done
 ```
 
 **Container Locations**:

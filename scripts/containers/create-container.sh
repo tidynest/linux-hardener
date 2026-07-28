@@ -14,6 +14,9 @@
 #   sudo ./scripts/containers/create-container.sh <distro>        # Create container
 #   sudo ./scripts/containers/create-container.sh <distro> enter  # Enter existing container
 #   sudo ./scripts/containers/create-container.sh <distro> clean  # Remove container
+#
+# --no-confirm may be added in any position to answer the clean prompt, for the
+# recreate-then-measure loop that removes all five in sequence.
 
 set -euo pipefail
 
@@ -31,7 +34,13 @@ usage() {
     cat << EOF
 Create an isolated Linux container for safe hardener testing.
 
-Usage: sudo $0 <distro> [command]
+Usage: sudo $0 <distro> [command] [--no-confirm]
+
+Options:
+  --no-confirm  Answer the 'clean' deletion prompt with yes. Intended for the
+                recreate-then-measure loop, where five containers are removed
+                in sequence and a baseline is worthless if any of them
+                survives. May appear in any argument position.
 
 Distros:
   arch      Arch Linux (pacstrap)                     -> hardener-test
@@ -77,6 +86,28 @@ EOF
 # =============================================================================
 # Distro selection
 # =============================================================================
+
+# Flags are stripped before the positional arguments are read, so --no-confirm
+# can sit anywhere without displacing <distro> or <command>. An unrecognised
+# flag is refused rather than passed through: nothing reads a third positional,
+# so a mistyped --no-confirm would otherwise be discarded in silence and the
+# recreate loop would sit waiting for a keypress nobody is there to give.
+# --help and -h are deliberately let through, being handled as verbs below.
+NO_CONFIRM=false
+POSITIONAL=()
+for arg in "$@"; do
+    case "$arg" in
+        --no-confirm) NO_CONFIRM=true ;;
+        --help|-h) POSITIONAL+=("$arg") ;;
+        -*)
+            log_error "Unknown option: $arg"
+            usage
+            exit 1
+            ;;
+        *) POSITIONAL+=("$arg") ;;
+    esac
+done
+set -- "${POSITIONAL[@]}"
 
 DISTRO="${1:-}"
 VERB="${2:-}"
@@ -567,8 +598,15 @@ clean_container() {
     fi
 
     log_warn "This will permanently delete the $DISTRO_LABEL test container!"
-    read -p "Are you sure? [y/N] " -n 1 -r
-    echo
+    if [[ "$NO_CONFIRM" == true ]]; then
+        # Still announced. A destructive step that proceeds in silence is how a
+        # scripted loop deletes something nobody meant to include.
+        log_warn "Proceeding without asking (--no-confirm)."
+        REPLY=y
+    else
+        read -p "Are you sure? [y/N] " -n 1 -r
+        echo
+    fi
 
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         # Stop container if running
