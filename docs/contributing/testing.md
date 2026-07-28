@@ -170,6 +170,14 @@ check asks whether a setting the tool targets reached its target; none asked
 whether the rest of the file survived, which is exactly how a masked
 `/etc/login.defs` stayed invisible.
 
+Each of the three has been watched failing on a real container, which is the
+only evidence that a check can fail at all: replacing the vendor file with the
+one-directive `/etc/login.defs` that releases up to 1.5.0 wrote moves
+`ENCRYPT_METHOD` from sha512 to DES and `HOME_MODE` from 0700 to 755 on
+openSUSE Leap, and `UMASK` from 0002 to 0022 on debian. Which distribution
+demonstrates which depends on what that distribution's `login.defs` actually
+drives, so a check looking inert on one host is not evidence it is inert.
+
 The second assertion is the harder one to state honestly, because after a
 successful apply it expects `scan` to report no finding, and no finding is also
 what the tool emits when it did not check. `scan --format json` carries a second

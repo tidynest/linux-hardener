@@ -476,7 +476,14 @@ login_defs_system_value() {
 # containers, ENCRYPT_METHOD is yescrypt on arch, debian, fedora and rhel and
 # sha512 on openSUSE Leap, and UMASK is 0002 on debian against 0022 elsewhere;
 # hardcoding any of them would make the check distribution-specific for no gain,
-# and the obvious guess would have been wrong in both cases. The tool does not manage these, so any
+# and the obvious guess would have been wrong in both cases.
+#
+# Each of the three has been watched moving under the masking this exists to
+# catch, so none of them is a check that cannot fail. Replacing the vendor file
+# with the one-directive /etc/login.defs that releases up to 1.5.0 wrote takes
+# ENCRYPT_METHOD from sha512 to DES and HOME_MODE from 0700 to 755 on openSUSE
+# Leap, and UMASK from 0002 to 0022 on debian. Deleting one as untestable would
+# be deleting a proven check. The tool does not manage these, so any
 # change to them is damage whatever the value was, and comparing before against
 # after catches masking the suite has never seen as well as the one it has.
 VENDOR_SURVIVAL_CHECKS=(ENCRYPT_METHOD HOME_MODE UMASK)
