@@ -235,6 +235,13 @@ const AUDIT_RULES: &[AuditRuleDirective] = &[
 /// Path to custom audit rules file for hardening.
 const AUDIT_RULES_PATH: &str = "/etc/audit/rules.d/hardening.rules";
 
+/// The mode the rules file is given, as a `chmod` argument.
+///
+/// 0640, which is what STIG asks of `/etc/audit/rules.d/*.rules` and what the
+/// distributions ship. The file is only ever read by `augenrules` and
+/// `auditctl`, both of which run as root, so nothing needs the world bit.
+const AUDIT_RULES_MODE: &str = "0640";
+
 /// ============================================================================
 /// AUDITD HELPER FUNCTIONS
 /// ============================================================================
@@ -366,6 +373,48 @@ async fn write_audit_rules_file(ctx: &Context, content: &str) -> Result<Option<S
         .await?;
 
     Ok(backup)
+}
+
+/// Gives the rules file the mode it should have, reporting the failure rather
+/// than aborting over it.
+///
+/// The rules name every path and syscall this host watches, which is a map of
+/// the monitoring to anyone who can read it, and STIG asks for these files at
+/// 0640 or tighter. Stated here rather than left to whatever a write produces:
+/// a local create lands 0644 like any other configuration file and a remote
+/// one lands whatever `tee` gives it under the remote umask, so the same apply
+/// produced different permissions on different hosts and neither was the one
+/// the benchmark asks for.
+///
+/// A failure is recorded and does not stop the run: the rules are loaded into
+/// the kernel either way, and refusing an apply over a permission bit would
+/// leave the host less hardened for a lesser problem. Returns the change to
+/// record, or `None` when the mode was set.
+async fn set_audit_rules_mode(ctx: &Context) -> Option<Change> {
+    let failure = match ctx
+        .executor()
+        .execute_command("chmod", &[AUDIT_RULES_MODE, AUDIT_RULES_PATH])
+        .await
+    {
+        // execute_command returns Ok for a command that ran and failed.
+        Ok(output) if output.success() => return None,
+        Ok(output) => format!(
+            "chmod exited {}: {}",
+            output.exit_code,
+            output.stderr.trim()
+        ),
+        Err(e) => e.to_string(),
+    };
+
+    Some(Change {
+        change_type: ChangeType::ConfigFile,
+        change_description: format!(
+            "Wrote {AUDIT_RULES_PATH} but could not set its mode to {AUDIT_RULES_MODE}; \
+             the rules are in force and the file is readable more widely than intended"
+        ),
+        change_error: Some(failure),
+        change_success: false,
+    })
 }
 
 /// Reloads audit rules into the running daemon.
@@ -1085,6 +1134,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
                         change_error: None,
                         change_success: true,
                     });
+                    changes.extend(set_audit_rules_mode(ctx).await);
                 }
                 Err(e) => {
                     changes.push(Change {

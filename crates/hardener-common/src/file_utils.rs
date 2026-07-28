@@ -8,6 +8,27 @@ use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 use tracing::warn;
 
+/// The mode given to a file this tool creates, as against one it rewrites.
+///
+/// A rewritten file keeps its own mode; only a file that did not exist needs
+/// one chosen for it, and the choice cannot be left to the temporary file the
+/// content is staged in. `NamedTempFile` creates 0600 so a partly written file
+/// is never readable, which is correct for a temporary file and wrong for the
+/// configuration file it becomes: at 0600 the ordinary-user tools that read
+/// these files cannot, and fall back to their built-in defaults without saying
+/// so. That is how this tool's `/etc/security/pwquality.conf` came to sit at
+/// 0600 against the vendor's 0644 on openSUSE.
+///
+/// 0644 is not a guess. It is what every distribution ships these files as,
+/// what a remote write through `SshExecutor` already produces (it pipes through
+/// `tee`, so the file lands 0644 under the standard umask), and therefore the
+/// only value that makes a local apply and a remote apply agree.
+///
+/// It is deliberately not umask-derived. A hardening tool whose output depends
+/// on the shell it was launched from cannot be reasoned about, and under a
+/// loose umask an inherited mode would be group writable.
+const CREATED_FILE_MODE: u32 = 0o644;
+
 /// Updates a file atomically using a temporary file and atomic rename.
 ///
 /// This function ensures that:
@@ -65,6 +86,23 @@ pub fn update_file_atomically(path: &Path, content: &str) -> Result<()> {
     temp.write_all(content.as_bytes()).map_err(|e| {
         crate::error::HardeningError::Plugin(format!("Failed to write to temporary file: {}", e))
     })?;
+
+    // A file being created has no original mode to put back, and the temporary
+    // file it is about to become is 0600: right for a temporary file, wrong for
+    // the configuration file it turns into. Set before the rename rather than
+    // after, so the target never exists at the temporary file's mode.
+    if original_permissions.is_none() {
+        use std::os::unix::fs::PermissionsExt;
+        temp.as_file()
+            .set_permissions(fs::Permissions::from_mode(CREATED_FILE_MODE))
+            .map_err(|e| {
+                crate::error::HardeningError::Plugin(format!(
+                    "Failed to set the mode of the file being created at {}: {}",
+                    path.display(),
+                    e
+                ))
+            })?;
+    }
 
     // Sync to disk before making visible
     temp.as_file().sync_all().map_err(|e| {
@@ -612,6 +650,31 @@ mod tests {
 
         update_file_atomically(&target, "key = value\n").expect("creating a new file must work");
         assert_eq!(std::fs::read_to_string(&target).unwrap(), "key = value\n");
+    }
+
+    /// A created file must not inherit the temporary file's private mode.
+    ///
+    /// `NamedTempFile` creates 0600 so its contents are never briefly readable,
+    /// which is right for a temporary file and wrong for the configuration file
+    /// it becomes. Asserted as the literal 0644 rather than against the
+    /// constant that holds it, because comparing the value to itself would pass
+    /// against the 0600 that is the defect.
+    #[test]
+    fn a_created_file_is_readable_by_the_tools_that_consume_it() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("created.conf");
+
+        update_file_atomically(&target, "key = value\n").unwrap();
+
+        let mode = std::fs::metadata(&target).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            mode, 0o644,
+            "a created configuration file at 0600 is unreadable to every \
+             ordinary-user tool that reads it, and to a remote write of the same \
+             file, which lands 0644"
+        );
     }
 
     /// The mode of an existing file survives the inode swap.

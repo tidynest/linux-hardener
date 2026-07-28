@@ -546,6 +546,11 @@ async fn test_audit_apply_skips_exceptions() {
             },
         )
         .with_command("mkdir", &["-p", "/etc/audit/rules.d"], ok.clone())
+        .with_command(
+            "chmod",
+            &["0640", "/etc/audit/rules.d/hardening.rules"],
+            ok.clone(),
+        )
         .with_command("augenrules", &["--load"], ok);
 
     let mut ctx = Context::with_executor(Arc::new(executor.clone()));
@@ -637,6 +642,11 @@ fn reload_fails_executor(auditctl_status: CommandOutput) -> MockExecutor {
             },
         )
         .with_command("mkdir", &["-p", "/etc/audit/rules.d"], ok.clone())
+        .with_command(
+            "chmod",
+            &["0640", "/etc/audit/rules.d/hardening.rules"],
+            ok.clone(),
+        )
         .with_command(
             "augenrules",
             &["--load"],
@@ -810,6 +820,11 @@ async fn test_audit_apply_reload_success_unaffected() {
             },
         )
         .with_command("mkdir", &["-p", "/etc/audit/rules.d"], ok.clone())
+        .with_command(
+            "chmod",
+            &["0640", "/etc/audit/rules.d/hardening.rules"],
+            ok.clone(),
+        )
         .with_command("augenrules", &["--load"], ok);
 
     let mut ctx = Context::with_executor(Arc::new(executor.clone()));
@@ -870,7 +885,8 @@ fn reload_retry_executor() -> MockExecutor {
                 exit_code: 0,
             },
         )
-        .with_command("mkdir", &["-p", "/etc/audit/rules.d"], ok)
+        .with_command("mkdir", &["-p", "/etc/audit/rules.d"], ok.clone())
+        .with_command("chmod", &["0640", "/etc/audit/rules.d/hardening.rules"], ok)
 }
 
 /// The `augenrules --load` output seen on a re-apply: kernel-resident rules
@@ -1146,6 +1162,11 @@ async fn test_audit_apply_is_idempotent_when_rules_file_already_matches() {
             },
         )
         .with_command("mkdir", &["-p", "/etc/audit/rules.d"], ok.clone())
+        .with_command(
+            "chmod",
+            &["0640", "/etc/audit/rules.d/hardening.rules"],
+            ok.clone(),
+        )
         .with_command("augenrules", &["--load"], ok);
 
     let mut ctx = Context::with_executor(Arc::new(executor.clone()));
@@ -1246,6 +1267,11 @@ async fn test_audit_apply_rewrites_when_rules_file_read_fails() {
             },
         )
         .with_command("mkdir", &["-p", "/etc/audit/rules.d"], ok.clone())
+        .with_command(
+            "chmod",
+            &["0640", "/etc/audit/rules.d/hardening.rules"],
+            ok.clone(),
+        )
         .with_command("augenrules", &["--load"], ok.clone())
         // A file that is present gets backed up before it is rewritten, and
         // the destination carries a timestamp, so the program is registered
@@ -1324,5 +1350,142 @@ async fn scan_annotates_valid_exception() {
     assert!(
         daemon_finding.finding_policy_exception.is_none(),
         "daemon-state findings have no exception key and stay unannotated"
+    );
+}
+
+/// The rules file names every path and syscall this host watches, so it is not
+/// a world-readable file. A local create lands 0644 like any other
+/// configuration file and a remote one lands whatever `tee` gives it, so the
+/// mode is stated rather than inherited from whichever write path ran.
+#[tokio::test]
+async fn test_audit_rules_file_is_not_world_readable() {
+    let ok = CommandOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    let executor = MockExecutor::new()
+        .with_command_exists("auditd", true)
+        .with_command_exists("augenrules", true)
+        .with_command(
+            "systemctl",
+            &["is-enabled", "auditd"],
+            CommandOutput {
+                stdout: "enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-active", "auditd"],
+            CommandOutput {
+                stdout: "active\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command("mkdir", &["-p", "/etc/audit/rules.d"], ok.clone())
+        .with_command(
+            "chmod",
+            &["0640", "/etc/audit/rules.d/hardening.rules"],
+            ok.clone(),
+        )
+        .with_command("augenrules", &["--load"], ok);
+
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+
+    let result = AuditHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(result.apply_success, "{:?}", result.apply_changes);
+    assert!(
+        executor.log().commands_executed.iter().any(|(cmd, args)| {
+            cmd == "chmod"
+                && args
+                    == &[
+                        "0640".to_string(),
+                        "/etc/audit/rules.d/hardening.rules".to_string(),
+                    ]
+        }),
+        "the rules file must be given 0640; commands: {:?}",
+        executor.log().commands_executed
+    );
+}
+
+/// A mode that could not be set is recorded and does not stop the run: the
+/// rules are loaded into the kernel either way, and refusing an apply over a
+/// permission bit would leave the host less hardened for a lesser problem.
+#[tokio::test]
+async fn test_audit_rules_mode_failure_is_recorded_not_fatal() {
+    let ok = CommandOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    let executor = MockExecutor::new()
+        .with_command_exists("auditd", true)
+        .with_command_exists("augenrules", true)
+        .with_command(
+            "systemctl",
+            &["is-enabled", "auditd"],
+            CommandOutput {
+                stdout: "enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-active", "auditd"],
+            CommandOutput {
+                stdout: "active\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command("mkdir", &["-p", "/etc/audit/rules.d"], ok.clone())
+        .with_command(
+            "chmod",
+            &["0640", "/etc/audit/rules.d/hardening.rules"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: "chmod: changing permissions: Read-only file system\n".to_string(),
+                exit_code: 1,
+            },
+        )
+        .with_command("augenrules", &["--load"], ok);
+
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+
+    let result = AuditHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    let mode_change = result
+        .apply_changes
+        .iter()
+        .find(|c| c.change_description.contains("could not set its mode"))
+        .expect("a mode that could not be set must be reported, not swallowed");
+    assert!(!mode_change.change_success);
+    assert!(
+        mode_change.change_error.is_some(),
+        "the failure must carry chmod's own words"
+    );
+    assert!(
+        !result.apply_success,
+        "an unreported gap is the thing to avoid; the run is not fully successful"
+    );
+    assert!(
+        result.apply_changes.iter().any(|c| {
+            c.change_description
+                .contains("Loaded audit rules into running daemon")
+                && c.change_success
+        }),
+        "the rules still load: the mode is a lesser problem than an unhardened host; changes: {:?}",
+        result.apply_changes
     );
 }
