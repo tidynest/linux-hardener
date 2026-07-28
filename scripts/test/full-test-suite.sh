@@ -329,10 +329,16 @@ test_dry_run_all_plugins() {
     for plugin in "${PLUGINS[@]}"; do
         if [[ "$CONTAINER_MODE" == "true" && "$plugin" == "service-minimisation" ]]; then
             log_test "Dry-run: $plugin"
-            if "$BINARY" apply --plugin "$plugin" --dry-run &>/dev/null; then
+            local dry_json="$REPORT_DIR/dryrun-$plugin.json"
+            local dry_err="$REPORT_DIR/dryrun-$plugin.err"
+            if "$BINARY" apply --plugin "$plugin" --dry-run --format json \
+                > "$dry_json" 2>"$dry_err"; then
                 log_pass "Dry-run: $plugin"
-            else
+            elif produced_result_document "$dry_json" validation_report_plugin_id; then
                 log_pass "Dry-run: $plugin (partial: expected in container)"
+            else
+                log_fail "Dry-run: $plugin (the plugin reported no validation report)"
+                surface_tool_error "$dry_err"
             fi
         else
             run_test "Dry-run: $plugin" "\"$BINARY\" apply --plugin \"$plugin\" --dry-run"
@@ -460,12 +466,28 @@ test_apply_kernel() {
 # Containers legitimately produce the first, having no init to restart a
 # service with and bind-mounted paths that cannot be chmodded, which is why
 # this branch exists at all. It reported the second as a pass as well.
-apply_produced_results() {
-    # A structural key, not prose: `apply_results` serialises the plugin's
-    # ApplyResult, so `apply_plugin_id` is present exactly when the tool got
-    # far enough to have a result to report, and an error message is not
-    # mistaken for one however plausible it reads.
-    grep -q '"apply_plugin_id"' "$1" 2>/dev/null
+# Puts the tool's own explanation into the output the cross-distro runner
+# captures. $LOG_FILE lives inside the container and is never collected, so a
+# failure explained only there is a failure reported without its evidence. An
+# empty stderr says so rather than printing nothing, because a failure with no
+# explanation must not look like one whose explanation was merely omitted.
+surface_tool_error() {
+    if [[ -s "$1" ]]; then
+        head -20 "$1" | while IFS= read -r line; do
+            log_info "  $line"
+        done
+    else
+        log_info "  the tool wrote nothing to stderr either"
+    fi
+}
+
+produced_result_document() {
+    # A structural key, not prose: the tool serialises the plugin's own record,
+    # so the key is present exactly when it got far enough to have one, and an
+    # error message is not mistaken for a result however plausible it reads.
+    # `apply` emits ApplyResult, keyed `apply_plugin_id`; `--dry-run` emits
+    # ValidationReport instead, keyed `validation_report_plugin_id`.
+    grep -q "\"$2\"" "$1" 2>/dev/null
 }
 
 test_apply_other_plugins() {
@@ -486,22 +508,12 @@ test_apply_other_plugins() {
                 > "$apply_json" 2>"$apply_err"; then
                 log_pass "Apply $plugin"
                 cat "$apply_err" >> "$LOG_FILE"
-            elif apply_produced_results "$apply_json"; then
+            elif produced_result_document "$apply_json" apply_plugin_id; then
                 log_pass "Apply $plugin (partial apply: expected in container)"
                 cat "$apply_err" >> "$LOG_FILE"
             else
                 log_fail "Apply $plugin (the plugin reported no result at all)"
-                # Through log_info, which tees to the output the cross-distro
-                # runner captures. $LOG_FILE lives inside the container and is
-                # never collected, so a failure explained only there is a
-                # failure reported without its evidence.
-                if [[ -s "$apply_err" ]]; then
-                    head -20 "$apply_err" | while IFS= read -r line; do
-                        log_info "  $line"
-                    done
-                else
-                    log_info "  the tool wrote nothing to stderr either"
-                fi
+                surface_tool_error "$apply_err"
             fi
         else
             run_test "Apply $plugin" "\"$BINARY\" apply --plugin \"$plugin\"" || true
@@ -703,12 +715,17 @@ test_per_plugin_lifecycle() {
 
         # APPLY (partial apply expected in containers: some operations can't complete)
         log_test "Lifecycle apply: $full_id"
-        if "$BINARY" apply --plugin "$full_id" &>/dev/null; then
+        local life_json="$REPORT_DIR/lifecycle-$full_id.json"
+        local life_err="$REPORT_DIR/lifecycle-$full_id.err"
+        if "$BINARY" apply --plugin "$full_id" --format json \
+            > "$life_json" 2>"$life_err"; then
             log_pass "Lifecycle apply: $full_id"
-        elif [[ "$CONTAINER_MODE" == "true" ]]; then
+        elif [[ "$CONTAINER_MODE" == "true" ]] \
+            && produced_result_document "$life_json" apply_plugin_id; then
             log_pass "Lifecycle apply: $full_id (partial: expected in container)"
         else
-            log_fail "Lifecycle apply: $full_id"
+            log_fail "Lifecycle apply: $full_id (the plugin reported no result at all)"
+            surface_tool_error "$life_err"
         fi
 
         # AFTER: count findings (should be <= before)
@@ -872,11 +889,22 @@ self_test() {
         > "$workdir/refused.json"
 
     check_status 0 "a partial apply is recognised by its result document" \
-        apply_produced_results "$workdir/partial.json"
+        produced_result_document "$workdir/partial.json" apply_plugin_id
     check_status 1 "an apply that printed nothing produced no result document" \
-        apply_produced_results "$workdir/empty.json"
+        produced_result_document "$workdir/empty.json" apply_plugin_id
     check_status 1 "an apply that printed only an error produced no result document" \
-        apply_produced_results "$workdir/refused.json"
+        produced_result_document "$workdir/refused.json" apply_plugin_id
+
+    # A dry run emits validation reports rather than apply results, so the key
+    # is part of the question. Asking for the wrong one must fail, or a run
+    # that produced the other kind of document entirely would read as a pass.
+    printf '[{"validation_report_plugin_id":"service-minimisation","validation_report_is_valid":true}]\n' \
+        > "$workdir/dryrun.json"
+
+    check_status 0 "a dry run is recognised by its validation report" \
+        produced_result_document "$workdir/dryrun.json" validation_report_plugin_id
+    check_status 1 "an apply result is not accepted as a validation report" \
+        produced_result_document "$workdir/partial.json" validation_report_plugin_id
 
     rm -rf "$workdir"
 
