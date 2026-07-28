@@ -89,7 +89,7 @@ maps to the full plugin ID as follows:
 | `[permissions]` | `permissions-hardening` |
 | `[services]` | `service-minimisation` |
 
-Every section accepts the same four keys:
+Every section accepts the same three keys:
 
 | Key | Type | Default | Effect |
 |-----|------|---------|--------|
