@@ -449,18 +449,48 @@ test_apply_kernel() {
     fi
 }
 
+# Whether an apply that exited non-zero nevertheless ran.
+#
+# `apply` prints its results and only then bails when a plugin reported
+# failure, so a partial apply leaves a result document behind while a run that
+# never reached that point does not. The exit code cannot separate them: a
+# plugin that applied nine changes of ten and a refusal on privilege both exit
+# 1, and `bail!` is the single path out for either.
+#
+# Containers legitimately produce the first, having no init to restart a
+# service with and bind-mounted paths that cannot be chmodded, which is why
+# this branch exists at all. It reported the second as a pass as well.
+apply_produced_results() {
+    # A structural key, not prose: `apply_results` serialises the plugin's
+    # ApplyResult, so `apply_plugin_id` is present exactly when the tool got
+    # far enough to have a result to report, and an error message is not
+    # mistaken for one however plausible it reads.
+    grep -q '"apply_plugin_id"' "$1" 2>/dev/null
+}
+
 test_apply_other_plugins() {
     log_header "14. APPLY - OTHER PLUGINS"
 
     # In containers, some plugins return exit 1 due to partial apply (bind-mount
     # permissions, missing services, etc.). This is expected, not a real failure.
+    # An apply that never ran is not, and is told apart by whether it left a
+    # result document rather than by its exit code.
     for plugin in ssh-hardening permissions-hardening pam-hardening firewall-hardening service-minimisation; do
         if [[ "$CONTAINER_MODE" == "true" ]]; then
             log_test "Apply $plugin"
-            if "$BINARY" apply --plugin "$plugin" &>/dev/null; then
+            local apply_json="$REPORT_DIR/apply-$plugin.json"
+            # stdout carries the result document, stderr the tracing. Keeping
+            # them apart is what leaves the document parseable, and appending
+            # the tracing to the log is what makes a real failure diagnosable
+            # rather than merely reported.
+            if "$BINARY" apply --plugin "$plugin" --format json \
+                > "$apply_json" 2>>"$LOG_FILE"; then
                 log_pass "Apply $plugin"
-            else
+            elif apply_produced_results "$apply_json"; then
                 log_pass "Apply $plugin (partial apply: expected in container)"
+            else
+                log_fail "Apply $plugin (no result document: the apply never ran)"
+                cat "$apply_json" >> "$LOG_FILE"
             fi
         else
             run_test "Apply $plugin" "\"$BINARY\" apply --plugin \"$plugin\"" || true
@@ -792,6 +822,61 @@ generate_summary() {
 }
 
 # =============================================================================
+# Self-test
+# =============================================================================
+# Drives the decisions this suite makes, rather than the system it makes them
+# about. Needs no root and no container, so it is safe anywhere.
+#
+# Only the apply classification for now, because that is the decision that was
+# wrong: this suite reported every apply as a pass for several releases,
+# including one that never ran, and logic choosing between pass and failure is
+# the last logic that should go unproven.
+
+self_test() {
+    local failures=0 workdir
+    workdir="$(mktemp -d)"
+
+    check_status() {
+        local want="$1" what="$2"
+        shift 2
+        local got=0
+        "$@" >/dev/null 2>&1 || got=$?
+        if [[ "$got" == "$want" ]]; then
+            echo "  ok   $what"
+        else
+            echo "  FAIL $what: exit $got, want $want"
+            failures=$((failures + 1))
+        fi
+    }
+
+    # A partial apply: the document exists and names the plugin, whatever the
+    # exit code said.
+    printf '[[{"plugin_id":"ssh-hardening"},{"apply_plugin_id":"ssh-hardening","apply_success":false}]]\n' \
+        > "$workdir/partial.json"
+    # An apply that bailed before printing anything.
+    : > "$workdir/empty.json"
+    # An apply whose refusal reached stdout rather than stderr. Prose is not a
+    # result document however plausible it reads.
+    printf 'Error: Root privileges required to apply hardening changes\n' \
+        > "$workdir/refused.json"
+
+    check_status 0 "a partial apply is recognised by its result document" \
+        apply_produced_results "$workdir/partial.json"
+    check_status 1 "an apply that printed nothing produced no result document" \
+        apply_produced_results "$workdir/empty.json"
+    check_status 1 "an apply that printed only an error produced no result document" \
+        apply_produced_results "$workdir/refused.json"
+
+    rm -rf "$workdir"
+
+    if (( failures > 0 )); then
+        echo "self-test: $failures assertion(s) failed"
+        return 1
+    fi
+    echo "self-test: all classification checks passed"
+}
+
+# =============================================================================
 # Argument parsing
 # =============================================================================
 
@@ -800,6 +885,10 @@ while [[ $# -gt 0 ]]; do
         --apply)
             DO_APPLY=true
             shift
+            ;;
+        --self-test)
+            self_test
+            exit $?
             ;;
         --help|-h)
             cat << EOF
@@ -888,4 +977,10 @@ main() {
     generate_summary
 }
 
-main "$@"
+# Run only on direct execution. This file ends in a bare `main "$@"`, so
+# sourcing it to drive a single function ran the entire suite with the caller's
+# arguments, and this suite applies hardening. `differential-suite.sh` already
+# guards itself the same way and for the same reason.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

@@ -122,6 +122,16 @@ More thorough than `root-test-suite.sh`. Covers CLI argument parsing, every plug
 Without `--apply`: skips sections 13-16 (per-plugin apply and rollback) and section 23 (per-plugin lifecycle).
 With `--apply`: runs all 26 sections including destructive per-plugin lifecycle testing.
 
+```bash
+bash scripts/test/full-test-suite.sh --self-test            # classification only, safe anywhere
+```
+
+Needs no root and no container. It drives the decisions the suite makes rather
+than the system it makes them about, currently the one that separates an apply
+that partially succeeded, which a container is expected to produce, from an
+apply that never ran, which it is not. Inside a container both exit 1, so the
+suite tells them apart by whether the tool left a result document behind.
+
 ### Rollback verification
 
 ```bash
