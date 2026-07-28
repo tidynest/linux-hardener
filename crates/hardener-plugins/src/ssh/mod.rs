@@ -1017,6 +1017,29 @@ async fn verify_dropin_precedence(
         .collect()
 }
 
+/// Carries a value the fragment is the only source of into the rewrite that is
+/// about to replace it.
+///
+/// Every branch deciding a directive needs no write ends by rewriting the
+/// fragment to whatever accumulated, so a directive left out of that list is
+/// removed from the host rather than left alone. Where the value being kept is
+/// one the fragment itself supplies, keeping it means writing it again. No note
+/// is attached: this is a value being held, not a target being applied, and the
+/// change reporting it says why it is not the strict one.
+fn keep_value_the_fragment_holds(
+    to_dropin: &mut Vec<dropin::Directive>,
+    keyword: &'static str,
+    held: Option<String>,
+) {
+    if let Some(value) = held {
+        to_dropin.push(dropin::Directive {
+            keyword,
+            value,
+            note: "",
+        });
+    }
+}
+
 /// Unchecked entries for every sshd_config check when the file itself cannot
 /// be read at the current privilege level. Ids mirror the finding ids.
 ///
@@ -1395,9 +1418,16 @@ impl HardeningPlugin for SshHardeningPlugin {
             // lockout guard compares against this rather than the main file's
             // own line, because on a vendor-layer host that line is not the one
             // in force and on an overridden directive it is inert.
-            let effective_now = resolved
-                .effective(directive.ssh_directive_name)
-                .map(|effective| effective.value);
+            let effective_now = resolved.effective(directive.ssh_directive_name);
+            // That value may be in force only because this tool's own fragment
+            // supplies it. Wherever the guard below concludes no write is
+            // needed, the conclusion rewrites the fragment without this
+            // directive, so a value only the fragment holds has to be carried
+            // into that rewrite rather than left to a file about to lose it.
+            let held_by_our_fragment = effective_now
+                .as_ref()
+                .filter(|effective| effective.source == dropin::DROPIN_PATH)
+                .map(|effective| effective.value.clone());
             let (dropin_target, dropin_note) = if guard_active {
                 (
                     REMOTE_ROOT_SAFE_VALUE,
@@ -1411,11 +1441,11 @@ impl HardeningPlugin for SshHardeningPlugin {
             // fallback stays as it is, and a case variant of the target is
             // already the target as far as sshd is concerned.
             let already_safe_enough = guard_active
-                && effective_now.as_deref().is_some_and(|current| {
-                    current.eq_ignore_ascii_case(target_value)
+                && effective_now.as_ref().is_some_and(|effective| {
+                    effective.value.eq_ignore_ascii_case(target_value)
                         || REMOTE_ROOT_SAFE_OR_STRICTER
                             .iter()
-                            .any(|safe| safe.eq_ignore_ascii_case(current))
+                            .any(|safe| safe.eq_ignore_ascii_case(&effective.value))
                 });
 
             // A drop-in read before this file already answers this directive,
@@ -1438,7 +1468,8 @@ impl HardeningPlugin for SshHardeningPlugin {
                 .effective_without(directive.ssh_directive_name, dropin::DROPIN_PATH)
                 .filter(|effective| effective.source != config_path);
             if let Some(effective) = overridden {
-                if effective.value == target_value || already_safe_enough {
+                let file_underneath_holds_target = effective.value == target_value;
+                if file_underneath_holds_target || already_safe_enough {
                     changes.push(Change {
                         change_description: format!(
                             "{}: already '{}' via {}, which sshd reads before {}",
@@ -1451,6 +1482,19 @@ impl HardeningPlugin for SshHardeningPlugin {
                         change_success: true,
                         change_error: None,
                     });
+                    // Dropping the directive is right where the file underneath
+                    // already holds the target, because the fragment is then
+                    // genuinely unnecessary. It is wrong where the only reason
+                    // the host counts as safe is the fragment itself: that file
+                    // underneath still says otherwise, so leaving the directive
+                    // out of the rewrite hands the host straight back to it.
+                    if !file_underneath_holds_target {
+                        keep_value_the_fragment_holds(
+                            &mut to_dropin,
+                            directive.ssh_directive_name,
+                            held_by_our_fragment,
+                        );
+                    }
                     continue;
                 }
                 to_dropin.push(dropin::Directive {
@@ -1472,12 +1516,23 @@ impl HardeningPlugin for SshHardeningPlugin {
                         change_description: format!(
                             "PermitRootLogin: kept at '{}' (already the strongest value safely \
                              settable over this root SSH session; set 'no' from a console)",
-                            effective_now.unwrap_or_default()
+                            effective_now
+                                .map(|effective| effective.value)
+                                .unwrap_or_default()
                         ),
                         change_type: ChangeType::Skipped,
                         change_success: true,
                         change_error: None,
                     });
+                    // The vendor file is never edited, so the fragment is the
+                    // only file this tool may write here. Leaving the directive
+                    // out of the rewrite is therefore what removes the value
+                    // being reported as kept.
+                    keep_value_the_fragment_holds(
+                        &mut to_dropin,
+                        directive.ssh_directive_name,
+                        held_by_our_fragment,
+                    );
                     continue;
                 }
                 to_dropin.push(dropin::Directive {

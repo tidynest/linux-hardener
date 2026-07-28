@@ -2263,3 +2263,140 @@ async fn applying_twice_keeps_the_fragment_that_beats_a_vendor_drop_in() {
         second.apply_changes
     );
 }
+
+#[tokio::test]
+async fn a_fragment_is_still_pruned_once_the_file_underneath_holds_the_target() {
+    // The mirror of keeping a value the fragment alone holds: where the drop-in
+    // that made the fragment necessary now sets the target itself, the fragment
+    // has nothing left to do and must go, exactly as it does when the main file
+    // is the only other source. Guards the keep-it-alive rule against becoming
+    // "never prune".
+    let executor = dropin_apply_commands(
+        MockExecutor::new()
+            .with_file(
+                "/etc/ssh/sshd_config",
+                "Include /etc/ssh/sshd_config.d/*.conf\n",
+            )
+            .with_directory("/etc/ssh/sshd_config.d")
+            .with_file(
+                "/etc/ssh/sshd_config.d/00-hardener.conf",
+                "# Managed by linux-system-hardener.\nX11Forwarding no\n",
+            )
+            .with_file(
+                "/etc/ssh/sshd_config.d/50-redhat.conf",
+                "X11Forwarding no\n",
+            )
+            .with_command_program("rm", ok_output("")),
+    );
+
+    run_ssh_apply(&executor).await;
+
+    assert!(
+        executor
+            .log()
+            .commands_executed
+            .iter()
+            .any(|(command, args)| command == "rm"
+                && args.contains(&"/etc/ssh/sshd_config.d/00-hardener.conf".to_string())),
+        "50-redhat.conf now holds the target itself, so the fragment is redundant and must \
+         be removed, commands: {:?}",
+        executor.log().commands_executed
+    );
+}
+
+// === Keeping a value the fragment is the only source of ===
+//
+// The remote-root lockout guard asks whether the value in force is already at
+// least as strict as the one it may safely write, and treats "yes" as a reason
+// to write nothing. Once this tool's own fragment supplies that value, writing
+// nothing means rewriting the fragment without the directive, so the answer
+// "it is already safe" is what takes the safety away.
+
+#[tokio::test]
+async fn a_second_apply_over_a_root_session_keeps_the_value_only_the_fragment_holds() {
+    // openSUSE reached over a root SSH session. The vendor sshd_config says
+    // PermitRootLogin yes and is never edited, so the first apply puts the
+    // downgraded prohibit-password in the fragment. On the second apply the
+    // fragment is what makes the host safe, the guard reads it as "already safe
+    // enough", skips, and the fragment is rewritten without the directive.
+    let executor = dropin_apply_commands(
+        opensuse_ssh_executor()
+            .remote()
+            .with_command("id", &["-u"], ok_output("0\n"))
+            .with_command_program("rm", ok_output("")),
+    );
+
+    run_ssh_apply(&executor).await;
+    let after_first =
+        dropin_written(&executor).expect("positive control: the first apply writes the fragment");
+    assert!(
+        after_first.contains("PermitRootLogin prohibit-password"),
+        "positive control: the downgraded value must reach the fragment, got: {after_first}"
+    );
+
+    run_ssh_apply(&executor).await;
+
+    assert_eq!(
+        dropin_written(&executor).as_deref(),
+        Some(after_first.as_str()),
+        "the second apply dropped a directive the fragment was the only source of, so the \
+         host is back on the vendor's value"
+    );
+}
+
+#[tokio::test]
+async fn a_second_apply_over_a_root_session_keeps_a_value_a_drop_in_still_contests() {
+    // The same conflation on a host whose sshd_config is the administrator's:
+    // 50-redhat.conf holds PermitRootLogin yes, so the first apply routes the
+    // downgraded value to the fragment. On the second apply the guard sees the
+    // fragment's own prohibit-password, calls the host already safe enough and
+    // skips, which empties the fragment and hands the directive back to
+    // 50-redhat.conf.
+    let executor = dropin_apply_commands(
+        MockExecutor::new()
+            .with_file(
+                "/etc/ssh/sshd_config",
+                "Include /etc/ssh/sshd_config.d/*.conf\n",
+            )
+            .with_directory("/etc/ssh/sshd_config.d")
+            .with_file(
+                "/etc/ssh/sshd_config.d/50-redhat.conf",
+                "PermitRootLogin yes\n",
+            )
+            .with_command_program("rm", ok_output(""))
+            .remote()
+            .with_command("id", &["-u"], ok_output("0\n")),
+    );
+
+    run_ssh_apply(&executor).await;
+    assert!(
+        dropin_written(&executor)
+            .is_some_and(|dropin| dropin.contains("PermitRootLogin prohibit-password")),
+        "positive control: the first apply must route the downgraded value to the fragment, \
+         wrote: {:?}",
+        executor.log().files_written
+    );
+    executor.clear_log();
+
+    let second = run_ssh_apply(&executor).await;
+
+    assert!(
+        !executor
+            .log()
+            .commands_executed
+            .iter()
+            .any(|(command, args)| command == "rm"
+                && args.contains(&"/etc/ssh/sshd_config.d/00-hardener.conf".to_string())),
+        "the second apply removed the fragment that is still the only thing beating \
+         50-redhat.conf, commands: {:?}",
+        executor.log().commands_executed
+    );
+    assert!(
+        second
+            .apply_changes
+            .iter()
+            .any(|change| change.change_description.contains("already compliant")),
+        "a host the previous run hardened has nothing left to change, got: {:?}",
+        second.apply_changes
+    );
+}
