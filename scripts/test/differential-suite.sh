@@ -996,6 +996,46 @@ pwquality_verdict() {
     fi
 }
 
+# Why libpwquality refused a password, in its own words.
+#
+# Called only on the failure path, and it exists because the first version of
+# this family did not have it. fedora refused the probe password where rhel
+# accepted it, and the check reported 'refused' against 'accepted' without
+# saying why, which is a diagnostic that has discarded the only thing it was
+# for. A refusal that names no rule cannot be told apart from a refusal by a
+# rule this suite should be honouring.
+pwquality_refusal_detail() {
+    local password="$1" message
+    command -v pwscore >/dev/null 2>&1 || {
+        printf 'pwscore is not installed'
+        return 0
+    }
+    message="$(printf '%s\n' "$password" | pwscore 2>&1 >/dev/null)"
+    if [[ -z "$message" ]]; then
+        printf 'pwscore refused it and said nothing'
+        return 0
+    fi
+    printf '%s' "${message//$'\n'/ }"
+}
+
+# Every file libpwquality reads, not only the one the tool writes.
+#
+# libpwquality 1.4.1 and later read /etc/security/pwquality.conf.d/*.conf after
+# the main file, so a drop-in there overrides it, and this tool writes only the
+# main file. Reported beside a refusal so a stricter-than-expected policy can be
+# told apart from a rule of the file the tool controls.
+pwquality_configuration_sources() {
+    local dropins=() file
+    for file in /etc/security/pwquality.conf.d/*.conf; do
+        [[ -e "$file" ]] && dropins+=("$file")
+    done
+    if (( ${#dropins[@]} == 0 )); then
+        printf '/etc/security/pwquality.conf only'
+        return 0
+    fi
+    printf '/etc/security/pwquality.conf plus %s' "${dropins[*]}"
+}
+
 # The system and the tool agree about whether password quality is enforced.
 #
 # Pure, and pinned in all four directions by the self-test, because this is the
@@ -1038,7 +1078,7 @@ run_pwquality_enforcement_checks() {
         if [[ "$weak" == refused && "$strong" == accepted ]]; then
             record_pass "pwquality weak-password-refused: libpwquality refused the weak password and accepted the probe password, so the policy is applied rather than merely written"
         else
-            record_fail "pwquality weak-password-refused: libpwquality returned '$weak' for the weak password and '$strong' for the probe password on a host whose stack loads the module; a policy that refuses everything or nothing proves the same amount"
+            record_fail "pwquality weak-password-refused: libpwquality returned '$weak' for the weak password and '$strong' for the probe password on a host whose stack loads the module; a policy that refuses everything or nothing proves the same amount. It read $(pwquality_configuration_sources), and of the probe password it said: $(pwquality_refusal_detail "$DIFF_PROBE_PASSWORD")"
         fi
     elif [[ "$weak" == refused ]]; then
         record_fail "pwquality weak-password-refused: libpwquality refused the weak password on a host whose stack does not load pam_pwquality, so the two readings describe different hosts"
