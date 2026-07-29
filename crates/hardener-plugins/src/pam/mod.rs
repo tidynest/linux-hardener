@@ -1106,6 +1106,31 @@ impl HardeningPlugin for PamHardeningPlugin {
             }
         }
 
+        // Drift between the layers, asked here through the same function scan
+        // uses so the two cannot come to disagree about one host.
+        //
+        // An issue rather than an estimated change, deliberately. Estimated
+        // changes are what apply would do, and their count is read as the real
+        // change count; apply does not import keys an existing /etc file omits,
+        // because that file is the host's own and this tool cannot tell a key
+        // the operator dropped on purpose from one an older release dropped for
+        // them. Listing drift there would inflate the count and promise a write
+        // that never happens. The message says so outright, so the preview
+        // cannot be read as an undertaking to fix it.
+        issues.extend(
+            layer_drift_findings(ctx)
+                .await
+                .into_iter()
+                .map(|finding| ValidationIssue {
+                    validation_issue_config_key: None,
+                    validation_issue_message: format!(
+                        "{}; apply will not import them, so restoring them is a manual step",
+                        finding.finding_description
+                    ),
+                    validation_issue_severity: finding.finding_severity,
+                }),
+        );
+
         // Estimate changes state-aware: read the current file values the same
         // way apply does and list only directives that would actually change;
         // already-compliant directives are tallied in compliant_count, not

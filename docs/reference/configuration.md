@@ -153,6 +153,12 @@ omitted keys matter, `scan` reports them in a Medium finding naming each one.
 Restoring them is a manual step by design: this tool cannot tell a key an
 operator dropped on purpose from one an older release dropped for them.
 
+`apply --dry-run` reports the same drift as a Medium validation issue, so the
+preview an operator reads before applying does not describe a drifted host and
+a clean one identically. It is an issue rather than an estimated change because
+`apply` will not import the missing keys; Medium is advisory, so the dry run
+still exits zero.
+
 The masking is a property of the layering rather than of any one file, so every
 layered file this plugin reads is checked and each has its own finding:
 

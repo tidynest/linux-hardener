@@ -26,6 +26,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`apply --dry-run` reports layer drift, which only `scan` did.** The preview
+  an operator reads before applying listed the directives that would change and
+  said nothing about masked keys, so a host whose vendor settings had already
+  reverted previewed identically to one whose had not. Drift is reported as a
+  Medium validation issue, not as an estimated change: `apply` does not import
+  keys an existing `/etc` file omits, so listing it as a pending change would
+  inflate the change count and promise a write that never happens. Medium is
+  advisory, so a dry run still exits zero; only Critical and High fail it.
+
 - **Layer drift is reported for every layered PAM configuration file, not only
   `/etc/login.defs`.** The whole-file override belongs to the layering, not to
   one path, so a hand-rolled `/etc/security/pwquality.conf` masks its

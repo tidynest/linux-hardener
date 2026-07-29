@@ -2738,6 +2738,78 @@ async fn scan_reports_masked_keys_in_every_layered_pam_conf_not_only_login_defs(
     }
 }
 
+#[tokio::test]
+async fn validate_reports_the_layer_drift_scan_reports() {
+    // `apply --dry-run` runs this path, and it is what an operator reads before
+    // deciding to apply. It described the directives that would change and said
+    // nothing about masked keys, so a host whose vendor settings had already
+    // reverted previewed identically to one whose had not, and the operator
+    // applied believing the preview was the whole story.
+    //
+    // Two files rather than one, because the point is that validate asks the
+    // same shared question scan asks. A second hardcoded path would satisfy a
+    // single-file assertion.
+    let executor = Arc::new(
+        secure_pam_executor()
+            .with_file("/usr/etc/login.defs", VENDOR_LOGIN_DEFS)
+            .with_file(
+                "/usr/etc/security/pwquality.conf",
+                "minlen = 8\ndifok = 5\n",
+            ),
+    );
+    let ctx = Context::with_executor(executor.clone());
+
+    let report = PamHardeningPlugin::new()
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .expect("validate runs");
+
+    let messages: Vec<&str> = report
+        .validation_report_issues
+        .iter()
+        .map(|i| i.validation_issue_message.as_str())
+        .collect();
+
+    for (file, key) in [
+        ("/etc/login.defs", "ENCRYPT_METHOD"),
+        ("/etc/security/pwquality.conf", "difok"),
+    ] {
+        let issue = report
+            .validation_report_issues
+            .iter()
+            .find(|i| {
+                i.validation_issue_message.contains(file)
+                    && i.validation_issue_message.contains("mask")
+            })
+            .unwrap_or_else(|| {
+                panic!("validate must report {file} masking its vendor copy; got: {messages:?}")
+            });
+        assert!(
+            issue.validation_issue_message.contains(key),
+            "the issue for {file} must name the masked key {key}: {}",
+            issue.validation_issue_message
+        );
+        assert_eq!(
+            issue.validation_issue_severity,
+            Severity::Medium,
+            "drift is the same severity here as the finding scan reports for it"
+        );
+    }
+
+    // Drift is not a pending change. apply deliberately does not import keys an
+    // existing /etc file omits, so listing it here would inflate the change
+    // count and promise a write that never happens, which is the defect this
+    // preview already carries one arm over.
+    assert!(
+        !report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("mask")),
+        "masked keys are not a change apply will make: {:?}",
+        report.validation_report_estimated_changes
+    );
+}
+
 // === An unreadable PAM stack (M) ===
 
 /// The first file `pamd_module_for("deny")` searches. An inline
