@@ -324,22 +324,17 @@ test_reports_output_formats() {
 test_dry_run_all_plugins() {
     log_header "8. DRY-RUN - ALL PLUGINS"
 
-    run_test_output "Dry-run --all" "\"$BINARY\" apply --all --dry-run" "item.s. to apply"
+    # Asked structurally, not by matching the renderer's prose. This grepped for
+    # "item(s) to apply" while the renderer prints "change(s) to apply", so it
+    # failed on every distribution and said only that a pattern was missing. The
+    # wording itself is pinned where it cannot drift, by a unit test that calls
+    # `validation_report_lines` directly, so repeating it here bought nothing
+    # even when it matched.
+    run_dry_run_test "Dry-run --all" "all" "$BINARY" apply --all
 
     for plugin in "${PLUGINS[@]}"; do
         if [[ "$CONTAINER_MODE" == "true" && "$plugin" == "service-minimisation" ]]; then
-            log_test "Dry-run: $plugin"
-            local dry_json="$REPORT_DIR/dryrun-$plugin.json"
-            local dry_err="$REPORT_DIR/dryrun-$plugin.err"
-            if "$BINARY" apply --plugin "$plugin" --dry-run --format json \
-                > "$dry_json" 2>"$dry_err"; then
-                log_pass "Dry-run: $plugin"
-            elif produced_result_document "$dry_json" validation_report_plugin_id; then
-                log_pass "Dry-run: $plugin (partial: expected in container)"
-            else
-                log_fail "Dry-run: $plugin (the plugin reported no validation report)"
-                surface_tool_error "$dry_err"
-            fi
+            run_dry_run_test "Dry-run: $plugin" "$plugin" "$BINARY" apply --plugin "$plugin"
         else
             run_test "Dry-run: $plugin" "\"$BINARY\" apply --plugin \"$plugin\" --dry-run"
         fi
@@ -488,6 +483,30 @@ produced_result_document() {
     # `apply` emits ApplyResult, keyed `apply_plugin_id`; `--dry-run` emits
     # ValidationReport instead, keyed `validation_report_plugin_id`.
     grep -q "\"$2\"" "$1" 2>/dev/null
+}
+
+# A dry run that left a validation report ran, whatever its exit code said.
+#
+# The exit code cannot answer this on its own: a plugin whose PAM module is
+# absent from the stack fails the run by design, and a container's bind-mount
+# permissions fail others, so a non-zero exit is ordinary on a host where the
+# dry run nonetheless did its work. What separates that from a run that never
+# started is whether the tool serialised a record of its own.
+run_dry_run_test() {
+    local name="$1" label="$2"
+    shift 2
+    local json="$REPORT_DIR/dryrun-$label.json"
+    local err="$REPORT_DIR/dryrun-$label.err"
+
+    log_test "$name"
+    if "$@" --dry-run --format json > "$json" 2>"$err"; then
+        log_pass "$name"
+    elif produced_result_document "$json" validation_report_plugin_id; then
+        log_pass "$name (partial: expected in container)"
+    else
+        log_fail "$name (the plugin reported no validation report)"
+        surface_tool_error "$err"
+    fi
 }
 
 test_apply_other_plugins() {
