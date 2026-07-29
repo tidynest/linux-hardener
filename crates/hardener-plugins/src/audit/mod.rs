@@ -951,6 +951,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
                         unchecked_category: FindingCategory::Audit,
                         unchecked_reason: "listing loaded audit rules (auditctl -l) requires root"
                             .to_string(),
+                        unchecked_needs_privilege: true,
                         unchecked_compliance: get_audit_compliance_mappings("rules"),
                     });
                 }

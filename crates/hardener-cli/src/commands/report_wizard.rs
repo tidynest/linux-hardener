@@ -201,7 +201,7 @@ pub async fn run(quiet: bool) -> Result<()> {
     output_reports(&reports, &state)?;
 
     // Step 6: Show summary
-    print_summary(&reports, &state, unchecked.len());
+    print_summary(&reports, &state, &unchecked);
 
     Ok(())
 }
@@ -574,7 +574,7 @@ fn format_name(format: &OutputFormat) -> &'static str {
 fn print_summary(
     reports: &[hardener_compliance::ComplianceReport],
     state: &WizardState,
-    unchecked_count: usize,
+    unchecked: &[hardener_types::UncheckedCheck],
 ) {
     println!();
     println!("{}", "═══════════════════════════════════════".green());
@@ -613,15 +613,8 @@ fn print_summary(
 
     println!();
 
-    if unchecked_count > 0 {
-        println!(
-            "{}",
-            format!(
-                "{} check(s) could not be evaluated without root privileges; run with sudo for a full scan",
-                unchecked_count
-            )
-            .dimmed()
-        );
+    if let Some(note) = hardener_types::unchecked_summary(unchecked) {
+        println!("{}", note.dimmed());
     }
 
     if state.output_path.is_some() {

@@ -1116,6 +1116,7 @@ fn unchecked_ssh_checks(path: &str) -> Vec<UncheckedCheck> {
             unchecked_title: format!("SSH setting: {}", name),
             unchecked_category: FindingCategory::Network,
             unchecked_reason: format!("reading {path} requires root"),
+            unchecked_needs_privilege: true,
             unchecked_compliance: compliance,
         })
         .collect()

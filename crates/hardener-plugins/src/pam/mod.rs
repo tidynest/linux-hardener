@@ -1288,6 +1288,7 @@ fn unchecked_pam_directive(
         unchecked_title: format!("PAM setting: {}", directive.pam_directive_name),
         unchecked_category: FindingCategory::Authentication,
         unchecked_reason: unreadable_reason(path, permission_denied),
+        unchecked_needs_privilege: permission_denied,
         unchecked_compliance: get_pam_compliance_mappings(directive.pam_directive_name),
     }
 }

@@ -311,6 +311,7 @@ mod tests {
             unchecked_title: "PAM setting: minlen".to_string(),
             unchecked_category: FindingCategory::Authentication,
             unchecked_reason: "requires root".to_string(),
+            unchecked_needs_privilege: true,
             unchecked_compliance: vec![mapping(ComplianceFramework::CIS, "1.5.1")],
         }];
         let report = generator.generate(&[], &unchecked).pop().unwrap();
@@ -335,6 +336,7 @@ mod tests {
             unchecked_title: "PAM setting: minlen".to_string(),
             unchecked_category: FindingCategory::Authentication,
             unchecked_reason: "requires root".to_string(),
+            unchecked_needs_privilege: true,
             unchecked_compliance: vec![mapping(ComplianceFramework::CIS, "1.5.1")],
         }];
         let report = generator

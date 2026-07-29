@@ -430,12 +430,16 @@ pub struct PluginMetadata {
     pub plugin_version: String,
 }
 
-/// A check the scanner could not evaluate at its current privilege level.
+/// A check the scanner could not evaluate.
 ///
 /// Unchecked entries are not findings: they carry no severity, never enter
 /// the security score, and map to `ManualReview` in compliance reports.
 /// `unchecked_check_id` equals the `finding_id` the check would produce if it
 /// failed, so consumers can correlate the two.
+///
+/// Privilege is one cause among several, not the definition. A plugin the
+/// operator disabled, a filesystem with no POSIX modes and a probe that failed
+/// for its own reasons all land here too, and sudo helps with none of them.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct UncheckedCheck {
     /// Stable id, identical to the finding_id the check would produce.
@@ -446,8 +450,52 @@ pub struct UncheckedCheck {
     pub unchecked_category: FindingCategory,
     /// Why it could not be checked, e.g. "reading /etc/security/pwquality.conf requires root".
     pub unchecked_reason: String,
+    /// Whether re-running the scan with privilege could turn this entry into a
+    /// real result.
+    ///
+    /// The producer is the only place that knows. `unchecked_reason` is prose
+    /// for an operator, so a renderer wanting to offer "run with sudo" had to
+    /// either assert privilege for every entry, which is what four of them did,
+    /// or guess from the wording, which is worse.
+    ///
+    /// Defaults to `false` on deserialisation, so a scan persisted before this
+    /// field existed claims nothing rather than over-promising a remedy.
+    #[serde(default)]
+    pub unchecked_needs_privilege: bool,
     /// Compliance mappings the check covers (drives ManualReview).
     pub unchecked_compliance: Vec<ComplianceMapping>,
+}
+
+/// The one-line roll-up describing a run's unchecked checks, or `None` when
+/// there are none to describe.
+///
+/// One definition because four renderers each grew their own, and every one of
+/// them named root as the cause of every entry. Sudo is offered only for the
+/// entries whose producer said it would help, so a run that could not check
+/// something for a reason privilege cannot touch no longer sends the operator
+/// to a remedy that changes nothing.
+///
+/// Takes an iterator rather than a slice so the scan footer, which summarises
+/// every plugin's entries at once, does not have to collect them first.
+pub fn unchecked_summary<'a>(
+    unchecked: impl IntoIterator<Item = &'a UncheckedCheck>,
+) -> Option<String> {
+    let (total, privileged) = unchecked
+        .into_iter()
+        .fold((0usize, 0usize), |(t, p), check| {
+            (t + 1, p + usize::from(check.unchecked_needs_privilege))
+        });
+    match (total, privileged) {
+        (0, _) => None,
+        (total, 0) => Some(format!("{total} check(s) could not be verified")),
+        (total, privileged) if privileged == total => Some(format!(
+            "{total} check(s) require root; run with sudo for a full scan"
+        )),
+        (total, privileged) => Some(format!(
+            "{total} check(s) could not be verified, {privileged} of them for want of root; \
+             run with sudo for a fuller scan"
+        )),
+    }
 }
 
 /// Result of a scan operation.
@@ -1322,11 +1370,127 @@ mod serde_compatibility_tests {
             unchecked_title: "PAM setting: minlen".to_string(),
             unchecked_category: FindingCategory::Authentication,
             unchecked_reason: "reading /etc/security/pwquality.conf requires root".to_string(),
+            unchecked_needs_privilege: true,
             unchecked_compliance: vec![],
         };
         let json = serde_json::to_string(&check).unwrap();
         let back: UncheckedCheck = serde_json::from_str(&json).unwrap();
         assert_eq!(back.unchecked_check_id, check.unchecked_check_id);
+    }
+
+    /// A scan persisted before the field existed must claim nothing rather
+    /// than inherit a remedy nobody recorded.
+    #[test]
+    fn unchecked_check_deserialises_without_the_privilege_field() {
+        let old_json = r#"{
+            "unchecked_check_id": "pam-minlen",
+            "unchecked_title": "PAM setting: minlen",
+            "unchecked_category": "Authentication",
+            "unchecked_reason": "reading /etc/security/pwquality.conf requires root",
+            "unchecked_compliance": []
+        }"#;
+        let check: UncheckedCheck = serde_json::from_str(old_json).expect("old JSON must parse");
+        assert!(
+            !check.unchecked_needs_privilege,
+            "an absent field must not be read as a promise that sudo helps"
+        );
+    }
+
+    fn unchecked(id: &str, reason: &str, needs_privilege: bool) -> UncheckedCheck {
+        UncheckedCheck {
+            unchecked_check_id: id.to_string(),
+            unchecked_title: id.to_string(),
+            unchecked_category: FindingCategory::Authentication,
+            unchecked_reason: reason.to_string(),
+            unchecked_needs_privilege: needs_privilege,
+            unchecked_compliance: vec![],
+        }
+    }
+
+    /// The roll-up must not name a cause no entry carries. Reasons sudo cannot
+    /// fix are produced today: a plugin the operator disabled, a path on a
+    /// filesystem with no POSIX modes, a service list that could not be read.
+    /// Naming root for those sends the operator to a remedy that changes
+    /// nothing, and it was seen live on a container already running as root.
+    #[test]
+    fn unchecked_summary_does_not_blame_root_for_a_check_root_cannot_reach() {
+        let disabled = unchecked(
+            "ssh-hardening-not-assessed",
+            "disabled by configuration, so the controls it covers were not assessed",
+            false,
+        );
+
+        let summary = unchecked_summary(&[disabled]).expect("one entry must be summarised");
+
+        assert!(
+            !summary.contains("root") && !summary.contains("sudo"),
+            "a check no privilege can reach must not be summarised as needing one, got: {summary}"
+        );
+        assert!(
+            summary.contains('1'),
+            "the count must survive whatever the cause is, got: {summary}"
+        );
+    }
+
+    /// The mixed run is the realistic one: a disabled plugin beside a file only
+    /// root can read. Reporting either cause alone loses the other.
+    #[test]
+    fn unchecked_summary_separates_what_sudo_fixes_from_what_it_does_not() {
+        let entries = [
+            unchecked(
+                "ssh-hardening-not-assessed",
+                "disabled by configuration",
+                false,
+            ),
+            unchecked(
+                "pam-minlen",
+                "reading /etc/security/pwquality.conf requires root",
+                true,
+            ),
+            unchecked(
+                "pam-dcredit",
+                "reading /etc/security/pwquality.conf requires root",
+                true,
+            ),
+        ];
+
+        let summary = unchecked_summary(&entries).expect("three entries must be summarised");
+
+        assert_eq!(
+            summary,
+            "3 check(s) could not be verified, 2 of them for want of root; \
+             run with sudo for a fuller scan"
+        );
+    }
+
+    /// Guard, not evidence. It discriminates nothing about the defect: the
+    /// unfixed roll-up blamed root for every run, so it was already right about
+    /// this one. It is here so a fix cannot buy honesty by dropping the sudo
+    /// offer altogether, on the run where sudo is the whole answer.
+    #[test]
+    fn unchecked_summary_still_offers_sudo_when_every_check_wants_it() {
+        let entries = [
+            unchecked(
+                "pam-minlen",
+                "reading /etc/security/pwquality.conf requires root",
+                true,
+            ),
+            unchecked("audit-rules", "auditctl -l requires root", true),
+        ];
+
+        let summary = unchecked_summary(&entries).expect("two entries must be summarised");
+
+        assert_eq!(
+            summary,
+            "2 check(s) require root; run with sudo for a full scan"
+        );
+    }
+
+    /// Nothing to say is said as nothing, so a renderer cannot print an empty
+    /// note beside a clean host.
+    #[test]
+    fn unchecked_summary_is_none_when_there_is_nothing_unchecked() {
+        assert!(unchecked_summary(&[]).is_none());
     }
 }
 

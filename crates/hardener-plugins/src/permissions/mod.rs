@@ -263,6 +263,7 @@ fn non_posix_unchecked(directive: &PermissionDirective, fstype: &str) -> Uncheck
         unchecked_title: format!("Permissions on {}", directive.permission_path),
         unchecked_category: FindingCategory::FileSystem,
         unchecked_reason: non_posix_guidance(directive.permission_path, fstype),
+        unchecked_needs_privilege: false,
         unchecked_compliance: get_permissions_compliance_mappings(directive.permission_path),
     }
 }
@@ -278,6 +279,7 @@ fn unverifiable_unchecked(directive: &PermissionDirective, reason: &str) -> Unch
         unchecked_title: format!("Permissions on {}", directive.permission_path),
         unchecked_category: FindingCategory::FileSystem,
         unchecked_reason: reason.to_string(),
+        unchecked_needs_privilege: false,
         unchecked_compliance: get_permissions_compliance_mappings(directive.permission_path),
     }
 }
