@@ -83,18 +83,6 @@ impl PluginConfig {
             .unwrap_or(baseline)
     }
 
-    /// The integer directive override for `key`, if the config sets a parseable
-    /// one.
-    ///
-    /// Separate from [`resolve_str`](Self::resolve_str) because its callers do
-    /// not fall back to a baseline here: they hand the `Option` to a clamp that
-    /// decides whether the override may move the target at all. An unparseable
-    /// value reads as no override, which leaves the plugin's own secure value
-    /// standing rather than letting a typo relax a threshold.
-    pub fn resolve_i64(&self, key: &str) -> Option<i64> {
-        self.directives.get(key).and_then(|v| v.parse::<i64>().ok())
-    }
-
     /// Returns a valid, non-expired exception for the given key, if one exists.
     pub fn has_valid_exception(&self, key: &str) -> Option<&PolicyException> {
         self.exceptions.get(key).filter(|e| e.is_valid())

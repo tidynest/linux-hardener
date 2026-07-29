@@ -8,6 +8,7 @@
 mod layer_drift;
 mod login_defs;
 
+use crate::strictness::Strictness;
 use async_trait::async_trait;
 use hardener_common::file_utils::{
     ConfigFormat, Duplicates, parse_config_value, set_config_directive,
@@ -635,20 +636,12 @@ impl HardeningPlugin for PamHardeningPlugin {
                     }
                 };
 
-            // Resolve the effective target the same way apply does: a
-            // directive override wins over the hardcoded baseline, and for
-            // threshold directives (AtMost/AtLeast) it is clamped so an
-            // override can only tighten, never loosen (apply ~725-729,
-            // ~761-766).
-            let target: String = clamp_target(
-                directive.pam_compare,
-                directive
-                    .pam_secure_value
-                    .parse()
-                    .expect("pam_secure_value must be a valid integer"),
-                config.resolve_i64(directive.pam_directive_name),
-            )
-            .to_string();
+            // Resolve the effective target the same way apply and validate do,
+            // through the one function all three call: a directive override
+            // wins over the hardcoded baseline only where it tightens it. The
+            // shared call is what keeps the three in step, rather than a note
+            // pointing at the line numbers of the other two.
+            let target = clamped_baseline(directive, config);
 
             // Check if current value satisfies the directive's comparison
             // against the resolved (overridden + clamped) target.
@@ -848,21 +841,10 @@ impl HardeningPlugin for PamHardeningPlugin {
             // and its own comment says skipping on the value leaves that repair
             // undone so the file never converges. Writing the stricter of the
             // two keeps the repair and keeps the host's setting.
-            let secure: i64 = directive
-                .pam_secure_value
-                .parse()
-                .expect("pam_secure_value must be a valid integer");
-            let target = clamp_target(
-                directive.pam_compare,
-                secure,
-                config.resolve_i64(directive.pam_directive_name),
-            );
-            let target_value = clamp_target(
-                directive.pam_compare,
-                target,
-                observed.value_or_not_set().parse::<i64>().ok(),
-            )
-            .to_string();
+            let target = clamped_baseline(directive, config);
+            let target_value = directive
+                .pam_compare
+                .clamp_target(&target, Some(observed.value_or_not_set()));
 
             // A file whose current contents could not be read is never
             // rewritten, and that refusal was already recorded once, at read
@@ -915,7 +897,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                 PamConfigFile::SecurityConf(path) => {
                     // `target` is the hoisted, override-clamped baseline. This
                     // arm does not use the host-clamped `target_value`: it
-                    // gates on `breaches_threshold` below and skips outright
+                    // gates on the comparison below and skips outright
                     // when the host is already stricter, so it never writes a
                     // looser value in the first place.
 
@@ -933,11 +915,10 @@ impl HardeningPlugin for PamHardeningPlugin {
                     // inline-vs-conf-file precedence; "not set" fails to parse as
                     // an integer just like a genuinely missing value, so reusing
                     // it here is equivalent to reading afresh.
-                    if !breaches_threshold(
-                        directive.pam_compare,
-                        target,
-                        Some(observed.value_or_not_set()),
-                    ) {
+                    if !directive
+                        .pam_compare
+                        .violated_by(&target, Some(observed.value_or_not_set()))
+                    {
                         changes.push(Change {
                             change_type: ChangeType::Skipped,
                             change_description: format!(
@@ -1273,14 +1254,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                     // The same override-clamped target scan and apply use, so
                     // the preview cannot judge the host by a rule the apply it
                     // previews does not apply.
-                    let target_number = clamp_target(
-                        d.pam_compare,
-                        d.pam_secure_value
-                            .parse()
-                            .expect("pam_secure_value must be a valid integer"),
-                        config.resolve_i64(d.pam_directive_name),
-                    );
-                    let target_value = target_number.to_string();
+                    let target_value = clamped_baseline(d, config);
                     let target_value = target_value.as_str();
                     // Absent reads as empty content, same as a confirmed-missing
                     // file always has: parsing finds nothing and the directive
@@ -1317,11 +1291,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                         // Threshold, not equality: a host stricter than the
                         // baseline is compliant and has no pending change.
                         Some(current)
-                            if !breaches_threshold(
-                                d.pam_compare,
-                                target_number,
-                                Some(&current),
-                            ) =>
+                            if !d.pam_compare.violated_by(target_value, Some(&current)) =>
                         {
                             compliant_count += 1
                         }
@@ -1343,16 +1313,9 @@ impl HardeningPlugin for PamHardeningPlugin {
                     // `SecurityConf` directive has no lenient/classified
                     // split between the exception check and this estimate,
                     // so there is no wording that reusing it could degrade.
-                    let secure: i64 = d
-                        .pam_secure_value
-                        .parse()
-                        .expect("pam_secure_value must be a valid integer");
-                    let over = config.resolve_i64(d.pam_directive_name);
-                    let target = clamp_target(d.pam_compare, secure, over);
+                    let target = clamped_baseline(d, config);
                     match &observed {
-                        PamObserved::Value(v)
-                            if !breaches_threshold(d.pam_compare, target, Some(v)) =>
-                        {
+                        PamObserved::Value(v) if !d.pam_compare.violated_by(&target, Some(v)) => {
                             compliant_count += 1
                         }
                         PamObserved::Value(v) => estimated_changes.push(format!(
@@ -1519,7 +1482,7 @@ struct PamDirective {
     pam_description: &'static str,
     pam_severity: Severity,
     pam_config_file: PamConfigFile,
-    pam_compare: PamCompare,
+    pam_compare: Strictness,
 }
 
 /// Represents which PAM configuration file contains the directive.
@@ -1558,31 +1521,6 @@ impl PamConfigFile {
     }
 }
 
-/// How a directive's current value is judged against its secure value.
-///
-/// **Every variant has a direction, and that is the point.** There used to be
-/// an `Exact`, and nine directives used it, which made any value other than the
-/// baseline a violation including a stricter one: a host expiring passwords
-/// every 30 days was reported violating and then written to 90. Removing the
-/// variant rather than reassigning its members is what makes the no-loosen rule
-/// structural, because a directive added later cannot be given a comparison
-/// that has no direction.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum PamCompare {
-    /// Current must be ≤ the secure value (e.g. faillock `deny`, lock no later).
-    AtMost,
-    /// Current must be ≥ the secure value (e.g. pwhistory `remember`).
-    AtLeast,
-    /// Current must be ≤ the secure value **and not zero**, for a setting whose
-    /// zero switches the check off rather than tightening it.
-    ///
-    /// `maxrepeat = 0` disables the consecutive-character check outright, so it
-    /// is the loosest value the setting has while being the smallest number it
-    /// can hold. A plain [`Self::AtMost`] would score it compliant, which is a
-    /// check switched off reading as a check satisfied.
-    NonZeroAtMost,
-}
-
 /// Secure PAM configuration directives.
 const PAM_DIRECTIVES: &[PamDirective] = &[
     // Password Quality (pwquality.conf)
@@ -1592,7 +1530,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Minimum password length of 14 characters",
         pam_severity: Severity::High,
         pam_config_file: PamConfigFile::PwQuality,
-        pam_compare: PamCompare::AtLeast,
+        pam_compare: Strictness::AtLeast,
     },
     PamDirective {
         pam_directive_name: "dcredit",
@@ -1600,7 +1538,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Require at least one digit in password",
         pam_severity: Severity::Medium,
         pam_config_file: PamConfigFile::PwQuality,
-        pam_compare: PamCompare::AtMost,
+        pam_compare: Strictness::AtMost,
     },
     PamDirective {
         pam_directive_name: "ucredit",
@@ -1608,7 +1546,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Require at least one uppercase character in password",
         pam_severity: Severity::Medium,
         pam_config_file: PamConfigFile::PwQuality,
-        pam_compare: PamCompare::AtMost,
+        pam_compare: Strictness::AtMost,
     },
     PamDirective {
         pam_directive_name: "lcredit",
@@ -1616,7 +1554,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Require at least one lowercase character in password",
         pam_severity: Severity::Medium,
         pam_config_file: PamConfigFile::PwQuality,
-        pam_compare: PamCompare::AtMost,
+        pam_compare: Strictness::AtMost,
     },
     PamDirective {
         pam_directive_name: "ocredit",
@@ -1624,7 +1562,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Require at least one special character in password",
         pam_severity: Severity::Medium,
         pam_config_file: PamConfigFile::PwQuality,
-        pam_compare: PamCompare::AtMost,
+        pam_compare: Strictness::AtMost,
     },
     PamDirective {
         pam_directive_name: "maxrepeat",
@@ -1632,7 +1570,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Maximum consecutive identical characters in password",
         pam_severity: Severity::Low,
         pam_config_file: PamConfigFile::PwQuality,
-        pam_compare: PamCompare::NonZeroAtMost,
+        pam_compare: Strictness::NonZeroAtMost,
     },
     PamDirective {
         pam_directive_name: "PASS_MAX_DAYS",
@@ -1640,7 +1578,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Maximum password age of 90 days",
         pam_severity: Severity::Medium,
         pam_config_file: PamConfigFile::LoginDefs,
-        pam_compare: PamCompare::AtMost,
+        pam_compare: Strictness::AtMost,
     },
     PamDirective {
         pam_directive_name: "PASS_MIN_DAYS",
@@ -1648,7 +1586,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Minimum password age of 1 day (prevents rapid changes)",
         pam_severity: Severity::Low,
         pam_config_file: PamConfigFile::LoginDefs,
-        pam_compare: PamCompare::AtLeast,
+        pam_compare: Strictness::AtLeast,
     },
     PamDirective {
         pam_directive_name: "PASS_WARN_AGE",
@@ -1656,7 +1594,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Warn users 7 days before password expiry",
         pam_severity: Severity::Low,
         pam_config_file: PamConfigFile::LoginDefs,
-        pam_compare: PamCompare::AtLeast,
+        pam_compare: Strictness::AtLeast,
     },
     // Account lockout (faillock) and password-reuse (pwhistory). Threshold
     // comparisons: a stricter setting is compliant and apply never loosens it.
@@ -1666,7 +1604,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Lock the account after at most 5 failed attempts",
         pam_severity: Severity::High,
         pam_config_file: PamConfigFile::SecurityConf("/etc/security/faillock.conf"),
-        pam_compare: PamCompare::AtMost,
+        pam_compare: Strictness::AtMost,
     },
     PamDirective {
         pam_directive_name: "remember",
@@ -1674,7 +1612,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Remember at least the last 5 passwords to prevent reuse",
         pam_severity: Severity::Medium,
         pam_config_file: PamConfigFile::SecurityConf("/etc/security/pwhistory.conf"),
-        pam_compare: PamCompare::AtLeast,
+        pam_compare: Strictness::AtLeast,
     },
 ];
 
@@ -1685,45 +1623,23 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
 /// pam.d args or /etc/security/*.conf) is resolved by callers via
 /// `read_effective_threshold` before this check.
 fn pam_violates(directive: &PamDirective, target: &str, current: Option<&str>) -> bool {
-    breaches_threshold(
-        directive.pam_compare,
-        target.parse().expect("target must be a valid integer"),
-        current,
+    directive.pam_compare.violated_by(target, current)
+}
+
+/// The override-clamped target for `directive`: the operator's directive
+/// override where the config sets one that tightens the plugin's own secure
+/// value, and the secure value itself otherwise.
+///
+/// Scan, apply and validate each need this, and they must agree, so a preview
+/// cannot judge the host by a rule the apply it previews does not apply.
+fn clamped_baseline(directive: &PamDirective, config: &PluginConfig) -> String {
+    directive.pam_compare.clamp_target(
+        directive.pam_secure_value,
+        // With no override this resolves to the secure value itself, which
+        // ties with the baseline and leaves it standing, so the absent case
+        // needs no separate spelling.
+        Some(config.resolve_str(directive.pam_directive_name, directive.pam_secure_value)),
     )
-}
-
-/// True when integer `current` fails threshold `bound` under `compare`.
-/// Unset/unparseable counts as a breach. (Only meaningful for AtMost/AtLeast.)
-fn breaches_threshold(compare: PamCompare, bound: i64, current: Option<&str>) -> bool {
-    let n = current.and_then(|v| v.parse::<i64>().ok());
-    match compare {
-        PamCompare::AtMost => n.is_none_or(|n| n > bound),
-        PamCompare::AtLeast => n.is_none_or(|n| n < bound),
-        PamCompare::NonZeroAtMost => n.is_none_or(|n| n > bound || n == 0),
-    }
-}
-
-/// The stricter of `baseline` and `candidate` under the directive's direction.
-///
-/// Two callers ask this one question. An operator override is clamped against
-/// the baseline so a per-host setting can only tighten, which is what this
-/// function was written for. Apply then clamps the result against the value the
-/// host already holds, so a write can only tighten too: that is the whole of
-/// the no-loosen rule for the files this plugin rewrites, and asking it twice
-/// through one definition is why the two cannot drift apart.
-///
-/// Exhaustive rather than defaulting, so a fourth direction cannot be absorbed
-/// silently by a catch-all arm.
-fn clamp_target(compare: PamCompare, baseline: i64, candidate: Option<i64>) -> i64 {
-    match (compare, candidate) {
-        (_, None) => baseline,
-        (PamCompare::AtMost, Some(c)) => c.min(baseline),
-        (PamCompare::AtLeast, Some(c)) => c.max(baseline),
-        // Zero switches the check off, so it is never the stricter candidate
-        // however small a number it is.
-        (PamCompare::NonZeroAtMost, Some(0)) => baseline,
-        (PamCompare::NonZeroAtMost, Some(c)) => c.min(baseline),
-    }
 }
 
 /// PAM-stack files that may carry an inline override for a threshold directive's
@@ -2886,7 +2802,7 @@ mod tests {
             pam_description: "t",
             pam_severity: Severity::High,
             pam_config_file: PamConfigFile::SecurityConf("/etc/security/faillock.conf"),
-            pam_compare: PamCompare::AtMost,
+            pam_compare: Strictness::AtMost,
         };
         assert!(pam_violates(&deny, deny.pam_secure_value, Some("10"))); // too loose
         assert!(!pam_violates(&deny, deny.pam_secure_value, Some("3"))); // stricter, compliant
@@ -2901,7 +2817,7 @@ mod tests {
         let remember = PamDirective {
             pam_directive_name: "remember",
             pam_config_file: PamConfigFile::SecurityConf("/etc/security/pwhistory.conf"),
-            pam_compare: PamCompare::AtLeast,
+            pam_compare: Strictness::AtLeast,
             ..deny
         };
         assert!(pam_violates(
