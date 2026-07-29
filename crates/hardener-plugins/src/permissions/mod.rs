@@ -878,14 +878,15 @@ async fn current_verified_mode(ctx: &Context, path: &Path) -> Option<u32> {
 /// `path_exists` check already ran) but its mode could not be established.
 /// This consults the same [`unverified_mode_target`] apply does: a max-mask
 /// directive has nothing to estimate (apply skips it), so the gap is
-/// reported as an issue instead. That issue is currently the only place
-/// this is surfaced at all: the CLI's default text renderer
-/// (`validation_reports` in `hardener-cli/src/output.rs`) prints only the
-/// estimated changes and never reads `validation_report_issues` or
-/// `validation_report_is_valid`, the CLI's apply command does not inspect
-/// `is_valid` either, and the desktop reads only the estimated-changes
-/// count - so today the gap reaches the operator solely via
-/// `--format json`. An exact directive is always
+/// reported as an issue instead, and that issue is the only place it is
+/// surfaced. It does reach the operator: `validation_report_lines` in
+/// `hardener-cli/src/output.rs` prints every issue with its severity and
+/// marks the report from `validation_report_is_valid`, and the desktop
+/// carries them through `PreviewDecision::issues` into the review list.
+/// `--format json` carries them too. It is `Severity::High`, so it also
+/// fails the dry run, in the fleet path as well as the single-host one:
+/// both ask `ValidationReport::has_blocking_issue`, which is Critical and
+/// High only. An exact directive is always
 /// hardened by apply regardless of the current mode (unless the filesystem
 /// cannot hold POSIX permissions at all, in which case there is nothing
 /// pending either), so it is reported as a predicted change, worded so the
