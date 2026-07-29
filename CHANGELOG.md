@@ -26,6 +26,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A dry run no longer counts a check it could not make as a pending change.**
+  `hardener apply --dry-run` prints "N change(s) to apply" from the plugin's
+  list of pending changes, and `hardener batch --dry-run` sums that same list
+  into the fleet's `would_change` total. The PAM plugin put a line there for
+  every directive whose configuration file it could not read, and the firewall
+  plugin put one there when the live ruleset could not be read without root, so
+  a host on which the tool will attempt no write at all was previewed as six
+  changes, or as one. Both now report the limitation as a validation issue,
+  which the terminal already prints beneath the count and the desktop already
+  renders, so nothing an operator was told disappears. The PAM issue is High,
+  matching what apply does with the same host: it refuses to rewrite a file
+  whose contents it could not see, records the refusal as a failed change and
+  exits non-zero, so an unprivileged dry run against a root-only
+  `/etc/security/*.conf` now fails instead of reporting a clean nothing-to-do.
+  The firewall issue is Medium, because a privileged apply reads the ruleset
+  and succeeds: the limit is on what an unprivileged preview can see, not on
+  the run.
+
 - **The kernel plugin no longer writes a host's stricter sysctl back down to
   the baseline, at runtime or at the next boot.** All eighteen parameters were
   compared for equality, which has no direction. A host with

@@ -777,12 +777,26 @@ impl HardeningPlugin for FirewallHardeningPlugin {
                     // so claiming "Enable X" or a concrete rule count would
                     // be a guess. Report the honest limitation instead; the
                     // privileged apply re-classifies and does the right thing.
+                    //
+                    // An issue rather than an estimated change: the pending
+                    // list is documented as genuinely pending changes and its
+                    // length is what a renderer prints as the change count and
+                    // what the fleet path sums into `would_change`, so a line
+                    // saying nothing is known counted as one queued write.
+                    // Medium, not High, because this is a limit on what an
+                    // unprivileged run can see rather than a failure: the
+                    // privileged apply reads the ruleset and succeeds, so
+                    // failing the dry run would fail on every host whose
+                    // firewall probe needs root.
                     _ => {
-                        estimated_changes.push(
-                            "Firewall ruleset could not be verified without root - \
-                             run with sudo (or a deep scan) for an accurate preview"
-                                .to_string(),
-                        );
+                        issues.push(hardener_core::ValidationIssue {
+                            validation_issue_severity: Severity::Medium,
+                            validation_issue_message:
+                                "Firewall ruleset could not be verified without root - \
+                                 run with sudo (or a deep scan) for an accurate preview"
+                                    .to_string(),
+                            validation_issue_config_key: None,
+                        });
                     }
                 }
             }
@@ -1121,16 +1135,29 @@ mod tests {
 
         let changes = &report.validation_report_estimated_changes;
         assert!(
-            changes.iter().any(|c| c.contains("could not be verified")),
-            "must report the honest unverifiable line, got {changes:?}"
+            changes.is_empty(),
+            "a state this run could not read queues no writes, got {changes:?}"
+        );
+        let reported: Vec<&str> = report
+            .validation_report_issues
+            .iter()
+            .map(|i| i.validation_issue_message.as_str())
+            .collect();
+        assert!(
+            reported.iter().any(|m| m.contains("could not be verified")),
+            "must report the honest unverifiable line, got {reported:?}"
         );
         assert!(
-            !changes.iter().any(|c| c.contains("Enable")),
-            "must NOT claim a false enable for an unverifiable ruleset, got {changes:?}"
+            !reported.iter().any(|m| m.contains("Enable")),
+            "must NOT claim a false enable for an unverifiable ruleset, got {reported:?}"
         );
         assert!(
-            !changes.iter().any(|c| c.to_lowercase().contains("ufw")),
-            "must NOT name ufw when nftables is the live-but-unverifiable winner, got {changes:?}"
+            !reported.iter().any(|m| m.to_lowercase().contains("ufw")),
+            "must NOT name ufw when nftables is the live-but-unverifiable winner, got {reported:?}"
+        );
+        assert!(
+            !report.has_blocking_issue(),
+            "a privileged apply re-classifies and succeeds, so this must not fail the dry run"
         );
     }
 
@@ -1178,12 +1205,21 @@ mod tests {
 
         let changes = &report.validation_report_estimated_changes;
         assert!(
-            changes.iter().any(|c| c.contains("could not be verified")),
-            "unit-active-but-unverifiable winner must report the honest line, got {changes:?}"
+            changes.is_empty(),
+            "a state this run could not read queues no writes, got {changes:?}"
+        );
+        let reported: Vec<&str> = report
+            .validation_report_issues
+            .iter()
+            .map(|i| i.validation_issue_message.as_str())
+            .collect();
+        assert!(
+            reported.iter().any(|m| m.contains("could not be verified")),
+            "unit-active-but-unverifiable winner must report the honest line, got {reported:?}"
         );
         assert!(
-            !changes.iter().any(|c| c.contains("Enable")),
-            "must NOT claim an enable for a unit-active winner, got {changes:?}"
+            !reported.iter().any(|m| m.contains("Enable")),
+            "must NOT claim an enable for a unit-active winner, got {reported:?}"
         );
     }
 

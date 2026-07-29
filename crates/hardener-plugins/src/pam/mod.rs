@@ -1273,7 +1273,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                             // not see, and never offer the write either:
                             // `conf_is_writable` refuses this whole file and
                             // every directive in it is skipped.
-                            estimated_changes.push(unreadable_preview(
+                            issues.push(unreadable_issue(
                                 d.pam_directive_name,
                                 target_value,
                                 path,
@@ -1333,7 +1333,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                         PamObserved::Unreadable {
                             path,
                             permission_denied,
-                        } => estimated_changes.push(unreadable_preview(
+                        } => issues.push(unreadable_issue(
                             d.pam_directive_name,
                             target,
                             path,
@@ -1450,28 +1450,44 @@ fn current_value_caveat(permission_denied: bool) -> &'static str {
     }
 }
 
-/// The dry-run preview line for a directive whose file this run could not read.
+/// What a dry run reports for a directive whose file this run could not read.
 ///
 /// Apply never rewrites a file whose current contents it cannot see, because
 /// merging directives into an empty buffer would replace the host's settings
-/// with this tool's, so the preview says the directive will not be set and names
+/// with this tool's, so the report says the directive will not be set and names
 /// the file that failed rather than offering a conditional write.
+///
+/// An issue rather than an estimated change, because estimated changes are
+/// documented as genuinely pending ones and their length is read as the real
+/// change count: a renderer prints it as "N change(s) to apply" and the fleet
+/// path sums it into `would_change`. A line saying no write will happen is the
+/// opposite of a pending change, and counting it reported queued writes on a
+/// host where apply will attempt none.
+///
+/// High, so the dry run fails. That is the same answer the real apply gives:
+/// `conf_is_writable` refuses the file, records the refusal as a failed change
+/// and clears `all_success`. A dry run exiting 0 where the apply exits non-zero
+/// is the divergence `ValidationReport::has_blocking_issue` exists to prevent.
 ///
 /// One definition, because every arm of `validate` asks the same question and
 /// two of them came to answer it differently: the `SecurityConf` arm said the
 /// directive would not be set while the `PwQuality` and `LoginDefs` arms
 /// promised to apply it "only if it differs", so one host was previewed two
 /// ways depending on which file was unreadable.
-fn unreadable_preview(
+fn unreadable_issue(
     directive_name: &str,
     target: impl std::fmt::Display,
     path: &str,
     permission_denied: bool,
-) -> String {
-    format!(
-        "{directive_name} will not be set to {target}: {path} could not be read ({})",
-        current_value_caveat(permission_denied)
-    )
+) -> ValidationIssue {
+    ValidationIssue {
+        validation_issue_config_key: None,
+        validation_issue_message: format!(
+            "{directive_name} will not be set to {target}: {path} could not be read ({})",
+            current_value_caveat(permission_denied)
+        ),
+        validation_issue_severity: Severity::High,
+    }
 }
 
 /// PAM configuration directive with security settings.

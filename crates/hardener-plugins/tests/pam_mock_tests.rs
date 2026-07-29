@@ -1738,10 +1738,11 @@ async fn pam_validate_reports_requires_root_when_pwquality_is_root_only() {
         report.validation_report_estimated_changes
     );
     let minlen_line = report
-        .validation_report_estimated_changes
+        .validation_report_issues
         .iter()
-        .find(|c| c.contains("minlen"))
-        .expect("minlen must still be listed");
+        .map(|i| i.validation_issue_message.as_str())
+        .find(|m| m.contains("minlen"))
+        .expect("minlen must still be reported");
     assert!(
         minlen_line.contains("requires root"),
         "unreadable pwquality directives must use the requires-root wording, got: {minlen_line}"
@@ -1775,28 +1776,83 @@ async fn pam_validate_does_not_promise_a_write_into_an_unreadable_conf() {
         .await
         .unwrap();
 
-    let changes = &report.validation_report_estimated_changes;
+    let reported: Vec<&str> = report
+        .validation_report_issues
+        .iter()
+        .map(|i| i.validation_issue_message.as_str())
+        .collect();
     assert!(
-        !changes.iter().any(|c| c.contains("applied only if")),
-        "no preview may promise a write apply refuses, got: {changes:?}"
+        !reported.iter().any(|m| m.contains("applied only if")),
+        "no preview may promise a write apply refuses, got: {reported:?}"
     );
     for (directive, target, path) in [
         ("minlen", "14", "/etc/security/pwquality.conf"),
         ("PASS_MAX_DAYS", "90", "/etc/login.defs"),
     ] {
-        let line = changes
+        let line = reported
             .iter()
-            .find(|c| c.contains(directive))
-            .unwrap_or_else(|| panic!("{directive} must still be listed, got: {changes:?}"));
+            .find(|m| m.contains(directive))
+            .unwrap_or_else(|| panic!("{directive} must still be reported, got: {reported:?}"));
         assert_eq!(
             *line,
             format!(
                 "{directive} will not be set to {target}: {path} could not be read \
                  (current value requires root)"
             ),
-            "the preview must name the file that failed and the action apply takes"
+            "the report must name the file that failed and the action apply takes"
         );
     }
+}
+
+/// A directive whose file could not be read is not a pending change, and the
+/// count an operator reads comes straight from the pending list.
+///
+/// `validation_report_estimated_changes` is documented as genuinely pending
+/// changes only, so its length is the real change count: `output.rs` prints it
+/// as "N change(s) to apply" and the fleet path sums it into `would_change`. A
+/// "will not be set" line is the opposite of a pending change. Apply refuses
+/// the whole file, records the refusal as a failed change and fails the run, so
+/// counting these told an operator six writes were queued on a host where none
+/// were, and the same six travelled into a fleet total.
+///
+/// The pwquality half of the fixture is compliant, so the count cannot be
+/// confused with drift: every line in the pending list would be one of these.
+#[tokio::test]
+async fn pam_validate_does_not_count_an_unreadable_file_as_a_pending_change() {
+    let executor =
+        secure_pam_executor().with_read_permission_denied("/etc/security/pwquality.conf");
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PamHardeningPlugin::new();
+
+    let report = plugin
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(
+        report.validation_report_estimated_changes.is_empty(),
+        "a file that cannot be read queues no writes, got: {:?}",
+        report.validation_report_estimated_changes
+    );
+    let unreadable: Vec<&str> = report
+        .validation_report_issues
+        .iter()
+        .map(|i| i.validation_issue_message.as_str())
+        .filter(|m| m.contains("could not be read"))
+        .collect();
+    assert_eq!(
+        unreadable.len(),
+        6,
+        "every pwquality directive must still be reported, got: {unreadable:?}"
+    );
+    assert!(
+        report.has_blocking_issue(),
+        "apply refuses this file and fails the run, so the dry run must fail too"
+    );
+    assert_eq!(
+        report.validation_report_compliant_count, 5,
+        "the five directives in readable files are still counted compliant"
+    );
 }
 
 /// Validate's `SecurityConf` estimate reuses the `observed` value already
@@ -1886,15 +1942,16 @@ async fn pam_validate_security_conf_requires_root_when_faillock_is_root_only() {
         report.validation_report_estimated_changes
     );
     let deny_line = report
-        .validation_report_estimated_changes
+        .validation_report_issues
         .iter()
-        .find(|c| c.contains("deny"))
-        .expect("deny must still be listed");
+        .map(|i| i.validation_issue_message.as_str())
+        .find(|m| m.contains("deny"))
+        .expect("deny must still be reported");
     assert_eq!(
         deny_line,
         "deny will not be set to 5: /etc/security/faillock.conf could not be read \
          (current value requires root)",
-        "the preview must name the file and must not promise a write apply refuses"
+        "the report must name the file and must not promise a write apply refuses"
     );
 }
 
