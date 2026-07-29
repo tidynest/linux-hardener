@@ -1,6 +1,6 @@
 # Linux System Hardener - File Map
 
-**Last Updated:** 2026-07-29
+**Last Updated:** 2026-07-30
 
 This document lists all source files with their purpose and key exports.
 
@@ -696,7 +696,7 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 | `scripts/release/release.sh` | Automated version bumping and release |
 | `scripts/dev/tauri-dev.sh` | Tauri development launcher |
 | `scripts/test/full-test-suite.sh` | Complete 127-test validation suite (26 sections) |
-| `scripts/test/differential-suite.sh` | Differential harness: applies hardening, then asks `sshd -T` and `chage -l` what the system enforces and compares that against `scan` (`--self-test` runs anywhere) |
+| `scripts/test/differential-suite.sh` | Differential harness: applies hardening, then asks `sshd -T`, `chage -l` and `stat -c %a` what the system enforces and compares that against `scan` (`--self-test` runs anywhere) |
 | `scripts/test/run-cross-distro-tests.sh` | Non-interactive cross-distro test orchestrator (`--differential` swaps in the differential suite) |
 | `scripts/test/root-test-suite.sh` | 36 root-level privilege tests |
 | `scripts/test/manual-verification-test.sh` | Interactive verification tests |

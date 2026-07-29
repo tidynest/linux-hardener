@@ -1,6 +1,6 @@
 # Project Scripts
 
-**Last Updated**: 2026-07-27
+**Last Updated**: 2026-07-30
 
 This directory contains utility scripts for the Linux Hardening Tool project.
 
@@ -1237,9 +1237,12 @@ sudo ./scripts/test/run-cross-distro-tests.sh
 **`--differential`** runs a different kind of test. Instead of comparing the
 tool against itself, it applies hardening inside the container and then asks
 each setting's real consumer what is in force: `sshd -T` for SSH, and
-`chage -l` on an account created after the apply for `/etc/login.defs`. Every
-directive is checked twice, that the system holds the target value and that
-`scan` agrees with the system. A value that cannot be determined is a failure
+`chage -l` on an account created after the apply for `/etc/login.defs`, and
+`stat -c %a` for the nine paths in `PERMISSION_CHECKS`. Every directive is
+checked twice, that the system satisfies what the run requires of it and that
+`scan` agrees with the system. Satisfying is not always equality: two of the nine
+permission paths are compared against an allowed-bits mask, where a stricter mode
+is compliant and the tool correctly leaves it alone. A value that cannot be determined is a failure
 rather than a skip, and a pre-apply control proves the checks match real
 output rather than passing by matching nothing.
 

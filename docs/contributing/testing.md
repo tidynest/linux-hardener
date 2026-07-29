@@ -169,9 +169,26 @@ consumer what is in force:
 | The `sshd_config` directives in `SSH_CHECKS` | `sshd -T` | Resolves `Include` precedence and `Match` scoping, which our parser does not |
 | `PASS_MIN_DAYS`, `PASS_MAX_DAYS`, `PASS_WARN_AGE` | `useradd` then `chage -l` | `login.defs` supplies defaults for NEW accounts, so only a fresh account shows what the file means today |
 | `ENCRYPT_METHOD`, `HOME_MODE`, `UMASK` | a probe account: the scheme prefix `crypt` wrote into its shadow field, `stat -c %a` on its home, `su - probe -c umask` | These are settings the tool does **not** manage, and the file they come from is the one a masked `/etc` copy silences. Reading that file back would ask the masked copy what it says |
+| The nine paths in `PERMISSION_CHECKS` | `stat -c %a` | A mode has no parser to disagree with: the value the kernel reports **is** the value in force. What the oracle adds is the comparison, because two of the nine are allowed-bits masks where a stricter mode is compliant |
 
 Two assertions per directive, because both have failed in production: the system
 holds the value the tool targeted, and `scan`'s verdict agrees with the system.
+
+**A reading satisfying a requirement is not always string equality**, which is
+why `requirement_satisfied` carries a direction. `/etc/shadow` and `/etc/gshadow`
+are compared against an allowed-bits mask of `0640`: a stricter mode sets no bit
+the mask disallows and is compliant, so Arch's `0600` and RHEL's `0000` are both
+correct and the tool deliberately leaves them alone. An equality oracle would
+have reported a defect on two of five distributions against a tool behaving
+exactly as designed. The comparison lives in one place for the same reason the
+product side keeps its own in `strictness.rs`: a second copy behind the verdict
+question would answer differently for precisely the readings the mask exists for.
+
+**A path that is absent still contributes two assertions.** The tool treats a
+confirmed absence as nothing to report, so the requirement there is that it
+reports nothing, and a tool inventing a finding for a path that is not there
+fails. What is given up is the mode comparison, and the run prints how many paths
+gave it up rather than leaving a reader to notice a shorter proof.
 
 One assertion per unmanaged setting, because there is no tool-reported
 counterpart: the value after apply must be the value before it. The tool claims
@@ -324,21 +341,24 @@ table emptied, a run over the `login.defs` directives alone would agree with
 itself, exit 0, and be reported as a PASS. So the size the run is measured
 against is counted off `SSH_CHECKS_EXPECTED`, `LOGIN_DEFS_CHECKS_EXPECTED`,
 `VENDOR_SURVIVAL_CHECKS_EXPECTED`, `IDEMPOTENCE_CHECKS_EXPECTED`,
-`PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED` and `DIFF_PLUGINS_EXPECTED`, which the tables are then checked against, rather than
+`PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED`, `PERMISSION_CHECKS_EXPECTED` and
+`DIFF_PLUGINS_EXPECTED`, which the tables are then checked against, rather than
 off the tables themselves.
 
 Adding a directive therefore means changing four literals in
 `scripts/test/differential-suite.sh`, not one: the `*_EXPECTED` constant beside
 its table, that same length re-pinned in the self-test (`the ssh table holds
-seven directives`), the total the run is sized at (`30`), and the number of
-directives the pre-apply control covers (`10`). `VENDOR_SURVIVAL_CHECKS`, `IDEMPOTENCE_CHECKS` and
+seven directives`), the total the run is sized at (`51`), and the number of
+directives the pre-apply control covers (`19`). `VENDOR_SURVIVAL_CHECKS`, `IDEMPOTENCE_CHECKS` and
 `PWQUALITY_ENFORCEMENT_CHECKS` are sized the same way, and contribute one check
 each rather than two. Every one of them fails loudly, over two `--self-test` runs,
 because the total is counted off the constant and only moves once the constant
 has been raised. Adding the idempotency table did exactly that: the self-test
 refused the run at `got '28', want '25'` until the literal was raised on
 purpose, and the pwquality enforcement pair did it again at
-`got '30', want '28'`.
+`got '30', want '28'`. The permissions table did it a third time: adding nine
+paths and a third plugin moved the total from 30 to 51, and the self-test refused
+the run until both literals were raised on purpose.
 
 ### What a failure means
 
@@ -508,4 +528,4 @@ cargo build --release --target aarch64-unknown-linux-gnu -p hardener-cli
 
 Produces three release tarballs and creates a GitHub release.
 
-**Last Updated**: 2026-07-28
+**Last Updated**: 2026-07-30

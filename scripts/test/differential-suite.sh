@@ -50,7 +50,7 @@ resolve_binary
 
 # The plugins whose settings this suite compares. Applying only these keeps the
 # run to what is actually asserted.
-DIFF_PLUGINS=(ssh-hardening pam-hardening)
+DIFF_PLUGINS=(ssh-hardening pam-hardening permissions-hardening)
 
 # Every external command the full run depends on.
 #
@@ -1215,7 +1215,168 @@ run_pwquality_enforcement_checks() {
     fi
 }
 
-# The lengths of the six tables the run is sized by, pinned as literals.
+# === Permission modes actually on disk ===
+#
+# The oracle is the filesystem, asked through `stat -c %a`, which is the only
+# consumer a mode has: nothing parses a permission the way sshd parses a
+# directive, so the mode the kernel reports IS the enforced value.
+#
+# Fields: path|mode|comparison. The nine rows mirror CRITICAL_PERMISSIONS in
+# crates/hardener-plugins/src/permissions/mod.rs, and the comparison column is
+# that table's permission_max_mask spelled the way this suite asks questions:
+# `exact` for its seven exact-match directives, `mask` for the two whose mode is
+# an allowed-bits mask.
+#
+# The two mask rows are the reason requirement_satisfied has a direction at all.
+# /etc/shadow ships at 0600 on Arch and 0000 on RHEL, both stricter than the
+# 0640 mask and both correct, and the tool deliberately leaves them alone. An
+# equality oracle would have reported a defect on two of five distributions
+# against a tool doing exactly what it was designed to do.
+PERMISSION_CHECKS=(
+    "/root|700|exact"
+    "/boot|700|exact"
+    "/etc/ssh|755|exact"
+    "/etc/sudoers|440|exact"
+    "/etc/sudoers.d|750|exact"
+    "/etc/passwd|644|exact"
+    "/etc/group|644|exact"
+    "/etc/shadow|640|mask"
+    "/etc/gshadow|640|mask"
+)
+
+# permissions spells its ids off the path: format!("perm-{}", path.replace('/',
+# "-")), so /etc/shadow becomes perm--etc-shadow. The doubled dash is not a typo
+# and is pinned by the self-test: the leading slash becomes a dash of its own.
+# A filter written without it matches nothing, and matching nothing reads as "the
+# tool reported no finding", which is this suite's pass condition.
+permission_finding_id() {
+    printf 'perm-%s' "${1//\//-}"
+}
+
+# Every path's reading, taken in one pass, as `path mode` lines.
+#
+# Three outcomes, never two. A mode is a reading; a path that is not there is
+# `absent`, which is a determinate answer and not the same as a failure; and a
+# path that exists but cannot be statted is fatal, because a mode this suite
+# could not read must never be scored as either agreement or absence.
+#
+# Absence is concluded from the shell test rather than from stat's message, which
+# is locale-dependent prose. A dangling symlink reads as absent here, and the
+# tool agrees: its path_exists follows the link exactly as `-e` does.
+permission_modes_capture() {
+    local entry path mode octal='^[0-7]{1,4}$' out=()
+    for entry in "${PERMISSION_CHECKS[@]}"; do
+        IFS='|' read -r path _ _ <<<"$entry"
+        if [[ ! -e "$path" ]]; then
+            out+=("$path absent")
+            continue
+        fi
+        if ! mode="$(stat -c %a "$path" 2>&1)"; then
+            echo "FATAL: stat could not read the mode of $path: $mode" >&2
+            return 1
+        fi
+        # One to four digits: `stat -c %a` prints `0` for mode 0000, and four
+        # digits for a mode carrying a setuid, setgid or sticky bit. Anything else
+        # is stat having said something other than a mode, and comparing it would
+        # be comparing prose.
+        if [[ ! "$mode" =~ $octal ]]; then
+            echo "FATAL: stat reported '$mode' for $path, which is not an octal mode" >&2
+            return 1
+        fi
+        out+=("$path $mode")
+    done
+    printf '%s\n' "${out[@]}"
+}
+
+# One reading out of a capture, by exact path.
+#
+# Deliberately not extract_sshd_value, which is what the ssh and vendor survival
+# captures use. That reader interpolates its key into a grep BRE and matches
+# case-insensitively, and a path is neither a regex nor case-insensitive: the `.`
+# in /etc/sudoers.d would also match /etc/sudoersXd. Two of the keys here contain
+# a metacharacter, so the compare is a string compare.
+permission_capture_reading() {
+    local capture="$1" path="$2" candidate reading
+    while read -r candidate reading; do
+        if [[ "$candidate" == "$path" ]]; then
+            printf '%s' "$reading"
+            return 0
+        fi
+    done <<<"$capture"
+    return 1
+}
+
+# Captured by permissions_oracle_init, which must run after apply. Empty means
+# the capture never happened, which permission_system_value treats as fatal, for
+# the same reason the ssh oracle does: a missing capture must not read like an
+# absent path, and an absent path must not read like a pass.
+PERMISSION_MODES=""
+PERMISSION_MODES_GENERATION=""
+
+permissions_oracle_init() {
+    local out
+    if ! out="$(permission_modes_capture)"; then
+        return 1
+    fi
+    if [[ -z "$out" ]]; then
+        echo "FATAL: the permission capture succeeded but read nothing" >&2
+        return 1
+    fi
+    PERMISSION_MODES="$out"
+    PERMISSION_MODES_GENERATION="$APPLY_GENERATION"
+}
+
+# What the filesystem holds now, refused unless the capture followed the last
+# apply. Prints the mode, or the word `absent`.
+permission_system_value() {
+    local path="$1" reading
+    require_fresh_capture permissions "$PERMISSION_MODES" \
+        "$PERMISSION_MODES_GENERATION" || return 1
+    if ! reading="$(permission_capture_reading "$PERMISSION_MODES" "$path")"; then
+        echo "FATAL: the permission capture holds no row for '$path'" >&2
+        return 1
+    fi
+    if [[ -z "$reading" ]]; then
+        echo "FATAL: the permission capture reports '$path' with no reading" >&2
+        return 1
+    fi
+    printf '%s' "$reading"
+}
+
+# Two assertions per path, whatever the path turns out to be, so a distribution
+# that ships fewer of them cannot quietly shorten the run.
+#
+# An absent path still has a verdict worth checking. The tool treats a confirmed
+# absence as nothing to report, so the requirement there is that it reports
+# nothing, and a tool inventing a finding for a path that is not there fails the
+# second assertion. What is given up is the mode comparison, and the count of
+# paths that gave it up is printed rather than left for a reader to notice.
+run_permission_checks() {
+    local entry path target comparison reading id absent=0
+    for entry in "${PERMISSION_CHECKS[@]}"; do
+        IFS='|' read -r path target comparison <<<"$entry"
+        id="$(permission_finding_id "$path")"
+        if ! reading="$(permission_system_value "$path")"; then
+            record_unresolved permissions-hardening "$path" "the filesystem reported no usable mode"
+            continue
+        fi
+        if [[ "$reading" == absent ]]; then
+            absent=$((absent + 1))
+            record_pass "permissions-hardening $path: the path is absent, so there is no mode for the tool to hold"
+            compare_reported_verdict permissions-hardening "$path" yes "$id" \
+                "the path is absent, so there is nothing on it to enforce"
+            continue
+        fi
+        compare_directive permissions-hardening "$path" "$reading" "$target" "$id" "$comparison"
+    done
+    # No silent caps: an absent path costs its mode comparison, and a run where
+    # several are absent proves less than one where none is.
+    if (( absent > 0 )); then
+        echo "  note| $absent of ${#PERMISSION_CHECKS[@]} permission paths are absent on this distribution, so those rows assert only that the tool reports nothing for a path that is not there"
+    fi
+}
+
+# The lengths of every table the run is sized by, pinned as literals.
 #
 # A count derived from a table cannot notice that table being edited down: with
 # SSH_CHECKS emptied, a run over the login.defs directives alone would agree
@@ -1230,8 +1391,9 @@ SEEDED_SSH_CHECKS_EXPECTED=2
 LOGIN_DEFS_CHECKS_EXPECTED=3
 VENDOR_SURVIVAL_CHECKS_EXPECTED=3
 IDEMPOTENCE_CHECKS_EXPECTED=3
-DIFF_PLUGINS_EXPECTED=2
+DIFF_PLUGINS_EXPECTED=3
 PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED=2
+PERMISSION_CHECKS_EXPECTED=9
 
 require_check_tables() {
     local entry name got want refused=0
@@ -1242,7 +1404,8 @@ require_check_tables() {
         "VENDOR_SURVIVAL_CHECKS ${#VENDOR_SURVIVAL_CHECKS[@]} $VENDOR_SURVIVAL_CHECKS_EXPECTED" \
         "IDEMPOTENCE_CHECKS ${#IDEMPOTENCE_CHECKS[@]} $IDEMPOTENCE_CHECKS_EXPECTED" \
         "DIFF_PLUGINS ${#DIFF_PLUGINS[@]} $DIFF_PLUGINS_EXPECTED" \
-        "PWQUALITY_ENFORCEMENT_CHECKS ${#PWQUALITY_ENFORCEMENT_CHECKS[@]} $PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED"; do
+        "PWQUALITY_ENFORCEMENT_CHECKS ${#PWQUALITY_ENFORCEMENT_CHECKS[@]} $PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED" \
+        "PERMISSION_CHECKS ${#PERMISSION_CHECKS[@]} $PERMISSION_CHECKS_EXPECTED"; do
         read -r name got want <<<"$entry"
         if [[ "$got" != "$want" ]]; then
             echo "FATAL: $name holds $got, expected $want." >&2
@@ -1273,13 +1436,19 @@ require_check_tables() {
 # against the tool and the password verdict against the stack reading, and
 # neither has a second tool claim to hold it to.
 #
+# The nine permission paths are two each, like the ssh and login.defs
+# directives, because each has both a reading and a tool verdict. With the third
+# plugin's own pre-apply control that takes the per-distribution total from 30 to
+# 51 and the five-distribution total from 150 to 255.
+#
 # Counted off the pinned lengths above, never off the tables themselves. Read
 # from ${#SSH_CHECKS[@]} the expectation would follow the table it exists to
 # police: emptying that table would drop the number from 28 to 14 and
 # print_summary would then accept the shorter run, which is the guard asking the
 # tables whether the tables are right.
 expected_check_total() {
-    printf '%s' "$(( 2 * (SSH_CHECKS_EXPECTED + LOGIN_DEFS_CHECKS_EXPECTED) \
+    printf '%s' "$(( 2 * (SSH_CHECKS_EXPECTED + LOGIN_DEFS_CHECKS_EXPECTED \
+        + PERMISSION_CHECKS_EXPECTED) \
         + VENDOR_SURVIVAL_CHECKS_EXPECTED + IDEMPOTENCE_CHECKS_EXPECTED \
         + PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED + DIFF_PLUGINS_EXPECTED \
         + SEEDED_SSH_CHECKS_EXPECTED ))"
@@ -1559,16 +1728,97 @@ preapply_finding_count() {
     count_scan_entries "$PRE_APPLY_SCAN_JSON" "$plugin" findings "$finding"
 }
 
+# Whether a reading satisfies what this run requires of it.
+#
+# `exact` is string equality, which is what every check in this suite meant while
+# there was only one comparison: sshd -T prints one value, the table names one
+# value, and anything else is a disagreement.
+#
+# `mask` exists for a mode compared against an allowed-bits mask, where a
+# STRICTER mode is compliant and equality would fail a correctly hardened host.
+# /etc/shadow at 0600 sets no bit the 0640 mask disallows, and the tool
+# deliberately leaves it alone, so an equality oracle would report a defect
+# against the tool behaving exactly as designed. The product side spells the same
+# asymmetry out in crates/hardener-plugins/src/permissions/mod.rs, and this is
+# the reason the question has to carry a direction rather than being `==`.
+#
+# An unknown comparison is fatal rather than defaulting to equality. A typo would
+# otherwise score every mask directive by the wrong rule while the run still
+# printed a complete summary, which is the exact failure this suite exists to
+# refuse. Fatal here means "not satisfied", so the check fails loudly rather than
+# passing on a comparison nobody implemented.
+requirement_satisfied() {
+    local system="$1" target="$2" comparison="$3" octal='^[0-7]{1,4}$'
+    case "$comparison" in
+        exact)
+            [[ "$system" == "$target" ]]
+            ;;
+        mask)
+            # Both sides are checked before any arithmetic runs, and what that
+            # buys is the message rather than the status. `8#absent` fails on its
+            # own, so an unguarded comparison would also refuse the reading, but
+            # it would refuse it as `8#absent: value too great for base` with a
+            # bash line number, and a check that reports a refusal has to report
+            # the rule that refused. The self-test asserts this wording for that
+            # reason, not the exit status, which is identical either way.
+            #
+            # One to four digits, not three: `stat -c %a` prints `0` for mode
+            # 0000, which /etc/shadow legitimately holds on some distributions,
+            # and four for a mode carrying a setuid, setgid or sticky bit. Both
+            # are real readings, and a special bit sits outside every mask this
+            # table uses, so it must reach the comparison rather than the
+            # refusal.
+            if [[ ! "$system" =~ $octal || ! "$target" =~ $octal ]]; then
+                echo "FATAL: a mask comparison needs two octal modes, and was" \
+                    "given '$system' against '$target'" >&2
+                return 1
+            fi
+            (( (8#$system & ~8#$target) == 0 ))
+            ;;
+        *)
+            echo "FATAL: no such comparison '$comparison'" >&2
+            return 1
+            ;;
+    esac
+}
+
+# How a requirement reads inside a message.
+#
+# `exact` names the value. `mask` names the rule, because "requires '640'" is
+# false of a directive that also accepts 600, and a message that asserts
+# something false about the requirement is the same defect as a message that
+# names the wrong cause.
+requirement_wording() {
+    local target="$1" comparison="$2"
+    case "$comparison" in
+        exact) printf "'%s'" "$target" ;;
+        mask) printf "no bit outside '%s'" "$target" ;;
+        *) printf "an unknown requirement against '%s'" "$target" ;;
+    esac
+}
+
 # The second assertion, on its own so it can be pinned in all four directions.
-# scan's verdict agrees with the system when a system that disagrees with the
-# target produces at least one finding, and one that agrees produces none.
+# scan's verdict agrees with the system when a system that does not satisfy what
+# this run requires produces at least one finding, and one that satisfies it
+# produces none.
+#
+# It is given the satisfaction rather than the two values, because whether a
+# reading satisfies a requirement is no longer always string equality. Deciding
+# that here as well would put a second copy of the comparison behind this
+# question, and the two copies would answer differently for exactly the readings
+# a mask exists for. Anything other than yes or no is fatal, for the same reason
+# an unknown comparison is.
 verdict_agrees() {
-    local system="$1" target="$2" findings="$3"
-    if [[ "$system" == "$target" ]]; then
-        (( findings == 0 ))
-    else
-        (( findings > 0 ))
-    fi
+    local satisfied="$1" findings="$2"
+    case "$satisfied" in
+        yes) (( findings == 0 )) ;;
+        no) (( findings > 0 )) ;;
+        *)
+            echo "FATAL: verdict_agrees was asked about satisfaction '$satisfied'," \
+                "which is neither yes nor no" >&2
+            return 1
+            ;;
+    esac
 }
 
 # Per-check bookkeeping. The summary vocabulary below is the one that
@@ -1605,35 +1855,53 @@ record_fail() {
 # own target. Stating the two values and leaving the cause to the reader is the
 # only wording true of both.
 compare_directive() {
-    local plugin="$1" directive="$2" system="$3" target="$4" finding_id="$5" reported unchecked
+    local plugin="$1" directive="$2" system="$3" target="$4" finding_id="$5" comparison="$6"
+    local satisfied=no requirement
+    requirement="$(requirement_wording "$target" "$comparison")"
 
-    if [[ "$system" == "$target" ]]; then
-        record_pass "$plugin $directive: the system holds '$system', the value this run requires"
+    if requirement_satisfied "$system" "$target" "$comparison"; then
+        satisfied=yes
+        record_pass "$plugin $directive: the system holds '$system', which is what this run requires ($requirement)"
     else
-        record_fail "$plugin $directive: the system holds '$system' but this run requires '$target'"
+        record_fail "$plugin $directive: the system holds '$system' but this run requires $requirement"
     fi
+
+    compare_reported_verdict "$plugin" "$directive" "$satisfied" "$finding_id" \
+        "the system holds '$system' and this run requires $requirement"
+}
+
+# The second assertion for one compared id: whether the tool's own verdict agrees
+# with what the system was just read to hold.
+#
+# Split out of compare_directive because a permission directive whose PATH is
+# absent has no mode to compare and still has a verdict worth checking, and a
+# second copy of this body is the shape that has produced a defect in eleven
+# consecutive sessions. `state` is the caller's description of what was read, so
+# no wording here has to be true of both callers.
+compare_reported_verdict() {
+    local plugin="$1" label="$2" satisfied="$3" finding_id="$4" state="$5" reported unchecked
 
     # Asked before the findings are counted, because it decides whether that
     # count means anything: the tool reports no finding for a check it never
     # ran, and no finding is the pass condition here.
     if ! unchecked="$(scan_unchecked_count "$plugin" "$finding_id")"; then
-        record_fail "$plugin $directive: the tool's unchecked list could not be read for '$finding_id'"
+        record_fail "$plugin $label: the tool's unchecked list could not be read for '$finding_id'"
         return 0
     fi
     if (( unchecked > 0 )); then
-        record_fail "$plugin $directive: the tool did not check '$finding_id'; it lists the id as unchecked, which is neither agreement with the system nor a contradiction of it"
+        record_fail "$plugin $label: the tool did not check '$finding_id'; it lists the id as unchecked, which is neither agreement with the system nor a contradiction of it"
         return 0
     fi
     if ! reported="$(scan_finding_count "$plugin" "$finding_id")"; then
-        record_fail "$plugin $directive: the tool's verdict for '$finding_id' could not be read"
+        record_fail "$plugin $label: the tool's verdict for '$finding_id' could not be read"
         return 0
     fi
-    if verdict_agrees "$system" "$target" "$reported"; then
-        record_pass "$plugin $directive: the tool agrees with the system ($reported finding(s) for '$finding_id')"
-    elif [[ "$system" == "$target" ]]; then
-        record_fail "$plugin $directive: the tool reports $reported finding(s) for '$finding_id' while the system holds the target value '$system'"
+    if verdict_agrees "$satisfied" "$reported"; then
+        record_pass "$plugin $label: the tool agrees with the system ($reported finding(s) for '$finding_id')"
+    elif [[ "$satisfied" == yes ]]; then
+        record_fail "$plugin $label: the tool reports $reported finding(s) for '$finding_id' while $state"
     else
-        record_fail "$plugin $directive: the tool claims a compliance the system does not have: no finding for '$finding_id' while the system holds '$system' and this run requires '$target'"
+        record_fail "$plugin $label: the tool claims a compliance the system does not have: no finding for '$finding_id' while $state"
     fi
 }
 
@@ -1658,6 +1926,10 @@ compared_finding_ids() {
     for entry in "${LOGIN_DEFS_CHECKS[@]}"; do
         IFS='|' read -r directive _ <<<"$entry"
         printf '%s %s\n' pam-hardening "$(pam_finding_id "$directive")"
+    done
+    for entry in "${PERMISSION_CHECKS[@]}"; do
+        IFS='|' read -r directive _ <<<"$entry"
+        printf '%s %s\n' permissions-hardening "$(permission_finding_id "$directive")"
     done
 }
 
@@ -1740,7 +2012,7 @@ run_ssh_checks() {
             continue
         fi
         compare_directive ssh-hardening "$directive" "$system" "$target" \
-            "$(ssh_finding_id "$directive")"
+            "$(ssh_finding_id "$directive")" exact
     done
 }
 
@@ -1753,7 +2025,7 @@ run_login_defs_checks() {
             continue
         fi
         compare_directive pam-hardening "$directive" "$system" "$target" \
-            "$(pam_finding_id "$directive")"
+            "$(pam_finding_id "$directive")" exact
     done
 }
 
@@ -2428,11 +2700,12 @@ Number of days of warning before password expires	: 11"
     check_eq "${#LOGIN_DEFS_CHECKS[@]}" "3" "the login.defs table holds three directives"
     check_eq "${#VENDOR_SURVIVAL_CHECKS[@]}" "3" "the vendor survival table holds three settings"
     check_eq "${#IDEMPOTENCE_CHECKS[@]}" "3" "the idempotency table holds three readings"
-    check_eq "${#DIFF_PLUGINS[@]}" "2" "two plugins are compared"
+    check_eq "${#DIFF_PLUGINS[@]}" "3" "three plugins are compared"
     check_eq "${#SEEDED_SSH_CHECKS[@]}" "2" "the seeded table holds two directives"
+    check_eq "${#PERMISSION_CHECKS[@]}" "9" "the permissions table holds nine paths"
     local pinned_total
     pinned_total="$(expected_check_total)"
-    check_eq "$pinned_total" "32" \
+    check_eq "$pinned_total" "51" \
         "the run is sized at two checks per directive, one per unmanaged setting, one per idempotency reading, one per pwquality enforcement reading, one control per plugin, plus one pre-apply control per seeded directive"
     check_status 0 "require_check_tables accepts the tables as they stand" \
         require_check_tables
@@ -2576,6 +2849,14 @@ Number of days of warning before password expires	: 11"
       { "finding_id": "ssh-permitrootlogin", "finding_current_value": "yes" }
     ],
     "unchecked": []
+  },
+  {
+    "plugin_id": "permissions-hardening",
+    "plugin_name": "File Permissions Hardening",
+    "findings": [
+      { "finding_id": "perm--boot", "finding_current_value": "755" }
+    ],
+    "unchecked": []
   }
 ]'
 
@@ -2686,6 +2967,14 @@ Number of days of warning before password expires	: 11"
     "unchecked": [
       { "unchecked_check_id": "ssh-permitrootlogin", "unchecked_reason": "reading /etc/ssh/sshd_config requires root" }
     ]
+  },
+  {
+    "plugin_id": "permissions-hardening",
+    "plugin_name": "File Permissions Hardening",
+    "findings": [],
+    "unchecked": [
+      { "unchecked_check_id": "perm--boot", "unchecked_reason": "could not determine whether /boot exists" }
+    ]
   }
 ]'
     scan_capture="$unchecked_fixture"
@@ -2707,7 +2996,7 @@ Number of days of warning before password expires	: 11"
     # the tool's verdict as a failure, and still contribute exactly two checks,
     # so the run's expected total does not move.
     local before_total=$CHECKS_TOTAL before_passed=$CHECKS_PASSED before_failed=$CHECKS_FAILED
-    compare_directive ssh-hardening PermitRootLogin no no "$(ssh_finding_id PermitRootLogin)" >/dev/null
+    compare_directive ssh-hardening PermitRootLogin no no "$(ssh_finding_id PermitRootLogin)" exact >/dev/null
     check_eq "$((CHECKS_TOTAL - before_total))" "2" "an unchecked directive still contributes two checks"
     check_eq "$((CHECKS_PASSED - before_passed))" "1" "an unchecked directive still passes the system assertion"
     check_eq "$((CHECKS_FAILED - before_failed))" "1" "a directive the tool did not check is recorded as a failure"
@@ -2737,7 +3026,7 @@ Number of days of warning before password expires	: 11"
     before_total=$CHECKS_TOTAL
     before_passed=$CHECKS_PASSED
     before_failed=$CHECKS_FAILED
-    compare_directive ssh-hardening MaxAuthTries 3 3 "$(ssh_finding_id MaxAuthTries)" >/dev/null
+    compare_directive ssh-hardening MaxAuthTries 3 3 "$(ssh_finding_id MaxAuthTries)" exact >/dev/null
     check_eq "$((CHECKS_PASSED - before_passed))" "2" \
         "a directive the tool checked and agreed on records two passes"
     check_eq "$((CHECKS_FAILED - before_failed))" "0" "and records no failure"
@@ -2776,7 +3065,7 @@ Number of days of warning before password expires	: 11"
     # so a directive added to either is covered without touching this.
     local compared_ids=()
     mapfile -t compared_ids < <(compared_finding_ids)
-    check_eq "${#compared_ids[@]}" "10" "the control covers every compared directive"
+    check_eq "${#compared_ids[@]}" "19" "the control covers every compared directive"
     check_eq "${compared_ids[0]}" "ssh-hardening ssh-permitrootlogin" \
         "the control names each directive by the id its own plugin emits"
 
@@ -2784,8 +3073,8 @@ Number of days of warning before password expires	: 11"
     before_passed=$CHECKS_PASSED
     before_failed=$CHECKS_FAILED
     run_preapply_control >/dev/null
-    check_eq "$((CHECKS_TOTAL - before_total))" "2" "the control records one check per plugin"
-    check_eq "$((CHECKS_PASSED - before_passed))" "2" \
+    check_eq "$((CHECKS_TOTAL - before_total))" "3" "the control records one check per plugin"
+    check_eq "$((CHECKS_PASSED - before_passed))" "3" \
         "a plugin that reported a finding before apply passes its control"
     CHECKS_TOTAL=$before_total
     CHECKS_PASSED=$before_passed
@@ -2800,8 +3089,8 @@ Number of days of warning before password expires	: 11"
     before_passed=$CHECKS_PASSED
     before_failed=$CHECKS_FAILED
     run_preapply_control >/dev/null
-    check_eq "$((CHECKS_PASSED - before_passed))" "1" \
-        "the plugin that did report findings still passes its control"
+    check_eq "$((CHECKS_PASSED - before_passed))" "2" \
+        "the plugins that did report findings still pass their controls"
     check_eq "$((CHECKS_FAILED - before_failed))" "1" \
         "a plugin that reported nothing before apply fails its control"
     CHECKS_TOTAL=$before_total
@@ -2836,17 +3125,67 @@ Number of days of warning before password expires	: 11"
     CHECKS_PASSED=$saved_passed
     CHECKS_FAILED=$saved_failed
 
+    # The comparison the verdict rests on, in both of its directions.
+    #
+    # `exact` is the one every check used while there was only one. `mask` is the
+    # one a permission directive needs, and the third and fourth assertions below
+    # are the whole reason it exists: /etc/shadow at 0600 and at 0000 sets no bit
+    # the 0640 mask disallows, and an equality comparison would report the tool as
+    # defective for leaving a correctly hardened path alone.
+    check_status 0 "an exact comparison is satisfied by the same value" \
+        requirement_satisfied 644 644 exact
+    check_status 1 "an exact comparison is not satisfied by a different value" \
+        requirement_satisfied 640 644 exact
+    check_status 0 "a mask comparison is satisfied by the mask itself" \
+        requirement_satisfied 640 640 mask
+    check_status 0 "a mask comparison is satisfied by a stricter mode" \
+        requirement_satisfied 600 640 mask
+    check_status 0 "a mask comparison is satisfied by a mode that sets nothing" \
+        requirement_satisfied 0 640 mask
+    check_status 1 "a mask comparison is not satisfied by a bit outside the mask" \
+        requirement_satisfied 644 640 mask
+    check_status 1 "a mask comparison is not satisfied by a special bit outside the mask" \
+        requirement_satisfied 4640 640 mask
+    # A reading that is not an octal mode must not be compared arithmetically.
+    # `8#` on a non-octal word is a bash syntax error inside the arithmetic, which
+    # would abort the run under set -e rather than fail one check.
+    # These three assert the MESSAGE, not the status, and the difference matters.
+    # `8#absent` fails arithmetically on its own and an unmatched `case` returns
+    # 0, so a status assertion here passed identically with the guard removed and
+    # with the unknown-comparison branch deleted. Watched failing under both, once
+    # the wording became the assertion.
+    check_status 1 "a mask comparison refuses a reading that is not an octal mode" \
+        requirement_satisfied absent 640 mask
+    check_eq "$(requirement_satisfied absent 640 mask 2>&1 >/dev/null; :)" \
+        "FATAL: a mask comparison needs two octal modes, and was given 'absent' against '640'" \
+        "and names the reading it refused rather than leaving bash to describe it"
+    check_eq "$(requirement_satisfied 640 rw-r----- mask 2>&1 >/dev/null; :)" \
+        "FATAL: a mask comparison needs two octal modes, and was given '640' against 'rw-r-----'" \
+        "a mask comparison refuses a target that is not an octal mode, and names it"
+    check_eq "$(requirement_satisfied 640 640 stricter 2>&1 >/dev/null; :)" \
+        "FATAL: no such comparison 'stricter'" \
+        "an unknown comparison is refused by name rather than treated as equality"
+    check_eq "$(requirement_wording 700 exact)" "'700'" \
+        "an exact requirement is worded as the value it names"
+    check_eq "$(requirement_wording 640 mask)" "no bit outside '640'" \
+        "a mask requirement is worded as the rule, because it also accepts 600"
+
     # The verdict rule itself, in all four directions. The last one is the shape
     # of the defect this harness exists to catch: the system holds something
     # other than the target and the tool reports nothing wrong.
-    check_status 0 "verdict agrees when the system holds the target and nothing is reported" \
-        verdict_agrees no no 0
-    check_status 1 "verdict disagrees when the system holds the target and a finding is reported" \
-        verdict_agrees no no 1
-    check_status 0 "verdict agrees when the system differs and a finding is reported" \
-        verdict_agrees yes no 1
-    check_status 1 "verdict disagrees when the system differs and nothing is reported" \
-        verdict_agrees yes no 0
+    check_status 0 "verdict agrees when the system satisfies the requirement and nothing is reported" \
+        verdict_agrees yes 0
+    check_status 1 "verdict disagrees when the system satisfies the requirement and a finding is reported" \
+        verdict_agrees yes 1
+    check_status 0 "verdict agrees when the system does not satisfy it and a finding is reported" \
+        verdict_agrees no 1
+    check_status 1 "verdict disagrees when the system does not satisfy it and nothing is reported" \
+        verdict_agrees no 0
+    # Neither yes nor no is fatal rather than silently one of them: read as "no"
+    # it would demand a finding for a reading nobody classified, and read as
+    # "yes" it would accept the tool reporting nothing about it.
+    check_status 1 "verdict_agrees refuses a satisfaction that is neither yes nor no" \
+        verdict_agrees maybe 0
 
     # The idempotency checks. Their readings want root and a container, so what
     # is pinned here is everything around them: the fragment listing, the
@@ -3018,6 +3357,151 @@ password required pam_unix.so"
     rm -rf "$pwquality_fixture"
     PWQUALITY_STACK_FILES=("${pwquality_saved_files[@]}")
 
+    # === The permissions oracle ===
+    #
+    # The id derivation first, pinned to literals. permissions builds its ids off
+    # the path, so the leading slash becomes a dash of its own and every id
+    # carries a doubled dash. A filter written without it matches nothing, and
+    # matching nothing is this suite's pass condition.
+    check_eq "$(permission_finding_id /root)" "perm--root" \
+        "the leading slash becomes a dash, so the id carries a doubled dash"
+    check_eq "$(permission_finding_id /etc/shadow)" "perm--etc-shadow" \
+        "every separator becomes a dash"
+    check_eq "$(permission_finding_id /etc/sudoers.d)" "perm--etc-sudoers.d" \
+        "a dot in a path is left alone, because the id derivation does not touch it"
+
+    # The reader is a string compare, not a pattern match, and this is the
+    # assertion that says why: two of the table's paths contain a dot, and the
+    # grep-based reader the ssh capture uses would answer this row from a
+    # different path entirely.
+    local permission_fixture_capture="/etc/sudoersXd 750
+/etc/sudoers.d 700
+/etc/shadow 0"
+    check_eq "$(permission_capture_reading "$permission_fixture_capture" /etc/sudoers.d)" "700" \
+        "a path is read by exact match, not by a pattern its dot would widen"
+    check_eq "$(permission_capture_reading "$permission_fixture_capture" /etc/shadow)" "0" \
+        "a mode of 0 is a reading, not an empty answer"
+    check_status 1 "a path the capture holds no row for is refused" \
+        permission_capture_reading "$permission_fixture_capture" /etc/passwd
+
+    # The capture itself, driven over a fixture table rather than the real one:
+    # the nine paths are absolute, and a self-test that read the developer's own
+    # /etc/shadow would prove whatever that machine happens to hold.
+    local permission_saved_table=("${PERMISSION_CHECKS[@]}")
+    local permission_fixture
+    permission_fixture="$(mktemp -d)"
+    printf 'x\n' >"$permission_fixture/exact"
+    chmod 640 "$permission_fixture/exact"
+    printf 'x\n' >"$permission_fixture/nothing"
+    chmod 000 "$permission_fixture/nothing"
+    PERMISSION_CHECKS=(
+        "$permission_fixture/exact|640|exact"
+        "$permission_fixture/nothing|640|mask"
+        "$permission_fixture/missing|700|exact"
+    )
+    # The status is captured rather than left to set -e. A capture that refuses
+    # aborts the whole self-test from an assignment, and an aborted run prints no
+    # verdict for the assertions below, so the failure that reaches a reader is a
+    # FATAL line rather than the named expectation that was broken.
+    local permission_capture_out permission_capture_status=0
+    permission_capture_out="$(permission_modes_capture)" || permission_capture_status=$?
+    check_eq "$permission_capture_status" "0" \
+        "the capture succeeds over a table whose third path does not exist"
+    check_eq "$(permission_capture_reading "$permission_capture_out" "$permission_fixture/exact")" "640" \
+        "the capture reports the mode the filesystem holds"
+    check_eq "$(permission_capture_reading "$permission_capture_out" "$permission_fixture/nothing")" "0" \
+        "a file with no bits set reports 0, which is why the octal pattern accepts one digit"
+    check_eq "$(permission_capture_reading "$permission_capture_out" "$permission_fixture/missing")" "absent" \
+        "a path that is not there is a determinate answer rather than a failure"
+
+    # A path that exists and cannot be read is the third outcome, and it must be
+    # fatal rather than joining either of the other two. Driven through a stub,
+    # because as an ordinary user a file inside an unreadable directory fails the
+    # existence test as well and would arrive as `absent`.
+    # shellcheck disable=SC2329  # called indirectly, by the capture below
+    stat() { echo "stat: cannot statx: Permission denied" >&2; return 1; }
+    check_status 1 "a path that exists and cannot be statted is fatal, never absent" \
+        permission_modes_capture
+    unset -f stat
+
+    # The freshness lifecycle, the same one every other oracle here has, and for
+    # the same reason: a capture taken before apply describes the container as it
+    # was found.
+    PERMISSION_MODES=""
+    PERMISSION_MODES_GENERATION=""
+    check_status 1 "uninitialised permissions oracle returns non-zero" \
+        permission_system_value "$permission_fixture/exact"
+    local permission_saved_generation=$APPLY_GENERATION
+    APPLY_GENERATION=1
+    init_status=0
+    permissions_oracle_init || init_status=$?
+    check_eq "$init_status" "0" "permissions_oracle_init captures at the current generation"
+    check_eq "$(permission_system_value "$permission_fixture/exact")" "640" \
+        "and the reading is then readable by path"
+    APPLY_GENERATION=2
+    check_status 1 "a capture taken before the last apply is refused" \
+        permission_system_value "$permission_fixture/exact"
+    APPLY_GENERATION=1
+    check_status 1 "a path the capture holds no row for is refused rather than read as absent" \
+        permission_system_value /etc/nowhere
+
+    # The family end to end, through stubbed verdicts. Three shapes, each
+    # contributing exactly two checks, and the second is the one an equality
+    # comparison would have failed: 000 is stricter than the 640 mask, the tool
+    # correctly reports nothing, and this must be two passes rather than a defect
+    # reported against a tool behaving as designed.
+    local permission_saved_total=$CHECKS_TOTAL
+    local permission_saved_passed=$CHECKS_PASSED
+    local permission_saved_failed=$CHECKS_FAILED
+    # shellcheck disable=SC2329  # called indirectly, through the family below
+    scan_unchecked_count() { printf '0'; }
+    # shellcheck disable=SC2329  # called indirectly, through the family below
+    scan_finding_count() { printf '0'; }
+    CHECKS_TOTAL=0
+    CHECKS_PASSED=0
+    CHECKS_FAILED=0
+    run_permission_checks >/dev/null
+    check_eq "$CHECKS_TOTAL" "6" "each path contributes two checks, absent or not"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "6/0" \
+        "a mode equal to an exact target, a mode stricter than a mask, and an absent path all agree with a tool reporting nothing"
+
+    # And the same three with the tool reporting a finding for each. The absent
+    # row is the interesting one: a finding for a path that is not there is the
+    # tool claiming something about a file it cannot have looked at.
+    # shellcheck disable=SC2329  # called indirectly, through the family below
+    scan_finding_count() { printf '1'; }
+    CHECKS_TOTAL=0
+    CHECKS_PASSED=0
+    CHECKS_FAILED=0
+    run_permission_checks >/dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "3/3" \
+        "the three readings still pass and all three tool verdicts fail"
+
+    # A mode that violates its target, with the tool reporting nothing: the shape
+    # this whole suite exists to catch, on a permission rather than a directive.
+    chmod 644 "$permission_fixture/exact"
+    PERMISSION_CHECKS=("$permission_fixture/exact|640|exact")
+    # shellcheck disable=SC2329  # called indirectly, through the family below
+    scan_finding_count() { printf '0'; }
+    permissions_oracle_init
+    CHECKS_TOTAL=0
+    CHECKS_PASSED=0
+    CHECKS_FAILED=0
+    run_permission_checks >/dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/2" \
+        "a mode that violates its target while the tool reports nothing fails both assertions"
+
+    unset -f scan_unchecked_count
+    unset -f scan_finding_count
+    CHECKS_TOTAL=$permission_saved_total
+    CHECKS_PASSED=$permission_saved_passed
+    CHECKS_FAILED=$permission_saved_failed
+    APPLY_GENERATION=$permission_saved_generation
+    PERMISSION_CHECKS=("${permission_saved_table[@]}")
+    PERMISSION_MODES=""
+    PERMISSION_MODES_GENERATION=""
+    rm -rf "$permission_fixture"
+
     if (( failures > 0 )); then
         echo "self-test: $failures failure(s)"
         return 1
@@ -3077,6 +3561,12 @@ run_full_suite() {
     # assert that the hardening holds on the run after the one that established
     # it, not merely that one apply reached its targets. A directive a second
     # apply un-hardens now fails its own check as well as the idempotency one.
+    # First of the post-apply captures, deliberately. The two below it create and
+    # remove a probe account, and useradd and userdel rewrite /etc/passwd and
+    # /etc/shadow: a mode captured after them describes what those tools left
+    # behind as much as what the apply set, and this suite exists to measure the
+    # apply. Taken here it is the closest reading to the apply available.
+    permissions_oracle_init || return 1
     ssh_oracle_init || return 1
     login_defs_oracle_init || return 1
     vendor_survival_oracle_init || return 1
@@ -3086,6 +3576,7 @@ run_full_suite() {
     run_seeded_checks
     run_ssh_checks
     run_login_defs_checks
+    run_permission_checks
     run_vendor_survival_checks
     run_idempotence_checks
     run_pwquality_enforcement_checks
