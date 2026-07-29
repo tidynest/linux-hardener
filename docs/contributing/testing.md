@@ -236,6 +236,12 @@ design and never safe on a real system. From the host it replaces the full suite
 for that run: `--differential` always applies, whether or not `--apply` is given,
 and results land in `test-results/<distro>.log` like any other run.
 
+Each run opens by printing the binary's path and its `--version` string, so a
+log can be attributed to a commit long afterwards rather than by reconstructing
+which build happened to be current. A binary whose `--version` fails or prints
+nothing is recorded as `UNAVAILABLE` with the reason, never as a blank beside
+the path.
+
 `jq` is required, along with `sshd`, `ssh-keygen`, `useradd`, `userdel`,
 `chage`, `id`, `chpasswd`, `stat` and `su`. A missing one aborts the run by name
 before any check runs. The account rows the probe reads are parsed by the shell

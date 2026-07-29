@@ -146,6 +146,28 @@ require_binary() {
     fi
 }
 
+# The version string of the binary under test, or a loud stand-in for it.
+#
+# The path this suite already prints cannot attribute a run to a commit: the
+# same path holds a different build after every rebuild, and the logs are read
+# long afterwards. The habit of checking the version before starting is one no
+# artefact can prove was kept.
+#
+# A failed or empty `--version` must never print as a blank, because a log that
+# silently omits what it tested reads exactly like one that recorded it. Never
+# fatal: require_binary has already proved the file executable, and refusing a
+# whole destructive run over a banner would cost more than it saves.
+binary_version() {
+    local output
+    if ! output="$("$1" --version 2>&1)" || [[ -z "$output" ]]; then
+        echo "UNAVAILABLE (--version gave: ${output:-no output})"
+        return 0
+    fi
+    # First line only. A multi-line answer would break the banner into a shape
+    # no reader can attribute to the path printed above it.
+    printf '%s' "${output%%$'\n'*}"
+}
+
 # The first line of captured output matching a pattern, or nothing when the
 # pattern matched nothing.
 # Matched case insensitively: sshd has printed its directives lowercased in the
@@ -1549,6 +1571,25 @@ Number of days of warning before password expires	: 7"
     check_status 2 "a rejected chage pattern is not reported as an absent label" \
         extract_chage_value "$chage_fixture" '\('
 
+    # The banner that lets a log name the binary that produced it. All three
+    # branches, because the dangerous one is the quiet one: a --version that
+    # fails, or that succeeds while printing nothing, must not reach the log as
+    # an empty string beside a path that looks authoritative.
+    check_eq "$(binary_version "$(command -v bash)")" "$(bash --version | head -1)" \
+        "a multi-line --version is reduced to its first line"
+    check_eq "$(binary_version /nonexistent/hardener | cut -d' ' -f1)" "UNAVAILABLE" \
+        "a binary that cannot be run is named, not blank"
+
+    # A stub rather than a temporary file, because /tmp is mounted noexec often
+    # enough that writing one there would make this assertion the flakiest in
+    # the suite. Invoked once directly as well: a static analyser cannot follow
+    # a function name passed as an argument, so without this the stub reads as
+    # dead code, exactly as the comment further down describes.
+    silent_binary() { :; }
+    silent_binary
+    check_eq "$(binary_version silent_binary | cut -d' ' -f1)" "UNAVAILABLE" \
+        "a binary that prints no version is named, not blank"
+
     # ssh_system_value is pure once the capture is stubbed, so its failure modes
     # are pinned here rather than only by hand. Each must return non-zero: an
     # oracle that was never initialised, a capture no apply preceded, a capture
@@ -2490,6 +2531,7 @@ run_full_suite() {
     require_absent_probe_user || return 1
 
     echo "Differential suite: $BINARY"
+    echo "Binary version: $(binary_version "$BINARY")"
     echo "Plugins: ${DIFF_PLUGINS[*]}"
     preapply_scan_oracle_init || return 1
     # The other capture that must be taken above apply, and for a second
