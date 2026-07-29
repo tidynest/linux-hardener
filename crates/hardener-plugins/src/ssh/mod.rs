@@ -23,6 +23,7 @@ const SSHD_ADMIN_CONFIG_PATH: &str = "/etc/ssh/sshd_config";
 /// openSUSE's own vendor config directs administrators to.
 const SSHD_DROPIN_DIR: &str = "/etc/ssh/sshd_config.d";
 
+use crate::strictness::Strictness;
 use async_trait::async_trait;
 use chrono::Utc;
 use hardener_common::{
@@ -52,7 +53,28 @@ struct SshConfigDirective {
     ssh_secure_value: &'static str,
     /// Severity level if this directive is not set securely.
     ssh_severity: Severity,
+    /// Which direction counts as stricter for this directive's values.
+    ///
+    /// Comparing for equality instead reads a host stricter than the baseline
+    /// as violating and then writes the baseline over it: `MaxAuthTries 2`
+    /// became `3`, and a five-minute idle timeout replaced a one-minute one.
+    ssh_compare: Strictness,
 }
+
+/// `PermitRootLogin`, weakest first. `without-password` is sshd's legacy
+/// spelling of `prohibit-password` and shares its rank rather than sitting
+/// below it; `forced-commands-only` permits strictly less than either, since
+/// key-based root login then works only for a forced command.
+const PERMIT_ROOT_LOGIN_ORDER: &[&[&str]] = &[
+    &["yes"],
+    &[REMOTE_ROOT_SAFE_VALUE, "without-password"],
+    &["forced-commands-only"],
+    &["no"],
+];
+
+/// The two values an on/off directive takes, weakest first. `no` is the
+/// strict end of every one of them in this table.
+const OFF_IS_STRICTER: &[&[&str]] = &[&["yes"], &["no"]];
 
 /// Critical SSH config directives for security hardening.
 ///
@@ -63,42 +85,56 @@ const SSH_DIRECTIVES: &[SshConfigDirective] = &[
         ssh_secure_value: "no",
         ssh_description: "Disable direct root login via SSH",
         ssh_severity: Severity::Critical,
+        ssh_compare: Strictness::Ranked(PERMIT_ROOT_LOGIN_ORDER),
     },
     SshConfigDirective {
         ssh_directive_name: "PasswordAuthentication",
         ssh_secure_value: "no",
         ssh_description: "Require key-based authentication only",
         ssh_severity: Severity::Critical,
+        ssh_compare: Strictness::Ranked(OFF_IS_STRICTER),
     },
     SshConfigDirective {
         ssh_directive_name: "PermitEmptyPasswords",
         ssh_secure_value: "no",
         ssh_description: "Disallow empty passwords",
         ssh_severity: Severity::Critical,
+        ssh_compare: Strictness::Ranked(OFF_IS_STRICTER),
     },
     SshConfigDirective {
         ssh_directive_name: "MaxAuthTries",
         ssh_secure_value: "3",
         ssh_description: "Limit authentication attempts to prevent brute force",
         ssh_severity: Severity::Medium,
+        // Fewer attempts is stricter, and zero is not a disable: it is the
+        // strictest setting there is, refusing every attempt.
+        ssh_compare: Strictness::AtMost,
     },
     SshConfigDirective {
         ssh_directive_name: "X11Forwarding",
         ssh_secure_value: "no",
         ssh_description: "Disable X11 forwarding to reduce attack surface",
         ssh_severity: Severity::Medium,
+        ssh_compare: Strictness::Ranked(OFF_IS_STRICTER),
     },
     SshConfigDirective {
         ssh_directive_name: "ClientAliveInterval",
         ssh_secure_value: "300",
         ssh_description: "Disconnect idle SSH sessions after 5 minutes",
         ssh_severity: Severity::Low,
+        // A shorter probe interval drops an idle session sooner, so smaller is
+        // stricter, but zero stops sshd probing at all and is therefore the
+        // loosest value the setting has.
+        ssh_compare: Strictness::NonZeroAtMost,
     },
     SshConfigDirective {
         ssh_directive_name: "ClientAliveCountMax",
         ssh_secure_value: "2",
         ssh_description: "Maximum idle connection checks before disconnect",
         ssh_severity: Severity::Low,
+        // Fewer tolerated missed probes is stricter. Zero disconnects on the
+        // first one, which is the strict end rather than a disable.
+        ssh_compare: Strictness::AtMost,
     },
 ];
 
@@ -334,16 +370,21 @@ const PERMIT_ROOT_LOGIN: &str = "PermitRootLogin";
 /// reaching `no` is a deliberate console step.
 const REMOTE_ROOT_SAFE_VALUE: &str = "prohibit-password";
 
-/// `PermitRootLogin` values at least as strict as [`REMOTE_ROOT_SAFE_VALUE`]:
-/// overwriting any of them with it would loosen the host's policy, which is
-/// never allowed. `without-password` is sshd's legacy spelling of
-/// `prohibit-password`; `forced-commands-only` is stricter still. Matched
-/// case-insensitively, because sshd compares values with strcasecmp.
-const REMOTE_ROOT_SAFE_OR_STRICTER: &[&str] = &[
-    REMOTE_ROOT_SAFE_VALUE,
-    "without-password",
-    "forced-commands-only",
-];
+/// The target for `directive`: its secure value, tightened by an operator's
+/// directive override where the config sets one that tightens it.
+///
+/// Scan, apply and validate all resolve it here, so a preview cannot judge the
+/// host by a rule the apply it previews does not apply, and an override cannot
+/// relax a directive below the baseline. Loosening deliberately is what the
+/// exceptions mechanism is for, and an exception is labelled in the report
+/// where an override would be silent.
+fn resolved_target(directive: &SshConfigDirective, config: &PluginConfig) -> String {
+    directive.ssh_compare.resolved_target(
+        config,
+        directive.ssh_directive_name,
+        directive.ssh_secure_value,
+    )
+}
 
 /// True when this apply runs as root over a remote executor, i.e. the very
 /// session `PermitRootLogin no` would sever on restart (live-reproduced:
@@ -1116,6 +1157,7 @@ fn unchecked_ssh_checks(path: &str) -> Vec<UncheckedCheck> {
             unchecked_title: format!("SSH setting: {}", name),
             unchecked_category: FindingCategory::Network,
             unchecked_reason: format!("reading {path} requires root"),
+            unchecked_needs_privilege: true,
             unchecked_compliance: compliance,
         })
         .collect()
@@ -1232,14 +1274,16 @@ impl HardeningPlugin for SshHardeningPlugin {
             let effective = resolved.effective(directive.ssh_directive_name);
             let current_value = effective.as_ref().map(|e| e.value.clone());
 
-            // Directive override takes precedence over the built-in baseline.
-            let target =
-                config.resolve_str(directive.ssh_directive_name, directive.ssh_secure_value);
+            let target = resolved_target(directive, config);
 
-            let is_insecure = match current_value {
-                Some(ref value) => value != target,
-                None => true, // Missing directive is insecure
-            };
+            // Threshold, not equality: a host stricter than the baseline is
+            // already compliant. Comparing for equality flagged
+            // `MaxAuthTries 2` against a baseline of 3, and apply then wrote
+            // the 3 over it. An absent directive violates every direction,
+            // since nothing is enforcing it.
+            let is_insecure = directive
+                .ssh_compare
+                .violated_by(&target, current_value.as_deref());
 
             if is_insecure {
                 // An exception is honoured only when it documents the value the
@@ -1450,9 +1494,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                 continue;
             }
 
-            // Determine target value: user directive override or hardcoded baseline
-            let target_value =
-                config.resolve_str(directive.ssh_directive_name, directive.ssh_secure_value);
+            let target_value = resolved_target(directive, config);
 
             // The remote-root lockout guard binds wherever the directive is
             // written. Routing PermitRootLogin to the drop-in with the strict
@@ -1479,22 +1521,35 @@ impl HardeningPlugin for SshHardeningPlugin {
                 .map(|effective| effective.value.clone());
             let (dropin_target, dropin_note) = if guard_active {
                 (
-                    REMOTE_ROOT_SAFE_VALUE,
+                    REMOTE_ROOT_SAFE_VALUE.to_string(),
                     " (downgraded from 'no': applying 'no' over this root SSH session \
                      would sever access; set 'no' from a console)",
                 )
             } else {
-                (target_value, "")
+                (target_value.clone(), "")
             };
+            // The fragment is read before every other file, so whatever it
+            // holds is what the host obeys. Writing the bare target into it
+            // would therefore overwrite a stricter value elsewhere with a
+            // looser one, which is the same defect as writing the main file
+            // would be. Clamping rather than skipping keeps the fragment
+            // present, which is what holds a vendor-layer host to this target
+            // after a package update replaces the file underneath.
+            let dropin_target = directive.ssh_compare.clamp_target(
+                &dropin_target,
+                effective_now
+                    .as_ref()
+                    .map(|effective| effective.value.as_str()),
+            );
             // Never loosen: a value already at least as strict as the safe
-            // fallback stays as it is, and a case variant of the target is
-            // already the target as far as sshd is concerned.
+            // fallback stays as it is. That includes a case variant of the
+            // target and the legacy spelling of the fallback, both of which
+            // the directive's own ranking already treats as what they are.
             let already_safe_enough = guard_active
                 && effective_now.as_ref().is_some_and(|effective| {
-                    effective.value.eq_ignore_ascii_case(target_value)
-                        || REMOTE_ROOT_SAFE_OR_STRICTER
-                            .iter()
-                            .any(|safe| safe.eq_ignore_ascii_case(&effective.value))
+                    !directive
+                        .ssh_compare
+                        .violated_by(REMOTE_ROOT_SAFE_VALUE, Some(&effective.value))
                 });
 
             // A drop-in read before this file already answers this directive,
@@ -1517,8 +1572,16 @@ impl HardeningPlugin for SshHardeningPlugin {
                 .effective_without(directive.ssh_directive_name, dropin::DROPIN_PATH)
                 .filter(|effective| effective.source != config_path);
             if let Some(effective) = overridden {
-                let file_underneath_holds_target = effective.value == target_value;
-                if file_underneath_holds_target || already_safe_enough {
+                // At least as strict as the target, not equal to it: a file
+                // underneath holding `MaxAuthTries 2` leaves the host
+                // compliant without this tool's fragment just as surely as one
+                // holding 3 does, so the fragment is unnecessary either way.
+                // Asking for equality here left behind a fragment restating a
+                // value the host already had.
+                let file_underneath_is_strict_enough = !directive
+                    .ssh_compare
+                    .violated_by(&target_value, Some(&effective.value));
+                if file_underneath_is_strict_enough || already_safe_enough {
                     changes.push(Change {
                         change_description: format!(
                             "{}: already '{}' via {}, which sshd reads before {}",
@@ -1532,12 +1595,12 @@ impl HardeningPlugin for SshHardeningPlugin {
                         change_error: None,
                     });
                     // Dropping the directive is right where the file underneath
-                    // already holds the target, because the fragment is then
+                    // is already strict enough, because the fragment is then
                     // genuinely unnecessary. It is wrong where the only reason
                     // the host counts as safe is the fragment itself: that file
                     // underneath still says otherwise, so leaving the directive
                     // out of the rewrite hands the host straight back to it.
-                    if !file_underneath_holds_target {
+                    if !file_underneath_is_strict_enough {
                         keep_value_the_fragment_holds(
                             &mut to_dropin,
                             directive.ssh_directive_name,
@@ -1548,7 +1611,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                 }
                 to_dropin.push(dropin::Directive {
                     keyword: directive.ssh_directive_name,
-                    value: dropin_target.to_string(),
+                    value: dropin_target,
                     note: dropin_note,
                 });
                 continue;
@@ -1586,7 +1649,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                 }
                 to_dropin.push(dropin::Directive {
                     keyword: directive.ssh_directive_name,
-                    value: dropin_target.to_string(),
+                    value: dropin_target,
                     note: dropin_note,
                 });
                 continue;
@@ -1601,37 +1664,26 @@ impl HardeningPlugin for SshHardeningPlugin {
 
             // Compared against the strict target first, so an existing `no`
             // is "already compliant" and the guard below can never loosen it.
-            let needs_change = match &original_value {
-                Some(value) => value != target_value,
-                None => true,
-            };
+            // The comparison is the directive's own, so a value stricter than
+            // the target needs no change either, and a case variant of the
+            // target is already the target as far as sshd is concerned. That
+            // last point used to need a branch of its own here, guarding
+            // against the downgrade below "normalising" a `No` into
+            // prohibit-password; a ranked comparison cannot reach it.
+            let needs_change = directive
+                .ssh_compare
+                .violated_by(&target_value, original_value.as_deref());
 
             // Lockout guard: on a remote root session, never write the
             // session-severing `no`. A current value already at least as
             // strict as the safe fallback is left untouched (never loosen);
             // anything weaker gets the fallback with an honest explanation.
-            // sshd matches directive values case-insensitively (strcasecmp),
-            // so a case variant like `No` is an effective `no`: leave it
-            // completely untouched rather than "normalising" it through the
-            // downgrade branch, which would loosen it to prohibit-password.
             if guard_active
                 && needs_change
                 && let Some(current) = original_value.as_deref()
-                && current.eq_ignore_ascii_case(target_value)
-            {
-                info!(
-                    "PermitRootLogin already effectively '{}' (case variant); left untouched on remote root session",
-                    target_value
-                );
-                continue;
-            }
-
-            if guard_active
-                && needs_change
-                && let Some(current) = original_value.as_deref()
-                && REMOTE_ROOT_SAFE_OR_STRICTER
-                    .iter()
-                    .any(|safe| safe.eq_ignore_ascii_case(current))
+                && !directive
+                    .ssh_compare
+                    .violated_by(REMOTE_ROOT_SAFE_VALUE, Some(current))
             {
                 info!(
                     "PermitRootLogin left at '{}' on remote root session (never loosen)",
@@ -1657,7 +1709,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                      would sever access; set 'no' from a console)",
                 )
             } else {
-                (target_value, "")
+                (target_value.as_str(), "")
             };
 
             if needs_change {
@@ -2091,10 +2143,9 @@ impl HardeningPlugin for SshHardeningPlugin {
             LayeredRead::Found { content, .. } => {
                 // Check each directive to see if it needs updating.
                 for directive in SSH_DIRECTIVES {
-                    // Resolve the target the way apply and scan do: a config
-                    // directive override wins over the hardcoded baseline.
-                    let target = config
-                        .resolve_str(directive.ssh_directive_name, directive.ssh_secure_value);
+                    // Resolve the target the way apply and scan do, through the
+                    // one function all three call.
+                    let target = resolved_target(directive, config);
 
                     // SSHD config is space-separated and case-insensitive.
                     let current_value = parse_config_value(
@@ -2122,7 +2173,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                     }
 
                     match current_value {
-                        Some(val) if val == target => {
+                        Some(val) if !directive.ssh_compare.violated_by(&target, Some(&val)) => {
                             // Already set to the target value - no change needed.
                         }
                         Some(val) => {

@@ -71,19 +71,9 @@ pub fn scan_results(format: &OutputFormat, results: &[(PluginMetadata, ScanResul
                 results.len()
             );
 
-            let total_unchecked: usize = results
-                .iter()
-                .map(|(_, r)| r.scan_unchecked.len())
-                .sum::<usize>();
-            if total_unchecked > 0 {
-                println!(
-                    "{}",
-                    format!(
-                        "{} check(s) require root; run with sudo for a full scan",
-                        total_unchecked
-                    )
-                    .dimmed()
-                );
+            let unchecked = results.iter().flat_map(|(_, r)| r.scan_unchecked.iter());
+            if let Some(note) = hardener_types::unchecked_summary(unchecked) {
+                println!("{}", note.dimmed());
             }
 
             let failed = results.iter().filter(|(_, r)| !r.scan_success).count();
@@ -166,10 +156,7 @@ fn scan_plugin_lines(metadata: &PluginMetadata, result: &ScanResult) -> Vec<Stri
     }
 
     let mut lines = Vec::new();
-    let unchecked_note = format!(
-        "{} check(s) could not be verified without root",
-        unchecked.len()
-    );
+    let unchecked_note = hardener_types::unchecked_summary(unchecked).unwrap_or_default();
 
     // Unchecked entries nest one level deeper when they sit under a
     // findings sub-header rather than directly under the plugin header.
@@ -859,6 +846,7 @@ mod tests {
             unchecked_title: title.to_string(),
             unchecked_category: FindingCategory::Audit,
             unchecked_reason: "listing loaded audit rules (auditctl -l) requires root".to_string(),
+            unchecked_needs_privilege: true,
             unchecked_compliance: vec![],
         }
     }
@@ -991,7 +979,7 @@ mod tests {
             "header must name the plugin: {header}"
         );
         assert!(
-            header.contains("5 check(s) could not be verified without root"),
+            header.contains("5 check(s) require root; run with sudo for a full scan"),
             "header must keep the honest raw count: {header}"
         );
 
@@ -1035,7 +1023,7 @@ mod tests {
         assert!(
             lines
                 .iter()
-                .any(|l| l.contains("1 check(s) could not be verified without root")),
+                .any(|l| l.contains("1 check(s) require root; run with sudo for a full scan")),
             "unchecked sub-header nests under the same plugin: {lines:?}"
         );
         assert!(lines.iter().any(|l| l.contains("PAM setting: minlen")));

@@ -8,6 +8,7 @@ pub mod permissions;
 pub mod scan_outcome;
 pub mod services;
 pub mod ssh;
+pub(crate) mod strictness;
 
 pub use scan_outcome::{
     Unassessed, failed_scan, flatten_persisted_scans, flatten_scans, unassessed_check,

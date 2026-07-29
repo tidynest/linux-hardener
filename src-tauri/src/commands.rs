@@ -2387,6 +2387,7 @@ mod fleet_tests {
             unchecked_title: String::new(),
             unchecked_category: hardener_types::FindingCategory::Kernel,
             unchecked_reason: String::new(),
+            unchecked_needs_privilege: false,
             unchecked_compliance: vec![],
         }
     }

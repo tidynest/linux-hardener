@@ -295,18 +295,92 @@ require_fresh_capture() {
     fi
 }
 
-# The ssh directives this suite checks and the value the tool targets for each,
-# verified against SSH_DIRECTIVES in crates/hardener-plugins/src/ssh/mod.rs.
-# Fields: directive|target.
+# The ssh directives this suite checks and the value the system must hold after
+# apply, verified against SSH_DIRECTIVES in
+# crates/hardener-plugins/src/ssh/mod.rs. Fields: directive|expected.
+#
+# For five of the seven, expected is the tool's own target and the container
+# arrives with the directive unset, so the check reads "the tool set it".
+#
+# For the two named in SEEDED_SSH_CHECKS below, expected is the SEEDED value,
+# which is stricter than the tool's target, and the check reads "the tool left
+# a stricter host alone". Those two therefore no longer cover the unset path;
+# the other five do, and run_seeded_checks logs the trade rather than leaving a
+# reader to infer it.
+#
+# These stay equality assertions. On a container created clean no distribution
+# default is stricter than the tool's baseline, so an unseeded directive must
+# read exactly the target. A distribution that started shipping, say,
+# MaxAuthTries 2 would leave the 2 in place and fail here, and that would be the
+# tool behaving correctly and this table being out of date: widen the entry
+# rather than the tool.
 SSH_CHECKS=(
     "PermitRootLogin|no"
     "PasswordAuthentication|no"
     "PermitEmptyPasswords|no"
-    "MaxAuthTries|3"
+    "MaxAuthTries|2"
     "X11Forwarding|no"
-    "ClientAliveInterval|300"
+    "ClientAliveInterval|60"
     "ClientAliveCountMax|2"
 )
+
+# The whole point of the seeded pair: a value STRICTER than the tool's own
+# target, written into the container before the first apply, which the tool must
+# then leave alone. Nothing a freshly created container ships is stricter than
+# the baseline, so without this the suite can only ever prove that the tool
+# hardens an unhardened host, never that it declines to un-harden a good one.
+# That second property is the one whose absence wrote MaxAuthTries from 2 up to
+# 3 and reported success.
+#
+# Fields: directive|seed|sshd-default.
+#
+# The three numbers in each row are distinct on purpose. sshd's default, the
+# seed and the tool's target are all different, so a probe that has silently
+# started reading a constant cannot produce the seed: the seed exists only
+# because the write took effect. The default column is OpenSSH's documented
+# default and is not measured, so it is carried here only to keep that
+# three-way distinction checkable by eye when a future reader changes a row.
+#
+# ClientAliveCountMax is deliberately not seeded: it exercises the same
+# direction as MaxAuthTries and would cost a third directive's unset coverage
+# for nothing. It is the standby if a distribution turns out to ship one of
+# these two at its seed value.
+SEEDED_SSH_CHECKS=(
+    "MaxAuthTries|2|6"
+    "ClientAliveInterval|60|0"
+)
+
+# Appended rather than prepended, and that is load-bearing.
+#
+# sshd takes the FIRST value it obtains and reads the drop-in directory through
+# an Include that sits near the top of the main file. A seed written above that
+# Include would beat anything the tool later writes to its own fragment, which
+# would make this check pass even if the tool had written the looser target
+# there. Appended, the fragment wins, so a tool that loosens the directive is
+# visible to sshd -T and fails the check. The placement is what makes it an
+# oracle rather than a restatement of the seed.
+# The file the seed is written to. A variable rather than a literal so the
+# self-test can point it at a scratch file: a self-test that appends to the
+# developer's own sshd_config would be a poor way to learn this rule.
+SEED_TARGET_FILE="/etc/ssh/sshd_config"
+
+seed_stricter_than_baseline() {
+    local entry directive seed
+    if (( APPLY_GENERATION != 0 )); then
+        echo "FATAL: the stricter-than-baseline seed was asked for at generation" \
+            "$APPLY_GENERATION, after apply had run." >&2
+        echo "  It has to be in place before the first apply, because what is being" >&2
+        echo "  tested is what that apply does when it meets it." >&2
+        return 1
+    fi
+    for entry in "${SEEDED_SSH_CHECKS[@]}"; do
+        IFS='|' read -r directive seed _ <<<"$entry"
+        if ! printf '%s %s\n' "$directive" "$seed" >>"$SEED_TARGET_FILE"; then
+            echo "FATAL: could not seed $directive into $SEED_TARGET_FILE" >&2
+            return 1
+        fi
+    done
+}
 
 # sshd -T refuses to run without host keys, so generate any that are missing.
 # This changes nothing the tool manages.
@@ -366,6 +440,60 @@ ssh_system_value() {
     # that silently passes. This makes "undeterminable is a failure" total.
     if [[ -z "$value" ]]; then
         echo "FATAL: sshd -T reports '$directive' with no value" >&2
+        return 1
+    fi
+    printf '%s' "$value"
+}
+
+# What sshd enforced BEFORE any apply. Captured by preapply_seeded_init, which
+# refuses to run once apply has happened, because a capture taken afterwards
+# would be describing the thing under test rather than its starting point.
+SEEDED_BEFORE=""
+SEEDED_BEFORE_GENERATION=""
+
+preapply_seeded_init() {
+    local out
+    if (( APPLY_GENERATION != 0 )); then
+        echo "FATAL: the pre-apply seeded capture was asked for at generation" \
+            "$APPLY_GENERATION, after apply had run." >&2
+        echo "  It is the control proving the seed took effect, so it has to be taken" >&2
+        echo "  while the container still holds only the seed." >&2
+        return 1
+    fi
+    ensure_host_keys || return 1
+    if ! out="$(capture_sshd_effective)"; then
+        return 1
+    fi
+    if [[ -z "$out" ]]; then
+        echo "FATAL: sshd -T succeeded but printed nothing for the seeded capture" >&2
+        return 1
+    fi
+    SEEDED_BEFORE="$out"
+    SEEDED_BEFORE_GENERATION="$APPLY_GENERATION"
+}
+
+# One pre-apply reading. The mirror of ssh_system_value, written out rather than
+# borrowed, because its freshness rule is the opposite one: this capture is only
+# usable if it predates every apply.
+seeded_baseline_value() {
+    local directive="$1" value
+    if [[ -z "$SEEDED_BEFORE" ]]; then
+        echo "FATAL: seeded baseline not captured;" \
+            "preapply_seeded_init must run before apply" >&2
+        return 1
+    fi
+    if [[ "$SEEDED_BEFORE_GENERATION" != "0" ]]; then
+        echo "FATAL: the seeded baseline is stamped generation" \
+            "${SEEDED_BEFORE_GENERATION:-unset}, so it was taken after an apply and" \
+            "describes a system that had already been changed." >&2
+        return 1
+    fi
+    if ! value="$(extract_sshd_value "$SEEDED_BEFORE" "$directive")"; then
+        echo "FATAL: the seeded capture does not report '$directive'" >&2
+        return 1
+    fi
+    if [[ -z "$value" ]]; then
+        echo "FATAL: the seeded capture reports '$directive' with no value" >&2
         return 1
     fi
     printf '%s' "$value"
@@ -904,7 +1032,190 @@ idempotence_report_difference() {
     done < <(grep -Fxv -f <(printf '%s\n' "$before") <(printf '%s\n' "$after") || true)
 }
 
-# The lengths of the five tables the run is sized by, pinned as literals.
+# === Password quality actually being enforced ===
+
+# /etc/security/pwquality.conf is read by pam_pwquality.so and by nothing else.
+# A host whose PAM stack never loads that module enforces no password policy
+# however the file is written, so every check that reads the file agrees with
+# itself and with the tool while the system enforces nothing. That is the shape
+# this suite exists to catch, and it needed a consumer to ask rather than a
+# second parser: the stack decides whether the file is read at all, and
+# libpwquality decides what the file means once it is.
+#
+# Two readings, one check each. The first compares the stack against the tool's
+# verdict, which is the differential proper. The second is the positive control
+# the first cannot supply: a policy that rejects everything and a policy that
+# rejects nothing both make a one-sided filter look right, so the strong
+# password must be accepted in the same breath as the weak one is refused.
+PWQUALITY_ENFORCEMENT_CHECKS=(module-loaded weak-password-refused)
+
+# The stack files the tool searches, in the same order and with the same names.
+# A distribution keeping its stack elsewhere reads as unreadable below, never as
+# absent: concluding "no module" from a file that is not there would fail every
+# such host on the strength of this list being short.
+PWQUALITY_STACK_FILES=(
+    /etc/pam.d/system-auth
+    /etc/pam.d/password-auth
+    /etc/pam.d/common-password
+)
+
+# A password no policy worth having accepts: three characters, one class, and
+# far below the minlen of 14 the tool targets. Kept beside the strong probe
+# password so the pair that forms the control is read together.
+PWQUALITY_WEAK_PASSWORD='abc'
+
+# Whether PAM stack text loads pam_pwquality.
+#
+# Pure, so the self-test can pin it without a container. A commented line is not
+# a loaded module: openSUSE's pam-config writes exactly that when libpwquality
+# is not installed, which is the host this check was written for.
+pwquality_module_loaded_in() {
+    local content="$1" line
+    while IFS= read -r line; do
+        line="${line#"${line%%[![:space:]]*}"}"
+        [[ "$line" == '#'* ]] && continue
+        [[ "$line" == *pam_pwquality.so* ]] && return 0
+    done <<<"$content"
+    return 1
+}
+
+# What the system says about the module: 'loaded', 'absent', or a refusal.
+#
+# A refusal when not one candidate could be read, because absence concluded from
+# nothing is the same mistake as a filter that matches nothing: it would score a
+# host this suite never looked at as a host with no module.
+pwquality_stack_reading() {
+    local file content read_one=0
+    for file in "${PWQUALITY_STACK_FILES[@]}"; do
+        [[ -e "$file" ]] || continue
+        if ! content="$(cat "$file" 2>/dev/null)"; then
+            continue
+        fi
+        read_one=1
+        if pwquality_module_loaded_in "$content"; then
+            printf 'loaded'
+            return 0
+        fi
+    done
+    if (( read_one == 0 )); then
+        echo "FATAL: none of ${PWQUALITY_STACK_FILES[*]} could be read, so whether" \
+            "pam_pwquality is loaded is not a question this run answered" >&2
+        return 1
+    fi
+    printf 'absent'
+}
+
+# libpwquality's own verdict on a password: 'refused', 'accepted', or 'no-tool'.
+#
+# pwscore ships with libpwquality and applies /etc/security/pwquality.conf, so
+# it is the file's consumer answering rather than this script re-reading it.
+# Its absence is a real answer and not a skip: no libpwquality means no
+# pam_pwquality.so either, so the policy cannot be in force.
+pwquality_verdict() {
+    local password="$1"
+    if ! command -v pwscore >/dev/null 2>&1; then
+        printf 'no-tool'
+        return 0
+    fi
+    if printf '%s\n' "$password" | pwscore >/dev/null 2>&1; then
+        printf 'accepted'
+    else
+        printf 'refused'
+    fi
+}
+
+# Why libpwquality refused a password, in its own words.
+#
+# Called only on the failure path, and it exists because the first version of
+# this family did not have it. fedora refused the probe password where rhel
+# accepted it, and the check reported 'refused' against 'accepted' without
+# saying why, which is a diagnostic that has discarded the only thing it was
+# for. A refusal that names no rule cannot be told apart from a refusal by a
+# rule this suite should be honouring.
+pwquality_refusal_detail() {
+    local password="$1" message
+    command -v pwscore >/dev/null 2>&1 || {
+        printf 'pwscore is not installed'
+        return 0
+    }
+    message="$(printf '%s\n' "$password" | pwscore 2>&1 >/dev/null)"
+    if [[ -z "$message" ]]; then
+        printf 'pwscore refused it and said nothing'
+        return 0
+    fi
+    printf '%s' "${message//$'\n'/ }"
+}
+
+# Every file libpwquality reads, not only the one the tool writes.
+#
+# libpwquality 1.4.1 and later read /etc/security/pwquality.conf.d/*.conf after
+# the main file, so a drop-in there overrides it, and this tool writes only the
+# main file. Reported beside a refusal so a stricter-than-expected policy can be
+# told apart from a rule of the file the tool controls.
+pwquality_configuration_sources() {
+    local dropins=() file
+    for file in /etc/security/pwquality.conf.d/*.conf; do
+        [[ -e "$file" ]] && dropins+=("$file")
+    done
+    if (( ${#dropins[@]} == 0 )); then
+        printf '/etc/security/pwquality.conf only'
+        return 0
+    fi
+    printf '/etc/security/pwquality.conf plus %s' "${dropins[*]}"
+}
+
+# The system and the tool agree about whether password quality is enforced.
+#
+# Pure, and pinned in all four directions by the self-test, because this is the
+# comparison the whole check reduces to: the tool must report minlen unsatisfied
+# exactly when the stack cannot enforce it. Either direction alone passes on a
+# broken harness, which is why neither is asserted on its own.
+pwquality_enforcement_agrees() {
+    local reading="$1" findings="$2"
+    case "$reading" in
+        loaded) (( findings == 0 )) ;;
+        absent) (( findings > 0 )) ;;
+        *) return 1 ;;
+    esac
+}
+
+# One check per reading, both determinate on every path.
+#
+# A reading that could not be taken is a failure and costs that entry its check,
+# never a skip, so the totals stay comparable between a run whose probes
+# answered and one whose did not.
+run_pwquality_enforcement_checks() {
+    local reading findings weak strong
+    if ! reading="$(pwquality_stack_reading)"; then
+        record_fail "pwquality module-loaded: no PAM stack file could be read, so nothing shows whether the policy can be enforced at all"
+        record_fail "pwquality weak-password-refused: without a stack reading there is nothing to hold the password verdict against"
+        return
+    fi
+
+    if ! findings="$(scan_finding_count pam-hardening "$(pam_finding_id minlen)")"; then
+        record_fail "pwquality module-loaded: the post-apply scan could not be read, so the tool's verdict is unknown"
+    elif pwquality_enforcement_agrees "$reading" "$findings"; then
+        record_pass "pwquality module-loaded: the stack reads '$reading' and the tool reported $findings minlen finding(s), which is what that stack allows"
+    else
+        record_fail "pwquality module-loaded: the stack reads '$reading' but the tool reported $findings minlen finding(s); a policy nothing loads cannot be satisfied, and one that is loaded and applied should not be failing"
+    fi
+
+    weak="$(pwquality_verdict "$PWQUALITY_WEAK_PASSWORD")"
+    strong="$(pwquality_verdict "$DIFF_PROBE_PASSWORD")"
+    if [[ "$reading" == loaded ]]; then
+        if [[ "$weak" == refused && "$strong" == accepted ]]; then
+            record_pass "pwquality weak-password-refused: libpwquality refused the weak password and accepted the probe password, so the policy is applied rather than merely written"
+        else
+            record_fail "pwquality weak-password-refused: libpwquality returned '$weak' for the weak password and '$strong' for the probe password on a host whose stack loads the module; a policy that refuses everything or nothing proves the same amount. It read $(pwquality_configuration_sources), and of the probe password it said: $(pwquality_refusal_detail "$DIFF_PROBE_PASSWORD")"
+        fi
+    elif [[ "$weak" == refused ]]; then
+        record_fail "pwquality weak-password-refused: libpwquality refused the weak password on a host whose stack does not load pam_pwquality, so the two readings describe different hosts"
+    else
+        record_pass "pwquality weak-password-refused: the stack loads no pam_pwquality and libpwquality returned '$weak', which is consistent: nothing here enforces the file"
+    fi
+}
+
+# The lengths of the six tables the run is sized by, pinned as literals.
 #
 # A count derived from a table cannot notice that table being edited down: with
 # SSH_CHECKS emptied, a run over the login.defs directives alone would agree
@@ -915,19 +1226,23 @@ idempotence_report_difference() {
 # iterates, and these are what it is measured against. Adding a directive means
 # changing the literal on purpose.
 SSH_CHECKS_EXPECTED=7
+SEEDED_SSH_CHECKS_EXPECTED=2
 LOGIN_DEFS_CHECKS_EXPECTED=3
 VENDOR_SURVIVAL_CHECKS_EXPECTED=3
 IDEMPOTENCE_CHECKS_EXPECTED=3
 DIFF_PLUGINS_EXPECTED=2
+PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED=2
 
 require_check_tables() {
     local entry name got want refused=0
     for entry in \
         "SSH_CHECKS ${#SSH_CHECKS[@]} $SSH_CHECKS_EXPECTED" \
+        "SEEDED_SSH_CHECKS ${#SEEDED_SSH_CHECKS[@]} $SEEDED_SSH_CHECKS_EXPECTED" \
         "LOGIN_DEFS_CHECKS ${#LOGIN_DEFS_CHECKS[@]} $LOGIN_DEFS_CHECKS_EXPECTED" \
         "VENDOR_SURVIVAL_CHECKS ${#VENDOR_SURVIVAL_CHECKS[@]} $VENDOR_SURVIVAL_CHECKS_EXPECTED" \
         "IDEMPOTENCE_CHECKS ${#IDEMPOTENCE_CHECKS[@]} $IDEMPOTENCE_CHECKS_EXPECTED" \
-        "DIFF_PLUGINS ${#DIFF_PLUGINS[@]} $DIFF_PLUGINS_EXPECTED"; do
+        "DIFF_PLUGINS ${#DIFF_PLUGINS[@]} $DIFF_PLUGINS_EXPECTED" \
+        "PWQUALITY_ENFORCEMENT_CHECKS ${#PWQUALITY_ENFORCEMENT_CHECKS[@]} $PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED"; do
         read -r name got want <<<"$entry"
         if [[ "$got" != "$want" ]]; then
             echo "FATAL: $name holds $got, expected $want." >&2
@@ -953,7 +1268,10 @@ require_check_tables() {
 # claims nothing about settings it does not manage and nothing about what a
 # second run of itself would do. Vendor survival took the per-distribution total
 # from 22 to 25 and the five-distribution total from 110 to 125; idempotency
-# takes them to 28 and 140.
+# takes them to 28 and 140. The pwquality enforcement pair takes them to 30
+# and 150: also one assertion each, because the stack reading is compared
+# against the tool and the password verdict against the stack reading, and
+# neither has a second tool claim to hold it to.
 #
 # Counted off the pinned lengths above, never off the tables themselves. Read
 # from ${#SSH_CHECKS[@]} the expectation would follow the table it exists to
@@ -963,7 +1281,8 @@ require_check_tables() {
 expected_check_total() {
     printf '%s' "$(( 2 * (SSH_CHECKS_EXPECTED + LOGIN_DEFS_CHECKS_EXPECTED) \
         + VENDOR_SURVIVAL_CHECKS_EXPECTED + IDEMPOTENCE_CHECKS_EXPECTED \
-        + DIFF_PLUGINS_EXPECTED ))"
+        + PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED + DIFF_PLUGINS_EXPECTED \
+        + SEEDED_SSH_CHECKS_EXPECTED ))"
 }
 
 # The two plugins spell their finding ids differently, and a filter written for
@@ -1275,13 +1594,23 @@ record_fail() {
 # The two assertions for one directive, given the value its oracle reported.
 # Both are always recorded, so every directive contributes the same two checks
 # whatever happens and one cannot quietly contribute fewer by going wrong.
+# `target` is what this run requires, which is the tool's own target for an
+# unseeded directive and the SEEDED value for the two in SEEDED_SSH_CHECKS. The
+# messages below therefore say "this run requires" rather than "the tool
+# targets", which reads more naturally and would be false for the seeded pair.
+#
+# For the same reason no message here names a cause. A disagreement used to be
+# reported as "apply did not take effect", and on a seeded directive the truth
+# is the opposite: apply took effect and overwrote a value stricter than its
+# own target. Stating the two values and leaving the cause to the reader is the
+# only wording true of both.
 compare_directive() {
     local plugin="$1" directive="$2" system="$3" target="$4" finding_id="$5" reported unchecked
 
     if [[ "$system" == "$target" ]]; then
-        record_pass "$plugin $directive: the system holds '$system', the value the tool targets"
+        record_pass "$plugin $directive: the system holds '$system', the value this run requires"
     else
-        record_fail "$plugin $directive: the system holds '$system' but the tool targets '$target'; apply did not take effect"
+        record_fail "$plugin $directive: the system holds '$system' but this run requires '$target'"
     fi
 
     # Asked before the findings are counted, because it decides whether that
@@ -1304,7 +1633,7 @@ compare_directive() {
     elif [[ "$system" == "$target" ]]; then
         record_fail "$plugin $directive: the tool reports $reported finding(s) for '$finding_id' while the system holds the target value '$system'"
     else
-        record_fail "$plugin $directive: the tool claims a compliance the system does not have: no finding for '$finding_id' while the system holds '$system' and the tool targets '$target'"
+        record_fail "$plugin $directive: the tool claims a compliance the system does not have: no finding for '$finding_id' while the system holds '$system' and this run requires '$target'"
     fi
 }
 
@@ -1373,6 +1702,33 @@ run_preapply_control() {
             record_fail "$plugin: before apply the tool reported no finding for any of the $total compared directives, on a container nothing had been applied to; either the filter matches nothing or this plugin's scan produced nothing, and the JSON cannot tell those apart"
         fi
     done
+}
+
+# The positive control for the seeded pair, and the only thing that separates
+# "the tool left the seed alone" from "the seed never landed and the tool set
+# its own target, which happens to be what we are reading".
+#
+# It is the seed itself rather than a separate probe, which is what makes it
+# unable to pass by matching nothing: the values asserted here exist only
+# because the write took effect, and a run where it did not reads sshd's
+# default and fails loudly instead of quietly agreeing with itself.
+run_seeded_checks() {
+    local entry directive seed before
+    for entry in "${SEEDED_SSH_CHECKS[@]}"; do
+        IFS='|' read -r directive seed _ <<<"$entry"
+        if ! before="$(seeded_baseline_value "$directive")"; then
+            record_fail "seeded $directive: the pre-apply reading could not be taken, so nothing shows the seed took effect and the post-apply check below proves nothing"
+            continue
+        fi
+        if [[ "$before" == "$seed" ]]; then
+            record_pass "seeded $directive: before apply sshd enforced '$before', stricter than the tool's own target, so the check below is asking a real question"
+        else
+            record_fail "seeded $directive: before apply sshd enforced '$before' but the seed wrote '$seed'; the seed did not take effect, so the post-apply reading would agree with the tool by accident"
+        fi
+    done
+    # No silent caps: these two directives buy the no-loosen check by giving up
+    # the "arrived unset, the tool set it" coverage, which the other five keep.
+    echo "  note| ${#SEEDED_SSH_CHECKS[@]} of ${#SSH_CHECKS[@]} ssh directives are seeded stricter than the baseline and no longer cover the unset path"
 }
 
 run_ssh_checks() {
@@ -1503,7 +1859,7 @@ print_summary() {
         echo "not be read. Neither is a flaky test: a disagreement is a product"
         echo "defect, and an oracle that cannot answer leaves a directive unproven."
         echo "Each FAIL line above names the directive, and where the two disagree,"
-        echo "the value the system holds and the value the tool targets."
+        echo "the value the system holds and the value this run requires."
         return 1
     fi
     echo "The system agrees with what the tool reported."
@@ -2073,16 +2429,26 @@ Number of days of warning before password expires	: 11"
     check_eq "${#VENDOR_SURVIVAL_CHECKS[@]}" "3" "the vendor survival table holds three settings"
     check_eq "${#IDEMPOTENCE_CHECKS[@]}" "3" "the idempotency table holds three readings"
     check_eq "${#DIFF_PLUGINS[@]}" "2" "two plugins are compared"
+    check_eq "${#SEEDED_SSH_CHECKS[@]}" "2" "the seeded table holds two directives"
     local pinned_total
     pinned_total="$(expected_check_total)"
-    check_eq "$pinned_total" "28" \
-        "the run is sized at two checks per directive, one per unmanaged setting, one per idempotency reading, plus one control per plugin"
+    check_eq "$pinned_total" "32" \
+        "the run is sized at two checks per directive, one per unmanaged setting, one per idempotency reading, one per pwquality enforcement reading, one control per plugin, plus one pre-apply control per seeded directive"
     check_status 0 "require_check_tables accepts the tables as they stand" \
         require_check_tables
 
     local saved_ssh_checks=("${SSH_CHECKS[@]}")
     SSH_CHECKS=("PermitRootLogin|no")
     check_status 1 "require_check_tables refuses a table edited down" require_check_tables
+    SSH_CHECKS=("${saved_ssh_checks[@]}")
+    # The seeded table is the newest and therefore the one most likely to be
+    # edited down by someone who does not know it is counted.
+    local saved_seeded=("${SEEDED_SSH_CHECKS[@]}")
+    SEEDED_SSH_CHECKS=("MaxAuthTries|2|6")
+    check_status 1 "require_check_tables refuses a seeded table edited down" \
+        require_check_tables
+    SEEDED_SSH_CHECKS=("${saved_seeded[@]}")
+    SSH_CHECKS=("PermitRootLogin|no")
     # And the size the run is measured against does not follow the table down.
     # Counted off ${#SSH_CHECKS[@]} it would, and print_summary would then accept
     # a run that skipped six directives as a complete one. Compared against the
@@ -2092,6 +2458,91 @@ Number of days of warning before password expires	: 11"
     SSH_CHECKS=("${saved_ssh_checks[@]}")
     check_status 0 "require_check_tables accepts the table once it is restored" \
         require_check_tables
+
+    # The seeded pair. Its failure mode is the quiet one: if the seed never
+    # lands, the post-apply reading is the tool's own target, the tool put it
+    # there, and the check agrees with the tool about a value neither of them
+    # was asked about. Only the pre-apply control separates those, so its own
+    # refusals are pinned here.
+    local seeded_fixture
+    seeded_fixture=$'maxauthtries 2\nclientaliveinterval 60\nemptydirective \n'
+
+    APPLY_GENERATION=0
+    SEEDED_BEFORE=""
+    SEEDED_BEFORE_GENERATION=""
+    check_status 1 "a seeded reading is refused before the capture is taken" \
+        seeded_baseline_value MaxAuthTries
+
+    SEEDED_BEFORE="$seeded_fixture"
+    SEEDED_BEFORE_GENERATION=1
+    check_status 1 "a seeded capture stamped after an apply is refused" \
+        seeded_baseline_value MaxAuthTries
+
+    SEEDED_BEFORE_GENERATION=0
+    check_eq "$(seeded_baseline_value MaxAuthTries)" "2" \
+        "a seeded reading comes back from the pre-apply capture"
+    check_status 1 "a directive absent from the seeded capture is refused" \
+        seeded_baseline_value NoSuchDirective
+    check_status 1 "a directive present with no value is refused" \
+        seeded_baseline_value EmptyDirective
+
+    APPLY_GENERATION=1
+    check_status 1 "the seeded capture refuses to be taken once apply has run" \
+        preapply_seeded_init
+    check_status 1 "the seed refuses to be written once apply has run" \
+        seed_stricter_than_baseline
+    APPLY_GENERATION=0
+
+    # What the seed actually writes, against a scratch file. Appended and not
+    # prepended is the property that makes this an oracle rather than a
+    # restatement of itself, so the content is asserted rather than assumed.
+    local seed_scratch seed_written
+    seed_scratch="$(mktemp)"
+    printf '# existing config\nInclude /etc/ssh/sshd_config.d/*.conf\n' >"$seed_scratch"
+    SEED_TARGET_FILE="$seed_scratch"
+    check_status 0 "the seed writes when no apply has happened" \
+        seed_stricter_than_baseline
+    seed_written="$(cat "$seed_scratch")"
+    SEED_TARGET_FILE="/etc/ssh/sshd_config"
+    rm -f "$seed_scratch"
+    check_eq "$(printf '%s' "$seed_written" | tail -2)" \
+        "$(printf 'MaxAuthTries 2\nClientAliveInterval 60')" \
+        "the seed is appended, so a fragment written later still beats it"
+    check_eq "$(printf '%s' "$seed_written" | head -2)" \
+        "$(printf '# existing config\nInclude /etc/ssh/sshd_config.d/*.conf')" \
+        "the seed leaves the Include above it, which is what lets a fragment win"
+
+    # And the checks themselves: one per seeded directive whichever way each
+    # goes, so a failed reading cannot quietly shrink the run.
+    local before_total before_passed before_failed
+    before_total=$CHECKS_TOTAL
+    before_passed=$CHECKS_PASSED
+    before_failed=$CHECKS_FAILED
+    run_seeded_checks >/dev/null
+    check_eq "$((CHECKS_TOTAL - before_total))" "2" \
+        "the seeded pair records one check each"
+    check_eq "$((CHECKS_FAILED - before_failed))" "0" \
+        "a capture holding both seeds passes both"
+    CHECKS_TOTAL=$before_total
+    CHECKS_PASSED=$before_passed
+    CHECKS_FAILED=$before_failed
+
+    # The discriminating case: sshd enforcing its own default rather than the
+    # seed means the write never took effect, and every later reading of that
+    # directive would be describing the tool agreeing with itself.
+    SEEDED_BEFORE=$'maxauthtries 6\nclientaliveinterval 60\n'
+    before_total=$CHECKS_TOTAL
+    before_failed=$CHECKS_FAILED
+    run_seeded_checks >/dev/null
+    check_eq "$((CHECKS_FAILED - before_failed))" "1" \
+        "a seed that did not take effect fails its control instead of passing quietly"
+    check_eq "$((CHECKS_TOTAL - before_total))" "2" \
+        "a failed seed still costs exactly one check"
+    CHECKS_TOTAL=$before_total
+    CHECKS_PASSED=$before_passed
+    CHECKS_FAILED=$before_failed
+    SEEDED_BEFORE=""
+    SEEDED_BEFORE_GENERATION=""
 
     # The scan side. Its filters are where a harness most easily goes green on
     # broken code: one that matches nothing returns an empty result, which is
@@ -2497,6 +2948,76 @@ added")" \
     CHECKS_FAILED=$idempotence_saved_failed
     APPLY_GENERATION=$saved_generation
 
+    # === Password quality enforcement ===
+
+    check_status 0 "a loaded module line is read as loaded" \
+        pwquality_module_loaded_in "password required pam_pwquality.so retry=3"
+    check_status 1 "a commented module line is not a loaded module" \
+        pwquality_module_loaded_in "#password required pam_pwquality.so retry=3"
+    check_status 1 "an indented commented module line is not a loaded module either" \
+        pwquality_module_loaded_in "    # password required pam_pwquality.so"
+    check_status 1 "a stack loading other modules only is read as absent" \
+        pwquality_module_loaded_in "auth required pam_faillock.so preauth
+password required pam_unix.so sha512 shadow"
+    check_status 0 "one loaded line among many is enough" \
+        pwquality_module_loaded_in "auth required pam_faillock.so preauth
+password required pam_pwquality.so
+password required pam_unix.so"
+
+    # All four directions, because either alone passes on a harness that always
+    # says the same thing.
+    check_status 0 "a loaded module and no finding agree" \
+        pwquality_enforcement_agrees loaded 0
+    check_status 1 "a loaded module and a finding disagree" \
+        pwquality_enforcement_agrees loaded 1
+    check_status 0 "an absent module and a finding agree" \
+        pwquality_enforcement_agrees absent 1
+    check_status 1 "an absent module and no finding disagree, which is the defect" \
+        pwquality_enforcement_agrees absent 0
+    check_status 1 "a reading that is neither is refused rather than read as agreement" \
+        pwquality_enforcement_agrees "" 0
+
+    # A stack directory with nothing in it must refuse rather than answer
+    # 'absent': absence concluded from nothing is how a host this run never
+    # looked at comes to be scored.
+    local pwquality_saved_files=("${PWQUALITY_STACK_FILES[@]}")
+    local pwquality_fixture
+    pwquality_fixture="$(mktemp -d)"
+    PWQUALITY_STACK_FILES=("$pwquality_fixture/system-auth")
+    check_status 1 "a stack with no readable file is refused, never read as no module" \
+        pwquality_stack_reading
+    printf 'password required pam_unix.so\n' >"$pwquality_fixture/system-auth"
+    check_eq "$(pwquality_stack_reading)" "absent" \
+        "a stack that was read and loads no pwquality reads as absent"
+    printf 'password required pam_pwquality.so\n' >>"$pwquality_fixture/system-auth"
+    check_eq "$(pwquality_stack_reading)" "loaded" \
+        "a stack that loads it reads as loaded"
+
+    # Watched failing, the only thing that makes the family evidence: the pair
+    # must be able to record two failures, not merely two checks.
+    local pwquality_saved_total=$CHECKS_TOTAL
+    local pwquality_saved_passed=$CHECKS_PASSED
+    local pwquality_saved_failed=$CHECKS_FAILED
+    CHECKS_TOTAL=0
+    CHECKS_PASSED=0
+    CHECKS_FAILED=0
+    # shellcheck disable=SC2329  # called indirectly, through the family below
+    scan_finding_count() { printf '1'; }
+    # shellcheck disable=SC2329  # called indirectly, through the family below
+    pwquality_verdict() { printf 'refused'; }
+    run_pwquality_enforcement_checks >/dev/null
+    check_eq "$CHECKS_TOTAL" "$PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED" \
+        "the pwquality family records one check per reading"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/$PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED" \
+        "a host whose stack loads the module, whose tool still reports minlen failing, and whose libpwquality refuses even the probe password fails both readings"
+    unset -f scan_finding_count
+    unset -f pwquality_verdict
+    CHECKS_TOTAL=$pwquality_saved_total
+    CHECKS_PASSED=$pwquality_saved_passed
+    CHECKS_FAILED=$pwquality_saved_failed
+    rm -rf "$pwquality_fixture"
+    PWQUALITY_STACK_FILES=("${pwquality_saved_files[@]}")
+
     if (( failures > 0 )); then
         echo "self-test: $failures failure(s)"
         return 1
@@ -2533,6 +3054,10 @@ run_full_suite() {
     echo "Differential suite: $BINARY"
     echo "Binary version: $(binary_version "$BINARY")"
     echo "Plugins: ${DIFF_PLUGINS[*]}"
+    # Before every capture below, because all of them describe a container that
+    # has to already be holding the seed.
+    seed_stricter_than_baseline || return 1
+    preapply_seeded_init || return 1
     preapply_scan_oracle_init || return 1
     # The other capture that must be taken above apply, and for a second
     # reason: it is not a control over the checks below, it is half of what
@@ -2558,10 +3083,12 @@ run_full_suite() {
     scan_oracle_init || return 1
 
     run_preapply_control
+    run_seeded_checks
     run_ssh_checks
     run_login_defs_checks
     run_vendor_survival_checks
     run_idempotence_checks
+    run_pwquality_enforcement_checks
     print_summary
 }
 

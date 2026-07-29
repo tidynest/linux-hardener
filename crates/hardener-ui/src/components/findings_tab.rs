@@ -7,12 +7,12 @@
 //! hidden: the documented deviation is itself the evidence.
 
 use super::icons::IconChevron;
-use crate::state::{AppState, total_unchecked};
+use crate::state::{AppState, unchecked_tally};
 use crate::tauri_bindings::{invoke_deep_scan, invoke_generate_report};
 use crate::types::{Finding, Severity};
 use crate::utils::{
     group_findings_by_severity, is_auth_cancelled, severity_class, severity_label,
-    split_policy_excepted,
+    split_policy_excepted, unchecked_honesty_line,
 };
 use leptos::prelude::*;
 use leptos_router::components::A;
@@ -112,8 +112,9 @@ pub fn FindingsTab() -> impl IntoView {
         });
     };
 
-    // Raw unchecked count for the honesty footer (undeduplicated, honest).
-    let unchecked_count = move || total_unchecked(&app_state.scan_results.get());
+    // Raw unchecked counts for the honesty footer (undeduplicated, honest),
+    // split by whether a privileged re-run would reach them.
+    let tally = move || unchecked_tally(&app_state.scan_results.get());
 
     view! {
         <div class="findings-tab">
@@ -175,19 +176,14 @@ pub fn FindingsTab() -> impl IntoView {
                     }}
                 </ol>
 
-                <Show when=move || unchecked_count() != 0>
+                <Show when=move || tally().total != 0>
                     <p class="findings-unchecked">
-                        {move || {
-                            let count = unchecked_count();
-                            format!(
-                                "{} check{} not verifiable without privileges. ",
-                                count,
-                                if count == 1 { "" } else { "s" },
-                            )
-                        }}
-                        <button class="link-button" on:click=on_deep_scan disabled=move || deep_running.get()>
-                            {move || if deep_running.get() { "Scanning..." } else { "Run with sudo" }}
-                        </button>
+                        {move || unchecked_honesty_line(tally())}
+                        <Show when=move || tally().privilege_would_help()>
+                            <button class="link-button" on:click=on_deep_scan disabled=move || deep_running.get()>
+                                {move || if deep_running.get() { "Scanning..." } else { "Run with sudo" }}
+                            </button>
+                        </Show>
                     </p>
                 </Show>
             </Show>

@@ -26,6 +26,123 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The kernel plugin no longer writes a host's stricter sysctl back down to
+  the baseline, at runtime or at the next boot.** All eighteen parameters were
+  compared for equality, which has no direction. A host with
+  `kernel.yama.ptrace_scope = 3`, which forbids `ptrace` outright, was reported
+  as violating a baseline of 2 and written down to 2; the same held for
+  `net.ipv4.tcp_syncookies = 2`. The persistent half was worse than the runtime
+  half: `/etc/sysctl.d/99-hardener.conf` was written with the plain baseline for
+  every parameter, outside the check that skipped an already-compliant runtime
+  write, so even where the runtime value was left alone the file restored the
+  looser value at the next boot. Both now write the stricter of the target and
+  what the host already runs.
+
+  Three parameters needed more than a direction, because their strictness is
+  not what their integer says. `net.ipv4.conf.all.rp_filter` and its `default`
+  twin rank strict mode `1` above loose mode `2` above off `0`, so the
+  strongest value is the middle number and no numeric direction can express it.
+  `fs.suid_dumpable` ranks `0` above `2` above `1` for the same reason.
+
+  **Behaviour change worth noting:** a `[kernel]` directive override in
+  `config.toml` is now clamped tighten-only, as `[pam]` and `[ssh]` are, so
+  `kernel.kptr_restrict = "0"` yields 2. `[permissions]` is now the only plugin
+  where an override is applied as given. Record a deliberate deviation as a
+  policy exception, which the report labels.
+
+- **The SSH plugin no longer writes a host's stricter setting back up to the
+  baseline.** `MaxAuthTries`, `ClientAliveInterval` and `ClientAliveCountMax`
+  were compared for equality, which has no direction, so a host allowing two
+  authentication attempts against a baseline of three counted as violating and
+  apply wrote the three over it, through the drop-in that sshd reads first.
+  Measured on a mock host: `MaxAuthTries 2`, `ClientAliveInterval 60` and
+  `ClientAliveCountMax 1` were all reported as findings and all three were
+  loosened by an apply that reported success. This is the same defect that was
+  fixed in the PAM plugin below, in a second plugin, and rather than copy the
+  rule a third time the comparison now has one definition that pam, ssh and
+  kernel share. `ClientAliveInterval 0` stops sshd probing an idle client at
+  all, so zero is treated as the loosest value that setting has rather than the
+  smallest; `MaxAuthTries 0` and `ClientAliveCountMax 0` really are the strict
+  end and are honoured as such. `PermitRootLogin` is now ordered explicitly
+  (`no` over `forced-commands-only` over `prohibit-password` over `yes`, with
+  `without-password` ranking alongside the modern spelling of the same
+  setting), which replaces a hand-written list that expressed the same ordering
+  only for the remote-root lockout guard. **Behaviour change worth noting:** an
+  `[ssh]` directive override in `config.toml` is now clamped tighten-only, as
+  `[pam]` already was, so `MaxAuthTries = "10"` yields 3 and
+  `X11Forwarding = "yes"` yields `no`; record a deliberate deviation as a policy
+  exception instead, which the report labels rather than silently lowering the
+  bar.
+
+- **`apply` no longer makes a host less secure than it found it.** Nine of the
+  eleven PAM directives compared for equality, so any value other than the
+  baseline counted as a violation, stricter ones included, and apply then wrote
+  the baseline over it. Measured on a mock host: `PASS_MAX_DAYS 30`,
+  `PASS_MIN_DAYS 7` and `PASS_WARN_AGE 14` came out of an apply as `90`, `1`
+  and `7`, relaxing a 30-day password expiry to 90 days while reporting
+  success. The same held for `minlen`, the four credit settings and
+  `maxrepeat`. The no-loosen rule and the machinery for it already existed and
+  had been applied to shadow permissions, `PermitRootLogin` and the
+  faillock/pwhistory thresholds; these nine were never swept into it. Every PAM
+  directive now carries a direction, apply writes the stricter of the baseline
+  and the host's own value, and the direction-less comparison has been removed
+  outright so a directive added later cannot be given one. `maxrepeat = 0` is
+  treated as the check being switched off rather than as the strictest possible
+  value. **Behaviour change worth noting:** a `[pam]` directive override in
+  `config.toml` is now clamped tighten-only like `deny` and `remember` always
+  were, so an override that loosens the baseline no longer takes effect; record
+  a deliberate deviation as a policy exception instead.
+
+- **A PAM configuration file no module reads is no longer reported as the
+  host's policy.** `/etc/security/pwquality.conf` is consumed by
+  `pam_pwquality.so` and by nothing else, and the plugin never checked that the
+  module was in the stack: it read the file, found `minlen = 14`, and passed the
+  control. A host whose stack does not load the module enforces no minimum
+  length at all, and `minlen` alone carries mappings to CIS, STIG
+  RHEL-08-020230, NIST IA-5(1)(a), 800-171 3.5.7, ISO 27001, SOC 2 and FedRAMP,
+  so the silent pass was seven frameworks wide. `faillock.conf` and
+  `pwhistory.conf` had the same gap. `scan` now reads
+  `/etc/pam.d/{system-auth,password-auth,common-*}` and reports every directive
+  in an unread file as not enforced, naming the module to add;
+  `apply` writes the file but records the missing module as a failed change; and
+  `apply --dry-run` raises it as a High issue, so the preview and the apply
+  reach the same verdict. Absence is concluded only from a stack file that was
+  actually read: an unreadable stack, or a distribution whose stack layout this
+  tool does not recognise, is reported unchecked instead. `/etc/login.defs` is
+  unaffected, since shadow-utils reads it with no module loaded.
+  Measured on a stock Arch workstation: `/etc/pam.d/system-auth` loads
+  `pam_faillock.so` four times and `pam_pwquality.so` not at all,
+  `libpwquality` is not installed, and `/etc/security/pwquality.conf` is 0600.
+  A privileged scan there used to read that file and pass six controls on it.
+  `pam_pwhistory.so` is present on disk but likewise absent from the stack, so
+  `remember` was passing the same way. Measured again across the five
+  distribution images the project tests against: **three of the five do not
+  load `pam_pwquality.so`** (Arch, Debian and openSUSE; Fedora and Rocky do),
+  so six password-quality directives were passing on three of five images. The
+  differential suite gained a check that asks the stack and holds it against
+  the tool's own verdict, and the two now agree on all five.
+- **The unchecked roll-up no longer tells an operator to re-run with sudo for
+  a check sudo cannot reach.** Every check a scan could not evaluate was
+  summarised as needing root, in four separate renderers that had each written
+  their own sentence: the scan footer, the per-plugin note, the per-host batch
+  line and the report wizard. Privilege is only one of the causes. A plugin
+  disabled in the configuration, a path on a filesystem with no POSIX
+  permission bits, a service list that could not be read and a probe that
+  failed for its own reasons all land in the same list, and none of them
+  improves with root; a container already running as root printed
+  `1 check(s) require root`. `UncheckedCheck` now carries
+  `unchecked_needs_privilege`, set by the producer that knows, and one shared
+  `unchecked_summary` builds the line for all four renderers. Sudo is offered
+  when every entry wants it, withheld when none does, and a mixed run says how
+  many of the total root would reach. A scan persisted before the field existed
+  reads as claiming nothing rather than as promising a remedy. The desktop's
+  score hero and findings tab had the same two copies of the claim and a
+  "Run with sudo" button offered whatever the cause; both now share one honesty
+  line, and the button appears only when a privileged re-run would reach
+  something. Measured on a developer workstation: 33 unchecked checks, 32 of
+  them privilege-blocked and one a `/boot` on vfat that no privilege can give
+  POSIX permission bits.
+
 - **`batch apply --dry-run` and `apply --dry-run` no longer disagree about
   whether a host failed.** The single-host dry run fails on Critical and High
   validation issues only, treating anything lower as advisory so a note cannot

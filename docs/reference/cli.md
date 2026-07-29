@@ -97,10 +97,17 @@ secure baseline.
 files such as `/etc/security/pwquality.conf` or `/etc/ssh/sshd_config`,
 `auditctl -l`, `aa-status`, the active firewall ruleset) need root to read.
 Running `scan` without root never reports these as failed or missing;
-instead they are reported unchecked, distinct from a genuine finding. Text
-output dims a per-plugin "N check(s) could not be verified without root"
-list with the reason for each, and a closing summary line reads "N
-check(s) require root; run with sudo for a full scan" when any exist.
+instead they are reported unchecked, distinct from a genuine finding.
+
+Privilege is not the only reason a check goes unchecked: a plugin the
+operator disabled, a path on a filesystem with no POSIX permission bits and
+a probe that failed for its own reasons all land in the same list, and sudo
+helps with none of them. Both the per-plugin list and the closing summary
+therefore describe only what they can. Where every entry wants privilege they
+read "N check(s) require root; run with sudo for a full scan"; where none
+does, "N check(s) could not be verified"; and on a mixed run, "N check(s)
+could not be verified, M of them for want of root; run with sudo for a fuller
+scan". The reason beside each entry is always the authority.
 `--format json` carries the same information as a per-plugin `unchecked`
 array alongside `findings`, so automation can distinguish "no issue" from
 "not checked". Run `sudo hardener scan` for a fully privileged scan with
@@ -351,7 +358,7 @@ hardener --format json batch scan --all --output fleet.json
 ==== web-01  admin@web-01.local:22 =====================================
   status:    ok
   findings:  38 total (7 crit, 13 high, 16 med, 2 low)
-  unchecked: 3 check(s) could not be verified without root
+  unchecked: 3 check(s) require root; run with sudo for a full scan
 
 ==== db-02  admin@db-02.local:22 =======================================
   status:    FAILED

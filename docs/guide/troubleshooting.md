@@ -79,6 +79,14 @@ its plugin - deduplicated per plugin - and prints a footer such as
 `3 check(s) require root; run with sudo for a full scan`. With `--format json`
 these arrive in a separate `unchecked` array, never mixed into `findings`.
 
+Not every unchecked entry is a privilege problem, and the footer says so. A
+plugin disabled in the config, a path on a filesystem with no POSIX permission
+bits, or a probe that failed for its own reasons all appear here too, and
+re-running as root changes nothing for them. Where none of the entries wants
+privilege the footer reads `N check(s) could not be verified` and offers no
+sudo; on a mixed run it names how many of the total root would reach. Read the
+reason printed beside each entry before reaching for sudo.
+
 For the complete picture, re-run as root:
 
 ```bash

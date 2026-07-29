@@ -487,11 +487,7 @@ pub fn render_text(outcomes: &[HostOutcome]) -> String {
                     format_counts(counts)
                 };
                 push_detail(&mut out, "findings", &findings);
-                if !unchecked.is_empty() {
-                    let note = format!(
-                        "{} check(s) could not be verified without root",
-                        unchecked.len()
-                    );
+                if let Some(note) = hardener_types::unchecked_summary(unchecked) {
                     push_detail(&mut out, "unchecked", &note.dimmed().to_string());
                 }
             }
@@ -2106,6 +2102,7 @@ mod tests {
             unchecked_title: "PAM setting: minlen".into(),
             unchecked_category: FindingCategory::Authentication,
             unchecked_reason: "reading /etc/security/pwquality.conf requires root".into(),
+            unchecked_needs_privilege: true,
             unchecked_compliance: vec![stig_mapping],
         }];
         let outcome = HostOutcome {
@@ -2657,6 +2654,7 @@ mod tests {
             unchecked_title: "PAM setting: minlen".into(),
             unchecked_category: FindingCategory::Authentication,
             unchecked_reason: "requires root".into(),
+            unchecked_needs_privilege: true,
             unchecked_compliance: vec![],
         }];
         let with = render_text(&[HostOutcome {
@@ -2670,7 +2668,7 @@ mod tests {
             },
         }]);
         assert!(
-            with.contains("unchecked: 1 check(s) could not be verified without root"),
+            with.contains("unchecked: 1 check(s) require root; run with sudo for a full scan"),
             "non-zero unchecked is listed: {with}"
         );
 

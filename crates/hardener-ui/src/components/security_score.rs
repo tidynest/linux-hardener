@@ -2,10 +2,12 @@
 //!
 //! Computes weighted scores per framework and an overall average.
 
-use crate::state::{AppState, total_unchecked};
+use crate::state::{AppState, unchecked_tally};
 use crate::tauri_bindings::{invoke_deep_scan, invoke_generate_report, invoke_scan};
 use crate::types::{ComplianceReport, ControlStatus, Severity};
-use crate::utils::{is_auth_cancelled, score_band, score_band_class, score_band_label};
+use crate::utils::{
+    is_auth_cancelled, score_band, score_band_class, score_band_label, unchecked_honesty_line,
+};
 use leptos::prelude::*;
 use std::cmp::Ordering;
 
@@ -111,7 +113,7 @@ pub fn SecurityScore() -> impl IntoView {
     let app_state = expect_context::<AppState>();
 
     let has_compliance_data = move || !app_state.compliance_reports.get().is_empty();
-    let unchecked_count = move || total_unchecked(&app_state.scan_results.get());
+    let tally = move || unchecked_tally(&app_state.scan_results.get());
     let scores = move || calculate_all_scores(&app_state.compliance_reports.get());
     let score = move || scores().0;
     let framework_scores = move || scores().1;
@@ -210,16 +212,18 @@ pub fn SecurityScore() -> impl IntoView {
                     <div class="score-bar">
                         <div class="score-bar-fill" style=move || format!("width: {}%", score().clamp(0, 100))></div>
                     </div>
-                    <Show when=move || unchecked_count() != 0>
+                    <Show when=move || tally().total != 0>
                         <p class="score-honesty">
-                            {move || format!("{} check(s) not verified. ", unchecked_count())}
-                            <button
-                                class="link-button"
-                                on:click=on_deep_scan
-                                disabled=move || deep_running.get()
-                            >
-                                {move || if deep_running.get() { "Scanning..." } else { "Run with sudo" }}
-                            </button>
+                            {move || unchecked_honesty_line(tally())}
+                            <Show when=move || tally().privilege_would_help()>
+                                <button
+                                    class="link-button"
+                                    on:click=on_deep_scan
+                                    disabled=move || deep_running.get()
+                                >
+                                    {move || if deep_running.get() { "Scanning..." } else { "Run with sudo" }}
+                                </button>
+                            </Show>
                         </p>
                     </Show>
                 </div>

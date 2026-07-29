@@ -8,6 +8,7 @@
 mod layer_drift;
 mod login_defs;
 
+use crate::strictness::Strictness;
 use async_trait::async_trait;
 use hardener_common::file_utils::{
     ConfigFormat, Duplicates, parse_config_value, set_config_directive,
@@ -576,6 +577,11 @@ impl HardeningPlugin for PamHardeningPlugin {
         // for login.defs alone.
         findings.extend(layer_drift_findings(ctx).await);
 
+        // Whether each file's consuming module is loaded, read once per file
+        // rather than once per directive: six pwquality keys share one module,
+        // and over SSH a per-directive read is six round trips for one answer.
+        let presence = module_presence_by_file(ctx).await;
+
         // Check each PAM directive.
         for directive in PAM_DIRECTIVES {
             if directive.pam_config_file == PamConfigFile::PamAuth {
@@ -586,6 +592,33 @@ impl HardeningPlugin for PamHardeningPlugin {
                 continue;
             }
 
+            // A file no module reads makes its own value irrelevant, so this
+            // comes before the value is read at all. Judging the value first
+            // and this second would report a directive both compliant and
+            // unenforced, which is one host described two ways.
+            match presence_for(&presence, directive) {
+                ModulePresence::NotInStack { module } => {
+                    let conf_path = directive
+                        .pam_config_file
+                        .conf_path()
+                        .expect("a directive with a module has a file");
+                    findings.push(module_absent_finding(directive, module, conf_path));
+                    continue;
+                }
+                ModulePresence::Indeterminate {
+                    reason,
+                    needs_privilege,
+                } => {
+                    unchecked.push(unchecked_pam_directive(
+                        directive,
+                        reason.clone(),
+                        *needs_privilege,
+                    ));
+                    continue;
+                }
+                ModulePresence::InStack | ModulePresence::NoModule => {}
+            }
+
             let current_value =
                 match observed_pam_value(ctx, directive, &pwquality, &login_defs_read).await {
                     PamObserved::Value(v) => Some(v),
@@ -594,29 +627,21 @@ impl HardeningPlugin for PamHardeningPlugin {
                         path,
                         permission_denied,
                     } => {
-                        unchecked.push(unchecked_pam_directive(directive, path, permission_denied));
+                        unchecked.push(unchecked_pam_directive(
+                            directive,
+                            unreadable_reason(path, permission_denied),
+                            permission_denied,
+                        ));
                         continue;
                     }
                 };
 
-            // Resolve the effective target the same way apply does: a
-            // directive override wins over the hardcoded baseline, and for
-            // threshold directives (AtMost/AtLeast) it is clamped so an
-            // override can only tighten, never loosen (apply ~725-729,
-            // ~761-766).
-            let target: String = match directive.pam_compare {
-                PamCompare::Exact => config
-                    .resolve_str(directive.pam_directive_name, directive.pam_secure_value)
-                    .to_string(),
-                compare => {
-                    let secure: i64 = directive
-                        .pam_secure_value
-                        .parse()
-                        .expect("pam_secure_value must be a valid integer");
-                    let over = config.resolve_i64(directive.pam_directive_name);
-                    clamp_target(compare, secure, over).to_string()
-                }
-            };
+            // Resolve the effective target the same way apply and validate do,
+            // through the one function all three call: a directive override
+            // wins over the hardcoded baseline only where it tightens it. The
+            // shared call is what keeps the three in step, rather than a note
+            // pointing at the line numbers of the other two.
+            let target = clamped_baseline(directive, config);
 
             // Check if current value satisfies the directive's comparison
             // against the resolved (overridden + clamped) target.
@@ -733,6 +758,30 @@ impl HardeningPlugin for PamHardeningPlugin {
         };
         let mut login_defs_changed = false;
 
+        // A file no module reads is still written: the value will be right the
+        // moment the module is added, and refusing would leave the operator
+        // with neither. What must not happen is reporting that as hardening
+        // done. Recorded once per file, and it fails the run, because this
+        // plugin already refuses to edit /etc/pam.d itself, so the remaining
+        // step is the operator's and a run that hardened nothing has not
+        // earned a clean result.
+        for (path, presence) in module_presence_by_file(ctx).await {
+            let ModulePresence::NotInStack { module } = presence else {
+                continue;
+            };
+            warn!(
+                "Nothing on this host reads {}: {} is not loaded",
+                path, module
+            );
+            all_success = false;
+            changes.push(Change {
+                change_type: ChangeType::ConfigFile,
+                change_description: module_not_loaded_message(path, module),
+                change_success: false,
+                change_error: Some(format!("{module} is not loaded by the PAM stack")),
+            });
+        }
+
         // Pre-apply snapshots for the exception check below. Taken once, here,
         // before any directive can mutate `pwquality_content`/`login_defs_content`,
         // or write a `SecurityConf` file: the exception decision must be judged
@@ -782,9 +831,20 @@ impl HardeningPlugin for PamHardeningPlugin {
                 continue;
             }
 
-            // Determine target value: user directive override or hardcoded baseline
-            let target_value =
-                config.resolve_str(directive.pam_directive_name, directive.pam_secure_value);
+            // The target, clamped twice through one definition: an operator
+            // override can only tighten the baseline, and then the write can
+            // only tighten what the host already holds.
+            //
+            // Clamping the write rather than skipping it is deliberate.
+            // `apply_exact_directive` exists partly to repair a duplicate or a
+            // line an older release wrote in a syntax the file does not parse,
+            // and its own comment says skipping on the value leaves that repair
+            // undone so the file never converges. Writing the stricter of the
+            // two keeps the repair and keeps the host's setting.
+            let target = clamped_baseline(directive, config);
+            let target_value = directive
+                .pam_compare
+                .clamp_target(&target, Some(observed.value_or_not_set()));
 
             // A file whose current contents could not be read is never
             // rewritten, and that refusal was already recorded once, at read
@@ -813,7 +873,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                     &mut pwquality_changed,
                     &mut changes,
                     directive.pam_directive_name,
-                    target_value,
+                    &target_value,
                     directive.pam_config_file.config_format(),
                     "pwquality.conf",
                 ),
@@ -822,7 +882,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                     &mut login_defs_changed,
                     &mut changes,
                     directive.pam_directive_name,
-                    target_value,
+                    &target_value,
                     directive.pam_config_file.config_format(),
                     "login.defs",
                 ),
@@ -835,20 +895,18 @@ impl HardeningPlugin for PamHardeningPlugin {
                     continue;
                 }
                 PamConfigFile::SecurityConf(path) => {
-                    let secure: i64 = directive
-                        .pam_secure_value
-                        .parse()
-                        .expect("pam_secure_value must be a valid integer");
-                    let over = config.resolve_i64(directive.pam_directive_name);
-                    // Clamp so a per-host override can tighten but never loosen.
-                    let target = clamp_target(directive.pam_compare, secure, over);
+                    // `target` is the hoisted, override-clamped baseline. This
+                    // arm does not use the host-clamped `target_value`: it
+                    // gates on the comparison below and skips outright
+                    // when the host is already stricter, so it never writes a
+                    // looser value in the first place.
 
                     // Read directly (rather than reusing `observed`, which already
                     // read this via `read_effective_threshold`) because the refuse-
                     // to-auto-edit message below needs to know specifically whether
                     // the value came from an inline pam.d override, a distinction
                     // `PamObserved` deliberately does not carry.
-                    let inline = read_pamd_inline(ctx, directive.pam_directive_name).await;
+                    let inline = read_pamd_inline(ctx, path, directive.pam_directive_name).await;
 
                     // No-loosen contract: only act when the effective value
                     // breaches the (clamped) target. A stricter value is already
@@ -857,11 +915,10 @@ impl HardeningPlugin for PamHardeningPlugin {
                     // inline-vs-conf-file precedence; "not set" fails to parse as
                     // an integer just like a genuinely missing value, so reusing
                     // it here is equivalent to reading afresh.
-                    if !breaches_threshold(
-                        directive.pam_compare,
-                        target,
-                        Some(observed.value_or_not_set()),
-                    ) {
+                    if !directive
+                        .pam_compare
+                        .violated_by(&target, Some(observed.value_or_not_set()))
+                    {
                         changes.push(Change {
                             change_type: ChangeType::Skipped,
                             change_description: format!(
@@ -1106,6 +1163,26 @@ impl HardeningPlugin for PamHardeningPlugin {
             }
         }
 
+        // Whether anything reads the files about to be previewed, asked through
+        // the same function scan and apply use, so a dry run cannot promise
+        // hardening the apply it previews will report as incomplete.
+        //
+        // High, so the dry run fails. That is the same answer the real apply
+        // gives: it records the missing module as a failed change, because the
+        // remaining step is a /etc/pam.d edit this plugin refuses to make. A
+        // dry run exiting 0 where the apply exits non-zero is the divergence
+        // `ValidationReport::has_blocking_issue` exists to prevent.
+        for (path, presence) in module_presence_by_file(ctx).await {
+            let ModulePresence::NotInStack { module } = presence else {
+                continue;
+            };
+            issues.push(ValidationIssue {
+                validation_issue_config_key: None,
+                validation_issue_message: module_not_loaded_message(path, module),
+                validation_issue_severity: Severity::High,
+            });
+        }
+
         // Drift between the layers, asked here through the same function scan
         // uses so the two cannot come to disagree about one host.
         //
@@ -1174,7 +1251,11 @@ impl HardeningPlugin for PamHardeningPlugin {
                     } else {
                         &login_defs
                     };
-                    let target_value = config.resolve_str(d.pam_directive_name, d.pam_secure_value);
+                    // The same override-clamped target scan and apply use, so
+                    // the preview cannot judge the host by a rule the apply it
+                    // previews does not apply.
+                    let target_value = clamped_baseline(d, config);
+                    let target_value = target_value.as_str();
                     // Absent reads as empty content, same as a confirmed-missing
                     // file always has: parsing finds nothing and the directive
                     // is honestly reported "(currently not set)" below. Only an
@@ -1184,15 +1265,19 @@ impl HardeningPlugin for PamHardeningPlugin {
                         ConfRead::Content(c, _) => c.as_str(),
                         ConfRead::Absent => "",
                         ConfRead::Unreadable {
-                            permission_denied, ..
+                            path,
+                            permission_denied,
+                            ..
                         } => {
-                            // Unreadable file: never claim "not set" for a
-                            // value this run could not see.
-                            estimated_changes.push(format!(
-                                "Set {} = {} ({}; applied only if it differs)",
+                            // Never claim "not set" for a value this run could
+                            // not see, and never offer the write either:
+                            // `conf_is_writable` refuses this whole file and
+                            // every directive in it is skipped.
+                            estimated_changes.push(unreadable_preview(
                                 d.pam_directive_name,
                                 target_value,
-                                current_value_caveat(*permission_denied)
+                                path,
+                                *permission_denied,
                             ));
                             continue;
                         }
@@ -1203,7 +1288,13 @@ impl HardeningPlugin for PamHardeningPlugin {
                         ConfigFormat::Auto,
                         true,
                     ) {
-                        Some(current) if current == target_value => compliant_count += 1,
+                        // Threshold, not equality: a host stricter than the
+                        // baseline is compliant and has no pending change.
+                        Some(current)
+                            if !d.pam_compare.violated_by(target_value, Some(&current)) =>
+                        {
+                            compliant_count += 1
+                        }
                         Some(current) => estimated_changes.push(format!(
                             "{} will change: {} -> {}",
                             d.pam_directive_name, current, target_value
@@ -1222,16 +1313,9 @@ impl HardeningPlugin for PamHardeningPlugin {
                     // `SecurityConf` directive has no lenient/classified
                     // split between the exception check and this estimate,
                     // so there is no wording that reusing it could degrade.
-                    let secure: i64 = d
-                        .pam_secure_value
-                        .parse()
-                        .expect("pam_secure_value must be a valid integer");
-                    let over = config.resolve_i64(d.pam_directive_name);
-                    let target = clamp_target(d.pam_compare, secure, over);
+                    let target = clamped_baseline(d, config);
                     match &observed {
-                        PamObserved::Value(v)
-                            if !breaches_threshold(d.pam_compare, target, Some(v)) =>
-                        {
+                        PamObserved::Value(v) if !d.pam_compare.violated_by(&target, Some(v)) => {
                             compliant_count += 1
                         }
                         PamObserved::Value(v) => estimated_changes.push(format!(
@@ -1242,20 +1326,18 @@ impl HardeningPlugin for PamHardeningPlugin {
                             "Set {} = {} (currently not set)",
                             d.pam_directive_name, target
                         )),
-                        // Not "applied only if currently looser": apply refuses
-                        // outright here, whether what could not be read is this
-                        // directive's own conf or a PAM stack file that would
-                        // override it. A preview promising a conditional write
-                        // describes something the apply will not attempt.
+                        // Apply refuses outright here, whether what could not be
+                        // read is this directive's own conf or a PAM stack file
+                        // that would override it, so the same shared wording as
+                        // the arm above applies.
                         PamObserved::Unreadable {
                             path,
                             permission_denied,
-                        } => estimated_changes.push(format!(
-                            "{} will not be set to {}: {} could not be read ({})",
+                        } => estimated_changes.push(unreadable_preview(
                             d.pam_directive_name,
                             target,
                             path,
-                            current_value_caveat(*permission_denied)
+                            *permission_denied,
                         )),
                     }
                 }
@@ -1280,15 +1362,68 @@ impl HardeningPlugin for PamHardeningPlugin {
 /// read at the current privilege level. The check id mirrors the finding id.
 fn unchecked_pam_directive(
     directive: &PamDirective,
-    path: &str,
-    permission_denied: bool,
+    reason: String,
+    needs_privilege: bool,
 ) -> UncheckedCheck {
     UncheckedCheck {
         unchecked_check_id: format!("pam-{}", directive.pam_directive_name),
         unchecked_title: format!("PAM setting: {}", directive.pam_directive_name),
         unchecked_category: FindingCategory::Authentication,
-        unchecked_reason: unreadable_reason(path, permission_denied),
+        unchecked_reason: reason,
+        unchecked_needs_privilege: needs_privilege,
         unchecked_compliance: get_pam_compliance_mappings(directive.pam_directive_name),
+    }
+}
+
+/// What apply and validate both say about a file no module reads.
+///
+/// One sentence, because the two describe the same host and the operator acts
+/// on it once. Scan says it per directive instead, since there the compliance
+/// mappings have to travel with each control.
+fn module_not_loaded_message(conf_path: &str, module: &str) -> String {
+    format!(
+        "{conf_path} is written but not read: the PAM stack does not load {module}. The \
+         settings in it take effect only once that module is added to the stack, which this \
+         plugin does not edit"
+    )
+}
+
+/// The finding for a directive whose configuration file no module reads.
+///
+/// A separate finding from the ordinary "wrong value" one, and it fires
+/// whatever the value is, because the value is not the problem: the file is
+/// correct and inert. It keeps the directive's own id, severity and compliance
+/// mappings, so every control that rested on the silent pass now rests on this
+/// instead rather than on nothing.
+fn module_absent_finding(directive: &PamDirective, module: &str, conf_path: &str) -> Finding {
+    Finding {
+        finding_id: format!("pam-{}", directive.pam_directive_name),
+        finding_category: FindingCategory::Authentication,
+        finding_current_value: "not enforced".to_string(),
+        finding_description: format!(
+            "PAM directive '{}' is set in {} but not enforced: the PAM stack does not load \
+             {}, which is the only thing that reads that file",
+            directive.pam_directive_name, conf_path, module
+        ),
+        finding_explanation: directive.pam_description.to_string(),
+        finding_impact:
+            "The setting appears configured and has no effect, so the host enforces nothing \
+             while its configuration file says otherwise"
+                .to_string(),
+        finding_recommended_value: directive.pam_secure_value.to_string(),
+        finding_remediation_steps: vec![
+            format!("Install the package providing {module} if it is missing"),
+            format!(
+                "Add {module} to the PAM stack (system-auth, password-auth or the \
+                 common-* file this distribution uses), then re-run the scan"
+            ),
+        ],
+        finding_severity: directive.pam_severity,
+        finding_title: format!("PAM setting not enforced: {}", directive.pam_directive_name),
+        finding_compliance: get_pam_compliance_mappings(directive.pam_directive_name),
+        // Deliberately never excepted: an exception documents a value the
+        // operator accepts, and this is not about the value.
+        finding_policy_exception: None,
     }
 }
 
@@ -1315,6 +1450,30 @@ fn current_value_caveat(permission_denied: bool) -> &'static str {
     }
 }
 
+/// The dry-run preview line for a directive whose file this run could not read.
+///
+/// Apply never rewrites a file whose current contents it cannot see, because
+/// merging directives into an empty buffer would replace the host's settings
+/// with this tool's, so the preview says the directive will not be set and names
+/// the file that failed rather than offering a conditional write.
+///
+/// One definition, because every arm of `validate` asks the same question and
+/// two of them came to answer it differently: the `SecurityConf` arm said the
+/// directive would not be set while the `PwQuality` and `LoginDefs` arms
+/// promised to apply it "only if it differs", so one host was previewed two
+/// ways depending on which file was unreadable.
+fn unreadable_preview(
+    directive_name: &str,
+    target: impl std::fmt::Display,
+    path: &str,
+    permission_denied: bool,
+) -> String {
+    format!(
+        "{directive_name} will not be set to {target}: {path} could not be read ({})",
+        current_value_caveat(permission_denied)
+    )
+}
+
 /// PAM configuration directive with security settings.
 #[derive(Clone, Debug)]
 struct PamDirective {
@@ -1323,7 +1482,7 @@ struct PamDirective {
     pam_description: &'static str,
     pam_severity: Severity,
     pam_config_file: PamConfigFile,
-    pam_compare: PamCompare,
+    pam_compare: Strictness,
 }
 
 /// Represents which PAM configuration file contains the directive.
@@ -1349,17 +1508,17 @@ impl PamConfigFile {
             _ => ConfigFormat::KeyValue,
         }
     }
-}
 
-/// How a directive's current value is judged against its secure value.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum PamCompare {
-    /// Current must equal the secure value.
-    Exact,
-    /// Current must be ≤ the secure value (e.g. faillock `deny`, lock no later).
-    AtMost,
-    /// Current must be ≥ the secure value (e.g. pwhistory `remember`).
-    AtLeast,
+    /// The file the directive lives in, or `None` for a directive that is
+    /// itself a line in the PAM stack.
+    fn conf_path(&self) -> Option<&'static str> {
+        match self {
+            PamConfigFile::PwQuality => Some("/etc/security/pwquality.conf"),
+            PamConfigFile::LoginDefs => Some("/etc/login.defs"),
+            PamConfigFile::SecurityConf(path) => Some(path),
+            PamConfigFile::PamAuth => None,
+        }
+    }
 }
 
 /// Secure PAM configuration directives.
@@ -1371,7 +1530,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Minimum password length of 14 characters",
         pam_severity: Severity::High,
         pam_config_file: PamConfigFile::PwQuality,
-        pam_compare: PamCompare::Exact,
+        pam_compare: Strictness::AtLeast,
     },
     PamDirective {
         pam_directive_name: "dcredit",
@@ -1379,7 +1538,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Require at least one digit in password",
         pam_severity: Severity::Medium,
         pam_config_file: PamConfigFile::PwQuality,
-        pam_compare: PamCompare::Exact,
+        pam_compare: Strictness::AtMost,
     },
     PamDirective {
         pam_directive_name: "ucredit",
@@ -1387,7 +1546,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Require at least one uppercase character in password",
         pam_severity: Severity::Medium,
         pam_config_file: PamConfigFile::PwQuality,
-        pam_compare: PamCompare::Exact,
+        pam_compare: Strictness::AtMost,
     },
     PamDirective {
         pam_directive_name: "lcredit",
@@ -1395,7 +1554,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Require at least one lowercase character in password",
         pam_severity: Severity::Medium,
         pam_config_file: PamConfigFile::PwQuality,
-        pam_compare: PamCompare::Exact,
+        pam_compare: Strictness::AtMost,
     },
     PamDirective {
         pam_directive_name: "ocredit",
@@ -1403,7 +1562,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Require at least one special character in password",
         pam_severity: Severity::Medium,
         pam_config_file: PamConfigFile::PwQuality,
-        pam_compare: PamCompare::Exact,
+        pam_compare: Strictness::AtMost,
     },
     PamDirective {
         pam_directive_name: "maxrepeat",
@@ -1411,7 +1570,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Maximum consecutive identical characters in password",
         pam_severity: Severity::Low,
         pam_config_file: PamConfigFile::PwQuality,
-        pam_compare: PamCompare::Exact,
+        pam_compare: Strictness::NonZeroAtMost,
     },
     PamDirective {
         pam_directive_name: "PASS_MAX_DAYS",
@@ -1419,7 +1578,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Maximum password age of 90 days",
         pam_severity: Severity::Medium,
         pam_config_file: PamConfigFile::LoginDefs,
-        pam_compare: PamCompare::Exact,
+        pam_compare: Strictness::AtMost,
     },
     PamDirective {
         pam_directive_name: "PASS_MIN_DAYS",
@@ -1427,7 +1586,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Minimum password age of 1 day (prevents rapid changes)",
         pam_severity: Severity::Low,
         pam_config_file: PamConfigFile::LoginDefs,
-        pam_compare: PamCompare::Exact,
+        pam_compare: Strictness::AtLeast,
     },
     PamDirective {
         pam_directive_name: "PASS_WARN_AGE",
@@ -1435,7 +1594,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Warn users 7 days before password expiry",
         pam_severity: Severity::Low,
         pam_config_file: PamConfigFile::LoginDefs,
-        pam_compare: PamCompare::Exact,
+        pam_compare: Strictness::AtLeast,
     },
     // Account lockout (faillock) and password-reuse (pwhistory). Threshold
     // comparisons: a stricter setting is compliant and apply never loosens it.
@@ -1445,7 +1604,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Lock the account after at most 5 failed attempts",
         pam_severity: Severity::High,
         pam_config_file: PamConfigFile::SecurityConf("/etc/security/faillock.conf"),
-        pam_compare: PamCompare::AtMost,
+        pam_compare: Strictness::AtMost,
     },
     PamDirective {
         pam_directive_name: "remember",
@@ -1453,7 +1612,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Remember at least the last 5 passwords to prevent reuse",
         pam_severity: Severity::Medium,
         pam_config_file: PamConfigFile::SecurityConf("/etc/security/pwhistory.conf"),
-        pam_compare: PamCompare::AtLeast,
+        pam_compare: Strictness::AtLeast,
     },
 ];
 
@@ -1464,43 +1623,37 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
 /// pam.d args or /etc/security/*.conf) is resolved by callers via
 /// `read_effective_threshold` before this check.
 fn pam_violates(directive: &PamDirective, target: &str, current: Option<&str>) -> bool {
-    match directive.pam_compare {
-        PamCompare::Exact => current != Some(target),
-        compare => breaches_threshold(
-            compare,
-            target.parse().expect("target must be a valid integer"),
-            current,
-        ),
-    }
+    directive.pam_compare.violated_by(target, current)
 }
 
-/// True when integer `current` fails threshold `bound` under `compare`.
-/// Unset/unparseable counts as a breach. (Only meaningful for AtMost/AtLeast.)
-fn breaches_threshold(compare: PamCompare, bound: i64, current: Option<&str>) -> bool {
-    let n = current.and_then(|v| v.parse::<i64>().ok());
-    match compare {
-        PamCompare::AtMost => n.is_none_or(|n| n > bound),
-        PamCompare::AtLeast => n.is_none_or(|n| n < bound),
-        PamCompare::Exact => true,
-    }
-}
-
-/// A per-host override clamped so it can never be looser than the CIS baseline:
-/// AtMost keeps the smaller (stricter) of override/secure, AtLeast the larger.
-fn clamp_target(compare: PamCompare, secure: i64, over: Option<i64>) -> i64 {
-    match (compare, over) {
-        (PamCompare::AtMost, Some(o)) => o.min(secure),
-        (PamCompare::AtLeast, Some(o)) => o.max(secure),
-        _ => secure,
-    }
+/// The override-clamped target for `directive`: the operator's directive
+/// override where the config sets one that tightens the plugin's own secure
+/// value, and the secure value itself otherwise.
+///
+/// Scan, apply and validate each need this, and they must agree, so a preview
+/// cannot judge the host by a rule the apply it previews does not apply.
+fn clamped_baseline(directive: &PamDirective, config: &PluginConfig) -> String {
+    directive.pam_compare.resolved_target(
+        config,
+        directive.pam_directive_name,
+        directive.pam_secure_value,
+    )
 }
 
 /// PAM-stack files that may carry an inline override for a threshold directive's
 /// module, plus the module those args attach to. Distro-variant, so a small
 /// candidate set is searched and the first match wins.
-fn pamd_module_for(arg: &str) -> Option<(&'static str, &'static [&'static str])> {
-    match arg {
-        "deny" => Some((
+fn pam_module_for(conf_path: &str) -> Option<(&'static str, &'static [&'static str])> {
+    match conf_path {
+        "/etc/security/pwquality.conf" => Some((
+            "pam_pwquality.so",
+            &[
+                "/etc/pam.d/system-auth",
+                "/etc/pam.d/password-auth",
+                "/etc/pam.d/common-password",
+            ],
+        )),
+        "/etc/security/faillock.conf" => Some((
             "pam_faillock.so",
             &[
                 "/etc/pam.d/system-auth",
@@ -1508,7 +1661,7 @@ fn pamd_module_for(arg: &str) -> Option<(&'static str, &'static [&'static str])>
                 "/etc/pam.d/common-auth",
             ],
         )),
-        "remember" => Some((
+        "/etc/security/pwhistory.conf" => Some((
             "pam_pwhistory.so",
             &[
                 "/etc/pam.d/system-auth",
@@ -1516,7 +1669,132 @@ fn pamd_module_for(arg: &str) -> Option<(&'static str, &'static [&'static str])>
                 "/etc/pam.d/common-password",
             ],
         )),
+        // /etc/login.defs is deliberately absent: shadow-utils reads it
+        // directly, so its settings take effect with no PAM module loaded.
         _ => None,
+    }
+}
+
+/// Whether the PAM module that reads a configuration file is loaded by the
+/// stack.
+///
+/// Four outcomes, because a file nothing reads, a file whose reader this run
+/// could not look for, and a file with no module at all are three different
+/// facts that used to be one. The distinction is the same one
+/// [`InlineRead`] already draws, applied to the module rather than to its
+/// arguments: absence concluded from a file that could not be opened would
+/// fail a control on a host that may well be compliant, and absence never
+/// concluded at all passes one on evidence nothing consults.
+enum ModulePresence {
+    /// A stack file was read and loads the module.
+    InStack,
+    /// At least one stack file was read, none of them loads the module, and
+    /// none was left unread. The setting is not in force.
+    NotInStack {
+        /// The module nothing loads, named so the operator knows what to add.
+        module: &'static str,
+    },
+    /// Nothing could be concluded: a candidate could not be read, or this
+    /// distribution keeps its stack somewhere the table does not name.
+    Indeterminate {
+        /// Phrased for an operator, in the same voice as [`unreadable_reason`].
+        reason: String,
+        /// Whether a privileged re-run would settle it. A stack file blocked by
+        /// permissions would; a distribution whose stack this table does not
+        /// name would not, and offering sudo for the second is advice that
+        /// changes nothing.
+        needs_privilege: bool,
+    },
+    /// The file has no PAM module, so there is nothing to be in the stack.
+    NoModule,
+}
+
+/// Every configuration file the directive table names, with whether its
+/// consuming module is loaded.
+///
+/// Built from `PAM_DIRECTIVES` rather than from a second list of files, so a
+/// directive added there cannot be the one nobody checked.
+async fn module_presence_by_file(ctx: &Context) -> Vec<(&'static str, ModulePresence)> {
+    let mut presence: Vec<(&'static str, ModulePresence)> = Vec::new();
+    for directive in PAM_DIRECTIVES {
+        let Some(path) = directive.pam_config_file.conf_path() else {
+            continue;
+        };
+        if presence.iter().any(|(known, _)| *known == path) {
+            continue;
+        }
+        presence.push((path, read_module_presence(ctx, path).await));
+    }
+    presence
+}
+
+/// The entry [`module_presence_by_file`] holds for a directive's file.
+fn presence_for<'a>(
+    presence: &'a [(&'static str, ModulePresence)],
+    directive: &PamDirective,
+) -> &'a ModulePresence {
+    directive
+        .pam_config_file
+        .conf_path()
+        .and_then(|path| {
+            presence
+                .iter()
+                .find(|(known, _)| *known == path)
+                .map(|(_, found)| found)
+        })
+        .unwrap_or(&ModulePresence::NoModule)
+}
+
+/// Reads whether the module that consumes `conf_path` is loaded.
+///
+/// Fails closed in both directions. A stack file that could not be read is one
+/// more place the module might be, so it makes the answer indeterminate even
+/// when another file was read and did not load it. A host where none of the
+/// candidates exists is indeterminate too rather than absent, because the
+/// candidate list is a set of per-distribution alternatives and a distribution
+/// this table does not know is not a distribution without a PAM stack.
+async fn read_module_presence(ctx: &Context, conf_path: &str) -> ModulePresence {
+    let Some((module, files)) = pam_module_for(conf_path) else {
+        return ModulePresence::NoModule;
+    };
+    let mut read_one = false;
+    let mut unread: Option<(&'static str, bool)> = None;
+    for file in files {
+        match read_conf_classified(ctx, file).await {
+            ConfRead::Content(content, _) => {
+                read_one = true;
+                if content
+                    .lines()
+                    .map(str::trim)
+                    .any(|line| !line.starts_with('#') && line.contains(module))
+                {
+                    return ModulePresence::InStack;
+                }
+            }
+            // Ordinary: the candidates are per-distribution alternatives, so
+            // most hosts have only one or two of them.
+            ConfRead::Absent => {}
+            ConfRead::Unreadable {
+                permission_denied, ..
+            } => {
+                unread.get_or_insert((file, permission_denied));
+            }
+        }
+    }
+    match (read_one, unread) {
+        (_, Some((path, permission_denied))) => ModulePresence::Indeterminate {
+            reason: unreadable_reason(path, permission_denied),
+            needs_privilege: permission_denied,
+        },
+        (true, None) => ModulePresence::NotInStack { module },
+        (false, None) => ModulePresence::Indeterminate {
+            reason: format!(
+                "no PAM stack file this tool knows of exists, so whether {module} is loaded \
+                 could not be determined"
+            ),
+            // No privilege finds a file that is not there.
+            needs_privilege: false,
+        },
     }
 }
 
@@ -1524,8 +1802,8 @@ fn pamd_module_for(arg: &str) -> Option<(&'static str, &'static [&'static str])>
 /// Inline args override `/etc/security/*.conf` when present; `None` if not set
 /// inline. Only whole-token `arg=` matches (so `even_deny_root` never matches
 /// `deny`).
-async fn read_pamd_inline(ctx: &Context, arg: &str) -> InlineRead {
-    let Some((module, files)) = pamd_module_for(arg) else {
+async fn read_pamd_inline(ctx: &Context, conf_path: &str, arg: &str) -> InlineRead {
+    let Some((module, files)) = pam_module_for(conf_path) else {
         return InlineRead::NotSet;
     };
     let mut unread: Option<(&'static str, bool)> = None;
@@ -1860,7 +2138,7 @@ enum ThresholdRead {
 /// over the `/etc/security/*.conf` value. A conf file blocked by privileges
 /// surfaces as `PermissionDenied` so the caller reports it unchecked.
 async fn read_effective_threshold(ctx: &Context, arg: &str, conf: &'static str) -> ThresholdRead {
-    match read_pamd_inline(ctx, arg).await {
+    match read_pamd_inline(ctx, conf, arg).await {
         InlineRead::Value(inline) => return ThresholdRead::Value(inline),
         // The stack wins over the conf, so a stack that could not be read
         // leaves the effective value unknown however readable the conf is.
@@ -2258,18 +2536,38 @@ mod tests {
             .find(|d| d.pam_directive_name == "minlen")
             .expect("minlen is a known PAM directive");
 
-        let denied = unchecked_pam_directive(directive, "/etc/security/pwquality.conf", true);
-        assert!(denied.unchecked_reason.contains("requires root"));
-
-        let broken = unchecked_pam_directive(directive, "/etc/security/pwquality.conf", false);
+        // The privilege-versus-I/O wording moved out to the caller when a
+        // second cause of an unchecked directive appeared: a stack file that
+        // could not be read is one reason, and a distribution whose stack this
+        // table does not name is another, and neither is phrased by this
+        // function any more. `unreadable_reason` still owns that distinction
+        // and `only_a_privilege_failure_tells_the_operator_to_use_root` still
+        // pins it.
+        let entry = unchecked_pam_directive(
+            directive,
+            unreadable_reason("/etc/security/pwquality.conf", true),
+            true,
+        );
+        assert!(entry.unchecked_reason.contains("requires root"));
         assert!(
-            !broken.unchecked_reason.contains("requires root"),
-            "a non-privilege failure must not claim root would fix it: {}",
-            broken.unchecked_reason
+            entry.unchecked_needs_privilege,
+            "a privilege failure must offer the remedy that reaches it"
+        );
+        assert_eq!(entry.unchecked_check_id, "pam-minlen");
+        assert!(
+            !entry.unchecked_compliance.is_empty(),
+            "the mappings must survive so the control still reaches manual review"
+        );
+
+        let carried = unchecked_pam_directive(directive, "any reason at all".to_string(), false);
+        assert_eq!(
+            carried.unchecked_reason, "any reason at all",
+            "the reason is the caller's, reported rather than reinterpreted"
         );
         assert!(
-            !broken.unchecked_compliance.is_empty(),
-            "the mappings must survive so the control still reaches manual review"
+            !carried.unchecked_needs_privilege,
+            "a cause privilege cannot reach must not offer sudo, which is what the \
+             stack table's own unknown distribution case produces"
         );
     }
 
@@ -2502,7 +2800,7 @@ mod tests {
             pam_description: "t",
             pam_severity: Severity::High,
             pam_config_file: PamConfigFile::SecurityConf("/etc/security/faillock.conf"),
-            pam_compare: PamCompare::AtMost,
+            pam_compare: Strictness::AtMost,
         };
         assert!(pam_violates(&deny, deny.pam_secure_value, Some("10"))); // too loose
         assert!(!pam_violates(&deny, deny.pam_secure_value, Some("3"))); // stricter, compliant
@@ -2517,7 +2815,7 @@ mod tests {
         let remember = PamDirective {
             pam_directive_name: "remember",
             pam_config_file: PamConfigFile::SecurityConf("/etc/security/pwhistory.conf"),
-            pam_compare: PamCompare::AtLeast,
+            pam_compare: Strictness::AtLeast,
             ..deny
         };
         assert!(pam_violates(
@@ -2537,13 +2835,42 @@ mod tests {
         ));
         assert!(!pam_violates(&remember, "12", Some("15"))); // still compliant against a tighter override
 
-        // Spread from `remember` (not `deny`, already moved above); PamDirective isn't Copy.
-        let exact = PamDirective {
-            pam_compare: PamCompare::Exact,
-            pam_secure_value: "14",
-            ..remember
-        };
-        assert!(!pam_violates(&exact, exact.pam_secure_value, Some("14")));
-        assert!(pam_violates(&exact, exact.pam_secure_value, Some("8")));
+        // This block used to build a synthetic `Exact` directive and assert
+        // that 8 violates a baseline of 14 while 14 does not. Both assertions
+        // were true of the code and the second was the defect: it pinned the
+        // rule that any value other than the baseline is a violation, which is
+        // what wrote 90 over a host's 30. The directives it stood for are real,
+        // so they are asserted directly now, in the direction their units have.
+        let minlen = PAM_DIRECTIVES
+            .iter()
+            .find(|d| d.pam_directive_name == "minlen")
+            .expect("minlen is a known directive");
+        assert!(!pam_violates(minlen, minlen.pam_secure_value, Some("14")));
+        assert!(pam_violates(minlen, minlen.pam_secure_value, Some("8")));
+        assert!(
+            !pam_violates(minlen, minlen.pam_secure_value, Some("20")),
+            "a longer minimum than the baseline is stricter, so it is compliant"
+        );
+
+        // maxrepeat counts downwards except at zero, which switches the check
+        // off and is therefore never compliant however small a number it is.
+        let maxrepeat = PAM_DIRECTIVES
+            .iter()
+            .find(|d| d.pam_directive_name == "maxrepeat")
+            .expect("maxrepeat is a known directive");
+        assert!(!pam_violates(
+            maxrepeat,
+            maxrepeat.pam_secure_value,
+            Some("2")
+        ));
+        assert!(pam_violates(
+            maxrepeat,
+            maxrepeat.pam_secure_value,
+            Some("4")
+        ));
+        assert!(
+            pam_violates(maxrepeat, maxrepeat.pam_secure_value, Some("0")),
+            "zero disables the check, so it is the loosest value and not the strictest"
+        );
     }
 }

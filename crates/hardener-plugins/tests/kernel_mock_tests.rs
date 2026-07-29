@@ -986,3 +986,148 @@ async fn validate_ignores_exception_whose_value_does_not_match() {
         "a non-matching exception must leave the change in the preview"
     );
 }
+
+/// A host stricter than this tool's baseline on the two parameters where the
+/// baseline is not already the strongest value the kernel accepts: ptrace is
+/// forbidden outright rather than restricted to admins, and SYN cookies are
+/// unconditional rather than used on demand.
+fn stricter_than_baseline_kernel_executor() -> MockExecutor {
+    fully_secure_kernel_executor()
+        .with_file("/proc/sys/kernel/yama/ptrace_scope", "3")
+        .with_file("/proc/sys/net/ipv4/tcp_syncookies", "2")
+}
+
+#[tokio::test]
+async fn kernel_scan_does_not_report_a_stricter_host_as_violating() {
+    let ctx = Context::with_executor(Arc::new(stricter_than_baseline_kernel_executor()));
+
+    let result = KernelHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("kernel scan should not error");
+
+    assert!(
+        result.scan_findings.is_empty(),
+        "a host stricter than the baseline is compliant, but these were flagged: {:?}",
+        result
+            .scan_findings
+            .iter()
+            .map(|f| (f.finding_id.as_str(), f.finding_current_value.as_str()))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn kernel_apply_never_loosens_a_stricter_host() {
+    let executor = Arc::new(stricter_than_baseline_kernel_executor());
+    let mut ctx = Context::with_executor(executor.clone());
+
+    KernelHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("kernel apply should not error");
+
+    let log = executor.log();
+    assert!(
+        !log.files_written
+            .iter()
+            .any(|(p, _)| p.starts_with("/proc/sys")),
+        "a host already at least as strict as the baseline needs no runtime write, got: {:?}",
+        log.files_written
+    );
+
+    // The persistent file is the half of this that survives a reboot, and it
+    // was written for every parameter regardless of the host's own value.
+    let persisted = log
+        .files_written
+        .iter()
+        .find(|(p, _)| p.to_str() == Some("/etc/sysctl.d/99-hardener.conf"))
+        .map(|(_, content)| content.clone())
+        .expect("apply must persist the settings it manages");
+    assert!(
+        persisted.contains("kernel.yama.ptrace_scope = 3"),
+        "the persistent file would loosen ptrace_scope from 3 back to 2 at the next \
+         boot, got:\n{persisted}"
+    );
+    assert!(
+        persisted.contains("net.ipv4.tcp_syncookies = 2"),
+        "the persistent file would loosen tcp_syncookies from 2 back to 1 at the next \
+         boot, got:\n{persisted}"
+    );
+}
+
+#[tokio::test]
+async fn kernel_validate_does_not_promise_to_loosen_a_stricter_host() {
+    let ctx = Context::with_executor(Arc::new(stricter_than_baseline_kernel_executor()));
+
+    let report = KernelHardeningPlugin::new()
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .expect("kernel validate should not error");
+
+    assert!(
+        !report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("ptrace_scope") || c.contains("tcp_syncookies")),
+        "the preview promised a change that would leave the host less secure, got: {:?}",
+        report.validation_report_estimated_changes
+    );
+}
+
+#[tokio::test]
+async fn kernel_apply_clamps_an_operator_override_that_would_loosen() {
+    let executor = Arc::new(insecure_kernel_executor());
+    let mut ctx = Context::with_executor(executor.clone());
+
+    let mut config = PluginConfig::default();
+    config
+        .directives
+        .insert("kernel.kptr_restrict".to_string(), "0".to_string());
+
+    KernelHardeningPlugin::new()
+        .apply(&mut ctx, &config)
+        .await
+        .expect("kernel apply should not error");
+
+    let log = executor.log();
+    let written = log
+        .files_written
+        .iter()
+        .find(|(p, _)| p.to_str().is_some_and(|s| s.contains("kptr_restrict")))
+        .map(|(_, content)| content.clone())
+        .expect("a host with kernel pointers exposed must be hardened");
+    assert_eq!(
+        written, "2",
+        "an override may tighten the baseline and never relax it"
+    );
+}
+
+#[tokio::test]
+async fn kernel_scan_flags_loose_mode_reverse_path_filtering() {
+    // rp_filter is the parameter whose strictness its own integer does not
+    // carry: 0 is off, 1 is strict mode and 2 is loose mode, so 2 is weaker
+    // than 1 despite being the larger number. Judged as "larger is stricter"
+    // it would score compliant.
+    let ctx = Context::with_executor(Arc::new(
+        fully_secure_kernel_executor().with_file("/proc/sys/net/ipv4/conf/all/rp_filter", "2"),
+    ));
+
+    let result = KernelHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("kernel scan should not error");
+
+    assert!(
+        result
+            .scan_findings
+            .iter()
+            .any(|f| f.finding_id == "kernel_net_ipv4_conf_all_rp_filter"),
+        "loose-mode reverse path filtering is weaker than strict mode, findings: {:?}",
+        result
+            .scan_findings
+            .iter()
+            .map(|f| f.finding_id.as_str())
+            .collect::<Vec<_>>()
+    );
+}

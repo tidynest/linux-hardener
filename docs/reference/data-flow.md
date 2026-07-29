@@ -153,6 +153,7 @@ struct UncheckedCheck {
     unchecked_title: String,
     unchecked_category: FindingCategory,
     unchecked_reason: String,        // e.g. "reading /etc/ssh/sshd_config requires root"
+    unchecked_needs_privilege: bool, // Would sudo reach it? Only the producer knows
     unchecked_compliance: Vec<ComplianceMapping>,  // Drives ManualReview, see Section 5
 }
 ```

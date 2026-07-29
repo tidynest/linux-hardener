@@ -9,7 +9,7 @@ use crate::types::{
     FleetFrameworkPosture, RollbackResult, ScanResult, ScanSessionInfo, Severity, ValidationIssue,
     ValidationReport,
 };
-use hardener_types::{ApplyStatus, RollbackStatus};
+use hardener_types::{ApplyStatus, RollbackStatus, UncheckedTally};
 
 /// One plugin's dry-run preview decision after cross-checking the estimate
 /// against the latest persisted scan.
@@ -567,6 +567,34 @@ pub fn group_findings_by_severity(findings: &[Finding]) -> Vec<(Severity, Vec<Fi
     .collect()
 }
 
+/// The honesty line beside a run's unchecked checks.
+///
+/// One definition for the score hero and the findings tab, which had each
+/// written their own and both blamed privilege for every entry. A plugin the
+/// operator disabled, a path on a filesystem with no permission bits and a
+/// probe that failed for its own reasons all land in the same count, and a
+/// privileged re-run reaches none of them, so the sentence names privilege only
+/// where privilege is the answer.
+///
+/// The trailing space is deliberate: the caller may follow this with the
+/// "Run with sudo" button, and the two must not run together.
+pub fn unchecked_honesty_line(tally: UncheckedTally) -> String {
+    let plural = if tally.total == 1 { "" } else { "s" };
+    match tally.needing_privilege {
+        0 => format!("{} check{plural} not verified. ", tally.total),
+        privileged if privileged == tally.total => {
+            format!(
+                "{} check{plural} not verifiable without privileges. ",
+                tally.total
+            )
+        }
+        privileged => format!(
+            "{} check{plural} not verified, {privileged} of them for want of privileges. ",
+            tally.total
+        ),
+    }
+}
+
 /// Splits findings into live violations and documented deviations, preserving
 /// order within each half.
 ///
@@ -917,12 +945,63 @@ mod tests {
         }
     }
 
+    /// The honesty line had no single predecessor: the score hero said
+    /// "N check(s) not verified" and the findings tab said
+    /// "N checks not verifiable without privileges", for the same count on the
+    /// same host, and the second was false whenever privilege was not the
+    /// cause. These assertions are the specification of the one line that
+    /// replaced both, not a regression guard over either.
+    #[test]
+    fn honesty_line_names_privilege_only_where_privilege_is_the_answer() {
+        let tally = |total: usize, needing_privilege: usize| UncheckedTally {
+            total,
+            needing_privilege,
+        };
+
+        assert_eq!(
+            unchecked_honesty_line(tally(3, 3)),
+            "3 checks not verifiable without privileges. "
+        );
+        assert_eq!(
+            unchecked_honesty_line(tally(3, 0)),
+            "3 checks not verified. "
+        );
+        assert_eq!(
+            unchecked_honesty_line(tally(3, 2)),
+            "3 checks not verified, 2 of them for want of privileges. "
+        );
+    }
+
+    /// One check is one check, in every arm. The findings tab pluralised and
+    /// the score hero printed "check(s)"; unifying them must not lose the
+    /// former.
+    #[test]
+    fn honesty_line_says_one_check_in_the_singular() {
+        let line = unchecked_honesty_line(UncheckedTally {
+            total: 1,
+            needing_privilege: 1,
+        });
+        assert!(
+            line.starts_with("1 check "),
+            "a single check must not read '1 checks', got: {line}"
+        );
+        let unreachable = unchecked_honesty_line(UncheckedTally {
+            total: 1,
+            needing_privilege: 0,
+        });
+        assert!(
+            unreachable.starts_with("1 check "),
+            "a single check must not read '1 checks', got: {unreachable}"
+        );
+    }
+
     fn an_unchecked() -> hardener_types::UncheckedCheck {
         hardener_types::UncheckedCheck {
             unchecked_check_id: "u-1".to_string(),
             unchecked_title: "t".to_string(),
             unchecked_category: FindingCategory::Network,
             unchecked_reason: "needs root".to_string(),
+            unchecked_needs_privilege: true,
             unchecked_compliance: vec![],
         }
     }

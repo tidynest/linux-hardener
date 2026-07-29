@@ -1,16 +1,20 @@
 use crate::types::{
     ApplyResult, ComplianceReport, ConfigSummary, Finding, ScanResult, SchedulerUiConfig, Severity,
 };
-use hardener_types::ValidationReport;
 use hardener_types::remote::{RemoteConnectionInfo, RemoteHostProfile};
+use hardener_types::{UncheckedTally, ValidationReport};
 use leptos::prelude::*;
 
-/// Total number of unchecked (requires-privileges) checks across scan
-/// results. Raw, undeduplicated sum: the score badge reports this as the
-/// honest count of unverified checks. Shared only by SecurityScore, which
-/// calls it inside its reactive closures.
-pub fn total_unchecked(results: &[ScanResult]) -> usize {
-    results.iter().map(|r| r.scan_unchecked.len()).sum()
+/// The unchecked checks across a run's scan results, counted whole and by
+/// whether privilege would reach them.
+///
+/// Raw and undeduplicated: the honesty lines report the true count of
+/// unverified checks. Privilege is only one of the reasons a check lands here,
+/// so the split is what lets a caller offer a privileged re-run when it would
+/// help and stay quiet when it would not. Shared by SecurityScore and
+/// FindingsTab, each calling it inside its reactive closures.
+pub fn unchecked_tally(results: &[ScanResult]) -> UncheckedTally {
+    UncheckedTally::from_checks(results.iter().flat_map(|r| &r.scan_unchecked))
 }
 
 /// Application state container holding all reactive signals for the UI.

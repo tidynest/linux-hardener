@@ -223,6 +223,33 @@ requires each plugin to have reported at least one finding while the container
 was still unhardened. Without it, every finding filter would pass by matching
 nothing on every green run.
 
+
+### Password quality actually being enforced
+
+`PWQUALITY_ENFORCEMENT_CHECKS` asks whether the file the tool writes is read by
+anything. `/etc/security/pwquality.conf` is consumed by `pam_pwquality.so` and
+by nothing else, so a host whose PAM stack never loads that module enforces no
+password policy however the file is written. Every check that reads the file
+agrees with itself, and with the tool, while the system enforces nothing: the
+purest form of this project's second root-cause family, the tool tested against
+itself.
+
+Two readings, one check each. The first compares the stack
+(`/etc/pam.d/system-auth`, `password-auth`, `common-password`) against the
+tool's `pam-minlen` verdict, and requires them to say the same thing: a stack
+that loads the module must leave the tool with nothing to report after apply,
+and a stack that does not must leave it reporting the directive unenforced. The
+second asks libpwquality itself, through `pwscore`, and is the positive control
+the first cannot supply: a policy that refuses every password and one that
+refuses none both make a one-sided filter look correct, so the weak password
+must be refused **and** the probe password accepted in the same breath.
+
+A stack with no readable file is refused rather than read as "no module", for
+the same reason a filter that matches nothing is not a pass: absence concluded
+from nothing scores a host this run never looked at. `pwscore` being absent is a
+real answer rather than a skip, since no libpwquality means no
+`pam_pwquality.so` either.
+
 ### Full run (container + root)
 
 ```bash
@@ -296,21 +323,22 @@ counted off the tables cannot notice one of them being edited down: with the ssh
 table emptied, a run over the `login.defs` directives alone would agree with
 itself, exit 0, and be reported as a PASS. So the size the run is measured
 against is counted off `SSH_CHECKS_EXPECTED`, `LOGIN_DEFS_CHECKS_EXPECTED`,
-`VENDOR_SURVIVAL_CHECKS_EXPECTED`, `IDEMPOTENCE_CHECKS_EXPECTED` and
-`DIFF_PLUGINS_EXPECTED`, which the tables are then checked against, rather than
+`VENDOR_SURVIVAL_CHECKS_EXPECTED`, `IDEMPOTENCE_CHECKS_EXPECTED`,
+`PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED` and `DIFF_PLUGINS_EXPECTED`, which the tables are then checked against, rather than
 off the tables themselves.
 
 Adding a directive therefore means changing four literals in
 `scripts/test/differential-suite.sh`, not one: the `*_EXPECTED` constant beside
 its table, that same length re-pinned in the self-test (`the ssh table holds
-seven directives`), the total the run is sized at (`28`), and the number of
-directives the pre-apply control covers (`10`). `VENDOR_SURVIVAL_CHECKS` and
-`IDEMPOTENCE_CHECKS` are sized the same way, and contribute one check each
-rather than two. Every one of them fails loudly, over two `--self-test` runs,
+seven directives`), the total the run is sized at (`30`), and the number of
+directives the pre-apply control covers (`10`). `VENDOR_SURVIVAL_CHECKS`, `IDEMPOTENCE_CHECKS` and
+`PWQUALITY_ENFORCEMENT_CHECKS` are sized the same way, and contribute one check
+each rather than two. Every one of them fails loudly, over two `--self-test` runs,
 because the total is counted off the constant and only moves once the constant
 has been raised. Adding the idempotency table did exactly that: the self-test
 refused the run at `got '28', want '25'` until the literal was raised on
-purpose.
+purpose, and the pwquality enforcement pair did it again at
+`got '30', want '28'`.
 
 ### What a failure means
 
