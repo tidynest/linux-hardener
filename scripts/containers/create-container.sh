@@ -245,6 +245,32 @@ generate_host_keys() {
     return 1
 }
 
+# Enables the services the suites test.
+#
+# These calls decide whether sshd and auditd exist in the finished container,
+# and every bootstrap installs both packages a few lines above its own call, so
+# a failure means the bootstrap did not do what it just reported doing rather
+# than that a unit is legitimately absent. Written `2>/dev/null || true`, it
+# produced a container that built cleanly and tested nothing: a service that
+# was never enabled reads, several layers later, exactly like a service the
+# tool correctly left alone.
+#
+# Called bare for the same reason `generate_host_keys` is, and the error text
+# is kept for the same reason too.
+#
+# The whole command is passed in because the bootstraps reach into the
+# container differently, `chroot` where that works and `systemd-nspawn` for
+# openSUSE, and that difference is deliberate.
+enable_test_services() {
+    local output
+    if output=$("$@" 2>&1); then
+        return 0
+    fi
+    log_error "enabling the test services failed: ${output:-no output}"
+    log_error "  command: $*"
+    return 1
+}
+
 # Pull an official image with podman and export its root filesystem to
 # $CONTAINER_PATH. Used by the Fedora, Rocky (RHEL) and openSUSE bootstraps:
 # - Red Hat family: Arch's rpm enforces %_pkgverify_level=all, which
@@ -310,7 +336,7 @@ bootstrap_arch() {
     generate_host_keys
 
     # Enable services that hardener tests
-    chroot "$CONTAINER_PATH" systemctl enable sshd auditd 2>/dev/null || true
+    enable_test_services chroot "$CONTAINER_PATH" systemctl enable sshd auditd
 }
 
 bootstrap_debian() {
@@ -356,7 +382,7 @@ bootstrap_debian() {
     generate_host_keys
 
     # Enable services that hardener tests
-    chroot "$CONTAINER_PATH" systemctl enable ssh auditd 2>/dev/null || true
+    enable_test_services chroot "$CONTAINER_PATH" systemctl enable ssh auditd
 
     # Clean up apt cache to save space
     chroot "$CONTAINER_PATH" apt-get clean
@@ -422,7 +448,7 @@ bootstrap_dnf_family() {
     generate_host_keys
 
     # Enable services that hardener tests
-    chroot "$CONTAINER_PATH" systemctl enable sshd auditd 2>/dev/null || true
+    enable_test_services chroot "$CONTAINER_PATH" systemctl enable sshd auditd
 
     # Clean up dnf cache to save space
     systemd-nspawn --quiet --directory="$CONTAINER_PATH" dnf clean all 2>/dev/null || true
@@ -514,8 +540,8 @@ bootstrap_opensuse() {
     generate_host_keys
 
     # Enable services that hardener tests
-    systemd-nspawn --quiet --directory="$CONTAINER_PATH" \
-        systemctl enable sshd auditd 2>/dev/null || true
+    enable_test_services systemd-nspawn --quiet --directory="$CONTAINER_PATH" \
+        systemctl enable sshd auditd
 
     # Clean up zypper cache to save space
     systemd-nspawn --quiet --directory="$CONTAINER_PATH" \

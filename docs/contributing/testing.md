@@ -72,6 +72,12 @@ sudo ./scripts/containers/create-container.sh arch clean         # Remove contai
 | `rhel` (Rocky Linux, RHEL-compatible) | `hardener-test-rhel` |
 | `opensuse` | `hardener-test-opensuse` |
 
+Enabling `sshd` and `auditd` is a required step, not a best-effort one: if it
+fails the script reports what the service manager said and refuses to finish,
+because a container missing the services under test produces suite results that
+look like passes. Every bootstrap installs both packages, so a failure there
+means the bootstrap did not do what it reported doing.
+
 ### SSH integration fixture (booted container)
 
 The suites above run containers via `nspawn --pipe` (no network, no sshd). The
