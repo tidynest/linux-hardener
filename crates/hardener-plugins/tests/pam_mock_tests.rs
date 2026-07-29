@@ -1679,8 +1679,11 @@ async fn pam_validate_one_drifted_lists_exactly_that_directive() {
 }
 
 /// State-aware validate must not assert false facts without privileges: a
-/// root-only pwquality.conf (stat succeeds, read denied) must yield
-/// conditional requires-root lines, never a confident "(currently not set)".
+/// root-only pwquality.conf (stat succeeds, read denied) must say so, never a
+/// confident "(currently not set)". What the requires-root line then promises
+/// is pinned by `pam_validate_does_not_promise_a_write_into_an_unreadable_conf`;
+/// this test only requires that the privilege failure is named at all, which is
+/// why it stayed green while the wording beside it was false.
 #[tokio::test]
 async fn pam_validate_reports_requires_root_when_pwquality_is_root_only() {
     let executor = MockExecutor::new()
@@ -1718,6 +1721,57 @@ async fn pam_validate_reports_requires_root_when_pwquality_is_root_only() {
         minlen_line.contains("requires root"),
         "unreadable pwquality directives must use the requires-root wording, got: {minlen_line}"
     );
+}
+
+/// The `PwQuality`/`LoginDefs` arm of validate must describe a host the way
+/// apply treats it. Apply refuses to rewrite a file whose current contents it
+/// could not read, which `apply_refuses_to_rewrite_an_unreadable_pwquality` and
+/// `apply_refuses_to_rewrite_an_unreadable_login_defs` both assert, so a preview
+/// offering to set the directive "only if it differs" describes a conditional
+/// write no apply will attempt.
+///
+/// Both files are unreadable in one fixture so the arm's file selector is
+/// exercised twice: naming the wrong file is as wrong as promising the wrong
+/// action, and only a line-by-line comparison catches a swapped selector.
+#[tokio::test]
+async fn pam_validate_does_not_promise_a_write_into_an_unreadable_conf() {
+    let executor = MockExecutor::new()
+        .with_file("/etc/security/pwquality.conf", "minlen 8\n")
+        .with_read_permission_denied("/etc/security/pwquality.conf")
+        .with_file("/etc/login.defs", "PASS_MAX_DAYS 99999\n")
+        .with_read_permission_denied("/etc/login.defs")
+        .with_file("/etc/security/faillock.conf", "deny = 3\n")
+        .with_file("/etc/security/pwhistory.conf", "remember = 10\n");
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PamHardeningPlugin::new();
+
+    let report = plugin
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    let changes = &report.validation_report_estimated_changes;
+    assert!(
+        !changes.iter().any(|c| c.contains("applied only if")),
+        "no preview may promise a write apply refuses, got: {changes:?}"
+    );
+    for (directive, target, path) in [
+        ("minlen", "14", "/etc/security/pwquality.conf"),
+        ("PASS_MAX_DAYS", "90", "/etc/login.defs"),
+    ] {
+        let line = changes
+            .iter()
+            .find(|c| c.contains(directive))
+            .unwrap_or_else(|| panic!("{directive} must still be listed, got: {changes:?}"));
+        assert_eq!(
+            *line,
+            format!(
+                "{directive} will not be set to {target}: {path} could not be read \
+                 (current value requires root)"
+            ),
+            "the preview must name the file that failed and the action apply takes"
+        );
+    }
 }
 
 /// Validate's `SecurityConf` estimate reuses the `observed` value already

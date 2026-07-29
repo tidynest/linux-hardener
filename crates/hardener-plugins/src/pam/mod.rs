@@ -1184,15 +1184,19 @@ impl HardeningPlugin for PamHardeningPlugin {
                         ConfRead::Content(c, _) => c.as_str(),
                         ConfRead::Absent => "",
                         ConfRead::Unreadable {
-                            permission_denied, ..
+                            path,
+                            permission_denied,
+                            ..
                         } => {
-                            // Unreadable file: never claim "not set" for a
-                            // value this run could not see.
-                            estimated_changes.push(format!(
-                                "Set {} = {} ({}; applied only if it differs)",
+                            // Never claim "not set" for a value this run could
+                            // not see, and never offer the write either:
+                            // `conf_is_writable` refuses this whole file and
+                            // every directive in it is skipped.
+                            estimated_changes.push(unreadable_preview(
                                 d.pam_directive_name,
                                 target_value,
-                                current_value_caveat(*permission_denied)
+                                path,
+                                *permission_denied,
                             ));
                             continue;
                         }
@@ -1242,20 +1246,18 @@ impl HardeningPlugin for PamHardeningPlugin {
                             "Set {} = {} (currently not set)",
                             d.pam_directive_name, target
                         )),
-                        // Not "applied only if currently looser": apply refuses
-                        // outright here, whether what could not be read is this
-                        // directive's own conf or a PAM stack file that would
-                        // override it. A preview promising a conditional write
-                        // describes something the apply will not attempt.
+                        // Apply refuses outright here, whether what could not be
+                        // read is this directive's own conf or a PAM stack file
+                        // that would override it, so the same shared wording as
+                        // the arm above applies.
                         PamObserved::Unreadable {
                             path,
                             permission_denied,
-                        } => estimated_changes.push(format!(
-                            "{} will not be set to {}: {} could not be read ({})",
+                        } => estimated_changes.push(unreadable_preview(
                             d.pam_directive_name,
                             target,
                             path,
-                            current_value_caveat(*permission_denied)
+                            *permission_denied,
                         )),
                     }
                 }
@@ -1313,6 +1315,30 @@ fn current_value_caveat(permission_denied: bool) -> &'static str {
     } else {
         "current value could not be read"
     }
+}
+
+/// The dry-run preview line for a directive whose file this run could not read.
+///
+/// Apply never rewrites a file whose current contents it cannot see, because
+/// merging directives into an empty buffer would replace the host's settings
+/// with this tool's, so the preview says the directive will not be set and names
+/// the file that failed rather than offering a conditional write.
+///
+/// One definition, because every arm of `validate` asks the same question and
+/// two of them came to answer it differently: the `SecurityConf` arm said the
+/// directive would not be set while the `PwQuality` and `LoginDefs` arms
+/// promised to apply it "only if it differs", so one host was previewed two
+/// ways depending on which file was unreadable.
+fn unreadable_preview(
+    directive_name: &str,
+    target: impl std::fmt::Display,
+    path: &str,
+    permission_denied: bool,
+) -> String {
+    format!(
+        "{directive_name} will not be set to {target}: {path} could not be read ({})",
+        current_value_caveat(permission_denied)
+    )
 }
 
 /// PAM configuration directive with security settings.
