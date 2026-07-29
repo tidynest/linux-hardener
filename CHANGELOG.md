@@ -26,6 +26,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A checkpoint can now record a symlink, so `systemctl disable` and
+  `systemctl mask` are undoable for the first time.** `file_metadata` follows a
+  link, so capturing `/etc/systemd/system` stored the *contents of the packaged
+  unit files* its enablement links point at. Restoring that meant writing those
+  bytes back through the link into `/usr/lib/systemd/system`, and chmod and chown
+  follow a link just as readily, so the rollback allowlist refused the path. The
+  result was that service enable, disable and mask state has never been
+  recoverable on any distribution: rollback either skipped those entries or, until
+  the fix above, abandoned the whole run over them.
+  `FileState` gained a link target, `file_states` gained a `link_target` column,
+  and a captured link is now restored by recreating the link rather than by
+  writing through it, so nothing outside the allowlist is touched and the
+  allowlist question becomes the link's own path. A path that is a link to a
+  directory is recorded as a link instead of being walked into, which had captured
+  the target directory's files under paths that resolved back through it.
+  **Existing checkpoints keep working.** The new column reads back as NULL for
+  them, which means "not a symlink" and restores exactly as before, and the
+  signature digest includes the target only when one is present, so a checkpoint
+  signed before this release still verifies.
+
 - **`hardener rollback` no longer refuses to restore anything because one file
   in the checkpoint cannot be restored.** Measured on the five test
   distributions: four of them failed rollback outright, restoring nothing, with

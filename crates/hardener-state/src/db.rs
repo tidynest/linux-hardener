@@ -30,6 +30,7 @@ const SCHEMA: &str = r#"
         permissions INTEGER,
         owner_uid INTEGER,
         owner_gid INTEGER,
+        link_target TEXT,
         FOREIGN KEY(checkpoint_id) REFERENCES checkpoints(id)
     );
 
@@ -147,6 +148,24 @@ pub async fn init_db(db_path: Option<&Path>) -> Result<SqlitePool> {
         > 0;
     if !has_unchecked {
         sqlx::query("ALTER TABLE scan_results ADD COLUMN unchecked_json TEXT")
+            .execute(&pool)
+            .await
+            .map_err(|e| HardeningError::Database(e.to_string()))?;
+    }
+
+    // Migrate pre-link_target file_states tables in place (idempotent). A
+    // checkpoint taken before this column existed leaves it NULL, which reads
+    // back as "not a symlink" and restores exactly as it did before, so an
+    // existing checkpoint keeps working rather than becoming unreadable.
+    let has_link_target: bool = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM pragma_table_info('file_states') WHERE name = 'link_target'",
+    )
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| HardeningError::Database(e.to_string()))?
+        > 0;
+    if !has_link_target {
+        sqlx::query("ALTER TABLE file_states ADD COLUMN link_target TEXT")
             .execute(&pool)
             .await
             .map_err(|e| HardeningError::Database(e.to_string()))?;

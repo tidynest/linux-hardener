@@ -56,6 +56,19 @@ pub struct FileState {
     pub file_owner_uid: u32,
     /// Owner group ID.
     pub file_owner_gid: u32,
+    /// The path this entry points at, when it is a symlink rather than a file.
+    ///
+    /// `file_content` is `None` for such an entry, because a symlink's content is
+    /// the target's: storing it would restore another file's bytes through the
+    /// link, into a directory the rollback allowlist deliberately excludes. That
+    /// is why service enable, disable and mask state was unrecoverable before
+    /// this field existed.
+    ///
+    /// `None` means positively not a symlink. A capture that could not tell
+    /// refuses rather than storing `None`, because "not a link" and "could not
+    /// look" restore differently and only one of them is safe.
+    #[serde(default)]
+    pub file_link_target: Option<String>,
 }
 
 // Rollback types are defined in hardener-types for WASM compatibility.

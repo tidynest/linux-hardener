@@ -15,6 +15,13 @@ use std::path::Path;
 /// Paths match via `starts_with`, so `/etc/ssh` covers both
 /// `/etc/ssh` itself and any file beneath it (e.g. `/etc/ssh/sshd_config`).
 /// Trailing slashes are intentionally omitted for this reason.
+/// The mode every symlink on Linux has: the link type bit and 0777.
+///
+/// Stored in place of the captured mode, which `file_metadata` reads through the
+/// link and so describes the target. It must not be 0, because restore reads a
+/// zero mode as "this path was absent, remove it on rollback".
+const SYMLINK_MODE: u32 = 0o120777;
+
 const DEFAULT_ROLLBACK_PREFIXES: &[&str] = &[
     "/etc/ssh",
     "/etc/sysctl",
@@ -171,6 +178,22 @@ impl CheckpointManager {
                 file_permissions: 0,
                 file_owner_uid: 0,
                 file_owner_gid: 0,
+                file_link_target: None,
+            });
+        }
+
+        // Asked before the read, because reading a symlink returns the target's
+        // bytes and storing those is the state that cannot be restored. The mode
+        // stored is `SYMLINK_MODE` rather than the captured one, which describes
+        // the target.
+        if let Some(target) = Self::link_target_of(executor, file_path).await? {
+            return Ok(FileState {
+                file_path: file_path.to_string_lossy().to_string(),
+                file_content: None,
+                file_permissions: SYMLINK_MODE,
+                file_owner_uid: meta.uid,
+                file_owner_gid: meta.gid,
+                file_link_target: Some(target),
             });
         }
 
@@ -201,6 +224,7 @@ impl CheckpointManager {
             file_permissions: meta.mode,
             file_owner_uid: meta.uid,
             file_owner_gid: meta.gid,
+            file_link_target: None,
         })
     }
 
@@ -226,15 +250,19 @@ impl CheckpointManager {
                 file_permissions: 0,
                 file_owner_uid: 0,
                 file_owner_gid: 0,
+                file_link_target: None,
             });
         }
 
+        // Asked here too, and for the same reason: a declared path can be a link
+        // to a directory, and the chmod a metadata restore issues follows it.
         Ok(FileState {
             file_path: dir_path.to_string_lossy().to_string(),
             file_content: None,
             file_permissions: meta.mode,
             file_owner_uid: meta.uid,
             file_owner_gid: meta.gid,
+            file_link_target: Self::link_target_of(executor, dir_path).await?,
         })
     }
 
@@ -259,6 +287,22 @@ impl CheckpointManager {
                 file_permissions: 0,
                 file_owner_uid: 0,
                 file_owner_gid: 0,
+                file_link_target: None,
+            }]);
+        }
+
+        // Asked before the directory branch. `file_metadata` follows a link, so a
+        // link to a directory reports `is_dir`, and recursing would capture the
+        // target directory's files under paths that resolve back through the
+        // link, so restoring them would write into the target directory.
+        if let Some(target) = Self::link_target_of(executor, file_path).await? {
+            return Ok(vec![FileState {
+                file_path: file_path.to_string_lossy().to_string(),
+                file_content: None,
+                file_permissions: SYMLINK_MODE,
+                file_owner_uid: meta.uid,
+                file_owner_gid: meta.gid,
+                file_link_target: Some(target),
             }]);
         }
 
@@ -337,6 +381,12 @@ impl CheckpointManager {
             hash_context.update(&file_state.file_permissions.to_be_bytes());
             hash_context.update(&file_state.file_owner_uid.to_be_bytes());
             hash_context.update(&file_state.file_owner_gid.to_be_bytes());
+            // Only when present, the same way `file_content` is handled. A
+            // checkpoint signed before this field existed carries `None` here and
+            // hashes to what it hashed then, so its signature still verifies.
+            if let Some(target) = &file_state.file_link_target {
+                hash_context.update(target.as_bytes());
+            }
         }
 
         // Finalise the hash
@@ -449,12 +499,20 @@ impl CheckpointManager {
                             reference.file_path
                         ))
                     })?;
+                    // A snapshot that stored a link's followed content would be
+                    // as unrestorable as the checkpoint it exists to undo.
+                    let link_target = Self::link_target_of(executor, path).await?;
                     file_states.push(FileState {
                         file_path: reference.file_path.clone(),
-                        file_content: Some(content.into_bytes()),
-                        file_permissions: meta.mode,
+                        file_content: link_target.is_none().then(|| content.into_bytes()),
+                        file_permissions: if link_target.is_some() {
+                            SYMLINK_MODE
+                        } else {
+                            meta.mode
+                        },
                         file_owner_uid: meta.uid,
                         file_owner_gid: meta.gid,
+                        file_link_target: link_target,
                     });
                 } else {
                     file_states.push(self.capture_directory_entry(executor, path).await?);
@@ -553,9 +611,10 @@ impl CheckpointManager {
                 content,
                 permissions,
                 owner_uid,
-                owner_gid
+                owner_gid,
+                link_target
                 )
-                VALUES (?, ?, ?, ?, ?, ?)",
+                VALUES (?, ?, ?, ?, ?, ?, ?)",
             )
             .bind(header.id.as_str())
             .bind(&file_state.file_path)
@@ -563,6 +622,7 @@ impl CheckpointManager {
             .bind(file_state.file_permissions)
             .bind(file_state.file_owner_uid as i64)
             .bind(file_state.file_owner_gid as i64)
+            .bind(&file_state.file_link_target)
             .execute(&mut *tx)
             .await
             .map_err(|e| HardeningError::Database(e.to_string()))?;
@@ -618,7 +678,8 @@ impl CheckpointManager {
                 content,
                 permissions,
                 owner_uid,
-                owner_gid
+                owner_gid,
+                link_target
             FROM
                 file_states WHERE checkpoint_id = ?
             ORDER BY file_path",
@@ -636,6 +697,7 @@ impl CheckpointManager {
                 file_permissions: row.get::<i64, _>("permissions") as u32,
                 file_owner_uid: row.get::<i64, _>("owner_uid") as u32,
                 file_owner_gid: row.get::<i64, _>("owner_gid") as u32,
+                file_link_target: row.get("link_target"),
             });
         }
 
@@ -747,6 +809,22 @@ impl CheckpointManager {
             .verify(&digest, &checkpoint.checkpoint_signature)
     }
 
+    /// Whether `path` is a symlink, and what it points at.
+    ///
+    /// Fail-closed by propagating the error rather than reporting `None`: "not a
+    /// symlink" and "could not tell" restore differently and only one of them is
+    /// safe, so a capture that cannot answer refuses instead of storing a link's
+    /// followed content. `readlink` is in coreutils, so on a host where this
+    /// fails the capture had bigger problems than this check.
+    async fn link_target_of(executor: &dyn SystemExecutor, path: &Path) -> Result<Option<String>> {
+        executor.read_link(path).await.map_err(|e| {
+            HardeningError::Executor(format!(
+                "Cannot tell whether {} is a symlink, so it cannot be captured safely: {e}",
+                path.display()
+            ))
+        })
+    }
+
     /// Why a rollback must not write this path, or `None` if it may.
     ///
     /// One definition, because both phases ask it and their copies had come to
@@ -787,6 +865,15 @@ impl CheckpointManager {
             ));
         }
 
+        // A link is restored by recreating the link, so the write lands on `path`
+        // and nowhere else. Following it here would refuse precisely the entries
+        // `file_link_target` exists to make restorable. The check below still
+        // guards the other direction: a checkpoint recording a regular file whose
+        // path is now a symlink pointing outside the allowlist.
+        if file_state.file_link_target.is_some() {
+            return None;
+        }
+
         if path.is_symlink() {
             return match path.canonicalize() {
                 Ok(resolved) if within(&resolved.to_string_lossy()) => None,
@@ -822,6 +909,26 @@ impl CheckpointManager {
                 FileRestoreAction::Skipped,
                 Err(HardeningError::Config(reason)),
             );
+        }
+
+        // A symlink is restored by recreating the link, never by writing through
+        // it: the content would land in whatever it points at, and chmod and
+        // chown follow it just as readily, which is how a rollback came to be
+        // able to overwrite a packaged unit file. `ln -sfn` creates the link, or
+        // replaces whatever stands in its place.
+        if let Some(target) = &file_state.file_link_target {
+            let result = match restore_command_refusal(
+                executor,
+                "ln",
+                &["-sfn", target, path_str],
+                path_str,
+            )
+            .await
+            {
+                None => Ok(()),
+                Some(refusal) => Err(HardeningError::Executor(refusal)),
+            };
+            return (FileRestoreAction::Restored, result);
         }
 
         // Determine the required action. `file_permissions` holds the full
@@ -1943,6 +2050,119 @@ mod tests {
         let signer = CheckpointSigner::new_with_path(&key_path).expect("signer");
         std::mem::forget(dir);
         CheckpointManager::new_with_allowlist(db_pool, signer, prefixes).expect("manager")
+    }
+
+    /// A link to a directory is a link, not a directory to walk into.
+    ///
+    /// `file_metadata` follows a link, so such a path reports `is_dir` and the
+    /// recursive capture would descend into the target, storing the target
+    /// directory's files under child paths that resolve back through the link.
+    /// Restoring those would write into the target directory, which is the same
+    /// defect one level down.
+    ///
+    /// The child registered below is what lets this test fail: without it the
+    /// recursion would find nothing and a single link entry would be
+    /// indistinguishable from a walk that happened to come back empty.
+    #[tokio::test]
+    async fn a_link_to_a_directory_is_captured_as_a_link_not_walked_into() {
+        let exec = MockExecutor::new()
+            .with_directory("/etc/x/wants")
+            .with_symlink("/etc/x/wants", "/usr/lib/systemd/system")
+            .with_file("/etc/x/wants/packaged.service", "[Unit]\n");
+        let manager = test_manager_with_etc_x().await;
+
+        let id = manager
+            .create_checkpoint(&exec, "dirlink", &[Path::new("/etc/x/wants")])
+            .await
+            .expect("create_checkpoint");
+        let (_, states) = manager.get_checkpoint(&id).await.expect("get_checkpoint");
+
+        assert_eq!(
+            states.len(),
+            1,
+            "a link must be one entry, not a walk of what it points at, got: {:?}",
+            states.iter().map(|s| &s.file_path).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            states[0].file_link_target.as_deref(),
+            Some("/usr/lib/systemd/system"),
+            "the entry must record where the link points"
+        );
+        assert!(
+            states[0].file_content.is_none(),
+            "a link has no content of its own to store"
+        );
+    }
+
+    /// A symlink must come back as a symlink, not as the content it pointed at.
+    ///
+    /// `file_metadata` follows a link, so a capture of `/etc/systemd/system`
+    /// stored the contents of the packaged unit files its enablement links point
+    /// at. Restoring that meant writing those bytes back through the link into
+    /// `/usr/lib/systemd/system`, which the allowlist exists to prevent, so
+    /// `systemctl disable` and `systemctl mask` state has never been recoverable
+    /// on any distribution: the rollback either refused the path or, before that,
+    /// abandoned the whole run over it.
+    ///
+    /// Recreating the link writes only the link, so the target's directory is
+    /// never touched and the allowlist question is about the link's own path.
+    /// The assertions below say that in three ways, because "it did not write
+    /// through the link" is the property, and an `ln` that ran alongside a write
+    /// would satisfy a weaker one.
+    #[tokio::test]
+    async fn a_captured_symlink_is_restored_as_a_link_not_as_content() {
+        use hardener_common::executor::CommandOutput;
+
+        let link = "/etc/x/autovt.service";
+        let target = "/usr/lib/systemd/system/getty.service";
+        let exec = MockExecutor::new()
+            // Content is what the mock returns for a read, exactly as a real
+            // read through the link would return the target's bytes.
+            .with_file(link, "[Unit]\nDescription=Getty\n")
+            .with_symlink(link, target)
+            .with_command(
+                "ln",
+                &["-sfn", target, link],
+                CommandOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            );
+        let manager = test_manager_with_etc_x().await;
+
+        let id = manager
+            .create_checkpoint(&exec, "svc", &[Path::new(link)])
+            .await
+            .expect("create_checkpoint");
+        let result = manager.rollback(&exec, &id).await.expect("rollback");
+
+        let log = exec.log();
+        assert!(
+            log.commands_executed
+                .iter()
+                .any(|(program, args)| program == "ln" && args.iter().any(|a| a == target)),
+            "the link must be recreated pointing at its target, got: {:?}",
+            log.commands_executed
+        );
+        assert!(
+            !log.files_written.iter().any(|(p, _)| p == Path::new(link)),
+            "nothing may be written through the link, got: {:?}",
+            log.files_written
+        );
+        assert!(
+            !log.commands_executed
+                .iter()
+                .any(|(program, args)| (program == "chmod" || program == "chown")
+                    && args.iter().any(|a| a == link)),
+            "chmod and chown follow a link, so neither may be issued for one, got: {:?}",
+            log.commands_executed
+        );
+        assert!(
+            result.rollback_success,
+            "restoring a link is a success, got: {:?}",
+            result.rollback_files
+        );
     }
 
     /// One file that cannot be restored must not cost the operator every other
