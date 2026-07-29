@@ -26,6 +26,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The kernel plugin no longer writes a host's stricter sysctl back down to
+  the baseline, at runtime or at the next boot.** All eighteen parameters were
+  compared for equality, which has no direction. A host with
+  `kernel.yama.ptrace_scope = 3`, which forbids `ptrace` outright, was reported
+  as violating a baseline of 2 and written down to 2; the same held for
+  `net.ipv4.tcp_syncookies = 2`. The persistent half was worse than the runtime
+  half: `/etc/sysctl.d/99-hardener.conf` was written with the plain baseline for
+  every parameter, outside the check that skipped an already-compliant runtime
+  write, so even where the runtime value was left alone the file restored the
+  looser value at the next boot. Both now write the stricter of the target and
+  what the host already runs.
+
+  Three parameters needed more than a direction, because their strictness is
+  not what their integer says. `net.ipv4.conf.all.rp_filter` and its `default`
+  twin rank strict mode `1` above loose mode `2` above off `0`, so the
+  strongest value is the middle number and no numeric direction can express it.
+  `fs.suid_dumpable` ranks `0` above `2` above `1` for the same reason.
+
+  **Behaviour change worth noting:** a `[kernel]` directive override in
+  `config.toml` is now clamped tighten-only, as `[pam]` and `[ssh]` are, so
+  `kernel.kptr_restrict = "0"` yields 2. `[permissions]` is now the only plugin
+  where an override is applied as given. Record a deliberate deviation as a
+  policy exception, which the report labels.
+
 - **The SSH plugin no longer writes a host's stricter setting back up to the
   baseline.** `MaxAuthTries`, `ClientAliveInterval` and `ClientAliveCountMax`
   were compared for equality, which has no direction, so a host allowing two

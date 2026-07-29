@@ -94,7 +94,7 @@ Every section accepts the same three keys:
 | Key | Type | Default | Effect |
 |-----|------|---------|--------|
 | `enabled` | bool | `true` | Set `false` to stop this plugin from running. Disabled anywhere is final: `enabled = true` is the key's default value, so it can only ever turn a plugin off and never re-enable one `[global] disabled_plugins` has already refused, or one a non-empty `[global] enabled_plugins` omits. |
-| `directives` | table of string to string | `{}` | Overrides the target value for a built-in check, typically to something stricter than the baseline. Every `[pam]` and `[ssh]` directive is clamped tighten-only; `[kernel]` and `[permissions]` still apply an override as given, so an override can loosen those. See below. |
+| `directives` | table of string to string | `{}` | Overrides the target value for a built-in check, typically to something stricter than the baseline. Every `[pam]`, `[ssh]` and `[kernel]` directive is clamped tighten-only; `[permissions]` still applies an override as given, so an override can loosen that one. See below. |
 | `exceptions` | table of exception entries | `{}` | Policy exceptions; see below. |
 
 > **Removed: `custom_directives`.** Earlier releases accepted and validated a
@@ -187,25 +187,27 @@ A config that fails validation is rejected with every invalid entry listed:
 
 ### Where a directive override is clamped to the baseline
 
-Every `[pam]` and `[ssh]` directive is clamped so an override can only tighten,
-in `scan`, `apply` and `apply --dry-run` alike. A `deny` limit above the
-baseline is lowered back to it, a `remember` count below it is raised back to
-it, a `minlen` below 14 is raised back to 14, a `PASS_MAX_DAYS` above 90 is
-lowered back to 90, and on the SSH side `MaxAuthTries = "10"` now yields 3 and
-`X11Forwarding = "yes"` yields `no`.
+Every `[pam]`, `[ssh]` and `[kernel]` directive is clamped so an override can
+only tighten, in `scan`, `apply` and `apply --dry-run` alike. A `deny` limit
+above the baseline is lowered back to it, a `remember` count below it is raised
+back to it, a `minlen` below 14 is raised back to 14, a `PASS_MAX_DAYS` above 90
+is lowered back to 90, `MaxAuthTries = "10"` yields 3, `X11Forwarding = "yes"`
+yields `no`, and `kernel.kptr_restrict = "0"` yields 2.
 
-For `[kernel]` and `[permissions]` an override still replaces the target value
-as given, so an override there can loosen a check as easily as tighten it.
-Validation only rules out values that are unsafe in themselves (the list
-above); it does not compare an override against the baseline.
+`[permissions]` is the one plugin left where an override replaces the target as
+given, so an override there can loosen a check as easily as tighten it. Two of
+its paths carry a max-mask rule that makes a stricter mode compliant, but the
+override itself is not compared against the baseline. Validation only rules out
+values that are unsafe in themselves (the list above).
 
 The clamp used to apply to `deny` and `remember` alone. Every other directive
-in both plugins was compared for equality, which has no direction, so any value
-other than the baseline counted as a violation, stricter ones included. A host
-expiring passwords every 30 days was reported as violating and then written to
-90, and a host allowing two SSH authentication attempts was written up to
-three: a hardening run leaving the host less secure than it found it, and
-reporting success. Every directive in both plugins now carries a direction, and
+in all three plugins was compared for equality, which has no direction, so any
+value other than the baseline counted as a violation, stricter ones included. A
+host expiring passwords every 30 days was reported as violating and then
+written to 90, a host allowing two SSH authentication attempts was written up
+to three, and a host forbidding `ptrace` outright was written back down to
+admin-only: a hardening run leaving the host less secure than it found it, and
+reporting success. Every directive in all three now carries a direction, and
 apply writes the stricter of the target and what the host already holds rather
 than skipping, so a file that also needs a duplicate or a stale separator
 repaired still converges.
@@ -217,12 +219,28 @@ of them zero is the loosest value the setting has and is never treated as
 compliant. `MaxAuthTries 0` and `ClientAliveCountMax 0`, by contrast, are the
 strict end of their settings and are honoured as such.
 
-`PermitRootLogin` is ordered rather than counted: `no` is stricter than
-`forced-commands-only`, which is stricter than `prohibit-password`, which is
-stricter than `yes`. `without-password` is sshd's legacy spelling of
-`prohibit-password` and ranks with it, so a host using it is not rewritten for
-the sake of the name. Values are matched case-insensitively throughout,
-because sshd itself compares them that way.
+Some settings are ordered rather than counted, because neither the number nor
+the alphabet carries their strictness:
+
+- `PermitRootLogin`: `no` is stricter than `forced-commands-only`, which is
+  stricter than `prohibit-password`, which is stricter than `yes`.
+  `without-password` is sshd's legacy spelling of `prohibit-password` and ranks
+  with it, so a host using it is not rewritten for the sake of the name. Values
+  are matched case-insensitively throughout, because sshd itself compares them
+  that way.
+- `net.ipv4.conf.*.rp_filter`: `1` is strict mode, `2` is loose mode and `0` is
+  off, so the strongest value is the middle number. Treated as "larger is
+  stricter" a host in loose mode would score compliant against a target of
+  strict mode.
+- `fs.suid_dumpable`: `0` refuses the dump, `2` writes one only root can read
+  and `1` writes one from every setuid process, so the strongest value is the
+  smallest and the weakest is in the middle.
+
+Two kernel parameters have a value stronger than the baseline, and a host
+already there keeps it: `kernel.yama.ptrace_scope = 3` forbids `ptrace`
+entirely where the baseline restricts it to administrators, and
+`net.ipv4.tcp_syncookies = 2` sends SYN cookies unconditionally rather than
+under pressure.
 
 To record a deliberate, approved deviation, prefer an exception over a
 loosening override: an exception carries a reason, an approver and an expiry,

@@ -10,6 +10,7 @@
 //! The plugin reads current values, compares against secure baselines,
 //! and can apply hardening configurations with automatic rollback support.
 
+use crate::strictness::Strictness;
 use async_trait::async_trait;
 use hardener_common::{
     error::Result,
@@ -53,122 +54,189 @@ impl KernelHardeningPlugin {
     }
 }
 
-/// Critical kernel security parameters with their secure values.
+/// The strictness order of `fs.suid_dumpable`, weakest first. 1 dumps core
+/// from every setuid process, 2 dumps a core only root can read, and 0 refuses
+/// outright, so the safest value is the smallest and the middle one is neither
+/// end. The integer carries none of that. This baseline is already the
+/// strongest value, which makes the ranking indistinguishable from `AtMost`
+/// today; it is written out because the reason `AtMost` happens to be right
+/// here is an accident of the baseline rather than a property of the setting.
+const SUID_DUMPABLE_ORDER: &[&[&str]] = &[&["1"], &["2"], &["0"]];
+
+/// The strictness order of `rp_filter`, weakest first: 0 is off, 2 is loose
+/// mode, which accepts a packet if its source is reachable through any
+/// interface, and 1 is strict mode, which requires the interface it arrived
+/// on. Loose mode is therefore weaker than strict mode while being the larger
+/// number, and no numeric direction can express that.
+const RP_FILTER_ORDER: &[&[&str]] = &[&["0"], &["2"], &["1"]];
+
+/// A kernel security parameter, its secure value, and the direction in which
+/// one of its values is stricter than another.
 ///
-/// Each tuple contains:
-/// - Parameter name in sysctl dot notation
-/// - Recommended secure value
-/// - Human-readable explanation
-const KERNEL_PARAMS: &[(&str, &str, &str, Severity)] = &[
-    (
-        "kernel.randomize_va_space",
-        "2",
-        "Enable full address space layout randomisation (ASLR)",
-        Severity::High,
-    ),
-    (
-        "kernel.kptr_restrict",
-        "2",
-        "Hides kernel pointers from all users except root",
-        Severity::Medium,
-    ),
-    (
-        "kernel.dmesg_restrict",
-        "1",
-        "Restricts dmesg access to privileged users only",
-        Severity::Medium,
-    ),
-    (
-        "kernel.yama.ptrace_scope",
-        "2",
-        "Restricts ptrace usage to admin-only",
-        Severity::High,
-    ),
-    (
-        "fs.suid_dumpable",
-        "0",
-        "Prevents setuid processes from creating core dumps",
-        Severity::Medium,
-    ),
-    (
-        "fs.protected_hardlinks",
-        "1",
-        "Prevents hardlink creation to files user doesn't own",
-        Severity::Medium,
-    ),
-    (
-        "fs.protected_symlinks",
-        "1",
-        "Prevents symlink following in sticky world-writable directories",
-        Severity::Medium,
-    ),
-    (
-        "net.ipv4.conf.all.rp_filter",
-        "1",
-        "Enables reverse path filtering (anti-spoofing)",
-        Severity::High,
-    ),
-    (
-        "net.ipv4.conf.default.rp_filter",
-        "1",
-        "Enables reverse path filtering for new interfaces",
-        Severity::High,
-    ),
-    (
-        "net.ipv4.tcp_syncookies",
-        "1",
-        "Enables SYN flood protection",
-        Severity::High,
-    ),
-    (
-        "net.ipv4.conf.all.accept_source_route",
-        "0",
-        "Disables source routing (security risk)",
-        Severity::Medium,
-    ),
-    (
-        "net.ipv4.conf.default.accept_source_route",
-        "0",
-        "Disables source routing for new interfaces",
-        Severity::Medium,
-    ),
-    (
-        "net.ipv4.conf.all.accept_redirects",
-        "0",
-        "Disables acceptance of ICMP redirects (prevents route table poisoning)",
-        Severity::Medium,
-    ),
-    (
-        "net.ipv4.conf.default.accept_redirects",
-        "0",
-        "Disables ICMP redirect acceptance for new interfaces",
-        Severity::Medium,
-    ),
-    (
-        "net.ipv4.conf.all.secure_redirects",
-        "0",
-        "Disables acceptance of secure ICMP redirects",
-        Severity::Medium,
-    ),
-    (
-        "net.ipv4.conf.default.secure_redirects",
-        "0",
-        "Disables secure ICMP redirect acceptance for new interfaces",
-        Severity::Medium,
-    ),
-    (
-        "net.ipv4.conf.all.log_martians",
-        "1",
-        "Logs packets with impossible (martian) source addresses",
-        Severity::Low,
-    ),
-    (
-        "net.ipv4.conf.default.log_martians",
-        "1",
-        "Logs martian packets for new interfaces",
-        Severity::Low,
-    ),
+/// The comparison used to be equality, which has no direction, so a host safer
+/// than this baseline counted as violating and both the runtime write and the
+/// persistent file replaced its value with the baseline.
+#[derive(Clone, Debug)]
+struct KernelParameter {
+    /// Parameter name in sysctl dot notation.
+    kernel_parameter_name: &'static str,
+    /// The value this tool targets.
+    kernel_secure_value: &'static str,
+    /// Human-readable explanation of what the parameter protects against.
+    kernel_description: &'static str,
+    /// Severity of a host that does not meet the target.
+    kernel_severity: Severity,
+    /// Which direction counts as stricter for this parameter's values.
+    kernel_compare: Strictness,
+}
+
+/// Critical kernel security parameters with their secure values.
+const KERNEL_PARAMS: &[KernelParameter] = &[
+    KernelParameter {
+        kernel_parameter_name: "kernel.randomize_va_space",
+        kernel_secure_value: "2",
+        kernel_description: "Enable full address space layout randomisation (ASLR)",
+        kernel_severity: Severity::High,
+        kernel_compare: Strictness::AtLeast,
+    },
+    KernelParameter {
+        kernel_parameter_name: "kernel.kptr_restrict",
+        kernel_secure_value: "2",
+        kernel_description: "Hides kernel pointers from all users except root",
+        kernel_severity: Severity::Medium,
+        kernel_compare: Strictness::AtLeast,
+    },
+    KernelParameter {
+        kernel_parameter_name: "kernel.dmesg_restrict",
+        kernel_secure_value: "1",
+        kernel_description: "Restricts dmesg access to privileged users only",
+        kernel_severity: Severity::Medium,
+        kernel_compare: Strictness::AtLeast,
+    },
+    KernelParameter {
+        kernel_parameter_name: "kernel.yama.ptrace_scope",
+        kernel_secure_value: "2",
+        kernel_description: "Restricts ptrace usage to admin-only",
+        kernel_severity: Severity::High,
+        // 3 forbids ptrace outright and is stricter than this baseline, so a
+        // host at 3 is compliant and is never written down to 2.
+        kernel_compare: Strictness::AtLeast,
+    },
+    KernelParameter {
+        kernel_parameter_name: "fs.suid_dumpable",
+        kernel_secure_value: "0",
+        kernel_description: "Prevents setuid processes from creating core dumps",
+        kernel_severity: Severity::Medium,
+        kernel_compare: Strictness::Ranked(SUID_DUMPABLE_ORDER),
+    },
+    KernelParameter {
+        kernel_parameter_name: "fs.protected_hardlinks",
+        kernel_secure_value: "1",
+        kernel_description: "Prevents hardlink creation to files user doesn't own",
+        kernel_severity: Severity::Medium,
+        kernel_compare: Strictness::AtLeast,
+    },
+    KernelParameter {
+        kernel_parameter_name: "fs.protected_symlinks",
+        kernel_secure_value: "1",
+        kernel_description: "Prevents symlink following in sticky world-writable directories",
+        kernel_severity: Severity::Medium,
+        kernel_compare: Strictness::AtLeast,
+    },
+    KernelParameter {
+        kernel_parameter_name: "net.ipv4.conf.all.rp_filter",
+        kernel_secure_value: "1",
+        kernel_description: "Enables reverse path filtering (anti-spoofing)",
+        kernel_severity: Severity::High,
+        kernel_compare: Strictness::Ranked(RP_FILTER_ORDER),
+    },
+    KernelParameter {
+        kernel_parameter_name: "net.ipv4.conf.default.rp_filter",
+        kernel_secure_value: "1",
+        kernel_description: "Enables reverse path filtering for new interfaces",
+        kernel_severity: Severity::High,
+        kernel_compare: Strictness::Ranked(RP_FILTER_ORDER),
+    },
+    KernelParameter {
+        kernel_parameter_name: "net.ipv4.tcp_syncookies",
+        kernel_secure_value: "1",
+        kernel_description: "Enables SYN flood protection",
+        kernel_severity: Severity::High,
+        // 2 sends SYN cookies unconditionally rather than under pressure, which
+        // is not weaker, so a host at 2 keeps it.
+        kernel_compare: Strictness::AtLeast,
+    },
+    KernelParameter {
+        kernel_parameter_name: "net.ipv4.conf.all.accept_source_route",
+        kernel_secure_value: "0",
+        kernel_description: "Disables source routing (security risk)",
+        kernel_severity: Severity::Medium,
+        kernel_compare: Strictness::AtMost,
+    },
+    KernelParameter {
+        kernel_parameter_name: "net.ipv4.conf.default.accept_source_route",
+        kernel_secure_value: "0",
+        kernel_description: "Disables source routing for new interfaces",
+        kernel_severity: Severity::Medium,
+        kernel_compare: Strictness::AtMost,
+    },
+    KernelParameter {
+        kernel_parameter_name: "net.ipv4.conf.all.accept_redirects",
+        kernel_secure_value: "0",
+        kernel_description: "Disables acceptance of ICMP redirects (prevents route table poisoning)",
+        kernel_severity: Severity::Medium,
+        kernel_compare: Strictness::AtMost,
+    },
+    KernelParameter {
+        kernel_parameter_name: "net.ipv4.conf.default.accept_redirects",
+        kernel_secure_value: "0",
+        kernel_description: "Disables ICMP redirect acceptance for new interfaces",
+        kernel_severity: Severity::Medium,
+        kernel_compare: Strictness::AtMost,
+    },
+    KernelParameter {
+        kernel_parameter_name: "net.ipv4.conf.all.secure_redirects",
+        kernel_secure_value: "0",
+        kernel_description: "Disables acceptance of secure ICMP redirects",
+        kernel_severity: Severity::Medium,
+        kernel_compare: Strictness::AtMost,
+    },
+    KernelParameter {
+        kernel_parameter_name: "net.ipv4.conf.default.secure_redirects",
+        kernel_secure_value: "0",
+        kernel_description: "Disables secure ICMP redirect acceptance for new interfaces",
+        kernel_severity: Severity::Medium,
+        kernel_compare: Strictness::AtMost,
+    },
+    KernelParameter {
+        kernel_parameter_name: "net.ipv4.conf.all.log_martians",
+        kernel_secure_value: "1",
+        kernel_description: "Logs packets with impossible (martian) source addresses",
+        kernel_severity: Severity::Low,
+        kernel_compare: Strictness::AtLeast,
+    },
+    KernelParameter {
+        kernel_parameter_name: "net.ipv4.conf.default.log_martians",
+        kernel_secure_value: "1",
+        kernel_description: "Logs martian packets for new interfaces",
+        kernel_severity: Severity::Low,
+        kernel_compare: Strictness::AtLeast,
+    },
 ];
+
+/// The target for `parameter`: its secure value, tightened by an operator's
+/// directive override where the config sets one that tightens it.
+///
+/// Scan, apply and validate all resolve it here. An override that would relax
+/// a parameter below this tool's own baseline is not honoured; a deliberate
+/// deviation belongs in an exception, which the report labels.
+fn resolved_target(parameter: &KernelParameter, config: &PluginConfig) -> String {
+    parameter.kernel_compare.resolved_target(
+        config,
+        parameter.kernel_parameter_name,
+        parameter.kernel_secure_value,
+    )
+}
 
 /// Builds a NIST 800-53 Rev 5 mapping. Title/section follow the project's
 /// authoritative definitions in `hardener-compliance/src/frameworks/nist.rs`.
@@ -307,7 +375,7 @@ fn fedramp(id: &str, title: &str) -> ComplianceMapping {
 pub fn coverage() -> Vec<ComplianceMapping> {
     KERNEL_PARAMS
         .iter()
-        .flat_map(|p| get_compliance_mappings(p.0))
+        .flat_map(|p| get_compliance_mappings(p.kernel_parameter_name))
         .collect()
 }
 
@@ -722,12 +790,23 @@ impl HardeningPlugin for KernelHardeningPlugin {
         let start_time = Instant::now();
         let mut findings = Vec::new();
 
-        for (param_name, expected_value, param_description, severity) in KERNEL_PARAMS {
+        for parameter in KERNEL_PARAMS {
+            let param_name = parameter.kernel_parameter_name;
+            let param_description = parameter.kernel_description;
+            let severity = &parameter.kernel_severity;
             match self.read_sysctl(param_name, ctx).await {
                 Ok(actual_value) => {
-                    // Directive override takes precedence over the built-in baseline.
-                    let target = config.resolve_str(param_name, expected_value);
-                    if actual_value != target {
+                    let target = resolved_target(parameter, config);
+                    // Threshold, not equality: a host stricter than the
+                    // baseline is already compliant. Comparing for equality
+                    // flagged a host forbidding ptrace outright against a
+                    // baseline of admin-only, and apply then wrote the
+                    // baseline over it, at runtime and in the file that
+                    // restores it at the next boot.
+                    if parameter
+                        .kernel_compare
+                        .violated_by(&target, Some(&actual_value))
+                    {
                         let policy_exception = config
                             .matching_exception(param_name, &actual_value)
                             .map(|e| e.to_finding_exception());
@@ -813,7 +892,9 @@ impl HardeningPlugin for KernelHardeningPlugin {
         let mut runtime_changed = false;
         let mut compliant_count = 0usize;
 
-        for (param_name, expected_value, param_description, _severity) in KERNEL_PARAMS {
+        for parameter in KERNEL_PARAMS {
+            let param_name = parameter.kernel_parameter_name;
+            let param_description = parameter.kernel_description;
             // The exception is honoured only when it documents the value the
             // host actually has. Read before deciding: an unreadable value
             // cannot confirm the exception, so it is not honoured and the
@@ -840,8 +921,14 @@ impl HardeningPlugin for KernelHardeningPlugin {
                 continue;
             }
 
-            // Determine target value: user directive override or hardcoded baseline
-            let target_value = config.resolve_str(param_name, expected_value);
+            // Never loosen: the value written is the stricter of this tool's
+            // target and what the host already runs. The persistent file below
+            // is written for every parameter whatever the runtime gate decides,
+            // so clamping only the runtime write would still hand a stricter
+            // host the baseline back at its next boot.
+            let target_value = parameter
+                .kernel_compare
+                .clamp_target(&resolved_target(parameter, config), observed.as_deref());
 
             let path = format!("/proc/sys/{}", param_name.replace('.', "/"));
 
@@ -851,9 +938,10 @@ impl HardeningPlugin for KernelHardeningPlugin {
                 param_description, param_name, target_value
             ));
 
-            // Already at the target: no runtime write needed.
-            if let Some(current) = observed.as_deref()
-                && current == target_value
+            // Already at least as strict as the target: no runtime write.
+            if !parameter
+                .kernel_compare
+                .violated_by(&target_value, observed.as_deref())
             {
                 compliant_count += 1;
                 continue;
@@ -862,7 +950,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
             // Apply immediately to runtime.
             match ctx
                 .executor()
-                .write_file(Path::new(&path), target_value)
+                .write_file(Path::new(&path), &target_value)
                 .await
             {
                 Ok(_) => {
@@ -1020,7 +1108,8 @@ impl HardeningPlugin for KernelHardeningPlugin {
         let mut exceptions: Vec<String> = Vec::new();
         let mut compliant_count = 0usize;
 
-        for (param_name, expected_value, _expected_description, _severity) in KERNEL_PARAMS {
+        for parameter in KERNEL_PARAMS {
+            let param_name = parameter.kernel_parameter_name;
             // Honour an exception only when it documents the value the host
             // actually has; an unreadable value is not a match (fail closed).
             let observed = self.read_sysctl(param_name, ctx).await.ok();
@@ -1035,8 +1124,13 @@ impl HardeningPlugin for KernelHardeningPlugin {
                 continue;
             }
 
-            // Determine target value for preview
-            let target_value = config.resolve_str(param_name, expected_value);
+            // The override-clamped target, exactly as scan judges the host
+            // against it. Apply additionally clamps against the host's own
+            // value, which this preview deliberately does not repeat: the
+            // comparison below already reports a stricter host as compliant,
+            // so the extra clamp could only ever return the same target, and a
+            // second spelling of a rule is how two of them come to disagree.
+            let target_value = resolved_target(parameter, config);
 
             let path = format!("/proc/sys/{}", param_name.replace('.', "/"));
 
@@ -1050,7 +1144,13 @@ impl HardeningPlugin for KernelHardeningPlugin {
                     });
                 }
                 Ok(_) => match observed.as_deref() {
-                    Some(current) if current == target_value => compliant_count += 1,
+                    Some(current)
+                        if !parameter
+                            .kernel_compare
+                            .violated_by(&target_value, Some(current)) =>
+                    {
+                        compliant_count += 1
+                    }
                     Some(current) => estimated_changes.push(format!(
                         "{} will change: {} -> {}",
                         param_name, current, target_value
