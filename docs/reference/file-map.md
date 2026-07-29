@@ -687,6 +687,7 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 | `scripts/validate/validate_all.py` | Master validation orchestrator |
 | `scripts/validate/validate_cli_docs.py` | CLI command documentation validator |
 | `scripts/validate/validate_compliance_docs.py` | Compliance framework documentation validator |
+| `scripts/validate/validate_doc_attachment.py` | Loose doc comment validator: an undocumented free function beside a long doc block |
 | `scripts/validate/validate_file_map.py` | file-map.md accuracy validator |
 | `scripts/validate/validate_last_updated.py` | Last Updated timestamp validator |
 | `scripts/validate/validate_plugin_docs.py` | Plugin documentation validator |

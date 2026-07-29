@@ -350,6 +350,9 @@ const AREA_LABELS: &[(&str, &str)] = &[
     ("mac", "MAC"),
 ];
 
+/// The short label for a plugin id, matched on its prefix against
+/// [`AREA_LABELS`]. An id no entry matches yields "Unknown area" rather than
+/// the raw id, so a sentence built from it still reads as a sentence.
 fn area_label(plugin_id: &str) -> &'static str {
     AREA_LABELS
         .iter()

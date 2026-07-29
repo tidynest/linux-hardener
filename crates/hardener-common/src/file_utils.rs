@@ -308,6 +308,8 @@ fn split_directive(line: &str) -> (&str, &str) {
     (key, rest.strip_prefix('=').map_or(rest, str::trim_start))
 }
 
+/// Strips `prefix` from `s`, comparing it with or without regard to case.
+/// `None` when `s` does not begin with it under the chosen comparison.
 fn strip_prefix_with_case<'a>(s: &'a str, prefix: &str, case_sensitive: bool) -> Option<&'a str> {
     if case_sensitive {
         s.strip_prefix(prefix)

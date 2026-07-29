@@ -102,6 +102,25 @@ Verifies that every `#[tauri::command]` function in `src-tauri/src/commands.rs` 
 
 Checks that "Last Updated" dates in documentation files match (or are close to) the file's last git modification date. Reports files with stale dates.
 
+### Doc comment attachment
+
+```bash
+python3 scripts/validate/validate_doc_attachment.py
+```
+
+Reports a free function with no doc comment of its own sitting immediately
+after an item that carries a long one. Rust attaches a `///` block to the item
+that follows it, so inserting a new item between a comment and its function
+silently hands the comment over: one function is then documented as two things
+and the other as nothing, and nothing warns. It has happened eight times here,
+once to the rollback contract that decides whether a file may be deleted.
+
+Fix a report either by moving the stolen half of the neighbour's doc down onto
+the function it describes, or by writing the function a line of its own. The
+script's own docstring records the threshold, what the rule cannot see, and the
+sharper rule that was measured and rejected for reporting eighty-one innocent
+functions.
+
 ### CLI documentation (slower)
 
 ```bash

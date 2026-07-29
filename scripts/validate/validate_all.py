@@ -75,6 +75,7 @@ def main():
         ("Plugin Documentation", "validate_plugin_docs.py", []),
         ("Tauri Command Documentation", "validate_tauri_docs.py", []),
         ("Last Updated Dates", "validate_last_updated.py", ["--fix"] if fix_mode else []),
+        ("Doc Comment Attachment", "validate_doc_attachment.py", []),
     ]
 
     # Add slower validators unless in quick mode
