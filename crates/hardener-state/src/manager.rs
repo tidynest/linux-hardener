@@ -1022,17 +1022,6 @@ fn select_latest_named(
         .collect()
 }
 
-/// Handles a checkpoint row whose action is [`FileRestoreAction::Removed`]:
-/// `path` was recorded absent at capture time, and this decides whether that
-/// row may still be trusted.
-///
-/// `path_str` outside [`UNDELETABLE_ROLLBACK_PATHS`] is deleted unconditionally,
-/// matching an apply that created the file itself. A listed path is probed
-/// first, and is deleted only when that probe positively confirms it is still
-/// absent; a probe error fails closed rather than guessing. Kept as a free
-/// function (rather than nested `if`s inline in `restore_file_state_tracked`)
-/// so the two conditions it distinguishes, ordinary-removal versus
-/// protected-path, read as one flat decision instead of two levels of nesting.
 /// Runs one restore command and describes why it did not happen, or `None` if
 /// it did.
 ///
@@ -1063,6 +1052,17 @@ async fn restore_command_refusal(
     Some(format!("{program} {path_str}: {detail}"))
 }
 
+/// Handles a checkpoint row whose action is [`FileRestoreAction::Removed`]:
+/// `path` was recorded absent at capture time, and this decides whether that
+/// row may still be trusted.
+///
+/// `path_str` outside [`UNDELETABLE_ROLLBACK_PATHS`] is deleted unconditionally,
+/// matching an apply that created the file itself. A listed path is probed
+/// first, and is deleted only when that probe positively confirms it is still
+/// absent; a probe error fails closed rather than guessing. Kept as a free
+/// function (rather than nested `if`s inline in `restore_file_state_tracked`)
+/// so the two conditions it distinguishes, ordinary-removal versus
+/// protected-path, read as one flat decision instead of two levels of nesting.
 async fn remove_or_refuse(
     executor: &dyn SystemExecutor,
     path: &Path,
