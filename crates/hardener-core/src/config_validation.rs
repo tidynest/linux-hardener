@@ -13,60 +13,42 @@ const SHELL_METACHARACTERS: &[char] = &[
     ';', '`', '$', '(', ')', '{', '}', '|', '&', '\n', '\r', '\0',
 ];
 
+/// A plugin's own value check, run after the universal one has passed.
+type ValueValidator = fn(&str, &str) -> std::result::Result<(), String>;
+
 /// Validates all directive values in a merged config.
 ///
 /// Returns `Err` listing every invalid directive, not just the first.
+///
+/// Every section appears in the table below. Listing them as separate calls
+/// let three of them be forgotten, and a section absent from the list is not
+/// validated leniently, it is not validated at all.
 pub fn validate_config(config: &HardenerConfig) -> Result<()> {
     let mut errors: Vec<String> = Vec::new();
 
-    validate_plugin_directives(
-        "kernel",
-        &config.kernel.directives,
-        validate_kernel_value,
-        &mut errors,
-    );
-    validate_plugin_directives(
-        "ssh",
-        &config.ssh.directives,
-        validate_ssh_value,
-        &mut errors,
-    );
-    validate_plugin_directives(
-        "firewall",
-        &config.firewall.directives,
-        validate_firewall_value,
-        &mut errors,
-    );
-    validate_plugin_directives(
-        "pam",
-        &config.pam.directives,
-        validate_pam_value,
-        &mut errors,
-    );
-    validate_plugin_directives(
-        "permissions",
-        &config.permissions.directives,
-        validate_permissions_value,
-        &mut errors,
-    );
-
-    // Binary plugins (audit, mac, services) have no directive values to validate,
-    // but still check for universal violations in custom_directives.
-    for (section, plugin) in [
-        ("kernel", &config.kernel),
-        ("ssh", &config.ssh),
-        ("firewall", &config.firewall),
-        ("pam", &config.pam),
-        ("audit", &config.audit),
-        ("mac", &config.mac),
-        ("permissions", &config.permissions),
-        ("services", &config.services),
+    for (section, directives, plugin_validator) in [
+        (
+            "kernel",
+            &config.kernel.directives,
+            validate_kernel_value as ValueValidator,
+        ),
+        ("ssh", &config.ssh.directives, validate_ssh_value),
+        (
+            "firewall",
+            &config.firewall.directives,
+            validate_firewall_value,
+        ),
+        ("pam", &config.pam.directives, validate_pam_value),
+        (
+            "permissions",
+            &config.permissions.directives,
+            validate_permissions_value,
+        ),
+        ("audit", &config.audit.directives, accept_any_value),
+        ("mac", &config.mac.directives, accept_any_value),
+        ("services", &config.services.directives, accept_any_value),
     ] {
-        for (key, value) in &plugin.custom_directives {
-            if let Err(reason) = check_universal(value) {
-                errors.push(format!("[{section}.custom_directives] {key}: {reason}"));
-            }
-        }
+        validate_plugin_directives(section, directives, plugin_validator, &mut errors);
     }
 
     if errors.is_empty() {
@@ -84,7 +66,7 @@ pub fn validate_config(config: &HardenerConfig) -> Result<()> {
 fn validate_plugin_directives(
     section: &str,
     directives: &std::collections::HashMap<String, String>,
-    plugin_validator: fn(&str, &str) -> std::result::Result<(), String>,
+    plugin_validator: ValueValidator,
     errors: &mut Vec<String>,
 ) {
     for (key, value) in directives {
@@ -98,6 +80,13 @@ fn validate_plugin_directives(
             errors.push(format!("[{section}.directives] {key}: {reason}"));
         }
     }
+}
+
+/// The audit, mac and services plugins declare no directive value format of
+/// their own, so the universal checks are the whole of their validation. This
+/// says that deliberately, where their omission from the table said nothing.
+fn accept_any_value(_key: &str, _value: &str) -> std::result::Result<(), String> {
+    Ok(())
 }
 
 /// Universal check: no shell metacharacters, no control characters.
@@ -252,6 +241,41 @@ fn validate_permissions_value(_key: &str, value: &str) -> std::result::Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every section, not the five `validate_config` happened to name. The
+    /// audit, mac and services sections were exempt by omission: the only loop
+    /// that mentioned them read the `custom_directives` table, never their
+    /// `directives` map, so removing that dead table made the omission plain.
+    ///
+    /// The five listed sections are the positive control here. They passed
+    /// this before the fix and still do, which is what says the test is
+    /// exercising validation rather than passing by matching nothing.
+    #[test]
+    fn every_plugin_section_rejects_a_shell_metacharacter() {
+        for section in [
+            "kernel",
+            "ssh",
+            "firewall",
+            "pam",
+            "permissions",
+            "audit",
+            "mac",
+            "services",
+        ] {
+            let config: HardenerConfig =
+                toml::from_str(&format!("[{section}.directives]\nSomeKey = \"a;b\"\n"))
+                    .expect("the section parses");
+
+            let error = validate_config(&config).expect_err(&format!(
+                "[{section}.directives] accepts a shell metacharacter, so nothing checks it"
+            ));
+
+            assert!(
+                error.to_string().contains(section),
+                "the error must name the section it came from: {error}"
+            );
+        }
+    }
 
     #[test]
     fn test_universal_rejects_shell_metacharacters() {

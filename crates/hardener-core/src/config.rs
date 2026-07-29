@@ -51,8 +51,6 @@ pub struct PluginConfig {
     pub enabled: bool,
     /// Stricter directive values (beyond baseline).
     pub directives: HashMap<String, String>,
-    /// Additional custom directives to check.
-    pub custom_directives: HashMap<String, String>,
     /// Policy exceptions for specific checks.
     pub exceptions: HashMap<String, PolicyException>,
 }
@@ -62,7 +60,6 @@ impl Default for PluginConfig {
         Self {
             enabled: true,
             directives: HashMap::new(),
-            custom_directives: HashMap::new(),
             exceptions: HashMap::new(),
         }
     }

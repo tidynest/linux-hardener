@@ -13,7 +13,7 @@
 //! CLI and the desktop both need it, and each keeping its own copy is precisely
 //! how the rule came to be applied in one and not the other.
 
-use hardener_common::types::PluginId;
+use hardener_common::types::{FindingCategory, PluginId};
 use hardener_core::{Finding, PluginMetadata, ScanResult, UncheckedCheck};
 
 /// Why a plugin contributed no evidence to this run.
@@ -89,11 +89,16 @@ pub fn failed_scan(plugin_id: &PluginId, error: &str) -> ScanResult {
 /// scanned a subset, the plugin was added after the session was stored) means
 /// the same thing to a compliance report: nobody assessed those controls this
 /// run, so none of them may report `Pass`.
+///
+/// When the registry itself cannot be enumerated there is no plugin left to
+/// name, so one entry carrying the engine's whole coverage stands in for all
+/// of them. See [`registered_or_unavailable`].
 pub fn flatten_persisted_scans(results: &[ScanResult]) -> (Vec<Finding>, Vec<UncheckedCheck>) {
-    let registered = crate::create_plugin_registry().list().unwrap_or_default();
+    let (registered, unavailable) =
+        registered_or_unavailable(crate::create_plugin_registry().list());
 
     let mut findings = Vec::new();
-    let mut unchecked = Vec::new();
+    let mut unchecked: Vec<UncheckedCheck> = unavailable.into_iter().collect();
 
     for result in results {
         findings.extend(result.scan_findings.iter().cloned());
@@ -125,6 +130,50 @@ pub fn flatten_persisted_scans(results: &[ScanResult]) -> (Vec<Finding>, Vec<Unc
     }
 
     (findings, unchecked)
+}
+
+/// The plugin list a persisted flatten works from, together with whatever has
+/// to stand in for it when the registry cannot be enumerated at all.
+///
+/// Discarding the error left an empty list, which reads exactly like a build
+/// registering no plugins: the loops below find nothing to stand in for, and
+/// the report passes every control on the resulting silence. The list has
+/// nowhere to record why it is empty, so the stand-in travels beside it.
+fn registered_or_unavailable(
+    listed: hardener_common::error::Result<Vec<PluginMetadata>>,
+) -> (Vec<PluginMetadata>, Option<UncheckedCheck>) {
+    match listed {
+        Ok(registered) => (registered, None),
+        Err(error) => (
+            Vec::new(),
+            Some(registry_unavailable_check(&error.to_string())),
+        ),
+    }
+}
+
+/// The entry standing in for a run that could not enumerate its plugins.
+///
+/// It carries the engine's whole declared coverage, because a run that cannot
+/// say which plugins exist cannot say that any control was assessed, and the
+/// generator passes a control it finds neither failed nor unchecked. This is
+/// the same rule `unassessed_check` applies per plugin, widened to the only
+/// scope left when no plugin can be named.
+///
+/// The category is the one field with no honest answer: no variant describes
+/// an engine-level failure. Nothing branches on it, and no renderer prints it
+/// (`output.rs` shows the title and the reason), so it reaches only the JSON
+/// output and the reason carries the meaning instead.
+fn registry_unavailable_check(reason: &str) -> UncheckedCheck {
+    UncheckedCheck {
+        unchecked_check_id: "plugin-registry-unavailable".to_string(),
+        unchecked_title: "Plugin registry could not be enumerated".to_string(),
+        unchecked_category: FindingCategory::Audit,
+        unchecked_reason: format!(
+            "the plugins this run would have assessed could not be listed ({reason}), \
+             so no control may be reported as satisfied"
+        ),
+        unchecked_compliance: crate::compliance_coverage(),
+    }
 }
 
 /// The unchecked entry standing in for a plugin that produced no evidence.
@@ -232,6 +281,64 @@ mod tests {
         let (_, unchecked) = flatten_scans(&[(metadata, scan_of("ssh-hardening", true))], &[]);
 
         assert!(unchecked.is_empty());
+    }
+
+    /// A run that cannot enumerate the plugins cannot say any control was
+    /// assessed. Folding that failure into an empty list silences both the
+    /// incomplete-scan branch and the not-covered loop beneath it, so every
+    /// control the engine covers reports `Pass` on evidence nobody collected.
+    #[test]
+    fn a_registry_that_cannot_be_enumerated_leaves_no_control_assessable() {
+        let listed = Err(hardener_common::error::HardeningError::Plugin(
+            "Failed to acquire read lock: poisoned".to_string(),
+        ));
+
+        let (registered, unavailable) = registered_or_unavailable(listed);
+
+        assert!(registered.is_empty());
+        let check = unavailable.expect("a registry that could not be listed must be recorded");
+        assert!(
+            check.unchecked_reason.contains("poisoned"),
+            "the reason must carry what went wrong: {}",
+            check.unchecked_reason
+        );
+
+        // Engine-wide rather than any one plugin's: a control only ssh
+        // declares and a control only the kernel plugin declares must both be
+        // carried, or whichever is missing still passes on silence.
+        for plugin_id in ["ssh-hardening", "kernel-hardening"] {
+            let declared = crate::coverage_for(plugin_id).expect("plugin declares coverage");
+            assert!(
+                !declared.is_empty(),
+                "{plugin_id} declares nothing to carry"
+            );
+            for mapping in declared {
+                // Framework and id are the whole invariant: the generator
+                // matches an unchecked entry to a control on that pair alone
+                // and takes the title from its catalogue, which is why the
+                // payload may deduplicate a control two plugins both declare.
+                assert!(
+                    check.unchecked_compliance.iter().any(|carried| {
+                        carried.compliance_framework == mapping.compliance_framework
+                            && carried.compliance_control_id == mapping.compliance_control_id
+                    }),
+                    "{plugin_id} control {} is not carried, so it can still pass",
+                    mapping.compliance_control_id
+                );
+            }
+        }
+    }
+
+    /// The stand-in must not fire on the ordinary path. An engine-wide manual
+    /// review entry on every report is the same defect pointing the other way:
+    /// it would bury a real assessment under controls that were in fact made.
+    #[test]
+    fn an_enumerable_registry_contributes_no_stand_in() {
+        let (registered, unavailable) =
+            registered_or_unavailable(crate::create_plugin_registry().list());
+
+        assert!(!registered.is_empty());
+        assert!(unavailable.is_none());
     }
 
     #[test]

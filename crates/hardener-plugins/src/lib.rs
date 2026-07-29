@@ -282,6 +282,36 @@ mod tests {
         }
     }
 
+    /// A plugin the registry lists but `get_plugin_config` does not name falls
+    /// through to one shared empty default whose `enabled` is `true`. The
+    /// operator's `enabled = false`, directive overrides and policy exceptions
+    /// for that plugin are then read as absent rather than as unroutable, so
+    /// the plugin runs unconfigured, applies baseline values the operator
+    /// overrode, and reports the deviations its exceptions document as
+    /// violations.
+    ///
+    /// The routing is a hand-written match over eight literals because
+    /// `HardenerConfig` names its sections as struct fields, leaving nothing to
+    /// derive it from; the registry is the only thing that can say the match is
+    /// complete. `hardener-core` cannot see the registry, which is why this
+    /// guard lives here rather than beside the code it guards.
+    #[test]
+    fn every_registered_plugin_routes_to_its_own_config_section() {
+        let config = hardener_core::HardenerConfig::default();
+        // Every unroutable id gets the one shared static, so identity with it
+        // is precisely the fell-through state and nothing else.
+        let fallback = config.get_plugin_config("no-plugin-answers-to-this-id");
+
+        for metadata in crate::create_plugin_registry().list().unwrap() {
+            let id = metadata.plugin_id.as_str();
+            assert!(
+                !std::ptr::eq(config.get_plugin_config(id), fallback),
+                "plugin '{id}' is registered but HardenerConfig::get_plugin_config \
+                 does not route it, so its configuration is silently ignored"
+            );
+        }
+    }
+
     #[test]
     fn compliance_coverage_spans_multiple_frameworks() {
         use std::collections::HashSet;

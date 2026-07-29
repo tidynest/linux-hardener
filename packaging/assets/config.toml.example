@@ -37,9 +37,6 @@ enabled = true
 # PermitRootLogin = "no"
 # PasswordAuthentication = "no"
 # MaxAuthTries = "3"
-
-# Additional custom directives beyond the built-in set.
-# [ssh.custom_directives]
 # ClientAliveInterval = "300"
 # ClientAliveCountMax = "2"
 

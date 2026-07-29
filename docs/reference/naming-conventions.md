@@ -1351,7 +1351,6 @@ pub struct GlobalConfig {
 pub struct PluginConfig {
     pub enabled: bool,
     pub directives: HashMap<String, String>,
-    pub custom_directives: HashMap<String, String>,
     pub exceptions: HashMap<String, PolicyException>,
 }
 
