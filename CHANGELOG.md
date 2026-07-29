@@ -48,7 +48,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `libpwquality` is not installed, and `/etc/security/pwquality.conf` is 0600.
   A privileged scan there used to read that file and pass six controls on it.
   `pam_pwhistory.so` is present on disk but likewise absent from the stack, so
-  `remember` was passing the same way.
+  `remember` was passing the same way. Measured again across the five
+  distribution images the project tests against: **three of the five do not
+  load `pam_pwquality.so`** (Arch, Debian and openSUSE; Fedora and Rocky do),
+  so six password-quality directives were passing on three of five images. The
+  differential suite gained a check that asks the stack and holds it against
+  the tool's own verdict, and the two now agree on all five.
 
 - **`batch apply --dry-run` and `apply --dry-run` no longer disagree about
   whether a host failed.** The single-host dry run fails on Critical and High
