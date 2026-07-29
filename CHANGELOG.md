@@ -26,6 +26,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`apply` no longer makes a host less secure than it found it.** Nine of the
+  eleven PAM directives compared for equality, so any value other than the
+  baseline counted as a violation, stricter ones included, and apply then wrote
+  the baseline over it. Measured on a mock host: `PASS_MAX_DAYS 30`,
+  `PASS_MIN_DAYS 7` and `PASS_WARN_AGE 14` came out of an apply as `90`, `1`
+  and `7`, relaxing a 30-day password expiry to 90 days while reporting
+  success. The same held for `minlen`, the four credit settings and
+  `maxrepeat`. The no-loosen rule and the machinery for it already existed and
+  had been applied to shadow permissions, `PermitRootLogin` and the
+  faillock/pwhistory thresholds; these nine were never swept into it. Every PAM
+  directive now carries a direction, apply writes the stricter of the baseline
+  and the host's own value, and the direction-less comparison has been removed
+  outright so a directive added later cannot be given one. `maxrepeat = 0` is
+  treated as the check being switched off rather than as the strictest possible
+  value. **Behaviour change worth noting:** a `[pam]` directive override in
+  `config.toml` is now clamped tighten-only like `deny` and `remember` always
+  were, so an override that loosens the baseline no longer takes effect; record
+  a deliberate deviation as a policy exception instead.
+
 - **A PAM configuration file no module reads is no longer reported as the
   host's policy.** `/etc/security/pwquality.conf` is consumed by
   `pam_pwquality.so` and by nothing else, and the plugin never checked that the

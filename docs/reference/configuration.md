@@ -94,7 +94,7 @@ Every section accepts the same three keys:
 | Key | Type | Default | Effect |
 |-----|------|---------|--------|
 | `enabled` | bool | `true` | Set `false` to stop this plugin from running. Disabled anywhere is final: `enabled = true` is the key's default value, so it can only ever turn a plugin off and never re-enable one `[global] disabled_plugins` has already refused, or one a non-empty `[global] enabled_plugins` omits. |
-| `directives` | table of string to string | `{}` | Overrides the target value for a built-in check, typically to something stricter than the baseline. Applied as given for `[kernel]`, `[ssh]` and `[permissions]`, so an override can also loosen a check; only the `[pam]` thresholds are clamped tighten-only. See below. |
+| `directives` | table of string to string | `{}` | Overrides the target value for a built-in check, typically to something stricter than the baseline. Applied as given for `[kernel]`, `[ssh]` and `[permissions]`, so an override can also loosen a check; **every `[pam]` directive** is clamped tighten-only. See below. |
 | `exceptions` | table of exception entries | `{}` | Policy exceptions; see below. |
 
 > **Removed: `custom_directives`.** Earlier releases accepted and validated a
@@ -195,11 +195,22 @@ running 10 compliant. Validation only rules out values that are unsafe in
 themselves (the list above); it does not compare an override against the
 baseline.
 
-The exception is the `[pam]` threshold directives, `deny` and `remember`,
-which are clamped so an override can only tighten: a `deny` limit above the
-baseline is lowered back to it, and a `remember` count below the baseline is
-raised back to it. Every other PAM directive is compared exactly and takes the
-override as given, like the other sections.
+The exception is `[pam]`, where **every** directive is clamped so an override
+can only tighten: a `deny` limit above the baseline is lowered back to it, a
+`remember` count below it is raised back to it, a `minlen` below 14 is raised
+back to 14, and a `PASS_MAX_DAYS` above 90 is lowered back to 90.
+
+This used to apply to `deny` and `remember` alone, and the other nine were
+compared for equality. That made any value other than the baseline a
+violation, stricter ones included, so a host expiring passwords every 30 days
+was reported as violating and then written to 90: a hardening run leaving the
+host less secure than it found it, and reporting success. Every `[pam]`
+directive now carries a direction, and apply writes the stricter of the
+baseline and what the host already holds.
+
+One setting does not count downwards all the way. `maxrepeat = 0` switches the
+consecutive-character check off rather than tightening it, so zero is the
+loosest value it has and is never treated as compliant.
 
 To record a deliberate, approved deviation, prefer an exception over a
 loosening override: an exception carries a reason, an approver and an expiry,

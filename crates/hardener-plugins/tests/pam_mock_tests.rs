@@ -3220,3 +3220,125 @@ async fn validate_fails_the_dry_run_when_no_module_reads_the_file() {
         "the dry run must fail, because the apply it previews reports a failure"
     );
 }
+
+// === A host already stricter than the baseline (no-loosen) ===
+
+/// A hardening tool must never leave a host less secure than it found it. The
+/// project applies that rule by name to shadow permissions, `PermitRootLogin`
+/// and the faillock/pwhistory thresholds, and built `PamCompare::AtMost` and
+/// `AtLeast` to express it. Nine directives were left comparing `Exact`, which
+/// reads any value other than the baseline as a violation, stricter ones
+/// included.
+#[tokio::test]
+async fn scan_does_not_report_a_stricter_host_as_violating() {
+    // secure_pam_executor, not the base: the base omits faillock.conf, which
+    // would leave `deny` genuinely unset and the finding for it correct.
+    let executor = Arc::new(
+        secure_pam_executor()
+            .with_file(
+                "/etc/login.defs",
+                "PASS_MAX_DAYS 30\nPASS_MIN_DAYS 7\nPASS_WARN_AGE 14\n",
+            )
+            .with_file(
+                "/etc/security/pwquality.conf",
+                "minlen = 20\ndcredit = -2\nucredit = -2\nlcredit = -2\nocredit = -2\nmaxrepeat = 2\n",
+            ),
+    );
+    let ctx = Context::with_executor(executor);
+
+    let result = PamHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan runs");
+
+    let offenders: Vec<&str> = result
+        .scan_findings
+        .iter()
+        .map(|f| f.finding_id.as_str())
+        .filter(|id| id.starts_with("pam-"))
+        .collect();
+    assert!(
+        offenders.is_empty(),
+        "every directive here is stricter than the baseline, so none is a \
+         violation, got: {offenders:?}"
+    );
+}
+
+/// The consequence, and the part that costs the operator something: apply acts
+/// on those findings and writes the baseline over the stricter value.
+#[tokio::test]
+async fn apply_does_not_loosen_a_host_stricter_than_the_baseline() {
+    let executor = Arc::new(with_backup_cp(
+        with_backup_cp(
+            secure_pam_executor_base()
+                .with_file(
+                    "/etc/login.defs",
+                    "PASS_MAX_DAYS 30\nPASS_MIN_DAYS 7\nPASS_WARN_AGE 14\n",
+                )
+                .with_file(
+                    "/etc/security/pwquality.conf",
+                    "minlen = 20\ndcredit = -2\nucredit = -2\nlcredit = -2\nocredit = -2\nmaxrepeat = 2\n",
+                ),
+            "/etc/login.defs",
+        ),
+        "/etc/security/pwquality.conf",
+    ));
+    let mut ctx = Context::with_executor(executor.clone());
+
+    PamHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply runs");
+
+    for (path, kept) in [
+        ("/etc/login.defs", vec!["30", "7", "14"]),
+        ("/etc/security/pwquality.conf", vec!["20", "-2", "2"]),
+    ] {
+        let Some(content) = executor
+            .log()
+            .files_written
+            .iter()
+            .find(|(written, _)| written.to_str() == Some(path))
+            .map(|(_, content)| content.clone())
+        else {
+            continue;
+        };
+        for value in kept {
+            assert!(
+                content.contains(value),
+                "{path} must keep its stricter '{value}', got: {content}"
+            );
+        }
+    }
+}
+
+/// `maxrepeat = 0` disables the consecutive-character check outright, so it is
+/// the loosest value the setting has and not the strictest. A plain "at most"
+/// comparison would score it compliant, which is the same shape as every other
+/// defect in this file: a setting switched off reading as a setting satisfied.
+#[tokio::test]
+async fn scan_reports_a_disabled_maxrepeat_rather_than_scoring_zero_as_strict() {
+    let executor = Arc::new(secure_pam_executor_base().with_file(
+        "/etc/security/pwquality.conf",
+        "minlen = 14\ndcredit = -1\nucredit = -1\nlcredit = -1\nocredit = -1\nmaxrepeat = 0\n",
+    ));
+    let ctx = Context::with_executor(executor);
+
+    let result = PamHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan runs");
+
+    assert!(
+        result
+            .scan_findings
+            .iter()
+            .any(|f| f.finding_id == "pam-maxrepeat"),
+        "maxrepeat = 0 turns the check off and must not read as compliant, got: {:?}",
+        result
+            .scan_findings
+            .iter()
+            .map(|f| &f.finding_id)
+            .collect::<Vec<_>>()
+    );
+}
