@@ -40,7 +40,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `unchecked_summary` builds the line for all four renderers. Sudo is offered
   when every entry wants it, withheld when none does, and a mixed run says how
   many of the total root would reach. A scan persisted before the field existed
-  reads as claiming nothing rather than as promising a remedy.
+  reads as claiming nothing rather than as promising a remedy. The desktop's
+  score hero and findings tab had the same two copies of the claim and a
+  "Run with sudo" button offered whatever the cause; both now share one honesty
+  line, and the button appears only when a privileged re-run would reach
+  something. Measured on a developer workstation: 33 unchecked checks, 32 of
+  them privilege-blocked and one a `/boot` on vfat that no privilege can give
+  POSIX permission bits.
 
 - **`batch apply --dry-run` and `apply --dry-run` no longer disagree about
   whether a host failed.** The single-host dry run fails on Critical and High
