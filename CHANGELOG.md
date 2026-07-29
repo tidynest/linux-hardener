@@ -26,6 +26,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`hardener rollback` no longer refuses to restore anything because one file
+  in the checkpoint cannot be restored.** Measured on the five test
+  distributions: four of them failed rollback outright, restoring nothing, with
+  `Rollback aborted: symlink /etc/systemd/system/autovt@.service resolves
+  outside allowed directories`. The services plugin declares
+  `/etc/systemd/system` so a checkpoint captures what a distribution ships
+  there, including stock unit symlinks pointing into the package-owned
+  `/usr/lib/systemd/system`. Refusing to write a captured copy through such a
+  link is correct and unchanged: it would overwrite a packaged unit file. What
+  was wrong is what happened next. The pre-validation pass returned an error on
+  the first such path and abandoned the whole rollback, while the restore pass
+  had always recorded the identical condition as one skipped file, so two copies
+  of one guard disagreed and the fatal copy ran first. They are now one
+  definition. A refused path is skipped with its reason named in the result, the
+  rollback restores everything in bounds, and it reports failure so the exit code
+  is non-zero. A checkpoint in which no path at all may be restored is still an
+  error, and still leaves no pre-rollback snapshot behind.
+
 - **A configuration file that is not there is no longer reported as a malformed
   one, and no longer fails the dry run.** PAM's validate probed
   `/etc/security/pwquality.conf` and `/etc/login.defs` with `file_metadata` and

@@ -747,6 +747,61 @@ impl CheckpointManager {
             .verify(&digest, &checkpoint.checkpoint_signature)
     }
 
+    /// Why a rollback must not write this path, or `None` if it may.
+    ///
+    /// One definition, because both phases ask it and their copies had come to
+    /// disagree about the answer's weight: Phase 1 returned `Err` and abandoned
+    /// the whole rollback, while Phase 2 recorded the same condition as one
+    /// skipped file. The fatal copy ran first, so a single stock unit symlink
+    /// under `/etc/systemd/system` pointing into the package-owned
+    /// `/usr/lib/systemd/system` stopped `hardener rollback` restoring anything
+    /// at all, on four of the five test distributions.
+    ///
+    /// The refusals themselves are unchanged and deliberate. A path outside the
+    /// allowlist, or a symlink resolving outside it, would have a captured copy
+    /// written somewhere this tool never modifies; a symlink that cannot be
+    /// resolved is refused because what the write would reach is unknown, which
+    /// is the fail-closed direction.
+    ///
+    /// The symlink half is meaningful only on the local filesystem. For a remote
+    /// executor the path does not exist here, `is_symlink` is false, and the
+    /// prefix allowlist is the whole check.
+    fn rollback_target_refusal(&self, file_state: &FileState) -> Option<String> {
+        let path = Path::new(&file_state.file_path);
+        let path_str = &file_state.file_path;
+
+        let within = |candidate: &str| {
+            self.allowed_rollback_prefixes
+                .iter()
+                .any(|p| candidate.starts_with(p))
+        };
+
+        if !path_str.starts_with('/')
+            || path
+                .components()
+                .any(|c| c == std::path::Component::ParentDir)
+            || !within(path_str)
+        {
+            return Some(format!(
+                "Rollback path outside allowed directories: {path_str}"
+            ));
+        }
+
+        if path.is_symlink() {
+            return match path.canonicalize() {
+                Ok(resolved) if within(&resolved.to_string_lossy()) => None,
+                Ok(_) => Some(format!(
+                    "Rollback symlink {path_str} resolves outside allowed directories"
+                )),
+                Err(e) => Some(format!(
+                    "Rollback target is a broken symlink: {path_str}: {e}"
+                )),
+            };
+        }
+
+        None
+    }
+
     /// Restores a single file to its checkpointed state via the executor.
     ///
     /// Validates the path against an allowlist and rejects symlinks (local check)
@@ -762,50 +817,11 @@ impl CheckpointManager {
         let path = Path::new(&file_state.file_path);
         let path_str = &file_state.file_path;
 
-        // --- Allowlist check (always runs; symlink check is local-only) ---
-        if !path_str.starts_with('/')
-            || path
-                .components()
-                .any(|c| c == std::path::Component::ParentDir)
-            || !self
-                .allowed_rollback_prefixes
-                .iter()
-                .any(|p| path_str.starts_with(p))
-        {
+        if let Some(reason) = self.rollback_target_refusal(file_state) {
             return (
                 FileRestoreAction::Skipped,
-                Err(HardeningError::Config(format!(
-                    "Rollback path outside allowed directories: {path_str}"
-                ))),
+                Err(HardeningError::Config(reason)),
             );
-        }
-
-        // Symlink traversal guard: only meaningful on the local filesystem.
-        // For remote executors the path does not exist locally, so is_symlink()
-        // returns false and we rely solely on the prefix allowlist above.
-        if path.is_symlink() {
-            if let Ok(resolved) = path.canonicalize() {
-                let resolved_str = resolved.to_string_lossy();
-                if !self
-                    .allowed_rollback_prefixes
-                    .iter()
-                    .any(|p| resolved_str.starts_with(p))
-                {
-                    return (
-                        FileRestoreAction::Skipped,
-                        Err(HardeningError::Config(format!(
-                            "Rollback symlink {path_str} resolves outside allowed directories"
-                        ))),
-                    );
-                }
-            } else {
-                return (
-                    FileRestoreAction::Skipped,
-                    Err(HardeningError::Config(format!(
-                        "Rollback target is a broken symlink: {path_str}"
-                    ))),
-                );
-            }
         }
 
         // Determine the required action. `file_permissions` holds the full
@@ -924,45 +940,46 @@ impl CheckpointManager {
         self.signer
             .verify(&digest, &checkpoint.checkpoint_signature)?;
 
-        // Phase 1: Pre-validate all targets before writing anything.
-        // Rejects if any target path fails the allowlist check, preventing a
-        // partially-rolled-back inconsistent state. Symlinks are allowed only
-        // if their resolved target is also within the allowed prefixes (e.g.
-        // Debian symlinks /etc/sysctl.d/99-sysctl.conf -> /etc/sysctl.conf).
-        for fs in &file_states {
-            let path = Path::new(&fs.file_path);
-            let path_str = &fs.file_path;
+        // Phase 1: sort the targets into those a rollback may write and those it
+        // must not, before anything is written.
+        //
+        // Refusing one path is not a reason to abandon the others. It used to be:
+        // this loop returned `Err` on the first target outside the allowlist, so
+        // one stock unit symlink under `/etc/systemd/system` resolving into the
+        // package-owned `/usr/lib/systemd/system` left `hardener rollback`
+        // restoring nothing on four of the five test distributions. Phase 2 had
+        // always treated the same condition as a single skipped file, and it is
+        // the honest reading: nothing out of bounds is read or written either
+        // way, and the operator gets back the files that could be restored plus
+        // a named reason for each that could not.
+        let mut restorable: Vec<FileState> = Vec::with_capacity(file_states.len());
+        let mut files: Vec<FileRestoreResult> = Vec::new();
+        for fs in file_states {
+            match self.rollback_target_refusal(&fs) {
+                Some(reason) => files.push(FileRestoreResult {
+                    restore_path: fs.file_path.clone(),
+                    restore_action: FileRestoreAction::Skipped,
+                    restore_success: false,
+                    restore_error: Some(reason),
+                }),
+                None => restorable.push(fs),
+            }
+        }
 
-            if !path_str.starts_with('/')
-                || path
-                    .components()
-                    .any(|c| c == std::path::Component::ParentDir)
-                || !self
-                    .allowed_rollback_prefixes
+        // Nothing left to restore is a rollback that did not happen, so it is
+        // reported as an error rather than as a run whose every file was skipped.
+        // It also means there is nothing to snapshot, so no orphan pre-rollback
+        // checkpoint is persisted for a rollback that changed nothing.
+        if restorable.is_empty() {
+            return Err(HardeningError::Config(format!(
+                "Rollback aborted: no path in checkpoint {} may be restored. {}",
+                checkpoint_id.as_str(),
+                files
                     .iter()
-                    .any(|p| path_str.starts_with(p))
-            {
-                return Err(HardeningError::Config(format!(
-                    "Rollback aborted: path outside allowed directories: {path_str}"
-                )));
-            }
-            if path.is_symlink() {
-                let resolved = path.canonicalize().map_err(|e| {
-                    HardeningError::Config(format!(
-                        "Rollback aborted: cannot resolve symlink {path_str}: {e}"
-                    ))
-                })?;
-                let resolved_str = resolved.to_string_lossy();
-                if !self
-                    .allowed_rollback_prefixes
-                    .iter()
-                    .any(|p| resolved_str.starts_with(p))
-                {
-                    return Err(HardeningError::Config(format!(
-                        "Rollback aborted: symlink {path_str} resolves outside allowed directories"
-                    )));
-                }
-            }
+                    .filter_map(|f| f.restore_error.as_deref())
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            )));
         }
 
         // Reversible-rollback guarantee: with every target validated but nothing
@@ -970,18 +987,18 @@ impl CheckpointManager {
         // overwritten so this rollback can itself be undone. Fail closed: if the
         // snapshot cannot be taken, refuse the rollback rather than destroy state
         // we could not back up. Placed after Phase 1 so only allow-listed paths
-        // are read and no orphan checkpoint persists if validation rejects.
+        // are read, and given only the restorable set so a refused path's content
+        // is never read either.
         self.snapshot_current_state(
             executor,
             &format!("Before rollback to '{}'", checkpoint.checkpoint_name),
-            &file_states,
+            &restorable,
         )
         .await?;
 
-        // Phase 2: Apply all file restores (pre-validated).
-        let mut all_ok = true;
-        let mut files = Vec::with_capacity(file_states.len());
-        for fs in &file_states {
+        // Phase 2: Apply the restores Phase 1 admitted.
+        let mut all_ok = files.is_empty();
+        for fs in &restorable {
             let (action, result) = self.restore_file_state_tracked(executor, fs).await;
             let success = result.is_ok();
             all_ok &= success;
@@ -1104,8 +1121,10 @@ mod tests {
     #[test]
     fn default_prefixes_cover_account_database_paths() {
         // The permissions plugin checkpoints these (CIS 6.1.2-6.1.5). Rollback's
-        // Phase-1 allowlist matches via `starts_with`, so each must be covered or
-        // the entire rollback aborts (regression: exit 1 on apply→rollback).
+        // Phase-1 allowlist matches via `starts_with`, so an uncovered path is
+        // refused and skipped rather than restored, and the rollback reports
+        // failure. It no longer abandons the other files, but a declared path
+        // silently not coming back is still the wrong outcome.
         for path in ["/etc/passwd", "/etc/group", "/etc/shadow", "/etc/gshadow"] {
             assert!(
                 DEFAULT_ROLLBACK_PREFIXES
@@ -1119,11 +1138,11 @@ mod tests {
     #[test]
     fn default_prefixes_cover_the_systemd_paths_the_services_plugin_checkpoints() {
         // The services plugin checkpoints /etc/systemd/system before disabling
-        // or masking a unit. An uncovered path does not degrade to a partial
-        // restore: Phase 1 validates every entry up front and returns Err on
-        // the first one outside the allowlist, so the whole rollback aborts
-        // having touched nothing. That was the state of services rollback from
-        // the beginning, and no test covered it.
+        // or masking a unit, so an uncovered path here would be skipped and the
+        // unit never restored. Phase 1 used to abandon the entire rollback over
+        // one such path; it now skips it and restores the rest, which makes this
+        // check about whether the plugin's own writes come back rather than about
+        // whether anything comes back at all.
         let path = "/etc/systemd/system/multi-user.target.wants/example.service";
         assert!(
             DEFAULT_ROLLBACK_PREFIXES
@@ -1913,14 +1932,103 @@ mod tests {
 
     /// Builds a CheckpointManager with a custom allowlist containing `/etc/x`.
     async fn test_manager_with_etc_x() -> CheckpointManager {
+        test_manager_with_allowlist(vec!["/etc/x".to_string()]).await
+    }
+
+    async fn test_manager_with_allowlist(prefixes: Vec<String>) -> CheckpointManager {
         let dir = tempfile::tempdir().expect("tempdir");
         let db_path = dir.path().join("mgr_test.db");
         let db_pool = crate::db::init_db(Some(&db_path)).await.expect("init_db");
         let key_path = dir.path().join("test.key");
         let signer = CheckpointSigner::new_with_path(&key_path).expect("signer");
         std::mem::forget(dir);
-        CheckpointManager::new_with_allowlist(db_pool, signer, vec!["/etc/x".to_string()])
-            .expect("manager")
+        CheckpointManager::new_with_allowlist(db_pool, signer, prefixes).expect("manager")
+    }
+
+    /// One file that cannot be restored must not cost the operator every other
+    /// file in the checkpoint.
+    ///
+    /// `/etc/systemd/system` is allow-listed and the services plugin declares
+    /// it, so capture recurses in and collects the stock unit symlinks a
+    /// distribution ships there. `autovt@.service` points into
+    /// `/usr/lib/systemd/system`, which is deliberately not allow-listed,
+    /// because writing a captured copy through that link would overwrite a
+    /// packaged unit file. The guard is right to refuse it. Phase 1 then turned
+    /// that one refusal into an abort of the entire rollback, so
+    /// `hardener rollback` restored nothing at all on four of the five test
+    /// distributions, measured 2026-07-29.
+    ///
+    /// Phase 2 already treats the identical condition as a per-file skip, so two
+    /// copies of one guard disagreed and the fatal copy ran first.
+    #[tokio::test]
+    async fn one_unrestorable_path_does_not_abort_the_whole_rollback() {
+        use hardener_common::executor::CommandOutput;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().to_path_buf();
+        let good = root.join("good.conf");
+        let outward = root.join("outward.link");
+        std::fs::write(&good, "current\n").expect("write good");
+        // Resolves outside the allowlist, exactly as a stock unit symlink does.
+        std::os::unix::fs::symlink("/etc", &outward).expect("symlink");
+
+        let manager = test_manager_with_allowlist(vec![root.to_string_lossy().into_owned()]).await;
+        // chmod and chown are registered because a restore issues both after the
+        // write. Without them the run stops at a failed metadata command and the
+        // assertion below would pass or fail for a reason that has nothing to do
+        // with Phase 1, which is how a fixture comes to hide the thing under test.
+        let ok = || CommandOutput {
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: 0,
+        };
+        let good_str = good.to_str().expect("utf8");
+        let exec = MockExecutor::new()
+            .with_file(good_str, "captured\n")
+            .with_file(outward.to_str().expect("utf8"), "captured\n")
+            .with_command("chmod", &["644", good_str], ok())
+            .with_command("chown", &["0:0", good_str], ok());
+
+        let id = manager
+            .create_checkpoint(&exec, "mixed", &[good.as_path(), outward.as_path()])
+            .await
+            .expect("create_checkpoint");
+
+        let result = manager
+            .rollback(&exec, &id)
+            .await
+            .expect("one unrestorable path must not abort the rollback");
+
+        let entry = |p: &Path| {
+            result
+                .rollback_files
+                .iter()
+                .find(|f| f.restore_path == p.to_string_lossy())
+                .unwrap_or_else(|| panic!("{} missing from the result", p.display()))
+        };
+        assert!(
+            entry(&good).restore_success,
+            "the in-bounds file must still be restored, got: {:?}",
+            entry(&good).restore_error
+        );
+        let refused = entry(&outward);
+        assert!(
+            !refused.restore_success,
+            "the out-of-bounds symlink must not be written"
+        );
+        assert!(
+            refused
+                .restore_error
+                .as_deref()
+                .unwrap_or_default()
+                .contains("resolves outside"),
+            "the refusal must say why, got: {:?}",
+            refused.restore_error
+        );
+        assert!(
+            !result.rollback_success,
+            "a rollback that skipped a file is not a successful one"
+        );
     }
 
     #[tokio::test]
@@ -2203,9 +2311,12 @@ mod tests {
 
     #[tokio::test]
     async fn rollback_leaves_no_snapshot_when_validation_rejects() {
-        // The snapshot runs after Phase 1 validation, so a rollback rejected for
-        // an out-of-allowlist path must not persist an orphan pre-rollback
-        // checkpoint or read that path's content.
+        // The snapshot runs after Phase 1, over the restorable set only, so a
+        // checkpoint whose every path is refused must not persist an orphan
+        // pre-rollback checkpoint or read a refused path's content. This fixture
+        // holds exactly one path and it is out of bounds, which is the
+        // nothing-left-to-restore case: an error, not a run whose every file was
+        // skipped.
         let exec = MockExecutor::new().with_file("/tmp/evil.conf", "x\n");
         let manager = test_manager_with_etc_x().await; // allowlist is ["/etc/x"] only
         let id = manager
