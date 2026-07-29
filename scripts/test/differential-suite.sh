@@ -1594,13 +1594,23 @@ record_fail() {
 # The two assertions for one directive, given the value its oracle reported.
 # Both are always recorded, so every directive contributes the same two checks
 # whatever happens and one cannot quietly contribute fewer by going wrong.
+# `target` is what this run requires, which is the tool's own target for an
+# unseeded directive and the SEEDED value for the two in SEEDED_SSH_CHECKS. The
+# messages below therefore say "this run requires" rather than "the tool
+# targets", which reads more naturally and would be false for the seeded pair.
+#
+# For the same reason no message here names a cause. A disagreement used to be
+# reported as "apply did not take effect", and on a seeded directive the truth
+# is the opposite: apply took effect and overwrote a value stricter than its
+# own target. Stating the two values and leaving the cause to the reader is the
+# only wording true of both.
 compare_directive() {
     local plugin="$1" directive="$2" system="$3" target="$4" finding_id="$5" reported unchecked
 
     if [[ "$system" == "$target" ]]; then
-        record_pass "$plugin $directive: the system holds '$system', the value the tool targets"
+        record_pass "$plugin $directive: the system holds '$system', the value this run requires"
     else
-        record_fail "$plugin $directive: the system holds '$system' but the tool targets '$target'; apply did not take effect"
+        record_fail "$plugin $directive: the system holds '$system' but this run requires '$target'"
     fi
 
     # Asked before the findings are counted, because it decides whether that
@@ -1623,7 +1633,7 @@ compare_directive() {
     elif [[ "$system" == "$target" ]]; then
         record_fail "$plugin $directive: the tool reports $reported finding(s) for '$finding_id' while the system holds the target value '$system'"
     else
-        record_fail "$plugin $directive: the tool claims a compliance the system does not have: no finding for '$finding_id' while the system holds '$system' and the tool targets '$target'"
+        record_fail "$plugin $directive: the tool claims a compliance the system does not have: no finding for '$finding_id' while the system holds '$system' and this run requires '$target'"
     fi
 }
 
@@ -1849,7 +1859,7 @@ print_summary() {
         echo "not be read. Neither is a flaky test: a disagreement is a product"
         echo "defect, and an oracle that cannot answer leaves a directive unproven."
         echo "Each FAIL line above names the directive, and where the two disagree,"
-        echo "the value the system holds and the value the tool targets."
+        echo "the value the system holds and the value this run requires."
         return 1
     fi
     echo "The system agrees with what the tool reported."
