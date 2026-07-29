@@ -147,7 +147,8 @@ pub trait HardeningPlugin: Send + Sync {
 | `src/firewall/firewalld.rs` | Network | firewalld backend |
 | `src/firewall/ufw.rs` | Network | UFW backend |
 | `src/pam/mod.rs` | Auth | Password complexity, aging, lockout |
-| `src/pam/login_defs.rs` | Auth | Carries a `/usr/etc` configuration file into `/etc` before the managed directives are edited into it, with the vendor file's own permissions rather than the temporary file's, and reports the keys an `/etc` file masks | `mode_for_copy_of()`, `masked_keys()`, `masked_keys_finding()` |
+| `src/pam/login_defs.rs` | Auth | Carries a `/usr/etc` configuration file into `/etc` before the managed directives are edited into it, with the vendor file's own permissions rather than the temporary file's | `mode_for_copy_of()` |
+| `src/pam/layer_drift.rs` | Auth | Reports the keys an `/etc` file hides from its `/usr/etc` counterpart, for every layered file the plugin reads rather than for `login.defs` alone | `LAYERED_CONFS`, `masked_keys()`, `masked_keys_finding()` |
 | `src/services/mod.rs` | Services | Unnecessary services (xinetd, cups, avahi, etc.) |
 | `src/permissions/mod.rs` | FileSystem | Critical paths, SUID/SGID, world-writable |
 | `src/audit/mod.rs` | Audit | auditd rules for time, users, permissions |

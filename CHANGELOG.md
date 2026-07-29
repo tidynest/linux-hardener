@@ -26,6 +26,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Layer drift is reported for every layered PAM configuration file, not only
+  `/etc/login.defs`.** The whole-file override belongs to the layering, not to
+  one path, so a hand-rolled `/etc/security/pwquality.conf` masks its
+  `/usr/etc` counterpart exactly as `/etc/login.defs` does. The check was
+  wired to `login.defs` alone, so masked password-quality, lockout and
+  reuse-prevention settings were reported nowhere and the host scanned clean
+  while running those modules on their built-in defaults.
+  `/etc/security/{pwquality,faillock,pwhistory}.conf` are now checked too, each
+  with its own Medium finding (`pam-pwquality-conf-masked-keys`,
+  `pam-faillock-conf-masked-keys`, `pam-pwhistory-conf-masked-keys`) naming the
+  keys that file hides. `pam-login-defs-masked-keys` is unchanged.
+
 - **Configuration layered across `/etc` and `/usr/etc` is read from the layer
   that supplies it.** openSUSE Leap 15.6+, Tumbleweed and MicroOS ship vendor
   configuration under `/usr/etc` and reserve `/etc` for administrator

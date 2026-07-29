@@ -149,10 +149,19 @@ never written.
 
 An `/etc` file that already exists is the host's own, so `apply` edits the
 directives it manages and does not import keys that file omits. Where those
-omitted keys matter, `scan` reports them as
-`pam-login-defs-masked-keys`, a Medium finding naming each one. Restoring them
-is a manual step by design: this tool cannot tell a key an operator dropped on
-purpose from one an older release dropped for them.
+omitted keys matter, `scan` reports them in a Medium finding naming each one.
+Restoring them is a manual step by design: this tool cannot tell a key an
+operator dropped on purpose from one an older release dropped for them.
+
+The masking is a property of the layering rather than of any one file, so every
+layered file this plugin reads is checked and each has its own finding:
+
+| File | Finding | What reverts to a built-in default |
+|---|---|---|
+| `/etc/login.defs` | `pam-login-defs-masked-keys` | shadow, including `ENCRYPT_METHOD` and `HOME_MODE` |
+| `/etc/security/pwquality.conf` | `pam-pwquality-conf-masked-keys` | libpwquality, and with it `pwscore` and `pwmake` |
+| `/etc/security/faillock.conf` | `pam-faillock-conf-masked-keys` | `pam_faillock` lockout behaviour |
+| `/etc/security/pwhistory.conf` | `pam-pwhistory-conf-masked-keys` | `pam_pwhistory` reuse prevention |
 
 ### Directive value validation
 
