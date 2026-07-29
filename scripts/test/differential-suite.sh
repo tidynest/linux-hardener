@@ -904,7 +904,150 @@ idempotence_report_difference() {
     done < <(grep -Fxv -f <(printf '%s\n' "$before") <(printf '%s\n' "$after") || true)
 }
 
-# The lengths of the five tables the run is sized by, pinned as literals.
+# === Password quality actually being enforced ===
+
+# /etc/security/pwquality.conf is read by pam_pwquality.so and by nothing else.
+# A host whose PAM stack never loads that module enforces no password policy
+# however the file is written, so every check that reads the file agrees with
+# itself and with the tool while the system enforces nothing. That is the shape
+# this suite exists to catch, and it needed a consumer to ask rather than a
+# second parser: the stack decides whether the file is read at all, and
+# libpwquality decides what the file means once it is.
+#
+# Two readings, one check each. The first compares the stack against the tool's
+# verdict, which is the differential proper. The second is the positive control
+# the first cannot supply: a policy that rejects everything and a policy that
+# rejects nothing both make a one-sided filter look right, so the strong
+# password must be accepted in the same breath as the weak one is refused.
+PWQUALITY_ENFORCEMENT_CHECKS=(module-loaded weak-password-refused)
+
+# The stack files the tool searches, in the same order and with the same names.
+# A distribution keeping its stack elsewhere reads as unreadable below, never as
+# absent: concluding "no module" from a file that is not there would fail every
+# such host on the strength of this list being short.
+PWQUALITY_STACK_FILES=(
+    /etc/pam.d/system-auth
+    /etc/pam.d/password-auth
+    /etc/pam.d/common-password
+)
+
+# A password no policy worth having accepts: three characters, one class, and
+# far below the minlen of 14 the tool targets. Kept beside the strong probe
+# password so the pair that forms the control is read together.
+PWQUALITY_WEAK_PASSWORD='abc'
+
+# Whether PAM stack text loads pam_pwquality.
+#
+# Pure, so the self-test can pin it without a container. A commented line is not
+# a loaded module: openSUSE's pam-config writes exactly that when libpwquality
+# is not installed, which is the host this check was written for.
+pwquality_module_loaded_in() {
+    local content="$1" line
+    while IFS= read -r line; do
+        line="${line#"${line%%[![:space:]]*}"}"
+        [[ "$line" == '#'* ]] && continue
+        [[ "$line" == *pam_pwquality.so* ]] && return 0
+    done <<<"$content"
+    return 1
+}
+
+# What the system says about the module: 'loaded', 'absent', or a refusal.
+#
+# A refusal when not one candidate could be read, because absence concluded from
+# nothing is the same mistake as a filter that matches nothing: it would score a
+# host this suite never looked at as a host with no module.
+pwquality_stack_reading() {
+    local file content read_one=0
+    for file in "${PWQUALITY_STACK_FILES[@]}"; do
+        [[ -e "$file" ]] || continue
+        if ! content="$(cat "$file" 2>/dev/null)"; then
+            continue
+        fi
+        read_one=1
+        if pwquality_module_loaded_in "$content"; then
+            printf 'loaded'
+            return 0
+        fi
+    done
+    if (( read_one == 0 )); then
+        echo "FATAL: none of ${PWQUALITY_STACK_FILES[*]} could be read, so whether" \
+            "pam_pwquality is loaded is not a question this run answered" >&2
+        return 1
+    fi
+    printf 'absent'
+}
+
+# libpwquality's own verdict on a password: 'refused', 'accepted', or 'no-tool'.
+#
+# pwscore ships with libpwquality and applies /etc/security/pwquality.conf, so
+# it is the file's consumer answering rather than this script re-reading it.
+# Its absence is a real answer and not a skip: no libpwquality means no
+# pam_pwquality.so either, so the policy cannot be in force.
+pwquality_verdict() {
+    local password="$1"
+    if ! command -v pwscore >/dev/null 2>&1; then
+        printf 'no-tool'
+        return 0
+    fi
+    if printf '%s\n' "$password" | pwscore >/dev/null 2>&1; then
+        printf 'accepted'
+    else
+        printf 'refused'
+    fi
+}
+
+# The system and the tool agree about whether password quality is enforced.
+#
+# Pure, and pinned in all four directions by the self-test, because this is the
+# comparison the whole check reduces to: the tool must report minlen unsatisfied
+# exactly when the stack cannot enforce it. Either direction alone passes on a
+# broken harness, which is why neither is asserted on its own.
+pwquality_enforcement_agrees() {
+    local reading="$1" findings="$2"
+    case "$reading" in
+        loaded) (( findings == 0 )) ;;
+        absent) (( findings > 0 )) ;;
+        *) return 1 ;;
+    esac
+}
+
+# One check per reading, both determinate on every path.
+#
+# A reading that could not be taken is a failure and costs that entry its check,
+# never a skip, so the totals stay comparable between a run whose probes
+# answered and one whose did not.
+run_pwquality_enforcement_checks() {
+    local reading findings weak strong
+    if ! reading="$(pwquality_stack_reading)"; then
+        record_fail "pwquality module-loaded: no PAM stack file could be read, so nothing shows whether the policy can be enforced at all"
+        record_fail "pwquality weak-password-refused: without a stack reading there is nothing to hold the password verdict against"
+        return
+    fi
+
+    if ! findings="$(scan_finding_count pam-hardening "$(pam_finding_id minlen)")"; then
+        record_fail "pwquality module-loaded: the post-apply scan could not be read, so the tool's verdict is unknown"
+    elif pwquality_enforcement_agrees "$reading" "$findings"; then
+        record_pass "pwquality module-loaded: the stack reads '$reading' and the tool reported $findings minlen finding(s), which is what that stack allows"
+    else
+        record_fail "pwquality module-loaded: the stack reads '$reading' but the tool reported $findings minlen finding(s); a policy nothing loads cannot be satisfied, and one that is loaded and applied should not be failing"
+    fi
+
+    weak="$(pwquality_verdict "$PWQUALITY_WEAK_PASSWORD")"
+    strong="$(pwquality_verdict "$DIFF_PROBE_PASSWORD")"
+    if [[ "$reading" == loaded ]]; then
+        if [[ "$weak" == refused && "$strong" == accepted ]]; then
+            record_pass "pwquality weak-password-refused: libpwquality refused the weak password and accepted the probe password, so the policy is applied rather than merely written"
+        else
+            record_fail "pwquality weak-password-refused: libpwquality returned '$weak' for the weak password and '$strong' for the probe password on a host whose stack loads the module; a policy that refuses everything or nothing proves the same amount"
+        fi
+    elif [[ "$weak" == refused ]]; then
+        record_fail "pwquality weak-password-refused: libpwquality refused the weak password on a host whose stack does not load pam_pwquality, so the two readings describe different hosts"
+    else
+        record_pass "pwquality weak-password-refused: the stack loads no pam_pwquality and libpwquality returned '$weak', which is consistent: nothing here enforces the file"
+    fi
+}
+
+# The lengths of the six tables the run is sized by, pinned as literals.
 #
 # A count derived from a table cannot notice that table being edited down: with
 # SSH_CHECKS emptied, a run over the login.defs directives alone would agree
@@ -919,6 +1062,7 @@ LOGIN_DEFS_CHECKS_EXPECTED=3
 VENDOR_SURVIVAL_CHECKS_EXPECTED=3
 IDEMPOTENCE_CHECKS_EXPECTED=3
 DIFF_PLUGINS_EXPECTED=2
+PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED=2
 
 require_check_tables() {
     local entry name got want refused=0
@@ -927,7 +1071,8 @@ require_check_tables() {
         "LOGIN_DEFS_CHECKS ${#LOGIN_DEFS_CHECKS[@]} $LOGIN_DEFS_CHECKS_EXPECTED" \
         "VENDOR_SURVIVAL_CHECKS ${#VENDOR_SURVIVAL_CHECKS[@]} $VENDOR_SURVIVAL_CHECKS_EXPECTED" \
         "IDEMPOTENCE_CHECKS ${#IDEMPOTENCE_CHECKS[@]} $IDEMPOTENCE_CHECKS_EXPECTED" \
-        "DIFF_PLUGINS ${#DIFF_PLUGINS[@]} $DIFF_PLUGINS_EXPECTED"; do
+        "DIFF_PLUGINS ${#DIFF_PLUGINS[@]} $DIFF_PLUGINS_EXPECTED" \
+        "PWQUALITY_ENFORCEMENT_CHECKS ${#PWQUALITY_ENFORCEMENT_CHECKS[@]} $PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED"; do
         read -r name got want <<<"$entry"
         if [[ "$got" != "$want" ]]; then
             echo "FATAL: $name holds $got, expected $want." >&2
@@ -953,7 +1098,10 @@ require_check_tables() {
 # claims nothing about settings it does not manage and nothing about what a
 # second run of itself would do. Vendor survival took the per-distribution total
 # from 22 to 25 and the five-distribution total from 110 to 125; idempotency
-# takes them to 28 and 140.
+# takes them to 28 and 140. The pwquality enforcement pair takes them to 30
+# and 150: also one assertion each, because the stack reading is compared
+# against the tool and the password verdict against the stack reading, and
+# neither has a second tool claim to hold it to.
 #
 # Counted off the pinned lengths above, never off the tables themselves. Read
 # from ${#SSH_CHECKS[@]} the expectation would follow the table it exists to
@@ -963,7 +1111,7 @@ require_check_tables() {
 expected_check_total() {
     printf '%s' "$(( 2 * (SSH_CHECKS_EXPECTED + LOGIN_DEFS_CHECKS_EXPECTED) \
         + VENDOR_SURVIVAL_CHECKS_EXPECTED + IDEMPOTENCE_CHECKS_EXPECTED \
-        + DIFF_PLUGINS_EXPECTED ))"
+        + PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED + DIFF_PLUGINS_EXPECTED ))"
 }
 
 # The two plugins spell their finding ids differently, and a filter written for
@@ -2075,8 +2223,8 @@ Number of days of warning before password expires	: 11"
     check_eq "${#DIFF_PLUGINS[@]}" "2" "two plugins are compared"
     local pinned_total
     pinned_total="$(expected_check_total)"
-    check_eq "$pinned_total" "28" \
-        "the run is sized at two checks per directive, one per unmanaged setting, one per idempotency reading, plus one control per plugin"
+    check_eq "$pinned_total" "30" \
+        "the run is sized at two checks per directive, one per unmanaged setting, one per idempotency reading, one per pwquality enforcement reading, plus one control per plugin"
     check_status 0 "require_check_tables accepts the tables as they stand" \
         require_check_tables
 
@@ -2497,6 +2645,76 @@ added")" \
     CHECKS_FAILED=$idempotence_saved_failed
     APPLY_GENERATION=$saved_generation
 
+    # === Password quality enforcement ===
+
+    check_status 0 "a loaded module line is read as loaded" \
+        pwquality_module_loaded_in "password required pam_pwquality.so retry=3"
+    check_status 1 "a commented module line is not a loaded module" \
+        pwquality_module_loaded_in "#password required pam_pwquality.so retry=3"
+    check_status 1 "an indented commented module line is not a loaded module either" \
+        pwquality_module_loaded_in "    # password required pam_pwquality.so"
+    check_status 1 "a stack loading other modules only is read as absent" \
+        pwquality_module_loaded_in "auth required pam_faillock.so preauth
+password required pam_unix.so sha512 shadow"
+    check_status 0 "one loaded line among many is enough" \
+        pwquality_module_loaded_in "auth required pam_faillock.so preauth
+password required pam_pwquality.so
+password required pam_unix.so"
+
+    # All four directions, because either alone passes on a harness that always
+    # says the same thing.
+    check_status 0 "a loaded module and no finding agree" \
+        pwquality_enforcement_agrees loaded 0
+    check_status 1 "a loaded module and a finding disagree" \
+        pwquality_enforcement_agrees loaded 1
+    check_status 0 "an absent module and a finding agree" \
+        pwquality_enforcement_agrees absent 1
+    check_status 1 "an absent module and no finding disagree, which is the defect" \
+        pwquality_enforcement_agrees absent 0
+    check_status 1 "a reading that is neither is refused rather than read as agreement" \
+        pwquality_enforcement_agrees "" 0
+
+    # A stack directory with nothing in it must refuse rather than answer
+    # 'absent': absence concluded from nothing is how a host this run never
+    # looked at comes to be scored.
+    local pwquality_saved_files=("${PWQUALITY_STACK_FILES[@]}")
+    local pwquality_fixture
+    pwquality_fixture="$(mktemp -d)"
+    PWQUALITY_STACK_FILES=("$pwquality_fixture/system-auth")
+    check_status 1 "a stack with no readable file is refused, never read as no module" \
+        pwquality_stack_reading
+    printf 'password required pam_unix.so\n' >"$pwquality_fixture/system-auth"
+    check_eq "$(pwquality_stack_reading)" "absent" \
+        "a stack that was read and loads no pwquality reads as absent"
+    printf 'password required pam_pwquality.so\n' >>"$pwquality_fixture/system-auth"
+    check_eq "$(pwquality_stack_reading)" "loaded" \
+        "a stack that loads it reads as loaded"
+
+    # Watched failing, the only thing that makes the family evidence: the pair
+    # must be able to record two failures, not merely two checks.
+    local pwquality_saved_total=$CHECKS_TOTAL
+    local pwquality_saved_passed=$CHECKS_PASSED
+    local pwquality_saved_failed=$CHECKS_FAILED
+    CHECKS_TOTAL=0
+    CHECKS_PASSED=0
+    CHECKS_FAILED=0
+    # shellcheck disable=SC2329  # called indirectly, through the family below
+    scan_finding_count() { printf '1'; }
+    # shellcheck disable=SC2329  # called indirectly, through the family below
+    pwquality_verdict() { printf 'refused'; }
+    run_pwquality_enforcement_checks >/dev/null
+    check_eq "$CHECKS_TOTAL" "$PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED" \
+        "the pwquality family records one check per reading"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/$PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED" \
+        "a host whose stack loads the module, whose tool still reports minlen failing, and whose libpwquality refuses even the probe password fails both readings"
+    unset -f scan_finding_count
+    unset -f pwquality_verdict
+    CHECKS_TOTAL=$pwquality_saved_total
+    CHECKS_PASSED=$pwquality_saved_passed
+    CHECKS_FAILED=$pwquality_saved_failed
+    rm -rf "$pwquality_fixture"
+    PWQUALITY_STACK_FILES=("${pwquality_saved_files[@]}")
+
     if (( failures > 0 )); then
         echo "self-test: $failures failure(s)"
         return 1
@@ -2562,6 +2780,7 @@ run_full_suite() {
     run_login_defs_checks
     run_vendor_survival_checks
     run_idempotence_checks
+    run_pwquality_enforcement_checks
     print_summary
 }
 
