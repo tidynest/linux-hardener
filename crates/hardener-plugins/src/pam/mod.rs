@@ -903,7 +903,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                     // .conf would be a silent no-op. Never auto-edit the auth
                     // stack (a malformed edit can lock users out); report the
                     // manual action and mark the run unsuccessful.
-                    if let Some(value) = inline {
+                    if let InlineRead::Value(value) = &inline {
                         warn!(
                             "{} is set inline ({}={}) in the PAM stack; refusing to auto-edit it",
                             directive.pam_directive_name, directive.pam_directive_name, value,
@@ -918,6 +918,40 @@ impl HardeningPlugin for PamHardeningPlugin {
                             ),
                             change_success: false,
                             change_error: Some("inline pam.d override present".to_string()),
+                        });
+                        continue;
+                    }
+
+                    // A stack that could not be read may hold an inline
+                    // argument, and one would override this file: writing it
+                    // would then succeed, be recorded as applied, and leave the
+                    // host enforcing a value the run never saw. Refusing is the
+                    // same answer as for an override actually seen, because
+                    // both mean this file is not where the value lives.
+                    if let InlineRead::Unreadable {
+                        path: stack,
+                        permission_denied,
+                    } = &inline
+                    {
+                        warn!(
+                            "{} may be set inline in {}, which could not be read; refusing to write {}",
+                            directive.pam_directive_name, stack, path,
+                        );
+                        all_success = false;
+                        let advice = if *permission_denied {
+                            "re-run with sudo, or edit the PAM stack manually"
+                        } else {
+                            "repair the file, or edit the PAM stack manually"
+                        };
+                        changes.push(Change {
+                            change_type: ChangeType::ConfigFile,
+                            change_description: format!(
+                                "{stack} could not be read and may set {name} inline, which would \
+                                 override {path}; {advice} to set {name} to {target}",
+                                name = directive.pam_directive_name,
+                            ),
+                            change_success: false,
+                            change_error: Some(format!("PAM stack {stack} unreadable")),
                         });
                         continue;
                     }
@@ -1208,21 +1242,21 @@ impl HardeningPlugin for PamHardeningPlugin {
                             "Set {} = {} (currently not set)",
                             d.pam_directive_name, target
                         )),
+                        // Not "applied only if currently looser": apply refuses
+                        // outright here, whether what could not be read is this
+                        // directive's own conf or a PAM stack file that would
+                        // override it. A preview promising a conditional write
+                        // describes something the apply will not attempt.
                         PamObserved::Unreadable {
-                            permission_denied, ..
-                        } => {
-                            let op = match d.pam_compare {
-                                PamCompare::AtMost => "<=",
-                                _ => ">=",
-                            };
-                            estimated_changes.push(format!(
-                                "{} {} {} ({}; applied only if currently looser)",
-                                d.pam_directive_name,
-                                op,
-                                target,
-                                current_value_caveat(*permission_denied)
-                            ));
-                        }
+                            path,
+                            permission_denied,
+                        } => estimated_changes.push(format!(
+                            "{} will not be set to {}: {} could not be read ({})",
+                            d.pam_directive_name,
+                            target,
+                            path,
+                            current_value_caveat(*permission_denied)
+                        )),
                     }
                 }
                 PamConfigFile::PamAuth => {}
@@ -1490,14 +1524,27 @@ fn pamd_module_for(arg: &str) -> Option<(&'static str, &'static [&'static str])>
 /// Inline args override `/etc/security/*.conf` when present; `None` if not set
 /// inline. Only whole-token `arg=` matches (so `even_deny_root` never matches
 /// `deny`).
-async fn read_pamd_inline(ctx: &Context, arg: &str) -> Option<String> {
-    let (module, files) = pamd_module_for(arg)?;
+async fn read_pamd_inline(ctx: &Context, arg: &str) -> InlineRead {
+    let Some((module, files)) = pamd_module_for(arg) else {
+        return InlineRead::NotSet;
+    };
+    let mut unread: Option<(&'static str, bool)> = None;
     for file in files {
-        // A scan writes nothing, so Absent and Unreadable both simply mean
-        // "no inline override here"; only Content is worth scanning.
+        // Absence is ordinary: the candidate list is distro-variant, so most
+        // hosts have only one or two of these. Unreadable is not, and is
+        // remembered rather than skipped, because an inline argument beats the
+        // .conf outright: a file that could not be read may hold the value in
+        // force, and reporting the .conf's value instead would be reporting a
+        // number nothing on the host consults.
         let content = match read_conf_classified(ctx, file).await {
             ConfRead::Content(c, _) => c,
-            ConfRead::Absent | ConfRead::Unreadable { .. } => continue,
+            ConfRead::Absent => continue,
+            ConfRead::Unreadable {
+                permission_denied, ..
+            } => {
+                unread.get_or_insert((file, permission_denied));
+                continue;
+            }
         };
         for line in content.lines() {
             let line = line.trim();
@@ -1508,11 +1555,43 @@ async fn read_pamd_inline(ctx: &Context, arg: &str) -> Option<String> {
                 .split_whitespace()
                 .find_map(|tok| tok.strip_prefix(arg).and_then(|r| r.strip_prefix('=')))
             {
-                return Some(value.to_string());
+                // A value actually seen is the answer even if another candidate
+                // was unreadable: the list is a set of alternatives, not a
+                // precedence chain, so finding one settles that an inline
+                // override exists and what it says.
+                return InlineRead::Value(value.to_string());
             }
         }
     }
-    None
+    match unread {
+        Some((path, permission_denied)) => InlineRead::Unreadable {
+            path,
+            permission_denied,
+        },
+        None => InlineRead::NotSet,
+    }
+}
+
+/// Whether the PAM stack sets a threshold directive inline on its module.
+///
+/// Three outcomes, because an inline argument overrides `/etc/security/*.conf`
+/// entirely. Folding the third into [`Self::NotSet`] made a stack this run
+/// could not read indistinguishable from one confirmed to carry no override,
+/// and the two lead opposite ways: scan reported the `.conf` value as the
+/// host's own, and apply wrote that file believing the write would take
+/// effect.
+enum InlineRead {
+    /// An inline `arg=value` was read off the module.
+    Value(String),
+    /// Every candidate file was read or confirmed absent, and none sets it.
+    NotSet,
+    /// A candidate could not be read, so whether one is set is unknown.
+    /// `path` names it, and `permission_denied` decides whether telling the
+    /// operator to use sudo is honest advice or a dead end.
+    Unreadable {
+        path: &'static str,
+        permission_denied: bool,
+    },
 }
 
 /// How a configuration file read turned out.
@@ -1706,9 +1785,13 @@ impl ConfWrite {
 enum ThresholdRead {
     Value(String),
     NotSet,
-    /// The conf file could not be read. `permission_denied` decides whether
-    /// telling the operator to use sudo is honest advice or a dead end.
+    /// The value could not be determined. `path` names whichever file was
+    /// unreadable, which is the `.conf` or a PAM stack file that may override
+    /// it, and the operator is owed the one that actually failed.
+    /// `permission_denied` decides whether telling them to use sudo is honest
+    /// advice or a dead end.
     Unreadable {
+        path: &'static str,
         permission_denied: bool,
     },
 }
@@ -1716,14 +1799,29 @@ enum ThresholdRead {
 /// Effective value of a threshold directive: an inline PAM-stack override wins
 /// over the `/etc/security/*.conf` value. A conf file blocked by privileges
 /// surfaces as `PermissionDenied` so the caller reports it unchecked.
-async fn read_effective_threshold(ctx: &Context, arg: &str, conf: &str) -> ThresholdRead {
-    if let Some(inline) = read_pamd_inline(ctx, arg).await {
-        return ThresholdRead::Value(inline);
+async fn read_effective_threshold(ctx: &Context, arg: &str, conf: &'static str) -> ThresholdRead {
+    match read_pamd_inline(ctx, arg).await {
+        InlineRead::Value(inline) => return ThresholdRead::Value(inline),
+        // The stack wins over the conf, so a stack that could not be read
+        // leaves the effective value unknown however readable the conf is.
+        InlineRead::Unreadable {
+            path,
+            permission_denied,
+        } => {
+            return ThresholdRead::Unreadable {
+                path,
+                permission_denied,
+            };
+        }
+        InlineRead::NotSet => {}
     }
     match read_conf_classified(ctx, conf).await {
         ConfRead::Unreadable {
             permission_denied, ..
-        } => ThresholdRead::Unreadable { permission_denied },
+        } => ThresholdRead::Unreadable {
+            path: conf,
+            permission_denied,
+        },
         // A missing file has no directives, same as today: empty content.
         ConfRead::Absent => ThresholdRead::NotSet,
         ConfRead::Content(content, _) => {
@@ -1831,7 +1929,13 @@ async fn observed_pam_value(
             match read_effective_threshold(ctx, directive.pam_directive_name, path).await {
                 ThresholdRead::Value(v) => PamObserved::Value(v),
                 ThresholdRead::NotSet => PamObserved::NotSet,
-                ThresholdRead::Unreadable { permission_denied } => PamObserved::Unreadable {
+                // The path carried here, not `path`: what could not be read may
+                // be a PAM stack file rather than the conf, and naming the
+                // wrong one sends the operator to a file that was fine.
+                ThresholdRead::Unreadable {
+                    path,
+                    permission_denied,
+                } => PamObserved::Unreadable {
                     path,
                     permission_denied,
                 },

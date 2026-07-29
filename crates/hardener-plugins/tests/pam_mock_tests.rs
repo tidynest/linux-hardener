@@ -1768,8 +1768,14 @@ async fn pam_validate_security_conf_estimate_reuses_observed_value() {
 }
 
 /// Complementary to the estimate test above: a `SecurityConf` file blocked by
-/// privileges must keep the requires-root wording after the duplicate
-/// `read_effective_threshold` call was removed, exactly as it did before.
+/// privileges must say so, and must not promise a write.
+///
+/// This pinned `"deny <= 5 (current value requires root; applied only if
+/// currently looser)"` until the promise in it was checked against what apply
+/// does with the same host. `apply_refuses_to_rewrite_an_unreadable_security_conf`
+/// asserts the file is never written, so the preview was describing a
+/// conditional write no apply would attempt, and the two tests described one
+/// host two ways. The wording asserted here is the one that matches.
 #[tokio::test]
 async fn pam_validate_security_conf_requires_root_when_faillock_is_root_only() {
     let executor = MockExecutor::new()
@@ -1806,8 +1812,10 @@ async fn pam_validate_security_conf_requires_root_when_faillock_is_root_only() {
         .find(|c| c.contains("deny"))
         .expect("deny must still be listed");
     assert_eq!(
-        deny_line, "deny <= 5 (current value requires root; applied only if currently looser)",
-        "unreadable faillock directives must use the requires-root wording"
+        deny_line,
+        "deny will not be set to 5: /etc/security/faillock.conf could not be read \
+         (current value requires root)",
+        "the preview must name the file and must not promise a write apply refuses"
     );
 }
 
@@ -2629,5 +2637,118 @@ async fn nothing_is_reported_when_the_admin_file_sets_every_vendor_key() {
             .iter()
             .any(|f| f.finding_id == "pam-login-defs-masked-keys"),
         "an admin file that keeps every vendor key masks nothing"
+    );
+}
+
+// === An unreadable PAM stack (M) ===
+
+/// The first file `pamd_module_for("deny")` searches. An inline
+/// `pam_faillock.so ... deny=N` here overrides `/etc/security/faillock.conf`
+/// entirely, which is what makes an unreadable copy of it consequential.
+const PAM_STACK_FILE: &str = "/etc/pam.d/system-auth";
+
+/// A PAM stack this run could not read leaves the effective value unknown, and
+/// unknown is not the same as compliant.
+///
+/// An inline argument on the module wins over the `.conf`, so a stack that
+/// could not be read means the `.conf` value may not be the one in force. The
+/// read folded that into the same answer as a stack positively confirmed to
+/// carry no override, and the scan then reported the `.conf` value as the
+/// host's own: a host whose stack says `deny=10` reads as compliant on the
+/// strength of a `faillock.conf` nothing consults.
+#[tokio::test]
+async fn scan_reports_deny_unchecked_when_the_pam_stack_cannot_be_read() {
+    let executor = Arc::new(
+        secure_pam_executor()
+            .with_file(PAM_STACK_FILE, "auth required pam_faillock.so deny=10\n")
+            .with_read_permission_denied(PAM_STACK_FILE),
+    );
+    let ctx = Context::with_executor(executor.clone());
+
+    let result = PamHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan runs");
+
+    assert!(
+        result
+            .scan_unchecked
+            .iter()
+            .any(|u| u.unchecked_check_id == "pam-deny"),
+        "deny cannot be assessed while the stack that may override it is \
+         unreadable, got unchecked: {:?} findings: {:?}",
+        result
+            .scan_unchecked
+            .iter()
+            .map(|u| &u.unchecked_check_id)
+            .collect::<Vec<_>>(),
+        result
+            .scan_findings
+            .iter()
+            .map(|f| &f.finding_id)
+            .collect::<Vec<_>>()
+    );
+}
+
+/// Apply must not write a file whose value may already be overridden.
+///
+/// Writing `faillock.conf` while an inline `deny=` sits in the stack is a
+/// silent no-op: the write succeeds, the change is recorded as applied, and
+/// the host keeps enforcing the inline value. Apply already refuses when it
+/// can see the inline argument. It could not see one it failed to read, so it
+/// wrote the file and reported a success that changed nothing.
+///
+/// The backup command is registered across a small clock window so the write
+/// is genuinely reachable. Without it the apply stops at a failed backup, and
+/// the test passes for a reason that has nothing to do with the stack.
+#[tokio::test]
+async fn apply_refuses_to_write_the_conf_when_the_pam_stack_cannot_be_read() {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let conf = "/etc/security/faillock.conf";
+    let mut executor = secure_pam_executor_base()
+        .with_file(conf, "deny = 10\n")
+        .with_file(PAM_STACK_FILE, "auth required pam_faillock.so deny=10\n")
+        .with_read_permission_denied(PAM_STACK_FILE);
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    for t in now..now + 3 {
+        executor = executor.with_command(
+            "cp",
+            &[conf, &format!("{conf}.backup-{t}")],
+            hardener_core::CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        );
+    }
+    let executor = Arc::new(executor);
+    let mut ctx = Context::with_executor(executor.clone());
+
+    let result = PamHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply must run rather than abort");
+
+    assert!(
+        !executor
+            .log()
+            .files_written
+            .iter()
+            .any(|(written, _)| written.to_str() == Some(conf)),
+        "writing {conf} cannot take effect while an unread stack may override \
+         it, but it was written: {:?}",
+        executor.log().files_written
+    );
+    assert!(
+        result
+            .apply_changes
+            .iter()
+            .any(|c| !c.change_success && c.change_description.contains(PAM_STACK_FILE)),
+        "the operator must learn which stack file could not be read, got: {:?}",
+        result.apply_changes
     );
 }
