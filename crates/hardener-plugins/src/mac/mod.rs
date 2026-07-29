@@ -414,6 +414,7 @@ fn fedramp(id: &str, title: &str) -> ComplianceMapping {
     }
 }
 
+/// Returns compliance mappings for a given MAC finding type.
 fn get_mac_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
     match finding_type {
         // SSG: package_apparmor_installed / package_selinux (CIS only); MAC absence

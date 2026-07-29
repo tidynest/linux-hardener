@@ -190,6 +190,15 @@ fn pam_fedramp_unsuccessful_logons() -> ComplianceMapping {
     )
 }
 
+/// Every compliance mapping this plugin can emit, across all PAM/login.defs
+/// directives it assesses. Aggregated into the engine's coverage set.
+pub fn coverage() -> Vec<ComplianceMapping> {
+    PAM_DIRECTIVES
+        .iter()
+        .flat_map(|d| get_pam_compliance_mappings(d.pam_directive_name))
+        .collect()
+}
+
 /// Returns compliance mappings for PAM findings.
 ///
 /// Multi-framework control IDs are sourced from the ComplianceAsCode/SSG rule
@@ -209,15 +218,6 @@ fn pam_fedramp_unsuccessful_logons() -> ComplianceMapping {
 /// and AC-7 are both FedRAMP Moderate (Rev 5) baseline members, so their
 /// arms mirror the 800-53 ids verbatim, and arms with no 800-53 reference
 /// carry no FedRAMP mapping either.
-/// Every compliance mapping this plugin can emit, across all PAM/login.defs
-/// directives it assesses. Aggregated into the engine's coverage set.
-pub fn coverage() -> Vec<ComplianceMapping> {
-    PAM_DIRECTIVES
-        .iter()
-        .flat_map(|d| get_pam_compliance_mappings(d.pam_directive_name))
-        .collect()
-}
-
 fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
     match check_name {
         // SSG: accounts_password_pam_minlen (stigid RHEL-08-020230)
@@ -1950,16 +1950,6 @@ async fn read_conf_classified(ctx: &Context, path: &str) -> ConfRead {
     }
 }
 
-/// Whether apply may write `path`, and how, recording the refusal when it may
-/// not.
-///
-/// One decision in one place, called by every site that could write one of this
-/// plugin's configuration files. A file whose contents could not be read must
-/// not be rewritten, because merging directives into an empty buffer replaces
-/// the host's settings with ours; that marks the run unsuccessful, since a run
-/// that hardened nothing has not earned a clean result. A file whose content
-/// came from the vendor layer is written, carrying that content with it, so the
-/// settings this plugin does not manage survive the edit.
 /// A finding for every `/etc` file in [`layer_drift::LAYERED_CONFS`] that masks
 /// keys its `/usr/etc` counterpart sets.
 ///
@@ -2020,6 +2010,16 @@ async fn layer_drift_findings(ctx: &Context) -> Vec<Finding> {
     findings
 }
 
+/// Whether apply may write `path`, and how, recording the refusal when it may
+/// not.
+///
+/// One decision in one place, called by every site that could write one of this
+/// plugin's configuration files. A file whose contents could not be read must
+/// not be rewritten, because merging directives into an empty buffer replaces
+/// the host's settings with ours; that marks the run unsuccessful, since a run
+/// that hardened nothing has not earned a clean result. A file whose content
+/// came from the vendor layer is written, carrying that content with it, so the
+/// settings this plugin does not manage survive the edit.
 async fn conf_is_writable(
     ctx: &Context,
     path: &str,

@@ -420,15 +420,6 @@ async fn check_path_permissions(
     }))
 }
 
-/// Returns compliance mappings for permission findings.
-///
-/// Multi-framework mappings are sourced from ComplianceAsCode/SSG rule
-/// `references:` blocks (see `// SSG:` comments). NIST IDs are 800-53 Rev 5;
-/// PCI-DSS is v4.0. STIG is deliberately omitted for the account files below:
-/// the SSG rules `file_permissions_etc_{passwd,shadow,group,gshadow}` declare
-/// no `stigid@`: DISA covers them only via the parent SRG
-/// (`SRG-OS-000480-GPOS-00227`), so there is no concrete STIG control ID to
-/// cite without inventing one.
 /// Every compliance mapping this plugin can emit, across all critical paths it
 /// assesses. Aggregated into the engine's automated-coverage set.
 pub fn coverage() -> Vec<ComplianceMapping> {
@@ -483,6 +474,15 @@ fn fedramp(id: &str, title: &str) -> ComplianceMapping {
     }
 }
 
+/// Returns compliance mappings for permission findings.
+///
+/// Multi-framework mappings are sourced from ComplianceAsCode/SSG rule
+/// `references:` blocks (see `// SSG:` comments). NIST IDs are 800-53 Rev 5;
+/// PCI-DSS is v4.0. STIG is deliberately omitted for the account files below:
+/// the SSG rules `file_permissions_etc_{passwd,shadow,group,gshadow}` declare
+/// no `stigid@`: DISA covers them only via the parent SRG
+/// (`SRG-OS-000480-GPOS-00227`), so there is no concrete STIG control ID to
+/// cite without inventing one.
 fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
     match path {
         // SSG: file_permissions_etc_passwd (nist: AC-6(1),CM-6(a); pcidss: Req-8.7.c)

@@ -175,6 +175,12 @@ fn fedramp(id: &str, title: &str) -> ComplianceMapping {
     }
 }
 
+/// Every compliance mapping this plugin can emit. The firewall plugin raises a
+/// single fixed mapping set, so coverage is exactly that set.
+pub fn coverage() -> Vec<ComplianceMapping> {
+    get_firewall_compliance_mappings()
+}
+
 /// Returns compliance mappings for firewall findings.
 ///
 /// CIS is the project's existing benchmark mapping. STIG/NIST/PCI-DSS entries
@@ -183,12 +189,6 @@ fn fedramp(id: &str, title: &str) -> ComplianceMapping {
 /// with the project's framework definitions in
 /// `hardener-compliance/src/frameworks/`. HIPAA/GDPR/ISO 27001 entries map the
 /// host firewall to data-in-transit and network-security controls.
-/// Every compliance mapping this plugin can emit. The firewall plugin raises a
-/// single fixed mapping set, so coverage is exactly that set.
-pub fn coverage() -> Vec<ComplianceMapping> {
-    get_firewall_compliance_mappings()
-}
-
 fn get_firewall_compliance_mappings() -> Vec<ComplianceMapping> {
     vec![
         // The firewall plugin detects ufw/nftables/firewalld; a detected backend

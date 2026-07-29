@@ -528,7 +528,6 @@ fn fedramp(id: &str, title: &str) -> ComplianceMapping {
     }
 }
 
-/// Returns compliance mappings for a given SSH directive.
 /// Every compliance mapping this plugin can emit, across all SSH config and
 /// crypto directives it assesses. Aggregated into the engine's coverage set.
 pub fn coverage() -> Vec<ComplianceMapping> {
@@ -544,6 +543,7 @@ pub fn coverage() -> Vec<ComplianceMapping> {
         .collect()
 }
 
+/// Returns compliance mappings for a given SSH directive.
 fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
     match directive_name {
         "PermitRootLogin" => vec![

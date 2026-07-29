@@ -593,6 +593,7 @@ fn fedramp(id: &str, title: &str) -> ComplianceMapping {
     }
 }
 
+/// Returns compliance mappings for a given audit finding type.
 fn get_audit_compliance_mappings(finding_type: &str) -> Vec<ComplianceMapping> {
     match finding_type {
         // SSG: package_audit_installed

@@ -362,14 +362,6 @@ fn fedramp(id: &str, title: &str) -> ComplianceMapping {
     }
 }
 
-/// Returns compliance mappings for a given kernel parameter.
-///
-/// CIS entries are the project's existing benchmark mappings. STIG/NIST/PCI-DSS
-/// entries are sourced from the matching ComplianceAsCode/SSG rule's
-/// `references:` block (rule id cited per check). NIST titles/sections and
-/// PCI-DSS v4.0 ids/titles are reconciled with the project's own framework
-/// definitions in `hardener-compliance/src/frameworks/`. A framework is omitted
-/// for a check only when the SSG rule carries no reference for it.
 /// Every compliance mapping this plugin can emit, across all kernel parameters
 /// it assesses. Aggregated into the engine's automated-coverage set.
 pub fn coverage() -> Vec<ComplianceMapping> {
@@ -379,6 +371,14 @@ pub fn coverage() -> Vec<ComplianceMapping> {
         .collect()
 }
 
+/// Returns compliance mappings for a given kernel parameter.
+///
+/// CIS entries are the project's existing benchmark mappings. STIG/NIST/PCI-DSS
+/// entries are sourced from the matching ComplianceAsCode/SSG rule's
+/// `references:` block (rule id cited per check). NIST titles/sections and
+/// PCI-DSS v4.0 ids/titles are reconciled with the project's own framework
+/// definitions in `hardener-compliance/src/frameworks/`. A framework is omitted
+/// for a check only when the SSG rule carries no reference for it.
 fn get_compliance_mappings(param_name: &str) -> Vec<ComplianceMapping> {
     match param_name {
         "kernel.randomize_va_space" => vec![

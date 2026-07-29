@@ -184,28 +184,6 @@ fn service_fedramp_wireless_access() -> ComplianceMapping {
     )
 }
 
-/// Returns compliance mappings for service findings.
-///
-/// Multi-framework control IDs are sourced from the ComplianceAsCode/SSG rule
-/// `references:` blocks for the matching service/package rule (cited per arm).
-/// NIST IDs use 800-53 Rev 5 base controls. The SSG service-disable rules for
-/// these daemons carry no STIG or PCI-DSS reference, so those frameworks are
-/// omitted rather than guessed.
-///
-/// GDPR and ISO/IEC 27001:2022 apply to every mapped daemon as service
-/// minimisation: GDPR "TM-SH" (Article 32 system-hardening technical measure)
-/// and ISO 27001 Annex A 8.19 (Installation of software on operational systems)
-/// plus 8.9 (Configuration management), both under the "Technological" theme.
-/// Network-exposed daemons (Bluetooth, Avahi/mDNS) additionally map ISO 8.20
-/// (Networks security). SOC 2 CC6.8 applies to every mapped daemon (the
-/// unauthorised-software criterion mirrors the same minimisation intent).
-/// NIST SP 800-171 3.4.6 likewise applies to every mapped daemon (sourced
-/// from CM-7), with 3.1.16 added for Bluetooth (sourced from AC-18).
-/// FedRAMP mirrors the same 800-53 entries verbatim: CM-7 for every mapped
-/// daemon and AC-18 for Bluetooth, both FedRAMP Moderate (Rev 5) baseline
-/// members.
-/// HIPAA is omitted: none of these daemons map cleanly to a Security Rule
-/// specification.
 /// Every compliance mapping this plugin can emit, across all services it
 /// assesses. Aggregated into the engine's automated-coverage set.
 pub fn coverage() -> Vec<ComplianceMapping> {
@@ -235,6 +213,28 @@ fn unchecked_all_services(reason: &str) -> Vec<UncheckedCheck> {
         .collect()
 }
 
+/// Returns compliance mappings for service findings.
+///
+/// Multi-framework control IDs are sourced from the ComplianceAsCode/SSG rule
+/// `references:` blocks for the matching service/package rule (cited per arm).
+/// NIST IDs use 800-53 Rev 5 base controls. The SSG service-disable rules for
+/// these daemons carry no STIG or PCI-DSS reference, so those frameworks are
+/// omitted rather than guessed.
+///
+/// GDPR and ISO/IEC 27001:2022 apply to every mapped daemon as service
+/// minimisation: GDPR "TM-SH" (Article 32 system-hardening technical measure)
+/// and ISO 27001 Annex A 8.19 (Installation of software on operational systems)
+/// plus 8.9 (Configuration management), both under the "Technological" theme.
+/// Network-exposed daemons (Bluetooth, Avahi/mDNS) additionally map ISO 8.20
+/// (Networks security). SOC 2 CC6.8 applies to every mapped daemon (the
+/// unauthorised-software criterion mirrors the same minimisation intent).
+/// NIST SP 800-171 3.4.6 likewise applies to every mapped daemon (sourced
+/// from CM-7), with 3.1.16 added for Bluetooth (sourced from AC-18).
+/// FedRAMP mirrors the same 800-53 entries verbatim: CM-7 for every mapped
+/// daemon and AC-18 for Bluetooth, both FedRAMP Moderate (Rev 5) baseline
+/// members.
+/// HIPAA is omitted: none of these daemons map cleanly to a Security Rule
+/// specification.
 fn get_service_compliance_mappings(service_name: &str) -> Vec<ComplianceMapping> {
     match service_name {
         // SSG: package_xinetd_removed
