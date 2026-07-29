@@ -152,6 +152,42 @@ impl SystemExecutor for LocalExecutor {
 mod tests {
     use super::*;
 
+    /// A symlink must be reported as one, with its target, and a regular file
+    /// must be reported as positively not one.
+    ///
+    /// Both halves matter. Without the first, capture stores the content the
+    /// link points at and a rollback writes that content back through the link,
+    /// which is how a checkpoint of `/etc/systemd/system` came to hold the
+    /// contents of packaged unit files. Without the second, every ordinary file
+    /// would be treated as a link and never restored at all.
+    #[tokio::test]
+    async fn read_link_tells_a_symlink_from_a_regular_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let target = dir.path().join("real.conf");
+        let link = dir.path().join("link.conf");
+        std::fs::write(&target, "content\n").expect("write");
+        std::os::unix::fs::symlink(&target, &link).expect("symlink");
+
+        let executor = LocalExecutor::new();
+
+        assert_eq!(
+            executor
+                .read_link(&link)
+                .await
+                .expect("read_link on a link"),
+            Some(target.to_string_lossy().into_owned()),
+            "a symlink must report the path it points at"
+        );
+        assert_eq!(
+            executor
+                .read_link(&target)
+                .await
+                .expect("read_link on a file"),
+            None,
+            "a regular file must be reported as positively not a symlink"
+        );
+    }
+
     #[test]
     fn kernel_interface_path_matches_proc_and_sys() {
         assert!(is_kernel_interface_path(Path::new(

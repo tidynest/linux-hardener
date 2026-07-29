@@ -20,6 +20,7 @@ type CommandExistsStore = Arc<Mutex<HashMap<String, bool>>>;
 type LogStore = Arc<Mutex<MockExecutorLog>>;
 type PermissionDeniedStore = Arc<Mutex<HashSet<PathBuf>>>;
 type PathExistsStore = Arc<Mutex<HashMap<PathBuf, bool>>>;
+type SymlinkStore = Arc<Mutex<HashMap<PathBuf, String>>>;
 
 /// Records of operations performed on the mock executor.
 #[derive(Clone, Debug, Default)]
@@ -63,6 +64,7 @@ pub struct MockExecutor {
     metadata_error: PermissionDeniedStore,
     path_exists_error: PermissionDeniedStore,
     path_exists_override: PathExistsStore,
+    symlinks: SymlinkStore,
     log: LogStore,
     is_remote: bool,
     description: String,
@@ -88,10 +90,24 @@ impl MockExecutor {
             metadata_error: Arc::new(Mutex::new(HashSet::new())),
             path_exists_error: Arc::new(Mutex::new(HashSet::new())),
             path_exists_override: Arc::new(Mutex::new(HashMap::new())),
+            symlinks: Arc::new(Mutex::new(HashMap::new())),
             log: Arc::new(Mutex::new(MockExecutorLog::default())),
             is_remote: false,
             description: "mock".to_string(),
         }
+    }
+
+    /// Registers `path` as a symlink pointing at `target`.
+    ///
+    /// A path not registered here reads as positively not a symlink, which keeps
+    /// every fixture that predates symlink support describing the host it always
+    /// described.
+    pub fn with_symlink(self, path: &str, target: &str) -> Self {
+        self.symlinks
+            .lock()
+            .expect("symlinks mutex poisoned")
+            .insert(PathBuf::from(path), target.to_string());
+        self
     }
 
     /// Sets the executor to behave as remote.
@@ -451,6 +467,19 @@ impl SystemExecutor for MockExecutor {
             .unwrap_or(false))
     }
 
+    /// Overridden rather than inherited: the provided body shells out to
+    /// `readlink`, and the mock registers no such command, so every fixture
+    /// would report "could not determine" for a path it knows perfectly well.
+    /// The mock owns its filesystem, so it answers from the registry.
+    async fn read_link(&self, path: &Path) -> Result<Option<String>> {
+        Ok(self
+            .symlinks
+            .lock()
+            .expect("symlinks mutex poisoned")
+            .get(path)
+            .cloned())
+    }
+
     async fn file_metadata(&self, path: &Path) -> Result<FileMetadata> {
         if self
             .metadata_error
@@ -545,6 +574,36 @@ impl SystemExecutor for MockExecutor {
 
 #[cfg(test)]
 mod tests {
+
+    /// The mock answers `read_link` from its own registry, and an unregistered
+    /// path is positively not a symlink.
+    ///
+    /// The second half is what lets every fixture written before symlinks existed
+    /// go on describing the same host: the inherited body shells out to
+    /// `readlink`, which no fixture registers, so it would report "could not
+    /// determine" for paths the mock knows exactly.
+    #[tokio::test]
+    async fn read_link_answers_from_the_registry_and_defaults_to_not_a_symlink() {
+        let executor = MockExecutor::new()
+            .with_file("/etc/plain.conf", "x\n")
+            .with_symlink("/etc/link.conf", "/usr/etc/plain.conf");
+
+        assert_eq!(
+            executor
+                .read_link(Path::new("/etc/link.conf"))
+                .await
+                .expect("registered link"),
+            Some("/usr/etc/plain.conf".to_string())
+        );
+        assert_eq!(
+            executor
+                .read_link(Path::new("/etc/plain.conf"))
+                .await
+                .expect("registered file"),
+            None,
+            "a path with no registered link must read as not a symlink"
+        );
+    }
     use super::*;
 
     #[tokio::test]

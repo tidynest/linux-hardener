@@ -59,6 +59,38 @@ pub trait SystemExecutor: Send + Sync {
     /// Checks if a file path exists.
     async fn path_exists(&self, path: &Path) -> Result<bool>;
 
+    /// The target of `path` if it is a symlink, `None` if it is not one.
+    ///
+    /// Three outcomes, the same shape as [`Self::file_metadata`]: a target, a
+    /// positive "not a symlink", or `Err` meaning could not determine. `Err`
+    /// must never be read as "not a symlink", because a checkpoint that stores a
+    /// symlink's followed content instead of its target cannot restore it: the
+    /// write would go through the link into whatever it points at.
+    ///
+    /// Provided rather than required, so local and remote answer it the same
+    /// way. `readlink` is POSIX and the executor already runs commands on both;
+    /// a local-only `std::fs::read_link` would make every remote capture report
+    /// "not a symlink" for a path it never looked at.
+    async fn read_link(&self, path: &Path) -> Result<Option<String>> {
+        let path_str = path.to_string_lossy();
+        let output = self
+            .execute_command("readlink", &["-n", "--", &path_str])
+            .await?;
+        match output.exit_code {
+            0 => Ok(Some(output.stdout.trim().to_string())),
+            // readlink(1) exits 1 for a path that is not a symlink, which is the
+            // positive answer. Any other status is readlink itself failing, 127
+            // when it is absent on a remote host being the likely one, and that
+            // is "could not determine" rather than "not a symlink".
+            1 => Ok(None),
+            code => Err(crate::error::HardeningError::Executor(format!(
+                "readlink {path_str} exited {code}: {}",
+                output.stderr.trim()
+            ))
+            .into()),
+        }
+    }
+
     /// Reads metadata for `path`.
     ///
     /// The three outcomes are a contract every implementation must honour,
