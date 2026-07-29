@@ -426,11 +426,21 @@ bootstrap_dnf_family() {
 
     # Install required packages for hardener testing
     # Use systemd-nspawn for proper /proc /sys mounts that dnf requires
+    #
+    # cracklib-dicts is here because libpwquality's dictionary check is on by
+    # default and fails CLOSED: with no dictionary to load it refuses every
+    # password, strong ones included, so a container without it cannot answer
+    # whether a password policy works. Rocky's base image already carries it
+    # and Fedora's does not, which is a difference nobody chose and which made
+    # one distribution's reading incomparable with the other's. Installing it
+    # is not the suite being made to pass: the differential check that found
+    # this reports the refusal and names the missing dictionary either way.
     log_info "Installing test dependencies..."
     systemd-nspawn --quiet --directory="$CONTAINER_PATH" \
         dnf -y install \
         openssh-server \
         audit \
+        cracklib-dicts \
         firewalld \
         nftables \
         "$iptables_pkg" \
