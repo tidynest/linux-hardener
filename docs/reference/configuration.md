@@ -312,6 +312,25 @@ the command reports an error for that plugin and rewrites nothing, so
 `pwquality.conf`, `login.defs`, `faillock.conf` and `pwhistory.conf` are
 all left alone, not only the one that could not be read.
 
+A configuration file is only worth as much as the module that reads it.
+`pwquality.conf`, `faillock.conf` and `pwhistory.conf` are each consumed by
+exactly one PAM module (`pam_pwquality.so`, `pam_faillock.so`,
+`pam_pwhistory.so`), and a host whose PAM stack never loads that module
+enforces nothing the file says. `scan` reads the stack
+(`/etc/pam.d/system-auth`, `password-auth` and the `common-*` file the
+distribution uses) and reports every directive in an unread file as not
+enforced rather than as compliant, so its compliance controls fail instead of
+passing on evidence nothing consults. A stack this tool could not read, or a
+distribution whose stack it does not recognise, is reported unchecked instead:
+absence is only concluded from a file that was actually read.
+
+`apply` still writes such a file, because the value is right the moment the
+module is added, but it records the missing module as a failed change and the
+run does not report success. `apply --dry-run` says the same thing as a High
+issue, so the preview and the apply agree. Adding a module to `/etc/pam.d` is
+not something this tool does: that step is yours. `/etc/login.defs` is
+unaffected, because shadow-utils reads it directly with no module loaded.
+
 The plugin also refuses per file, on its own, without relying on that
 checkpoint: it declines to rewrite whichever file it could not read,
 reports that one file as a failed change, and hardens the rest. No

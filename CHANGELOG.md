@@ -26,6 +26,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A PAM configuration file no module reads is no longer reported as the
+  host's policy.** `/etc/security/pwquality.conf` is consumed by
+  `pam_pwquality.so` and by nothing else, and the plugin never checked that the
+  module was in the stack: it read the file, found `minlen = 14`, and passed the
+  control. A host whose stack does not load the module enforces no minimum
+  length at all, and `minlen` alone carries mappings to CIS, STIG
+  RHEL-08-020230, NIST IA-5(1)(a), 800-171 3.5.7, ISO 27001, SOC 2 and FedRAMP,
+  so the silent pass was seven frameworks wide. `faillock.conf` and
+  `pwhistory.conf` had the same gap. `scan` now reads
+  `/etc/pam.d/{system-auth,password-auth,common-*}` and reports every directive
+  in an unread file as not enforced, naming the module to add;
+  `apply` writes the file but records the missing module as a failed change; and
+  `apply --dry-run` raises it as a High issue, so the preview and the apply
+  reach the same verdict. Absence is concluded only from a stack file that was
+  actually read: an unreadable stack, or a distribution whose stack layout this
+  tool does not recognise, is reported unchecked instead. `/etc/login.defs` is
+  unaffected, since shadow-utils reads it with no module loaded.
+  Measured on a stock Arch workstation: `/etc/pam.d/system-auth` loads
+  `pam_faillock.so` four times and `pam_pwquality.so` not at all,
+  `libpwquality` is not installed, and `/etc/security/pwquality.conf` is 0600.
+  A privileged scan there used to read that file and pass six controls on it.
+  `pam_pwhistory.so` is present on disk but likewise absent from the stack, so
+  `remember` was passing the same way.
+
 - **`batch apply --dry-run` and `apply --dry-run` no longer disagree about
   whether a host failed.** The single-host dry run fails on Critical and High
   validation issues only, treating anything lower as advisory so a note cannot

@@ -13,7 +13,7 @@ use std::sync::Arc;
 /// The secure fixture minus faillock.conf, so callers can model an absent or
 /// unreadable faillock file without duplicating the other compliant directives.
 fn secure_pam_executor_base() -> MockExecutor {
-    MockExecutor::new()
+    with_pam_stack(MockExecutor::new())
         // pwquality.conf uses "key = value" format, which is also the form
         // apply writes: a compliant host in that form has nothing to rewrite.
         .with_file(
@@ -94,24 +94,49 @@ fn with_backup_cp(mut executor: MockExecutor, path: &str) -> MockExecutor {
     executor
 }
 
+/// A PAM stack that loads every module this plugin's configuration files
+/// depend on.
+///
+/// Every fixture below carries it, because a host with no PAM stack at all is
+/// not a host any of these tests mean to describe: `/etc/security/*.conf` is
+/// read by a module or by nothing, and a mock with no `/etc/pam.d` was the
+/// second of those while every assertion here assumed the first. Added when
+/// the plugin learned to tell them apart.
+///
+/// It goes in `password-auth` rather than `system-auth` deliberately. Several
+/// tests register their own `system-auth` to place an inline argument, and
+/// `with_file` replaces rather than merges, so putting the modules there would
+/// have made those tests describe a host with no pwquality module by accident.
+fn with_pam_stack(executor: MockExecutor) -> MockExecutor {
+    executor.with_file(
+        "/etc/pam.d/password-auth",
+        "auth     required pam_faillock.so preauth silent\n\
+         password required pam_pwquality.so retry=3\n\
+         password required pam_pwhistory.so\n\
+         password required pam_unix.so sha512 shadow use_authtok\n",
+    )
+}
+
 /// Creates a mock executor with insecure PAM configuration.
 fn insecure_pam_executor() -> MockExecutor {
-    MockExecutor::new()
-        .with_file(
-            "/etc/security/pwquality.conf",
-            r#"# Default password quality
+    with_pam_stack(
+        MockExecutor::new()
+            .with_file(
+                "/etc/security/pwquality.conf",
+                r#"# Default password quality
 minlen 8
 # No complexity requirements set
 "#,
-        )
-        .with_file(
-            "/etc/login.defs",
-            r#"# Default login settings
+            )
+            .with_file(
+                "/etc/login.defs",
+                r#"# Default login settings
 PASS_MAX_DAYS 99999
 PASS_MIN_DAYS 0
 PASS_WARN_AGE 7
 "#,
-        )
+            ),
+    )
 }
 
 /// Creates a mock executor with missing PAM config files.
@@ -122,7 +147,7 @@ fn missing_pam_config_executor() -> MockExecutor {
 
 /// Creates a mock executor with partial configuration.
 fn partial_pam_executor() -> MockExecutor {
-    MockExecutor::new()
+    with_pam_stack(MockExecutor::new())
         // pwquality.conf exists but missing some settings
         .with_file(
             "/etc/security/pwquality.conf",
@@ -288,7 +313,7 @@ async fn test_pam_scan_partial_config() {
 
 #[tokio::test]
 async fn test_pam_scan_finding_structure() {
-    let executor = MockExecutor::new()
+    let executor = with_pam_stack(MockExecutor::new())
         .with_file("/etc/security/pwquality.conf", "minlen 8\n")
         .with_file("/etc/login.defs", "");
 
@@ -2974,5 +2999,224 @@ async fn apply_refuses_to_write_the_conf_when_the_pam_stack_cannot_be_read() {
             .any(|c| !c.change_success && c.change_description.contains(PAM_STACK_FILE)),
         "the operator must learn which stack file could not be read, got: {:?}",
         result.apply_changes
+    );
+}
+
+// === A configuration file no module reads (queue item 3) ===
+
+/// Every stack file `pam_module_for` searches for `pam_pwquality.so`. A host
+/// whose stack loads none of them does not enforce password quality, whatever
+/// `/etc/security/pwquality.conf` says.
+const PWQUALITY_STACK_FILES: [&str; 3] = [
+    "/etc/pam.d/system-auth",
+    "/etc/pam.d/password-auth",
+    "/etc/pam.d/common-password",
+];
+
+/// A stack that loads faillock and pwhistory but never pwquality: the shape
+/// openSUSE's `pam-config` writes when the pwquality module is not installed.
+fn stack_without_pwquality() -> MockExecutor {
+    let mut executor = secure_pam_executor();
+    for file in PWQUALITY_STACK_FILES {
+        executor = executor.with_file(
+            file,
+            "auth     required pam_faillock.so preauth silent\n\
+             password required pam_pwhistory.so\n\
+             password required pam_unix.so sha512 shadow use_authtok\n",
+        );
+    }
+    executor
+}
+
+/// `/etc/security/pwquality.conf` is read by `pam_pwquality.so` and by nothing
+/// else. A host whose PAM stack never loads that module enforces no minimum
+/// length however the file is written, so reporting the file's own value as the
+/// host's policy passes a control on evidence nothing consults.
+///
+/// This is not a hypothetical shape. `minlen` alone carries mappings to CIS,
+/// STIG RHEL-08-020230, NIST IA-5(1)(a), 800-171 3.5.7, ISO 27001, SOC 2 and
+/// FedRAMP, so the silent pass is seven frameworks wide.
+#[tokio::test]
+async fn scan_refuses_to_pass_a_pwquality_file_no_module_reads() {
+    let executor = Arc::new(stack_without_pwquality());
+    let ctx = Context::with_executor(executor);
+
+    let result = PamHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan runs");
+
+    let minlen = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "pam-minlen")
+        .unwrap_or_else(|| {
+            panic!(
+                "a compliant pwquality.conf no module reads must not pass, got findings: {:?}",
+                result
+                    .scan_findings
+                    .iter()
+                    .map(|f| &f.finding_id)
+                    .collect::<Vec<_>>()
+            )
+        });
+    assert!(
+        minlen.finding_description.contains("pam_pwquality.so"),
+        "the finding must name the module that is missing, got: {}",
+        minlen.finding_description
+    );
+    assert!(
+        !minlen.finding_compliance.is_empty(),
+        "the finding must carry minlen's mappings, or the frameworks it covers \
+         stay passed on the same absent evidence"
+    );
+    assert!(
+        !result
+            .scan_unchecked
+            .iter()
+            .any(|u| u.unchecked_check_id == "pam-minlen"),
+        "a stack that was read and does not load the module is a fact, not an \
+         unknown, got: {:?}",
+        result.scan_unchecked
+    );
+}
+
+/// Guard against over-correction: a stack that does load the module must go on
+/// reporting the file's value as the host's policy, which is what every other
+/// test in this file assumes.
+#[tokio::test]
+async fn scan_still_passes_a_pwquality_file_the_stack_does_read() {
+    let executor = Arc::new(secure_pam_executor());
+    let ctx = Context::with_executor(executor);
+
+    let result = PamHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan runs");
+
+    assert!(
+        !result
+            .scan_findings
+            .iter()
+            .any(|f| f.finding_id == "pam-minlen"),
+        "a compliant pwquality.conf the stack reads must stay compliant, got: {:?}",
+        result
+            .scan_findings
+            .iter()
+            .map(|f| &f.finding_id)
+            .collect::<Vec<_>>()
+    );
+}
+
+/// A stack this run could not read is not a stack without the module. The same
+/// distinction the inline read already makes, applied to presence: concluding
+/// absence from a file that could not be opened would fail a control on a host
+/// that may well be compliant.
+#[tokio::test]
+async fn scan_reports_a_directive_unchecked_when_the_stack_cannot_be_read() {
+    let mut executor = stack_without_pwquality();
+    for file in PWQUALITY_STACK_FILES {
+        executor = executor.with_read_permission_denied(file);
+    }
+    let ctx = Context::with_executor(Arc::new(executor));
+
+    let result = PamHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan runs");
+
+    assert!(
+        result
+            .scan_unchecked
+            .iter()
+            .any(|u| u.unchecked_check_id == "pam-minlen"),
+        "an unreadable stack leaves the question open, got unchecked: {:?}",
+        result
+            .scan_unchecked
+            .iter()
+            .map(|u| &u.unchecked_check_id)
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        !result
+            .scan_findings
+            .iter()
+            .any(|f| f.finding_id == "pam-minlen"),
+        "an unreadable stack must not be reported as a missing module"
+    );
+}
+
+/// Apply writes the file anyway, because the value will be right the moment the
+/// module is added and refusing would leave the operator with neither. What it
+/// must not do is call that hardening: this plugin does not edit /etc/pam.d, so
+/// the step that makes the file matter is the operator's.
+#[tokio::test]
+async fn apply_reports_a_file_it_wrote_that_nothing_reads() {
+    let executor = Arc::new(with_backup_cp(
+        stack_without_pwquality(),
+        "/etc/security/pwquality.conf",
+    ));
+    let mut ctx = Context::with_executor(executor.clone());
+
+    let result = PamHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply must run rather than abort");
+
+    let named: Vec<&str> = result
+        .apply_changes
+        .iter()
+        .filter(|c| c.change_description.contains("pam_pwquality.so"))
+        .map(|c| c.change_description.as_str())
+        .collect();
+    assert_eq!(
+        named.len(),
+        1,
+        "the missing module must be reported exactly once, per file rather than \
+         per directive, got: {named:?}"
+    );
+    assert!(
+        result
+            .apply_changes
+            .iter()
+            .any(|c| !c.change_success && c.change_description.contains("pam_pwquality.so")),
+        "a step the operator still has to take is not a change that succeeded"
+    );
+    assert!(
+        !result.apply_success,
+        "a run whose hardening does not take effect has not earned a clean result"
+    );
+}
+
+/// The dry run must reach the same verdict as the apply it previews. A dry run
+/// exiting 0 where the apply exits non-zero is the divergence
+/// `has_blocking_issue` exists to prevent, and it was a shipped defect once.
+#[tokio::test]
+async fn validate_fails_the_dry_run_when_no_module_reads_the_file() {
+    let ctx = Context::with_executor(Arc::new(stack_without_pwquality()));
+
+    let report = PamHardeningPlugin::new()
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .expect("validate runs");
+
+    let issue = report
+        .validation_report_issues
+        .iter()
+        .find(|i| i.validation_issue_message.contains("pam_pwquality.so"))
+        .unwrap_or_else(|| {
+            panic!(
+                "the preview must say the write will not take effect, got: {:?}",
+                report
+                    .validation_report_issues
+                    .iter()
+                    .map(|i| &i.validation_issue_message)
+                    .collect::<Vec<_>>()
+            )
+        });
+    assert_eq!(issue.validation_issue_severity, Severity::High);
+    assert!(
+        report.has_blocking_issue(),
+        "the dry run must fail, because the apply it previews reports a failure"
     );
 }
