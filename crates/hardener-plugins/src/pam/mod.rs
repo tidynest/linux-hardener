@@ -1633,12 +1633,10 @@ fn pam_violates(directive: &PamDirective, target: &str, current: Option<&str>) -
 /// Scan, apply and validate each need this, and they must agree, so a preview
 /// cannot judge the host by a rule the apply it previews does not apply.
 fn clamped_baseline(directive: &PamDirective, config: &PluginConfig) -> String {
-    directive.pam_compare.clamp_target(
+    directive.pam_compare.resolved_target(
+        config,
+        directive.pam_directive_name,
         directive.pam_secure_value,
-        // With no override this resolves to the secure value itself, which
-        // ties with the baseline and leaves it standing, so the absent case
-        // needs no separate spelling.
-        Some(config.resolve_str(directive.pam_directive_name, directive.pam_secure_value)),
     )
 }
 

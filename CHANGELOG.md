@@ -26,6 +26,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The SSH plugin no longer writes a host's stricter setting back up to the
+  baseline.** `MaxAuthTries`, `ClientAliveInterval` and `ClientAliveCountMax`
+  were compared for equality, which has no direction, so a host allowing two
+  authentication attempts against a baseline of three counted as violating and
+  apply wrote the three over it, through the drop-in that sshd reads first.
+  Measured on a mock host: `MaxAuthTries 2`, `ClientAliveInterval 60` and
+  `ClientAliveCountMax 1` were all reported as findings and all three were
+  loosened by an apply that reported success. This is the same defect that was
+  fixed in the PAM plugin below, in a second plugin, and rather than copy the
+  rule a third time the comparison now has one definition that pam, ssh and
+  kernel share. `ClientAliveInterval 0` stops sshd probing an idle client at
+  all, so zero is treated as the loosest value that setting has rather than the
+  smallest; `MaxAuthTries 0` and `ClientAliveCountMax 0` really are the strict
+  end and are honoured as such. `PermitRootLogin` is now ordered explicitly
+  (`no` over `forced-commands-only` over `prohibit-password` over `yes`, with
+  `without-password` ranking alongside the modern spelling of the same
+  setting), which replaces a hand-written list that expressed the same ordering
+  only for the remote-root lockout guard. **Behaviour change worth noting:** an
+  `[ssh]` directive override in `config.toml` is now clamped tighten-only, as
+  `[pam]` already was, so `MaxAuthTries = "10"` yields 3 and
+  `X11Forwarding = "yes"` yields `no`; record a deliberate deviation as a policy
+  exception instead, which the report labels rather than silently lowering the
+  bar.
+
 - **`apply` no longer makes a host less secure than it found it.** Nine of the
   eleven PAM directives compared for equality, so any value other than the
   baseline counted as a violation, stricter ones included, and apply then wrote

@@ -1675,10 +1675,37 @@ X11Forwarding yes
 }
 
 #[tokio::test]
-async fn validate_honours_a_directive_override() {
+async fn validate_honours_a_directive_override_that_tightens() {
     // The plugin's hardcoded baseline for MaxAuthTries is "3"; the override
     // below picks a distinct value so the assertion can only pass if validate
     // actually consults config.directives rather than the hardcoded baseline.
+    // It has to be a distinct *stricter* value: this test used to use "6" and
+    // assert the preview said 6, which pinned the rule that an override sets
+    // whatever it says, in the one direction that leaves a host less secure
+    // than the tool's own baseline.
+    let executor = insecure_ssh_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = SshHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config
+        .directives
+        .insert("MaxAuthTries".to_string(), "2".to_string());
+
+    let report = plugin.validate(&ctx, &config).await.unwrap();
+
+    assert!(
+        report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("MaxAuthTries") && c.contains('2')),
+        "the preview must reflect the directive override, got: {:?}",
+        report.validation_report_estimated_changes
+    );
+}
+
+#[tokio::test]
+async fn validate_clamps_a_directive_override_that_would_loosen() {
     let executor = insecure_ssh_executor();
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = SshHardeningPlugin::new();
@@ -1690,12 +1717,15 @@ async fn validate_honours_a_directive_override() {
 
     let report = plugin.validate(&ctx, &config).await.unwrap();
 
+    let previewed: Vec<_> = report
+        .validation_report_estimated_changes
+        .iter()
+        .filter(|c| c.contains("MaxAuthTries"))
+        .collect();
     assert!(
-        report
-            .validation_report_estimated_changes
-            .iter()
-            .any(|c| c.contains("MaxAuthTries") && c.contains('6')),
-        "the preview must reflect the directive override"
+        previewed.iter().any(|c| c.contains('3')) && !previewed.iter().any(|c| c.contains('6')),
+        "an override may tighten the baseline and never relax it, so the preview \
+         must promise 3 rather than 6, got: {previewed:?}"
     );
 }
 
@@ -2490,5 +2520,168 @@ async fn a_second_apply_over_a_root_session_keeps_a_value_a_drop_in_still_contes
             .any(|change| change.change_description.contains("already compliant")),
         "a host the previous run hardened has nothing left to change, got: {:?}",
         second.apply_changes
+    );
+}
+
+/// A host stricter than this tool's baseline on every directive whose value
+/// has a direction: two authentication attempts rather than three, a sixty
+/// second idle probe rather than five minutes, one missed probe rather than
+/// two. Crypto lines are the ones `secure_ssh_executor` uses, so the crypto
+/// pass contributes nothing either way.
+const STRICTER_THAN_BASELINE: &str = r#"
+PermitRootLogin no
+PasswordAuthentication no
+PermitEmptyPasswords no
+MaxAuthTries 2
+X11Forwarding no
+ClientAliveInterval 60
+ClientAliveCountMax 1
+KexAlgorithms curve25519-sha256,diffie-hellman-group16-sha512
+Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com
+MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
+"#;
+
+#[tokio::test]
+async fn ssh_scan_does_not_report_a_stricter_host_as_violating() {
+    let ctx = Context::with_executor(Arc::new(
+        MockExecutor::new().with_file("/etc/ssh/sshd_config", STRICTER_THAN_BASELINE),
+    ));
+
+    let result = SshHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("ssh scan should not error");
+
+    assert!(
+        result.scan_findings.is_empty(),
+        "a host stricter than the baseline is compliant, but these were flagged: {:?}",
+        result
+            .scan_findings
+            .iter()
+            .map(|finding| (
+                finding.finding_id.as_str(),
+                finding.finding_current_value.as_str()
+            ))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn ssh_apply_never_loosens_a_stricter_host() {
+    let executor = apply_ready_executor(STRICTER_THAN_BASELINE);
+
+    run_ssh_apply(&executor).await;
+
+    let written = written_sshd_config(&executor);
+    for (directive, kept) in [
+        ("MaxAuthTries", "2"),
+        ("ClientAliveInterval", "60"),
+        ("ClientAliveCountMax", "1"),
+    ] {
+        assert!(
+            written
+                .lines()
+                .any(|line| line.trim() == format!("{directive} {kept}")),
+            "apply loosened {directive}: the host had {kept} and the file now reads:\n{written}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn ssh_scan_flags_an_idle_probe_that_is_switched_off() {
+    // ClientAliveInterval 0 stops sshd probing an idle client at all, so zero
+    // is the loosest value the setting has while being the smallest number it
+    // can hold. Judged purely on "smaller is stricter" it would score best.
+    let disabled =
+        STRICTER_THAN_BASELINE.replace("ClientAliveInterval 60", "ClientAliveInterval 0");
+    let ctx = Context::with_executor(Arc::new(
+        MockExecutor::new().with_file("/etc/ssh/sshd_config", &disabled),
+    ));
+
+    let result = SshHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("ssh scan should not error");
+
+    assert!(
+        result
+            .scan_findings
+            .iter()
+            .any(|finding| finding.finding_id == "ssh-clientaliveinterval"),
+        "an idle probe switched off is not a stricter idle probe, findings: {:?}",
+        result
+            .scan_findings
+            .iter()
+            .map(|finding| finding.finding_id.as_str())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn ssh_apply_clamps_an_operator_override_that_would_loosen() {
+    let mut config = PluginConfig::default();
+    config
+        .directives
+        .insert("MaxAuthTries".to_string(), "6".to_string());
+    config
+        .directives
+        .insert("X11Forwarding".to_string(), "yes".to_string());
+
+    let executor = apply_ready_executor("# minimal config\n");
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    SshHardeningPlugin::new()
+        .apply(&mut ctx, &config)
+        .await
+        .expect("ssh apply should not error");
+
+    let written = written_sshd_config(&executor);
+    assert!(
+        written.lines().any(|line| line.trim() == "MaxAuthTries 3"),
+        "an override may tighten the baseline and never relax it, file reads:\n{written}"
+    );
+    assert!(
+        written
+            .lines()
+            .any(|line| line.trim() == "X11Forwarding no"),
+        "an override may tighten the baseline and never relax it, file reads:\n{written}"
+    );
+}
+
+#[tokio::test]
+async fn apply_does_not_loosen_a_vendor_host_through_its_own_fragment() {
+    // On a host whose sshd_config lives under /usr/etc, the vendor file is
+    // never edited and every managed directive goes to the fragment instead.
+    // The fragment sorts first, so writing the plain baseline into it
+    // overrides the vendor file's stricter value: this host allows two
+    // authentication attempts and one missed keepalive probe, and the
+    // fragment would hand it back three and two.
+    let executor = dropin_apply_commands(
+        MockExecutor::new()
+            .with_file(
+                "/usr/etc/ssh/sshd_config",
+                "# vendor config\n\
+                 Include /etc/ssh/sshd_config.d/*.conf\n\
+                 MaxAuthTries 2\n\
+                 ClientAliveCountMax 1\n",
+            )
+            .with_directory("/etc/ssh/sshd_config.d"),
+    );
+
+    SshHardeningPlugin::new()
+        .apply(
+            &mut Context::with_executor(Arc::new(executor.clone())),
+            &PluginConfig::default(),
+        )
+        .await
+        .expect("apply must not abort on a vendor-only host");
+
+    let dropin = dropin_written(&executor).expect("the fragment carries the managed directives");
+    assert!(
+        dropin.contains("MaxAuthTries 2"),
+        "the fragment loosened MaxAuthTries from the vendor file's 2, got:\n{dropin}"
+    );
+    assert!(
+        dropin.contains("ClientAliveCountMax 1"),
+        "the fragment loosened ClientAliveCountMax from the vendor file's 1, got:\n{dropin}"
     );
 }

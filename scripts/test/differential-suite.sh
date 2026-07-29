@@ -298,6 +298,15 @@ require_fresh_capture() {
 # The ssh directives this suite checks and the value the tool targets for each,
 # verified against SSH_DIRECTIVES in crates/hardener-plugins/src/ssh/mod.rs.
 # Fields: directive|target.
+#
+# These are equality assertions and deliberately so: on a container created
+# clean, no distribution's default is stricter than the tool's baseline, so
+# every one of these must read exactly the target after an apply. That used to
+# be guaranteed by the tool itself, which wrote the target over whatever it
+# found; it now writes the stricter of the target and the host's own value, so
+# a distribution that started shipping, say, MaxAuthTries 2 would leave the 2
+# in place and fail here. That is the tool behaving correctly and this table
+# being out of date, not a regression: widen the entry rather than the tool.
 SSH_CHECKS=(
     "PermitRootLogin|no"
     "PasswordAuthentication|no"

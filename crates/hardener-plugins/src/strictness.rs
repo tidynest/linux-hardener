@@ -14,6 +14,8 @@
 //! survived in nine of eleven PAM directives after being applied by name to the
 //! other two.
 
+use hardener_core::PluginConfig;
+
 /// The direction in which one value is stricter than another.
 ///
 /// **Every variant carries a direction, and that is the point.** PAM used to
@@ -32,11 +34,28 @@ pub enum Strictness {
     /// Smaller is stricter **except zero**, which switches the setting off
     /// rather than tightening it.
     ///
-    /// `maxrepeat = 0` disables the consecutive-character check outright, so
-    /// zero is the loosest value the setting has while being the smallest
+    /// `maxrepeat = 0` disables the consecutive-character check outright and
+    /// `ClientAliveInterval 0` stops sshd probing an idle client at all, so
+    /// zero is the loosest value either setting has while being the smallest
     /// number it can hold. A plain [`Self::AtMost`] scores it compliant, which
     /// is a check switched off reading as a check satisfied.
     NonZeroAtMost,
+    /// The value space is a closed set whose strictness neither the number nor
+    /// the alphabet carries, so it is listed here explicitly, **weakest first**.
+    ///
+    /// `net.ipv4.conf.all.rp_filter` is the clearest case: `0` is off, `1` is
+    /// strict mode and `2` is loose mode, so strictness runs 1, then 2, then 0.
+    /// [`Self::AtLeast`] scores loose-mode `2` compliant against a target of
+    /// `1`, and [`Self::AtMost`] scores off compliant. Both are wrong, and
+    /// neither is wrong in a way the integer could reveal. `PermitRootLogin` is
+    /// the same shape in words.
+    ///
+    /// Each entry is a group of spellings of **one** strictness, so a legacy
+    /// synonym does not read as a weaker setting than the name that replaced
+    /// it. The first spelling in a group is the one this tool writes. Matching
+    /// is case-insensitive, because sshd compares directive values with
+    /// `strcasecmp` and a host spelling it `No` means `no`.
+    Ranked(&'static [&'static [&'static str]]),
 }
 
 impl Strictness {
@@ -61,6 +80,23 @@ impl Strictness {
             Some((score, spelling)) if score > baseline_score => spelling,
             _ => baseline_spelling,
         }
+    }
+
+    /// The plugin's own `baseline` for `key`, tightened by the operator's
+    /// directive override where the config sets one that tightens it.
+    ///
+    /// Every plugin resolves its target through here, in scan, in apply and in
+    /// validate, so a preview cannot judge a host by a rule the apply it
+    /// previews does not apply, and an override cannot mean "tighten only" in
+    /// one plugin and "set to whatever I said" in another. Deviating from the
+    /// baseline in the loosening direction is what the exceptions mechanism is
+    /// for, and an exception is labelled in the report where an override is
+    /// silent.
+    pub fn resolved_target(self, config: &PluginConfig, key: &str, baseline: &str) -> String {
+        // With no override this resolves to the baseline itself, which ties
+        // with the baseline and leaves it standing, so the absent case needs no
+        // separate spelling.
+        self.clamp_target(baseline, Some(config.resolve_str(key, baseline)))
     }
 
     /// True when `current` is weaker than `target`, which is the resolved and
@@ -92,25 +128,87 @@ impl Strictness {
     /// `None` means this comparison cannot place that value at all, which is a
     /// deliberately different answer from "placed, and weak".
     fn place(self, value: &str) -> Option<(i64, String)> {
-        let n = value.parse::<i64>().ok()?;
-        let score = match self {
-            Self::AtLeast => n,
+        match self {
+            Self::Ranked(order) => order
+                .iter()
+                .position(|group| {
+                    group
+                        .iter()
+                        .any(|spelling| spelling.eq_ignore_ascii_case(value))
+                })
+                .map(|index| (index as i64, order[index][0].to_string())),
+            Self::AtLeast => value.parse::<i64>().ok().map(|n| (n, n.to_string())),
             // Negated so that a smaller number sorts stricter on the shared
             // scale. Saturating because negating `i64::MIN` overflows, and a
             // configuration file is free to contain it.
-            Self::AtMost => n.saturating_neg(),
+            Self::AtMost => value
+                .parse::<i64>()
+                .ok()
+                .map(|n| (n.saturating_neg(), n.to_string())),
             // Zero is the weakest value the scale has, however small a number
             // it is, so it can never win a clamp and is never compliant.
-            Self::NonZeroAtMost if n == 0 => i64::MIN,
-            Self::NonZeroAtMost => n.saturating_neg(),
-        };
-        Some((score, n.to_string()))
+            Self::NonZeroAtMost => value.parse::<i64>().ok().map(|n| match n {
+                0 => (i64::MIN, n.to_string()),
+                n => (n.saturating_neg(), n.to_string()),
+            }),
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::Strictness;
+
+    /// `rp_filter`: off, then loose mode, then strict mode. The integer says
+    /// nothing about that order.
+    const RP_FILTER: Strictness = Strictness::Ranked(&[&["0"], &["2"], &["1"]]);
+    /// `PermitRootLogin`, weakest first. `without-password` is sshd's legacy
+    /// spelling of `prohibit-password` and therefore shares its rank;
+    /// `forced-commands-only` allows strictly less than either.
+    const PERMIT_ROOT_LOGIN: Strictness = Strictness::Ranked(&[
+        &["yes"],
+        &["prohibit-password", "without-password"],
+        &["forced-commands-only"],
+        &["no"],
+    ]);
+
+    #[test]
+    fn a_ranked_value_is_ordered_by_the_table_and_not_by_its_number() {
+        // rp_filter 2 is loose mode: weaker than strict mode 1, despite being
+        // the larger integer. Both numeric directions get this wrong, which is
+        // the entire reason the variant exists.
+        assert!(RP_FILTER.violated_by("1", Some("2")));
+        assert!(RP_FILTER.violated_by("1", Some("0")));
+        assert!(!RP_FILTER.violated_by("1", Some("1")));
+        assert!(!Strictness::AtLeast.violated_by("1", Some("2")));
+
+        // And a clamp keeps strict mode rather than taking the bigger number.
+        assert_eq!(RP_FILTER.clamp_target("1", Some("2")), "1");
+        assert_eq!(RP_FILTER.clamp_target("2", Some("1")), "1");
+    }
+
+    #[test]
+    fn a_ranked_word_is_matched_the_way_sshd_matches_it() {
+        // sshd compares directive values with strcasecmp, so a host spelling
+        // it `No` is already at the target and must not be rewritten.
+        assert!(!PERMIT_ROOT_LOGIN.violated_by("no", Some("No")));
+        assert!(PERMIT_ROOT_LOGIN.violated_by("no", Some("prohibit-password")));
+        assert!(!PERMIT_ROOT_LOGIN.violated_by("prohibit-password", Some("no")));
+
+        // The table's spelling is what gets written, not the host's casing.
+        assert_eq!(PERMIT_ROOT_LOGIN.clamp_target("yes", Some("NO")), "no");
+    }
+
+    #[test]
+    fn a_legacy_spelling_ranks_with_the_name_that_replaced_it() {
+        // `without-password` and `prohibit-password` are one setting under two
+        // names. Ranking them as neighbours rather than as equals would make a
+        // host using the legacy spelling look weaker than the target and earn
+        // it a rewrite that changes nothing sshd can observe.
+        assert!(!PERMIT_ROOT_LOGIN.violated_by("prohibit-password", Some("without-password")));
+        assert!(!PERMIT_ROOT_LOGIN.violated_by("without-password", Some("prohibit-password")));
+        assert!(PERMIT_ROOT_LOGIN.violated_by("forced-commands-only", Some("without-password")));
+    }
 
     #[test]
     fn a_direction_judges_by_direction_rather_than_by_equality() {
@@ -152,11 +250,13 @@ mod tests {
     fn a_value_the_comparison_cannot_place_is_never_compliant_and_never_wins() {
         // An unrecognised value is not evidence of anything, so it violates.
         assert!(Strictness::AtMost.violated_by("3", Some("banana")));
+        assert!(PERMIT_ROOT_LOGIN.violated_by("no", Some("maybe")));
 
         // And as a candidate it loses, so a typo in an override cannot relax
         // the target the plugin would otherwise have used.
         assert_eq!(Strictness::AtMost.clamp_target("3", Some("banana")), "3");
         assert_eq!(Strictness::AtMost.clamp_target("3", None), "3");
+        assert_eq!(PERMIT_ROOT_LOGIN.clamp_target("no", Some("maybe")), "no");
     }
 
     #[test]

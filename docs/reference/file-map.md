@@ -1,6 +1,6 @@
 # Linux System Hardener - File Map
 
-**Last Updated:** 2026-07-28
+**Last Updated:** 2026-07-29
 
 This document lists all source files with their purpose and key exports.
 
@@ -135,6 +135,7 @@ pub trait HardeningPlugin: Send + Sync {
 | `src/lib.rs` | Module exports, helpers | `create_checkpoint_for_apply()`, `create_checkpoint_metadata_only_for_apply()`, `checkpoint_change()` (shared `ChangeType::Checkpoint` bookkeeping change), `rollback_files_from_checkpoint()`, `create_plugin_registry()`, `compliance_coverage()` |
 | `src/macros.rs` | Plugin definition macro | `define_plugin!` |
 | `src/scan_outcome.rs` | Turns per-plugin scan results into the flat lists a compliance report consumes. A plugin that contributed no evidence gets an entry carrying its whole declared coverage, so its controls route to Manual Review instead of passing on the silence its own absence caused; a run that could not enumerate its plugins at all gets one carrying the engine's whole coverage, for the same reason at the only scope left. Shared by the CLI and the desktop, beside the coverage table it depends on | `Unassessed`, `flatten_scans()`, `flatten_persisted_scans()`, `failed_scan()`, `unassessed_check()` |
+| `src/strictness.rs` | The one definition of which direction counts as stricter for a configuration value, shared by the pam, ssh and kernel plugins. Comparing a host's value against the baseline for equality has no direction, so a stricter host reads as violating and apply writes the baseline over it; every variant here carries a direction, and there is deliberately no equality variant to give a directive added later. Also the single place an operator's directive override is clamped, so an override can tighten a target but never relax it | `Strictness` (`AtMost`, `AtLeast`, `NonZeroAtMost`, `Ranked`), `clamp_target()`, `violated_by()`, `resolved_target()` |
 
 ### Individual Plugins
 
