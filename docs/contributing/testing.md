@@ -129,7 +129,7 @@ Without `--apply`: skips sections 13-16 (per-plugin apply and rollback) and sect
 With `--apply`: runs all 26 sections including destructive per-plugin lifecycle testing.
 
 ```bash
-bash scripts/test/full-test-suite.sh --self-test            # classification only, safe anywhere
+bash scripts/test/full-test-suite.sh --self-test            # classification and diagnostics, safe anywhere
 ```
 
 Needs no root and no container. It drives the decisions the suite makes rather

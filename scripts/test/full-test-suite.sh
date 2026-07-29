@@ -109,7 +109,7 @@ run_test() {
             return 0
         else
             log_fail "$name (exit code: $exit_code)"
-            echo "$output" >> "$LOG_FILE"
+            surface_tool_output "$output"
             return 1
         fi
     else
@@ -118,6 +118,7 @@ run_test() {
             return 0
         else
             log_fail "$name (expected failure but succeeded)"
+            surface_tool_output "$output"
             return 1
         fi
     fi
@@ -149,9 +150,8 @@ run_test_output() {
         return 0
     else
         log_fail "$name (pattern not found: $grep_pattern)"
-        # Surface to the host-visible console log (LOG_FILE is container-local).
-        log_info "diag: exit=$exit_code bytes=$(wc -c <"$out_tmp") head=[$(head -c 160 "$out_tmp" | tr '\n' ' ')]"
-        cat "$out_tmp" >> "$LOG_FILE"
+        log_info "diag: exit=$exit_code bytes=$(wc -c <"$out_tmp")"
+        surface_tool_error "$out_tmp"
         rm -f "$out_tmp"
         return 1
     fi
@@ -466,11 +466,28 @@ test_apply_kernel() {
 # failure explained only there is a failure reported without its evidence. An
 # empty stderr says so rather than printing nothing, because a failure with no
 # explanation must not look like one whose explanation was merely omitted.
-surface_tool_error() {
-    if [[ -s "$1" ]]; then
-        head -20 "$1" | while IFS= read -r line; do
+# Puts a tool's own output where a reader can see it.
+#
+# `LOG_FILE` is inside the container and is discarded with it, so anything
+# written only there names a failure and takes the reason with it: three
+# failures on five distributions were reported that way and none could be
+# diagnosed without running the suite again. `log_info` goes through `log`,
+# which tees to stdout, and the cross-distro runner captures that into
+# `test-results/<distro>.log`. Twenty lines, because a validation report is
+# long and its first lines are the ones that say why.
+surface_tool_output() {
+    if [[ -n "$1" ]]; then
+        printf '%s\n' "$1" | head -20 | while IFS= read -r line; do
             log_info "  $line"
         done
+    else
+        log_info "  the tool printed nothing"
+    fi
+}
+
+surface_tool_error() {
+    if [[ -s "$1" ]]; then
+        surface_tool_output "$(cat "$1")"
     else
         log_info "  the tool wrote nothing to stderr either"
     fi
@@ -924,6 +941,29 @@ self_test() {
         produced_result_document "$workdir/dryrun.json" validation_report_plugin_id
     check_status 1 "an apply result is not accepted as a validation report" \
         produced_result_document "$workdir/partial.json" validation_report_plugin_id
+
+    # A failure the harness cannot explain is what the surfacing exists to
+    # prevent, and it is not hypothetical: three failures on five distributions
+    # were named and none could be diagnosed, because the only copy of the tool's
+    # output went to a log inside the container. These assert that a reason
+    # reaches the console at all, which is the one property `log_info` has and a
+    # write to `LOG_FILE` does not.
+    check_contains() {
+        local want="$1" what="$2" got
+        shift 2
+        got=$(LOG_FILE="$workdir/self-test.log" "$@" 2>&1)
+        if [[ "$got" == *"$want"* ]]; then
+            echo "  ok   $what"
+        else
+            echo "  FAIL $what: wanted [$want] in [$got]"
+            failures=$((failures + 1))
+        fi
+    }
+
+    check_contains "denied by policy" "a tool's own words reach the console" \
+        surface_tool_output "hardener: denied by policy"
+    check_contains "printed nothing" "a tool that said nothing is reported as silent" \
+        surface_tool_output ""
 
     rm -rf "$workdir"
 
