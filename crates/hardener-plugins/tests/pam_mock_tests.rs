@@ -2640,6 +2640,176 @@ async fn nothing_is_reported_when_the_admin_file_sets_every_vendor_key() {
     );
 }
 
+#[tokio::test]
+async fn scan_reports_masked_keys_in_every_layered_pam_conf_not_only_login_defs() {
+    // The whole-file override is a property of the layering, not of login.defs.
+    // /etc/security/{pwquality,faillock,pwhistory}.conf mask their /usr/etc
+    // counterparts identically, and the drift check covered none of them, so a
+    // hand-rolled pwquality.conf silenced every quality rule the vendor set and
+    // the scan reported the host clean.
+    //
+    // All three in one test on purpose: the defect is that the check is wired to
+    // one path rather than to the layering, so proving one file is fixed proves
+    // nothing about the other two.
+    let executor = Arc::new(
+        secure_pam_executor()
+            .with_file(
+                "/usr/etc/security/pwquality.conf",
+                "minlen = 8\ndifok = 5\nminclass = 4\n",
+            )
+            .with_file(
+                "/usr/etc/security/faillock.conf",
+                "deny = 5\nunlock_time = 900\neven_deny_root =\n",
+            )
+            .with_file(
+                "/usr/etc/security/pwhistory.conf",
+                "remember = 5\nenforce_for_root =\n",
+            ),
+    );
+    let ctx = Context::with_executor(executor.clone());
+
+    let result = PamHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan runs");
+
+    let seen: Vec<&str> = result
+        .scan_findings
+        .iter()
+        .map(|f| f.finding_id.as_str())
+        .collect();
+
+    for (id, masked, overridden) in [
+        (
+            "pam-pwquality-conf-masked-keys",
+            &["difok", "minclass"][..],
+            "minlen",
+        ),
+        (
+            "pam-faillock-conf-masked-keys",
+            &["even_deny_root", "unlock_time"][..],
+            "deny",
+        ),
+        (
+            "pam-pwhistory-conf-masked-keys",
+            &["enforce_for_root"][..],
+            "remember",
+        ),
+    ] {
+        let drift = result
+            .scan_findings
+            .iter()
+            .find(|f| f.finding_id == id)
+            .unwrap_or_else(|| panic!("{id} must be reported; got: {seen:?}"));
+
+        // Compared key by key rather than by substring: `even_deny_root`
+        // contains `deny`, so a `contains` check would call the masked key the
+        // overridden one and fail against correct output.
+        let named: Vec<&str> = drift.finding_current_value.split(", ").collect();
+        assert_eq!(
+            named, masked,
+            "{id} must name exactly the keys the vendor sets and the admin file \
+             does not"
+        );
+        // Set at both layers, so the vendor's value is overridden rather than
+        // lost. Naming it would pass an implementation that lists the vendor
+        // file's contents instead of the set difference.
+        assert!(
+            !named.contains(&overridden),
+            "{id} must not name {overridden}, which the admin file sets: {}",
+            drift.finding_current_value
+        );
+        assert_eq!(
+            drift.finding_severity,
+            Severity::Medium,
+            "{id} must match the severity login.defs drift already carries, or \
+             the scheduler drops it below its default min_severity"
+        );
+        // Guard, not evidence: this passes against the unfixed code too, since
+        // the unfixed code emits no such finding at all. It is here so a later
+        // edit cannot quietly map these to a framework control, which would let
+        // a masked file drive that control to Fail on evidence no framework
+        // asked for.
+        assert!(
+            drift.finding_compliance.is_empty(),
+            "{id} must carry no compliance mapping: {:?}",
+            drift.finding_compliance
+        );
+    }
+}
+
+#[tokio::test]
+async fn validate_reports_the_layer_drift_scan_reports() {
+    // `apply --dry-run` runs this path, and it is what an operator reads before
+    // deciding to apply. It described the directives that would change and said
+    // nothing about masked keys, so a host whose vendor settings had already
+    // reverted previewed identically to one whose had not, and the operator
+    // applied believing the preview was the whole story.
+    //
+    // Two files rather than one, because the point is that validate asks the
+    // same shared question scan asks. A second hardcoded path would satisfy a
+    // single-file assertion.
+    let executor = Arc::new(
+        secure_pam_executor()
+            .with_file("/usr/etc/login.defs", VENDOR_LOGIN_DEFS)
+            .with_file(
+                "/usr/etc/security/pwquality.conf",
+                "minlen = 8\ndifok = 5\n",
+            ),
+    );
+    let ctx = Context::with_executor(executor.clone());
+
+    let report = PamHardeningPlugin::new()
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .expect("validate runs");
+
+    let messages: Vec<&str> = report
+        .validation_report_issues
+        .iter()
+        .map(|i| i.validation_issue_message.as_str())
+        .collect();
+
+    for (file, key) in [
+        ("/etc/login.defs", "ENCRYPT_METHOD"),
+        ("/etc/security/pwquality.conf", "difok"),
+    ] {
+        let issue = report
+            .validation_report_issues
+            .iter()
+            .find(|i| {
+                i.validation_issue_message.contains(file)
+                    && i.validation_issue_message.contains("mask")
+            })
+            .unwrap_or_else(|| {
+                panic!("validate must report {file} masking its vendor copy; got: {messages:?}")
+            });
+        assert!(
+            issue.validation_issue_message.contains(key),
+            "the issue for {file} must name the masked key {key}: {}",
+            issue.validation_issue_message
+        );
+        assert_eq!(
+            issue.validation_issue_severity,
+            Severity::Medium,
+            "drift is the same severity here as the finding scan reports for it"
+        );
+    }
+
+    // Drift is not a pending change. apply deliberately does not import keys an
+    // existing /etc file omits, so listing it here would inflate the change
+    // count and promise a write that never happens, which is the defect this
+    // preview already carries one arm over.
+    assert!(
+        !report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("mask")),
+        "masked keys are not a change apply will make: {:?}",
+        report.validation_report_estimated_changes
+    );
+}
+
 // === An unreadable PAM stack (M) ===
 
 /// The first file `pamd_module_for("deny")` searches. An inline

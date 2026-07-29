@@ -5,6 +5,7 @@
 //! - Account lockout policies (failed login attempts)
 //! - Password ageing policies (expiry, reuse prevention)
 
+mod layer_drift;
 mod login_defs;
 
 use async_trait::async_trait;
@@ -571,35 +572,9 @@ impl HardeningPlugin for PamHardeningPlugin {
         // it already had.
         let login_defs_read = read_conf_classified(ctx, "/etc/login.defs").await;
 
-        // Drift between the layers. Only an admin file in force can mask
-        // anything: if the vendor file is the one being read there is no
-        // override, and if there is no vendor file there is nothing to lose.
-        // Reported whoever caused it, so it also catches an operator's
-        // hand-rolled file and a vendor that adds a key in a later package.
-        if let ConfRead::Content(admin, ConfigLayer::Admin) = &login_defs_read
-            && let Some(vendor_path) = vendor_path_for("/etc/login.defs")
-        {
-            // The layer this read reports is meaningless: read_conf_classified
-            // attributes a layer by which probe answered, and this path names
-            // the vendor file directly. Its three outcomes are what is wanted.
-            match read_conf_classified(ctx, &vendor_path).await {
-                ConfRead::Content(vendor, _) => {
-                    let masked = login_defs::masked_keys(admin, &vendor);
-                    if !masked.is_empty() {
-                        findings.push(login_defs::masked_keys_finding(&vendor_path, &masked));
-                    }
-                }
-                // No vendor file, so the admin file masks nothing.
-                ConfRead::Absent => {}
-                // Whether anything is masked cannot be determined. Deliberately
-                // not an unchecked entry: those carry a plugin's declared
-                // coverage into ManualReview, which would let a housekeeping
-                // observation move compliance results.
-                ConfRead::Unreadable { path, reason, .. } => {
-                    warn!("Could not check {} for masked keys: {}", path, reason);
-                }
-            }
-        }
+        // Drift between the layers, for every file the table names rather than
+        // for login.defs alone.
+        findings.extend(layer_drift_findings(ctx).await);
 
         // Check each PAM directive.
         for directive in PAM_DIRECTIVES {
@@ -1130,6 +1105,31 @@ impl HardeningPlugin for PamHardeningPlugin {
                 });
             }
         }
+
+        // Drift between the layers, asked here through the same function scan
+        // uses so the two cannot come to disagree about one host.
+        //
+        // An issue rather than an estimated change, deliberately. Estimated
+        // changes are what apply would do, and their count is read as the real
+        // change count; apply does not import keys an existing /etc file omits,
+        // because that file is the host's own and this tool cannot tell a key
+        // the operator dropped on purpose from one an older release dropped for
+        // them. Listing drift there would inflate the count and promise a write
+        // that never happens. The message says so outright, so the preview
+        // cannot be read as an undertaking to fix it.
+        issues.extend(
+            layer_drift_findings(ctx)
+                .await
+                .into_iter()
+                .map(|finding| ValidationIssue {
+                    validation_issue_config_key: None,
+                    validation_issue_message: format!(
+                        "{}; apply will not import them, so restoring them is a manual step",
+                        finding.finding_description
+                    ),
+                    validation_issue_severity: finding.finding_severity,
+                }),
+        );
 
         // Estimate changes state-aware: read the current file values the same
         // way apply does and list only directives that would actually change;
@@ -1666,6 +1666,66 @@ async fn read_conf_classified(ctx: &Context, path: &str) -> ConfRead {
 /// that hardened nothing has not earned a clean result. A file whose content
 /// came from the vendor layer is written, carrying that content with it, so the
 /// settings this plugin does not manage survive the edit.
+/// A finding for every `/etc` file in [`layer_drift::LAYERED_CONFS`] that masks
+/// keys its `/usr/etc` counterpart sets.
+///
+/// One definition, because the question is the same wherever it is asked: it
+/// used to be written out inline for `/etc/login.defs` in `scan` and asked
+/// nowhere else, so the other three layered files drifted unreported and
+/// `validate` could not mention drift at all.
+///
+/// Only an admin file **in force** can mask anything: if the vendor file is the
+/// one being read there is no override, and if there is no vendor file there is
+/// nothing to lose. It reports whoever caused the drift, so it catches an
+/// operator's hand-rolled file and a vendor that adds a key in a later package
+/// as well as a file an older release of this tool wrote.
+///
+/// The admin files are read here rather than passed in, so a caller cannot
+/// cover three files and forget the fourth. `scan` reads two of them a second
+/// time as a result; a config file read twice costs less than a check wired to
+/// one call site.
+async fn layer_drift_findings(ctx: &Context) -> Vec<Finding> {
+    let mut findings = Vec::new();
+
+    for conf in layer_drift::LAYERED_CONFS {
+        let Some(vendor_path) = vendor_path_for(conf.admin_path) else {
+            continue;
+        };
+        let ConfRead::Content(admin, ConfigLayer::Admin) =
+            read_conf_classified(ctx, conf.admin_path).await
+        else {
+            continue;
+        };
+
+        // The layer this read reports is meaningless: read_conf_classified
+        // attributes a layer by which probe answered, and this path names the
+        // vendor file directly. Its three outcomes are what is wanted.
+        match read_conf_classified(ctx, &vendor_path).await {
+            ConfRead::Content(vendor, _) => {
+                let masked = layer_drift::masked_keys(&admin, &vendor);
+                if !masked.is_empty() {
+                    findings.push(layer_drift::masked_keys_finding(
+                        conf,
+                        &vendor_path,
+                        &masked,
+                    ));
+                }
+            }
+            // No vendor file, so the admin file masks nothing.
+            ConfRead::Absent => {}
+            // Whether anything is masked cannot be determined. Deliberately not
+            // an unchecked entry: those carry a plugin's declared coverage into
+            // ManualReview, which would let a housekeeping observation move
+            // compliance results.
+            ConfRead::Unreadable { path, reason, .. } => {
+                warn!("Could not check {} for masked keys: {}", path, reason);
+            }
+        }
+    }
+
+    findings
+}
+
 async fn conf_is_writable(
     ctx: &Context,
     path: &str,
