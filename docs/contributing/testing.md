@@ -217,9 +217,15 @@ reads `$y$` on four distributions and `$6$` on openSUSE, `0022` on four and
 `0002` on debian.
 
 **The run applies twice**, and one assertion per reading in
-`IDEMPOTENCE_CHECKS` says the second apply changed nothing: `sshd -T` in full,
-`/etc/ssh/sshd_config.d` as filenames and contents, and what `login.defs` means
-to a fresh account. Idempotency is an invariant rather than a nicety, because
+`IDEMPOTENCE_CHECKS` says the second apply changed nothing: every managed
+permission mode as one reading, `sshd -T` in full, `/etc/ssh/sshd_config.d` as
+filenames and contents, and what `login.defs` means to a fresh account. The
+permission reading is taken **first**, because reading `login.defs` creates and
+removes a probe account and `useradd` and `userdel` rewrite `/etc/passwd` and
+`/etc/shadow`: taking it ahead of that keeps one probe cycle out from between the
+two readings being compared. It also makes permissions the second plugin in the
+repo whose apply is checked for idempotency at all, ssh having been the only one,
+and ssh failed that check twice. Idempotency is an invariant rather than a nicety, because
 the scheduler applies on a cadence: an apply that undoes the previous one is a
 fleet host returning to an unhardened state on a timer while reporting success
 every time. A single-apply oracle structurally cannot see that, which is how a
@@ -366,7 +372,7 @@ off the tables themselves.
 Adding a directive therefore means changing four literals in
 `scripts/test/differential-suite.sh`, not one: the `*_EXPECTED` constant beside
 its table, that same length re-pinned in the self-test (`the ssh table holds
-seven directives`), the total the run is sized at (`51`), and the number of
+seven directives`), the total the run is sized at (`52`), and the number of
 directives the pre-apply control covers (`19`). `VENDOR_SURVIVAL_CHECKS`, `IDEMPOTENCE_CHECKS` and
 `PWQUALITY_ENFORCEMENT_CHECKS` are sized the same way, and contribute one check
 each rather than two. Every one of them fails loudly, over two `--self-test` runs,

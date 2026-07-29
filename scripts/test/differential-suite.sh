@@ -890,7 +890,11 @@ vendor_survival_baseline_value() {
 # The readings are whole, not per directive. A directive nobody thought to list
 # is exactly what this class of defect moves, so each reading is the consumer's
 # entire answer and the comparison is byte equality.
-IDEMPOTENCE_CHECKS=(sshd-effective sshd-dropins login-defs)
+# permission-modes is FIRST, and the position is load-bearing. Reading login-defs
+# creates and removes a probe account, and useradd and userdel rewrite /etc/passwd
+# and /etc/shadow. Taking the permission baseline ahead of it keeps one probe cycle
+# out from between the two readings this check compares.
+IDEMPOTENCE_CHECKS=(permission-modes sshd-effective sshd-dropins login-defs)
 
 # The fragment directory as names and contents.
 #
@@ -930,6 +934,15 @@ idempotence_reading() {
             ;;
         sshd-dropins)
             sshd_dropin_listing
+            ;;
+        permission-modes)
+            # Every managed mode as one whole reading, which is the point: a
+            # second apply that moves a mode nobody thought to list still shows
+            # up. The kernel plugin's sysctl.d fragment is the closest structural
+            # analogue to the ssh one and has never been applied twice under
+            # test, so this is the second plugin in the repo whose apply is
+            # checked for idempotency at all.
+            permission_modes_capture
             ;;
         login-defs)
             # A fresh probe account is created for each reading, so the date it
@@ -1450,7 +1463,7 @@ SSH_CHECKS_EXPECTED=7
 SEEDED_SSH_CHECKS_EXPECTED=2
 LOGIN_DEFS_CHECKS_EXPECTED=3
 VENDOR_SURVIVAL_CHECKS_EXPECTED=3
-IDEMPOTENCE_CHECKS_EXPECTED=3
+IDEMPOTENCE_CHECKS_EXPECTED=4
 DIFF_PLUGINS_EXPECTED=3
 PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED=2
 PERMISSION_CHECKS_EXPECTED=9
@@ -1499,7 +1512,10 @@ require_check_tables() {
 # The nine permission paths are two each, like the ssh and login.defs
 # directives, because each has both a reading and a tool verdict. With the third
 # plugin's own pre-apply control that takes the per-distribution total from 30 to
-# 51 and the five-distribution total from 150 to 255.
+# 51 and the five-distribution total from 150 to 255. The permission-modes
+# idempotency reading takes them to 52 and 260: one assertion, like the other
+# three readings, because the tool claims nothing about what a second run of
+# itself would do.
 #
 # Counted off the pinned lengths above, never off the tables themselves. Read
 # from ${#SSH_CHECKS[@]} the expectation would follow the table it exists to
@@ -2133,7 +2149,7 @@ run_idempotence_checks() {
         if [[ "$before" == "$after" ]]; then
             record_pass "idempotency $key: the second apply left this exactly as the first one did"
         else
-            record_fail "idempotency $key: the second apply changed it, so applying on a cadence does not hold the host where one apply put it"
+            record_fail "idempotency $key: this reading moved between the two applies, so applying on a cadence does not hold the host where one apply put it"
             idempotence_report_difference "$key" "$before" "$after"
         fi
     done
@@ -2759,13 +2775,15 @@ Number of days of warning before password expires	: 11"
     check_eq "${#SSH_CHECKS[@]}" "7" "the ssh table holds seven directives"
     check_eq "${#LOGIN_DEFS_CHECKS[@]}" "3" "the login.defs table holds three directives"
     check_eq "${#VENDOR_SURVIVAL_CHECKS[@]}" "3" "the vendor survival table holds three settings"
-    check_eq "${#IDEMPOTENCE_CHECKS[@]}" "3" "the idempotency table holds three readings"
+    check_eq "${#IDEMPOTENCE_CHECKS[@]}" "4" "the idempotency table holds four readings"
+    check_eq "${IDEMPOTENCE_CHECKS[0]}" "permission-modes" \
+        "the permission reading is taken first, ahead of the probe account login-defs creates"
     check_eq "${#DIFF_PLUGINS[@]}" "3" "three plugins are compared"
     check_eq "${#SEEDED_SSH_CHECKS[@]}" "2" "the seeded table holds two directives"
     check_eq "${#PERMISSION_CHECKS[@]}" "9" "the permissions table holds nine paths"
     local pinned_total
     pinned_total="$(expected_check_total)"
-    check_eq "$pinned_total" "51" \
+    check_eq "$pinned_total" "52" \
         "the run is sized at two checks per directive, one per unmanaged setting, one per idempotency reading, one per pwquality enforcement reading, one control per plugin, plus one pre-apply control per seeded directive"
     check_status 0 "require_check_tables accepts the tables as they stand" \
         require_check_tables
@@ -3252,6 +3270,24 @@ Number of days of warning before password expires	: 11"
     # dispatch, every refusal that keeps the baseline from becoming a reading
     # against itself, and the comparison driven through a stub so it is watched
     # both passing and failing.
+    #
+    # The permission reading dispatches to the same capture the permissions oracle
+    # uses, driven over a fixture table so it reads nothing of the developer's own.
+    # One capture, two questions: does the system agree with the tool, and did the
+    # second apply move anything. A second reader would have been a second thing to
+    # keep in step with the table.
+    local idem_fixture idem_saved_table=("${PERMISSION_CHECKS[@]}")
+    idem_fixture="$(mktemp -d)"
+    printf 'x\n' >"$idem_fixture/mode-640"
+    chmod 640 "$idem_fixture/mode-640"
+    PERMISSION_CHECKS=("$idem_fixture/mode-640|640|exact" "$idem_fixture/gone|700|exact")
+    check_eq "$(idempotence_reading permission-modes)" \
+        "$idem_fixture/mode-640 640
+$idem_fixture/gone absent" \
+        "the permission idempotency reading is the whole capture, absences included"
+    PERMISSION_CHECKS=("${idem_saved_table[@]}")
+    rm -rf "$idem_fixture"
+
     local dropin_fixture
     dropin_fixture="$(mktemp -d)"
     check_eq "$(sshd_dropin_listing "$dropin_fixture/missing")" "directory absent" \
