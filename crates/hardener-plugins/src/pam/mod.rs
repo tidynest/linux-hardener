@@ -1110,58 +1110,23 @@ impl HardeningPlugin for PamHardeningPlugin {
 
         let mut issues = Vec::new();
 
-        // Check pwquality.conf
-        match ctx
-            .executor()
-            .file_metadata(Path::new("/etc/security/pwquality.conf"))
-            .await
-        {
-            Ok(metadata) => {
-                if !metadata.is_file {
-                    issues.push(ValidationIssue {
-                        validation_issue_config_key: None,
-                        validation_issue_message:
-                            "/etc/security/pwquality.conf exists but is not a regular file"
-                                .to_string(),
-                        validation_issue_severity: Severity::High,
-                    });
-                }
-            }
-            Err(_) => {
-                issues.push(ValidationIssue {
-                    validation_issue_config_key: None,
-                    validation_issue_message: "/etc/security/pwquality.conf does not exist or is not readable"
-                        .to_string(),
-                    validation_issue_severity: Severity::Medium,
-                });
-            }
-        }
-
-        // Check login.defs
-        match ctx
-            .executor()
-            .file_metadata(Path::new("/etc/login.defs"))
-            .await
-        {
-            Ok(metadata) => {
-                if !metadata.is_file {
-                    issues.push(ValidationIssue {
-                        validation_issue_config_key: None,
-                        validation_issue_message:
-                            "/etc/login.defs exists but is not a regular file".to_string(),
-                        validation_issue_severity: Severity::High,
-                    });
-                }
-            }
-            Err(_) => {
-                issues.push(ValidationIssue {
-                    validation_issue_config_key: None,
-                    validation_issue_message: "/etc/login.defs does not exist or is not readable"
-                        .to_string(),
-                    validation_issue_severity: Severity::High,
-                });
-            }
-        }
+        // Deliberately no metadata probe of the two configuration files here.
+        //
+        // There was one, and it asked `file_metadata(..).is_file` alone. That
+        // field is false for a file which is not there as well as for a
+        // directory standing where a file should, because a positively-confirmed
+        // absence is `Ok(FileMetadata { exists: false, is_file: false, .. })`, so
+        // both states were reported as "exists but is not a regular file" at
+        // High and failed the dry run. On three of the five test distributions
+        // `/etc/security/pwquality.conf` is not under `/etc` at all, and openSUSE
+        // keeps `/etc/login.defs` under `/usr/etc` too, so the run called a file
+        // malformed on every host that merely kept it somewhere else.
+        //
+        // Nothing is lost by dropping it. `read_conf_classified` below answers
+        // the same question with three outcomes instead of one bit, across both
+        // configuration layers: `Absent` is previewed as "currently not set" and
+        // created by apply, and anything that exists but cannot be read reaches
+        // `unreadable_issue`, which says which file failed and why.
 
         // Whether anything reads the files about to be previewed, asked through
         // the same function scan and apply use, so a dry run cannot promise

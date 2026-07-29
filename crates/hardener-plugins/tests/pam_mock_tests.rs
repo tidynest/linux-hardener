@@ -1804,6 +1804,64 @@ async fn pam_validate_does_not_promise_a_write_into_an_unreadable_conf() {
     }
 }
 
+/// A configuration file that is not there is absent, not malformed.
+///
+/// `file_metadata` reports a positively-confirmed absence as
+/// `Ok(FileMetadata { exists: false, is_file: false, .. })`, so a check reading
+/// `is_file` alone cannot tell "no such file" from "a directory where a file
+/// should be". Both rendered as "exists but is not a regular file" at High,
+/// which fails the dry run. Measured consequence: `/etc/security/pwquality.conf`
+/// is not under `/etc` on three of the five test distributions and openSUSE
+/// keeps `/etc/login.defs` under `/usr/etc` too, so `apply --dry-run` called a
+/// file malformed on every host where it merely lived somewhere else.
+///
+/// Absence is a state the rest of the plugin already handles correctly: the
+/// layered read returns `Absent`, validate previews the directives as
+/// "currently not set", and apply creates the file. The assertions below require
+/// that reporting, so the fix cannot be to fall silent about the file instead.
+#[tokio::test]
+async fn pam_validate_does_not_call_an_absent_conf_malformed() {
+    // The secure fixture minus pwquality.conf, which is therefore absent rather
+    // than unreadable: the mock answers an unregistered path exactly as
+    // LocalExecutor answers a NotFound.
+    let executor = with_pam_stack(MockExecutor::new())
+        .with_file(
+            "/etc/login.defs",
+            "PASS_MAX_DAYS 90\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n",
+        )
+        .with_file("/etc/security/faillock.conf", "deny = 3\n")
+        .with_file("/etc/security/pwhistory.conf", "remember = 10\n");
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PamHardeningPlugin::new();
+
+    let report = plugin
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    let messages: Vec<&str> = report
+        .validation_report_issues
+        .iter()
+        .map(|i| i.validation_issue_message.as_str())
+        .collect();
+    assert!(
+        !messages.iter().any(|m| m.contains("is not a regular file")),
+        "an absent file must not be called malformed, got: {messages:?}"
+    );
+    assert!(
+        !report.has_blocking_issue(),
+        "a file apply will simply create must not fail the dry run, got: {messages:?}"
+    );
+    assert!(
+        report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("minlen") && c.contains("currently not set")),
+        "the absent file's directives must still be previewed as pending, got: {:?}",
+        report.validation_report_estimated_changes
+    );
+}
+
 /// A directive whose file could not be read is not a pending change, and the
 /// count an operator reads comes straight from the pending list.
 ///

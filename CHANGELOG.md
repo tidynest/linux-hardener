@@ -26,6 +26,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A configuration file that is not there is no longer reported as a malformed
+  one, and no longer fails the dry run.** PAM's validate probed
+  `/etc/security/pwquality.conf` and `/etc/login.defs` with `file_metadata` and
+  read `is_file` alone. That field is false both for a file which is absent and
+  for a directory standing where a file should, because a positively confirmed
+  absence is reported as existing-false with is-file-false, so both states
+  rendered as "exists but is not a regular file" at High severity, which fails
+  `apply --dry-run`. Measured on the five test distributions: three of them do
+  not keep `pwquality.conf` under `/etc` and openSUSE keeps `login.defs` under
+  `/usr/etc`, so the run called a file malformed on every host that merely kept
+  it somewhere else. The probe is removed rather than corrected: the layered read
+  beside it already answers the same question across both configuration layers
+  with three outcomes, previewing an absent file's directives as "currently not
+  set" for apply to create, and naming any file that exists but cannot be read.
+
 - **A dry run no longer counts a check it could not make as a pending change.**
   `hardener apply --dry-run` prints "N change(s) to apply" from the plugin's
   list of pending changes, and `hardener batch --dry-run` sums that same list
