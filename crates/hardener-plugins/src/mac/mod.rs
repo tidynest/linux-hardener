@@ -44,6 +44,43 @@ enum MacDetection {
     Indeterminate(String),
 }
 
+/// Where SELinux records the mode it boots into.
+const SELINUX_CONFIG_PATH: &str = "/etc/selinux/config";
+
+/// What the restored SELinux configuration asks the running system to be.
+///
+/// Three outcomes, because a rollback that cannot tell them apart acts on a
+/// guess: a mode to set, a target that is not an SELinux host at all, and a
+/// question that could not be answered.
+enum RestoredMode {
+    /// The argument `setenforce` takes: `"1"` enforcing, `"0"` permissive.
+    Setenforce(&'static str),
+    /// No SELinux configuration on the target.
+    NotConfigured,
+    /// The configuration could not be read, or names no mode.
+    Unknown(String),
+}
+
+/// The `setenforce` argument a SELinux configuration file asks for.
+///
+/// The first `SELINUX=` line wins, as it does for SELinux itself. A commented
+/// line is skipped by the prefix match alone, since `#SELINUX=` does not start
+/// with `SELINUX=`; the explicit comment test this replaces could never change
+/// an answer. Anything that is not `enforcing`, which includes `permissive`
+/// and `disabled`, maps to permissive: `setenforce` cannot disable SELinux at
+/// runtime, so permissive is the closest the running system can be brought to
+/// a disabled configuration until it reboots.
+fn selinux_mode_argument(content: &str) -> Option<&'static str> {
+    content.lines().find_map(|line| {
+        let value = line.trim().strip_prefix("SELINUX=")?;
+        Some(if value.trim().eq_ignore_ascii_case("enforcing") {
+            "1"
+        } else {
+            "0"
+        })
+    })
+}
+
 /// Main MAC (Mandatory Access Control) hardening plugin.
 ///
 /// Automatically detects whether the system uses AppArmor or SELinux
@@ -91,6 +128,97 @@ impl MacHardeningPlugin {
 
         info!("No MAC system detected (checked SELinux and AppArmor)");
         MacDetection::Absent
+    }
+
+    /// Brings the running MAC system back in line with the configuration a
+    /// rollback has just restored.
+    ///
+    /// Extracted from `rollback` so it can be exercised: `rollback` itself
+    /// needs a checkpoint manager before it reaches this point.
+    async fn reload_mac_system(&self, ctx: &Context) {
+        let mode = match self.restored_selinux_mode(ctx).await {
+            RestoredMode::Setenforce(mode) => Some(mode),
+            RestoredMode::NotConfigured => None,
+            // A mode nobody could read is not a mode to restore. Forcing one
+            // would be this rollback deciding the host's security posture on a
+            // guess, and the file it just restored already governs the next
+            // boot either way.
+            RestoredMode::Unknown(reason) => {
+                warn!(
+                    "Could not determine the SELinux mode to restore from {}: {}. \
+                     Leaving the running mode alone; the restored file governs the next boot",
+                    SELINUX_CONFIG_PATH, reason
+                );
+                return;
+            }
+        };
+
+        if let Some(mode) = mode {
+            match ctx.executor().execute_command("setenforce", &[mode]).await {
+                Ok(output) if output.success() => {
+                    info!("SELinux runtime mode restored (setenforce {})", mode);
+                    return;
+                }
+                // execute_command returns Ok for a command that ran and failed,
+                // so the status has to be read. `setenforce: SELinux is
+                // disabled` used to be logged as a policy reload.
+                Ok(output) => warn!(
+                    "setenforce {} exited {}: {}",
+                    mode,
+                    output.exit_code,
+                    output.stderr.trim()
+                ),
+                Err(e) => warn!("Could not run setenforce: {}", e),
+            }
+        }
+
+        // Reached when the target carries no SELinux configuration, which is
+        // what an AppArmor host looks like, and when setenforce did not do what
+        // it was asked.
+        match ctx
+            .executor()
+            .execute_command("systemctl", &["reload", "apparmor"])
+            .await
+        {
+            Ok(output) if output.success() => {
+                info!("AppArmor profiles reloaded");
+            }
+            _ => {
+                warn!("Could not reload MAC system (SELinux/AppArmor)");
+            }
+        }
+    }
+
+    /// The mode the restored [`SELINUX_CONFIG_PATH`] asks for, read from the
+    /// host being rolled back.
+    ///
+    /// Through the executor, like every other file operation in `rollback`. It
+    /// used to be a bare `std::fs` read, so rolling a remote host back restored
+    /// that host's files and then consulted the **controller's** configuration
+    /// to decide what mode to put the target in.
+    async fn restored_selinux_mode(&self, ctx: &Context) -> RestoredMode {
+        let path = Path::new(SELINUX_CONFIG_PATH);
+        let content = match ctx.executor().read_file(path).await {
+            Ok(content) => content,
+            Err(e) => {
+                // Absence confirmed at the target means it is not an SELinux
+                // host. Any other failure means the answer is unknown, and the
+                // two must not share one outcome.
+                return match ctx.executor().path_exists(path).await {
+                    Ok(false) => RestoredMode::NotConfigured,
+                    _ => RestoredMode::Unknown(e.to_string()),
+                };
+            }
+        };
+
+        match selinux_mode_argument(&content) {
+            Some(mode) => RestoredMode::Setenforce(mode),
+            // The file exists, so this is an SELinux host, but it names no
+            // mode. Unknown rather than absent, for the same reason.
+            None => {
+                RestoredMode::Unknown(format!("no SELINUX= directive in {SELINUX_CONFIG_PATH}"))
+            }
+        }
     }
 
     /// Checks if SELinux is enabled and gets its current mode.
@@ -656,7 +784,7 @@ impl HardeningPlugin for MacHardeningPlugin {
 
         // Create checkpoint for MAC config files
         let mac_paths: Vec<&Path> = vec![
-            Path::new("/etc/selinux/config"),
+            Path::new(SELINUX_CONFIG_PATH),
             Path::new("/etc/apparmor"),
             Path::new("/etc/apparmor.d"),
         ];
@@ -784,50 +912,7 @@ impl HardeningPlugin for MacHardeningPlugin {
 
         info!("MAC configuration files restored from checkpoint");
 
-        // Reload SELinux/AppArmor based on what's available
-        // Try SELinux first: restore mode from the config we just rolled back
-        let selinux_mode = std::fs::read_to_string("/etc/selinux/config")
-            .ok()
-            .and_then(|content| {
-                content.lines().find_map(|line| {
-                    let trimmed = line.trim();
-                    trimmed
-                        .strip_prefix("SELINUX=")
-                        .filter(|_| !trimmed.starts_with('#'))
-                        .map(|v| {
-                            if v.trim().eq_ignore_ascii_case("enforcing") {
-                                "1"
-                            } else {
-                                "0"
-                            }
-                        })
-                })
-            })
-            .unwrap_or("1");
-
-        let selinux_result = ctx
-            .executor()
-            .execute_command("setenforce", &[selinux_mode])
-            .await;
-
-        if selinux_result.is_ok() {
-            info!("SELinux policy reloaded");
-        } else {
-            // Try AppArmor
-            let apparmor_result = ctx
-                .executor()
-                .execute_command("systemctl", &["reload", "apparmor"])
-                .await;
-
-            match apparmor_result {
-                Ok(output) if output.success() => {
-                    info!("AppArmor profiles reloaded");
-                }
-                _ => {
-                    warn!("Could not reload MAC system (SELinux/AppArmor)");
-                }
-            }
-        }
+        self.reload_mac_system(ctx).await;
 
         Ok(())
     }
@@ -933,6 +1018,175 @@ impl HardeningPlugin for MacHardeningPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hardener_common::executor::{CommandOutput, MockExecutor};
+    use std::sync::Arc;
+
+    /// The arguments one command was called with, or `None` if it never ran.
+    fn call_args(executor: &MockExecutor, program: &str) -> Option<Vec<String>> {
+        executor
+            .log()
+            .commands_executed
+            .iter()
+            .find(|(command, _)| command == program)
+            .map(|(_, args)| args.clone())
+    }
+
+    /// A mock where `setenforce` exists and succeeds, so a test that expects it
+    /// not to run fails on the decision rather than on a missing command.
+    fn setenforce_available() -> MockExecutor {
+        MockExecutor::new().with_command_program(
+            "setenforce",
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+    }
+
+    #[tokio::test]
+    async fn the_restored_mode_is_read_from_the_target_not_the_controller() {
+        // Every other file operation in rollback goes through the executor, so
+        // against a remote host this one read the controller's own
+        // /etc/selinux/config and restored the wrong mode on the target.
+        let executor = Arc::new(
+            setenforce_available().with_file("/etc/selinux/config", "SELINUX=permissive\n"),
+        );
+        let ctx = Context::with_executor(executor.clone());
+
+        MacHardeningPlugin::new().reload_mac_system(&ctx).await;
+
+        assert_eq!(
+            call_args(&executor, "setenforce").as_deref(),
+            Some(["0".to_string()].as_slice()),
+            "the target's config says permissive, so the target must be set permissive; \
+             commands: {:?}",
+            executor.log().commands_executed
+        );
+    }
+
+    #[tokio::test]
+    async fn an_enforcing_config_on_the_target_restores_enforcing() {
+        // The other direction, so the test above cannot pass by the mode being
+        // hardcoded to the value it happens to expect.
+        let executor = Arc::new(
+            setenforce_available().with_file("/etc/selinux/config", "SELINUX=enforcing\n"),
+        );
+        let ctx = Context::with_executor(executor.clone());
+
+        MacHardeningPlugin::new().reload_mac_system(&ctx).await;
+
+        assert_eq!(
+            call_args(&executor, "setenforce").as_deref(),
+            Some(["1".to_string()].as_slice()),
+        );
+    }
+
+    #[tokio::test]
+    async fn a_config_that_cannot_be_read_is_not_guessed_at() {
+        // The read used .ok().unwrap_or("1"), so a file that exists and cannot
+        // be read produced the same answer as one that says enforcing. A
+        // rollback exists to restore a recorded state, and enforcing a mode
+        // nobody read is not restoring it.
+        let executor = Arc::new(
+            setenforce_available()
+                .with_file("/etc/selinux/config", "SELINUX=permissive\n")
+                .with_read_permission_denied("/etc/selinux/config"),
+        );
+        let ctx = Context::with_executor(executor.clone());
+
+        MacHardeningPlugin::new().reload_mac_system(&ctx).await;
+
+        assert!(
+            call_args(&executor, "setenforce").is_none(),
+            "a mode that could not be read must not be invented; commands: {:?}",
+            executor.log().commands_executed
+        );
+    }
+
+    #[tokio::test]
+    async fn a_host_with_no_selinux_config_reloads_apparmor() {
+        // What an AppArmor host looks like. This used to work by accident:
+        // setenforce was called with a guessed mode and the call failed because
+        // the command is absent, which is what led to the AppArmor branch.
+        let executor = Arc::new(MockExecutor::new().with_command_program(
+            "systemctl",
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        ));
+        let ctx = Context::with_executor(executor.clone());
+
+        MacHardeningPlugin::new().reload_mac_system(&ctx).await;
+
+        assert!(
+            call_args(&executor, "setenforce").is_none(),
+            "no SELinux configuration means it is not an SELinux host; commands: {:?}",
+            executor.log().commands_executed
+        );
+        assert_eq!(
+            call_args(&executor, "systemctl").as_deref(),
+            Some(["reload".to_string(), "apparmor".to_string()].as_slice()),
+            "the AppArmor reload must still happen"
+        );
+    }
+
+    #[test]
+    fn the_mode_parse_skips_comments_and_takes_the_first_directive() {
+        // Pins the parse contract rather than the fix: SELinux itself takes the
+        // first SELINUX= line, and a commented one sets nothing.
+        assert_eq!(
+            selinux_mode_argument("# SELINUX=disabled\nSELINUX=enforcing\nSELINUX=permissive\n"),
+            Some("1")
+        );
+        assert_eq!(selinux_mode_argument("#SELINUX=enforcing\n"), None);
+        assert_eq!(selinux_mode_argument("  SELINUX=permissive  \n"), Some("0"));
+        // Not enforcing, and setenforce cannot disable SELinux at runtime.
+        assert_eq!(selinux_mode_argument("SELINUX=disabled\n"), Some("0"));
+        assert_eq!(selinux_mode_argument("SELINUXTYPE=targeted\n"), None);
+    }
+
+    #[tokio::test]
+    async fn setenforce_that_ran_and_failed_is_not_a_reload() {
+        // execute_command returns Ok for a command that ran and failed, and the
+        // SELinux branch tested only is_ok(). On a host carrying setenforce
+        // without SELinux enabled, the rollback logged a policy reload that
+        // never happened and never tried AppArmor. The AppArmor branch beside
+        // it has always checked the exit code.
+        let executor = Arc::new(
+            MockExecutor::new()
+                .with_file("/etc/selinux/config", "SELINUX=enforcing\n")
+                .with_command_program(
+                    "setenforce",
+                    CommandOutput {
+                        stdout: String::new(),
+                        stderr: "setenforce: SELinux is disabled\n".to_string(),
+                        exit_code: 1,
+                    },
+                )
+                .with_command_program(
+                    "systemctl",
+                    CommandOutput {
+                        stdout: String::new(),
+                        stderr: String::new(),
+                        exit_code: 0,
+                    },
+                ),
+        );
+        let ctx = Context::with_executor(executor.clone());
+
+        MacHardeningPlugin::new().reload_mac_system(&ctx).await;
+
+        assert_eq!(
+            call_args(&executor, "systemctl").as_deref(),
+            Some(["reload".to_string(), "apparmor".to_string()].as_slice()),
+            "a setenforce that exited non-zero reloaded nothing, so the other MAC \
+             system is still worth trying; commands: {:?}",
+            executor.log().commands_executed
+        );
+    }
 
     /// A representative MAC check (`selinux-not-enforcing`) must now carry
     /// multi-framework mappings: the existing CIS control plus NIST 800-53 and
