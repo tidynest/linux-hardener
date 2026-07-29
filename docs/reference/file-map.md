@@ -35,7 +35,8 @@ pub struct ScanResult { scan_plugin_id, scan_success, scan_findings, scan_unchec
 pub struct ApplyResult { apply_plugin_id, apply_success, apply_changes, apply_checkpoint_id, apply_error }
 pub struct Finding { finding_id, finding_title, finding_severity, ... }
 pub struct UncheckedCheck { unchecked_check_id, unchecked_title, unchecked_category, unchecked_reason, unchecked_needs_privilege, unchecked_compliance }
-pub fn unchecked_summary(...)  // the one roll-up line every renderer prints
+pub fn unchecked_summary(...)  // the one roll-up line every CLI renderer prints
+pub struct UncheckedTally { total, needing_privilege }  // and privilege_would_help()
 
 // Compliance report types
 pub struct ComplianceReport { report_framework, report_generated_at, report_controls, report_summary }
@@ -414,11 +415,11 @@ pub struct ScanRunner {
 | `styles.css` | Base styles plus the 7-theme system (`[data-theme="..."]` overrides, incl. light Daywatch and WCAG AAA High Contrast) | CSS Variables, utility classes (.truncate, .sr-only, .skip-link), tabs, sidebar, score gauge, buttons, tables, forms |
 | `src/lib.rs` | Main App component and WASM entry point; defines seven routes (Dashboard, Analysis, Hardening, Hosts at `/fleet`, Fleet Apply, Scheduler, Settings) plus a `/remote` -> `/fleet` redirect, mounts the grouped `Sidebar`, and owns the sole theme apply/persist `Effect` | `App`, `#[wasm_bindgen(start)] main()` |
 | `src/types.rs` | Re-exports from hardener-types | `pub use hardener_types::*` (ApplyResult, Change, ChangeType, ComplianceFramework, ComplianceMapping, ComplianceReport, ComplianceSummary, ConfigSummary, ControlResult, ControlStatus, FileRestoreAction, FileRestoreResult, Finding, FindingCategory, FindingPolicyException, PluginId, PluginMetadata, RollbackResult, ScanResult, Severity, UncheckedCheck, ValidationIssue, ValidationReport), scheduler re-exports (SchedulerUiConfig, NotificationUiConfig, EmailUiConfig, WebhookUiConfig, TestNotificationResult), `CheckpointInfo`, `ScanSessionInfo`, `CheckpointDetail`, `CheckpointFileInfo` |
-| `src/state/mod.rs` | Reactive state | `AppState` |
+| `src/state/mod.rs` | Reactive state | `AppState`, `unchecked_tally()` |
 | `src/tauri_bindings.rs` | Tauri command bindings | `tauri_available`, `invoke_scan`, `invoke_deep_scan`, `invoke_apply`, `invoke_apply_dry_run`, `invoke_generate_report`, `invoke_export_report`, `invoke_get_latest_scan`, `invoke_get_checkpoints`, `invoke_create_checkpoint`, `invoke_delete_checkpoint`, `invoke_get_scan_history`, `invoke_get_scan_session`, `invoke_get_checkpoint_detail`, `invoke_rollback`, `invoke_list_remote_hosts`, `invoke_save_remote_host`, `invoke_delete_remote_host`, `invoke_connect_remote`, `invoke_disconnect_remote`, `invoke_remote_scan`, `invoke_fleet_scan`, `invoke_fleet_apply`, `invoke_fleet_rollback`, `invoke_get_host_history`, `invoke_list_plugins`, `invoke_get_scheduler_config`, `invoke_save_scheduler_config`, `invoke_test_notification`, `invoke_validate_config`, `invoke_pick_config_file` |
 | `src/keyboard.rs` | Global keyboard event handler | Ctrl+1-5 page nav (Dashboard/Analysis/Hardening/Hosts/Scheduler; Ctrl+4 reaches Hosts via the retained `/remote` redirect - Fleet Apply and Settings have no shortcut yet), Ctrl+Shift+S scan from anywhere, Alt+T theme cycle, Escape close, F11 fullscreen |
 | `src/navigation.rs` | Navigation signal helpers | Page routing helpers for keyboard and UI nav |
-| `src/utils/mod.rs` | Utils module exports and preview/apply helpers | `annotate_preview()`, `PreviewDecision`, `apply_change_summary()`, `is_auth_cancelled()`, `parse_rate_limit_wait_secs()`; `mock_data` mod, `theme` mod |
+| `src/utils/mod.rs` | Utils module exports and preview/apply helpers | `annotate_preview()`, `PreviewDecision`, `apply_change_summary()`, `is_auth_cancelled()`, `parse_rate_limit_wait_secs()`, `unchecked_honesty_line()`; `mock_data` mod, `theme` mod |
 | `src/utils/mock_data.rs` | Development mocks | Mock data generators |
 | `src/utils/theme.rs` | Shared theme metadata plus the single apply/persist side effects; the only writer of `<html data-theme>` and the `theme` localStorage key | `THEMES` (7 themes), `apply_theme()`, `get_stored_theme()`, `store_theme()` |
 | `src/pages/mod.rs` | Pages module exports | `DashboardPage`, `AnalysisPage`, `HardeningPage`, `HostsPage`, `SchedulerPage`, `SettingsPage`, `FleetApplyPage` |

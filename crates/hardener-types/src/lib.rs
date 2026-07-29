@@ -466,6 +466,46 @@ pub struct UncheckedCheck {
     pub unchecked_compliance: Vec<ComplianceMapping>,
 }
 
+/// How many checks a run could not evaluate, and how many of those a
+/// privileged re-run could reach.
+///
+/// The counting is split out from [`unchecked_summary`] because the desktop
+/// asks the same question and cannot use a sentence for its answer: it offers a
+/// button, and a button must appear only when pressing it would change
+/// something.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct UncheckedTally {
+    /// Every check the run could not evaluate, whatever the cause.
+    pub total: usize,
+    /// Those whose producer said a privileged re-run would reach them.
+    pub needing_privilege: usize,
+}
+
+impl UncheckedTally {
+    /// Counts a run's unchecked checks.
+    ///
+    /// Takes an iterator rather than a slice so the scan footer, which
+    /// summarises every plugin's entries at once, does not have to collect
+    /// them first.
+    pub fn from_checks<'a>(unchecked: impl IntoIterator<Item = &'a UncheckedCheck>) -> Self {
+        unchecked
+            .into_iter()
+            .fold(Self::default(), |tally, check| Self {
+                total: tally.total + 1,
+                needing_privilege: tally.needing_privilege
+                    + usize::from(check.unchecked_needs_privilege),
+            })
+    }
+
+    /// Whether offering a privileged re-run would change anything.
+    ///
+    /// The one place that decision is made, so a renderer cannot come to
+    /// offer sudo for a run sudo cannot help.
+    pub fn privilege_would_help(&self) -> bool {
+        self.needing_privilege > 0
+    }
+}
+
 /// The one-line roll-up describing a run's unchecked checks, or `None` when
 /// there are none to describe.
 ///
@@ -474,18 +514,11 @@ pub struct UncheckedCheck {
 /// entries whose producer said it would help, so a run that could not check
 /// something for a reason privilege cannot touch no longer sends the operator
 /// to a remedy that changes nothing.
-///
-/// Takes an iterator rather than a slice so the scan footer, which summarises
-/// every plugin's entries at once, does not have to collect them first.
 pub fn unchecked_summary<'a>(
     unchecked: impl IntoIterator<Item = &'a UncheckedCheck>,
 ) -> Option<String> {
-    let (total, privileged) = unchecked
-        .into_iter()
-        .fold((0usize, 0usize), |(t, p), check| {
-            (t + 1, p + usize::from(check.unchecked_needs_privilege))
-        });
-    match (total, privileged) {
+    let tally = UncheckedTally::from_checks(unchecked);
+    match (tally.total, tally.needing_privilege) {
         (0, _) => None,
         (total, 0) => Some(format!("{total} check(s) could not be verified")),
         (total, privileged) if privileged == total => Some(format!(
@@ -1491,6 +1524,49 @@ mod serde_compatibility_tests {
     #[test]
     fn unchecked_summary_is_none_when_there_is_nothing_unchecked() {
         assert!(unchecked_summary(&[]).is_none());
+    }
+
+    /// The desktop offers a "Run with sudo" button rather than a sentence, so
+    /// it needs the decision rather than the wording. A run whose unchecked
+    /// entries are all beyond privilege must not get the button: pressing it
+    /// runs a full privileged scan, prompts for a password through polkit, and
+    /// comes back with the same count.
+    #[test]
+    fn a_run_privilege_cannot_help_does_not_offer_privilege() {
+        let tally = UncheckedTally::from_checks(&[unchecked(
+            "ssh-hardening-not-assessed",
+            "disabled by configuration, so the controls it covers were not assessed",
+            false,
+        )]);
+
+        assert_eq!(tally.total, 1);
+        assert_eq!(tally.needing_privilege, 0);
+        assert!(
+            !tally.privilege_would_help(),
+            "a check no privilege can reach must not be offered a privileged re-run"
+        );
+    }
+
+    /// The other two directions, so the fix cannot be "never offer it".
+    #[test]
+    fn a_run_privilege_can_help_offers_privilege() {
+        let all = UncheckedTally::from_checks(&[unchecked("pam-minlen", "requires root", true)]);
+        assert!(all.privilege_would_help());
+
+        let mixed = UncheckedTally::from_checks(&[
+            unchecked(
+                "ssh-hardening-not-assessed",
+                "disabled by configuration",
+                false,
+            ),
+            unchecked("pam-minlen", "requires root", true),
+        ]);
+        assert!(
+            mixed.privilege_would_help(),
+            "one reachable check is reason enough to offer the re-run"
+        );
+
+        assert!(!UncheckedTally::default().privilege_would_help());
     }
 }
 
