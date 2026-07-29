@@ -592,6 +592,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
                     "verifying the active {} ruleset requires root",
                     backend.backend_name()
                 ),
+                unchecked_needs_privilege: true,
                 unchecked_compliance: get_firewall_compliance_mappings(),
             });
         } else if classified

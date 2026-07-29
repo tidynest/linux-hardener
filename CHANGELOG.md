@@ -54,6 +54,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so six password-quality directives were passing on three of five images. The
   differential suite gained a check that asks the stack and holds it against
   the tool's own verdict, and the two now agree on all five.
+- **The unchecked roll-up no longer tells an operator to re-run with sudo for
+  a check sudo cannot reach.** Every check a scan could not evaluate was
+  summarised as needing root, in four separate renderers that had each written
+  their own sentence: the scan footer, the per-plugin note, the per-host batch
+  line and the report wizard. Privilege is only one of the causes. A plugin
+  disabled in the configuration, a path on a filesystem with no POSIX
+  permission bits, a service list that could not be read and a probe that
+  failed for its own reasons all land in the same list, and none of them
+  improves with root; a container already running as root printed
+  `1 check(s) require root`. `UncheckedCheck` now carries
+  `unchecked_needs_privilege`, set by the producer that knows, and one shared
+  `unchecked_summary` builds the line for all four renderers. Sudo is offered
+  when every entry wants it, withheld when none does, and a mixed run says how
+  many of the total root would reach. A scan persisted before the field existed
+  reads as claiming nothing rather than as promising a remedy.
 
 - **`batch apply --dry-run` and `apply --dry-run` no longer disagree about
   whether a host failed.** The single-host dry run fails on Critical and High

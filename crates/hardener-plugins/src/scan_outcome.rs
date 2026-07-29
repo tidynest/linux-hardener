@@ -172,6 +172,7 @@ fn registry_unavailable_check(reason: &str) -> UncheckedCheck {
             "the plugins this run would have assessed could not be listed ({reason}), \
              so no control may be reported as satisfied"
         ),
+        unchecked_needs_privilege: false,
         unchecked_compliance: crate::compliance_coverage(),
     }
 }
@@ -209,6 +210,7 @@ pub fn unassessed_check(metadata: &PluginMetadata, why: Unassessed<'_>) -> Unche
         unchecked_title: title,
         unchecked_category: metadata.plugin_category,
         unchecked_reason: reason,
+        unchecked_needs_privilege: false,
         unchecked_compliance: crate::coverage_for(id).unwrap_or_default(),
     }
 }

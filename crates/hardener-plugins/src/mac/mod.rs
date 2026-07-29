@@ -721,6 +721,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                             unchecked_reason:
                                 "reading the AppArmor profile set (aa-status) requires root"
                                     .to_string(),
+                            unchecked_needs_privilege: true,
                             unchecked_compliance: get_mac_compliance_mappings(
                                 "apparmor-no-profiles",
                             ),
@@ -743,6 +744,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                     unchecked_reason: format!(
                         "could not determine whether a MAC system is present: {reason}"
                     ),
+                    unchecked_needs_privilege: false,
                     unchecked_compliance: get_mac_compliance_mappings("no-mac-system"),
                 });
             }

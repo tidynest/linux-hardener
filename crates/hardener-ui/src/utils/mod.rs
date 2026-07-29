@@ -923,6 +923,7 @@ mod tests {
             unchecked_title: "t".to_string(),
             unchecked_category: FindingCategory::Network,
             unchecked_reason: "needs root".to_string(),
+            unchecked_needs_privilege: true,
             unchecked_compliance: vec![],
         }
     }

@@ -604,8 +604,15 @@ impl HardeningPlugin for PamHardeningPlugin {
                     findings.push(module_absent_finding(directive, module, conf_path));
                     continue;
                 }
-                ModulePresence::Indeterminate { reason } => {
-                    unchecked.push(unchecked_pam_directive(directive, reason.clone()));
+                ModulePresence::Indeterminate {
+                    reason,
+                    needs_privilege,
+                } => {
+                    unchecked.push(unchecked_pam_directive(
+                        directive,
+                        reason.clone(),
+                        *needs_privilege,
+                    ));
                     continue;
                 }
                 ModulePresence::InStack | ModulePresence::NoModule => {}
@@ -622,6 +629,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                         unchecked.push(unchecked_pam_directive(
                             directive,
                             unreadable_reason(path, permission_denied),
+                            permission_denied,
                         ));
                         continue;
                     }
@@ -1352,12 +1360,17 @@ impl HardeningPlugin for PamHardeningPlugin {
 
 /// Builds the unchecked entry for a PAM directive whose config file cannot be
 /// read at the current privilege level. The check id mirrors the finding id.
-fn unchecked_pam_directive(directive: &PamDirective, reason: String) -> UncheckedCheck {
+fn unchecked_pam_directive(
+    directive: &PamDirective,
+    reason: String,
+    needs_privilege: bool,
+) -> UncheckedCheck {
     UncheckedCheck {
         unchecked_check_id: format!("pam-{}", directive.pam_directive_name),
         unchecked_title: format!("PAM setting: {}", directive.pam_directive_name),
         unchecked_category: FindingCategory::Authentication,
         unchecked_reason: reason,
+        unchecked_needs_privilege: needs_privilege,
         unchecked_compliance: get_pam_compliance_mappings(directive.pam_directive_name),
     }
 }
@@ -1711,6 +1724,11 @@ enum ModulePresence {
     Indeterminate {
         /// Phrased for an operator, in the same voice as [`unreadable_reason`].
         reason: String,
+        /// Whether a privileged re-run would settle it. A stack file blocked by
+        /// permissions would; a distribution whose stack this table does not
+        /// name would not, and offering sudo for the second is advice that
+        /// changes nothing.
+        needs_privilege: bool,
     },
     /// The file has no PAM module, so there is nothing to be in the stack.
     NoModule,
@@ -1791,6 +1809,7 @@ async fn read_module_presence(ctx: &Context, conf_path: &str) -> ModulePresence 
     match (read_one, unread) {
         (_, Some((path, permission_denied))) => ModulePresence::Indeterminate {
             reason: unreadable_reason(path, permission_denied),
+            needs_privilege: permission_denied,
         },
         (true, None) => ModulePresence::NotInStack { module },
         (false, None) => ModulePresence::Indeterminate {
@@ -1798,6 +1817,8 @@ async fn read_module_presence(ctx: &Context, conf_path: &str) -> ModulePresence 
                 "no PAM stack file this tool knows of exists, so whether {module} is loaded \
                  could not be determined"
             ),
+            // No privilege finds a file that is not there.
+            needs_privilege: false,
         },
     }
 }
@@ -2550,18 +2571,28 @@ mod tests {
         let entry = unchecked_pam_directive(
             directive,
             unreadable_reason("/etc/security/pwquality.conf", true),
+            true,
         );
         assert!(entry.unchecked_reason.contains("requires root"));
+        assert!(
+            entry.unchecked_needs_privilege,
+            "a privilege failure must offer the remedy that reaches it"
+        );
         assert_eq!(entry.unchecked_check_id, "pam-minlen");
         assert!(
             !entry.unchecked_compliance.is_empty(),
             "the mappings must survive so the control still reaches manual review"
         );
 
-        let carried = unchecked_pam_directive(directive, "any reason at all".to_string());
+        let carried = unchecked_pam_directive(directive, "any reason at all".to_string(), false);
         assert_eq!(
             carried.unchecked_reason, "any reason at all",
             "the reason is the caller's, reported rather than reinterpreted"
+        );
+        assert!(
+            !carried.unchecked_needs_privilege,
+            "a cause privilege cannot reach must not offer sudo, which is what the \
+             stack table's own unknown distribution case produces"
         );
     }
 
