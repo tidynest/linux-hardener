@@ -14,6 +14,7 @@ use async_trait::async_trait;
 use hardener_common::{
     error::Result,
     types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
+    vendor_config::vendor_path_for,
 };
 use hardener_core::{
     ApplyResult, Change, ChangeType, Checkpoint, PluginConfig, ValidationReport,
@@ -307,9 +308,145 @@ enum PermissionCheck {
     Unverifiable(Box<UncheckedCheck>),
     /// Violates the directive and can be remediated by chmod.
     Insecure(Box<Finding>),
+    /// Absent from `/etc` and violating at the vendor layer (`/usr/etc`), where
+    /// this tool never writes. A finding rather than an unchecked entry, because
+    /// the mode was read and does violate: what is missing is a remediation this
+    /// tool may perform, not the evidence. Its remediation names the copy into
+    /// `/etc` that a distribution layering its configuration expects, never a
+    /// chmod of the package-owned file.
+    VendorOnly(Box<Finding>),
     /// Violates, but sits on a filesystem that cannot hold POSIX permissions,
     /// so chmod cannot fix it: reported as unchecked with fstab guidance.
     NonPosix(Box<UncheckedCheck>),
+}
+
+/// The directive as this run should read it.
+///
+/// An octal directive override keyed by `permission_path` replaces the built-in
+/// baseline (mirrors apply :899-907 / validate :960-964), preserving
+/// `permission_max_mask` so mask semantics still apply to the overridden target.
+///
+/// One definition, because the admin path and the vendor path both need it, and
+/// two copies would come to disagree about an override for exactly the paths
+/// where only one of the two layers holds the file.
+fn effective_directive(
+    directive: &PermissionDirective,
+    config: &PluginConfig,
+) -> PermissionDirective {
+    let mut effective = directive.clone();
+    if let Some(mode) = config
+        .directives
+        .get(directive.permission_path)
+        .and_then(|s| u32::from_str_radix(s, 8).ok())
+    {
+        effective.permission_mode = mode;
+    }
+    effective
+}
+
+/// Assesses the vendor copy of a path `/etc` does not hold.
+///
+/// openSUSE ships its configuration under `/usr/etc` and reserves `/etc` for
+/// administrator overrides, and Fedora is moving the same way, so a confirmed
+/// absence from `/etc` is not the same as "there is nothing here". Measured on the
+/// openSUSE test container 2026-07-30: `/etc/sudoers` does not exist,
+/// `/usr/etc/sudoers` does, at mode 0444 against a directive targeting 0440 at
+/// Critical. The file in force is world-readable, and this plugin used to report
+/// neither a finding nor an unchecked entry, which is precisely the silence
+/// [`PermissionCheck::Unverifiable`] was added to avoid for this path.
+///
+/// The remediation is a copy into `/etc`, never a chmod of `/usr/etc`. Writing the
+/// vendor file is settled policy against: it is package-owned, so a package update
+/// would revert the change, and the layering exists so that `/etc` is where an
+/// administrator states a deviation. That is why this returns its own variant
+/// rather than [`PermissionCheck::Insecure`], whose remediation is a chmod of the
+/// path itself and whose findings describe something apply will perform.
+///
+/// No filesystem-type probe here, unlike the admin path: that probe exists to
+/// avoid promising a chmod on a filesystem that cannot hold the mode, and nothing
+/// on this path promises a chmod at all.
+async fn check_vendor_layer_permissions(
+    ctx: &Context,
+    directive: &PermissionDirective,
+    config: &PluginConfig,
+) -> PermissionCheck {
+    // /root and /boot have no vendor counterpart, and vendor_path_for says so by
+    // requiring the /etc/ prefix. Nothing under /etc is assumed to have one
+    // either: the probe below is what decides.
+    let Some(vendor_path) = vendor_path_for(directive.permission_path) else {
+        return PermissionCheck::Clear;
+    };
+    let vendor = Path::new(&vendor_path);
+
+    match ctx.executor().path_exists(vendor).await {
+        // Absent from both layers. There is no file anywhere, so silence is the
+        // whole truth, and this is the branch /etc/gshadow takes on openSUSE.
+        Ok(false) => return PermissionCheck::Clear,
+        Ok(true) => {}
+        Err(e) => {
+            return PermissionCheck::Unverifiable(Box::new(unverifiable_unchecked(
+                directive,
+                &format!(
+                    "{} is absent and could not determine whether {vendor_path} exists: {e}",
+                    directive.permission_path
+                ),
+            )));
+        }
+    }
+
+    let metadata = match ctx.executor().file_metadata(vendor).await {
+        Ok(metadata) => metadata,
+        Err(e) => {
+            return PermissionCheck::Unverifiable(Box::new(unverifiable_unchecked(
+                directive,
+                &format!(
+                    "{} is absent and its vendor copy {vendor_path} could not be read: {e}",
+                    directive.permission_path
+                ),
+            )));
+        }
+    };
+    let current_mode = metadata.mode & 0o777;
+
+    let effective = effective_directive(directive, config);
+    let directive = &effective;
+    if !violates(directive, current_mode) {
+        return PermissionCheck::Clear;
+    }
+
+    let target = target_mode(directive, current_mode);
+    let policy_exception = config
+        .matching_mode_exception(directive.permission_path, current_mode)
+        .map(|e| e.to_finding_exception());
+    PermissionCheck::VendorOnly(Box::new(Finding {
+        finding_category: FindingCategory::FileSystem,
+        finding_current_value: format!("{:04o}", current_mode),
+        finding_description: directive.permission_description.to_string(),
+        finding_explanation: format!(
+            "{} does not exist, so {vendor_path} is the file in force, and it has permissions {:04o} where {:04o} is required. This tool does not write the vendor layer, so it cannot correct this for you",
+            directive.permission_path, current_mode, target,
+        ),
+        // Keyed on the /etc path, deliberately: the control is about this
+        // setting wherever the distribution keeps it, and the compliance
+        // mappings, the report and the differential suite all ask by that id.
+        finding_id: permission_check_id(directive.permission_path),
+        finding_impact: "Low - only affects security posture, no functional impact".to_string(),
+        finding_recommended_value: format!("{:04o}", target),
+        finding_remediation_steps: vec![
+            format!(
+                "install -o root -g root -m {:04o} {vendor_path} {}",
+                target, directive.permission_path,
+            ),
+            format!(
+                "The copy in {} takes precedence over the vendor file and is where a deviation belongs; editing {vendor_path} in place would be reverted by the next package update",
+                directive.permission_path,
+            ),
+        ],
+        finding_severity: directive.permission_severity,
+        finding_title: format!("Insecure permissions on {vendor_path}"),
+        finding_compliance: get_permissions_compliance_mappings(directive.permission_path),
+        finding_policy_exception: policy_exception,
+    }))
 }
 
 /// Assesses one critical path's permissions.
@@ -323,8 +460,14 @@ enum PermissionCheck {
 /// Returns [`PermissionCheck::Insecure`] when the path violates its directive on
 /// a POSIX filesystem, [`PermissionCheck::NonPosix`] when it violates but sits on
 /// a filesystem that cannot hold POSIX permissions (reported as unchecked with
-/// fstab guidance, never a false finding), and [`PermissionCheck::Clear`] when
-/// the path is compliant, missing or unreadable.
+/// fstab guidance, never a false finding), [`PermissionCheck::VendorOnly`] when
+/// `/etc` holds nothing and the vendor copy under `/usr/etc` violates, and
+/// [`PermissionCheck::Clear`] when the path is compliant or absent from both
+/// layers.
+///
+/// A path that exists and cannot be read is [`PermissionCheck::Unverifiable`],
+/// never `Clear`. This doc comment claimed otherwise until 2026-07-30, having
+/// outlived the variant that fixed it.
 async fn check_path_permissions(
     ctx: &Context,
     directive: &PermissionDirective,
@@ -336,7 +479,7 @@ async fn check_path_permissions(
     // errored says nothing either way, and treating it as absence made the
     // scan silent about a path it never managed to look at.
     match ctx.executor().path_exists(path).await {
-        Ok(false) => return PermissionCheck::Clear,
+        Ok(false) => return check_vendor_layer_permissions(ctx, directive, config).await,
         Ok(true) => {}
         Err(e) => {
             return PermissionCheck::Unverifiable(Box::new(unverifiable_unchecked(
@@ -366,20 +509,7 @@ async fn check_path_permissions(
     // Get current permissions (only last 9 bits = rwxrwxrwx)
     let current_mode = metadata.mode & 0o777;
 
-    // Build an effective directive: an octal directive override wins over the
-    // built-in baseline (mirrors apply :899-907 / validate :960-964),
-    // preserving permission_max_mask so mask semantics (a stricter mode is
-    // compliant) still apply to the overridden target. Shadowing `directive`
-    // means every downstream use (violates/target_mode/finding fields) picks
-    // up the override without further changes.
-    let mut effective = directive.clone();
-    if let Some(mode) = config
-        .directives
-        .get(directive.permission_path)
-        .and_then(|s| u32::from_str_radix(s, 8).ok())
-    {
-        effective.permission_mode = mode;
-    }
+    let effective = effective_directive(directive, config);
     let directive = &effective;
 
     // Compliant: nothing to report (and no filesystem probe needed).
@@ -1154,6 +1284,7 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
         for directive in CRITICAL_PERMISSIONS {
             match check_path_permissions(ctx, directive, config).await {
                 PermissionCheck::Insecure(finding) => findings.push(*finding),
+                PermissionCheck::VendorOnly(finding) => findings.push(*finding),
                 PermissionCheck::NonPosix(check) => unchecked.push(*check),
                 PermissionCheck::Unverifiable(check) => unchecked.push(*check),
                 PermissionCheck::Clear => {}

@@ -1,6 +1,6 @@
 # Configuration reference
 
-**Last Updated**: 2026-07-29
+**Last Updated**: 2026-07-30
 
 Complete reference for the hardener's configuration files. Configuration
 controls which plugins run, tightens directive targets beyond the built-in
@@ -309,8 +309,20 @@ underneath it. Use `"not set"` to except a directive that is absent from
 the file (that is the value `scan` reports for it) for `[ssh]` or `[pam]`.
 
 `[permissions]` tells a missing path apart from one that exists but could
-not be stat'd. A missing path is left alone: no chmod is attempted and
-nothing is recorded, the same treatment as an already-compliant path. A path
+not be stat'd. A path missing from `/etc` is left alone by `apply`: no chmod
+is attempted and nothing is recorded, the same treatment as an
+already-compliant path. `scan` looks one layer further before concluding
+there is nothing there. On a distribution that keeps its configuration under
+`/usr/etc` and reserves `/etc` for administrator overrides, the vendor copy
+is the file in force, so where `/etc` holds nothing and the vendor copy
+violates the directive, `scan` reports a finding naming that path and its
+mode. openSUSE is the measured case: no `/etc/sudoers`, a
+`/usr/etc/sudoers` at 0444 against a required 0440. **The vendor file is
+never written**, so the remediation offered is a copy into `/etc` at the
+required mode rather than a chmod of the package-owned original, and `apply`
+still changes nothing there. A path absent from both layers remains nothing
+to report, and a vendor path whose existence or mode cannot be read is
+reported as unchecked rather than as absence. A path
 that exists but whose mode could not be verified is hardened anyway for the
 seven critical paths with a single exact target mode (`/root`, `/boot`,
 `/etc/ssh`, `/etc/sudoers`, `/etc/sudoers.d`, `/etc/passwd`, `/etc/group`):

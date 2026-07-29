@@ -190,6 +190,24 @@ reports nothing, and a tool inventing a finding for a path that is not there
 fails. What is given up is the mode comparison, and the run prints how many paths
 gave it up rather than leaving a reader to notice a shorter proof.
 
+**Absent from `/etc` is not absent from the host**, and the first container run of
+this oracle proved why. openSUSE keeps `sudoers` at `/usr/etc/sudoers` with
+nothing at `/etc/sudoers`, at mode 0444 against a 0440 target, so both the tool
+and the first version of this oracle said nothing and agreed with each other: two
+silences comparing equal, which is the shape the suite exists to refuse. The
+capture now asks the vendor layer whenever `/etc` holds nothing, mirroring
+`vendor_path_for`, and a vendor reading is compared against the same target by the
+same rule.
+
+For a vendor row the **first** assertion records the reading rather than demanding
+compliance, and that is deliberate: this tool never writes `/usr/etc`, so a
+violating vendor file is a state it reports and cannot correct, and requiring
+compliance would leave the suite permanently red against a tool behaving exactly
+as designed. The message states the mode and the requirement so the violation is
+visible, and the verdict assertion is the one that can fail: the tool must report
+a finding when the vendor mode violates and stay silent when it does not, pinned
+in all four directions by the self-test.
+
 One assertion per unmanaged setting, because there is no tool-reported
 counterpart: the value after apply must be the value before it. The tool claims
 nothing about these, so any change at all is damage whatever the new value is,

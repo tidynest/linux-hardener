@@ -26,6 +26,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`hardener scan` no longer reports a critical permission control as clean on a
+  distribution that keeps the file under `/usr/etc`.** Measured on the openSUSE
+  test container: `/etc/sudoers` does not exist there, `/usr/etc/sudoers` does, at
+  mode **0444**, and the directive requires **0440** exactly at Critical severity.
+  The file in force is therefore world readable, which discloses the sudo policy,
+  and the plugin reported **neither a finding nor an unchecked check**, because a
+  confirmed absence from `/etc` was treated as nothing to report. A CIS control was
+  passing on evidence nobody had collected. The permissions plugin now asks the
+  vendor layer whenever `/etc` holds nothing, the same way the ssh and pam plugins
+  already do, and reports what it finds there.
+  **The vendor file is never written.** The finding names `/usr/etc/sudoers` and its
+  remediation is a copy into `/etc` at the required mode, which is where a
+  distribution layering its configuration expects a deviation to be stated, and
+  which survives the next package update where editing the vendor file in place
+  would not. A path absent from both layers is still nothing to report, which is
+  what `/etc/gshadow` reads on that same container, and a vendor path whose
+  existence or mode cannot be read is reported as unchecked rather than as absence.
+
 - **A checkpoint can now record a symlink, so `systemctl disable` and
   `systemctl mask` are undoable for the first time.** `file_metadata` follows a
   link, so capturing `/etc/systemd/system` stored the *contents of the packaged
@@ -2312,4 +2330,4 @@ Configuration file support with layered loading, compliance framework reporting 
 [0.2.0]: https://github.com/tidynest/linux-system-hardener/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tidynest/linux-system-hardener/releases/tag/v0.1.0
 
-**Last Updated**: 2026-07-27
+**Last Updated**: 2026-07-30

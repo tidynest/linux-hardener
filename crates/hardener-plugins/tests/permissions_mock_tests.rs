@@ -1226,3 +1226,234 @@ async fn scan_reports_a_critical_path_it_cannot_read_instead_of_staying_silent()
             .collect::<Vec<_>>()
     );
 }
+
+/// openSUSE ships `sudoers` at `/usr/etc/sudoers` and nothing at `/etc/sudoers`,
+/// measured on the test container 2026-07-30 at mode 0444. The directive targets
+/// 0440 exactly, at Critical, so the file in force is world-readable and the
+/// control is violated. Before this was fixed the plugin took its confirmed
+/// absence branch and reported neither a finding nor an unchecked entry, which
+/// is the silence `PermissionCheck::Unverifiable` was introduced to avoid for
+/// this very path.
+#[tokio::test]
+async fn vendor_layer_violation_is_reported_when_etc_holds_nothing() {
+    let executor = MockExecutor::new().with_file_metadata(
+        "/usr/etc/sudoers",
+        "",
+        FileMetadata {
+            exists: true,
+            is_file: true,
+            is_dir: false,
+            mode: 0o444,
+            size: 5292,
+            uid: 0,
+            gid: 0,
+        },
+    );
+
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PermissionsHardeningPlugin::new();
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "perm--etc-sudoers")
+        .unwrap_or_else(|| {
+            panic!(
+                "the vendor file violates its directive and must be reported; findings: {:?}, unchecked: {:?}",
+                result
+                    .scan_findings
+                    .iter()
+                    .map(|f| &f.finding_id)
+                    .collect::<Vec<_>>(),
+                result
+                    .scan_unchecked
+                    .iter()
+                    .map(|u| &u.unchecked_check_id)
+                    .collect::<Vec<_>>()
+            )
+        });
+    assert_eq!(finding.finding_current_value, "0444");
+    assert_eq!(finding.finding_recommended_value, "0440");
+    assert_eq!(finding.finding_severity, Severity::Critical);
+    assert!(
+        finding.finding_title.contains("/usr/etc/sudoers"),
+        "the finding names the file actually in force, got: {}",
+        finding.finding_title
+    );
+    assert!(
+        finding
+            .finding_remediation_steps
+            .iter()
+            .all(|s| !s.contains("chmod 0440 /usr/etc/sudoers")),
+        "this tool never writes the vendor file, so it must not tell the operator it will, got: {:?}",
+        finding.finding_remediation_steps
+    );
+}
+
+/// The vendor copy at the target mode is compliant, and compliance is silence.
+#[tokio::test]
+async fn vendor_layer_at_the_target_mode_reports_nothing() {
+    let executor = MockExecutor::new().with_file_metadata(
+        "/usr/etc/sudoers",
+        "",
+        FileMetadata {
+            exists: true,
+            is_file: true,
+            is_dir: false,
+            mode: 0o440,
+            size: 5292,
+            uid: 0,
+            gid: 0,
+        },
+    );
+
+    let ctx = Context::with_executor(Arc::new(executor));
+    let result = PermissionsHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(
+        result.scan_findings.is_empty() && result.scan_unchecked.is_empty(),
+        "a compliant vendor file is nothing to report, got findings {:?} and unchecked {:?}",
+        result
+            .scan_findings
+            .iter()
+            .map(|f| &f.finding_id)
+            .collect::<Vec<_>>(),
+        result
+            .scan_unchecked
+            .iter()
+            .map(|u| &u.unchecked_check_id)
+            .collect::<Vec<_>>()
+    );
+}
+
+/// `/etc` wins. The vendor layer is consulted only on a confirmed absence, so a
+/// host holding both must be judged on the file that takes precedence, and a
+/// violating vendor copy underneath a compliant override is not a finding.
+#[tokio::test]
+async fn an_etc_file_is_judged_and_the_vendor_copy_beneath_it_is_not() {
+    let executor = MockExecutor::new()
+        .with_file_metadata(
+            "/etc/sudoers",
+            "",
+            FileMetadata {
+                exists: true,
+                is_file: true,
+                is_dir: false,
+                mode: 0o440,
+                size: 100,
+                uid: 0,
+                gid: 0,
+            },
+        )
+        .with_file_metadata(
+            "/usr/etc/sudoers",
+            "",
+            FileMetadata {
+                exists: true,
+                is_file: true,
+                is_dir: false,
+                mode: 0o444,
+                size: 5292,
+                uid: 0,
+                gid: 0,
+            },
+        );
+
+    let ctx = Context::with_executor(Arc::new(executor));
+    let result = PermissionsHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(
+        result.scan_findings.is_empty(),
+        "the /etc copy is compliant and it is the file in force, got: {:?}",
+        result
+            .scan_findings
+            .iter()
+            .map(|f| (&f.finding_id, &f.finding_current_value))
+            .collect::<Vec<_>>()
+    );
+}
+
+/// Absent from both layers is the only shape where silence is the whole truth,
+/// and it is what `/etc/gshadow` reads on the openSUSE container.
+#[tokio::test]
+async fn absent_from_both_layers_reports_nothing() {
+    let ctx = Context::with_executor(Arc::new(MockExecutor::new()));
+    let result = PermissionsHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(
+        result.scan_findings.is_empty() && result.scan_unchecked.is_empty(),
+        "no file at either layer is nothing to report"
+    );
+}
+
+/// A vendor probe that errors says nothing either way, and must not join the
+/// absence it cannot rule out. The same three-outcome contract the admin path has.
+#[tokio::test]
+async fn an_unreadable_vendor_path_is_unchecked_rather_than_silent() {
+    let executor = MockExecutor::new().with_path_exists_error("/usr/etc/sudoers");
+
+    let ctx = Context::with_executor(Arc::new(executor));
+    let result = PermissionsHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    let unchecked = result
+        .scan_unchecked
+        .iter()
+        .find(|u| u.unchecked_check_id == "perm--etc-sudoers")
+        .expect("an existence probe that failed is not an absence");
+    assert!(
+        unchecked.unchecked_reason.contains("/usr/etc/sudoers"),
+        "the reason names the path it could not read, got: {}",
+        unchecked.unchecked_reason
+    );
+}
+
+/// The directive override reaches the vendor path, which is the property the
+/// extracted `effective_directive` exists for: 0440 satisfies the built-in
+/// baseline and violates an operator override of 0400, so a finding here can only
+/// come from the override having been applied to the vendor comparison.
+#[tokio::test]
+async fn a_directive_override_applies_to_the_vendor_layer_too() {
+    let executor = MockExecutor::new().with_file_metadata(
+        "/usr/etc/sudoers",
+        "",
+        FileMetadata {
+            exists: true,
+            is_file: true,
+            is_dir: false,
+            mode: 0o440,
+            size: 5292,
+            uid: 0,
+            gid: 0,
+        },
+    );
+    let mut config = PluginConfig::default();
+    config
+        .directives
+        .insert("/etc/sudoers".to_string(), "400".to_string());
+
+    let ctx = Context::with_executor(Arc::new(executor));
+    let result = PermissionsHardeningPlugin::new()
+        .scan(&ctx, &config)
+        .await
+        .unwrap();
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "perm--etc-sudoers")
+        .expect("0440 violates an override of 0400");
+    assert_eq!(finding.finding_recommended_value, "0400");
+}

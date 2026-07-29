@@ -1263,27 +1263,57 @@ permission_finding_id() {
 # Absence is concluded from the shell test rather than from stat's message, which
 # is locale-dependent prose. A dangling symlink reads as absent here, and the
 # tool agrees: its path_exists follows the link exactly as `-e` does.
+# The `/usr/etc` counterpart of an `/etc` path, when there is one. Mirrors
+# vendor_path_for in crates/hardener-common/src/vendor_config.rs, including its
+# refusal to invent one for a path outside /etc: /root and /boot have no vendor
+# copy, and asking for one would compare a mode against a file that cannot exist.
+permission_vendor_path() {
+    local path="$1"
+    [[ "$path" == /etc/?* ]] || return 1
+    printf '/usr/etc/%s' "${path#/etc/}"
+}
+
+# One path's mode, or a named refusal. One definition, because both layers need
+# it and two copies would come to disagree about what stat is allowed to print.
+#
+# One to four digits: `stat -c %a` prints `0` for mode 0000, and four digits for a
+# mode carrying a setuid, setgid or sticky bit. Anything else is stat having said
+# something other than a mode, and comparing it would be comparing prose.
+permission_mode_of() {
+    local path="$1" mode octal='^[0-7]{1,4}$'
+    if ! mode="$(stat -c %a "$path" 2>&1)"; then
+        echo "FATAL: stat could not read the mode of $path: $mode" >&2
+        return 1
+    fi
+    if [[ ! "$mode" =~ $octal ]]; then
+        echo "FATAL: stat reported '$mode' for $path, which is not an octal mode" >&2
+        return 1
+    fi
+    printf '%s' "$mode"
+}
+
 permission_modes_capture() {
-    local entry path mode octal='^[0-7]{1,4}$' out=()
+    local entry path mode vendor out=()
     for entry in "${PERMISSION_CHECKS[@]}"; do
         IFS='|' read -r path _ _ <<<"$entry"
-        if [[ ! -e "$path" ]]; then
-            out+=("$path absent")
+        if [[ -e "$path" ]]; then
+            mode="$(permission_mode_of "$path")" || return 1
+            out+=("$path $mode")
             continue
         fi
-        if ! mode="$(stat -c %a "$path" 2>&1)"; then
-            echo "FATAL: stat could not read the mode of $path: $mode" >&2
-            return 1
+        # Absent from /etc is not absent from the host. openSUSE ships its
+        # configuration under /usr/etc and reserves /etc for administrator
+        # overrides, so the vendor copy is the file in force, and an oracle that
+        # stopped at the first absence would agree with a tool that was blind to
+        # it. That is exactly what happened on 2026-07-30: /etc/sudoers does not
+        # exist there, /usr/etc/sudoers does at 0444 against a 0440 target, and
+        # both the tool and the first version of this oracle said nothing.
+        if vendor="$(permission_vendor_path "$path")" && [[ -e "$vendor" ]]; then
+            mode="$(permission_mode_of "$vendor")" || return 1
+            out+=("$path vendor:$mode")
+            continue
         fi
-        # One to four digits: `stat -c %a` prints `0` for mode 0000, and four
-        # digits for a mode carrying a setuid, setgid or sticky bit. Anything else
-        # is stat having said something other than a mode, and comparing it would
-        # be comparing prose.
-        if [[ ! "$mode" =~ $octal ]]; then
-            echo "FATAL: stat reported '$mode' for $path, which is not an octal mode" >&2
-            return 1
-        fi
-        out+=("$path $mode")
+        out+=("$path absent")
     done
     printf '%s\n' "${out[@]}"
 }
@@ -1352,12 +1382,37 @@ permission_system_value() {
 # second assertion. What is given up is the mode comparison, and the count of
 # paths that gave it up is printed rather than left for a reader to notice.
 run_permission_checks() {
-    local entry path target comparison reading id absent=0
+    local entry path target comparison reading id vendor mode requirement satisfied
+    local absent=0 at_vendor=0
     for entry in "${PERMISSION_CHECKS[@]}"; do
         IFS='|' read -r path target comparison <<<"$entry"
         id="$(permission_finding_id "$path")"
         if ! reading="$(permission_system_value "$path")"; then
             record_unresolved permissions-hardening "$path" "the filesystem reported no usable mode"
+            continue
+        fi
+        # A vendor reading is compared exactly like an /etc one, against the same
+        # target and by the same comparison, because the control is about the
+        # setting rather than about which directory a distribution keeps it in.
+        # The tool's finding id is keyed on the /etc path for the same reason, so
+        # the verdict half needs no special case at all.
+        if [[ "$reading" == vendor:* ]]; then
+            at_vendor=$((at_vendor + 1))
+            vendor="$(permission_vendor_path "$path")"
+            mode="${reading#vendor:}"
+            requirement="$(requirement_wording "$target" "$comparison")"
+            satisfied=no
+            requirement_satisfied "$mode" "$target" "$comparison" && satisfied=yes
+            # The first assertion records the reading rather than demanding the
+            # mode be compliant, and that is deliberate. This tool does not write
+            # the vendor layer, so a violating vendor file is a state it reports
+            # and cannot correct: requiring compliance here would leave the suite
+            # permanently red against a tool behaving exactly as designed. The
+            # message states the mode and the requirement so a reader sees the
+            # violation, and the verdict assertion below is the one that can fail.
+            record_pass "permissions-hardening $path: absent from /etc, and $vendor holds '$mode' where this run requires $requirement; the mode in force was read, and this tool does not write the vendor layer"
+            compare_reported_verdict permissions-hardening "$path" "$satisfied" "$id" \
+                "$vendor holds '$mode' and this run requires $requirement"
             continue
         fi
         if [[ "$reading" == absent ]]; then
@@ -1370,9 +1425,14 @@ run_permission_checks() {
         compare_directive permissions-hardening "$path" "$reading" "$target" "$id" "$comparison"
     done
     # No silent caps: an absent path costs its mode comparison, and a run where
-    # several are absent proves less than one where none is.
+    # several are absent proves less than one where none is. A vendor reading
+    # loses nothing, and is reported because it means this distribution keeps the
+    # file somewhere else, which is worth seeing in a log.
     if (( absent > 0 )); then
         echo "  note| $absent of ${#PERMISSION_CHECKS[@]} permission paths are absent on this distribution, so those rows assert only that the tool reports nothing for a path that is not there"
+    fi
+    if (( at_vendor > 0 )); then
+        echo "  note| $at_vendor of ${#PERMISSION_CHECKS[@]} permission paths are absent from /etc and were read at the vendor layer instead, which is where the mode in force lives on this distribution"
     fi
 }
 
@@ -3501,6 +3561,97 @@ password required pam_unix.so"
     PERMISSION_MODES=""
     PERMISSION_MODES_GENERATION=""
     rm -rf "$permission_fixture"
+
+    # === The vendor layer ===
+    #
+    # openSUSE keeps sudoers at /usr/etc/sudoers and nothing at /etc/sudoers, so
+    # an oracle that stopped at the first absence agreed with a tool that could
+    # not see the file either: two silences comparing equal, which is the shape
+    # this suite exists to refuse.
+    check_eq "$(permission_vendor_path /etc/sudoers)" "/usr/etc/sudoers" \
+        "an /etc path has a vendor counterpart"
+    check_status 1 "a path outside /etc has none, so none is invented for it" \
+        permission_vendor_path /root
+    check_status 1 "and /etc with nothing after it has none either" \
+        permission_vendor_path /etc/
+
+    local vendor_fixture vendor_saved_table=("${PERMISSION_CHECKS[@]}")
+    local vendor_saved_total=$CHECKS_TOTAL vendor_saved_passed=$CHECKS_PASSED
+    local vendor_saved_failed=$CHECKS_FAILED vendor_saved_generation=$APPLY_GENERATION
+    vendor_fixture="$(mktemp -d)"
+    install -d "$vendor_fixture/etc"
+    printf 'x\n' >"$vendor_fixture/vendor-copy"
+    chmod 444 "$vendor_fixture/vendor-copy"
+    # The path derivation is stubbed, because the real one names an absolute
+    # /usr/etc path this self-test must not depend on the developer having. What
+    # the stub leaves under test is the capture's use of it; the derivation itself
+    # is pinned by the three assertions above.
+    # shellcheck disable=SC2329  # called indirectly, by the capture and the family
+    permission_vendor_path() { printf '%s' "$vendor_fixture/vendor-copy"; }
+    PERMISSION_CHECKS=("$vendor_fixture/etc/absent-here|440|exact")
+    local vendor_capture vendor_status=0
+    vendor_capture="$(permission_modes_capture)" || vendor_status=$?
+    check_eq "$vendor_status" "0" "the capture succeeds when /etc holds nothing and the vendor copy does"
+    check_eq "$(permission_capture_reading "$vendor_capture" "$vendor_fixture/etc/absent-here")" \
+        "vendor:444" \
+        "a path absent from /etc is read at the vendor layer rather than called absent"
+
+    # The verdict is the assertion that can fail here, and both directions are
+    # watched. 444 sets o+r where an exact 440 does not allow it, so the tool is
+    # required to have reported a finding: reporting one agrees, reporting none is
+    # the openSUSE defect and fails.
+    # shellcheck disable=SC2329  # called indirectly, through the family below
+    scan_unchecked_count() { printf '0'; }
+    # shellcheck disable=SC2329  # called indirectly, through the family below
+    scan_finding_count() { printf '1'; }
+    APPLY_GENERATION=1
+    permissions_oracle_init
+    CHECKS_TOTAL=0
+    CHECKS_PASSED=0
+    CHECKS_FAILED=0
+    run_permission_checks >/dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "2/0" \
+        "a violating vendor mode the tool reported agrees, and still costs two checks"
+    # shellcheck disable=SC2329  # called indirectly, through the family below
+    scan_finding_count() { printf '0'; }
+    CHECKS_TOTAL=0
+    CHECKS_PASSED=0
+    CHECKS_FAILED=0
+    run_permission_checks >/dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "1/1" \
+        "a violating vendor mode the tool said nothing about fails the verdict, which is the openSUSE defect"
+
+    # And the compliant direction, so the verdict is pinned all four ways: a
+    # vendor mode that satisfies the target requires silence, and a finding
+    # against it is the tool contradicting a system that is fine.
+    chmod 440 "$vendor_fixture/vendor-copy"
+    permissions_oracle_init
+    CHECKS_TOTAL=0
+    CHECKS_PASSED=0
+    CHECKS_FAILED=0
+    run_permission_checks >/dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "2/0" \
+        "a compliant vendor mode with nothing reported agrees"
+    # shellcheck disable=SC2329  # called indirectly, through the family below
+    scan_finding_count() { printf '1'; }
+    CHECKS_TOTAL=0
+    CHECKS_PASSED=0
+    CHECKS_FAILED=0
+    run_permission_checks >/dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "1/1" \
+        "a compliant vendor mode the tool reported a finding for fails the verdict"
+
+    unset -f scan_unchecked_count
+    unset -f scan_finding_count
+    unset -f permission_vendor_path
+    CHECKS_TOTAL=$vendor_saved_total
+    CHECKS_PASSED=$vendor_saved_passed
+    CHECKS_FAILED=$vendor_saved_failed
+    APPLY_GENERATION=$vendor_saved_generation
+    PERMISSION_CHECKS=("${vendor_saved_table[@]}")
+    PERMISSION_MODES=""
+    PERMISSION_MODES_GENERATION=""
+    rm -rf "$vendor_fixture"
 
     if (( failures > 0 )); then
         echo "self-test: $failures failure(s)"
