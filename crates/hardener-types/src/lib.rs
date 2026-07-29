@@ -782,6 +782,34 @@ pub struct ValidationReport {
     pub validation_report_exceptions: Vec<String>,
 }
 
+impl ValidationReport {
+    /// Whether this report carries an issue serious enough to fail a dry run.
+    ///
+    /// **Critical and High only.** Lower severities are advisory, and promoting
+    /// them would turn an informational note into a non-zero exit, which trains
+    /// operators to ignore the exit code entirely.
+    ///
+    /// This is not the same question as `validation_report_is_valid`, which is
+    /// `issues.is_empty()` and answers "has this report anything to say". A
+    /// renderer deciding whether to show a clean marker wants that one; anything
+    /// deciding whether a run **failed** wants this one.
+    ///
+    /// It lives on the type because the two callers that ask it are in
+    /// different command modules and had drifted: the single-host dry run
+    /// applied the Critical-or-High rule while the fleet path counted any issue
+    /// at all, so one host, one report and two verbs gave exit 0 and exit 1. A
+    /// Medium note is not hypothetical: PAM layer drift emits one on every host
+    /// whose `/etc` file masks its vendor copy.
+    pub fn has_blocking_issue(&self) -> bool {
+        self.validation_report_issues.iter().any(|issue| {
+            matches!(
+                issue.validation_issue_severity,
+                Severity::Critical | Severity::High
+            )
+        })
+    }
+}
+
 /// A single validation issue.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct ValidationIssue {

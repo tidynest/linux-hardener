@@ -3,7 +3,7 @@
 use crate::cli::OutputFormat;
 use crate::output;
 use anyhow::{Result, bail};
-use hardener_common::types::{PluginId, Severity};
+use hardener_common::types::PluginId;
 use hardener_core::{
     ApplyResult, ConfigLoader, Context, HardenerConfig, PluginMetadata, SystemExecutor,
     ValidationReport,
@@ -122,7 +122,7 @@ pub(crate) async fn apply_host(
                     // run. Without this, an unreadable config renders as
                     // "0 change(s) to apply" and exits 0, so the operator is
                     // told the host needs nothing when it was never read.
-                    if blocking_validation_issue(&report) {
+                    if report.has_blocking_issue() {
                         had_failure = true;
                     }
                     validation_reports.push(report);
@@ -182,21 +182,6 @@ pub(crate) async fn apply_host(
         had_failure,
         skipped,
     }
-}
-
-/// Whether a validation report carries an issue serious enough to fail the
-/// dry run.
-///
-/// Critical and High only. Lower severities are advisory, and promoting them
-/// would turn an informational note into a non-zero exit, which trains
-/// operators to ignore the exit code entirely.
-fn blocking_validation_issue(report: &ValidationReport) -> bool {
-    report.validation_report_issues.iter().any(|issue| {
-        matches!(
-            issue.validation_issue_severity,
-            Severity::Critical | Severity::High
-        )
-    })
 }
 
 pub async fn run(
@@ -287,6 +272,9 @@ pub async fn run(
 mod tests {
     use super::*;
     use hardener_common::executor::{CommandOutput, MockExecutor};
+    // Only the severity-rule tests need this now: the production code stopped
+    // matching on Severity when the rule moved onto ValidationReport.
+    use hardener_common::types::Severity;
 
     /// The gate must ask the executor, not the local process: a non-root
     /// test process talking to an executor that reports uid 1000 and denies
@@ -348,24 +336,24 @@ mod tests {
     /// A serious validation issue has to reach the exit code.
     #[test]
     fn a_serious_validation_issue_fails_the_dry_run() {
-        assert!(blocking_validation_issue(&report_with(Severity::Critical)));
-        assert!(blocking_validation_issue(&report_with(Severity::High)));
+        assert!(report_with(Severity::Critical).has_blocking_issue());
+        assert!(report_with(Severity::High).has_blocking_issue());
     }
 
     /// Advisory severities must not flip the exit code, or the signal becomes
     /// noise and operators learn to ignore it.
     #[test]
     fn an_advisory_validation_issue_does_not_fail_the_dry_run() {
-        assert!(!blocking_validation_issue(&report_with(Severity::Medium)));
-        assert!(!blocking_validation_issue(&report_with(Severity::Low)));
-        assert!(!blocking_validation_issue(&report_with(Severity::Info)));
+        assert!(!report_with(Severity::Medium).has_blocking_issue());
+        assert!(!report_with(Severity::Low).has_blocking_issue());
+        assert!(!report_with(Severity::Info).has_blocking_issue());
 
         let clean = ValidationReport {
             validation_report_issues: vec![],
             validation_report_is_valid: true,
             ..report_with(Severity::High)
         };
-        assert!(!blocking_validation_issue(&clean));
+        assert!(!clean.has_blocking_issue());
     }
 
     #[tokio::test]

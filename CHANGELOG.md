@@ -26,6 +26,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`batch apply --dry-run` and `apply --dry-run` no longer disagree about
+  whether a host failed.** The single-host dry run fails on Critical and High
+  validation issues only, treating anything lower as advisory so a note cannot
+  become a non-zero exit. The fleet path instead counted every host whose report
+  carried any issue at all, and that count feeds the exit code, so one host and
+  one report exited 0 through `apply --dry-run` and 1 through
+  `batch apply --dry-run`. A CI gate built on the fleet verb therefore failed on
+  advisory notes. The rule now has one definition, `ValidationReport::
+  has_blocking_issue`, which both paths call. `validation_report_is_valid` is
+  unchanged and still means "this report has something to say"; it is what the
+  text renderer's marker reads.
+
 - **`apply --dry-run` reports layer drift, which only `scan` did.** The preview
   an operator reads before applying listed the directives that would change and
   said nothing about masked keys, so a host whose vendor settings had already

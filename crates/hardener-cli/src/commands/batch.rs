@@ -1087,10 +1087,16 @@ fn status_from_result(execute: bool, result: &super::apply::ApplyHostResult) -> 
             .iter()
             .map(|r| r.validation_report_compliant_count)
             .sum();
+        // The same question the single-host dry run asks, through the same
+        // definition. This counted `!validation_report_is_valid`, which is
+        // "has anything to say" rather than "failed", so a Medium note made
+        // apply_exit_code return 1 for a host `hardener apply --dry-run` exits
+        // 0 on. A fleet gate and a single-host gate disagreeing about one host
+        // is worse than either being strict or lax.
         let failed = result
             .validation_reports
             .iter()
-            .filter(|r| !r.validation_report_is_valid)
+            .filter(|r| r.has_blocking_issue())
             .count();
         ApplyStatus::Validated {
             plugins,
@@ -1602,6 +1608,7 @@ mod tests {
         ComplianceFramework, ComplianceMapping, FindingCategory, Severity,
     };
     use hardener_compliance::Scenario;
+    use hardener_core::ValidationReport;
 
     /// Every `batch` subcommand accepted the global `--config` flag and threw
     /// it away, so a fleet was assessed and hardened against whatever config
@@ -1677,6 +1684,85 @@ mod tests {
                 "the error must name what was skipped: {error}"
             ),
             other => panic!("a run that applied nothing must not report success: {other:?}"),
+        }
+    }
+
+    /// One report, one host, two verbs, one answer.
+    ///
+    /// `apply --dry-run` and `batch apply --dry-run` ask the same question of
+    /// the same `ValidationReport` and used to answer it differently: the
+    /// single-host path fails a dry run on Critical and High only, calling
+    /// anything lower advisory precisely so a note cannot become a non-zero
+    /// exit, while the fleet path counted any issue at all. A Medium note, of
+    /// the kind PAM layer drift now produces on every drifted host, therefore
+    /// exited 0 through one verb and 1 through the other.
+    ///
+    /// Asserted against the single-host rule rather than against a literal, so
+    /// the two cannot drift apart again by someone changing one of them.
+    #[test]
+    fn a_severity_the_single_host_dry_run_calls_advisory_is_not_a_fleet_failure() {
+        for severity in [Severity::Medium, Severity::Low, Severity::Info] {
+            let report = ValidationReport {
+                validation_report_plugin_id: PluginId::new("pam-hardening"),
+                validation_report_is_valid: false,
+                validation_report_issues: vec![hardener_core::ValidationIssue {
+                    validation_issue_severity: severity,
+                    validation_issue_config_key: None,
+                    validation_issue_message: "/etc/login.defs masks 2 key(s)".to_string(),
+                }],
+                validation_report_estimated_changes: vec![],
+                validation_report_compliant_count: 0,
+                validation_report_exceptions: vec![],
+            };
+            let result = super::super::apply::ApplyHostResult {
+                results: vec![],
+                validation_reports: vec![report],
+                had_failure: false,
+                skipped: vec![],
+            };
+
+            match status_from_result(false, &result) {
+                ApplyStatus::Validated { failed, .. } => assert_eq!(
+                    failed, 0,
+                    "{severity:?} is advisory to the single-host dry run, so the fleet \
+                     row must not count it as a failed validation"
+                ),
+                other => panic!("a dry run must render as Validated: {other:?}"),
+            }
+        }
+    }
+
+    /// The other direction, so the fix cannot be "never count anything".
+    #[test]
+    fn a_severity_the_single_host_dry_run_blocks_on_is_a_fleet_failure() {
+        for severity in [Severity::High, Severity::Critical] {
+            let report = ValidationReport {
+                validation_report_plugin_id: PluginId::new("ssh-hardening"),
+                validation_report_is_valid: false,
+                validation_report_issues: vec![hardener_core::ValidationIssue {
+                    validation_issue_severity: severity,
+                    validation_issue_config_key: None,
+                    validation_issue_message: "Failed to read /etc/ssh/sshd_config".to_string(),
+                }],
+                validation_report_estimated_changes: vec![],
+                validation_report_compliant_count: 0,
+                validation_report_exceptions: vec![],
+            };
+            let result = super::super::apply::ApplyHostResult {
+                results: vec![],
+                validation_reports: vec![report],
+                had_failure: false,
+                skipped: vec![],
+            };
+
+            match status_from_result(false, &result) {
+                ApplyStatus::Validated { failed, .. } => assert_eq!(
+                    failed, 1,
+                    "{severity:?} fails the single-host dry run, so the fleet row must \
+                     count it too"
+                ),
+                other => panic!("a dry run must render as Validated: {other:?}"),
+            }
         }
     }
 
