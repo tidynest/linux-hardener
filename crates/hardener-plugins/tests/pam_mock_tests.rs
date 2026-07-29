@@ -2203,43 +2203,105 @@ PASS_WARN_AGE   7
 ";
 
 #[tokio::test]
-async fn apply_refuses_to_create_an_etc_file_that_would_mask_a_vendor_file() {
+async fn apply_materialises_the_vendor_file_before_editing_it() {
     // openSUSE keeps vendor configuration in /usr/etc and reserves /etc for
     // administrator overrides, and that override is whole-file rather than per
     // directive. Creating a three-directive /etc/login.defs therefore silences
     // every other key the vendor file sets, including ENCRYPT_METHOD and
-    // UMASK. Hardening three settings by disabling the rest is not hardening.
-    let executor = secure_pam_executor_base()
-        .with_file("/etc/security/faillock.conf", "deny = 3\n")
-        .without_file("/etc/login.defs")
-        .with_file("/usr/etc/login.defs", VENDOR_LOGIN_DEFS);
-    let executor = Arc::new(executor);
+    // UMASK. Hardening three settings by disabling the rest is not hardening,
+    // so the vendor copy is carried over first and the managed directives are
+    // edited into that copy.
+    let executor = Arc::new(
+        secure_pam_executor_base()
+            .with_file("/etc/security/faillock.conf", "deny = 3\n")
+            .without_file("/etc/login.defs")
+            .with_file("/usr/etc/login.defs", VENDOR_LOGIN_DEFS)
+            .with_command_program(
+                "chmod",
+                hardener_core::CommandOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            ),
+    );
     let mut ctx = Context::with_executor(executor.clone());
-    let plugin = PamHardeningPlugin::new();
 
-    let result = plugin
+    let result = PamHardeningPlugin::new()
         .apply(&mut ctx, &PluginConfig::default())
         .await
         .expect("apply must run rather than abort");
 
     let log = executor.log();
+    let written = log
+        .files_written
+        .iter()
+        .find(|(path, _)| path.to_str() == Some("/etc/login.defs"))
+        .map(|(_, content)| content.clone())
+        .unwrap_or_else(|| {
+            panic!(
+                "login.defs must be written, not refused; wrote: {:?}",
+                log.files_written
+            )
+        });
+    for key in ["UMASK", "ENCRYPT_METHOD", "PASS_MIN_DAYS", "PASS_WARN_AGE"] {
+        assert!(
+            written.contains(key),
+            "materialising must preserve every vendor key; {key} is missing from: {written}"
+        );
+    }
     assert!(
-        !log.files_written
-            .iter()
-            .any(|(written, _)| written.to_str() == Some("/etc/login.defs")),
-        "creating /etc/login.defs masks the vendor file wholesale, but apply wrote: {:?}",
-        log.files_written
+        written.contains("PASS_MAX_DAYS 90"),
+        "the managed directive must still be applied to the copy: {written}"
     );
     assert!(
-        !result.apply_success,
-        "a refusal to harden must be reported, not silently swallowed"
-    );
-    assert!(
-        result.apply_changes.iter().any(|change| {
-            !change.change_success && change.change_description.contains("/usr/etc/login.defs")
-        }),
-        "the refusal must name the vendor file it would have masked, got: {:?}",
+        result.apply_success,
+        "the host is hardened and the vendor settings survive: {:?}",
         result.apply_changes
+    );
+}
+
+#[tokio::test]
+async fn a_materialised_file_wears_the_vendor_mode_not_the_temporary_file_s() {
+    // update_file_atomically restores an *original* mode, and a file being
+    // created has none, so it keeps whatever the temporary file had. That is
+    // how the tool's /etc/security/pwquality.conf landed 0600 on openSUSE
+    // against the vendor's 0644, and at 0600 pwscore and pwmake cannot read it
+    // and silently fall back to their built-in defaults: a configuration that
+    // appears to apply and does not.
+    let executor = Arc::new(
+        secure_pam_executor_base()
+            .with_file("/etc/security/faillock.conf", "deny = 3\n")
+            .without_file("/etc/login.defs")
+            .with_file("/usr/etc/login.defs", VENDOR_LOGIN_DEFS)
+            .with_command_program(
+                "chmod",
+                hardener_core::CommandOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            ),
+    );
+    let mut ctx = Context::with_executor(executor.clone());
+
+    PamHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply must run");
+
+    assert!(
+        executor
+            .log()
+            .commands_executed
+            .iter()
+            .any(|(command, args)| {
+                command == "chmod"
+                    && args.iter().any(|a| a == "/etc/login.defs")
+                    && args.iter().any(|a| a.contains("644"))
+            }),
+        "the created file must be given the vendor file's mode, commands: {:?}",
+        executor.log().commands_executed
     );
 }
 
@@ -2280,40 +2342,292 @@ async fn apply_refuses_when_it_cannot_tell_whether_a_vendor_file_exists() {
 }
 
 #[tokio::test]
-async fn apply_refuses_to_create_a_security_conf_that_would_mask_a_vendor_file() {
+async fn apply_materialises_a_vendor_security_conf_before_editing_it() {
     // The same door, on the other file kind. faillock.conf is written through
-    // the SecurityConf arm, which has its own read and its own absence branch,
-    // so guarding login.defs alone would leave this one open.
-    let executor = secure_pam_executor_base().with_file(
-        "/usr/etc/security/faillock.conf",
-        "deny = 3\naudit\nsilent\n",
+    // the SecurityConf arm, which has its own read and its own write, so
+    // handling login.defs alone would leave this one masking its vendor copy.
+    // The vendor value breaches the threshold, so a write is genuinely wanted
+    // and the vendor's other settings have to survive it.
+    let executor = Arc::new(
+        secure_pam_executor_base()
+            .with_file(
+                "/usr/etc/security/faillock.conf",
+                "deny = 10\naudit\nsilent\n",
+            )
+            .with_command_program(
+                "chmod",
+                hardener_core::CommandOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            ),
     );
-    let executor = Arc::new(executor);
     let mut ctx = Context::with_executor(executor.clone());
-    let plugin = PamHardeningPlugin::new();
 
-    let result = plugin
+    let result = PamHardeningPlugin::new()
         .apply(&mut ctx, &PluginConfig::default())
         .await
         .expect("apply must run rather than abort");
 
     let log = executor.log();
+    let written = log
+        .files_written
+        .iter()
+        .find(|(path, _)| path.to_str() == Some("/etc/security/faillock.conf"))
+        .map(|(_, content)| content.clone())
+        .unwrap_or_else(|| {
+            panic!(
+                "faillock.conf must be written, not refused; wrote: {:?}",
+                log.files_written
+            )
+        });
+    for key in ["audit", "silent"] {
+        assert!(
+            written.contains(key),
+            "the vendor's unmanaged settings must survive; {key} is missing from: {written}"
+        );
+    }
     assert!(
-        !log.files_written
+        written.contains("deny = 5"),
+        "the managed directive must be clamped into the copy: {written}"
+    );
+    assert!(
+        result.apply_success,
+        "the host is hardened and the vendor settings survive: {:?}",
+        result.apply_changes
+    );
+}
+
+/// A vendor `login.defs` whose password-ageing keys already meet this tool's
+/// targets, so a scan that reads the layer it lives in has nothing to report.
+const COMPLIANT_VENDOR_LOGIN_DEFS: &str = "\
+UMASK           022
+ENCRYPT_METHOD  yescrypt
+PASS_MAX_DAYS   90
+PASS_MIN_DAYS   1
+PASS_WARN_AGE   7
+";
+
+#[tokio::test]
+async fn scan_reads_login_defs_from_the_vendor_layer() {
+    // openSUSE ships no /etc/login.defs. Reading only that path made every
+    // directive it sets read as unset, so the scan reported findings against a
+    // host whose vendor file already held compliant values.
+    let executor = Arc::new(
+        secure_pam_executor()
+            .without_file("/etc/login.defs")
+            .with_file("/usr/etc/login.defs", COMPLIANT_VENDOR_LOGIN_DEFS),
+    );
+    let ctx = Context::with_executor(executor.clone());
+
+    let result = PamHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan runs");
+
+    let reported: Vec<&str> = result
+        .scan_findings
+        .iter()
+        .map(|f| f.finding_id.as_str())
+        .collect();
+    for key in ["PASS_MAX_DAYS", "PASS_MIN_DAYS", "PASS_WARN_AGE"] {
+        assert!(
+            !reported.iter().any(|id| id.contains(key)),
+            "the vendor file already sets a compliant {key}, so there is nothing to \
+             report; got: {reported:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn scan_does_not_report_an_unreadable_login_defs_as_unset() {
+    // A root-only /etc/login.defs is not an empty one. Folding the read failure
+    // into an empty buffer made every directive it sets read as unset, so an
+    // unprivileged scan reported findings against a host that is hardened.
+    let executor = Arc::new(secure_pam_executor().with_read_permission_denied("/etc/login.defs"));
+    let ctx = Context::with_executor(executor.clone());
+
+    let result = PamHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan runs");
+
+    let reported: Vec<&str> = result
+        .scan_findings
+        .iter()
+        .map(|f| f.finding_id.as_str())
+        .collect();
+    for key in ["PASS_MAX_DAYS", "PASS_MIN_DAYS", "PASS_WARN_AGE"] {
+        assert!(
+            !reported.iter().any(|id| id.contains(key)),
+            "a file this scan could not read must never be reported as unset; got: \
+             {reported:?}"
+        );
+    }
+    assert!(
+        !result.scan_unchecked.is_empty(),
+        "the privilege failure must surface as unchecked entries instead"
+    );
+}
+
+#[tokio::test]
+async fn an_inline_pam_argument_in_a_vendor_stack_file_is_honoured() {
+    // pam.d layers per service file. A vendor system-auth with an inline deny=
+    // overrides /etc/security/faillock.conf, so missing that layer makes the
+    // tool report a threshold that is not the one in force.
+    let executor = Arc::new(secure_pam_executor().with_file(
+        "/usr/etc/pam.d/system-auth",
+        "auth required pam_faillock.so deny=10\n",
+    ));
+    let ctx = Context::with_executor(executor.clone());
+
+    let result = PamHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan runs");
+
+    assert!(
+        result
+            .scan_findings
+            .iter()
+            .any(|f| f.finding_id.contains("deny")),
+        "deny=10 inline exceeds the threshold and is what sshd's PAM stack \
+         actually enforces, so it must be reported; got: {:?}",
+        result
+            .scan_findings
+            .iter()
+            .map(|f| f.finding_id.as_str())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn a_compliant_vendor_security_conf_needs_neither_a_write_nor_a_refusal() {
+    // Reading the layer the value lives in is what makes this case visible at
+    // all. While the tool could only see /etc it read the directive as unset,
+    // wanted to write, and the vendor-mask guard had to stop it; the host was
+    // reported unsuccessful for being already compliant. Now the value is
+    // observed, nothing needs writing, and there is nothing to refuse.
+    let executor = Arc::new(secure_pam_executor_base().with_file(
+        "/usr/etc/security/faillock.conf",
+        "deny = 3\naudit\nsilent\n",
+    ));
+    let mut ctx = Context::with_executor(executor.clone());
+
+    let result = PamHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply must run");
+
+    assert!(
+        !executor
+            .log()
+            .files_written
             .iter()
             .any(|(written, _)| written.to_str() == Some("/etc/security/faillock.conf")),
-        "creating /etc/security/faillock.conf masks the vendor file, but apply wrote: {:?}",
-        log.files_written
+        "a compliant vendor value must not be copied into /etc, wrote: {:?}",
+        executor.log().files_written
     );
-    assert!(!result.apply_success, "the refusal must be reported");
     assert!(
-        result.apply_changes.iter().any(|change| {
-            !change.change_success
-                && change
-                    .change_description
-                    .contains("/usr/etc/security/faillock.conf")
-        }),
-        "the refusal must name the vendor file, got: {:?}",
+        result.apply_success,
+        "being already compliant is not a failure: {:?}",
         result.apply_changes
+    );
+}
+
+#[tokio::test]
+async fn scan_reports_vendor_keys_the_admin_file_masks() {
+    // The override is whole-file, so an /etc/login.defs setting one key silences
+    // every other key the vendor file sets. Nothing in the tool said so: the
+    // scan read the file in force, found the directives it manages, and reported
+    // a host whose ENCRYPT_METHOD and UMASK had quietly reverted to shadow's
+    // built-in defaults as clean.
+    //
+    // It fires whoever caused the masking. An operator's hand-rolled file, a
+    // vendor that adds a key in a later package, and an older release of this
+    // tool all produce the same drift, and the scan cannot tell them apart.
+    let executor = Arc::new(
+        secure_pam_executor()
+            .with_file("/etc/login.defs", "PASS_MAX_DAYS 90\n")
+            .with_file("/usr/etc/login.defs", VENDOR_LOGIN_DEFS),
+    );
+    let ctx = Context::with_executor(executor.clone());
+
+    let result = PamHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan runs");
+
+    let drift = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "pam-login-defs-masked-keys")
+        .unwrap_or_else(|| {
+            panic!(
+                "a masked vendor key must be reported; got: {:?}",
+                result
+                    .scan_findings
+                    .iter()
+                    .map(|f| f.finding_id.as_str())
+                    .collect::<Vec<_>>()
+            )
+        });
+
+    for key in ["ENCRYPT_METHOD", "UMASK", "PASS_MIN_DAYS", "PASS_WARN_AGE"] {
+        assert!(
+            drift.finding_current_value.contains(key),
+            "the finding must name every masked key; {key} is missing from: {}",
+            drift.finding_current_value
+        );
+    }
+    // PASS_MAX_DAYS is set in /etc, so the vendor's value is overridden rather
+    // than lost. Listing it would turn every layered host into a wall of keys
+    // that are working as intended, and would pass an implementation that
+    // reports the vendor file's contents instead of the difference.
+    assert!(
+        !drift.finding_current_value.contains("PASS_MAX_DAYS"),
+        "a key the admin file sets is overridden, not masked: {}",
+        drift.finding_current_value
+    );
+    assert_eq!(
+        drift.finding_severity,
+        Severity::Medium,
+        "masking a vendor login.defs was measured dropping password hashing to \
+         DES on openSUSE, and the scheduler drops anything below Medium, so at \
+         Low a fleet host with DES passwords would record nothing"
+    );
+    assert!(
+        drift.finding_compliance.is_empty(),
+        "no framework maps this, and a mapping would let it drive a control to \
+         Fail: {:?}",
+        drift.finding_compliance
+    );
+}
+
+#[tokio::test]
+async fn nothing_is_reported_when_the_admin_file_sets_every_vendor_key() {
+    // Opposite direction: this passes against an implementation that never
+    // reports anything, so it is not evidence of the fix. It is here to stop the
+    // finding firing on the mere presence of a vendor file, which would put a
+    // permanent Low on every openSUSE host that has taken a full copy.
+    let executor = Arc::new(
+        secure_pam_executor()
+            .with_file("/etc/login.defs", VENDOR_LOGIN_DEFS)
+            .with_file("/usr/etc/login.defs", VENDOR_LOGIN_DEFS),
+    );
+    let ctx = Context::with_executor(executor.clone());
+
+    let result = PamHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan runs");
+
+    assert!(
+        !result
+            .scan_findings
+            .iter()
+            .any(|f| f.finding_id == "pam-login-defs-masked-keys"),
+        "an admin file that keeps every vendor key masks nothing"
     );
 }

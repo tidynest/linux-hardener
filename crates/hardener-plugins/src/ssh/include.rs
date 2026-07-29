@@ -129,14 +129,30 @@ fn pattern_is_supported(pattern: &str) -> bool {
     !pattern.contains('[') && !pattern.contains(']')
 }
 
+/// Whether a relative include can be resolved for the file containing it.
+///
+/// sshd_config(5) resolves relative includes against sshd's compiled
+/// sysconfdir. That is `/etc/ssh` where the including file is the
+/// administrator's, and something this tool cannot read out of the binary
+/// where the file came from the vendor layer under `/usr/etc`. Every shipped
+/// layout uses absolute includes, so refusing costs nothing, whereas guessing
+/// would silently mis-locate a fragment, which is the false pass this module
+/// exists to prevent.
+fn relative_base(including_path: &str) -> Option<&'static str> {
+    including_path
+        .starts_with("/etc/")
+        .then_some(SSH_CONFIG_DIR)
+}
+
 /// Absolute form of an include pattern, per sshd_config(5).
-fn absolute_pattern(pattern: &str) -> PathBuf {
+///
+/// `None` where the pattern is relative and its base cannot be determined.
+fn absolute_pattern(pattern: &str, including_path: &str) -> Option<PathBuf> {
     let path = Path::new(pattern);
     if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        Path::new(SSH_CONFIG_DIR).join(path)
+        return Some(path.to_path_buf());
     }
+    relative_base(including_path).map(|base| Path::new(base).join(path))
 }
 
 /// The files a pattern names, in the lexical order sshd processes them.
@@ -144,7 +160,11 @@ fn absolute_pattern(pattern: &str) -> PathBuf {
 /// A pattern that names a single existing file needs no directory listing. A
 /// pattern whose directory cannot be listed is an error rather than an empty
 /// result: "no drop-ins" and "could not look" must not be the same answer.
-async fn expand_pattern(ctx: &Context, pattern: &str) -> Result<Vec<PathBuf>> {
+async fn expand_pattern(
+    ctx: &Context,
+    pattern: &str,
+    including_path: &str,
+) -> Result<Vec<PathBuf>> {
     if !pattern_is_supported(pattern) {
         return Err(HardeningError::Plugin(format!(
             "Include pattern {pattern} uses a character class, which this tool cannot expand; \
@@ -152,7 +172,13 @@ async fn expand_pattern(ctx: &Context, pattern: &str) -> Result<Vec<PathBuf>> {
         )));
     }
 
-    let absolute = absolute_pattern(pattern);
+    let Some(absolute) = absolute_pattern(pattern, including_path) else {
+        return Err(HardeningError::Plugin(format!(
+            "The relative Include pattern {pattern} in {including_path} resolves against sshd's \
+             compiled sysconfdir, which this tool cannot read for a file outside /etc; \
+             check it by hand with `sshd -T`"
+        )));
+    };
     let has_wildcard = pattern.contains('*') || pattern.contains('?');
     if !has_wildcard {
         // A literal include of a file that does not exist is not an error to
@@ -260,7 +286,7 @@ fn expand_into<'a>(
             };
             flush(&mut pending, segments);
             for pattern in patterns {
-                for included in expand_pattern(ctx, &pattern).await? {
+                for included in expand_pattern(ctx, &pattern, path).await? {
                     let included_path = included.display().to_string();
                     let included_content =
                         ctx.executor().read_file(&included).await.map_err(|e| {
@@ -350,12 +376,32 @@ mod tests {
     #[test]
     fn a_relative_include_resolves_under_etc_ssh() {
         assert_eq!(
-            absolute_pattern("sshd_config.d/*.conf"),
-            PathBuf::from("/etc/ssh/sshd_config.d/*.conf")
+            absolute_pattern("sshd_config.d/*.conf", "/etc/ssh/sshd_config"),
+            Some(PathBuf::from("/etc/ssh/sshd_config.d/*.conf"))
         );
         assert_eq!(
-            absolute_pattern("/somewhere/else.conf"),
-            PathBuf::from("/somewhere/else.conf")
+            absolute_pattern("/somewhere/else.conf", "/etc/ssh/sshd_config"),
+            Some(PathBuf::from("/somewhere/else.conf"))
+        );
+    }
+
+    #[test]
+    fn a_relative_include_from_the_vendor_layer_is_refused_rather_than_guessed() {
+        // sshd resolves a relative include against its compiled sysconfdir,
+        // which this tool cannot read. Guessing /etc/ssh for a file under
+        // /usr/etc would silently mis-locate the fragment and report a value
+        // that is not in force.
+        assert_eq!(
+            absolute_pattern("sshd_config.d/*.conf", "/usr/etc/ssh/sshd_config"),
+            None
+        );
+        // An absolute pattern needs no base, so it still resolves.
+        assert_eq!(
+            absolute_pattern(
+                "/usr/etc/ssh/sshd_config.d/40-suse.conf",
+                "/usr/etc/ssh/sshd_config"
+            ),
+            Some(PathBuf::from("/usr/etc/ssh/sshd_config.d/40-suse.conf"))
         );
     }
 }

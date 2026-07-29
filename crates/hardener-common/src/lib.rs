@@ -9,3 +9,4 @@ pub mod executor;
 pub mod file_utils;
 pub mod logging;
 pub mod types;
+pub mod vendor_config;

@@ -250,11 +250,38 @@ impl MockExecutor {
 
     /// Marks a path whose read fails with an io PermissionDenied error,
     /// simulating a root-only file seen by an unprivileged scan.
+    ///
+    /// The path is also recorded as present, because that is what a root-only
+    /// file is: there, and refusing to open. No executor produces "denied, and
+    /// also absent": [`crate::executor::SystemExecutor::path_exists`] confirms
+    /// absence only on NotFound and returns an error for a denied probe. A
+    /// caller that consults the probe before falling back to another location
+    /// would otherwise take a branch a real host cannot produce. Same reasoning
+    /// as [`Self::without_file`]: a path half present in one store and not the
+    /// other is a fixture that lies about the host.
+    ///
+    /// Metadata already registered is left alone, so builder order cannot
+    /// change the answer, and an explicit [`Self::with_path_exists`] still
+    /// wins for a test that genuinely wants the impossible state.
     pub fn with_read_permission_denied(self, path: &str) -> Self {
+        let path_buf = PathBuf::from(path);
         self.read_permission_denied
             .lock()
             .expect("read_permission_denied mutex poisoned")
-            .insert(PathBuf::from(path));
+            .insert(path_buf.clone());
+        self.file_metadata
+            .lock()
+            .expect("metadata mutex poisoned")
+            .entry(path_buf)
+            .or_insert(FileMetadata {
+                exists: true,
+                is_file: true,
+                is_dir: false,
+                mode: 0o600,
+                size: 0,
+                uid: 0,
+                gid: 0,
+            });
         self
     }
 
@@ -555,6 +582,65 @@ mod tests {
             .await
             .unwrap_err();
         assert!(crate::error::is_permission_denied(&err));
+    }
+
+    #[tokio::test]
+    async fn a_read_denied_path_still_reports_as_present() {
+        // A root-only file is present and refuses to open. No executor
+        // produces "denied, and also absent": LocalExecutor::path_exists
+        // confirms absence only on NotFound and returns an error for a denied
+        // probe. A mock that reported such a path as absent is gentler than
+        // reality, so a caller that consults the probe before falling back
+        // takes a branch it could never take on a real host.
+        let mock = MockExecutor::new().with_read_permission_denied("/etc/ssh/sshd_config");
+        assert!(
+            mock.path_exists(std::path::Path::new("/etc/ssh/sshd_config"))
+                .await
+                .expect("the probe itself succeeds"),
+            "a file whose read is denied is still there"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_read_denied_path_keeps_metadata_it_was_already_given() {
+        // Denial must not overwrite what a fixture stated deliberately, so
+        // ordering in the builder chain cannot change the answer.
+        let mock = MockExecutor::new()
+            .with_read_permission_denied("/etc/shadow")
+            .with_file_metadata(
+                "/etc/shadow",
+                "root:x:",
+                FileMetadata {
+                    exists: true,
+                    is_file: true,
+                    is_dir: false,
+                    mode: 0o600,
+                    size: 7,
+                    uid: 0,
+                    gid: 42,
+                },
+            );
+        let metadata = mock
+            .file_metadata(std::path::Path::new("/etc/shadow"))
+            .await
+            .expect("metadata reads");
+        assert_eq!(metadata.mode, 0o600, "the stated mode must survive");
+        assert_eq!(metadata.gid, 42, "the stated ownership must survive");
+    }
+
+    #[tokio::test]
+    async fn a_read_denied_path_can_still_be_declared_absent_explicitly() {
+        // The escape hatch stays open: an explicit path_exists override wins,
+        // so a test that genuinely wants the impossible state can say so.
+        let mock = MockExecutor::new()
+            .with_read_permission_denied("/etc/nope")
+            .with_path_exists("/etc/nope", false);
+        assert!(
+            !mock
+                .path_exists(std::path::Path::new("/etc/nope"))
+                .await
+                .expect("the probe itself succeeds")
+        );
     }
 
     #[tokio::test]

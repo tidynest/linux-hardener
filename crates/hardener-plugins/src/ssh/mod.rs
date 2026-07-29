@@ -10,20 +10,28 @@
 //! The plugin reads the sshd_config file, compares against secure baselines,
 //! and can apply hardening configurations with automatic backup support.
 
+mod dropin;
 mod include;
 
-/// The file this plugin reads and edits. Files it Includes are read too, but
-/// only this one is ever written.
-const SSHD_CONFIG_PATH: &str = "/etc/ssh/sshd_config";
+/// Where an administrator's sshd_config lives. Not necessarily where the one
+/// in force lives: openSUSE ships no `/etc/ssh/sshd_config` and keeps the
+/// vendor copy at `/usr/etc/ssh/sshd_config`, so every read goes through
+/// `read_layered` and only the write path names this constant directly.
+const SSHD_ADMIN_CONFIG_PATH: &str = "/etc/ssh/sshd_config";
+
+/// The drop-in directory sshd reads before the main configuration, and the one
+/// openSUSE's own vendor config directs administrators to.
+const SSHD_DROPIN_DIR: &str = "/etc/ssh/sshd_config.d";
 
 use async_trait::async_trait;
 use chrono::Utc;
 use hardener_common::{
-    error::Result,
+    error::{HardeningError, Result},
     file_utils::{
         ConfigFormat, Duplicates, global_scope, parse_config_value, set_config_directive,
     },
     types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
+    vendor_config::{ConfigLayer, LayeredRead, read_layered},
 };
 use hardener_core::{
     ApplyResult, Change, ChangeType, Checkpoint, PluginConfig, ValidationIssue, ValidationReport,
@@ -879,9 +887,144 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
     }
 }
 
+/// The sshd_config actually in force, with the layer that supplied it.
+struct MainConfig {
+    path: String,
+    layer: ConfigLayer,
+    content: String,
+}
+
+impl MainConfig {
+    /// Where an operator should put a directive so sshd obeys it.
+    ///
+    /// Never the vendor file: writing `/etc/ssh/sshd_config` on a host whose
+    /// configuration lives under `/usr/etc` makes sshd stop reading the vendor
+    /// copy, discarding its Include lines and the crypto-policy fragment with
+    /// them. sshd takes the first value it obtains and reads the drop-in
+    /// directory before the main file, so the drop-in is the mechanism that
+    /// works on every distribution and the one openSUSE documents in the
+    /// vendor file itself.
+    fn edit_target(&self) -> String {
+        match self.layer {
+            ConfigLayer::Admin => self.path.clone(),
+            ConfigLayer::Vendor => format!("{SSHD_DROPIN_DIR}/00-hardener.conf"),
+        }
+    }
+}
+
+/// Takes the advisory lock that makes the read-compute-write cycle atomic
+/// against another process editing the same file.
+///
+/// Only ever called for a local executor: `flock` needs a local file
+/// descriptor, so taking it against a remote target locked the controller's
+/// file and protected nothing.
+///
+/// A path that cannot be opened yields no lock rather than an error. This is
+/// the openSUSE failure: the lock used to open `/etc/ssh/sshd_config`
+/// unconditionally and abort the entire apply when it was not there, on a host
+/// whose sshd_config lives under `/usr/etc`. There is nothing to serialise on a
+/// file that does not exist, and refusing to harden the host over it is far
+/// worse than proceeding, so the reason is logged and the apply continues.
+fn lock_config_path(path: &str) -> Option<nix::fcntl::Flock<std::fs::File>> {
+    let file = match std::fs::File::open(path) {
+        Ok(file) => file,
+        Err(e) => {
+            warn!("Proceeding without an advisory lock on {path}: {e}");
+            return None;
+        }
+    };
+    match nix::fcntl::Flock::lock(file, nix::fcntl::FlockArg::LockExclusive) {
+        Ok(lock) => Some(lock),
+        Err((_file, errno)) => {
+            warn!("Proceeding without an advisory lock on {path}: {errno}");
+            None
+        }
+    }
+}
+
+/// Asks the resolver whether the fragment actually won, once it is on disk.
+///
+/// The whole design rests on `00-hardener.conf` sorting before whatever else
+/// the host ships, and that is a claim about filenames this tool does not
+/// control. Checking it costs one re-resolve and turns the single assumption
+/// underneath the feature into something self-reporting: a directive still
+/// answered by another file becomes a failed change naming that file, rather
+/// than a success that quietly changed nothing.
+async fn verify_dropin_precedence(
+    ctx: &Context,
+    main_path: &str,
+    directives: &[dropin::Directive],
+    main_content: &str,
+) -> Vec<Change> {
+    let resolved = match include::resolve(ctx, main_path, main_content).await {
+        Ok(resolved) => resolved,
+        Err(e) => {
+            return vec![Change {
+                change_description: format!(
+                    "Wrote {} but could not confirm it takes precedence",
+                    dropin::DROPIN_PATH
+                ),
+                change_type: ChangeType::ConfigFile,
+                change_success: false,
+                change_error: Some(e.to_string()),
+            }];
+        }
+    };
+
+    directives
+        .iter()
+        .map(|directive| match resolved.effective(directive.keyword) {
+            Some(effective) if effective.source == dropin::DROPIN_PATH => Change {
+                change_description: format!(
+                    "{}: set to '{}' in {}, which sshd reads before {}{}",
+                    directive.keyword,
+                    directive.value,
+                    dropin::DROPIN_PATH,
+                    main_path,
+                    directive.note,
+                ),
+                change_type: ChangeType::ConfigFile,
+                change_success: true,
+                change_error: None,
+            },
+            Some(effective) => Change {
+                change_description: format!(
+                    "{}: written to {} but {} still supplies '{}', and sshd reads it first",
+                    directive.keyword,
+                    dropin::DROPIN_PATH,
+                    effective.source,
+                    effective.value,
+                ),
+                change_type: ChangeType::ConfigFile,
+                change_success: false,
+                change_error: Some(format!("still overridden by {}", effective.source)),
+            },
+            None => Change {
+                change_description: format!(
+                    "{}: written to {} but no file supplies it, so sshd does not read that \
+                     fragment",
+                    directive.keyword,
+                    dropin::DROPIN_PATH,
+                ),
+                change_type: ChangeType::ConfigFile,
+                change_success: false,
+                change_error: Some(format!(
+                    "{} is not included by {main_path}",
+                    dropin::DROPIN_PATH
+                )),
+            },
+        })
+        .collect()
+}
+
 /// Unchecked entries for every sshd_config check when the file itself cannot
 /// be read at the current privilege level. Ids mirror the finding ids.
-fn unchecked_ssh_checks() -> Vec<UncheckedCheck> {
+///
+/// `path` names the file that could not be read, which is not always
+/// `/etc/ssh/sshd_config`: on a host that layers its configuration it may be
+/// the vendor copy under `/usr/etc`, and naming the wrong file sends the
+/// operator to a path that is not the problem.
+fn unchecked_ssh_checks(path: &str) -> Vec<UncheckedCheck> {
     SSH_DIRECTIVES
         .iter()
         .map(|d| {
@@ -900,7 +1043,7 @@ fn unchecked_ssh_checks() -> Vec<UncheckedCheck> {
             unchecked_check_id: format!("ssh-{}", name.to_lowercase()),
             unchecked_title: format!("SSH setting: {}", name),
             unchecked_category: FindingCategory::Network,
-            unchecked_reason: "reading /etc/ssh/sshd_config requires root".to_string(),
+            unchecked_reason: format!("reading {path} requires root"),
             unchecked_compliance: compliance,
         })
         .collect()
@@ -928,20 +1071,36 @@ impl HardeningPlugin for SshHardeningPlugin {
         let mut findings = Vec::new();
         let plugin_id = PluginId::new("ssh-hardening");
 
-        // Read the SSH configuration file using executor
-        let config_content = match ctx.executor().read_file(Path::new(SSHD_CONFIG_PATH)).await {
-            Ok(content) => content,
-            Err(e) => {
+        // Read whichever sshd_config is in force, which is not always the one
+        // under /etc: openSUSE keeps the vendor copy at /usr/etc and the scan
+        // used to report it could not read /etc/ssh/sshd_config and assess
+        // nothing at all.
+        let main = match read_layered(ctx.executor().as_ref(), SSHD_ADMIN_CONFIG_PATH).await {
+            LayeredRead::Found {
+                path,
+                layer,
+                content,
+            } => MainConfig {
+                path,
+                layer,
+                content,
+            },
+            // A root-only sshd_config must not read as "every directive
+            // missing": that would falsely flag a hardened host. Surface the
+            // privilege failure as unchecked entries instead, naming the file
+            // that could not be read rather than assuming it was the /etc one.
+            LayeredRead::Unreadable {
+                path,
+                reason,
+                permission_denied,
+            } => {
                 let duration_us = start_time.elapsed().as_micros() as u64;
-                // A root-only sshd_config must not read as "every directive
-                // missing": that would falsely flag a hardened host. Surface
-                // the privilege failure as unchecked entries instead.
-                if hardener_common::error::is_permission_denied(&e) {
+                if permission_denied {
                     return Ok(ScanResult {
                         scan_plugin_id: plugin_id,
                         scan_success: true,
                         scan_findings: vec![],
-                        scan_unchecked: unchecked_ssh_checks(),
+                        scan_unchecked: unchecked_ssh_checks(&path),
                         scan_duration_us: duration_us,
                         scan_error: None,
                     });
@@ -952,16 +1111,31 @@ impl HardeningPlugin for SshHardeningPlugin {
                     scan_findings: vec![],
                     scan_unchecked: vec![],
                     scan_duration_us: duration_us,
-                    scan_error: Some(format!("Failed to read /etc/ssh/sshd_config: {}", e)),
+                    scan_error: Some(format!("Failed to read {path}: {reason}")),
+                });
+            }
+            LayeredRead::Absent => {
+                let duration_us = start_time.elapsed().as_micros() as u64;
+                return Ok(ScanResult {
+                    scan_plugin_id: plugin_id,
+                    scan_success: false,
+                    scan_findings: vec![],
+                    scan_unchecked: vec![],
+                    scan_duration_us: duration_us,
+                    scan_error: Some(format!(
+                        "Failed to read {SSHD_ADMIN_CONFIG_PATH}: no sshd_config exists there \
+                         or at its /usr/etc counterpart"
+                    )),
                 });
             }
         };
+        let config_content = main.content.clone();
 
         // sshd uses the first value it obtains, and the shipped config
         // Includes /etc/ssh/sshd_config.d/*.conf above everything this tool
         // writes, so a drop-in silently wins. Reading only the main file
         // reported the value we wrote while sshd enforced the drop-in's.
-        let resolved = match include::resolve(ctx, SSHD_CONFIG_PATH, &config_content).await {
+        let resolved = match include::resolve(ctx, &main.path, &config_content).await {
             Ok(resolved) => resolved,
             Err(e) => {
                 // Without the included files the effective configuration is
@@ -972,7 +1146,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                     scan_plugin_id: plugin_id,
                     scan_success: false,
                     scan_findings: vec![],
-                    scan_unchecked: unchecked_ssh_checks(),
+                    scan_unchecked: unchecked_ssh_checks(&main.path),
                     scan_duration_us: duration_us,
                     scan_error: Some(format!(
                         "Cannot resolve sshd_config Include directives: {e}"
@@ -1011,14 +1185,14 @@ impl HardeningPlugin for SshHardeningPlugin {
                         // Naming the file matters when it is not the one this
                         // tool edits: editing sshd_config would not change what
                         // sshd uses, because the drop-in is read first.
-                        Some(e) if e.source != SSHD_CONFIG_PATH => format!(
+                        Some(e) if e.source != main.path => format!(
                             "The SSH directive '{}' is not configured securely. {} \
                              The value in force comes from {}, which sshd reads before \
                              {}, so it overrides anything set there.",
                             directive.ssh_directive_name,
                             directive.ssh_description,
                             e.source,
-                            SSHD_CONFIG_PATH,
+                            main.path,
                         ),
                         _ => format!(
                             "The SSH directive '{}' is not configured securely. {}",
@@ -1031,8 +1205,10 @@ impl HardeningPlugin for SshHardeningPlugin {
                     finding_recommended_value: target.to_string(),
                     finding_remediation_steps: vec![
                         format!(
-                            "Edit /etc/ssh/sshd_config and set: {} {}",
-                            directive.ssh_directive_name, target,
+                            "Edit {} and set: {} {}",
+                            main.edit_target(),
+                            directive.ssh_directive_name,
+                            target,
                         ),
                         "Restart SSH service: systemctl restart sshd".to_string(),
                     ],
@@ -1108,37 +1284,47 @@ impl HardeningPlugin for SshHardeningPlugin {
 
     async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult> {
         let plugin_id = PluginId::new("ssh-hardening");
-        let config_path = SSHD_CONFIG_PATH;
 
-        // Step 1: Acquire an advisory lock on the config so the whole
-        // read-compute-write cycle is atomic against other processes editing
-        // sshd_config, then read the current content. Reading before any side
-        // effect lets the no-op guard below decide whether a backup, a write,
-        // an sshd restart or even a checkpoint is warranted at all.
-        let lock_file = std::fs::File::open(config_path).map_err(|e| {
-            hardener_common::error::HardeningError::Plugin(format!(
-                "Failed to open {} for locking: {}",
-                config_path, e
-            ))
-        })?;
-        let _lock = nix::fcntl::Flock::lock(lock_file, nix::fcntl::FlockArg::LockExclusive)
-            .map_err(|(_file, errno)| {
-                hardener_common::error::HardeningError::Plugin(format!(
-                    "Failed to lock {}: {}",
-                    config_path, errno
-                ))
-            })?;
+        // Step 1: Find the config actually in force, then lock it. openSUSE
+        // ships no /etc/ssh/sshd_config and keeps the vendor one under
+        // /usr/etc, so a lock opening the admin path directly died there
+        // before anything else ran. Locking the resolved path serialises
+        // concurrent runs just as well, because they resolve the same file.
+        let main = match read_layered(ctx.executor().as_ref(), SSHD_ADMIN_CONFIG_PATH).await {
+            LayeredRead::Found {
+                path,
+                layer,
+                content,
+            } => MainConfig {
+                path,
+                layer,
+                content,
+            },
+            LayeredRead::Absent => {
+                return Err(HardeningError::Plugin(format!(
+                    "Failed to read {SSHD_ADMIN_CONFIG_PATH}: no sshd_config exists there or at \
+                     its /usr/etc counterpart"
+                )));
+            }
+            LayeredRead::Unreadable { path, reason, .. } => {
+                return Err(HardeningError::Plugin(format!(
+                    "Failed to read {path}: {reason}"
+                )));
+            }
+        };
+        let config_path = main.path.as_str();
+        // The vendor file is never written. Where it is the one in force, every
+        // managed directive goes to the drop-in instead, because creating
+        // /etc/ssh/sshd_config would make sshd stop reading the vendor config
+        // and discard its Include lines with it.
+        let writing_main = matches!(main.layer, ConfigLayer::Admin);
 
-        let original_content = ctx
-            .executor()
-            .read_file(Path::new(config_path))
-            .await
-            .map_err(|e| {
-                hardener_common::error::HardeningError::Plugin(format!(
-                    "Failed to read {}: {}",
-                    config_path, e
-                ))
-            })?;
+        // flock needs a local file descriptor and means nothing against a
+        // remote target, so it is taken only for a local executor, matching
+        // what the permissions plugin does at permissions/mod.rs:845.
+        let _lock = (!ctx.executor().is_remote()).then(|| lock_config_path(config_path));
+
+        let original_content = main.content.clone();
 
         // Step 2: Compute the hardened config from the current content.
         // Directive changes accumulate in `changes`, but nothing is committed
@@ -1148,6 +1334,10 @@ impl HardeningPlugin for SshHardeningPlugin {
         // its own access.
         let mut config_content = original_content.clone();
         let mut changes = Vec::new();
+        // Directives that cannot take effect by editing the main file, either
+        // because a drop-in outranks it or because it is the vendor's and must
+        // not be touched. These go to the fragment this tool owns.
+        let mut to_dropin: Vec<dropin::Directive> = Vec::new();
         let remote_root_session = is_remote_root_session(ctx.executor().as_ref()).await;
 
         // Which directives a drop-in already answers. sshd reads the Include
@@ -1192,46 +1382,104 @@ impl HardeningPlugin for SshHardeningPlugin {
             let target_value =
                 config.resolve_str(directive.ssh_directive_name, directive.ssh_secure_value);
 
+            // The remote-root lockout guard binds wherever the directive is
+            // written. Routing PermitRootLogin to the drop-in with the strict
+            // 'no' would sever the very session performing the apply exactly as
+            // writing it to the main file would, so the flag is computed before
+            // the destination is chosen rather than after.
+            let guard_active = remote_root_session
+                && directive.ssh_directive_name == PERMIT_ROOT_LOGIN
+                && target_value == "no";
+
+            // What the host obeys today, from whichever file supplies it. The
+            // lockout guard compares against this rather than the main file's
+            // own line, because on a vendor-layer host that line is not the one
+            // in force and on an overridden directive it is inert.
+            let effective_now = resolved
+                .effective(directive.ssh_directive_name)
+                .map(|effective| effective.value);
+            let (dropin_target, dropin_note) = if guard_active {
+                (
+                    REMOTE_ROOT_SAFE_VALUE,
+                    " (downgraded from 'no': applying 'no' over this root SSH session \
+                     would sever access; set 'no' from a console)",
+                )
+            } else {
+                (target_value, "")
+            };
+            // Never loosen: a value already at least as strict as the safe
+            // fallback stays as it is, and a case variant of the target is
+            // already the target as far as sshd is concerned.
+            let already_safe_enough = guard_active
+                && effective_now.as_deref().is_some_and(|current| {
+                    current.eq_ignore_ascii_case(target_value)
+                        || REMOTE_ROOT_SAFE_OR_STRICTER
+                            .iter()
+                            .any(|safe| safe.eq_ignore_ascii_case(current))
+                });
+
             // A drop-in read before this file already answers this directive,
-            // so writing here cannot change what sshd uses. Only a drop-in
-            // holding the wrong value is a problem: one that already holds the
-            // target leaves the host compliant, and reporting that as a
-            // failure would be a false alarm. Where it is wrong, an inert
-            // write must not be reported as success, so the operator is told
-            // which file actually governs it.
-            if let Some(effective) = resolved.effective(directive.ssh_directive_name)
-                && effective.source != config_path
-            {
-                let compliant = effective.value == target_value;
-                changes.push(Change {
-                    change_description: if compliant {
-                        format!(
+            // so writing here cannot change what sshd uses. One that already
+            // holds the target leaves the host compliant and is reported as
+            // skipped; reporting that as a failure would be a false alarm.
+            // Where it holds the wrong value the directive is routed to the
+            // fragment this tool owns, which sorts first and therefore wins.
+            //
+            // A directive our own fragment already answers is not an override
+            // to route around: it is this tool's own previous write, and the
+            // rewrite below refreshes it.
+            let overridden = resolved
+                .effective(directive.ssh_directive_name)
+                .filter(|effective| {
+                    effective.source != config_path && effective.source != dropin::DROPIN_PATH
+                });
+            if let Some(effective) = overridden {
+                if effective.value == target_value || already_safe_enough {
+                    changes.push(Change {
+                        change_description: format!(
                             "{}: already '{}' via {}, which sshd reads before {}",
                             directive.ssh_directive_name,
                             effective.value,
                             effective.source,
                             config_path,
-                        )
-                    } else {
-                        format!(
-                            "{}: not written. {} sets it to '{}' and sshd reads that before {}. \
-                             Edit {} instead, then re-run.",
-                            directive.ssh_directive_name,
-                            effective.source,
-                            effective.value,
-                            config_path,
-                            effective.source,
-                        )
-                    },
-                    change_type: if compliant {
-                        ChangeType::Skipped
-                    } else {
-                        ChangeType::ConfigFile
-                    },
-                    change_success: compliant,
-                    change_error: (!compliant).then(|| {
-                        format!("overridden by {}, which sshd reads first", effective.source)
-                    }),
+                        ),
+                        change_type: ChangeType::Skipped,
+                        change_success: true,
+                        change_error: None,
+                    });
+                    continue;
+                }
+                to_dropin.push(dropin::Directive {
+                    keyword: directive.ssh_directive_name,
+                    value: dropin_target.to_string(),
+                    note: dropin_note,
+                });
+                continue;
+            }
+
+            // The vendor file is never edited, so every managed directive goes
+            // to the drop-in on a host that keeps its sshd_config under
+            // /usr/etc. Being already compliant is not a reason to skip: the
+            // vendor value can change under a package update, and the fragment
+            // is what holds the host to this tool's target afterwards.
+            if !writing_main {
+                if already_safe_enough {
+                    changes.push(Change {
+                        change_description: format!(
+                            "PermitRootLogin: kept at '{}' (already the strongest value safely \
+                             settable over this root SSH session; set 'no' from a console)",
+                            effective_now.unwrap_or_default()
+                        ),
+                        change_type: ChangeType::Skipped,
+                        change_success: true,
+                        change_error: None,
+                    });
+                    continue;
+                }
+                to_dropin.push(dropin::Directive {
+                    keyword: directive.ssh_directive_name,
+                    value: dropin_target.to_string(),
+                    note: dropin_note,
                 });
                 continue;
             }
@@ -1254,10 +1502,6 @@ impl HardeningPlugin for SshHardeningPlugin {
             // session-severing `no`. A current value already at least as
             // strict as the safe fallback is left untouched (never loosen);
             // anything weaker gets the fallback with an honest explanation.
-            let guard_active = remote_root_session
-                && directive.ssh_directive_name == PERMIT_ROOT_LOGIN
-                && target_value == "no";
-
             // sshd matches directive values case-insensitively (strcasecmp),
             // so a case variant like `No` is an effective `no`: leave it
             // completely untouched rather than "normalising" it through the
@@ -1436,7 +1680,24 @@ impl HardeningPlugin for SshHardeningPlugin {
         // backup, the write and - critically - the sshd restart, which is the
         // one operation that can drop the admin's own session. Emit a single
         // Skipped change so the caller still sees the plugin ran.
-        if config_content == original_content {
+        //
+        // The fragment counts as part of the config here. On a vendor-layer
+        // host every directive goes there and the main file is never touched,
+        // so comparing the main file alone would report "already compliant" on
+        // a host nothing had been written to yet.
+        let desired_dropin = (!to_dropin.is_empty()).then(|| dropin::render(&to_dropin));
+        // A drop-in that cannot be read counts as changed, which is why the
+        // failure is folded into None rather than distinguished: the cost of
+        // being wrong is one needless rewrite of a file this tool owns and
+        // stamps as managed, and the direction is toward hardening.
+        let current_dropin = ctx
+            .executor()
+            .read_file(Path::new(dropin::DROPIN_PATH))
+            .await
+            .ok();
+        let dropin_changed = desired_dropin.as_deref() != current_dropin.as_deref();
+
+        if config_content == original_content && !dropin_changed {
             changes.push(Change {
                 change_description:
                     "sshd_config already compliant - not rewritten, service not restarted"
@@ -1460,50 +1721,64 @@ impl HardeningPlugin for SshHardeningPlugin {
         // the committed change list, ahead of the directive changes.
         let mut committed = Vec::new();
 
+        // The fragment joins the checkpoint so a rollback removes it. It is
+        // deliberately absent from UNDELETABLE_ROLLBACK_PATHS: a checkpoint
+        // taken before this apply records it as truthfully absent, so deleting
+        // it is what the operator asked for, and protecting it would leave the
+        // hardening in place after a rollback. Same precedent as the kernel
+        // plugin's sysctl.d drop-in.
         let checkpoint_id = crate::create_checkpoint_for_apply(
             ctx,
             "ssh-hardening-pre-apply",
-            &[Path::new(config_path)],
+            &[Path::new(config_path), Path::new(dropin::DROPIN_PATH)],
         )
         .await?;
         committed.extend(crate::checkpoint_change(&checkpoint_id));
 
-        let backup_path = format!(
-            "{}.backup.{}",
-            config_path,
-            Utc::now().format("%Y%m%d_%H%M%S")
-        );
-        match ctx
-            .executor()
-            .execute_command("cp", &["-p", config_path, &backup_path])
-            .await
-        {
-            Ok(output) if output.success() => {
-                committed.push(Change {
-                    change_description: format!("Created backup: {}", backup_path),
-                    change_type: ChangeType::ConfigFile,
-                    change_success: true,
-                    change_error: None,
-                });
-                info!("SSH config backup created: {}", backup_path);
-            }
-            Ok(output) => {
-                return Ok(ApplyResult {
-                    apply_plugin_id: plugin_id,
-                    apply_success: false,
-                    apply_changes: committed,
-                    apply_checkpoint_id: checkpoint_id,
-                    apply_error: Some(format!("Failed to create backup: {}", output.stderr)),
-                });
-            }
-            Err(e) => {
-                return Ok(ApplyResult {
-                    apply_plugin_id: plugin_id,
-                    apply_success: false,
-                    apply_changes: committed,
-                    apply_checkpoint_id: checkpoint_id,
-                    apply_error: Some(format!("Failed to create backup: {}", e)),
-                });
+        // The legacy backup sits beside the file it copies, so it is taken only
+        // when that file is the administrator's. Copying the vendor config
+        // would drop a hardener-named file into /usr/etc, which is the
+        // distribution's to own, and there is nothing to back up in any case
+        // because the vendor file is never edited.
+        let main_write_needed = writing_main && config_content != original_content;
+        if main_write_needed {
+            let backup_path = format!(
+                "{}.backup.{}",
+                config_path,
+                Utc::now().format("%Y%m%d_%H%M%S")
+            );
+            match ctx
+                .executor()
+                .execute_command("cp", &["-p", config_path, &backup_path])
+                .await
+            {
+                Ok(output) if output.success() => {
+                    committed.push(Change {
+                        change_description: format!("Created backup: {}", backup_path),
+                        change_type: ChangeType::ConfigFile,
+                        change_success: true,
+                        change_error: None,
+                    });
+                    info!("SSH config backup created: {}", backup_path);
+                }
+                Ok(output) => {
+                    return Ok(ApplyResult {
+                        apply_plugin_id: plugin_id,
+                        apply_success: false,
+                        apply_changes: committed,
+                        apply_checkpoint_id: checkpoint_id,
+                        apply_error: Some(format!("Failed to create backup: {}", output.stderr)),
+                    });
+                }
+                Err(e) => {
+                    return Ok(ApplyResult {
+                        apply_plugin_id: plugin_id,
+                        apply_success: false,
+                        apply_changes: committed,
+                        apply_checkpoint_id: checkpoint_id,
+                        apply_error: Some(format!("Failed to create backup: {}", e)),
+                    });
+                }
             }
         }
 
@@ -1513,7 +1788,16 @@ impl HardeningPlugin for SshHardeningPlugin {
         // the live file. If sshd would refuse to start, abort here: no write, no
         // restart; the running daemon and its config are left fully intact, so
         // there is no lockout path.
-        if let Err(e) = validate_sshd_config(ctx.executor().as_ref(), &config_content).await {
+        //
+        // The candidate is the fragment's body ahead of the main file, because
+        // that is the order sshd resolves in and the first value wins. On a
+        // vendor-layer host the main file is unchanged, so validating it alone
+        // would check nothing this apply is about to write.
+        let candidate = match &desired_dropin {
+            Some(body) => format!("{body}\n{config_content}"),
+            None => config_content.clone(),
+        };
+        if let Err(e) = validate_sshd_config(ctx.executor().as_ref(), &candidate).await {
             error!("Candidate sshd_config failed validation, aborting apply: {e}");
             committed.push(Change {
                 change_description: "Candidate sshd_config rejected by `sshd -t`; \
@@ -1532,29 +1816,56 @@ impl HardeningPlugin for SshHardeningPlugin {
             });
         }
 
-        // Step 6: Write modified configuration using executor.
-        match ctx
-            .executor()
-            .write_file(Path::new(config_path), &config_content)
-            .await
-        {
-            Ok(_) => {
-                committed.push(Change {
-                    change_description: format!("Updated {}", config_path),
-                    change_type: ChangeType::ConfigFile,
-                    change_success: true,
-                    change_error: None,
-                });
-                info!("SSH configuration updated successfully");
+        // Step 6: Write modified configuration using executor. The vendor file
+        // is never a write target: creating /etc/ssh/sshd_config to hold these
+        // directives would make sshd stop reading the vendor config entirely,
+        // discarding its Include lines and every setting it makes.
+        if main_write_needed {
+            match ctx
+                .executor()
+                .write_file(Path::new(config_path), &config_content)
+                .await
+            {
+                Ok(_) => {
+                    committed.push(Change {
+                        change_description: format!("Updated {}", config_path),
+                        change_type: ChangeType::ConfigFile,
+                        change_success: true,
+                        change_error: None,
+                    });
+                    info!("SSH configuration updated successfully");
+                }
+                Err(e) => {
+                    committed.push(Change {
+                        change_description: format!("Failed to write {}", config_path),
+                        change_type: ChangeType::ConfigFile,
+                        change_success: false,
+                        change_error: Some(e.to_string()),
+                    });
+                    error!("Failed to write SSH config: {}", e);
+                }
             }
-            Err(e) => {
-                committed.push(Change {
-                    change_description: format!("Failed to write {}", config_path),
-                    change_type: ChangeType::ConfigFile,
-                    change_success: false,
-                    change_error: Some(e.to_string()),
-                });
-                error!("Failed to write SSH config: {}", e);
+        }
+
+        // Step 6b: Write the fragment, then ask the resolver whether it
+        // actually won. That 00- sorts first is a claim about filenames nobody
+        // controls, so it is checked rather than trusted: a directive still
+        // answered by another file is a failed change naming that file, never a
+        // success.
+        if dropin_changed {
+            match dropin::write_dropin(ctx, &to_dropin).await {
+                Ok(()) => committed.extend(
+                    verify_dropin_precedence(ctx, config_path, &to_dropin, &config_content).await,
+                ),
+                Err(e) => {
+                    committed.push(Change {
+                        change_description: format!("Failed to write {}", dropin::DROPIN_PATH),
+                        change_type: ChangeType::ConfigFile,
+                        change_success: false,
+                        change_error: Some(e.to_string()),
+                    });
+                    error!("Failed to write the sshd drop-in: {e}");
+                }
             }
         }
 
@@ -1619,7 +1930,17 @@ impl HardeningPlugin for SshHardeningPlugin {
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {
         let mut issues = Vec::new();
         let plugin_id = PluginId::new("ssh-hardening");
-        let config_path = Path::new(SSHD_CONFIG_PATH);
+        // Validate whichever sshd_config is in force. Where neither layer has
+        // one, the admin path is the right file to name: it is where an
+        // operator would look, and where a working host would keep it.
+        let main = read_layered(ctx.executor().as_ref(), SSHD_ADMIN_CONFIG_PATH).await;
+        let resolved_path = match &main {
+            LayeredRead::Found { path, .. } => path.clone(),
+            LayeredRead::Absent | LayeredRead::Unreadable { .. } => {
+                SSHD_ADMIN_CONFIG_PATH.to_string()
+            }
+        };
+        let config_path = Path::new(&resolved_path);
 
         // Check if SSH config file exists and is readable using executor.
         match ctx.executor().file_metadata(config_path).await {
@@ -1656,8 +1977,10 @@ impl HardeningPlugin for SshHardeningPlugin {
         // deviation is deliberate and documented.
         let mut exceptions = Vec::new();
 
-        match ctx.executor().read_file(config_path).await {
-            Ok(content) => {
+        // The content already came back from the layered read above; reading it
+        // a second time would be a second round trip against a remote host.
+        match &main {
+            LayeredRead::Found { content, .. } => {
                 // Check each directive to see if it needs updating.
                 for directive in SSH_DIRECTIVES {
                     // Resolve the target the way apply and scan do: a config
@@ -1667,7 +1990,7 @@ impl HardeningPlugin for SshHardeningPlugin {
 
                     // SSHD config is space-separated and case-insensitive.
                     let current_value = parse_config_value(
-                        global_scope(&content),
+                        global_scope(content),
                         directive.ssh_directive_name,
                         ConfigFormat::SpaceSeparated,
                         false, // case-insensitive
@@ -1711,14 +2034,21 @@ impl HardeningPlugin for SshHardeningPlugin {
                     }
                 }
             }
-            Err(e) => {
+            LayeredRead::Absent => {
                 issues.push(ValidationIssue {
                     validation_issue_severity: Severity::Critical,
                     validation_issue_message: format!(
-                        "Cannot read {}: {}",
-                        config_path.display(),
-                        e
+                        "Cannot read {}: no sshd_config exists there or at its /usr/etc \
+                         counterpart",
+                        config_path.display()
                     ),
+                    validation_issue_config_key: None,
+                });
+            }
+            LayeredRead::Unreadable { path, reason, .. } => {
+                issues.push(ValidationIssue {
+                    validation_issue_severity: Severity::Critical,
+                    validation_issue_message: format!("Cannot read {path}: {reason}"),
                     validation_issue_config_key: None,
                 });
             }

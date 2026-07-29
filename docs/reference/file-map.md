@@ -1,6 +1,6 @@
 # Linux System Hardener - File Map
 
-**Last Updated:** 2026-07-27
+**Last Updated:** 2026-07-28
 
 This document lists all source files with their purpose and key exports.
 
@@ -120,6 +120,7 @@ pub trait HardeningPlugin: Send + Sync {
 | `src/binary_utils.rs` | Safe binary path resolution (CWE-426 prevention) | `resolve_binary()`, `TRUSTED_PATH` |
 | `src/executor/mod.rs` | Executor abstraction (trait + types) | `SystemExecutor`, `CommandOutput`, `FileMetadata` |
 | `src/executor/mock.rs` | Virtual filesystem for unit testing | `MockExecutor` |
+| `src/vendor_config.rs` | Resolves configuration a distribution layers across `/etc` and `/usr/etc`. `/usr/etc` is consulted only on absence positively confirmed at `/etc`, because an `/etc` file that exists but cannot be read is still the file the system obeys, and answering with the vendor copy would report a configuration that is not in force | `ConfigLayer`, `LayeredRead`, `read_layered()`, `vendor_path_for()` |
 
 **Note**: Core types (Severity, FindingCategory, etc.) are now defined in `hardener-types` and re-exported here for backwards compatibility. The executor abstraction (`SystemExecutor`, `CommandOutput`, `FileMetadata`, `MockExecutor`) relocated here from `hardener-core` and is re-exported from that crate for source compatibility.
 
@@ -138,6 +139,7 @@ pub trait HardeningPlugin: Send + Sync {
 | Plugin File | Category | Key Checks |
 |-------------|----------|------------|
 | `src/ssh/mod.rs` | Network | PermitRootLogin, PasswordAuthentication, MaxAuthTries, X11Forwarding, Protocol, ClientAliveInterval |
+| `src/ssh/dropin.rs` | Network | Writes SSH hardening to `/etc/ssh/sshd_config.d/00-hardener.conf`, which sorts before the fragments distributions ship, so sshd takes this file's values first. Precedence is verified after writing by re-resolving, never assumed from the filename, and an empty directive set removes the file rather than leaving an empty one | `DROPIN_PATH`, `Directive`, `render()`, `write_dropin()` |
 | `src/ssh/include.rs` | Network | Resolves `Include` directives in sshd's own order, so scan reports the value sshd will actually use and names the file supplying it. sshd takes the **first** value it obtains and distributions put the Include above everything this tool writes, so a drop-in silently won while the tool reported its own write |
 | `src/kernel/mod.rs` | Kernel | ASLR, kptr_restrict, dmesg_restrict, ptrace_scope, suid_dumpable, rp_filter, tcp_syncookies |
 | `src/firewall/mod.rs` | Network | Firewall enabled, baseline rules |
@@ -145,6 +147,7 @@ pub trait HardeningPlugin: Send + Sync {
 | `src/firewall/firewalld.rs` | Network | firewalld backend |
 | `src/firewall/ufw.rs` | Network | UFW backend |
 | `src/pam/mod.rs` | Auth | Password complexity, aging, lockout |
+| `src/pam/login_defs.rs` | Auth | Carries a `/usr/etc` configuration file into `/etc` before the managed directives are edited into it, with the vendor file's own permissions rather than the temporary file's, and reports the keys an `/etc` file masks | `mode_for_copy_of()`, `masked_keys()`, `masked_keys_finding()` |
 | `src/services/mod.rs` | Services | Unnecessary services (xinetd, cups, avahi, etc.) |
 | `src/permissions/mod.rs` | FileSystem | Critical paths, SUID/SGID, world-writable |
 | `src/audit/mod.rs` | Audit | auditd rules for time, users, permissions |

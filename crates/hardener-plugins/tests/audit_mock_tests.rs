@@ -1246,7 +1246,11 @@ async fn test_audit_apply_rewrites_when_rules_file_read_fails() {
             },
         )
         .with_command("mkdir", &["-p", "/etc/audit/rules.d"], ok.clone())
-        .with_command("augenrules", &["--load"], ok)
+        .with_command("augenrules", &["--load"], ok.clone())
+        // A file that is present gets backed up before it is rewritten, and
+        // the destination carries a timestamp, so the program is registered
+        // rather than one exact argument list.
+        .with_command_program("cp", ok)
         // The rules file exists but cannot be read (root-only, denied).
         .with_read_permission_denied("/etc/audit/rules.d/hardening.rules");
 

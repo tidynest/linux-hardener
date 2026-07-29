@@ -5,6 +5,8 @@
 //! - Account lockout policies (failed login attempts)
 //! - Password ageing policies (expiry, reuse prevention)
 
+mod login_defs;
+
 use async_trait::async_trait;
 use hardener_common::file_utils::{
     ConfigFormat, Duplicates, parse_config_value, set_config_directive,
@@ -12,6 +14,7 @@ use hardener_common::file_utils::{
 use hardener_common::{
     error::{HardeningError, Result},
     types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
+    vendor_config::{ConfigLayer, LayeredRead, read_layered, vendor_path_for},
 };
 use hardener_core::{
     Change, ChangeType, Checkpoint, Context, PluginConfig,
@@ -561,10 +564,42 @@ impl HardeningPlugin for PamHardeningPlugin {
         // Read configuration files.
         let pwquality = read_conf_classified(ctx, "/etc/security/pwquality.conf").await;
 
-        let login_defs_content: String = read_login_defs(ctx).await.unwrap_or_else(|e| {
-            warn!("Failed to read login.defs: {}", e);
-            String::new()
-        });
+        // Classified, and layered, like every other file this plugin reads. It
+        // used to go through a second reader that folded any failure into an
+        // empty string, so a root-only /etc/login.defs reported every directive
+        // it sets as unset and a hardened host collected findings for settings
+        // it already had.
+        let login_defs_read = read_conf_classified(ctx, "/etc/login.defs").await;
+
+        // Drift between the layers. Only an admin file in force can mask
+        // anything: if the vendor file is the one being read there is no
+        // override, and if there is no vendor file there is nothing to lose.
+        // Reported whoever caused it, so it also catches an operator's
+        // hand-rolled file and a vendor that adds a key in a later package.
+        if let ConfRead::Content(admin, ConfigLayer::Admin) = &login_defs_read
+            && let Some(vendor_path) = vendor_path_for("/etc/login.defs")
+        {
+            // The layer this read reports is meaningless: read_conf_classified
+            // attributes a layer by which probe answered, and this path names
+            // the vendor file directly. Its three outcomes are what is wanted.
+            match read_conf_classified(ctx, &vendor_path).await {
+                ConfRead::Content(vendor, _) => {
+                    let masked = login_defs::masked_keys(admin, &vendor);
+                    if !masked.is_empty() {
+                        findings.push(login_defs::masked_keys_finding(&vendor_path, &masked));
+                    }
+                }
+                // No vendor file, so the admin file masks nothing.
+                ConfRead::Absent => {}
+                // Whether anything is masked cannot be determined. Deliberately
+                // not an unchecked entry: those carry a plugin's declared
+                // coverage into ManualReview, which would let a housekeeping
+                // observation move compliance results.
+                ConfRead::Unreadable { path, reason, .. } => {
+                    warn!("Could not check {} for masked keys: {}", path, reason);
+                }
+            }
+        }
 
         // Check each PAM directive.
         for directive in PAM_DIRECTIVES {
@@ -577,7 +612,7 @@ impl HardeningPlugin for PamHardeningPlugin {
             }
 
             let current_value =
-                match observed_pam_value(ctx, directive, &pwquality, &login_defs_content).await {
+                match observed_pam_value(ctx, directive, &pwquality, &login_defs_read).await {
                     PamObserved::Value(v) => Some(v),
                     PamObserved::NotSet => None,
                     PamObserved::Unreadable {
@@ -694,7 +729,7 @@ impl HardeningPlugin for PamHardeningPlugin {
         // and only for a file that will actually be rewritten, so a compliant
         // host accumulates no backup churn in /etc.
         let pwquality_read = read_conf_classified(ctx, "/etc/security/pwquality.conf").await;
-        let pwquality_writable = conf_is_writable(
+        let pwquality_write = conf_is_writable(
             ctx,
             "/etc/security/pwquality.conf",
             &pwquality_read,
@@ -703,13 +738,13 @@ impl HardeningPlugin for PamHardeningPlugin {
         )
         .await;
         let mut pwquality_content = match &pwquality_read {
-            ConfRead::Content(content) => content.clone(),
+            ConfRead::Content(content, _) => content.clone(),
             _ => String::new(),
         };
         let mut pwquality_changed = false;
 
         let login_defs_read = read_conf_classified(ctx, "/etc/login.defs").await;
-        let login_defs_writable = conf_is_writable(
+        let login_defs_write = conf_is_writable(
             ctx,
             "/etc/login.defs",
             &login_defs_read,
@@ -718,7 +753,7 @@ impl HardeningPlugin for PamHardeningPlugin {
         )
         .await;
         let mut login_defs_content = match &login_defs_read {
-            ConfRead::Content(content) => content.clone(),
+            ConfRead::Content(content, _) => content.clone(),
             _ => String::new(),
         };
         let mut login_defs_changed = false;
@@ -734,7 +769,7 @@ impl HardeningPlugin for PamHardeningPlugin {
         // one's, rather than relying on today's `PAM_DIRECTIVES` entries
         // pointing at distinct files.
         let pwquality_observed = pwquality_read;
-        let login_defs_observed = login_defs_content.clone();
+        let login_defs_observed = login_defs_read;
         let mut observed_values = Vec::with_capacity(PAM_DIRECTIVES.len());
         for directive in PAM_DIRECTIVES {
             observed_values.push(
@@ -789,8 +824,8 @@ impl HardeningPlugin for PamHardeningPlugin {
             // and refuses per directive below, which is the same rule applied
             // at its own read site.
             let file_writable = match directive.pam_config_file {
-                PamConfigFile::PwQuality => pwquality_writable,
-                PamConfigFile::LoginDefs => login_defs_writable,
+                PamConfigFile::PwQuality => pwquality_write.allowed,
+                PamConfigFile::LoginDefs => login_defs_write.allowed,
                 _ => true,
             };
             if !file_writable {
@@ -888,14 +923,16 @@ impl HardeningPlugin for PamHardeningPlugin {
                     }
 
                     let read = read_conf_classified(ctx, path).await;
-                    if !conf_is_writable(ctx, path, &read, &mut changes, &mut all_success).await {
+                    let write =
+                        conf_is_writable(ctx, path, &read, &mut changes, &mut all_success).await;
+                    if !write.allowed {
                         continue;
                     }
                     // Reachable only for a confirmed absence with no vendor
                     // file behind it, which is the case where creating the
                     // file is correct.
                     let current = match read {
-                        ConfRead::Content(content) => content,
+                        ConfRead::Content(content, _) => content,
                         _ => String::new(),
                     };
 
@@ -909,7 +946,9 @@ impl HardeningPlugin for PamHardeningPlugin {
                         Duplicates::Remove,
                     );
 
-                    if backup_and_write(ctx, path, path, &updated, &mut changes).await {
+                    if backup_and_write(ctx, path, path, &updated, write.create_mode, &mut changes)
+                        .await
+                    {
                         changes.push(Change {
                             change_type: ChangeType::ConfigFile,
                             change_description: format!(
@@ -936,12 +975,13 @@ impl HardeningPlugin for PamHardeningPlugin {
         // runs on contents that were never read, and a second, local check
         // costs nothing.
         if pwquality_changed
-            && pwquality_writable
+            && pwquality_write.allowed
             && !write_changed_conf(
                 ctx,
                 "/etc/security/pwquality.conf",
                 "pwquality.conf",
                 &pwquality_content,
+                pwquality_write.create_mode,
                 &mut changes,
             )
             .await
@@ -950,12 +990,13 @@ impl HardeningPlugin for PamHardeningPlugin {
         }
 
         if login_defs_changed
-            && login_defs_writable
+            && login_defs_write.allowed
             && !write_changed_conf(
                 ctx,
                 "/etc/login.defs",
                 "login.defs",
                 &login_defs_content,
+                login_defs_write.create_mode,
                 &mut changes,
             )
             .await
@@ -1071,19 +1112,6 @@ impl HardeningPlugin for PamHardeningPlugin {
         let mut exceptions: Vec<String> = Vec::new();
         let mut compliant_count = 0usize;
 
-        // Plain content for the shared helper's login_defs argument: it carries
-        // no permission distinction, so an unreadable /etc/login.defs renders
-        // its directives as "not set" here. That matches scan's lenient
-        // (always-content) read, and apply, which classifies its read but still
-        // seeds an empty buffer for a file it will then refuse to rewrite. The
-        // classified `login_defs` above is still used, unchanged, by the
-        // SecurityConf/PwQuality estimate below.
-        let login_defs_str = match &login_defs {
-            ConfRead::Content(c) => c.as_str(),
-            ConfRead::Absent => "",
-            ConfRead::Unreadable { .. } => "",
-        };
-
         for d in PAM_DIRECTIVES {
             if d.pam_config_file == PamConfigFile::PamAuth {
                 continue;
@@ -1093,7 +1121,7 @@ impl HardeningPlugin for PamHardeningPlugin {
             // actually has, matching apply's rendering of an absent or
             // unreadable directive as "not set" so neither trusts an
             // exception on faith.
-            let observed = observed_pam_value(ctx, d, &pwquality, login_defs_str).await;
+            let observed = observed_pam_value(ctx, d, &pwquality, &login_defs).await;
             if let Some(exception) =
                 config.matching_exception(d.pam_directive_name, observed.value_or_not_set())
             {
@@ -1119,7 +1147,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                     // Unreadable file (existing but blocked by privilege) must
                     // avoid that claim, since it is not a fact this scan can see.
                     let content = match read {
-                        ConfRead::Content(c) => c.as_str(),
+                        ConfRead::Content(c, _) => c.as_str(),
                         ConfRead::Absent => "",
                         ConfRead::Unreadable {
                             permission_denied, ..
@@ -1468,7 +1496,7 @@ async fn read_pamd_inline(ctx: &Context, arg: &str) -> Option<String> {
         // A scan writes nothing, so Absent and Unreadable both simply mean
         // "no inline override here"; only Content is worth scanning.
         let content = match read_conf_classified(ctx, file).await {
-            ConfRead::Content(c) => c,
+            ConfRead::Content(c, _) => c,
             ConfRead::Absent | ConfRead::Unreadable { .. } => continue,
         };
         for line in content.lines() {
@@ -1494,101 +1522,115 @@ async fn read_pamd_inline(ctx: &Context, arg: &str) -> Option<String> {
 /// whose contents could not be read tells us nothing, and merging directives
 /// into the empty string would replace the host's file with ours.
 enum ConfRead {
-    Content(String),
+    /// A file was read, and which layer supplied it. The layer is not
+    /// decoration: content from `/usr/etc` is the distribution's, so a write
+    /// path that treated it as an ordinary `/etc` file would create an `/etc`
+    /// copy and mask the vendor file wholesale, which is the defect this
+    /// module's guard exists to refuse.
+    Content(String, ConfigLayer),
+    /// Absence confirmed at **both** layers, so a directive really is unset.
     Absent,
-    /// Present (or of indeterminate existence) but unreadable.
+    /// Present (or of indeterminate existence) but unreadable, at whichever
+    /// layer failed. `path` names it, because "your /etc file cannot be read"
+    /// and "whether a vendor file exists could not be checked" call for
+    /// different advice and the caller cannot tell them apart otherwise.
     /// `permission_denied` separates a privilege failure, which sudo fixes,
     /// from an I/O or encoding failure, which it does not.
     Unreadable {
+        path: String,
         reason: String,
         permission_denied: bool,
     },
 }
 
-/// Reads a config file, distinguishing absence from a failure to read.
+/// Reads whichever copy of a config file the host actually obeys.
+///
+/// `/etc` first, `/usr/etc` only on absence confirmed there, so an `/etc` file
+/// that exists but cannot be read never answers with the vendor copy's values.
 /// Fails closed: any read failure of a path that is not confirmed absent is
 /// `Unreadable`, including a failure to determine whether it exists at all.
+///
+/// `Absent` therefore means absent at **both** layers. Every consumer was
+/// re-read against that narrowed meaning when this stopped being an `/etc`-only
+/// read.
 async fn read_conf_classified(ctx: &Context, path: &str) -> ConfRead {
-    match ctx.executor().read_file(Path::new(path)).await {
-        Ok(content) => ConfRead::Content(content),
-        Err(e) => match ctx.executor().path_exists(Path::new(path)).await {
-            Ok(false) => ConfRead::Absent,
-            _ => {
-                warn!("Failed to read {}: {}", path, e);
-                // Only a genuine privilege failure is worth telling the
-                // operator to re-run with sudo. An I/O error or non-UTF-8
-                // content will not improve with root, and every failure used
-                // to render as "requires root", sending them down a dead end.
-                // `ssh/mod.rs` classifies with the same helper.
-                ConfRead::Unreadable {
-                    reason: e.to_string(),
-                    permission_denied: hardener_common::error::is_permission_denied(&e),
-                }
+    match read_layered(ctx.executor().as_ref(), path).await {
+        LayeredRead::Found { content, layer, .. } => ConfRead::Content(content, layer),
+        LayeredRead::Absent => ConfRead::Absent,
+        LayeredRead::Unreadable {
+            path,
+            reason,
+            permission_denied,
+        } => {
+            warn!("Failed to read {}: {}", path, reason);
+            let path = path.clone();
+            // Only a genuine privilege failure is worth telling the operator to
+            // re-run with sudo. An I/O error or non-UTF-8 content will not
+            // improve with root, and every failure used to render as "requires
+            // root", sending them down a dead end.
+            ConfRead::Unreadable {
+                path,
+                reason,
+                permission_denied,
             }
-        },
+        }
     }
 }
 
-/// Whether creating a file under `/etc` would mask a vendor file under
-/// `/usr/etc`.
+/// Whether apply may write `path`, and how, recording the refusal when it may
+/// not.
 ///
-/// openSUSE (Leap 15.6+, Tumbleweed, MicroOS) ships vendor configuration in
-/// `/usr/etc` and reserves `/etc` for administrator overrides. That override is
-/// whole-file, not per directive: the first file found wins entirely. So a
-/// three-directive `/etc/login.defs` silences the other 35 keys
-/// `/usr/etc/login.defs` sets, among them `ENCRYPT_METHOD`, which chooses the
-/// password hashing algorithm for every password set afterwards, and `UMASK`,
-/// `FAIL_DELAY`, `LOGIN_RETRIES` and `LOGIN_TIMEOUT`, which are login-hardening
-/// settings this plugin exists to strengthen.
-enum VendorMask {
-    /// No vendor file, so creating the `/etc` file masks nothing.
-    None,
-    /// A vendor file exists and would be masked.
-    Masks(String),
-    /// Existence could not be determined. Deliberately distinct from `Masks`:
-    /// the operator is told something different, and folding the two together
-    /// would be the same conflation this guard exists to remove.
-    Indeterminate { vendor: String, reason: String },
-}
-
-/// Classifies an `/etc` path against its `/usr/etc` counterpart.
-///
-/// Fails closed. A probe that errors yields `Indeterminate` and callers refuse
-/// on it: absence must be positively confirmed before authorising a write that
-/// would discard the host's settings.
-async fn vendor_mask(ctx: &Context, path: &str) -> VendorMask {
-    let Some(rest) = path.strip_prefix("/etc/") else {
-        return VendorMask::None;
-    };
-    let vendor = format!("/usr/etc/{rest}");
-    match ctx.executor().path_exists(Path::new(&vendor)).await {
-        Ok(false) => VendorMask::None,
-        Ok(true) => VendorMask::Masks(vendor),
-        Err(e) => VendorMask::Indeterminate {
-            vendor,
-            reason: e.to_string(),
-        },
-    }
-}
-
-/// Whether apply may write `path`, recording the refusal when it may not.
-///
-/// Two refusals in one place, called by every site that could write one of this
+/// One decision in one place, called by every site that could write one of this
 /// plugin's configuration files. A file whose contents could not be read must
 /// not be rewritten, because merging directives into an empty buffer replaces
-/// the host's settings with ours. A file that is absent must not be created
-/// when its existence would mask a vendor file. Both mark the run unsuccessful:
-/// a run that hardened nothing has not earned a clean result.
+/// the host's settings with ours; that marks the run unsuccessful, since a run
+/// that hardened nothing has not earned a clean result. A file whose content
+/// came from the vendor layer is written, carrying that content with it, so the
+/// settings this plugin does not manage survive the edit.
 async fn conf_is_writable(
     ctx: &Context,
     path: &str,
     read: &ConfRead,
     changes: &mut Vec<Change>,
     all_success: &mut bool,
-) -> bool {
+) -> ConfWrite {
     match read {
-        ConfRead::Content(_) => true,
-        ConfRead::Unreadable { reason, .. } => {
+        ConfRead::Content(_, ConfigLayer::Admin) => ConfWrite::allowed(),
+        // The content came from `/usr/etc`, so no file exists under `/etc` yet
+        // and the buffer the caller holds is the vendor's. Writing that buffer
+        // creates the `/etc` copy with every vendor setting intact, and the
+        // managed directives are edited into it, so the whole-file override
+        // masks nothing. 1.5.1 refused this write instead, which kept the
+        // vendor settings by leaving the host unhardened.
+        ConfRead::Content(_, ConfigLayer::Vendor) => {
+            let vendor = vendor_path_for(path).unwrap_or_else(|| path.to_string());
+            info!("Creating {} from {} before editing it", path, vendor);
+            changes.push(Change {
+                change_type: ChangeType::ConfigFile,
+                change_description: format!(
+                    "Creating {path} from {vendor} so the settings it makes survive: this \
+                     host keeps vendor configuration in {vendor}, and {path} overrides it as \
+                     a whole file rather than per directive"
+                ),
+                change_success: true,
+                change_error: None,
+            });
+            ConfWrite {
+                allowed: true,
+                create_mode: Some(login_defs::mode_for_copy_of(ctx, &vendor).await),
+            }
+        }
+        ConfRead::Absent => ConfWrite::allowed(),
+        // Which layer failed decides the advice. An unreadable `/etc` file is
+        // the one in force and rewriting it would discard settings this run
+        // cannot see. A vendor layer whose existence could not be determined is
+        // a different problem: the `/etc` file is absent, and creating it would
+        // silence a vendor file that may well be there.
+        ConfRead::Unreadable {
+            path: unreadable,
+            reason,
+            ..
+        } if unreadable == path => {
             warn!("Refusing to rewrite {}: {}", path, reason);
             *all_success = false;
             changes.push(Change {
@@ -1600,45 +1642,63 @@ async fn conf_is_writable(
                 change_success: false,
                 change_error: Some(reason.clone()),
             });
-            false
+            ConfWrite::refused()
         }
-        ConfRead::Absent => match vendor_mask(ctx, path).await {
-            VendorMask::None => true,
-            VendorMask::Masks(vendor) => {
-                warn!("Refusing to create {}: it would mask {}", path, vendor);
-                *all_success = false;
-                changes.push(Change {
-                    change_type: ChangeType::ConfigFile,
-                    change_description: format!(
-                        "Refused to create {path}: this host keeps vendor configuration in \
-                         {vendor}, and {path} overrides it as a whole file rather than per \
-                         directive, so creating a short one would silence every setting \
-                         {vendor} makes. Copy {vendor} to {path} first, then re-run."
-                    ),
-                    change_success: false,
-                    change_error: Some(format!("would mask {vendor}")),
-                });
-                false
-            }
-            VendorMask::Indeterminate { vendor, reason } => {
-                warn!(
-                    "Refusing to create {}: whether {} exists could not be checked",
-                    path, vendor
-                );
-                *all_success = false;
-                changes.push(Change {
-                    change_type: ChangeType::ConfigFile,
-                    change_description: format!(
-                        "Refused to create {path}: whether this host keeps vendor configuration \
-                         in {vendor} could not be checked, and creating {path} would silence it \
-                         if it is there"
-                    ),
-                    change_success: false,
-                    change_error: Some(reason.clone()),
-                });
-                false
-            }
-        },
+        ConfRead::Unreadable {
+            path: vendor,
+            reason,
+            ..
+        } => {
+            warn!(
+                "Refusing to create {}: whether {} exists could not be checked",
+                path, vendor
+            );
+            *all_success = false;
+            changes.push(Change {
+                change_type: ChangeType::ConfigFile,
+                change_description: format!(
+                    "Refused to create {path}: whether this host keeps vendor configuration \
+                     in {vendor} could not be checked, and creating {path} would silence it \
+                     if it is there"
+                ),
+                change_success: false,
+                change_error: Some(reason.clone()),
+            });
+            ConfWrite::refused()
+        }
+    }
+}
+
+/// Whether apply may write a file, and the mode to give it if the write creates
+/// it.
+///
+/// `create_mode` exists because
+/// [`hardener_common::file_utils::update_file_atomically`] restores an
+/// *original* mode, and a file being created has none, so it otherwise keeps
+/// whatever mode the temporary file happened to have. A copy of a vendor file
+/// that lands 0600 against the vendor's 0644 is unreadable to the ordinary-user
+/// tools that consume it, which is a configuration that appears to apply and
+/// does not.
+struct ConfWrite {
+    allowed: bool,
+    create_mode: Option<u32>,
+}
+
+impl ConfWrite {
+    /// Write it as it stands, keeping whatever mode it already has.
+    fn allowed() -> Self {
+        Self {
+            allowed: true,
+            create_mode: None,
+        }
+    }
+
+    /// Do not write it. The reason is already recorded as a failed change.
+    fn refused() -> Self {
+        Self {
+            allowed: false,
+            create_mode: None,
+        }
     }
 }
 
@@ -1666,7 +1726,7 @@ async fn read_effective_threshold(ctx: &Context, arg: &str, conf: &str) -> Thres
         } => ThresholdRead::Unreadable { permission_denied },
         // A missing file has no directives, same as today: empty content.
         ConfRead::Absent => ThresholdRead::NotSet,
-        ConfRead::Content(content) => {
+        ConfRead::Content(content, _) => {
             match parse_config_value(&content, arg, ConfigFormat::KeyValue, true) {
                 Some(v) => ThresholdRead::Value(v),
                 None => ThresholdRead::NotSet,
@@ -1713,19 +1773,24 @@ impl PamObserved {
 }
 
 /// Computes [`PamObserved`] for `directive`. `pwquality` and `login_defs` are
-/// the file contents the caller has already read, so this performs I/O only
-/// for `SecurityConf` directives. `login_defs` carries no permission
-/// distinction, matching `scan`'s existing lenient (always-content) read of
-/// `/etc/login.defs`.
+/// the classified reads the caller has already performed, so this does I/O only
+/// for `SecurityConf` directives.
+///
+/// `login_defs` is classified rather than plain content because the two states
+/// it used to conflate call for opposite answers: a file that is genuinely
+/// absent leaves its directives unset, while one that exists and could not be
+/// read tells this run nothing at all. Rendering the second as "not set"
+/// reported findings against hosts that were already hardened, and it did so
+/// wherever an unprivileged scan met a root-only `/etc/login.defs`.
 async fn observed_pam_value(
     ctx: &Context,
     directive: &PamDirective,
     pwquality: &ConfRead,
-    login_defs: &str,
+    login_defs: &ConfRead,
 ) -> PamObserved {
     match &directive.pam_config_file {
         PamConfigFile::PwQuality => match pwquality {
-            ConfRead::Content(content) => match parse_config_value(
+            ConfRead::Content(content, _) => match parse_config_value(
                 content,
                 directive.pam_directive_name,
                 ConfigFormat::Auto,
@@ -1743,14 +1808,23 @@ async fn observed_pam_value(
                 permission_denied: *permission_denied,
             },
         },
-        PamConfigFile::LoginDefs => match parse_config_value(
-            login_defs,
-            directive.pam_directive_name,
-            ConfigFormat::Auto,
-            true,
-        ) {
-            Some(v) => PamObserved::Value(v),
-            None => PamObserved::NotSet,
+        PamConfigFile::LoginDefs => match login_defs {
+            ConfRead::Content(content, _) => match parse_config_value(
+                content,
+                directive.pam_directive_name,
+                ConfigFormat::Auto,
+                true,
+            ) {
+                Some(v) => PamObserved::Value(v),
+                None => PamObserved::NotSet,
+            },
+            ConfRead::Absent => PamObserved::NotSet,
+            ConfRead::Unreadable {
+                permission_denied, ..
+            } => PamObserved::Unreadable {
+                path: "/etc/login.defs",
+                permission_denied: *permission_denied,
+            },
         },
         PamConfigFile::PamAuth => PamObserved::NotSet,
         PamConfigFile::SecurityConf(path) => {
@@ -1831,13 +1905,15 @@ async fn backup_and_write(
     path: &str,
     file_label: &str,
     content: &str,
+    create_mode: Option<u32>,
     changes: &mut Vec<Change>,
 ) -> bool {
     // A file that is not there has nothing to back up, and cp on a missing
     // source fails. Absence is an ordinary case: creating the file is correct.
     // Fail closed, so only a CONFIRMED absence skips the backup. An existence
     // probe that errors, or that says the file is present, still requires one.
-    let needs_backup = !matches!(ctx.executor().path_exists(Path::new(path)).await, Ok(false));
+    let creating = matches!(ctx.executor().path_exists(Path::new(path)).await, Ok(false));
+    let needs_backup = !creating;
 
     if needs_backup {
         match create_config_backup(ctx, path).await {
@@ -1863,6 +1939,12 @@ async fn backup_and_write(
     match ctx.executor().write_file(Path::new(path), content).await {
         Ok(_) => {
             info!("Successfully wrote {}", path);
+            // A file that already existed keeps the mode it had, restored by
+            // `update_file_atomically`. One being created has no original mode
+            // to restore, so it wears the temporary file's until this sets it.
+            if let Some(mode) = create_mode.filter(|_| creating) {
+                apply_create_mode(ctx, path, mode, changes).await;
+            }
             true
         }
         Err(e) => {
@@ -1886,9 +1968,10 @@ async fn write_changed_conf(
     path: &str,
     file_label: &str,
     content: &str,
+    create_mode: Option<u32>,
     changes: &mut Vec<Change>,
 ) -> bool {
-    if !backup_and_write(ctx, path, file_label, content, changes).await {
+    if !backup_and_write(ctx, path, file_label, content, create_mode, changes).await {
         return false;
     }
     changes.push(Change {
@@ -1900,12 +1983,43 @@ async fn write_changed_conf(
     true
 }
 
-/// Reads the login.defs configuration file.
-async fn read_login_defs(ctx: &Context) -> Result<String> {
-    ctx.executor()
-        .read_file(Path::new("/etc/login.defs"))
+/// Gives a newly created configuration file its intended mode.
+///
+/// Not fatal when it fails: the settings are in force either way, and refusing
+/// the whole apply over a permission bit would leave the host less hardened for
+/// a lesser problem. It is recorded rather than only logged, because a file
+/// that ordinary-user tools cannot read is a real gap and the operator has to
+/// be able to see it.
+async fn apply_create_mode(ctx: &Context, path: &str, mode: u32, changes: &mut Vec<Change>) {
+    let octal = format!("{mode:o}");
+    match ctx
+        .executor()
+        .execute_command("chmod", &[&octal, path])
         .await
-        .map_err(|e| HardeningError::Plugin(e.to_string()))
+    {
+        Ok(output) if output.success() => {}
+        Ok(output) => {
+            warn!(
+                "Could not set mode {} on {}: {}",
+                octal, path, output.stderr
+            );
+            changes.push(Change {
+                change_type: ChangeType::ConfigFile,
+                change_description: format!("Could not set mode {octal} on {path}"),
+                change_success: false,
+                change_error: Some(output.stderr.trim().to_string()),
+            });
+        }
+        Err(e) => {
+            warn!("Could not set mode {} on {}: {}", octal, path, e);
+            changes.push(Change {
+                change_type: ChangeType::ConfigFile,
+                change_description: format!("Could not set mode {octal} on {path}"),
+                change_success: false,
+                change_error: Some(e.to_string()),
+            });
+        }
+    }
 }
 
 /// Creates a timestamped backup of a configuration file.

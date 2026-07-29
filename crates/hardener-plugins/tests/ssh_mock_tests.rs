@@ -633,7 +633,16 @@ fn ssh_stig_crypto_ids_match_the_rhel8_v2r7_benchmark() {
 /// of findings.
 #[tokio::test]
 async fn scan_reports_directives_unchecked_when_sshd_config_is_root_only() {
-    let mock = MockExecutor::new().with_read_permission_denied("/etc/ssh/sshd_config");
+    // The file is registered as well as denied, because that is what a
+    // root-only file is: present, and refusing to open. Declaring the denial
+    // alone described a path that does not exist, which no executor produces:
+    // LocalExecutor::path_exists returns an error for a denied probe and
+    // confirms absence only on NotFound. A layered read consults that probe to
+    // decide whether to fall through to /usr/etc, so the gentler fixture made
+    // this test pass for a reason the real code path does not have.
+    let mock = MockExecutor::new()
+        .with_file("/etc/ssh/sshd_config", "PermitRootLogin no\n")
+        .with_read_permission_denied("/etc/ssh/sshd_config");
     let ctx = Context::with_executor(Arc::new(mock));
     let result = SshHardeningPlugin::new()
         .scan(&ctx, &PluginConfig::default())
@@ -1782,10 +1791,17 @@ async fn ssh_scan_accepts_a_drop_in_that_holds_the_secure_value() {
 }
 
 #[tokio::test]
-async fn ssh_apply_refuses_to_claim_success_for_a_write_a_drop_in_overrides() {
-    // Writing sshd_config cannot change a directive a drop-in answers first,
-    // so reporting the write as applied would be a false pass. The operator is
-    // told which file actually governs it instead.
+async fn ssh_apply_beats_a_drop_in_that_would_otherwise_override_the_write() {
+    // 23ee0c1 made this case honest: writing sshd_config cannot change a
+    // directive a drop-in answers first, so the write was reported as failed
+    // rather than applied. Honest, and the host stayed unhardened. The
+    // directive now goes to a fragment that sorts before the offending one, so
+    // it is genuinely in force and the change is a real success naming where
+    // the value came from.
+    //
+    // The invariant that an inert write is never reported as applied still
+    // holds and is covered by apply_reports_failure_when_the_dropin_does_not_win,
+    // which is now the only case where a write really is inert.
     let executor = apply_ready_executor(SHIPPED_LAYOUT)
         .with_directory("/etc/ssh/sshd_config.d")
         .with_file(
@@ -1801,16 +1817,21 @@ async fn ssh_apply_refuses_to_claim_success_for_a_write_a_drop_in_overrides() {
         .find(|c| c.change_description.contains("PermitRootLogin"))
         .expect("the shadowed directive must still be reported");
     assert!(
-        !change.change_success,
-        "an inert write must not be reported as applied: {}",
+        change.change_success,
+        "the directive is now genuinely applied: {}",
         change.change_description
     );
     assert!(
         change
             .change_description
-            .contains("/etc/ssh/sshd_config.d/99-evil.conf"),
-        "the operator must be told which file to edit: {}",
+            .contains("/etc/ssh/sshd_config.d/00-hardener.conf"),
+        "the operator must be told which file supplies the value: {}",
         change.change_description
+    );
+    let dropin = dropin_written(&executor).expect("a fragment must beat 99-evil.conf");
+    assert!(
+        dropin.contains("PermitRootLogin no"),
+        "the fragment must carry the directive: {dropin}"
     );
 }
 
@@ -1856,5 +1877,328 @@ async fn validate_reports_a_directive_left_alone_by_a_policy_exception() {
             .any(|c| c.contains("PermitRootLogin")),
         "an excepted directive is not a pending change and must not inflate the count, got: {:?}",
         report.validation_report_estimated_changes
+    );
+}
+
+/// openSUSE's shape: no `/etc/ssh/sshd_config` at all, the real one under
+/// `/usr/etc`, and its Include of the `/etc` drop-in directory six lines above
+/// its own.
+fn opensuse_ssh_executor() -> MockExecutor {
+    MockExecutor::new()
+        .with_file(
+            "/usr/etc/ssh/sshd_config",
+            "# vendor config\n\
+             Include /etc/ssh/sshd_config.d/*.conf\n\
+             Include /usr/etc/ssh/sshd_config.d/*.conf\n\
+             PermitRootLogin yes\n\
+             PasswordAuthentication yes\n",
+        )
+        .with_directory("/etc/ssh/sshd_config.d")
+        .with_directory("/usr/etc/ssh/sshd_config.d")
+}
+
+#[tokio::test]
+async fn scan_reads_the_vendor_config_when_etc_has_none() {
+    // Before this change the scan reported "Failed to read
+    // /etc/ssh/sshd_config" and assessed nothing, so every SSH control on
+    // openSUSE routed to Manual Review and the host was never checked.
+    let ctx = Context::with_executor(Arc::new(opensuse_ssh_executor()));
+    let plugin = SshHardeningPlugin::new();
+
+    let result = plugin
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan must run");
+
+    assert!(
+        result.scan_success,
+        "the vendor config is readable, so the scan completed: {:?}",
+        result.scan_error
+    );
+    assert!(
+        result
+            .scan_findings
+            .iter()
+            .any(|f| f.finding_id == "ssh-permitrootlogin"),
+        "PermitRootLogin yes in the vendor file is a real finding, got: {:?}",
+        result
+            .scan_findings
+            .iter()
+            .map(|f| f.finding_id.as_str())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn an_unreadable_etc_config_is_not_answered_from_the_vendor_copy() {
+    // /etc/ssh/sshd_config exists and is what sshd reads, so reporting the
+    // vendor file's values because ours could not be read would describe a
+    // configuration that is not in force. Asserts the opposite direction: it
+    // guards the fix against over-reaching and is not evidence of the defect.
+    let ctx = Context::with_executor(Arc::new(
+        opensuse_ssh_executor()
+            .with_file("/etc/ssh/sshd_config", "PermitRootLogin no\n")
+            .with_read_permission_denied("/etc/ssh/sshd_config"),
+    ));
+    let plugin = SshHardeningPlugin::new();
+
+    let result = plugin
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan must run");
+
+    assert!(
+        result.scan_findings.is_empty(),
+        "an unreadable config must produce unchecked entries, never findings \
+         derived from the vendor copy, got: {:?}",
+        result.scan_findings
+    );
+    assert!(
+        !result.scan_unchecked.is_empty(),
+        "the privilege failure must be reported as unchecked"
+    );
+}
+
+#[tokio::test]
+async fn remediation_never_advises_creating_a_file_that_would_mask_the_vendor_config() {
+    // Making the scan work on openSUSE is what first renders these findings
+    // there, and every one of them carried "Edit /etc/ssh/sshd_config". On a
+    // host whose sshd_config lives under /usr/etc, creating that file makes
+    // sshd stop reading the vendor one, discarding both its Include lines. The
+    // advice would have instructed the operator to cause the masking defect
+    // this workstream exists to remove.
+    let ctx = Context::with_executor(Arc::new(opensuse_ssh_executor()));
+    let plugin = SshHardeningPlugin::new();
+
+    let result = plugin
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan must run");
+
+    let steps: Vec<&str> = result
+        .scan_findings
+        .iter()
+        .flat_map(|f| f.finding_remediation_steps.iter().map(|s| s.as_str()))
+        .collect();
+    assert!(!steps.is_empty(), "the scan must have produced findings");
+    assert!(
+        !steps
+            .iter()
+            .any(|s| s.contains("Edit /etc/ssh/sshd_config")
+                && !s.contains("/etc/ssh/sshd_config.d")),
+        "advising the operator to create /etc/ssh/sshd_config masks the vendor \
+         file wholesale, got: {steps:?}"
+    );
+    assert!(
+        steps.iter().any(|s| s.contains("/etc/ssh/sshd_config.d")),
+        "the drop-in directory is where openSUSE's own vendor config directs \
+         administrators, got: {steps:?}"
+    );
+}
+
+// === Writing where the setting is actually read from ===
+//
+// sshd uses the first value it obtains for a keyword and reads
+// /etc/ssh/sshd_config.d/*.conf before the main file, so a fragment there
+// outranks anything this tool writes to sshd_config. On Fedora and RHEL
+// 50-redhat.conf does exactly that; on openSUSE there is no main file under
+// /etc at all and the vendor one must never be masked.
+
+/// Registers the commands a full apply run needs, without pinning the
+/// timestamped backup name: `cp` is registered by program because the suffix
+/// is generated inside `apply`.
+fn dropin_apply_commands(executor: MockExecutor) -> MockExecutor {
+    executor
+        .with_command_program("cp", ok_output(""))
+        .with_command_program("sshd", ok_output(""))
+        .with_command("systemctl", &["restart", "sshd"], ok_output(""))
+}
+
+fn dropin_written(executor: &MockExecutor) -> Option<String> {
+    executor
+        .files()
+        .get(&std::path::PathBuf::from(
+            "/etc/ssh/sshd_config.d/00-hardener.conf",
+        ))
+        .cloned()
+}
+
+#[tokio::test]
+async fn apply_writes_a_winning_dropin_when_one_overrides_the_main_file() {
+    // Fedora and RHEL: 50-redhat.conf sets X11Forwarding yes and sshd reads it
+    // first, so everything written to sshd_config for that directive is inert.
+    // 23ee0c1 made the tool honest about that; this makes it effective.
+    let executor = dropin_apply_commands(
+        MockExecutor::new()
+            .with_file(
+                "/etc/ssh/sshd_config",
+                "Include /etc/ssh/sshd_config.d/*.conf\nX11Forwarding no\n",
+            )
+            .with_directory("/etc/ssh/sshd_config.d")
+            .with_file(
+                "/etc/ssh/sshd_config.d/50-redhat.conf",
+                "X11Forwarding yes\n",
+            ),
+    );
+
+    let result = run_ssh_apply(&executor).await;
+
+    let dropin = dropin_written(&executor).unwrap_or_else(|| {
+        panic!(
+            "a drop-in must be written to beat 50-redhat.conf, wrote: {:?}",
+            executor.log().files_written
+        )
+    });
+    assert!(
+        dropin.contains("X11Forwarding no"),
+        "the drop-in must carry the overridden directive, got: {dropin}"
+    );
+    assert!(
+        result.apply_success,
+        "the directive is now genuinely applied, so apply succeeds: {:?}",
+        result.apply_changes
+    );
+}
+
+#[tokio::test]
+async fn apply_writes_no_dropin_when_nothing_overrides_the_main_file() {
+    // Arch and Debian pass today. The drop-in is written only where needed, so
+    // a host with no conflicting fragment must be untouched by this feature.
+    // Asserts the opposite direction: it guards against over-correction and is
+    // not evidence that the defect is fixed.
+    let executor = dropin_apply_commands(
+        MockExecutor::new().with_file("/etc/ssh/sshd_config", "X11Forwarding yes\n"),
+    );
+
+    run_ssh_apply(&executor).await;
+
+    assert!(
+        dropin_written(&executor).is_none(),
+        "no drop-in overrides this host, so none should be created"
+    );
+    assert!(
+        written_sshd_config(&executor).contains("X11Forwarding no"),
+        "the main file is still the write target here"
+    );
+}
+
+#[tokio::test]
+async fn apply_reports_failure_when_the_dropin_does_not_win() {
+    // The one assumption under this design is that 00- sorts first. A host
+    // shipping something earlier must produce a failed change naming it, never
+    // a success.
+    let executor = dropin_apply_commands(
+        MockExecutor::new()
+            .with_file(
+                "/etc/ssh/sshd_config",
+                "Include /etc/ssh/sshd_config.d/*.conf\nX11Forwarding no\n",
+            )
+            .with_directory("/etc/ssh/sshd_config.d")
+            .with_file(
+                "/etc/ssh/sshd_config.d/00-aaa-wins.conf",
+                "X11Forwarding yes\n",
+            ),
+    );
+
+    let result = run_ssh_apply(&executor).await;
+
+    assert!(
+        result
+            .apply_changes
+            .iter()
+            .any(|c| !c.change_success && c.change_description.contains("00-aaa-wins.conf")),
+        "a drop-in that still loses must be reported, naming the winner, got: {:?}",
+        result.apply_changes
+    );
+    assert!(
+        !result.apply_success,
+        "a directive that is still overridden has not been applied"
+    );
+}
+
+#[tokio::test]
+async fn apply_writes_only_the_dropin_on_a_vendor_only_host() {
+    // openSUSE: the apply failure there is the advisory lock, which opens
+    // /etc/ssh/sshd_config directly with std::fs and dies on a path that does
+    // not exist. Fixing the lock alone would be worse than leaving it: apply
+    // would go on to create /etc/ssh/sshd_config, and because the override is
+    // whole-file sshd would stop reading the vendor config, discarding both
+    // its Include lines and the crypto policy fragment.
+    let executor = dropin_apply_commands(opensuse_ssh_executor());
+
+    let result = SshHardeningPlugin::new()
+        .apply(
+            &mut Context::with_executor(Arc::new(executor.clone())),
+            &PluginConfig::default(),
+        )
+        .await
+        .expect("apply must not abort on a host whose sshd_config is under /usr/etc");
+
+    let dropin = dropin_written(&executor).unwrap_or_else(|| {
+        panic!(
+            "with no /etc/ssh/sshd_config, every managed directive goes to the drop-in, wrote: {:?}",
+            executor.log().files_written
+        )
+    });
+    assert!(
+        dropin.contains("PermitRootLogin no"),
+        "the drop-in must carry the managed directives, got: {dropin}"
+    );
+    assert!(
+        !executor
+            .log()
+            .files_written
+            .iter()
+            .any(|(p, _)| p.to_str().is_some_and(|s| s.starts_with("/usr/etc/"))),
+        "the vendor file must never be written, wrote: {:?}",
+        executor.log().files_written
+    );
+    assert!(
+        !executor
+            .log()
+            .files_written
+            .iter()
+            .any(|(p, _)| p.to_str() == Some("/etc/ssh/sshd_config")),
+        "creating the admin file masks the vendor config wholesale, wrote: {:?}",
+        executor.log().files_written
+    );
+    assert!(
+        result.apply_success,
+        "the host is hardened through the drop-in, so apply succeeds: {:?}",
+        result.apply_changes
+    );
+}
+
+#[tokio::test]
+async fn apply_prunes_a_fragment_nothing_needs_any_more() {
+    // The fragment exists only to beat something. An operator who removes the
+    // drop-in that made it necessary would otherwise be left with a file
+    // shadowing sshd_config indefinitely, which is the same class of surprise
+    // as the fragments this feature exists to defeat.
+    let executor = dropin_apply_commands(
+        MockExecutor::new()
+            .with_file(
+                "/etc/ssh/sshd_config",
+                "Include /etc/ssh/sshd_config.d/*.conf\nX11Forwarding no\n",
+            )
+            .with_directory("/etc/ssh/sshd_config.d")
+            .with_file(
+                "/etc/ssh/sshd_config.d/00-hardener.conf",
+                "# Managed by linux-system-hardener.\nX11Forwarding no\n",
+            )
+            .with_command_program("rm", ok_output("")),
+    );
+
+    run_ssh_apply(&executor).await;
+
+    assert!(
+        executor
+            .log()
+            .commands_executed
+            .iter()
+            .any(|(command, args)| command == "rm"
+                && args.contains(&"/etc/ssh/sshd_config.d/00-hardener.conf".to_string())),
+        "the fragment must be removed once nothing overrides the main file, commands: {:?}",
+        executor.log().commands_executed
     );
 }

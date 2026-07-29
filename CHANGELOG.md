@@ -7,6 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **openSUSE hosts hardened by 1.5.0 or earlier may be storing DES password
+  hashes, and should have those passwords set again.** Those releases wrote a
+  short `/etc/login.defs` on a distribution that keeps its copy under
+  `/usr/etc`, and that override is whole-file rather than per directive, so
+  every key the vendor file set stopped applying. Measured on openSUSE Leap:
+  `ENCRYPT_METHOD SHA512` stopped applying and shadow fell back to **DES**,
+  which truncates a password at eight characters however long it was typed, and
+  `HOME_MODE 0700` stopped applying, so new home directories were created
+  world readable at 755. This release stops the masking happening, and reports
+  it where it has already happened, but it cannot undo it: a password already
+  hashed with DES stays DES until it is set again, and an `/etc/login.defs`
+  that already exists is edited rather than replaced, so the keys an older
+  release dropped stay dropped until they are restored by hand. `hardener scan`
+  now names them in a Medium finding, `pam-login-defs-masked-keys`.
+
+### Fixed
+
+- **Configuration layered across `/etc` and `/usr/etc` is read from the layer
+  that supplies it.** openSUSE Leap 15.6+, Tumbleweed and MicroOS ship vendor
+  configuration under `/usr/etc` and reserve `/etc` for administrator
+  overrides, and Fedora is moving the same way. The tool read `/etc` only, so
+  on such a host every directive the vendor set read as unset: an unprivileged
+  scan reported findings against a host that was already compliant, and apply
+  wrote a short `/etc` file that silenced the rest. Both the SSH and PAM
+  plugins now resolve the file the system actually obeys. `/usr/etc` is
+  consulted only on absence positively confirmed at `/etc`, so a root-only
+  `/etc` file that cannot be read is never answered with the vendor copy's
+  values.
+- **SSH hardening is written where sshd will actually read it.** Fedora and
+  RHEL ship `/etc/ssh/sshd_config.d/50-redhat.conf`, which sets
+  `X11Forwarding yes`, and sshd takes the **first** value it obtains, so the
+  distribution's fragment beat everything the tool wrote to the main file and
+  the host was left unhardened while the tool reported success. Hardening now
+  goes to `/etc/ssh/sshd_config.d/00-hardener.conf`, which sorts before what
+  distributions ship, and the precedence is verified after writing by
+  re-resolving the configuration rather than assumed from the filename.
+- **A vendor configuration file is copied into `/etc` before it is edited.**
+  Where the setting being hardened lives in a `/usr/etc` file, the whole file
+  is carried over first and the managed directives edited into that copy, so
+  nothing the distribution set is lost. 1.5.1 refused the write instead, which
+  was honest and left the host unhardened. The copy is given the vendor file's
+  own permissions rather than the temporary file's, because at 0600 the
+  ordinary-user tools that read `/etc/security/pwquality.conf`, `pwscore` and
+  `pwmake`, silently fall back to their built-in defaults.
+- **`scan` reports keys an `/etc` file masks.** New Medium finding
+  `pam-login-defs-masked-keys`, naming every key `/usr/etc/login.defs` sets
+  that `/etc/login.defs` does not. It fires on the drift rather than on its
+  cause, so it covers an operator's hand-rolled file and a vendor that adds a
+  key in a later package as well as the file an older release of this tool
+  wrote.
+
+### Changed
+
+- **The differential test suite asks whether settings the tool does not manage
+  survived the run.** `ENCRYPT_METHOD`, `HOME_MODE` and `UMASK` are captured
+  before apply and again afterwards and must be unchanged, each read from the
+  setting's own consumer rather than from a configuration file. The assertion
+  is the invariant, never a particular value, because the correct value differs
+  between distributions while "unchanged" does not. Nothing in the suite
+  previously asked this, so a masking regression could have reappeared with
+  every existing check green. The per-distribution total moves from 22 checks
+  to 25, and the five-distribution total from 110 to 125.
+
 ## [1.5.1] - 2026-07-27
 
 ### Changed
