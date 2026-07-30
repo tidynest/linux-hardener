@@ -408,16 +408,21 @@ async fn test_firewall_apply_respects_directives() {
     );
 }
 
-#[tokio::test]
-async fn test_firewall_apply_skips_exceptions() {
-    // Register commands for the 3 remaining rules (loopback, established, drop).
-    // SSH rule is excepted, so its ufw command should NOT be called.
+/// A host with an active ufw, registering every baseline rule command EXCEPT
+/// the SSH one, so a plugin that ignored the SSH exception would fail rather
+/// than quietly succeed.
+///
+/// Shared by the apply test, the validate test and the test that they name the
+/// same rule. That last one is why this is a single fixture rather than one per
+/// half: two fixtures would prove that two similar hosts agree, not that one
+/// host is described consistently by the preview and by the run.
+fn ufw_exception_executor() -> MockExecutor {
     let ok = CommandOutput {
         stdout: "Rule added\n".to_string(),
         stderr: String::new(),
         exit_code: 0,
     };
-    let executor = MockExecutor::new()
+    MockExecutor::new()
         .with_command_exists("ufw", true)
         .with_command_exists("firewall-cmd", false)
         .with_command_exists("nft", false)
@@ -437,20 +442,33 @@ async fn test_firewall_apply_skips_exceptions() {
             "ufw",
             &["status"],
             CommandOutput {
-                stdout: "Status: active
-"
-                .to_string(),
+                stdout: "Status: active\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        // This host's default incoming policy is still allow, so the baseline's
+        // default-deny rule has real work to do. Without an answer here the
+        // probe fails and the rule is applied for want of a reading rather than
+        // because the host needs it.
+        .with_command(
+            "ufw",
+            &["status", "verbose"],
+            CommandOutput {
+                stdout: "Status: active\nDefault: allow (incoming), allow (outgoing), \
+                         disabled (routed)\n"
+                    .to_string(),
                 stderr: String::new(),
                 exit_code: 0,
             },
         )
         .with_command("ufw", &["allow", "from", "127.0.0.1/8"], ok.clone())
         // No SSH rule registered: if the plugin tries to call it, the mock errors
-        .with_command("ufw", &["default", "deny", "incoming"], ok);
+        .with_command("ufw", &["default", "deny", "incoming"], ok)
+}
 
-    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
-    let plugin = FirewallHardeningPlugin::new();
-
+/// The exception every test in this group installs, keyed on the `ssh` rule id.
+fn ssh_exception_config() -> PluginConfig {
     let mut config = PluginConfig::default();
     config.exceptions.insert(
         "ssh".to_string(),
@@ -464,6 +482,83 @@ async fn test_firewall_apply_skips_exceptions() {
             expires: None,
         },
     );
+    config
+}
+
+/// The rule both halves must name, spelled the way the baseline spells it.
+const EXCEPTED_RULE_DESCRIPTION: &str = "Allow SSH to prevent lockout";
+
+/// The name a preview or change line carries, which is everything before the
+/// first `": "`. Both sides render `"{rule_description}: <tail>"`.
+///
+/// Returns `None` rather than an empty string when the separator is absent, so
+/// a format change on either side surfaces as a missing name instead of as two
+/// silences that happen to compare equal.
+fn rule_name_in(line: &str) -> Option<&str> {
+    line.split_once(": ").map(|(name, _)| name)
+}
+
+#[tokio::test]
+async fn apply_and_validate_name_an_excepted_rule_the_same_way() {
+    // Both halves were pinned only against literals on their own side, so they
+    // could drift apart with a fully green suite: apply's test asserted the
+    // change contains "skipped" and the reason, pinning no identifier at all,
+    // and could have been switched to the config's "ssh" id without a single
+    // failure. This asserts the two against each other, from ONE host.
+    let executor = ufw_exception_executor();
+    let config = ssh_exception_config();
+
+    let mut apply_ctx = Context::with_executor(Arc::new(executor.clone()));
+    let applied = FirewallHardeningPlugin::new()
+        .apply(&mut apply_ctx, &config)
+        .await
+        .unwrap();
+    let validate_ctx = Context::with_executor(Arc::new(executor));
+    let previewed = FirewallHardeningPlugin::new()
+        .validate(&validate_ctx, &config)
+        .await
+        .unwrap();
+
+    let apply_line = applied
+        .apply_changes
+        .iter()
+        .map(|c| c.change_description.as_str())
+        .find(|d| d.contains("skipped (exception:"))
+        .expect("apply must record the excepted rule as a skipped change");
+    let preview_line = previewed
+        .validation_report_exceptions
+        .iter()
+        .find(|e| e.contains("SSH managed externally"))
+        .expect("validate must report the excepted rule as a documented deviation");
+
+    let apply_name = rule_name_in(apply_line).expect("apply's change must carry a rule name");
+    let preview_name =
+        rule_name_in(preview_line).expect("validate's preview must carry a rule name");
+
+    assert_eq!(
+        apply_name, preview_name,
+        "the preview and the run must identify the same rule the same way, or an \
+         operator reading the dry run cannot match it to what the apply reports.\n\
+         apply:    {apply_line}\n  preview:  {preview_line}"
+    );
+    // Without this the assertion above passes on two names that are both wrong
+    // in the same way, which a shared format change would produce. Anchoring to
+    // the baseline's own spelling is what stops equal-and-empty counting as
+    // agreement.
+    assert_eq!(
+        apply_name, EXCEPTED_RULE_DESCRIPTION,
+        "both sides must name the rule by the baseline's description rather than \
+         by the config's rule id, got: {apply_line}"
+    );
+}
+
+#[tokio::test]
+async fn test_firewall_apply_skips_exceptions() {
+    let executor = ufw_exception_executor();
+
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    let plugin = FirewallHardeningPlugin::new();
+    let config = ssh_exception_config();
 
     let result = plugin.apply(&mut ctx, &config).await.unwrap();
 
@@ -477,11 +572,12 @@ async fn test_firewall_apply_skips_exceptions() {
             .collect::<Vec<_>>()
     );
 
-    // Should have a "skipped" change for the SSH rule
+    // Found by the exception wording rather than by the bare word "skipped",
+    // which several unrelated no-ops now also carry.
     let skipped = result
         .apply_changes
         .iter()
-        .find(|c| c.change_description.contains("skipped"));
+        .find(|c| c.change_description.contains("skipped (exception:"));
     assert!(skipped.is_some(), "should have a skipped change for SSH");
     assert!(
         skipped
