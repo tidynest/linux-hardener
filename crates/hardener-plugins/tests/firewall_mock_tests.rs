@@ -1811,6 +1811,18 @@ fn ufw_needs_enabling_executor() -> MockExecutor {
                 exit_code: 0,
             },
         )
+        // debian's packaging already wants the unit at boot, so systemd has
+        // nothing to do and nothing to say. The enable is issued regardless,
+        // because ufw itself never touches systemd on any distribution.
+        .with_command(
+            "systemctl",
+            &["enable", "ufw"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
         .with_command(
             "ufw",
             &["status", "verbose"],
@@ -1896,5 +1908,166 @@ async fn a_firewall_that_was_already_enabled_is_recorded_as_a_no_op() {
         recorded.is_skipped() && recorded.change_success,
         "a backend that needed no enabling must not be counted as applied work: {:?}",
         recorded
+    );
+}
+
+/// arch's container after the first apply, measured 2026-07-30: `ufw --force
+/// enable` succeeded and printed its usual "enabled on system startup" line,
+/// `/etc/ufw/ufw.conf` read `ENABLED=yes`, and yet after a reboot
+/// `systemctl is-active ufw` read `inactive` and
+/// `/etc/systemd/system/multi-user.target.wants/ufw.service` did not exist.
+///
+/// ufw's own code never touches systemd (`grep -rn systemctl` over ufw
+/// 0.36.2-7's python sources returns nothing), so whether the unit is wanted at
+/// boot is decided by the packaging alone: Debian's package enables it, Arch's
+/// does not. The message ufw prints is about ufw's own `ENABLED=yes` flag, not
+/// about the unit, so it cannot be read as boot persistence.
+fn ufw_unit_not_enabled_at_boot_executor() -> MockExecutor {
+    MockExecutor::new()
+        .with_command(
+            "ufw",
+            &["--force", "enable"],
+            CommandOutput {
+                stdout: "Firewall is active and enabled on system startup\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["enable", "ufw"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: "Created symlink \
+                         /etc/systemd/system/multi-user.target.wants/ufw.service.\n"
+                    .to_string(),
+                exit_code: 0,
+            },
+        )
+}
+
+#[tokio::test]
+async fn enabling_ufw_also_wants_its_unit_at_boot() {
+    let executor = ufw_unit_not_enabled_at_boot_executor();
+    let ctx = Context::with_executor(Arc::new(executor.clone()));
+    use hardener_plugins::firewall::FirewallBackend;
+    let backend = hardener_plugins::firewall::ufw::UfwBackend::new();
+
+    backend
+        .enable(&ctx)
+        .await
+        .expect("both steps succeed in this fixture");
+
+    assert!(
+        executor.log().commands_executed.iter().any(|(cmd, args)| {
+            cmd == "systemctl" && args == &["enable".to_string(), "ufw".to_string()]
+        }),
+        "`ufw --force enable` loads rules into the running kernel and writes ufw's own \
+         ENABLED=yes; it never asks systemd to want the unit at boot. A host whose \
+         packaging did not enable the unit loses its firewall at the next reboot while \
+         apply reports it enabled, which is what arch measured. Commands run: {:?}",
+        executor.log().commands_executed
+    );
+}
+
+#[tokio::test]
+async fn a_unit_that_cannot_be_enabled_fails_the_enable() {
+    let executor = MockExecutor::new()
+        .with_command(
+            "ufw",
+            &["--force", "enable"],
+            CommandOutput {
+                stdout: "Firewall is active and enabled on system startup\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["enable", "ufw"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: "Failed to enable unit: Unit file ufw.service does not exist.\n"
+                    .to_string(),
+                exit_code: 1,
+            },
+        );
+    let ctx = Context::with_executor(Arc::new(executor));
+    use hardener_plugins::firewall::FirewallBackend;
+    let backend = hardener_plugins::firewall::ufw::UfwBackend::new();
+
+    let error = backend.enable(&ctx).await.expect_err(
+        "a firewall that vanishes at the next reboot has not been enabled, and \
+         reporting success for it is the defect arch measured",
+    );
+
+    assert!(
+        error
+            .to_string()
+            .contains("Unit file ufw.service does not exist"),
+        "the operator has to be told why the unit could not be enabled, so systemd's \
+         own words belong in the error: {error}"
+    );
+}
+
+/// debian's container, measured 2026-07-30: its packaging already enabled the
+/// `ufw` unit, so the symlink is present and `systemctl is-active ufw` reads
+/// active, while `/etc/ufw/ufw.conf` ships `ENABLED=no` and the kernel holds no
+/// rules. The unit and the firewall are separate switches, and this fixture is
+/// the half arch's is not.
+fn ufw_unit_already_enabled_executor() -> MockExecutor {
+    MockExecutor::new()
+        .with_command(
+            "ufw",
+            &["--force", "enable"],
+            CommandOutput {
+                stdout: "Firewall is active and enabled on system startup\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        // What systemd answers for a unit it already wants at boot: exit 0 and
+        // nothing to say, indistinguishable from the run that created the link.
+        .with_command(
+            "systemctl",
+            &["enable", "ufw"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+}
+
+#[tokio::test]
+async fn the_unit_and_the_firewall_are_enabled_independently() {
+    let executor = ufw_unit_already_enabled_executor();
+    let ctx = Context::with_executor(Arc::new(executor.clone()));
+    use hardener_plugins::firewall::FirewallBackend;
+    let backend = hardener_plugins::firewall::ufw::UfwBackend::new();
+
+    backend
+        .enable(&ctx)
+        .await
+        .expect("both steps succeed in this fixture");
+
+    let log = executor.log();
+    assert!(
+        log.commands_executed
+            .iter()
+            .any(|(cmd, args)| cmd == "ufw"
+                && args == &["--force".to_string(), "enable".to_string()]),
+        "a unit already wanted at boot says nothing about whether ufw is enforcing: \
+         debian ships that exact host with ENABLED=no and an empty filter table. \
+         Commands run: {:?}",
+        log.commands_executed
+    );
+    assert!(
+        log.commands_executed.iter().any(|(cmd, args)| {
+            cmd == "systemctl" && args == &["enable".to_string(), "ufw".to_string()]
+        }),
+        "and neither does ufw's own enable say anything about the unit, so both \
+         switches are thrown every time. Commands run: {:?}",
+        log.commands_executed
     );
 }

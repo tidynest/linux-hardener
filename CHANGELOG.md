@@ -25,6 +25,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   activity probe now asks ufw rather than systemd; the unit hint is still used,
   but only where it belongs, to mark a root-blocked probe as unverified rather
   than as confirmed.
+- **Arch hosts hardened by any release up to and including 1.5.1 lose their ufw
+  firewall at the next reboot, while the tool reported it enabled.** `apply
+  --plugin firewall-hardening` turned ufw on with `ufw --force enable` and did
+  nothing else. That command writes `ENABLED=yes` into `/etc/ufw/ufw.conf` and
+  loads the rules into the running kernel, but it never asks systemd to want
+  the `ufw` unit at boot: ufw's own code contains no call to `systemctl` at
+  all. Whether the unit starts at boot is decided by the distribution's
+  packaging, and Debian's package enables it where Arch's does not. Measured by
+  booting the hardened Arch test container: `systemctl is-active ufw` read
+  `inactive`, `/etc/ufw/ufw.conf` read `ENABLED=yes`, and
+  `/etc/systemd/system/multi-user.target.wants/ufw.service` did not exist. The
+  same check on Debian showed the symlink present and the unit active, so
+  Debian is unaffected. **Check an affected host with `systemctl is-enabled
+  ufw` and run `systemctl enable ufw` if it reports disabled.** The ufw backend
+  now runs `systemctl enable ufw` after turning the firewall on, and a unit
+  that cannot be enabled fails the apply with systemd's own message, matching
+  what the firewalld backend has always done.
 - **openSUSE hosts hardened by 1.5.0 or earlier may be storing DES password
   hashes, and should have those passwords set again.** Those releases wrote a
   short `/etc/login.defs` on a distribution that keeps its copy under

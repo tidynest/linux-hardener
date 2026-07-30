@@ -208,20 +208,58 @@ impl FirewallBackend for UfwBackend {
         }
     }
 
+    /// Turns ufw on now **and** asks systemd to want its unit at boot.
+    ///
+    /// Both halves are needed, and neither implies the other. `ufw --force
+    /// enable` writes `ENABLED=yes` into `/etc/ufw/ufw.conf` and loads the
+    /// rules into the running kernel, and that is all it does: ufw's own code
+    /// never runs `systemctl` (verified against ufw 0.36.2-7). Whether the unit
+    /// is wanted at boot is therefore decided by the distribution's packaging
+    /// alone. Debian's package enables it; Arch's does not.
+    ///
+    /// Skipping the second half left an Arch host with `ENABLED=yes`, no
+    /// `multi-user.target.wants/ufw.service` symlink, and no firewall at all
+    /// after a reboot, while the apply that caused it reported the firewall
+    /// enabled. Measured on the arch container 2026-07-30. The line ufw prints,
+    /// "Firewall is active and enabled on system startup", is about its own
+    /// flag rather than the unit, so it cannot be read as boot persistence.
+    ///
+    /// A unit that cannot be enabled is an error rather than a warning, matching
+    /// [`super::firewalld::FirewalldBackend::enable`]: a firewall that vanishes
+    /// at the next reboot has not been enabled, and every distribution this tool
+    /// supports runs systemd.
     async fn enable(&self, ctx: &Context) -> Result<()> {
         // Enable UFW firewall
         info!("Enabling UFW firewall");
 
         let output = self.execute_ufw(ctx, &["--force", "enable"]).await?;
 
-        if output.contains("Firewall is active") || output.contains("enabled") {
-            info!("UFW firewall enabled successfully");
-            Ok(())
-        } else {
-            Err(HardeningError::Plugin(
+        if !output.contains("Firewall is active") && !output.contains("enabled") {
+            return Err(HardeningError::Plugin(
                 "Failed to enable UFW firewall".to_string(),
-            ))
+            ));
         }
+
+        // Enable ufw to start on boot. The unit name is taken from
+        // `systemd_unit` so this backend states it once.
+        let unit = self.systemd_unit();
+        let enable_output = ctx
+            .executor()
+            .execute_command("systemctl", &["enable", unit])
+            .await
+            .map_err(|e| {
+                HardeningError::Plugin(format!("Failed to enable the {unit} unit: {e}"))
+            })?;
+
+        if !enable_output.success() {
+            return Err(HardeningError::Plugin(format!(
+                "Failed to enable the {unit} unit: {}",
+                enable_output.stderr
+            )));
+        }
+
+        info!("UFW firewall enabled successfully");
+        Ok(())
     }
 
     async fn apply_rules(&self, ctx: &Context, rules: &[Rule]) -> Result<Vec<Change>> {
