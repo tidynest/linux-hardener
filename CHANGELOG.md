@@ -42,6 +42,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`hardener apply --plugin firewall-hardening` no longer reports adding a
+  firewalld port or setting a zone target that was already in place.** On
+  Fedora, RHEL and openSUSE the backend ran `firewall-cmd --add-port` and
+  `--set-target=DROP` without first asking what the zone already held.
+  `firewall-cmd` exits 0 either way, printing `ALREADY_ENABLED` for a port that
+  is present, so the exit status could not tell an addition from a no-op and
+  both were recorded as applied changes on every run. A second apply on the
+  Fedora test container printed the same "3 change(s) applied" as the first, on
+  a zone the first had already hardened. That count is what the CLI summary and
+  the desktop's confirmation both read, so an operator re-running a hardened
+  host was told three things changed when nothing had. The backend now reads
+  the zone's permanent port list and target before writing, records an
+  already-satisfied rule as a skipped no-op, and skips the reload entirely when
+  nothing was written, so an already-hardened firewalld host reads "no changes
+  needed". Nothing about which traffic is permitted has changed: the port was
+  allowed either way, and this is a reporting fix. A zone whose state cannot be
+  read is treated as unhardened, so the rules are applied and reported rather
+  than skipped on a host the tool cannot see.
 - **`hardener apply --dry-run` no longer hides a firewall rule it is leaving
   alone because a policy exception documents it.** An excepted rule was filtered
   out of the "Apply N baseline firewall rules" count and recorded nowhere, so the

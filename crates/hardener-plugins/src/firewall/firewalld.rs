@@ -73,6 +73,55 @@ impl FirewalldBackend {
         validate_zone_name(&zone)?;
         Ok(zone)
     }
+
+    /// The ports already allowed in the zone's **permanent** configuration.
+    ///
+    /// The permanent layer is the one [`FirewalldBackend::apply_rules`] writes
+    /// into, so it is the only layer that can say whether an `--add-port`
+    /// would change anything. Reading the runtime layer instead, which
+    /// [`FirewalldBackend::list_rules`] does, would disagree with it for as
+    /// long as a permanent change is pending a reload.
+    ///
+    /// A read that fails is treated as an empty list, so the port is added and
+    /// reported rather than skipped. Doing the work is the safe direction when
+    /// the state cannot be determined, and it is the fallback the nftables
+    /// backend already takes for the same reason.
+    async fn permanent_ports(&self, ctx: &Context, zone: &str) -> Vec<String> {
+        match self
+            .execute_firewall_cmd(ctx, &["--permanent", "--zone", zone, "--list-ports"])
+            .await
+        {
+            Ok(output) => output.split_whitespace().map(str::to_string).collect(),
+            Err(e) => {
+                warn!(
+                    "Could not read the permanent port list for zone '{zone}' ({e}); \
+                     treating it as empty so baseline ports are added rather than skipped"
+                );
+                Vec::new()
+            }
+        }
+    }
+
+    /// Whether the zone's **permanent** target is already `DROP`.
+    ///
+    /// Same layer and same fallback direction as
+    /// [`FirewalldBackend::permanent_ports`]: a target that cannot be read is
+    /// reported as not `DROP`, so the apply sets it.
+    async fn permanent_target_is_drop(&self, ctx: &Context, zone: &str) -> bool {
+        match self
+            .execute_firewall_cmd(ctx, &["--permanent", "--zone", zone, "--get-target"])
+            .await
+        {
+            Ok(output) => output.trim() == "DROP",
+            Err(e) => {
+                warn!(
+                    "Could not read the permanent target for zone '{zone}' ({e}); \
+                     treating it as not DROP so the apply sets it"
+                );
+                false
+            }
+        }
+    }
 }
 
 impl Default for FirewalldBackend {
@@ -193,6 +242,16 @@ impl FirewallBackend for FirewalldBackend {
 
         info!("Applying {} firewalld rules to zone {}", rules.len(), zone);
 
+        // Read the permanent zone state once, before writing anything.
+        // `firewall-cmd` exits 0 for a port that is already allowed, printing
+        // ALREADY_ENABLED, and for a target that is already set, so its exit
+        // status cannot tell an addition from a no-op and every apply used to
+        // report both as changes. Measured on the fedora container
+        // 2026-07-30: a second apply printed the same three changes as the
+        // first, on a zone the first apply had already hardened.
+        let existing_ports = self.permanent_ports(ctx, &zone).await;
+        let target_already_drop = self.permanent_target_is_drop(ctx, &zone).await;
+
         for rule in rules {
             if rule.rule_description.contains("loopback") {
                 debug!("Skipping loopback rule (handled by firewalld automatically)");
@@ -206,6 +265,20 @@ impl FirewallBackend for FirewalldBackend {
 
             // Handle drop/default deny rules (set zone target)
             if rule.rule_action == "drop" && rule.rule_port == "any" {
+                if target_already_drop {
+                    info!("Zone '{}' default target is already DROP", zone);
+                    changes.push(Change {
+                        change_type: ChangeType::Skipped,
+                        change_description: format!(
+                            "Zone '{}' default target is already DROP",
+                            zone
+                        ),
+                        change_success: true,
+                        change_error: None,
+                    });
+                    continue;
+                }
+
                 match self
                     .execute_firewall_cmd(
                         ctx,
@@ -243,6 +316,20 @@ impl FirewallBackend for FirewalldBackend {
             if rule.rule_action == "accept" {
                 let port_spec = format!("{}/{}", rule.rule_port, rule.rule_protocol);
 
+                if existing_ports.iter().any(|port| port == &port_spec) {
+                    info!("Port {} is already allowed in zone '{}'", port_spec, zone);
+                    changes.push(Change {
+                        change_type: ChangeType::Skipped,
+                        change_description: format!(
+                            "Port {} is already allowed in zone '{}'",
+                            port_spec, zone
+                        ),
+                        change_success: true,
+                        change_error: None,
+                    });
+                    continue;
+                }
+
                 match self
                     .execute_firewall_cmd(
                         ctx,
@@ -275,6 +362,25 @@ impl FirewallBackend for FirewalldBackend {
                     }
                 }
             }
+        }
+
+        // A reload only activates permanent changes that are pending, so on a
+        // zone where every rule was already in force there is nothing to
+        // activate. Reloading anyway and recording it as a change is what kept
+        // an already-hardened host from ever reading "no changes needed".
+        if !changes
+            .iter()
+            .any(|change| !change.is_skipped() && change.change_success)
+        {
+            info!("No permanent firewalld change was written; skipping the reload");
+            changes.push(Change {
+                change_type: ChangeType::Skipped,
+                change_description: "Firewalld reload not needed: no permanent change was written"
+                    .to_string(),
+                change_success: true,
+                change_error: None,
+            });
+            return Ok(changes);
         }
 
         // Reload firewalld to activate permanent changes

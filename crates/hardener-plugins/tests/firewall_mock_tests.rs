@@ -1420,3 +1420,102 @@ async fn test_nftables_plugin_apply_ensures_chain_when_foreign_hook_input_presen
         result.apply_changes
     );
 }
+
+/// fedora's container after one apply, measured 2026-07-30 from
+/// `test-results/fedora.log`: 22/tcp is already in the zone's permanent port
+/// list and the zone target is already DROP, because the run before it put
+/// them there. `firewall-cmd` exits 0 for both commands anyway, printing
+/// ALREADY_ENABLED for the port, so the exit status cannot tell an addition
+/// from a no-op.
+fn firewalld_already_hardened_executor() -> MockExecutor {
+    let ok = CommandOutput {
+        stdout: "success\n".to_string(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    MockExecutor::new()
+        .with_command_exists("firewall-cmd", true)
+        .with_command(
+            "firewall-cmd",
+            &["--get-default-zone"],
+            CommandOutput {
+                stdout: "public\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        // The permanent state the apply is about to write into. Both readings
+        // already hold the target values.
+        .with_command(
+            "firewall-cmd",
+            &["--permanent", "--zone", "public", "--list-ports"],
+            CommandOutput {
+                stdout: "22/tcp\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "firewall-cmd",
+            &["--permanent", "--zone", "public", "--get-target"],
+            CommandOutput {
+                stdout: "DROP\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        // Both write commands succeed on an already-hardened zone, which is
+        // exactly why their exit status is not evidence of a change.
+        .with_command(
+            "firewall-cmd",
+            &["--permanent", "--zone", "public", "--add-port", "22/tcp"],
+            CommandOutput {
+                stdout: "ALREADY_ENABLED: 22:tcp\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "firewall-cmd",
+            &["--permanent", "--zone", "public", "--set-target=DROP"],
+            ok.clone(),
+        )
+        .with_command("firewall-cmd", &["--reload"], ok)
+}
+
+#[tokio::test]
+async fn firewalld_records_a_no_op_for_a_port_and_a_target_already_in_force() {
+    use hardener_plugins::firewall::{FirewallBackend, firewalld::FirewalldBackend};
+
+    let ctx = Context::with_executor(Arc::new(firewalld_already_hardened_executor()));
+    let changes = FirewalldBackend::new()
+        .apply_rules(&ctx, &hardener_plugins::firewall::get_baseline_rules())
+        .await
+        .expect("apply_rules must not fail on an already-hardened zone");
+
+    let claimed_port = changes
+        .iter()
+        .any(|c| c.change_description.starts_with("Added port") && !c.is_skipped());
+    assert!(
+        !claimed_port,
+        "22/tcp was already in the zone's permanent port list, so nothing added it: {:?}",
+        changes
+    );
+
+    let claimed_target = changes
+        .iter()
+        .any(|c| c.change_description.starts_with("Set zone") && !c.is_skipped());
+    assert!(
+        !claimed_target,
+        "the zone target was already DROP, so nothing set it: {:?}",
+        changes
+    );
+
+    let applied = changes.iter().filter(|c| !c.is_skipped()).count();
+    assert_eq!(
+        applied, 0,
+        "an already-hardened firewalld zone needs no changes at all, and a count \
+         above zero is what the renderer prints as 'N change(s) applied': {:?}",
+        changes
+    );
+}
