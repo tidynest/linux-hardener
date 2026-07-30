@@ -401,6 +401,52 @@ seed_stricter_than_baseline() {
     done
 }
 
+# The kernel counterpart of the pair above, and it exists for the same reason: a
+# container arrives with nothing stricter than the tool's own baseline, so
+# without a seed the kernel oracle can only ever prove the tool hardens a host
+# below its target, never that it declines to un-harden one already above it.
+#
+# Fields: parameter|seed|tool-target, matching SEEDED_SSH_CHECKS' shape of "the
+# name, the value written in, and a third value carried for the eye rather than
+# measured".
+#
+# net.ipv4.tcp_syncookies is an at-least row targeting 1, and 2 sends SYN
+# cookies unconditionally rather than only under pressure, which is not weaker.
+# kernel/mod.rs says so where it declares the row, and its apply clamps its own
+# target up to whatever the host already runs before deciding whether to write,
+# so a correct apply leaves a host at 2 reading 2 in the runtime AND writes 2
+# into /etc/sysctl.d rather than handing 1 back at the next boot.
+#
+# rp_filter is deliberately NOT the seeded row, though it looks like the obvious
+# candidate. Its ranked order is 0, 2, 1 weakest first: 2 is LOOSE mode and
+# ranks BELOW the target of strict mode 1, so seeding 2 would seed a looser
+# value, a correct tool would tighten it to 1, and this check would then report
+# a defect against every distribution.
+#
+# The seed is distinct from the tool's own target on purpose, exactly as the ssh
+# pair's three columns are: a probe that has silently started reading a constant
+# cannot produce 2, because 2 exists only where the seed took effect.
+SEEDED_KERNEL_CHECKS=(
+    "net.ipv4.tcp_syncookies|2|1"
+)
+
+seed_kernel_stricter_than_baseline() {
+    local entry name seed
+    if [[ "$KERNEL_BOOTED" != "1" ]]; then
+        return 0
+    fi
+    for entry in "${SEEDED_KERNEL_CHECKS[@]}"; do
+        IFS='|' read -r name seed _ <<<"$entry"
+        if ! sysctl -w "$name=$seed" >/dev/null 2>&1; then
+            echo "FATAL: could not seed $name=$seed." >&2
+            echo "  This run claims to be booted with its own network namespace, where" >&2
+            echo "  /proc/sys/net is writable. If that is not true the mode signal is" >&2
+            echo "  wrong, and every kernel row below would be measuring the host." >&2
+            return 1
+        fi
+    done
+}
+
 # sshd -T refuses to run without host keys, so generate any that are missing.
 # This changes nothing the tool manages.
 ensure_host_keys() {
@@ -1919,6 +1965,34 @@ run_kernel_checks() {
     done
 }
 
+# The one kernel row that asks whether the apply LOOSENED anything.
+#
+# The value read here is the seed rather than the tool's target, so this row
+# cannot pass by agreeing with the tool: an oracle that compared for equality
+# with the target would fail it, and so would a tool that stopped clamping its
+# target up to what the host already runs.
+run_seeded_kernel_check() {
+    local entry name seed target reading
+    if [[ "$KERNEL_BOOTED" != "1" ]]; then
+        for entry in "${SEEDED_KERNEL_CHECKS[@]}"; do
+            IFS='|' read -r name _ _ <<<"$entry"
+            record_unaskable "seeded kernel $name: this run is not booted, so /proc/sys/net is the host's and the seed could not be written"
+        done
+        return 0
+    fi
+    for entry in "${SEEDED_KERNEL_CHECKS[@]}"; do
+        IFS='|' read -r name seed target <<<"$entry"
+        reading="$(kernel_reading "$name")"
+        if [[ "$reading" == "$seed" ]]; then
+            record_pass "seeded kernel $name: still '$reading' after apply, so the tool left a host stricter than its own target of '$target' alone"
+        elif [[ "$reading" == "unreadable" ]]; then
+            record_fail "seeded kernel $name: was seeded '$seed' before apply and cannot be read now, so nothing here shows whether the apply left the seed standing"
+        else
+            record_fail "seeded kernel $name: was seeded '$seed' before apply and now reads '$reading', against a tool target of '$target', so the apply LOOSENED a parameter that was already stricter than its target"
+        fi
+    done
+}
+
 SSH_CHECKS_EXPECTED=7
 SEEDED_SSH_CHECKS_EXPECTED=2
 LOGIN_DEFS_CHECKS_EXPECTED=3
@@ -1934,6 +2008,7 @@ KERNEL_CHECKS_EXPECTED=11
 # from KERNEL_CHECKS into KERNEL_UNASKABLE. Both sizes are pinned, so that move
 # fails the guard twice rather than passing quietly.
 KERNEL_UNASKABLE_EXPECTED=7
+SEEDED_KERNEL_CHECKS_EXPECTED=1
 
 require_check_tables() {
     local entry name got want refused=0
@@ -1948,7 +2023,8 @@ require_check_tables() {
         "PERMISSION_CHECKS ${#PERMISSION_CHECKS[@]} $PERMISSION_CHECKS_EXPECTED" \
         "FIREWALL_CHECKS ${#FIREWALL_CHECKS[@]} $FIREWALL_CHECKS_EXPECTED" \
         "KERNEL_CHECKS ${#KERNEL_CHECKS[@]} $KERNEL_CHECKS_EXPECTED" \
-        "KERNEL_UNASKABLE ${#KERNEL_UNASKABLE[@]} $KERNEL_UNASKABLE_EXPECTED"; do
+        "KERNEL_UNASKABLE ${#KERNEL_UNASKABLE[@]} $KERNEL_UNASKABLE_EXPECTED" \
+        "SEEDED_KERNEL_CHECKS ${#SEEDED_KERNEL_CHECKS[@]} $SEEDED_KERNEL_CHECKS_EXPECTED"; do
         read -r name got want <<<"$entry"
         if [[ "$got" != "$want" ]]; then
             echo "FATAL: $name holds $got, expected $want." >&2
@@ -1996,7 +2072,8 @@ expected_check_total() {
     if [[ "$KERNEL_BOOTED" != "1" ]]; then
         # The 11 kernel rows are declared unaskable in this mode, so they are
         # not checks the tables ask for either. The pre-apply control goes the
-        # same way, which is why DIFF_PLUGINS_EXPECTED is discounted too.
+        # same way, which is why DIFF_PLUGINS_EXPECTED is discounted too, and so
+        # does the seeded kernel row, whose seed could not be written.
         printf '%s' "$(( 2 * (SSH_CHECKS_EXPECTED + LOGIN_DEFS_CHECKS_EXPECTED \
             + PERMISSION_CHECKS_EXPECTED) \
             + VENDOR_SURVIVAL_CHECKS_EXPECTED + IDEMPOTENCE_CHECKS_EXPECTED \
@@ -2009,7 +2086,7 @@ expected_check_total() {
         + VENDOR_SURVIVAL_CHECKS_EXPECTED + IDEMPOTENCE_CHECKS_EXPECTED \
         + PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED + DIFF_PLUGINS_EXPECTED \
         + SEEDED_SSH_CHECKS_EXPECTED + FIREWALL_CHECKS_EXPECTED \
-        + KERNEL_CHECKS_EXPECTED ))"
+        + KERNEL_CHECKS_EXPECTED + SEEDED_KERNEL_CHECKS_EXPECTED ))"
 }
 
 # The three plugins spell their finding ids differently, and a filter written for
@@ -3471,6 +3548,73 @@ Number of days of warning before password expires	: 11"
     CHECKS_UNASKABLE=$kernel_saved_unaskable
     KERNEL_BEFORE="$kernel_saved_before"
 
+    # The seeded kernel row. Every other kernel row can only prove the tool
+    # hardened a host that was below its target; this one is the only one that
+    # can prove it declined to un-harden a host that was already above it.
+    local seeded_kernel_name seeded_kernel_seed seeded_kernel_target
+    local seeded_kernel_direction
+    IFS='|' read -r seeded_kernel_name seeded_kernel_seed seeded_kernel_target \
+        <<<"${SEEDED_KERNEL_CHECKS[0]}"
+    seeded_kernel_direction="$(printf '%s\n' "${KERNEL_CHECKS[@]}" \
+        | grep -m1 "^$seeded_kernel_name|" | cut -d'|' -f3)"
+    check_eq "$seeded_kernel_direction" "at-least" \
+        "the seeded parameter is a row of the kernel table and carries the direction that scores it, so the seed cannot be written into a parameter nothing checks"
+    # tcp_syncookies 2 sends SYN cookies unconditionally rather than only under
+    # pressure, which is not weaker than the tool's target of 1. The plugin
+    # clamps its own target up to what the host already runs, so a correct apply
+    # leaves the seed standing in the runtime and in the persistent file.
+    check_eq "$(kernel_satisfies "$seeded_kernel_seed" "$seeded_kernel_target" "$seeded_kernel_direction" && echo yes || echo no)" "yes" \
+        "the seeded value satisfies the tool's own target in that row's direction, so a correct apply has nothing to write and the seed survives it"
+    check_eq "$(kernel_satisfies "$seeded_kernel_target" "$seeded_kernel_seed" "$seeded_kernel_direction" && echo yes || echo no)" "no" \
+        "and the tool's own target does NOT satisfy the seed, which is the property that makes this row catch a loosening rather than restate the seed"
+    check_eq "${SEEDED_KERNEL_CHECKS_EXPECTED}" "1" \
+        "one seeded kernel row, pinned like every other table"
+
+    # And the row's discrimination, driven without root and without a container.
+    # A seeded row that only ever reads its seed proves nothing: these three
+    # readings are what separate "the tool left the seed alone" from "the tool
+    # wrote its own target over it" and from "nothing could be read at all".
+    local seeded_kernel_stub=seed seeded_kernel_out
+    sysctl() {
+        case "$seeded_kernel_stub" in
+            seed) printf '%s\n' "$seeded_kernel_seed" ;;
+            target) printf '%s\n' "$seeded_kernel_target" ;;
+            *) return 1 ;;
+        esac
+    }
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    KERNEL_BOOTED=1 run_seeded_kernel_check >/dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "1/0" \
+        "a host still reading the seed after apply passes the seeded row"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    seeded_kernel_stub=target
+    seeded_kernel_out="$(mktemp)"
+    KERNEL_BOOTED=1 run_seeded_kernel_check > "$seeded_kernel_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/1" \
+        "a host reading the tool's own target instead fails it, which is the loosening this row exists to catch and the one an equality oracle would score green"
+    check_status 0 "and it says the apply loosened the parameter, rather than reporting a value that merely disagrees" \
+        grep -q "LOOSENED" "$seeded_kernel_out"
+    rm -f "$seeded_kernel_out"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    seeded_kernel_stub=unreadable
+    KERNEL_BOOTED=1 run_seeded_kernel_check >/dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/1" \
+        "and a reading that could not be taken at all is a failure too, never a declared gap"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    KERNEL_BOOTED=0 run_seeded_kernel_check >/dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED/$CHECKS_UNASKABLE" "0/0/1" \
+        "an unbooted run declares the seeded row unaskable and records no check, so the unbooted total is unmoved by it"
+
+    unset -f sysctl
+    CHECKS_TOTAL=$kernel_saved_total
+    CHECKS_PASSED=$kernel_saved_passed
+    CHECKS_FAILED=$kernel_saved_failed
+    CHECKS_UNASKABLE=$kernel_saved_unaskable
+
     local pinned_total
     # Asked in an explicit mode, both here and below: the totals these two
     # assertions pin are properties of the tables, and reading them in
@@ -3479,8 +3623,8 @@ Number of days of warning before password expires	: 11"
     pinned_total="$(KERNEL_BOOTED=0 expected_check_total)"
     check_eq "$pinned_total" "55" \
         "the run is sized at two checks per directive, one per unmanaged setting, one per idempotency reading, one per pwquality enforcement reading, one control per plugin, plus one pre-apply control per seeded directive"
-    check_eq "$(KERNEL_BOOTED=1 expected_check_total)" "67" \
-        "a booted run is sized for eleven kernel rows and the kernel plugin's own control on top of that, which is the only arithmetic difference the mode makes"
+    check_eq "$(KERNEL_BOOTED=1 expected_check_total)" "68" \
+        "a booted run is sized for eleven kernel rows, the seeded kernel row and the kernel plugin's own control on top of that, which is the only arithmetic difference the mode makes"
     check_status 0 "require_check_tables accepts the tables as they stand" \
         require_check_tables
 
@@ -4628,6 +4772,11 @@ run_full_suite() {
     # Before every capture below, because all of them describe a container that
     # has to already be holding the seed.
     seed_stricter_than_baseline || return 1
+    # Above preapply_kernel_init, so the capture below sees the seeded value
+    # rather than what the container shipped. Taken the other way round the
+    # pre-apply control would score the seeded parameter against a reading the
+    # seed had already replaced.
+    seed_kernel_stricter_than_baseline || return 1
     preapply_seeded_init || return 1
     preapply_scan_oracle_init || return 1
     # The other capture that must be taken above apply, and for a second
@@ -4674,6 +4823,7 @@ run_full_suite() {
     run_pwquality_enforcement_checks
     run_firewall_checks
     run_kernel_checks
+    run_seeded_kernel_check
     print_summary
 }
 
