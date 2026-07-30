@@ -1524,14 +1524,30 @@ FIREWALL_CHECKS=(
 
 # Counters and handles change between two snapshots of an UNCHANGED rule, so a
 # raw diff of two captures is mostly noise and the real delta is buried in it.
+# Returns non-zero when NEITHER view could be read, which is a different outcome
+# from "there are no rules" and must not share a value with it. An earlier
+# version of this function always emitted its own marker line, so the capture was
+# never empty, and a container where nft and iptables both failed reported
+# exactly what a container with a clean ruleset reports. That is the sentinel
+# conflation this suite exists to find, written into the suite itself.
 firewall_ruleset_snapshot() {
+    local nft_out ipt_out nft_rc=0 ipt_rc=0
+    nft_out="$(nft list ruleset 2>&1)" || nft_rc=$?
+    # ufw expresses its default disposition as an iptables chain policy and
+    # nowhere in the nft output, so both views are needed. firewalld needs only
+    # the first. grep's own non-match is not a read failure, so iptables is asked
+    # first and filtered after.
+    ipt_out="$(iptables -S 2>&1)" || ipt_rc=$?
+    if (( nft_rc != 0 && ipt_rc != 0 )); then
+        echo "FATAL: neither 'nft list ruleset' nor 'iptables -S' could be read." >&2
+        echo "  nft said: ${nft_out:-(nothing)}" >&2
+        echo "  iptables said: ${ipt_out:-(nothing)}" >&2
+        return 1
+    fi
     {
-        nft list ruleset 2> /dev/null
-        # ufw expresses its default disposition as an iptables chain policy and
-        # nowhere in the nft output, so both views are needed. firewalld needs
-        # only the first.
+        (( nft_rc == 0 )) && printf '%s\n' "$nft_out"
         echo "=== iptables policies ==="
-        iptables -S 2> /dev/null | grep '^-P'
+        (( ipt_rc == 0 )) && grep '^-P' <<< "$ipt_out"
     } | sed -E 's/counter packets [0-9]+ bytes [0-9]+ ?//; s/ # handle [0-9]+//; s/[[:space:]]+$//'
 }
 
@@ -1654,6 +1670,13 @@ run_firewall_checks() {
                     record_fail "firewall $key: the ruleset after apply could not be read"
                 elif firewall_default_is_drop "$FIREWALL_AFTER"; then
                     record_pass "firewall $key: the $kind backend drops inbound traffic by default, and did not before apply"
+                elif [[ "$kind" == "none" ]]; then
+                    # Distinct from "the backend is there and did not drop":
+                    # the apply reported rules it wrote and the kernel holds no
+                    # ruleset either backend recognises. The capture travels
+                    # with the verdict, because a message naming a cause is an
+                    # assertion and this one has been wrong before.
+                    record_fail "firewall $key: the apply reported success and the kernel holds no ufw or firewalld ruleset at all; captured after apply: $(head -c 400 <<< "$FIREWALL_AFTER" | tr '\n' '/')"
                 else
                     record_fail "firewall $key: the $kind backend does not drop inbound traffic by default after apply, so the hardening the tool reported is not what the kernel will enforce"
                 fi
@@ -4076,6 +4099,27 @@ password required pam_unix.so"
     run_firewall_checks > /dev/null
     check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "1/1" \
         "an unhardened firewalld ruleset fails the drop check and passes the lockout check"
+
+    # A ruleset holding neither backend after a successful-looking apply, which
+    # is what debian produced on the first real run. It must fail, and it must
+    # fail with its own message rather than the one about a backend that is
+    # present and misconfigured, because those two send a reader to different
+    # places.
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    FIREWALL_AFTER='=== iptables policies ===
+-P INPUT ACCEPT'
+    # Redirected to a file rather than captured with $(...): a command
+    # substitution is a subshell, so every counter this function increments
+    # would be discarded and the assertion below would read 0/0 whatever
+    # happened.
+    local fw_none_out
+    fw_none_out="$(mktemp)"
+    run_firewall_checks > "$fw_none_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/2" \
+        "a ruleset holding no backend at all fails both firewall checks"
+    check_status 0 "and the no-backend failure carries the capture that produced it" \
+        grep -q "the kernel holds no ufw or firewalld ruleset at all" "$fw_none_out"
+    rm -f "$fw_none_out"
 
     CHECKS_TOTAL=$fw_saved_total
     CHECKS_PASSED=$fw_saved_passed
