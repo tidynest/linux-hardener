@@ -1918,6 +1918,16 @@ preapply_kernel_init() {
 # Doing nothing must never exit 0. This asserts at least one managed parameter
 # was AWAY from its target before the apply, so the checks below cannot pass
 # against a host that was already compliant.
+#
+# The names below are what this suite read before the WHOLE apply, which is not
+# the same as what the kernel plugin saw when its turn came, and the two can
+# disagree honestly. Measured 2026-07-30 on arch and debian: the firewall plugin
+# runs first and enables ufw, whose start applies /etc/ufw/sysctl.conf
+# (IPT_SYSCTL in /etc/default/ufw), and that file sets log_martians to 0 while
+# the tool's target is 1. So the kernel plugin then reports writing a parameter
+# this capture had recorded as compliant. Both readings are correct; they were
+# taken either side of another plugin. The three firewalld distributions show no
+# such disagreement, which is what identified the cause.
 run_kernel_preapply_control() {
     local entry name target direction reading away=0 away_names=""
     if [[ "$KERNEL_BOOTED" != "1" ]]; then
