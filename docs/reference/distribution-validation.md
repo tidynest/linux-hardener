@@ -1,6 +1,6 @@
 # Distribution Validation Results
 
-**Last Updated**: 2026-07-27
+**Last Updated**: 2026-07-30
 
 This document tracks validation testing across supported Linux distributions.
 
@@ -640,9 +640,19 @@ Pass Rate:    100%
 | kernel-hardening | Pass | Pass | Pass | sysctl params applied |
 | mac-hardening | Pass | Pass | Skipped | No AppArmor kernel modules in container |
 | pam-hardening | Pass | Pass | Pass | PAM config updated |
-| permissions-hardening | Pass | Pass | Pass | File perms corrected |
+| permissions-hardening | Pass | Pass | Pass | File perms corrected, but see the note below |
 | service-minimisation | Pass | Pass | Pass | Services managed |
 | ssh-hardening | Pass | Pass | Pass | sshd_config hardened |
+
+**On permissions-hardening, three Passes do not mean every managed path was
+corrected here.** openSUSE holds no `/etc/sudoers`, so before 2026-07-30 the
+plugin reported nothing at all about `sudoers` and apply had nothing to do, which
+is what "Pass" records. `/usr/etc/sudoers` was meanwhile sitting at 0444 against
+a required 0440. `scan` now reports that as a Critical finding, and `apply` still
+passes without correcting it, because the vendor file is never written and the
+remediation is a copy into `/etc` that an operator has to make. On this
+distribution a green apply and an outstanding Critical permission finding are the
+expected, correct combination.
 
 ### Compliance Reports Generated
 
@@ -673,7 +683,28 @@ Pass Rate:    100%
 | SELinux | No | No | Yes | Optional |
 | AppArmor | Optional | Yes | No | Yes |
 | Default rp_filter | 1 (strict) | 1 (strict) | 1 (strict) | 2 (loose) |
+| Default /etc/shadow mode | 0600 | 0640 | 0000 | 0640 |
 | Audit Reload | augenrules --load | augenrules --load | augenrules --load | augenrules --load |
+
+The shadow row is why `permissions-hardening` measures `/etc/shadow` and
+`/etc/gshadow` against an allowed-bits mask rather than an exact mode: none of
+those four values sets a bit outside 0640, so all four are already compliant and
+the tool deliberately leaves them alone. An equality comparison would have
+reported a defect on three of the five containers against a tool behaving
+exactly as designed. The modes were read with `stat -c %a` by the permissions
+oracle in `scripts/test/differential-suite.sh` on the five recreated containers,
+2026-07-30.
+
+SUSE's vendor layer also changes what an absent path means for a permission
+check. openSUSE reserves `/etc` for administrator overrides and ships its own
+copy under `/usr/etc`, and on that container `/etc/sudoers` does not exist while
+`/usr/etc/sudoers` does, at mode 0444 against a directive requiring 0440: the
+file in force is world-readable although `/etc` holds nothing. `scan` therefore
+reads the vendor copy wherever `/etc` is empty and reports what it finds there,
+keyed on the `/etc` path so one control has one id on every distribution. It
+never writes `/usr/etc`, so the remediation named is an install into `/etc`.
+`/etc/gshadow` is absent from both layers on that same container and stays
+silent, which is the honest answer for a file the host does not have.
 
 ---
 
@@ -775,4 +806,4 @@ test-results/gui/
 
 ---
 
-**Last Updated**: 2026-07-27
+**Last Updated**: 2026-07-30

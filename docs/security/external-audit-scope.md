@@ -5,6 +5,8 @@
 `archive/2026-02-25-internal-audit/REMEDIATION_TRACKER.md`), which is precisely the right time to buy outside
 eyes.
 
+**Last Updated**: 2026-07-30
+
 ---
 
 ## Threat model (what the audit must assume)
@@ -35,6 +37,27 @@ eyes.
 - **Parser attack surface:** config TOML loading order, `sshd_config` and
   PAM file editing (including `sshd -t` pre-write validation), os-release
   parsing, compliance report generation from untrusted finding content.
+- **Layered host configuration (`/etc` and `/usr/etc`):**
+  `crates/hardener-common/src/vendor_config.rs` decides which copy of a
+  configuration file is in force, and the ssh, pam and permissions plugins all
+  route through it. Two properties are load bearing and should be attacked
+  directly: that `/usr/etc` is consulted only on an absence positively
+  confirmed at `/etc`, because answering with the vendor copy for an `/etc`
+  file that merely could not be read describes a configuration the host does
+  not obey, and that no write path ever touches `/usr/etc`.
+- **Silent false negatives, as a class.** A check the tool cannot make must be
+  reported as unchecked and never as a clean result, and several of the fixes
+  in the Unreleased section of `CHANGELOG.md` have exactly this shape. The most
+  recent instance, closed on 2026-07-30: the permissions plugin read `/etc`
+  alone, so on openSUSE, where `/etc/sudoers` does not exist and
+  `/usr/etc/sudoers` sits at 0444 against a required 0440, `scan` reported
+  neither a finding nor an unchecked check and a Critical severity check passed
+  on evidence nobody had collected. `scan` now
+  reports that mode as a finding keyed on the `/etc` path, with a copy into
+  `/etc` as the remediation; `apply` and `apply --dry-run` deliberately stay
+  silent, because the tool will not write the vendor layer. Auditors should
+  treat every remaining silence as a claim to be tested: the report's unchecked
+  list is part of the security surface, not a footnote to it.
 
 ## Out of scope
 
@@ -56,6 +79,11 @@ security-relevant OSS, a credible funding route given the tool's nature.
 - This scope document (threat model above)
 - Runbooks: `docs/guide/installation.md`, `docs/contributing/testing.md`, container fixtures
   (`scripts/containers/create-container.sh <distro>`, `scripts/containers/boot-ssh-test-container.sh`)
+- Verification harnesses: `scripts/test/full-test-suite.sh` and
+  `scripts/test/differential-suite.sh`, the latter judging every checked setting
+  by asking its real consumer (`sshd -T`, `chage -l`, `stat -c %a`) rather than
+  this project's own parser, driven across the five container distributions by
+  `scripts/test/run-cross-distro-tests.sh --differential`
 
 ## Logistics decisions (owner: maintainer)
 

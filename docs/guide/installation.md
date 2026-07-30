@@ -1,6 +1,6 @@
 # Installation Guide
 
-**Last Updated**: 2026-07-19
+**Last Updated**: 2026-07-30
 
 ## Requirements
 
@@ -132,10 +132,18 @@ docker run --rm --pid=host \
   the container's own network namespace; add `--network=host` if those
   checks should reflect the host's tuning rather than namespace defaults.
 - `-v /etc:/etc:ro`: SSH, PAM, permissions and distro-detection checks read
-  the host's real configuration and cannot write to it.
+  the host's real configuration and cannot write to it. On a host that layers
+  its configuration this is only half of what they read; see the `/usr/etc`
+  bullet below.
 - `-v /var/log:/var/log:ro`: log-file permission checks.
 - `-v /usr/lib:/usr/lib:ro`: vendor systemd unit and library permission
   checks.
+- `-v /usr/etc:/usr/etc:ro`, on a host that has that directory: openSUSE keeps
+  its packaged configuration there and reserves `/etc` for overrides, and Fedora
+  is moving the same way. The SSH, PAM and permissions checks fall through to
+  that layer when `/etc` holds nothing, so without the mount they find an empty
+  vendor layer and stay silent about a file that is genuinely in force on the
+  host. Leave the flag off where the directory does not exist.
 
 Filesystem checks only evaluate paths visible inside the container; anything
 outside the mounts is silently absent from the results. Widen coverage with

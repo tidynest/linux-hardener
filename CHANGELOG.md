@@ -26,23 +26,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **`hardener scan` no longer reports a critical permission control as clean on a
+- **`hardener scan` no longer reports a critical permission check as clean on a
   distribution that keeps the file under `/usr/etc`.** Measured on the openSUSE
   test container: `/etc/sudoers` does not exist there, `/usr/etc/sudoers` does, at
   mode **0444**, and the directive requires **0440** exactly at Critical severity.
   The file in force is therefore world readable, which discloses the sudo policy,
   and the plugin reported **neither a finding nor an unchecked check**, because a
-  confirmed absence from `/etc` was treated as nothing to report. A CIS control was
-  passing on evidence nobody had collected. The permissions plugin now asks the
-  vendor layer whenever `/etc` holds nothing, the same way the ssh and pam plugins
-  already do, and reports what it finds there.
+  confirmed absence from `/etc` was treated as nothing to report. A Critical
+  severity check was passing on evidence nobody had collected. The permissions
+  plugin now consults the same vendor layer the ssh and pam plugins already read,
+  and reports what it finds there. The mechanism differs from theirs because this
+  plugin audits modes rather than content: where those two read the contents of
+  whichever copy is in force, this one takes the `/usr/etc` counterpart of a path
+  confirmed absent from `/etc` and probes that counterpart's mode. Only paths under
+  `/etc` have a counterpart at all, so `/root` and `/boot` are unaffected.
   **The vendor file is never written.** The finding names `/usr/etc/sudoers` and its
   remediation is a copy into `/etc` at the required mode, which is where a
   distribution layering its configuration expects a deviation to be stated, and
   which survives the next package update where editing the vendor file in place
-  would not. A path absent from both layers is still nothing to report, which is
-  what `/etc/gshadow` reads on that same container, and a vendor path whose
-  existence or mode cannot be read is reported as unchecked rather than as absence.
+  would not. The finding is keyed on the `/etc` path, so the report, the
+  deduplication between a path's finding and its unchecked entry, and any
+  compliance mappings the path carries all resolve it by the identifier they
+  already ask for. `/etc/sudoers` carries no compliance mapping in this tool, so no
+  framework report changes for the measured case; the permission paths that do
+  carry one are `/etc/passwd`, `/etc/shadow`, `/etc/group`, `/etc/gshadow` and
+  `/etc/ssh`. A policy exception written for the `/etc` path still annotates the
+  finding, matched against the vendor copy's mode because that is the mode in
+  force.
+  **`apply` is unchanged, and so is the preview:** apply does nothing for a path
+  absent from `/etc`, so `apply --dry-run` still reports no pending change for a
+  vendor violation, and `scan` is the command that tells you about it. A path absent
+  from both layers is still nothing to report, which is what `/etc/gshadow` reads on
+  that same container, and a vendor path whose existence or mode cannot be read is
+  reported as unchecked rather than as absence.
 
 - **A checkpoint can now record a symlink, so `systemctl disable` and
   `systemctl mask` are undoable for the first time.** `file_metadata` follows a

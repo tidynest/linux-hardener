@@ -299,7 +299,11 @@ fn non_posix_skip_change(path: &str, fstype: &str) -> Change {
 
 /// Outcome of assessing one critical path during a scan.
 enum PermissionCheck {
-    /// Compliant, or confirmed absent: nothing to report.
+    /// Nothing to report: compliant, absent from `/etc` and `/usr/etc` both, or a
+    /// path with no vendor counterpart and nothing at `/etc`. A confirmed absence
+    /// from `/etc` alone is NOT this variant any more; it delegates to
+    /// [`check_vendor_layer_permissions`], because on a layering distribution the
+    /// vendor copy is the file in force.
     Clear,
     /// Present, but its permissions could not be read, so nothing can be said
     /// about them. Reported as unchecked rather than folded into `Clear`:
@@ -323,12 +327,20 @@ enum PermissionCheck {
 /// The directive as this run should read it.
 ///
 /// An octal directive override keyed by `permission_path` replaces the built-in
-/// baseline (mirrors apply :899-907 / validate :960-964), preserving
-/// `permission_max_mask` so mask semantics still apply to the overridden target.
+/// baseline, preserving `permission_max_mask` so mask semantics still apply to the
+/// overridden target.
 ///
-/// One definition, because the admin path and the vendor path both need it, and
-/// two copies would come to disagree about an override for exactly the paths
-/// where only one of the two layers holds the file.
+/// It exists because the admin path and the vendor path both need it, and two
+/// copies would come to disagree about an override for exactly the paths where
+/// only one of the two layers holds the file.
+///
+/// **Its reach is `scan` only.** `apply` and `validate` each still carry their own
+/// inline copy of the same computation, at the `config.directives.get` calls in
+/// their per-directive loops, so the rule has three implementations rather than
+/// one. `validate`'s copy is byte-for-byte what this function was extracted from.
+/// Collapsing all three is worth doing and is not what this extraction did. An
+/// earlier version of this comment cited line numbers for those two copies; they
+/// were wrong when written and line numbers were the wrong thing to cite.
 fn effective_directive(
     directive: &PermissionDirective,
     config: &PluginConfig,

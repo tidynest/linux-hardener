@@ -1,6 +1,6 @@
 # Getting started
 
-**Last Updated**: 2026-07-27
+**Last Updated**: 2026-07-30
 
 A task-oriented tour of the hardener for new users: scan a system, read the
 findings, preview and apply hardening, roll it back, and produce a first
@@ -67,7 +67,12 @@ hardener apply --dry-run --all
 ```
 
 The dry-run lists every change with its current and target value, modifies
-nothing, creates no checkpoint, and needs no root. You can narrow it to one
+nothing, creates no checkpoint, and needs no root. It covers what `apply` will
+change and nothing else, so a scan finding that has to be remediated by hand
+appears in `scan` and not here; the finding's own remediation steps are then the
+instructions, and the
+[troubleshooting guide](troubleshooting.md#scan-reports-a-permissions-finding-under-usretc-and-apply-changes-nothing) works
+through the case you are most likely to meet. You can narrow the preview to one
 plugin:
 
 ```bash

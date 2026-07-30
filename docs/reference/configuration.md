@@ -322,7 +322,12 @@ never written**, so the remediation offered is a copy into `/etc` at the
 required mode rather than a chmod of the package-owned original, and `apply`
 still changes nothing there. A path absent from both layers remains nothing
 to report, and a vendor path whose existence or mode cannot be read is
-reported as unchecked rather than as absence. A path
+reported as unchecked rather than as absence. That finding is keyed on the
+`/etc` path, so an exception written for that path still annotates it, matched
+against the mode of the vendor copy because that is the mode in force. Since
+`apply` changes nothing there, `apply --dry-run` reports nothing there either:
+it previews what `apply` would do, so a vendor violation reaches you through
+`scan` and the compliance report rather than through the preview. A path
 that exists but whose mode could not be verified is hardened anyway for the
 seven critical paths with a single exact target mode (`/root`, `/boot`,
 `/etc/ssh`, `/etc/sudoers`, `/etc/sudoers.d`, `/etc/passwd`, `/etc/group`):

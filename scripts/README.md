@@ -171,11 +171,12 @@ WEBKIT_DISABLE_COMPOSITING_MODE=1 cargo tauri dev
 | Plugin Documentation | `validate_plugin_docs.py` | Plugin tables match source |
 | Tauri Commands | `validate_tauri_docs.py` | Tauri commands documented |
 | Last Updated Dates | `validate_last_updated.py` | Dates current with git |
+| Doc Comment Attachment | `validate_doc_attachment.py` | No `///` block silently reassigned to the following item |
 | CLI Documentation | `validate_cli_docs.py` | CLI commands documented |
 | Compliance Frameworks | `validate_compliance_docs.py` | Framework list matches enum |
 
 **Modes**:
-- Default: Runs all 7 validators
+- Default: Runs all 8 validators
 - `--quick`: Skips CLI and Compliance validators (faster)
 - `--fix`: Passes `--fix` to validators that support it
 
@@ -203,10 +204,11 @@ Running: Version Synchronisation
   ✓ Plugin Documentation: passed
   ✓ Tauri Command Documentation: passed
   ✓ Last Updated Dates: passed
+  ✓ Doc Comment Attachment: passed
   ✓ CLI Documentation: passed
   ✓ Compliance Framework List: passed
 
-All 7 validations passed!
+All 8 validations passed!
 ```
 
 **Integration with CI/CD**:
@@ -1240,16 +1242,32 @@ each setting's real consumer what is in force: `sshd -T` for SSH, and
 `chage -l` on an account created after the apply for `/etc/login.defs`, and
 `stat -c %a` for the nine paths in `PERMISSION_CHECKS`. Every directive is
 checked twice, that the system satisfies what the run requires of it and that
-`scan` agrees with the system. Satisfying is not always equality: two of the nine
-permission paths are compared against an allowed-bits mask, where a stricter mode
-is compliant and the tool correctly leaves it alone. A value that cannot be determined is a failure
-rather than a skip, and a pre-apply control proves the checks match real
-output rather than passing by matching nothing.
+`scan` agrees with the system. Satisfying is not always equality: two of the
+nine permission paths are compared against an allowed-bits mask, where a
+stricter mode is compliant and the tool correctly leaves it alone. A value that
+cannot be determined is a failure rather than a skip, and a pre-apply control
+proves the checks match real output rather than passing by matching nothing.
+
+A permission path `/etc` does not hold is read at `/usr/etc` instead, which is
+where openSUSE keeps the file actually in force, and only an absence confirmed at
+both layers is treated as nothing to compare. For such a row the mode is recorded
+rather than required, because the tool never writes the vendor layer, so the
+assertion that can fail is whether `scan` reported the violation.
+
+The run applies twice, and four readings are compared across the two applies:
+every managed permission mode, `sshd -T` in full, the `sshd_config.d` fragments
+as names and contents, and what `login.defs` means to a fresh account. An apply
+that undoes the previous one is a fleet host drifting back to an unhardened state
+on a timer while every scan reports success, and a single-apply run cannot see
+that. A complete run comes to 52 checks per distribution, 260 across the five,
+and a run recording fewer than the tables ask for is refused rather than reported
+as a pass.
 
 It needs a container that has never been hardened, because that pre-apply
 control requires findings to exist, and it needs `jq` (the suite refuses
 loudly if it is missing). `differential-suite.sh --self-test` runs the pure
-text extractors and every refusal path with no root and no container.
+text extractors and every refusal path with no root and no container, 254
+assertions in all.
 
 **How It Works**:
 

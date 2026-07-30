@@ -91,7 +91,9 @@ This tool is designed to harden systems against common attack vectors, but is **
 
 4. **Distribution Detection**: Relies on `/etc/os-release` which could be spoofed on a compromised system.
 
-5. **Compliance Coverage**: All 10 frameworks (CIS, STIG, NIST 800-53, PCI-DSS, HIPAA, GDPR, ISO 27001:2022, SOC 2, NIST 800-171, FedRAMP) emit real Pass/Fail results via plugin-declared per-control coverage. Controls not covered by any plugin are reported as `ManualReview`. Do not treat a `ManualReview` result as compliant.
+5. **Findings the Tool Will Not Remediate**: `hardener scan` can report a finding, up to Critical severity, that `apply` will never act on. Where a distribution layers its configuration (openSUSE keeps packaged files under `/usr/etc` and reserves `/etc` for overrides; Fedora is moving the same way) and a critical path is absent from `/etc`, the permissions plugin assesses the vendor copy and reports a violating mode there. It never writes that file: the file is package-owned, so a package update would revert the change, and `/etc` is where a deviation belongs. `apply` therefore makes no change for such a path and `apply --dry-run` previews nothing about it, so `scan` is the only command that surfaces it. The finding carries the `install` command that copies the file into `/etc` at the required mode, and an operator has to run it; the control keeps reporting `Fail` until they do. Measured case: `/usr/etc/sudoers` at mode 0444 where 0440 is required, which leaves the sudo policy readable by every account on the host.
+
+6. **Compliance Coverage**: All 10 frameworks (CIS, STIG, NIST 800-53, PCI-DSS, HIPAA, GDPR, ISO 27001:2022, SOC 2, NIST 800-171, FedRAMP) emit real Pass/Fail results via plugin-declared per-control coverage. Controls not covered by any plugin are reported as `ManualReview`. Do not treat a `ManualReview` result as compliant.
 
 ### SSH Remote Scanning Security
 
@@ -210,4 +212,4 @@ For security concerns: **tidynest@proton.me**
 
 For general issues: [GitHub Issues](https://github.com/tidynest/linux-system-hardener/issues)
 
-**Last Updated**: 2026-07-19
+**Last Updated**: 2026-07-30

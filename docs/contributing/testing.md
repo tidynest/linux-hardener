@@ -12,7 +12,7 @@ Commands for running unit tests, integration tests, container-based root tests, 
 cargo test --workspace
 ```
 
-Runs every test across all 11 crates. Currently 660+ tests.
+Runs every test across all 11 crates. Currently 1300+ tests.
 
 ### CI subset (excludes GUI crates)
 
@@ -172,23 +172,25 @@ consumer what is in force:
 | The nine paths in `PERMISSION_CHECKS` | `stat -c %a` | A mode has no parser to disagree with: the value the kernel reports **is** the value in force. What the oracle adds is the comparison, because two of the nine are allowed-bits masks where a stricter mode is compliant |
 
 Two assertions per directive, because both have failed in production: the system
-holds the value the tool targeted, and `scan`'s verdict agrees with the system.
+satisfies what this run requires of it, and `scan`'s verdict agrees with the
+system.
 
 **A reading satisfying a requirement is not always string equality**, which is
 why `requirement_satisfied` carries a direction. `/etc/shadow` and `/etc/gshadow`
 are compared against an allowed-bits mask of `0640`: a stricter mode sets no bit
 the mask disallows and is compliant, so Arch's `0600` and RHEL's `0000` are both
 correct and the tool deliberately leaves them alone. An equality oracle would
-have reported a defect on two of five distributions against a tool behaving
+have reported a defect on three of the five distributions against a tool behaving
 exactly as designed. The comparison lives in one place for the same reason the
 product side keeps its own in `strictness.rs`: a second copy behind the verdict
 question would answer differently for precisely the readings the mask exists for.
 
-**A path that is absent still contributes two assertions.** The tool treats a
-confirmed absence as nothing to report, so the requirement there is that it
-reports nothing, and a tool inventing a finding for a path that is not there
-fails. What is given up is the mode comparison, and the run prints how many paths
-gave it up rather than leaving a reader to notice a shorter proof.
+**A path absent from both layers still contributes two assertions.** The tool
+treats an absence confirmed at `/etc` and at `/usr/etc` as nothing to report, so
+the requirement there is that it reports nothing, and a tool inventing a finding
+for a path that is not there fails. What is given up is the mode comparison, and
+the run prints how many paths gave it up rather than leaving a reader to notice a
+shorter proof.
 
 **Absent from `/etc` is not absent from the host**, and the first container run of
 this oracle proved why. openSUSE keeps `sudoers` at `/usr/etc/sudoers` with
@@ -223,8 +225,13 @@ filenames and contents, and what `login.defs` means to a fresh account. The
 permission reading is taken **first**, because reading `login.defs` creates and
 removes a probe account and `useradd` and `userdel` rewrite `/etc/passwd` and
 `/etc/shadow`: taking it ahead of that keeps one probe cycle out from between the
-two readings being compared. It also makes permissions the second plugin in the
-repo whose apply is checked for idempotency at all, ssh having been the only one,
+two readings being compared. It cannot keep all of them out, since one cycle
+still runs between that baseline and the post-apply capture, and that is why the
+shared failure message names no cause: it reports that the reading moved between
+the two applies rather than that the second apply moved it, because for this
+reading the probe account could have. It also makes permissions the second
+plugin in the repo whose apply is checked for idempotency at all, ssh having
+been the only one,
 and ssh failed that check twice. Idempotency is an invariant rather than a nicety, because
 the scheduler applies on a cadence: an apply that undoes the previous one is a
 fleet host returning to an unhardened state on a timer while reporting success
@@ -310,13 +317,13 @@ which build happened to be current. A binary whose `--version` fails or prints
 nothing is recorded as `UNAVAILABLE` with the reason, never as a blank beside
 the path.
 
-`jq` is required, along with `sshd`, `ssh-keygen`, `useradd`, `userdel`,
-`chage`, `id`, `chpasswd`, `stat` and `su`. A missing one aborts the run by name
-before any check runs. The account rows the probe reads are parsed by the shell
-rather than by `awk`, which is in neither the dnf-family nor the openSUSE
-package set the container script installs. An oracle
-that cannot answer is a failure here, never a skip: a skipped check that reads as
-a pass is the disease being treated.
+`jq` is required, along with `grep`, `sshd`, `ssh-keygen`, `useradd`,
+`userdel`, `chage`, `id`, `chpasswd`, `stat` and `su`. A missing one aborts the
+run by name before any check runs. The account rows the probe reads are parsed
+by the shell rather than by `awk`, which is in neither the dnf-family nor the
+openSUSE package set the container script installs. An oracle that cannot answer
+is a failure here, never a skip: a skipped check that reads as a pass is the
+disease being treated.
 
 The binary under test must be built from this tree. Its `scan --format json`
 output has to carry both a `findings` and an `unchecked` array per plugin, and
@@ -334,8 +341,9 @@ bash scripts/test/differential-suite.sh --self-test
 
 Needs neither root nor a container. It drives the text extractors, the freshness
 guard that refuses a capture taken before `apply`, the probe's create-and-remove
-safety, and both plugins' finding-id conventions against fixtures. `jq` is the
-only external command it needs.
+safety, and all three plugins' finding-id conventions against fixtures,
+including the doubled dash in `perm--etc-shadow` that a filter written without it
+would silently miss. `jq` is the only external command it needs.
 
 The idempotency family is proven here too, because its readings want root and a
 container: the fragment listing against a temporary directory that is missing,
@@ -382,7 +390,10 @@ refused the run at `got '28', want '25'` until the literal was raised on
 purpose, and the pwquality enforcement pair did it again at
 `got '30', want '28'`. The permissions table did it a third time: adding nine
 paths and a third plugin moved the total from 30 to 51, and the self-test refused
-the run until both literals were raised on purpose.
+the run until both literals were raised on purpose. The `permission-modes`
+idempotency reading did it a fourth time, refusing the run at
+`got '51', want '52'`, which is where the per-distribution total stands and where
+the five-distribution total of 260 comes from.
 
 ### What a failure means
 
@@ -391,18 +402,29 @@ that an oracle could not be read. Neither is a flaky test: a disagreement is a
 product defect and is exactly what this suite exists to find, and an oracle that
 cannot answer leaves a directive unproven, which is recorded as a failure rather
 than skipped. Each `FAIL` line names the directive, and where the two disagree,
-the value the system holds and the value the tool targeted:
+the value the system holds and what this run requires of it:
 
-- `the system holds 'X' but the tool targets 'Y'`: `apply` did not take effect.
+- `the system holds 'X' but this run requires 'Y'`: `apply` did not take effect.
+  For the two mask rows the requirement reads `no bit outside 'Y'` instead,
+  because a stricter mode is compliant there and a message claiming the run
+  requires `640` would be false of a directive that also accepts `600`.
 - `the tool claims a compliance the system does not have`: `scan` reported
   nothing while the system holds something other than the target. This is the
-  shape of the `login.defs` defect.
-- `the tool reports N finding(s) ... while the system holds the target value`:
-  `scan` is flagging a host that is in fact compliant.
+  shape of the `login.defs` defect, and of the openSUSE vendor-file defect where
+  the mode in force sat at `/usr/etc` and the tool had looked only at `/etc`.
+- `the tool reports N finding(s) ... while the system holds 'X' and this run
+  requires 'Y'`: `scan` is flagging a host that is in fact compliant.
 - `the tool did not check '<id>'`: the id came back in the `unchecked` array.
   The tool verified nothing for that directive, which is neither agreement with
   the system nor a contradiction of it, and the usual cause is a config file the
   scan could not read.
+- `idempotency <key>: this reading moved between the two applies`: the second
+  apply did not leave the reading where the first one did, so applying on a
+  cadence does not hold the host where one apply put it. The message names no
+  cause on purpose: for `permission-modes` the probe account that reading
+  `login.defs` creates and removes rewrites `/etc/passwd` and `/etc/shadow`, so
+  the apply is not the only candidate. The `diff|` lines beneath it name the
+  lines that moved, in both directions.
 - `before apply the tool reported no finding for any of the N compared
   directives`: the pre-apply control failed for that plugin. Either its scan
   produced nothing, which this JSON cannot distinguish from a compliant host, or

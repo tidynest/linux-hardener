@@ -157,7 +157,7 @@ sudo hardener apply --plugin kernel          # Apply only kernel sysctl hardenin
 ```
 
 **Dry-run vs real apply:**
-- `--dry-run` lists each pending change, with an "N already compliant" tail per plugin for settings that already meet policy, then exits. No files are modified, no checkpoint is created, and no privilege is required.
+- `--dry-run` lists each pending change, with an "N already compliant" tail per plugin for settings that already meet policy, then exits. No files are modified, no checkpoint is created, and no privilege is required. **Neither category covers a finding apply cannot act on**, and there is one: on a distribution that keeps configuration under `/usr/etc`, a permission violation in the vendor copy is reported by `scan` and is deliberately absent from the dry run, because the vendor file is never written and so no change is pending. A clean dry run for `permissions` is therefore not the same as a clean `scan`.
 - Without `--dry-run`, root or passwordless sudo is required on the target session (local, or the `--ssh` host). A checkpoint is created before any writes, and each plugin's changes are applied to the live system and persisted to config files. Apply is state-aware and idempotent: already-compliant settings are skipped rather than rewritten, unless the value is correct but the line's separator is not, which is repaired in place. The per-plugin summary counts only successful, non-skipped changes ("N change(s) applied"); a plugin that needed nothing reads "no changes needed", and failures are reported as "N failed".
 
 ---
@@ -638,4 +638,4 @@ hardener history export <SESSION_ID> [FLAGS]
 | `SESSION_ID` | UUID of the session to export | |
 | `-o`, `--output <FILE>` | Output file path | `session-<id>.json` |
 
-**Last Updated**: 2026-07-27
+**Last Updated**: 2026-07-30

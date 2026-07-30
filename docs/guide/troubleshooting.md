@@ -1,6 +1,6 @@
 # Troubleshooting
 
-**Last Updated**: 2026-07-26
+**Last Updated**: 2026-07-30
 
 Symptom-organised fixes for the most common problems. Installation steps live
 in the [installation guide](installation.md); the per-desktop polkit agent
@@ -103,6 +103,44 @@ fstab guidance instead. Harden the mount rather than the mode - add mask
 options to the /boot line in `/etc/fstab`, for example `fmask=0077,dmask=0077`,
 then remount. The same handling covers msdos, exfat, ntfs, iso9660 and udf
 mounts.
+
+## Scan reports a permissions finding under /usr/etc, and apply changes nothing
+
+openSUSE keeps its packaged configuration under `/usr/etc` and reserves `/etc`
+for administrator overrides, and Fedora is moving the same way. On such a host a
+critical file can be missing from `/etc` while the copy actually in force sits
+under `/usr/etc`, so when `/etc` holds nothing the scan reads the vendor copy
+rather than concluding there is nothing to check. Where that copy violates its
+required mode the finding names it. On openSUSE, `/etc/sudoers` does not exist,
+`/usr/etc/sudoers` is mode 0444 and the directive requires 0440, so the sudo
+policy is readable by every account on the host; earlier releases reported
+nothing at all about it, which let a Critical control pass on evidence nobody had
+collected.
+
+`apply` deliberately does nothing for such a path and `apply --dry-run` previews
+no change for it, so `scan` is the only command that mentions it. Apply looking
+idle here is the designed outcome rather than a bug: the vendor file belongs to a
+package, so a mode this tool set there would be reverted by the next package
+update, and `/etc` is where a layering distribution expects a deviation to be
+stated. The remediation is therefore one you perform yourself, and the finding
+prints it as an `install` command that creates the `/etc` copy at the required
+mode:
+
+```bash
+sudo install -o root -g root -m 0440 /usr/etc/sudoers /etc/sudoers
+```
+
+That copy takes precedence over the vendor file and survives package updates,
+where editing `/usr/etc/sudoers` in place would not. Re-run `hardener scan`
+afterwards and the finding is gone, because the path now exists under `/etc` and
+is compliant, which also means `apply` can maintain its mode from then on.
+
+Two neighbouring cases stay quiet for good reasons. A path absent from both
+layers is genuinely nothing to report, which is what `/etc/gshadow` reads on
+openSUSE, so no finding appears for a file the host does not have anywhere. A
+vendor path whose existence or mode could not be determined becomes a dimmed
+"unchecked" entry instead of a finding, because a probe that errored is not the
+same answer as an absence.
 
 ## The scheduled daemon refuses to start
 

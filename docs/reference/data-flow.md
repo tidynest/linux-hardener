@@ -1,7 +1,7 @@
 # Linux System Hardener - Data Flow Documentation
 
-**Last Updated:** 2026-07-24
-**Version:** 1.4.0
+**Last Updated:** 2026-07-30
+**Version:** 1.5.1
 
 This document describes the data flow for all major operations in the system.
 
@@ -72,7 +72,8 @@ This document describes the data flow for all major operations in the system.
 │  │   • PAM: /etc/pam.d/*, /etc/security/*                    │
 │  │   • Services: two batched systemctl listings              │
 │  │     (list-unit-files + list-units, pattern-filtered)      │
-│  │   • Permissions: stat on critical paths                   │
+│  │   • Permissions: stat on critical paths, and on the       │
+│  │     /usr/etc copy of any /etc path the host does not hold │
 │  │   • Audit: /etc/audit/rules.d/*                           │
 │  │   • MAC: getenforce/aa-status                             │
 │  ├─ Compare against secure baseline                          │
@@ -158,6 +159,22 @@ struct UncheckedCheck {
 }
 ```
 
+**Two layers, one finding.** `permissions` asks the filesystem about each
+critical path, and where `/etc` holds nothing at all it asks the `/usr/etc`
+counterpart through `hardener_common::vendor_config::vendor_path_for`. A
+distribution that reserves `/etc` for administrator overrides keeps the file in
+force under `/usr/etc`, so a confirmed absence from `/etc` is not the same as
+there being nothing to report. A violating vendor mode becomes a `Finding` keyed
+on the `/etc` path, which is what keeps the id, the compliance mappings and the
+differential suite all asking by one name, while the title and explanation name
+the vendor file the operator actually has to look at. Nothing follows from it in
+`/usr/etc`: the remediation is an install into `/etc` at the required mode,
+because the vendor file is package owned and the next update would revert an
+edit made there. `apply` is unchanged and still leaves a path absent from `/etc`
+alone, so `apply --dry-run` says nothing about a vendor violation either. A path
+absent from both layers stays silent, and a vendor path whose existence or mode
+could not be read is reported as an `UncheckedCheck` rather than as an absence.
+
 ---
 
 ## 2. Apply Command Flow
@@ -211,7 +228,9 @@ struct UncheckedCheck {
 │  │   • PAM: Update /etc/pam.d/* files                        │
 │  │   • Services: systemctl disable/mask                      │
 │  │   • Permissions: chmod, chown (non-POSIX fs skipped       │
-│  │     with fstab guidance, not chmodded)                    │
+│  │     with fstab guidance, not chmodded); a path absent     │
+│  │     from /etc is left alone and the /usr/etc copy is      │
+│  │     never written, so a vendor violation is scan only     │
 │  │   • Audit: Write audit rules, augenrules --load           │
 │  │   • MAC: setenforce, aa-enforce                           │
 │  ├─ Log each change to audit trail                           │
@@ -1367,4 +1386,4 @@ compares the two behaviours, not two separate screens.
 
 ---
 
-**Last Updated**: 2026-07-27
+**Last Updated**: 2026-07-30

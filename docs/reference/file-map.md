@@ -153,7 +153,7 @@ pub trait HardeningPlugin: Send + Sync {
 | `src/pam/login_defs.rs` | Auth | Carries a `/usr/etc` configuration file into `/etc` before the managed directives are edited into it, with the vendor file's own permissions rather than the temporary file's | `mode_for_copy_of()` |
 | `src/pam/layer_drift.rs` | Auth | Reports the keys an `/etc` file hides from its `/usr/etc` counterpart, for every layered file the plugin reads rather than for `login.defs` alone | `LAYERED_CONFS`, `masked_keys()`, `masked_keys_finding()` |
 | `src/services/mod.rs` | Services | Unnecessary services (xinetd, cups, avahi, etc.) |
-| `src/permissions/mod.rs` | FileSystem | Critical paths, SUID/SGID, world-writable |
+| `src/permissions/mod.rs` | FileSystem | Critical paths, SUID/SGID, world-writable. Where `/etc` holds nothing at all, `scan` reads the `/usr/etc` copy through `vendor_path_for()` and reports a violating vendor mode as a finding keyed on the `/etc` path, so the id stays `perm--etc-sudoers` while the title names the file in force. The vendor file is never written, so that finding's remediation is an install into `/etc`; `apply` is unchanged and still leaves a path absent from `/etc` alone | `PermissionCheck::VendorOnly`, `check_vendor_layer_permissions()`, `effective_directive()` |
 | `src/audit/mod.rs` | Audit | auditd rules for time, users, permissions |
 | `src/mac/mod.rs` | MAC | SELinux/AppArmor status |
 
@@ -846,4 +846,4 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | `hardener-common/src/types.rs` | Added `FindingPolicyException` struct |
 | `hardener-cli/src/cli.rs` | Added `--config`, `--audit`, `--exit-code` flags, `ScanMode` enum |
 
-**Last Updated**: 2026-07-27
+**Last Updated**: 2026-07-30

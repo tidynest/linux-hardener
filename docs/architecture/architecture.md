@@ -1,6 +1,6 @@
 # Linux System Hardener - Architecture Documentation
 
-**Last Updated:** 2026-07-27
+**Last Updated:** 2026-07-30
 **Version:** 1.5.1
 
 ---
@@ -72,7 +72,8 @@ Linux System Hardener is a modular security hardening tool for Linux systems, pr
 │ ├─ Ed25519 signing      │     │ ├─ Severity/Category enums      │
 │ └─ SQLite database      │     │ ├─ SystemExecutor trait         │
 │                         │     │ ├─ FileMetadata/CommandOutput   │
-│                         │     │ └─ MockExecutor (test seam)     │
+│                         │     │ ├─ MockExecutor (test seam)     │
+│                         │     │ └─ Layered /etc + /usr/etc      │
 │                         │     │ hardener-distro                 │
 │                         │     │ ├─ Distribution detection       │
 │                         │     │ └─ Package managers             │
@@ -105,7 +106,7 @@ Linux System Hardener is a modular security hardening tool for Linux systems, pr
 ├─────────────────────────────────────────────────────────────────┤
 │  Linux System APIs                                              │
 │  ├─ /proc/sys (kernel parameters)                               │
-│  ├─ /etc (config files)                                         │
+│  ├─ /etc, /usr/etc (config files)                               │
 │  ├─ systemctl (service management)                              │
 │  ├─ auditctl (audit rules)                                      │
 │  ├─ nftables/firewalld/ufw (firewall)                           │
@@ -121,7 +122,7 @@ Linux System Hardener is a modular security hardening tool for Linux systems, pr
 |-------|---------|-------------|
 | `hardener-types` | WASM-compatible shared types (4 source files: `lib.rs`, `config_picker.rs`, `remote.rs`, `scheduler.rs`) | `PluginId`, `Severity`, `Finding`, `ScanResult`, `UncheckedCheck`, `ApplyResult`, `ComplianceReport`, `RollbackResult`, `ValidationReport`, `ConfigSummary`, `RemoteHostProfile`, `RemoteConnectionStatus`, `RemoteConnectionInfo`, `HostsConfig`, `SchedulerUiConfig`, `NotificationUiConfig`, `TestNotificationResult`, `FleetHostScan`, `FleetHostStatus`, `SeverityTallies` |
 | `hardener-core` | Plugin framework, execution context, config | `HardeningPlugin`, `Context`, `PluginManager`, `HardenerConfig`, `ConfigLoader`, `LocalExecutor`, `SshExecutor` (re-exports `SystemExecutor` from hardener-common) |
-| `hardener-common` | Shared utilities, error types, executor abstraction | `HardeningError`, `SystemExecutor`, `FileMetadata`, `CommandOutput`, `MockExecutor`, file utilities (re-exports types from hardener-types) |
+| `hardener-common` | Shared utilities, error types, executor abstraction, layered `/etc` + `/usr/etc` configuration resolution | `HardeningError`, `SystemExecutor`, `FileMetadata`, `CommandOutput`, `MockExecutor`, `ConfigLayer`, `LayeredRead`, `read_layered()`, `vendor_path_for()`, file utilities (re-exports types from hardener-types) |
 | `hardener-plugins` | 8 security plugin implementations | All plugin structs |
 | `hardener-state` | Checkpoint, audit, and scan-session persistence | `CheckpointManager`, `AuditLogger`, `ScanHistoryManager` |
 | `hardener-compliance` | Compliance framework mapping | `ReportGenerator`, frameworks (PDF behind `pdf` feature) |
@@ -392,6 +393,60 @@ pub trait FirewallBackend: Send + Sync {
 
 ---
 
+## Vendor Configuration Layer (`/etc` and `/usr/etc`)
+
+openSUSE (Leap 15.6+, Tumbleweed, MicroOS) ships its configuration under
+`/usr/etc` and reserves `/etc` for administrator overrides, and Fedora is moving
+the same way. On those hosts the vendor copy is the file in force wherever `/etc`
+holds nothing, so a plugin reading `/etc` alone reports on a file the system does
+not obey. `hardener-common/src/vendor_config.rs` is the single place that knows
+this:
+
+| Item | Purpose |
+|------|---------|
+| `ConfigLayer { Admin, Vendor }` | Which directory supplied a file |
+| `LayeredRead { Found, Absent, Unreadable }` | The three outcomes of a layered read; `Found` names the path and the layer that answered |
+| `read_layered()` | Reads whichever copy is in force for an `/etc` path |
+| `vendor_path_for()` | The `/usr/etc` counterpart of an `/etc` path, when there is one (nothing outside `/etc`, and not `/etc` itself) |
+
+Two rules hold everywhere:
+
+1. **`/etc` wins, and `/usr/etc` is consulted only on an absence positively
+   confirmed at `/etc`.** An `/etc` file that exists but cannot be read is still
+   the file the system obeys, so answering with the vendor copy would report a
+   configuration that is not in force. Every other outcome is `Unreadable`,
+   never a fallthrough to the vendor layer.
+2. **The vendor file is never written.** SSH states its deviation in a drop-in
+   under `/etc/ssh/sshd_config.d`, PAM copies the vendor file into `/etc` and
+   edits the managed directives into that copy, and permissions reports the
+   violation with a copy into `/etc` as the remediation. Editing a package-owned
+   file in place would be reverted by the next package update.
+
+Three plugins consult the layer. Permissions was the last one blind to it, until
+2026-07-30:
+
+| Plugin | What it asks the vendor layer | Through |
+|--------|-------------------------------|---------|
+| `SshHardeningPlugin` | The contents of the `sshd_config` in force | `read_layered()` |
+| `PamHardeningPlugin` | The contents of the `login.defs` and `pam` files in force, and which keys an `/etc` copy masks | `read_layered()`, `vendor_path_for()` |
+| `PermissionsHardeningPlugin` | The **mode** of the vendor counterpart of a path confirmed absent from `/etc` | `vendor_path_for()`, then `path_exists`/`file_metadata` |
+
+Permissions is the odd one out because it audits modes rather than content, so it
+probes the counterpart path directly instead of reading a file. Its scan gained a
+`PermissionCheck::VendorOnly` outcome, which is a finding rather than an
+unchecked check: the mode was read and it does violate, so what is missing is a
+remediation this tool may perform, not the evidence. The finding is keyed on the
+`/etc` path, so the report, the CLI/GUI dedupe and the differential suite still
+resolve it by the identifier they already ask for, while its title and
+explanation name the `/usr/etc` file that is actually in force. `apply` and
+`validate` are unchanged: apply does nothing for a path absent from `/etc`, and
+the dry run accordingly previews nothing, so `scan` is where a vendor violation
+is reported. A path absent from both layers stays silent, and a vendor path whose
+existence or mode cannot be determined is reported as unchecked, never as
+absence.
+
+---
+
 ## State Management
 
 ### Storage Locations
@@ -556,6 +611,7 @@ pub struct PolicyException {
 5. **Rollback Safety**: Full state restoration from any checkpoint (including directory permissions). Rollback is itself reversible: it snapshots the current state as a new signed checkpoint before restoring, and fails closed (refuses the rollback, writes nothing) if that snapshot cannot be taken. A checkpoint row that records a protected system path (`UNDELETABLE_ROLLBACK_PATHS`: account databases, `/etc/ssh`, `/etc/sudoers` and similar) as absent is never trusted to mean the file should be removed: if that path exists on the host, rollback refuses to delete it and reports it as skipped rather than guessing
 6. **Transparent Config**: Configuration cannot hide security findings, only annotate them
 7. **Non-POSIX Filesystem Awareness**: Permissions plugin recognises filesystems that ignore `chmod` (vfat/FAT32, exfat, ntfs, iso9660, udf) - e.g. a vfat `/boot` ESP - and reports an unchecked check with fstab `fmask`/`dmask` guidance instead of a false HIGH finding or a futile `chmod`; apply records these as Skipped, and the remote chmod path still verifies the mode actually changed
+8. **Vendor Configuration Awareness**: On a distribution that keeps its configuration under `/usr/etc` and reserves `/etc` for administrator overrides, the copy in force is the vendor one wherever `/etc` holds nothing. `hardener-common/src/vendor_config.rs` resolves both layers for the ssh, pam and permissions plugins: `/etc` always wins, `/usr/etc` is consulted only on an absence positively confirmed at `/etc` (an `/etc` file that exists but cannot be read is never answered with the vendor copy), and the vendor file is never written. Until 2026-07-30 the permissions plugin read `/etc` alone, so a confirmed absence there was silence: on the openSUSE test container `/usr/etc/sudoers` sat at 0444 against a required 0440 and the scan reported neither a finding nor an unchecked check, so a Critical severity check passed on evidence nobody had collected. `scan` now reports that mode as a finding keyed on the `/etc` path, with a copy into `/etc` at the required mode as its remediation, while a path absent from both layers, which is what `/etc/gshadow` reads on that host, is still nothing to report
 
 ---
 

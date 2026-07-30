@@ -226,15 +226,20 @@ The tool is designed for system administrators, DevOps engineers, and security p
 > 16. See [docs/reference/distribution-validation.md](docs/reference/distribution-validation.md) for
 > the specific versions last validated end-to-end.
 
-> **openSUSE is partially supported.** It keeps vendor configuration under
-> `/usr/etc` and reserves `/etc` for administrator overrides, a layout this tool
-> does not yet read. SSH is therefore neither scanned nor hardened there, since
-> `sshd_config` lives at `/usr/etc/ssh/sshd_config`, and PAM hardening is
-> refused rather than applied wherever writing to `/etc` would mask a vendor
-> file. Every other plugin works normally, and scanning is unaffected outside
-> SSH. **If you ran an earlier release on openSUSE, see the CHANGELOG: hardening
-> could leave a short `/etc/login.defs` masking the vendor file, and that needs
-> undoing by hand.**
+> **openSUSE is supported with one manual step.** It keeps packaged configuration
+> under `/usr/etc` and reserves `/etc` for administrator overrides, and the tool reads
+> both layers rather than only `/etc`. SSH assesses whichever `sshd_config` is in
+> force and hardens through `/etc/ssh/sshd_config.d/00-hardener.conf`, so the
+> vendor file's own `Include` lines survive the change. PAM creates its `/etc`
+> copy from the vendor file before editing it, so the settings it does not manage
+> survive an override that replaces the file as a whole. The permissions plugin is
+> where a manual step remains: when `/etc` holds nothing it assesses the
+> `/usr/etc` copy and reports a violating mode there, but it never writes a
+> package-owned file, so the remediation is the copy into `/etc` that the finding
+> prints for you (see the [troubleshooting guide](docs/guide/troubleshooting.md#scan-reports-a-permissions-finding-under-usretc-and-apply-changes-nothing)). **If you ran 1.5.0
+> or earlier on openSUSE, hardening could leave a short `/etc/login.defs` masking
+> the vendor file, and that needs undoing by hand: see the notice at the top of
+> this file.**
 
 ### User Interface
 
@@ -268,7 +273,7 @@ The tool is designed for system administrators, DevOps engineers, and security p
 ### Test Coverage
 
 ```
-Rust workspace:  1191 passed · 0 failed · 43 ignored
+Rust workspace:  1312 passed · 0 failed · 43 ignored
 GUI / desktop:   113 Playwright (Web UI, 5 distros) · 95 desktop (UX + functional) · 21 Node.js
 ```
 
@@ -644,6 +649,12 @@ This tool is designed to harden systems against:
 - `scan --format json` reports a plugin whose scan failed identically to one
   that passed, because the per-plugin success flag is not serialised. The text
   output does name such a plugin
+- Not every finding is one `apply` can act on. Where a distribution layers its
+  configuration, a permissions finding can name a file under `/usr/etc` that the
+  tool deliberately never writes, because it is package-owned and a package
+  update would revert the change. `scan` reports it and prints the `install`
+  command that copies it into `/etc`, while `apply` and `apply --dry-run` stay
+  silent about it by design ([troubleshooting guide](docs/guide/troubleshooting.md#scan-reports-a-permissions-finding-under-usretc-and-apply-changes-nothing))
 
 ---
 
@@ -686,4 +697,4 @@ This project draws inspiration from established security tools including:
 **Contact**: tidynest@proton.me
 **Repository**: https://github.com/tidynest/linux-system-hardener
 
-**Last Updated**: 2026-07-27
+**Last Updated**: 2026-07-30

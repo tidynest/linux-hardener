@@ -2,7 +2,27 @@
 
 ---
 
-## Current State (as of 2026-07-27)
+## Current State (as of 2026-07-30)
+
+**Read this first: `main` is well ahead of the last release, and nothing has
+shipped since it.** The version in the tree is unchanged, so none of the work in
+this paragraph is in a build a user can install. The one change on `main` with
+user-visible behaviour is the permissions plugin's vendor layer (`f008a10`): when
+a critical path is absent from `/etc`, the scan now assesses the distribution's
+copy under `/usr/etc` and reports a finding naming that file when its mode
+violates the directive. Measured on openSUSE, `/etc/sudoers` does not exist and
+`/usr/etc/sudoers` is mode 0444 against a required 0440, so a Critical control had
+been passing on evidence nobody collected. The vendor file is never written,
+because it is package-owned and a package update would revert the change, so
+`apply` does nothing for such a path and `apply --dry-run` previews nothing about
+it; the finding instead carries the `install` command that copies the file into
+`/etc`, and the operator runs it. Documented for operators in
+[guide/troubleshooting.md](guide/troubleshooting.md#scan-reports-a-permissions-finding-under-usretc-and-apply-changes-nothing). The other two commits (`68334ee`, `27dc715`)
+are test-harness work with no user-visible effect: the differential suite gained a
+permissions oracle that asks `stat` what each of the nine modes is rather than
+trusting the tool's own report, and a second apply must now leave every mode where
+it found it. Per-distribution checks went from 30 to 52, five-distribution from
+255 to 260.
 
 **Everything below shipped in v1.5.0.** The reversible-rollback fix landed
 (`303c4d0`) - `hardener rollback` (CLI, desktop and fleet) now snapshots the
@@ -384,9 +404,9 @@ See `docs/plans/archive/2026-02-24-gui-cli-parity.md`: all 6 phases complete.
 
 - **11 Crates** (10 core + 1 Tauri app)
 - **8 Security Plugins**: Kernel, SSH, Firewall, PAM, Services, Audit, Permissions, MAC
-- **1105 Passing Tests** (plus 43 ignored: root-, SSH- or backend-gated)
+- **1312 Passing Tests** (plus 43 ignored: root-, SSH- or backend-gated)
 - **Multi-Distribution Support**: Debian, Red Hat, Arch, SUSE families
-- **Current Version**: 1.5.0 (code, tag and repo packaging; AUR bump follows the tag)
+- **Current Version**: 1.5.1 (code, tag and repo packaging; AUR bump follows the tag)
 - **WASM Support**: GUI frontend compiles to `wasm32-unknown-unknown`
 
 For version history and detailed feature tracking, see [ROADMAP.md](ROADMAP.md).
@@ -458,4 +478,4 @@ hardener-scheduler
 
 *This document is prepared for continuity between development sessions.*
 
-**Last Updated**: 2026-07-27
+**Last Updated**: 2026-07-30

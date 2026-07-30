@@ -1241,10 +1241,12 @@ run_pwquality_enforcement_checks() {
 # an allowed-bits mask.
 #
 # The two mask rows are the reason requirement_satisfied has a direction at all.
-# /etc/shadow ships at 0600 on Arch and 0000 on RHEL, both stricter than the
-# 0640 mask and both correct, and the tool deliberately leaves them alone. An
-# equality oracle would have reported a defect on two of five distributions
-# against a tool doing exactly what it was designed to do.
+# /etc/shadow ships at 0600 on Arch and 0000 on Fedora and RHEL, all stricter than
+# the 0640 mask and all correct, and the tool deliberately leaves them alone. An
+# equality oracle would have reported a defect on THREE of the five distributions
+# against a tool doing exactly what it was designed to do. Measured 2026-07-30:
+# 600 arch, 640 debian, 0 fedora, 0 rhel, 640 openSUSE. This comment said "two of
+# five" until the readings were counted; Fedora was the one it missed.
 PERMISSION_CHECKS=(
     "/root|700|exact"
     "/boot|700|exact"
@@ -1530,8 +1532,8 @@ expected_check_total() {
         + SEEDED_SSH_CHECKS_EXPECTED ))"
 }
 
-# The two plugins spell their finding ids differently, and a filter written for
-# one convention matches NOTHING under the other. Matching nothing returns an
+# The three plugins spell their finding ids differently, and a filter written for
+# one convention matches NOTHING under the others. Matching nothing returns an
 # empty result, which reads as "the tool reported no finding", which is the pass
 # condition, so this is the single most likely way to build a harness that
 # passes on broken code. Each convention is derived in exactly one place and
