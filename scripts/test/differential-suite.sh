@@ -1255,6 +1255,76 @@ run_pwquality_enforcement_checks() {
 
 # === Kernel parameters the running kernel enforces ===
 #
+# What the kernel currently enforces for one parameter, asked of sysctl.
+#
+# Prints `unreadable` rather than an empty string on failure, so a value that
+# could not be read is a token the comparison rejects rather than a silence that
+# compares equal to another silence.
+kernel_reading() {
+    local name="$1" value
+    if ! value="$(sysctl -n "$name" 2>/dev/null)"; then
+        printf 'unreadable'
+        return 0
+    fi
+    # Trim, never delete. Deleting whitespace would turn a multi-value
+    # parameter such as the tcp_*_mem triples into one plausible-looking
+    # integer, which then passes the numeric guard below and is compared
+    # arithmetically against a target nobody meant it to meet. None of the
+    # parameters in KERNEL_CHECKS is multi-value today, so this is a property
+    # of the reader rather than a live case: a reading this function cannot
+    # represent as a single value is `unreadable`, which satisfies nothing.
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    if [[ -z "$value" || "$value" =~ [[:space:]] ]]; then
+        printf 'unreadable'
+        return 0
+    fi
+    printf '%s' "$value"
+}
+
+# Whether a reading is at least as strict as the target, in that parameter's
+# own direction. Returns 0 when satisfied.
+#
+# `unreadable` satisfies nothing, in every direction. That is the suite's rule
+# that an undeterminable value is a failure, kept intact: a parameter the
+# fixture cannot be asked about is declared in KERNEL_UNASKABLE and never
+# reaches this function.
+kernel_satisfies() {
+    local reading="$1" target="$2" direction="$3"
+
+    if [[ "$reading" == "unreadable" ]]; then
+        return 1
+    fi
+
+    if [[ "$direction" == ranked:* ]]; then
+        local order="${direction#ranked:}" position=0 got=-1 want=-1 entry
+        local -a _kernel_rank
+        IFS=',' read -r -a _kernel_rank <<<"$order"
+        for entry in "${_kernel_rank[@]}"; do
+            [[ "$entry" == "$reading" ]] && got=$position
+            [[ "$entry" == "$target" ]] && want=$position
+            position=$((position + 1))
+        done
+        # A value outside the declared space cannot be placed, and an
+        # unplaceable value is not evidence of compliance.
+        if (( got < 0 || want < 0 )); then
+            return 1
+        fi
+        (( got >= want ))
+        return
+    fi
+
+    if ! [[ "$reading" =~ ^-?[0-9]+$ && "$target" =~ ^-?[0-9]+$ ]]; then
+        return 1
+    fi
+
+    case "$direction" in
+        at-least) (( reading >= target )) ;;
+        at-most) (( reading <= target )) ;;
+        *) return 1 ;;
+    esac
+}
+
 # The kernel parameters this suite can ask about, and the direction each
 # comparison has.
 #
@@ -3154,6 +3224,46 @@ Number of days of warning before password expires	: 11"
         "every askable kernel row is a net.ipv4 parameter, which is the only family a container namespace exposes"
     check_eq "$(printf '%s\n' "${KERNEL_UNASKABLE[@]}" | grep -cE '^(kernel|fs)\.')" "7" \
         "and every unaskable row is a kernel. or fs. parameter"
+
+    # The comparison each kernel row is scored by, in all three of its
+    # directions.
+    check_eq "$(kernel_satisfies 1 1 at-least && echo yes || echo no)" "yes" \
+        "an at-least parameter is satisfied by its target"
+    check_eq "$(kernel_satisfies 2 1 at-least && echo yes || echo no)" "yes" \
+        "and by a stricter value, which is the whole reason the comparison has a direction"
+    check_eq "$(kernel_satisfies 0 1 at-least && echo yes || echo no)" "no" \
+        "and not by a looser one"
+    check_eq "$(kernel_satisfies 0 0 at-most && echo yes || echo no)" "yes" \
+        "an at-most parameter is satisfied by its target"
+    check_eq "$(kernel_satisfies 1 0 at-most && echo yes || echo no)" "no" \
+        "and not by a looser one"
+    check_eq "$(kernel_satisfies 0 1 at-most && echo yes || echo no)" "yes" \
+        "an at-most parameter is satisfied by a stricter value, which is what makes at-most a direction and not an equality in disguise"
+    # The ranked rows are what prove a direction cannot be arithmetic at all.
+    # rp_filter's strictness is not its integer order: 0 is off, 2 is loose mode
+    # and 1 is strict mode, so at-least would score loose mode 2 as satisfying a
+    # target of strict mode 1, and at-most would score it the wrong way round on
+    # the other pair. Only a listed value space places these readings correctly.
+    check_eq "$(kernel_satisfies 2 1 ranked:0,2,1 && echo yes || echo no)" "no" \
+        "a ranked value below the target does not satisfy it"
+    check_eq "$(kernel_satisfies 1 2 ranked:0,2,1 && echo yes || echo no)" "yes" \
+        "and rp_filter 1 satisfies a target of 2 because it ranks above it"
+    check_eq "$(kernel_satisfies 3 1 ranked:0,2,1 && echo yes || echo no)" "no" \
+        "a reading outside the declared value space satisfies nothing, because a value that cannot be placed is not evidence of compliance"
+    check_eq "$(kernel_satisfies 1 3 ranked:0,2,1 && echo yes || echo no)" "no" \
+        "and a target outside it satisfies nothing either, so a mistyped table row goes red rather than scoring every reading green forever"
+    check_eq "$(kernel_satisfies unreadable 1 at-least && echo yes || echo no)" "no" \
+        "an unreadable value satisfies nothing: discovered at runtime is a failure, never a declared gap"
+    check_eq "$(kernel_reading net.ipv4.no_such_parameter_at_all)" "unreadable" \
+        "a parameter the kernel does not have reads as a token the comparison rejects, not as an empty string"
+    sysctl() { printf '4096\t131072\t33554432\n'; }
+    check_eq "$(kernel_reading net.ipv4.tcp_rmem)" "unreadable" \
+        "a multi-value parameter is unreadable, not a plausible integer assembled by deleting its separators"
+    sysctl() { printf '  1  \n'; }
+    check_eq "$(kernel_reading net.ipv4.conf.all.rp_filter)" "1" \
+        "and a scalar arriving with surrounding whitespace is trimmed to the value itself"
+    unset -f sysctl
+
     local pinned_total
     pinned_total="$(expected_check_total)"
     check_eq "$pinned_total" "55" \
