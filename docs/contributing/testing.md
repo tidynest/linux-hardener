@@ -243,6 +243,7 @@ consumer what is in force:
 | `ENCRYPT_METHOD`, `HOME_MODE`, `UMASK` | a probe account: the scheme prefix `crypt` wrote into its shadow field, `stat -c %a` on its home, `su - probe -c umask` | These are settings the tool does **not** manage, and the file they come from is the one a masked `/etc` copy silences. Reading that file back would ask the masked copy what it says |
 | The nine paths in `PERMISSION_CHECKS` | `stat -c %a` | A mode has no parser to disagree with: the value the kernel reports **is** the value in force. What the oracle adds is the comparison, because two of the nine are allowed-bits masks where a stricter mode is compliant |
 | The two properties in `FIREWALL_CHECKS` | `nft list ruleset`, diffed against a pre-apply capture | `ufw status` and `firewall-cmd --list-all` are the tools' own frontends. Netfilter is what a packet meets. **Requires `--booted`** |
+| The 11 `net.ipv4.*` parameters in `KERNEL_CHECKS` | `sysctl -n` | The file under `/etc/sysctl.d` is what the tool wrote, not what the kernel runs, and a reader sharing one mistake with the writer agrees with it and disagrees with Linux. **Requires `--booted`** |
 
 Two assertions per directive, because both have failed in production: the system
 satisfies what this run requires of it, and `scan`'s verdict agrees with the
@@ -407,6 +408,100 @@ from nothing scores a host this run never looked at. `pwscore` being absent is a
 real answer rather than a skip, since no libpwquality means no
 `pam_pwquality.so` either.
 
+### Declared unaskable, which is not a skip
+
+`record_unaskable` sits beside `record_pass` and `record_fail`. It keeps its own
+counter, `CHECKS_UNASKABLE`, prints every row it records by name, and stays
+outside `CHECKS_TOTAL`, so the `Total`, `Passed` and `Failed` numbers the
+host-side runner parses mean exactly what they meant before it existed.
+
+**It does not weaken the rule that an oracle which cannot answer is a failure.**
+The distinction is *when* unaskability is decided. A property of the fixture,
+known before the run and written into a table with its reason, is unaskable: a
+container has no writable `/proc/sys`, and that is true before a single check
+runs. A property of the run, discovered at the moment a read comes back empty,
+stays a failure: "I asked and got nothing" is the silence this suite exists to
+refuse, and reaching for `record_unaskable` where a read fails would turn the
+mechanism into the escape hatch it was built to avoid.
+
+That is also why the count is named on its own line rather than folded into any
+of the four labels:
+
+```
+  Skipped:      0
+  Unaskable:    7 (declared above, not asked on this fixture)
+```
+
+`Skipped` stays 0 and always will. A green run carrying an `Unaskable` line is
+not full coverage, and the line exists so that it cannot be read as though it
+were.
+
+### The kernel oracle, and the parameters it cannot ask about
+
+`KERNEL_CHECKS` holds 11 `net.ipv4.*` parameters, one assertion each: `sysctl -n`
+is asked what the kernel enforces, and the reading is compared against the
+target in that parameter's own direction. One assertion rather than two, as with
+the firewall rows, because the plugin publishes no per-parameter verdict to
+compare a reading against.
+
+**It covers 11 of the 18 parameters the kernel plugin manages, and the other 7
+are named rather than quietly left out.** `nspawn` mounts `/proc/sys` read-only,
+and it is the **host's**: a write is refused, and a read reports the host's value
+rather than the container's. Only `/proc/sys/net` is remounted read-write, and
+only for a container holding its own network namespace, which is why every
+askable row is a `net.ipv4.` parameter and why these 7 are not:
+
+- `kernel.randomize_va_space`, `kernel.kptr_restrict`, `kernel.dmesg_restrict`
+  and `kernel.yama.ptrace_scope`
+- `fs.suid_dumpable`, `fs.protected_hardlinks` and `fs.protected_symlinks`
+
+Each sits in `KERNEL_UNASKABLE` with its reason beside it and prints a `----`
+row in every run, so the gap is on the log rather than in the reader's head.
+
+**The comparison carries a direction**, for the reason `requirement_satisfied`
+does: a host already stricter than the target is compliant, and an equality
+oracle would report a defect against a tool behaving exactly as designed.
+`rp_filter` is the sharp row, and it is sharp against the arithmetic. 0 is off,
+2 is loose mode, which accepts a packet whose source is reachable through any
+interface, and 1 is strict mode, which requires the interface it arrived on. The
+larger number is the weaker setting, so no numeric direction can express that
+row at all and it carries the value space itself as `ranked:0,2,1`, weakest
+first.
+
+**One row is seeded stricter than the tool's own target before the first
+apply**, because a container arrives with nothing above the baseline, and an
+oracle that only ever watches a host being raised to its target can never watch
+one being lowered from above it. The seed is `net.ipv4.tcp_syncookies` written
+to `2` against a tool target of `1`: 2 sends SYN cookies unconditionally rather
+than only under pressure, so a host at 2 is ahead of the target rather than
+broken, and a reading of 2 after the apply is the evidence that the tool
+declined to un-harden it. `rp_filter` is deliberately **not** that row, though it
+looks like the obvious candidate: 2 there ranks below strict mode 1, so seeding
+it would seed a looser value, a correct tool would tighten it, and the check
+would report a defect against every distribution.
+
+**A run that is not booted asks the kernel nothing.** The signal is
+`HARDENER_DIFF_BOOTED`, exported by `run-cross-distro-tests.sh` on the
+`systemd-run --machine` invocation inside `nspawn_suite_booted` and nowhere
+else, and anything other than the literal `1` means not booted. It is never
+inferred from what the fixture happens to permit, because a mode concluded from
+a failed read is one value standing for several outcomes, which is the family of
+defect this project keeps closing. The header prints
+`Booted (kernel oracle): 0` or `Booted (kernel oracle): 1` beside the binary
+version, so a reader meeting an old log can see which arithmetic applied to it.
+
+**The totals move with the mode, and both kernel tables are pinned.** A run
+records **55 checks when it is not booted and 68 when it is**, and
+`expected_check_total` carries an arm for each: the 11 kernel rows and the
+seeded row are checks the tables ask for only where they can be asked at all.
+The unaskable count runs the other way, **7 when booted and 19 when not**, the
+19 being the 11 rows the mode puts out of reach, the 7 the mount does, and the
+seeded row whose seed could not be written. `KERNEL_CHECKS_EXPECTED` and
+`KERNEL_UNASKABLE_EXPECTED` are both pinned in `require_check_tables`, for one
+reason beyond the usual: the failure mode here is a red row being quietly
+"fixed" by moving it out of `KERNEL_CHECKS` and into `KERNEL_UNASKABLE`, and
+with both sizes pinned that move fails the guard twice rather than passing.
+
 ### Full run (container + root)
 
 ```bash
@@ -480,17 +575,22 @@ The lengths of the check tables are pinned there as literals as well. A total
 counted off the tables cannot notice one of them being edited down: with the ssh
 table emptied, a run over the `login.defs` directives alone would agree with
 itself, exit 0, and be reported as a PASS. So the size the run is measured
-against is counted off `SSH_CHECKS_EXPECTED`, `LOGIN_DEFS_CHECKS_EXPECTED`,
-`VENDOR_SURVIVAL_CHECKS_EXPECTED`, `IDEMPOTENCE_CHECKS_EXPECTED`,
-`PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED`, `PERMISSION_CHECKS_EXPECTED` and
+against is counted off `SSH_CHECKS_EXPECTED`, `SEEDED_SSH_CHECKS_EXPECTED`,
+`LOGIN_DEFS_CHECKS_EXPECTED`, `VENDOR_SURVIVAL_CHECKS_EXPECTED`,
+`IDEMPOTENCE_CHECKS_EXPECTED`, `PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED`,
+`PERMISSION_CHECKS_EXPECTED`, `FIREWALL_CHECKS_EXPECTED`,
+`KERNEL_CHECKS_EXPECTED`, `SEEDED_KERNEL_CHECKS_EXPECTED` and
 `DIFF_PLUGINS_EXPECTED`, which the tables are then checked against, rather than
-off the tables themselves.
+off the tables themselves. `KERNEL_UNASKABLE_EXPECTED` is pinned alongside them
+in `require_check_tables` but contributes to no total, because a row that was
+never asked is not a check that ran.
 
 Adding a directive therefore means changing four literals in
 `scripts/test/differential-suite.sh`, not one: the `*_EXPECTED` constant beside
 its table, that same length re-pinned in the self-test (`the ssh table holds
-seven directives`), the total the run is sized at (`52`), and the number of
-directives the pre-apply control covers (`19`). `VENDOR_SURVIVAL_CHECKS`, `IDEMPOTENCE_CHECKS` and
+seven directives`), the total the run is sized at, which `expected_check_total`
+computes at **55** unbooted and **68** booted, and the number of directives the
+pre-apply control covers (`19`). `VENDOR_SURVIVAL_CHECKS`, `IDEMPOTENCE_CHECKS` and
 `PWQUALITY_ENFORCEMENT_CHECKS` are sized the same way, and contribute one check
 each rather than two. Every one of them fails loudly, over two `--self-test` runs,
 because the total is counted off the constant and only moves once the constant
@@ -501,8 +601,9 @@ purpose, and the pwquality enforcement pair did it again at
 paths and a third plugin moved the total from 30 to 51, and the self-test refused
 the run until both literals were raised on purpose. The `permission-modes`
 idempotency reading did it a fourth time, refusing the run at
-`got '51', want '52'`, which is where the per-distribution total stands and where
-the five-distribution total of 260 comes from.
+`got '51', want '52'`. The firewall oracle and then the kernel oracle did it
+again, and the per-distribution total now stands at **55** for a run that is not
+booted and **68** for one that is.
 
 ### What a failure means
 
