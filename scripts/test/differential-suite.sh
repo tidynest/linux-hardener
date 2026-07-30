@@ -2149,6 +2149,7 @@ verdict_agrees() {
 CHECKS_TOTAL=0
 CHECKS_PASSED=0
 CHECKS_FAILED=0
+CHECKS_UNASKABLE=0
 
 record_pass() {
     CHECKS_TOTAL=$((CHECKS_TOTAL + 1))
@@ -2160,6 +2161,24 @@ record_fail() {
     CHECKS_TOTAL=$((CHECKS_TOTAL + 1))
     CHECKS_FAILED=$((CHECKS_FAILED + 1))
     printf '  FAIL %s\n' "$1"
+}
+
+# A check this fixture cannot answer, declared in advance as a property of the
+# fixture rather than discovered at runtime.
+#
+# The suite's rule is that an undeterminable value is a FAILURE, never a skip,
+# so that a probe which quietly fails to read cannot pass. This does not weaken
+# it. The distinction is when unaskability is decided: a container has no
+# writable /proc/sys, which is known before the run and stated in a table, while
+# "I asked and got nothing" is a property of the run and stays a failure.
+#
+# Deliberately outside CHECKS_TOTAL. The three counters above are what the
+# host-side runner parses, and a gap that was never asked is not a check that
+# ran. print_summary names the count so a green run can never be read as full
+# coverage.
+record_unaskable() {
+    CHECKS_UNASKABLE=$((CHECKS_UNASKABLE + 1))
+    printf '  ----   %s\n' "$1"
 }
 
 # The two assertions for one directive, given the value its oracle reported.
@@ -2431,9 +2450,11 @@ apply_hardening() {
 }
 
 # The run's own summary. The four labels match full-test-suite.sh so the
-# host-side runner parses this log with the machinery it already has. There is
-# no skip outcome to report: a check that could not be determined is recorded
-# as a failure, which is the whole point, so Skipped is always 0.
+# host-side runner parses this log with the machinery it already has. Skipped
+# stays 0: a check that could not be DETERMINED is recorded as a failure, which
+# is the whole point. A check the fixture cannot be ASKED is a different thing,
+# declared in advance, and it is reported on its own line below rather than
+# folded into any of the four.
 print_summary() {
     local expected
     expected="$(expected_check_total)"
@@ -2442,6 +2463,9 @@ print_summary() {
     echo "  Passed:       $CHECKS_PASSED"
     echo "  Failed:       $CHECKS_FAILED"
     echo "  Skipped:      0"
+    if (( CHECKS_UNASKABLE > 0 )); then
+        echo "  Unaskable:    $CHECKS_UNASKABLE (declared above, not asked on this fixture)"
+    fi
     echo ""
     if (( CHECKS_TOTAL == 0 )); then
         echo "No checks ran. Refusing to report success for a run that checked nothing."
@@ -2855,6 +2879,24 @@ Number of days of warning before password expires	: 11"
     VENDOR_SURVIVAL_AFTER_GENERATION=""
     VENDOR_SURVIVAL_BEFORE=""
     VENDOR_SURVIVAL_BEFORE_GENERATION=""
+
+    # An unaskable row is reported and counted, and it must NOT move the
+    # pass/fail arithmetic: the host-side runner parses those three numbers and
+    # a declared gap is not a check that ran.
+    before_total=$CHECKS_TOTAL
+    before_passed=$CHECKS_PASSED
+    before_failed=$CHECKS_FAILED
+    before_unaskable=$CHECKS_UNASKABLE
+    record_unaskable "self-test: a row the fixture cannot answer" >/dev/null
+    check_eq "$((CHECKS_UNASKABLE - before_unaskable))" "1" \
+        "an unaskable row increments its own counter"
+    check_eq "$((CHECKS_TOTAL - before_total))" "0" \
+        "an unaskable row does not count as a check that ran"
+    check_eq "$((CHECKS_PASSED - before_passed))" "0" \
+        "an unaskable row is not a pass"
+    check_eq "$((CHECKS_FAILED - before_failed))" "0" \
+        "an unaskable row is not a failure"
+    CHECKS_UNASKABLE=$before_unaskable
 
     # The probe's two safety properties, the same pair the login.defs probe has
     # and for the same reason: it creates a real account. The account database
