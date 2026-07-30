@@ -30,7 +30,9 @@ commands on the remote host.
 ### Authentication
 - SSH key authentication (recommended)
 - SSH agent for passphrase-protected keys
-- Or password authentication (less secure)
+
+Remote hosts authenticate with an SSH key or agent only - there is no password
+path.
 
 ## Quick Start
 
@@ -117,16 +119,10 @@ hardener --ssh myserver scan
 
 ### Password Authentication
 
-Warning: Password authentication is less secure. Use key-based authentication when
-possible.
-
-> **Not yet implemented.** The SSH executor currently uses the `openssh` crate with
-> key-based and SSH agent authentication only. The `HARDENER_SSH_PASSWORD` environment
-> variable is reserved for future use but has no effect at this time.
-
-```bash
-HARDENER_SSH_PASSWORD=secret hardener --ssh user@host scan
-```
+Not supported. `SshExecutor::connect` builds its session from a key file, the
+agent, and your `~/.ssh/config` only, so there is no password prompt and no
+environment variable that supplies one. A host that accepts passwords alone
+cannot be scanned until you authorise a key in its `~/.ssh/authorized_keys`.
 
 ## Common Use Cases
 
@@ -384,10 +380,10 @@ Solutions:
 
 ## Security Considerations
 
-### Always Use Key-Based Authentication
+### Key-Based Authentication Is the Only Path
 
-Password authentication is vulnerable to brute-force attacks. Use Ed25519 or RSA
-keys:
+Password authentication is vulnerable to brute-force attacks, which is why this
+tool never offers it. Use Ed25519 or RSA keys:
 
 ```bash
 # Generate a secure key
