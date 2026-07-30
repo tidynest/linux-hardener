@@ -47,20 +47,9 @@ fn ufw_unit_active_but_not_enforcing_executor() -> MockExecutor {
                 exit_code: 0,
             },
         )
-        // ufw's own answer, which is what is_enabled asks now. An active unit
-        // is not proof the rules are loaded: Debian's unit reports active with
-        // ENABLED=no and no ruleset at all.
-        .with_command(
-            "ufw",
-            &["status"],
-            CommandOutput {
-                stdout: "Status: active
-"
-                .to_string(),
-                stderr: String::new(),
-                exit_code: 0,
-            },
-        )
+        // ufw's own answer, and the only one that reflects what the kernel
+        // holds. It runs cleanly here and reports inactive, which is what
+        // makes this fixture Debian's state rather than a blocked probe.
         .with_command(
             "ufw",
             &["status"],
@@ -130,20 +119,6 @@ fn ufw_permission_denied_executor() -> MockExecutor {
             &["is-active", "ufw"],
             CommandOutput {
                 stdout: "active\n".to_string(),
-                stderr: String::new(),
-                exit_code: 0,
-            },
-        )
-        // ufw's own answer, which is what is_enabled asks now. An active unit
-        // is not proof the rules are loaded: Debian's unit reports active with
-        // ENABLED=no and no ruleset at all.
-        .with_command(
-            "ufw",
-            &["status"],
-            CommandOutput {
-                stdout: "Status: active
-"
-                .to_string(),
                 stderr: String::new(),
                 exit_code: 0,
             },
