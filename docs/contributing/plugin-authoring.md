@@ -168,6 +168,15 @@ the admin path must be the same code that resolves it for the vendor path.
 this reason, because two copies come to disagree about an override for precisely
 the paths where only one of the two layers holds the file.
 
+The argument does not stop at the two layers. `apply` and `validate` each carried
+an inline copy of the same resolution for a while, and those were collapsed into
+the helper as well, so every caller now asks one function. They were
+behaviour-equivalent at the point they were collapsed rather than already
+divergent, and that is the point: a duplicated rule is worth removing before it
+diverges, not after. Prove such a collapse by mutating the surviving
+implementation and watching every caller's test fail, which is the evidence that
+each one really routes through it.
+
 The differential suite learned the same lesson at the same time, and its
 `PERMISSION_CHECKS` oracle now consults `/usr/etc` too. For a vendor row its
 first assertion records the mode rather than demanding compliance, since this

@@ -797,6 +797,42 @@ async fn scan_honours_directive_override() {
 }
 
 #[tokio::test]
+async fn validate_honours_directive_override() {
+    // The counterpart of scan_honours_directive_override on the dry-run path,
+    // which had no test of its own while carrying its own copy of the override
+    // rule. /root already sits at the 0700 baseline, so nothing is pending
+    // without the override: a stricter 0500 is the only thing that can put the
+    // path in the preview at all, and the target the preview names is the only
+    // place the override's value can surface.
+    let executor = secure_permissions_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PermissionsHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config
+        .directives
+        .insert("/root".to_string(), "500".to_string());
+
+    let report = plugin.validate(&ctx, &config).await.unwrap();
+
+    let pending = report
+        .validation_report_estimated_changes
+        .iter()
+        .find(|c| c.contains("/root"))
+        .unwrap_or_else(|| {
+            panic!(
+                "a stricter override makes a compliant path pending, got: {:?}",
+                report.validation_report_estimated_changes
+            )
+        });
+    assert!(
+        pending.contains("0500"),
+        "the preview must name the override as the target rather than the \
+         baseline, got: {pending}"
+    );
+}
+
+#[tokio::test]
 async fn scan_annotates_valid_exception() {
     // /root violates baseline (0755 vs 0700) with a valid exception recorded:
     // exceptions annotate findings, they never drop them, so the finding

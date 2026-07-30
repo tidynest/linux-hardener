@@ -334,13 +334,16 @@ enum PermissionCheck {
 /// copies would come to disagree about an override for exactly the paths where
 /// only one of the two layers holds the file.
 ///
-/// **Its reach is `scan` only.** `apply` and `validate` each still carry their own
-/// inline copy of the same computation, at the `config.directives.get` calls in
-/// their per-directive loops, so the rule has three implementations rather than
-/// one. `validate`'s copy is byte-for-byte what this function was extracted from.
-/// Collapsing all three is worth doing and is not what this extraction did. An
-/// earlier version of this comment cited line numbers for those two copies; they
-/// were wrong when written and line numbers were the wrong thing to cite.
+/// **Every caller now reaches the rule through here**: `scan`'s admin and vendor
+/// assessments, `apply`'s per-directive loop, and `validate`'s. It had three
+/// implementations until they were collapsed, and the two that went were
+/// behaviour-equivalent rather than divergent, which is the only reason the
+/// collapse was a refactor: `apply`'s `unwrap_or(directive.permission_mode)` on
+/// an unparseable override and this function's `.ok()` both end at the baseline
+/// mode. Family 3 is what the collapse forecloses, not a live defect it fixed.
+/// An override reaching the vendor comparison, `validate` naming the override as
+/// its target and `apply` chmod'ing to it are each pinned by a test, so a fourth
+/// caller cannot quietly grow its own copy without one of them failing.
 fn effective_directive(
     directive: &PermissionDirective,
     config: &PluginConfig,
@@ -1355,16 +1358,7 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
                 continue;
             }
 
-            // Apply directive mode override if present
-            let directive = if let Some(mode_str) = config.directives.get(directive.permission_path)
-            {
-                let mode = u32::from_str_radix(mode_str, 8).unwrap_or(directive.permission_mode);
-                let mut d = directive.clone();
-                d.permission_mode = mode;
-                d
-            } else {
-                directive.clone()
-            };
+            let directive = effective_directive(directive, config);
 
             if let Some(change) = apply_path_permissions(ctx, &directive, current_mode).await {
                 changes.push(change);
@@ -1407,18 +1401,7 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
         let mut exceptions: Vec<String> = Vec::new();
 
         for directive in CRITICAL_PERMISSIONS {
-            // Build an effective directive: apply any per-path override to
-            // `permission_mode` while preserving `permission_max_mask`, so the
-            // dry-run's compliance test matches scan/apply exactly (a stricter
-            // mode is compliant for mask directives (no spurious pending change).
-            let mut effective = directive.clone();
-            if let Some(mode) = config
-                .directives
-                .get(directive.permission_path)
-                .and_then(|s| u32::from_str_radix(s, 8).ok())
-            {
-                effective.permission_mode = mode;
-            }
+            let effective = effective_directive(directive, config);
 
             let path = Path::new(directive.permission_path);
 
