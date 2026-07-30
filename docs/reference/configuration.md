@@ -256,7 +256,10 @@ matched; `hardener report` treats an annotated finding as satisfied, so it no
 longer fails a compliance control. The text, HTML, PDF and JSON reports still
 list that finding under its control as evidence, labelled `POLICY EXCEPTION`
 instead of a severity, so a control passed by a documented deviation is never
-presented as a clean pass. Audit mode
+presented as a clean pass. `apply --dry-run` lists an excepted setting
+separately from the pending changes, so a preview whose only drift is excepted
+is never rendered as nothing to do, and an exception cannot inflate the change
+count either. Audit mode
 (`scan --audit`) ignores the config, exceptions included.
 
 ```toml

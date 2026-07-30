@@ -1037,15 +1037,18 @@ async fn current_verified_mode(ctx: &Context, path: &Path) -> Option<u32> {
 /// "from" mode is honestly described as unknown rather than invented; a
 /// second issue on top would only repeat what the estimate already says.
 ///
-/// `current_mode: Some(mode)` is the pre-existing, unchanged behaviour: an
-/// exception whose documented value matches the observed mode suppresses the
-/// prediction (fail closed - a stale or wrong exception never does), and a
+/// `current_mode: Some(mode)` is the pre-existing, unchanged behaviour: a
 /// genuine violation on a filesystem that can actually hold POSIX
 /// permissions becomes the predicted change.
+///
+/// A policy exception is deliberately not consulted here. The caller's loop
+/// honours it first, exactly where `apply`'s loop honours its own, because an
+/// excepted path has to be *recorded* as a documented deviation and a helper
+/// returning "nothing to predict" has no way to say that. Suppressing the
+/// prediction inside this function is what let the deviation vanish.
 async fn validate_path_permissions(
     ctx: &Context,
     directive: &PermissionDirective,
-    config: &PluginConfig,
     current_mode: Option<u32>,
 ) -> (Option<String>, Option<hardener_core::ValidationIssue>) {
     let Some(mode) = current_mode else {
@@ -1086,17 +1089,6 @@ async fn validate_path_permissions(
             None,
         );
     };
-
-    // Skip paths with an exception whose documented value matches the mode
-    // actually observed (fail closed: a stale or wrong exception does not
-    // suppress a change). Exception matching requires a verified mode,
-    // exactly as apply enforces before it ever reaches apply_path_permissions.
-    if config
-        .matching_mode_exception(directive.permission_path, mode)
-        .is_some()
-    {
-        return (None, None);
-    }
 
     // A pending change requires both a violation and a filesystem that
     // chmod can actually change. `&&` short-circuits, so the filesystem
@@ -1410,6 +1402,9 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {
         let mut issues = Vec::new();
         let mut estimated_changes = Vec::new();
+        // Excepted paths are recorded rather than dropped: a preview that
+        // omits them shows a documented deviation as nothing at all.
+        let mut exceptions: Vec<String> = Vec::new();
 
         for directive in CRITICAL_PERMISSIONS {
             // Build an effective directive: apply any per-path override to
@@ -1433,13 +1428,32 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
                 continue;
             }
 
-            // Mirrors apply's own loop: the same current_verified_mode read,
-            // handed to the same-shaped validate_path_permissions, so a
-            // dry-run preview and the apply it previews can never again
-            // derive "unverified" differently or act on it differently.
             let current_mode = current_verified_mode(ctx, path).await;
-            let (estimate, issue) =
-                validate_path_permissions(ctx, &effective, config, current_mode).await;
+
+            // Honoured here rather than inside the helper, mirroring apply's
+            // own loop, and fail closed for the same reason: matching needs a
+            // verified mode, so an unverified one matches nothing, and a stale
+            // exception documenting a mode the host does not have suppresses
+            // no work. An excepted path is not a pending change and must not
+            // inflate the count the confirm button is named after; it is not
+            // nothing either, so it is recorded as the deviation it is.
+            if let Some(mode) = current_mode
+                && let Some(exception) =
+                    config.matching_mode_exception(directive.permission_path, mode)
+            {
+                exceptions.push(hardener_common::types::exception_preview_line(
+                    directive.permission_path,
+                    &format!("{mode:04o}"),
+                    &exception.reason,
+                ));
+                continue;
+            }
+
+            // The same current_verified_mode read handed to the same-shaped
+            // validate_path_permissions, so a dry-run preview and the apply it
+            // previews can never again derive "unverified" differently or act
+            // on it differently.
+            let (estimate, issue) = validate_path_permissions(ctx, &effective, current_mode).await;
             estimated_changes.extend(estimate);
             issues.extend(issue);
         }
@@ -1452,7 +1466,7 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
             validation_report_issues: issues,
             validation_report_estimated_changes: estimated_changes,
             validation_report_compliant_count: 0,
-            validation_report_exceptions: vec![],
+            validation_report_exceptions: exceptions,
         })
     }
 }
@@ -1749,8 +1763,7 @@ mod tests {
                         directive.permission_path
                     )
                 });
-            let (estimate, issue) =
-                validate_path_permissions(&ctx, directive, &PluginConfig::default(), None).await;
+            let (estimate, issue) = validate_path_permissions(&ctx, directive, None).await;
 
             if directive.permission_max_mask {
                 assert!(

@@ -26,6 +26,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`hardener apply --dry-run` no longer hides a permission path it is leaving
+  alone because a policy exception documents it.** The preview honoured the
+  exception and then recorded nothing about it, so a host whose only drift was
+  excepted previewed as no pending change beside an empty exceptions list, which
+  is byte-identical to a host that needs nothing doing. The real `apply` has
+  always reported such a path as a skipped change naming the reason, so the dry
+  run did not preview what the run it previews would do, and a stale exception
+  still suppressing work stayed invisible to the operator reviewing it. The
+  1.5.1 sweep that recorded excepted settings across seven sites reached six
+  plugins; `[permissions]` received only the struct field it needed in order to
+  compile, because its exception check sits in a helper and returns "nothing to
+  predict" rather than reaching the `continue` in a loop that sweep read. The
+  deviation is now recorded through the same shared helper as the rest, naming
+  the mode the path keeps and why, and the exception is honoured in the loop
+  where `apply` honours its own.
 - **`hardener scan` no longer reports a critical permission check as clean on a
   distribution that keeps the file under `/usr/etc`.** Measured on the openSUSE
   test container: `/etc/sudoers` does not exist there, `/usr/etc/sudoers` does, at

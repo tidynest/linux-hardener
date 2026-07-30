@@ -874,6 +874,57 @@ async fn test_permissions_validate_skips_exceptions() {
 }
 
 #[tokio::test]
+async fn validate_reports_a_path_left_alone_by_a_policy_exception() {
+    // The sibling above pins that an excepted path is not a pending change.
+    // It is not, however, nothing. Every other renderer labels a documented
+    // deviation rather than hiding it, and the sweep in 2ae9e4a gave six
+    // plugins exactly that while this one kept an empty vector, so a dry run
+    // whose only drift was excepted rendered byte-identically to a host that
+    // needed nothing doing.
+    let executor = insecure_permissions_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PermissionsHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "/root".to_string(),
+        PolicyException {
+            value: "0755".to_string(),
+            allowed: true,
+            reason: "Shared admin access".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let report = plugin.validate(&ctx, &config).await.unwrap();
+
+    // The mode is spelled the way every other line this plugin emits spells
+    // one, so a bare `{:o}` would fail here rather than reach an operator.
+    assert!(
+        report.validation_report_exceptions.iter().any(|e| {
+            e.contains("/root") && e.contains("0755") && e.contains("Shared admin access")
+        }),
+        "an excepted path must be reported, naming the mode it keeps and why, got: {:?}",
+        report.validation_report_exceptions
+    );
+
+    // /boot violates its baseline on this fixture and carries no exception,
+    // so a fix that reports every path rather than every excepted one fails
+    // here.
+    assert!(
+        !report
+            .validation_report_exceptions
+            .iter()
+            .any(|e| e.contains("/boot")),
+        "a path with no exception must not be reported as excepted, got: {:?}",
+        report.validation_report_exceptions
+    );
+}
+
+#[tokio::test]
 async fn validate_ignores_exception_whose_mode_does_not_match() {
     // insecure_permissions_executor's /root is genuinely 0755; the exception
     // documents 0750, a value the host does not actually have.
