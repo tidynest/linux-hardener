@@ -42,6 +42,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`hardener apply --plugin firewall-hardening` now reports turning the
+  firewall on.** Enabling a firewall that was off is the most consequential
+  thing this plugin does, taking a host from no firewall to a firewall, and it
+  appeared only in the log: the change list named the rules and said nothing
+  about the enable that made them mean anything. An operator reading the
+  summary, or the desktop's confirmation, was told about two or three rules and
+  not about the firewall being switched on. It is now recorded like any other
+  change, and a backend that was already enabled is recorded as a skipped
+  no-op, consistent with how already-satisfied rules are reported. Nothing
+  about what the tool does to a host has changed; this makes the record match
+  it. The omission was previously masked by the ufw and firewalld overcounts
+  fixed below, which made the totals look right for the wrong reason.
 - **`hardener apply --plugin firewall-hardening` no longer reports adding ufw
   rules that were already in force.** The ufw backend read nothing before
   running `ufw allow`, and ufw exits 0 for a rule it already has, so every

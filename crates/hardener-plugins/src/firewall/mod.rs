@@ -686,8 +686,12 @@ impl HardeningPlugin for FirewallHardeningPlugin {
             }
         };
 
-        // Enable firewall if not already enabled.
-        if backend.is_enabled(ctx).await.is_err() {
+        // Enable firewall if not already enabled. The outcome is held here and
+        // recorded below, once `apply_changes` exists, rather than moving the
+        // enable itself further down: this is a side effect the rules that
+        // follow depend on, so its position must not change.
+        let was_already_enabled = backend.is_enabled(ctx).await.is_ok();
+        if !was_already_enabled {
             backend.enable(ctx).await?;
         }
 
@@ -697,6 +701,30 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         let mut apply_changes = Vec::new();
 
         apply_changes.extend(crate::checkpoint_change(&checkpoint_id));
+
+        // Turning the firewall on is the most consequential thing this apply
+        // can do, taking a host from no firewall to a firewall, and it used to
+        // appear only in the log. The change list is the record apply leaves
+        // behind, so an operator reading "N change(s) applied" was told about
+        // the rules and not about the enable that made them mean anything.
+        apply_changes.push(if was_already_enabled {
+            Change {
+                change_description: format!(
+                    "The {} firewall was already enabled",
+                    backend.backend_name()
+                ),
+                change_type: ChangeType::Skipped,
+                change_success: true,
+                change_error: None,
+            }
+        } else {
+            Change {
+                change_description: format!("Enabled the {} firewall", backend.backend_name()),
+                change_type: ChangeType::FirewallRule,
+                change_success: true,
+                change_error: None,
+            }
+        });
 
         for rule in baseline_rules {
             let id = rule_id(&rule);

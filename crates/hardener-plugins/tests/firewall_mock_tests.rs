@@ -1009,10 +1009,19 @@ async fn test_ufw_established_rule_is_skipped_not_executed() {
             .collect::<Vec<_>>()
     );
 
+    // Found by the rule it is about rather than by being the first Skipped
+    // change in the list. It was the only one when this test was written, so
+    // taking the first happened to work and pinned nothing: an apply now
+    // records a no-op for an already-enabled backend and for a rule already in
+    // force, any of which would satisfy a bare "some change was skipped".
     let skipped = result
         .apply_changes
         .iter()
-        .find(|c| c.change_type == ChangeType::Skipped)
+        .find(|c| {
+            c.change_type == ChangeType::Skipped
+                && c.change_description
+                    .starts_with("Allow established and related connections")
+        })
         .expect("established/related rule should be recorded as a Skipped change for ufw");
     assert!(
         skipped.change_success,
@@ -1625,5 +1634,118 @@ async fn ufw_records_a_no_op_for_rules_and_a_policy_already_in_force() {
         "an already-hardened ufw host needs no changes at all, and a count above \
          zero is what the renderer prints as 'N change(s) applied': {:?}",
         changes
+    );
+}
+
+/// debian's container before the first apply, measured 2026-07-30: ufw is
+/// installed and reports inactive, so apply enables it. That enable is the
+/// single most consequential thing the run does on such a host, taking it from
+/// no firewall to a firewall.
+fn ufw_needs_enabling_executor() -> MockExecutor {
+    let ok = CommandOutput {
+        stdout: "Rule added\n".to_string(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    MockExecutor::new()
+        .with_command_exists("ufw", true)
+        .with_command_exists("firewall-cmd", false)
+        .with_command_exists("nft", false)
+        .with_command(
+            "ufw",
+            &["status"],
+            CommandOutput {
+                stdout: "Status: inactive\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "ufw",
+            &["--force", "enable"],
+            CommandOutput {
+                stdout: "Firewall is active and enabled on system startup\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "ufw",
+            &["status", "verbose"],
+            CommandOutput {
+                stdout: "Status: active\nDefault: allow (incoming), allow (outgoing), \
+                         disabled (routed)\n"
+                    .to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command("ufw", &["allow", "from", "127.0.0.1/8"], ok.clone())
+        .with_command(
+            "ufw",
+            &["allow", "to", "any", "port", "22", "proto", "tcp"],
+            ok.clone(),
+        )
+        .with_command("ufw", &["default", "deny", "incoming"], ok)
+}
+
+#[tokio::test]
+async fn enabling_the_firewall_is_recorded_as_a_change() {
+    let executor = ufw_needs_enabling_executor();
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+
+    let result = FirewallHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    // The enable did happen, so the question is only whether it was recorded.
+    assert!(
+        executor
+            .log()
+            .commands_executed
+            .iter()
+            .any(|(cmd, args)| cmd == "ufw"
+                && args == &["--force".to_string(), "enable".to_string()]),
+        "this fixture must reach the enable, or the assertion below proves nothing"
+    );
+
+    let recorded = result
+        .apply_changes
+        .iter()
+        .find(|c| {
+            c.change_description
+                .to_lowercase()
+                .contains("enabled the ufw firewall")
+        })
+        .expect(
+            "turning the firewall on must appear in the record apply leaves behind, not \
+             only in the log",
+        );
+    assert!(
+        !recorded.is_skipped() && recorded.change_success,
+        "enabling a firewall that was off is real work, not a no-op: {:?}",
+        recorded
+    );
+}
+
+#[tokio::test]
+async fn a_firewall_that_was_already_enabled_is_recorded_as_a_no_op() {
+    let mut ctx = Context::with_executor(Arc::new(ufw_apply_executor("22")));
+
+    let result = FirewallHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    let recorded = result
+        .apply_changes
+        .iter()
+        .find(|c| c.change_description.contains("already enabled"))
+        .expect("an already-enabled backend is a no-op worth naming, like the rules are");
+    assert!(
+        recorded.is_skipped() && recorded.change_success,
+        "a backend that needed no enabling must not be counted as applied work: {:?}",
+        recorded
     );
 }
