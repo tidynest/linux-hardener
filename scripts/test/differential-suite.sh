@@ -1919,7 +1919,7 @@ preapply_kernel_init() {
 # was AWAY from its target before the apply, so the checks below cannot pass
 # against a host that was already compliant.
 run_kernel_preapply_control() {
-    local entry name target direction reading away=0
+    local entry name target direction reading away=0 away_names=""
     if [[ "$KERNEL_BOOTED" != "1" ]]; then
         record_unaskable "kernel-hardening pre-apply control: this run is not booted, so /proc/sys/net is the host's and read-only"
         return 0
@@ -1929,13 +1929,20 @@ run_kernel_preapply_control() {
         reading="$(grep -m1 "^$name=" <<<"$KERNEL_BEFORE" | cut -d= -f2-)"
         if ! kernel_satisfies "$reading" "$target" "$direction"; then
             away=$((away + 1))
+            # Named, not just counted. A bare count cannot be reconciled against
+            # the tool's own list of what it wrote, and the first container run
+            # of this oracle produced exactly that: the tool reported writing two
+            # parameters on arch and three on debian where this control found one
+            # away on each. One of the two readings is wrong and a number alone
+            # cannot say which.
+            away_names+="${away_names:+, }$name was '$reading' against a target of '$target'"
         fi
     done
     if (( away == 0 )); then
         record_fail "kernel-hardening: every managed parameter already met its target before apply, so the checks below would pass without the tool having done anything"
         return 0
     fi
-    record_pass "kernel-hardening: $away of the ${#KERNEL_CHECKS[@]} managed parameters were away from target before apply, so the checks below are asking a real question"
+    record_pass "kernel-hardening: $away of the ${#KERNEL_CHECKS[@]} managed parameters were away from target before apply, so the checks below are asking a real question ($away_names)"
 }
 
 # One assertion per parameter: does the kernel enforce what the tool reported.
