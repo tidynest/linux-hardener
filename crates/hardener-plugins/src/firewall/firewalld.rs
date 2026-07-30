@@ -224,21 +224,20 @@ impl FirewallBackend for FirewalldBackend {
             }
 
             // Handle drop/default deny rules (set zone target)
-            if rule.rule_action == "drop" && rule.rule_port == "any" {
-                if target_already_drop {
-                    info!("Zone '{}' default target is already DROP", zone);
-                    changes.push(Change {
-                        change_type: ChangeType::Skipped,
-                        change_description: format!(
-                            "Zone '{}' default target is already DROP",
-                            zone
-                        ),
-                        change_success: true,
-                        change_error: None,
-                    });
-                    continue;
-                }
+            let sets_default_target = rule.rule_action == "drop" && rule.rule_port == "any";
 
+            if sets_default_target && target_already_drop {
+                info!("Zone '{}' default target is already DROP", zone);
+                changes.push(Change {
+                    change_type: ChangeType::Skipped,
+                    change_description: format!("Zone '{}' default target is already DROP", zone),
+                    change_success: true,
+                    change_error: None,
+                });
+                continue;
+            }
+
+            if sets_default_target {
                 match self
                     .execute_firewall_cmd(
                         ctx,
@@ -273,23 +272,24 @@ impl FirewallBackend for FirewalldBackend {
             }
 
             // For accept rules, add port or service
-            if rule.rule_action == "accept" {
-                let port_spec = format!("{}/{}", rule.rule_port, rule.rule_protocol);
+            let port_spec = format!("{}/{}", rule.rule_port, rule.rule_protocol);
+            let adds_port = rule.rule_action == "accept";
 
-                if existing_ports.iter().any(|port| port == &port_spec) {
-                    info!("Port {} is already allowed in zone '{}'", port_spec, zone);
-                    changes.push(Change {
-                        change_type: ChangeType::Skipped,
-                        change_description: format!(
-                            "Port {} is already allowed in zone '{}'",
-                            port_spec, zone
-                        ),
-                        change_success: true,
-                        change_error: None,
-                    });
-                    continue;
-                }
+            if adds_port && existing_ports.iter().any(|port| port == &port_spec) {
+                info!("Port {} is already allowed in zone '{}'", port_spec, zone);
+                changes.push(Change {
+                    change_type: ChangeType::Skipped,
+                    change_description: format!(
+                        "Port {} is already allowed in zone '{}'",
+                        port_spec, zone
+                    ),
+                    change_success: true,
+                    change_error: None,
+                });
+                continue;
+            }
 
+            if adds_port {
                 match self
                     .execute_firewall_cmd(
                         ctx,

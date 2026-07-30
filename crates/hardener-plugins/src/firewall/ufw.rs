@@ -17,6 +17,16 @@ const DEFAULT_INBOUND_RULE: &str = "Drop all other inbound traffic by default";
 /// The exit status is the same either way, so this string is the only thing
 /// that distinguishes an addition from a no-op, and reading it is what lets
 /// apply report an already-hardened host as needing no changes.
+///
+/// **Known limit, deliberate.** ufw applies a rule to IPv4 and IPv6 and prints
+/// a line per family, so a host holding one family and not the other produces
+/// both "Rule added" and this marker in the same output, and the change is then
+/// recorded as a no-op although half of it was real. That undercounts, which is
+/// the mirror of the defect this constant exists to fix, and it is left alone
+/// because `ufw delete` removes both families together: reaching that state
+/// means editing ufw's rule files by hand. Distinguishing the two would mean
+/// matching a second output string, and coupling harder to ufw's wording buys
+/// less here than it costs.
 const RULE_ALREADY_PRESENT: &str = "Skipping adding existing rule";
 
 /// UFW firewall backend for Ubuntu/Debian systems.

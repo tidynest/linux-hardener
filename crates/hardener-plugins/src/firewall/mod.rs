@@ -715,7 +715,13 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         } else {
             Change {
                 change_description: format!("Enabled the {} firewall", backend.backend_name()),
-                change_type: ChangeType::FirewallRule,
+                // A service state change rather than a rule: ufw's enable runs
+                // `ufw --force enable` and firewalld's runs `systemctl start`
+                // plus `systemctl enable`, which is what this variant is for.
+                // Nothing counts it differently, but a renderer grouping by
+                // type would otherwise file it under firewall rules, which it
+                // is not.
+                change_type: ChangeType::Service,
                 change_success: true,
                 change_error: None,
             }

@@ -1640,6 +1640,31 @@ async fn firewalld_records_a_no_op_for_a_port_and_a_target_already_in_force() {
          above zero is what the renderer prints as 'N change(s) applied': {:?}",
         changes
     );
+
+    // The three assertions above all pass if the rules vanish entirely, because
+    // each of them asserts the absence of a wrong claim. Proved by mutation
+    // during review: making the drop-rule predicate `false` dropped that rule
+    // silently and the test stayed green. A no-op has to be reported, not just
+    // not-misreported.
+    let no_ops: Vec<&str> = changes
+        .iter()
+        .filter(|c| c.is_skipped())
+        .map(|c| c.change_description.as_str())
+        .collect();
+    assert!(
+        no_ops
+            .iter()
+            .any(|d| d.contains("Port 22/tcp is already allowed")),
+        "the port already in force must be named as a no-op: {:?}",
+        changes
+    );
+    assert!(
+        no_ops
+            .iter()
+            .any(|d| d.contains("default target is already DROP")),
+        "the zone target already in force must be named as a no-op: {:?}",
+        changes
+    );
 }
 
 /// The debian container on a second apply, measured 2026-07-30 from
@@ -1729,6 +1754,27 @@ async fn ufw_records_a_no_op_for_rules_and_a_policy_already_in_force() {
         applied, 0,
         "an already-hardened ufw host needs no changes at all, and a count above \
          zero is what the renderer prints as 'N change(s) applied': {:?}",
+        changes
+    );
+
+    // As in the firewalld sibling: everything above passes if a rule disappears
+    // rather than being reported as already in force, so the no-ops are asserted
+    // present rather than merely not-wrong.
+    let no_ops: Vec<&str> = changes
+        .iter()
+        .filter(|c| c.is_skipped())
+        .map(|c| c.change_description.as_str())
+        .collect();
+    assert!(
+        no_ops
+            .iter()
+            .any(|d| d.contains("Firewall rule already present: Allow SSH to prevent lockout")),
+        "a rule ufw reports as already present must be named as a no-op: {:?}",
+        changes
+    );
+    assert!(
+        no_ops.iter().any(|d| d.contains("already in force")),
+        "the default incoming policy already in force must be named as a no-op: {:?}",
         changes
     );
 }
@@ -1821,6 +1867,13 @@ async fn enabling_the_firewall_is_recorded_as_a_change() {
     assert!(
         !recorded.is_skipped() && recorded.change_success,
         "enabling a firewall that was off is real work, not a no-op: {:?}",
+        recorded
+    );
+    assert_eq!(
+        recorded.change_type,
+        ChangeType::Service,
+        "starting and enabling a firewall's unit is a service state change, not a \
+         firewall rule, and a renderer grouping by type reads this: {:?}",
         recorded
     );
 }
