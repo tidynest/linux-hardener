@@ -75,26 +75,18 @@ pub(super) async fn write_dropin(ctx: &Context, directives: &[Directive]) -> Res
         return remove_dropin(ctx).await;
     }
 
-    // `write_file` cannot create a missing parent. Every distribution seen so
-    // far ships the directory, so this runs only where the probe positively
-    // confirms it is absent; a probe that fails is treated as "may be missing"
-    // and the creation is attempted, because `mkdir -p` on an existing
-    // directory does nothing.
-    if !matches!(
-        ctx.executor().path_exists(Path::new(DROPIN_DIR)).await,
-        Ok(true)
-    ) {
-        let made = ctx
-            .executor()
-            .execute_command("mkdir", &["-p", DROPIN_DIR])
-            .await
-            .map_err(|e| HardeningError::Plugin(format!("Failed to create {DROPIN_DIR}: {e}")))?;
-        if !made.success() {
-            return Err(HardeningError::Plugin(format!(
-                "Failed to create {DROPIN_DIR}: {}",
-                made.stderr.trim()
-            )));
-        }
+    // `write_file` cannot create a missing parent, so the directory the
+    // fragment goes in is ensured first. Every distribution seen so far ships
+    // it, and the shared helper owns the rule that decides when to try: a probe
+    // which cannot answer counts as may-be-missing, because `mkdir -p` on an
+    // existing directory does nothing.
+    //
+    // No ordering against this apply's checkpoint is needed, unlike the kernel
+    // and audit plugins. That checkpoint captures the main config and the
+    // fragment itself, never the bare directory, so no row is ever written for
+    // it and the creation is invisible to a rollback of this apply.
+    if let Some(reason) = crate::ensure_directory(ctx, DROPIN_DIR).await {
+        return Err(HardeningError::Plugin(reason));
     }
 
     ctx.executor()

@@ -2685,3 +2685,144 @@ async fn apply_does_not_loosen_a_vendor_host_through_its_own_fragment() {
         "the fragment loosened ClientAliveCountMax from the vendor file's 1, got:\n{dropin}"
     );
 }
+
+// =============================================================================
+// The directory the fragment lives in
+// =============================================================================
+//
+// `write_file` cannot create a missing parent: it lands its content through a
+// temporary file in the target directory. The creation is shared with the
+// kernel, pam and audit plugins, and these tests are what proves this plugin
+// routes through that one implementation rather than a copy of its own.
+
+const DROPIN_DIR: &str = "/etc/ssh/sshd_config.d";
+
+/// A vendor-only host that never gained the `/etc` drop-in directory.
+///
+/// Everything managed goes to the fragment on such a host, because the vendor
+/// file is never edited, so the write this guard protects is always reached.
+/// The directory is registered nowhere, which is what absence looks like to the
+/// mock: `path_exists` answers false from the metadata registry and `read_dir`
+/// returns nothing, exactly as an absent directory would.
+fn vendor_host_without_the_dropin_directory() -> MockExecutor {
+    dropin_apply_commands(MockExecutor::new().with_file(
+        "/usr/etc/ssh/sshd_config",
+        "# vendor config\n\
+         Include /etc/ssh/sshd_config.d/*.conf\n\
+         PermitRootLogin yes\n\
+         PasswordAuthentication yes\n",
+    ))
+}
+
+/// How many times the apply asked for the drop-in directory to exist.
+fn dropin_mkdir_count(executor: &MockExecutor) -> usize {
+    executor
+        .log()
+        .commands_executed
+        .iter()
+        .filter(|(program, args)| {
+            program == "mkdir"
+                && args.contains(&"-p".to_string())
+                && args.contains(&DROPIN_DIR.to_string())
+        })
+        .count()
+}
+
+#[tokio::test]
+async fn apply_creates_the_dropin_directory_when_it_is_absent() {
+    let executor = vendor_host_without_the_dropin_directory().with_command(
+        "mkdir",
+        &["-p", DROPIN_DIR],
+        ok_output(""),
+    );
+
+    let result = run_ssh_apply(&executor).await;
+
+    assert_eq!(
+        dropin_mkdir_count(&executor),
+        1,
+        "an absent parent must be created, commands: {:?}",
+        executor.log().commands_executed
+    );
+    assert!(
+        dropin_written(&executor).is_some(),
+        "the fragment must still be written, writes: {:?}",
+        executor.log().files_written
+    );
+    assert!(
+        result.apply_success,
+        "an apply that created the directory it needed succeeded, changes: {:?}",
+        result.apply_changes
+    );
+}
+
+/// A probe that cannot answer is not an answer. `path_exists` returns an error
+/// for a directory it could not determine, and reading that as "it is there"
+/// would skip the creation on exactly the host that needs it. `mkdir -p` on an
+/// existing directory does nothing, so attempting it costs nothing.
+#[tokio::test]
+async fn apply_creates_the_dropin_directory_when_the_probe_cannot_answer() {
+    let executor = vendor_host_without_the_dropin_directory()
+        .with_path_exists_error(DROPIN_DIR)
+        .with_command("mkdir", &["-p", DROPIN_DIR], ok_output(""));
+
+    run_ssh_apply(&executor).await;
+
+    assert_eq!(
+        dropin_mkdir_count(&executor),
+        1,
+        "a probe that failed must be treated as may-be-missing, commands: {:?}",
+        executor.log().commands_executed
+    );
+}
+
+/// `execute_command` returns Ok for a command that ran and failed, so an
+/// unchecked exit code would let a failed mkdir be followed by a write that
+/// cannot land. The failure must reach the operator as a failed change carrying
+/// the reason, and the reason names the exit code as well as the stderr,
+/// because a mkdir that fails silently prints nothing.
+#[tokio::test]
+async fn apply_reports_why_the_dropin_directory_could_not_be_created() {
+    let executor = vendor_host_without_the_dropin_directory().with_command(
+        "mkdir",
+        &["-p", DROPIN_DIR],
+        CommandOutput {
+            stdout: String::new(),
+            stderr: "mkdir: cannot create directory '/etc/ssh/sshd_config.d': \
+                     Read-only file system\n"
+                .to_string(),
+            exit_code: 1,
+        },
+    );
+
+    let result = run_ssh_apply(&executor).await;
+
+    let failed = result
+        .apply_changes
+        .iter()
+        .find(|change| !change.change_success)
+        .expect("a failed mkdir must produce a failed change, not a silent success");
+    let reason = failed
+        .change_error
+        .as_deref()
+        .expect("a failed change must carry the reason");
+    assert!(
+        reason.contains("Read-only file system"),
+        "the operator must be told why the directory could not be created, got: {reason}"
+    );
+    assert!(
+        reason.contains("mkdir exited 1"),
+        "the exit code belongs in the reason, because a silent mkdir leaves \
+         nothing else to report, got: {reason}"
+    );
+    assert!(
+        dropin_written(&executor).is_none(),
+        "a write into a directory that could not be created must not be attempted, \
+         writes: {:?}",
+        executor.log().files_written
+    );
+    assert!(
+        !result.apply_success,
+        "an apply that could not write the fragment has not succeeded"
+    );
+}
