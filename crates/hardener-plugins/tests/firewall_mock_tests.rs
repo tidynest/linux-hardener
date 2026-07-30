@@ -2114,6 +2114,10 @@ async fn the_unit_and_the_firewall_are_enabled_independently() {
 /// is enforcing, so `is_enabled` succeeds and the whole of `enable` is skipped,
 /// and the unit that was never wanted at boot stays that way however many times
 /// the tool is run. `state` is what `systemctl is-enabled ufw` answers.
+///
+/// Drives the preview half as well as the run half, which is why it is one
+/// fixture and not two: two would prove that two similar hosts agree, not that
+/// one host is described the same way by the dry run and by the apply.
 fn ufw_active_with_unit_state_apply_executor(state: &str, exit_code: i32) -> MockExecutor {
     ufw_apply_executor("22")
         .with_command(
@@ -2214,5 +2218,241 @@ async fn a_unit_already_wanted_at_boot_is_recorded_as_a_no_op() {
     assert!(
         recorded.is_skipped() && recorded.change_success,
         "a unit that needed no enabling must not be counted as applied work: {recorded:?}"
+    );
+}
+
+/// The one word a boot line's two halves are allowed to differ in is its verb:
+/// apply writes "Enabled ..." of work it has done and a preview writes
+/// "Enable ..." of work it intends, the same tense split the enable pair beside
+/// them already uses. Everything after that first space must match exactly.
+///
+/// Returns None rather than an empty string when there is no second word, so a
+/// reworded line surfaces as a missing subject instead of as two silences that
+/// happen to compare equal.
+fn boot_subject_in(line: &str) -> Option<&str> {
+    line.split_once(' ')
+        .map(|(_verb, subject)| subject)
+        .filter(|subject| !subject.is_empty())
+}
+
+/// What both halves must say about the unit, spelled as the baseline spells it.
+const BOOT_SUBJECT: &str = "the ufw unit to start the firewall at boot";
+
+/// The boot line in a list of descriptions, which is the only one of them that
+/// mentions boot at all.
+fn boot_line_in<'a>(mut lines: impl Iterator<Item = &'a str>) -> Option<&'a str> {
+    lines.find(|line| line.contains("at boot"))
+}
+
+#[tokio::test]
+async fn the_preview_and_the_run_agree_that_a_unit_is_not_wanted_at_boot() {
+    // apply pushes a boot change for every host whose firewall was already
+    // running, and validate's verified-active arm never asked the boot question
+    // at all, so the dry run previewed nothing for a line the run would write.
+    // The preview omitting a change the run will make is the worse direction of
+    // the two, because the preview is what the operator approves. fedora, rhel
+    // and openSUSE all took that arm in the container runs of 2026-07-30, each
+    // carrying a boot line no dry run would have shown.
+    let executor = ufw_active_with_unit_state_apply_executor("disabled", 1);
+
+    let mut apply_ctx = Context::with_executor(Arc::new(executor.clone()));
+    let applied = FirewallHardeningPlugin::new()
+        .apply(&mut apply_ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+    let validate_ctx = Context::with_executor(Arc::new(executor));
+    let previewed = FirewallHardeningPlugin::new()
+        .validate(&validate_ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    let apply_line = boot_line_in(
+        applied
+            .apply_changes
+            .iter()
+            .map(|c| c.change_description.as_str()),
+    )
+    .expect("apply must record the boot enable it performs");
+    let preview_line = boot_line_in(
+        previewed
+            .validation_report_estimated_changes
+            .iter()
+            .map(String::as_str),
+    )
+    .expect(
+        "the preview must name the boot change the run makes, or an operator \
+         approves a dry run that is one line short of the apply",
+    );
+
+    let apply_subject = boot_subject_in(apply_line).expect("apply's change must carry a subject");
+    let preview_subject =
+        boot_subject_in(preview_line).expect("the preview's line must carry a subject");
+
+    assert_eq!(
+        apply_subject, preview_subject,
+        "the preview and the run must describe the same boot change the same way, \
+         or an operator reading the dry run cannot match it to what the apply \
+         reports.\n  apply:    {apply_line}\n  preview:  {preview_line}"
+    );
+    // Without this the assertion above passes on two subjects that are both
+    // wrong in the same way, which a shared rewording would produce. Anchoring
+    // to the baseline's own spelling is what stops equal-and-empty counting as
+    // agreement.
+    assert_eq!(
+        apply_subject, BOOT_SUBJECT,
+        "both halves must name the unit and say what enabling it buys, got: \
+         {apply_line}"
+    );
+
+    // Order, because an operator compares the two lists by reading them down.
+    // apply pushes its boot change before it walks the baseline, so the preview
+    // that stands for it belongs before the rule estimate too.
+    let apply_boot_index = applied
+        .apply_changes
+        .iter()
+        .position(|c| c.change_description.contains("at boot"))
+        .expect("found above");
+    let apply_first_rule_index = applied
+        .apply_changes
+        .iter()
+        .position(|c| c.change_type == ChangeType::FirewallRule)
+        .expect("this host's baseline rules are all pending, so apply writes them");
+    assert!(
+        apply_boot_index < apply_first_rule_index,
+        "the fixture the order is read from: apply enables the unit before it \
+         applies any rule, got {:?}",
+        applied
+            .apply_changes
+            .iter()
+            .map(|c| c.change_description.as_str())
+            .collect::<Vec<_>>()
+    );
+    let preview_boot_index = previewed
+        .validation_report_estimated_changes
+        .iter()
+        .position(|c| c.contains("at boot"))
+        .expect("found above");
+    let preview_rule_index = previewed
+        .validation_report_estimated_changes
+        .iter()
+        .position(|c| c.contains("baseline firewall rules"))
+        .expect("the baseline rules are pending on this host, so the preview says so");
+    assert!(
+        preview_boot_index < preview_rule_index,
+        "and the preview must list them in the order the run emits them, got: {:?}",
+        previewed.validation_report_estimated_changes
+    );
+}
+
+#[tokio::test]
+async fn a_unit_already_wanted_at_boot_is_previewed_as_nothing_pending() {
+    // The other side of the same host state. apply records a skipped no-op
+    // here, and a preview line standing for a no-op would be counted: the
+    // pending list's length is what a renderer prints as the change count.
+    let executor = ufw_active_with_unit_state_apply_executor("enabled", 0);
+
+    let mut apply_ctx = Context::with_executor(Arc::new(executor.clone()));
+    let applied = FirewallHardeningPlugin::new()
+        .apply(&mut apply_ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+    let validate_ctx = Context::with_executor(Arc::new(executor));
+    let previewed = FirewallHardeningPlugin::new()
+        .validate(&validate_ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    // The run half is asserted to have spoken first, so the preview's silence
+    // below is measured against a host that genuinely has a boot answer rather
+    // than against one where neither half said anything.
+    let recorded = applied
+        .apply_changes
+        .iter()
+        .find(|c| c.change_description.contains("at boot"))
+        .expect("apply names the no-op, which is what makes this host boot-relevant");
+    assert!(
+        recorded.is_skipped() && recorded.change_success,
+        "a unit that needed no enabling is a no-op, not applied work: {recorded:?}"
+    );
+
+    // And the preview is asserted to have reached the arm under test, so its
+    // silence is a considered nothing rather than a validate that produced
+    // nothing at all.
+    assert!(
+        previewed
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("baseline firewall rules")),
+        "this host's baseline rules are pending, so a preview that says nothing \
+         about them never reached the verified-active arm: {:?}",
+        previewed.validation_report_estimated_changes
+    );
+    assert!(
+        previewed.validation_report_issues.is_empty(),
+        "systemd answered the boot question on this host, so there is no \
+         limitation to report: {:?}",
+        previewed.validation_report_issues
+    );
+
+    assert!(
+        boot_line_in(
+            previewed
+                .validation_report_estimated_changes
+                .iter()
+                .map(String::as_str)
+        )
+        .is_none(),
+        "a unit already wanted at boot has no pending change, and a preview line \
+         standing for a no-op inflates the count a renderer prints and the \
+         `would_change` the fleet path sums: {:?}",
+        previewed.validation_report_estimated_changes
+    );
+}
+
+#[tokio::test]
+async fn an_unreadable_boot_state_is_an_issue_rather_than_a_queued_change() {
+    // `static` is the state that traps a probe reading exit codes: it exits 0
+    // like `enabled` does, and it has no [Install] section, so the unit can be
+    // neither enabled nor disabled while something else may still pull it in.
+    // Neither "will start at boot" nor "will not" is true of this host, and the
+    // preview has to say so rather than queue a write for it.
+    let executor = ufw_active_with_unit_state_apply_executor("static", 0);
+    let ctx = Context::with_executor(Arc::new(executor));
+    let previewed = FirewallHardeningPlugin::new()
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    let issue = previewed
+        .validation_report_issues
+        .iter()
+        .find(|i| i.validation_issue_message.contains("boot"))
+        .unwrap_or_else(|| {
+            panic!(
+                "an unanswered question is reported as unanswered, never passed \
+                 over in silence: {:?}",
+                previewed.validation_report_issues
+            )
+        });
+    assert_eq!(
+        issue.validation_issue_severity,
+        Severity::Medium,
+        "a limit on what this run could read is not a fault of the host, and \
+         failing the dry run over it would fail it on every host in that \
+         state: {issue:?}"
+    );
+    assert!(
+        boot_line_in(
+            previewed
+                .validation_report_estimated_changes
+                .iter()
+                .map(String::as_str)
+        )
+        .is_none(),
+        "the pending list is documented as genuinely pending changes, and its \
+         length is what a renderer prints as the change count and what the fleet \
+         path sums into `would_change`, so a line saying nothing is known must \
+         not be counted as one queued write: {:?}",
+        previewed.validation_report_estimated_changes
     );
 }

@@ -1073,9 +1073,54 @@ impl HardeningPlugin for FirewallHardeningPlugin {
                     .all(|(_, activity)| matches!(activity, BackendActivity::Inactive));
 
                 match winner_activity {
-                    // Confirmed active: no enable needed. Report the
-                    // rule-level pending changes as before.
+                    // Confirmed active: no enable needed, but the boot question
+                    // is still open, and apply asks it on exactly this host
+                    // state. `ensure_unit_wanted_at_boot` runs only where the
+                    // firewall was already enabled, which is this arm, so a
+                    // preview that skipped it was one line short of the run it
+                    // previews: fedora, rhel and openSUSE all took this arm in
+                    // the container runs of 2026-07-30 and each carried a boot
+                    // line no dry run had shown.
+                    //
+                    // Ahead of the rule estimate because apply pushes its boot
+                    // change before it walks the baseline, and an operator
+                    // comparing a dry run against the run it previews reads the
+                    // two lists in order.
                     BackendActivity::Verified => {
+                        let unit = winner.systemd_unit();
+                        match unit_boot_persistence(ctx, unit).await {
+                            // The sentence apply prints, in the tense a preview
+                            // uses, so the two halves can be read against each
+                            // other line by line.
+                            BootPersistence::NotAtBoot(_) => estimated_changes.push(format!(
+                                "Enable the {unit} unit to start the firewall at boot"
+                            )),
+                            // Nothing pending: apply records this as a skipped
+                            // no-op, and a preview line standing for a no-op
+                            // would be counted as a queued write.
+                            BootPersistence::AtBoot => {}
+                            // An issue rather than an estimated change, for the
+                            // reason the arm below states at length: the length
+                            // of the pending list is the change count. Medium
+                            // for the same shape of reason, that this is a
+                            // limit on what the run could read rather than a
+                            // fault of the host, and `scan` reports the same
+                            // answer as an unchecked entry rather than as a
+                            // finding. Failing the dry run over it would fail
+                            // it on every host whose unit has no [Install]
+                            // section or whose systemd cannot be asked at all.
+                            BootPersistence::Undeterminable => {
+                                issues.push(hardener_core::ValidationIssue {
+                                    validation_issue_severity: Severity::Medium,
+                                    validation_issue_message: format!(
+                                        "`systemctl is-enabled {unit}` gave no answer this \
+                                         run can read, so whether the firewall starts at \
+                                         boot is unknown"
+                                    ),
+                                    validation_issue_config_key: None,
+                                });
+                            }
+                        }
                         push_rule_estimate(
                             winner.as_ref(),
                             config,
