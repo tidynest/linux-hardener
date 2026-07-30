@@ -362,6 +362,20 @@ fn ufw_apply_executor(ssh_port: &str) -> MockExecutor {
                 exit_code: 0,
             },
         )
+        // The boot half of the question, asked of every backend that is already
+        // running. This host's unit is wanted at boot, so the apply has nothing
+        // to repair and these tests stay about the rules. `systemctl enable ufw`
+        // is deliberately left unregistered: a run that issued it anyway would
+        // fail loudly here rather than pass unnoticed.
+        .with_command(
+            "systemctl",
+            &["is-enabled", "ufw"],
+            CommandOutput {
+                stdout: "enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
         // Baseline rule commands (UFW build_ufw_rule_args output)
         .with_command("ufw", &["allow", "from", "127.0.0.1/8"], ok.clone())
         .with_command(
@@ -458,6 +472,18 @@ fn ufw_exception_executor() -> MockExecutor {
                 stdout: "Status: active\nDefault: allow (incoming), allow (outgoing), \
                          disabled (routed)\n"
                     .to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        // The boot half of the question, asked of every backend that is already
+        // running. This host's unit is wanted at boot, so the apply has nothing
+        // to repair and these tests stay about the excepted rule.
+        .with_command(
+            "systemctl",
+            &["is-enabled", "ufw"],
+            CommandOutput {
+                stdout: "enabled\n".to_string(),
                 stderr: String::new(),
                 exit_code: 0,
             },
@@ -1456,6 +1482,18 @@ async fn test_nftables_plugin_apply_ensures_chain_when_foreign_hook_input_presen
                 exit_code: 0,
             },
         )
+        // The boot half of the question, asked of every backend that is already
+        // running. This host's unit is wanted at boot, so the apply has nothing
+        // to repair and this test stays about the chain.
+        .with_command(
+            "systemctl",
+            &["is-enabled", "nftables"],
+            CommandOutput {
+                stdout: "enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
         .with_command("nft", &["add", "table", "inet", "filter"], nft_ok())
         .with_command(
             "nft",
@@ -2069,5 +2107,112 @@ async fn the_unit_and_the_firewall_are_enabled_independently() {
         "and neither does ufw's own enable say anything about the unit, so both \
          switches are thrown every time. Commands run: {:?}",
         log.commands_executed
+    );
+}
+
+/// The arch container as apply finds it on a re-run, measured 2026-07-30: ufw
+/// is enforcing, so `is_enabled` succeeds and the whole of `enable` is skipped,
+/// and the unit that was never wanted at boot stays that way however many times
+/// the tool is run. `state` is what `systemctl is-enabled ufw` answers.
+fn ufw_active_with_unit_state_apply_executor(state: &str, exit_code: i32) -> MockExecutor {
+    ufw_apply_executor("22")
+        .with_command(
+            "systemctl",
+            &["is-enabled", "ufw"],
+            CommandOutput {
+                stdout: format!("{state}\n"),
+                stderr: String::new(),
+                exit_code,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["enable", "ufw"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: "Created symlink /etc/systemd/system/multi-user.target.wants/\
+                         ufw.service.\n"
+                    .to_string(),
+                exit_code: 0,
+            },
+        )
+}
+
+fn logged_systemctl_enable_ufw(executor: &MockExecutor) -> bool {
+    executor
+        .log()
+        .commands_executed
+        .iter()
+        .any(|(cmd, args)| cmd == "systemctl" && args == &["enable".to_string(), "ufw".to_string()])
+}
+
+#[tokio::test]
+async fn a_running_firewall_whose_unit_is_disabled_is_repaired_by_apply() {
+    let executor = ufw_active_with_unit_state_apply_executor("disabled", 1);
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+
+    let result = FirewallHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(
+        logged_systemctl_enable_ufw(&executor),
+        "apply skips `enable` entirely on a host whose firewall is already running, so \
+         nothing ever asked systemd to want the unit at boot and a re-run could not \
+         repair it. Commands run: {:?}",
+        executor.log().commands_executed
+    );
+    let recorded = result
+        .apply_changes
+        .iter()
+        .find(|c| c.change_description.contains("at boot"))
+        .expect(
+            "asking systemd to start the firewall at boot is real work and belongs in \
+                 the record apply leaves behind",
+        );
+    assert!(
+        !recorded.is_skipped() && recorded.change_success,
+        "a unit that was not wanted at boot and now is has been changed, not skipped: {recorded:?}"
+    );
+    assert_eq!(
+        recorded.change_type,
+        ChangeType::Service,
+        "wanting a unit at boot is a service state change, not a firewall rule: {recorded:?}"
+    );
+    assert!(
+        result.apply_success,
+        "the repair succeeded in this fixture: {:?}",
+        result
+            .apply_changes
+            .iter()
+            .filter(|c| !c.change_success)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn a_unit_already_wanted_at_boot_is_recorded_as_a_no_op() {
+    let executor = ufw_active_with_unit_state_apply_executor("enabled", 0);
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+
+    let result = FirewallHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(
+        !logged_systemctl_enable_ufw(&executor),
+        "the unit is already enabled, so there is nothing to enable. Commands run: {:?}",
+        executor.log().commands_executed
+    );
+    let recorded = result
+        .apply_changes
+        .iter()
+        .find(|c| c.change_description.contains("at boot"))
+        .expect("a setting already at its target is a no-op worth naming, as the rules are");
+    assert!(
+        recorded.is_skipped() && recorded.change_success,
+        "a unit that needed no enabling must not be counted as applied work: {recorded:?}"
     );
 }

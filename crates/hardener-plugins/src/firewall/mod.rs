@@ -348,6 +348,232 @@ async fn systemd_unit_active(ctx: &Context, unit: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// The words `systemctl is-enabled` uses for a unit that will definitely not
+/// be started at the next boot.
+///
+/// Judged by the word and never by the exit status, because the two disagree
+/// by design: `enabled-runtime` and `static` both exit 0 while neither
+/// survives a reboot, and `disabled` exits non-zero although `systemctl
+/// enable` repairs it in one command. [`systemd_unit_active`] above can read
+/// exit codes because `is-active` asks a question with one meaning; this one
+/// does not.
+///
+/// `enabled-runtime` is on the list because it is enablement made in
+/// `/run/systemd/system`, which the next boot discards. That is the very
+/// failure this probe exists to catch, so reading its "enabled" prefix as
+/// enabled would reintroduce the defect through the probe. `linked` units are
+/// not enabled either, and `masked` ones cannot be started at all.
+const NOT_AT_BOOT_STATES: [&str; 6] = [
+    "disabled",
+    "enabled-runtime",
+    "linked",
+    "linked-runtime",
+    "masked",
+    "masked-runtime",
+];
+
+/// Whether a unit is started at boot, which is a different question from
+/// whether it is running now and therefore needs a different answer.
+///
+/// Deliberately not folded into `FirewallBackend::is_enabled`, which means
+/// "running now" in all three backends. "Not running" and "running but gone
+/// after a reboot" are different states needing different words to the
+/// operator, and one boolean standing for both is how an Arch host came to be
+/// reported as having a firewall it was about to lose.
+enum BootPersistence {
+    /// `enabled`: a permanent `.wants/` or `.requires/` symlink under
+    /// `/etc/systemd/system`, so the unit is started at boot.
+    AtBoot,
+    /// systemd answered with one of [`NOT_AT_BOOT_STATES`]. The word is
+    /// carried so the operator is told which of the several ways of not
+    /// starting at boot this host is in: a masked unit has to be unmasked
+    /// before enabling it can work at all.
+    NotAtBoot(String),
+    /// The question was not answered. `systemctl` absent or erroring, an empty
+    /// answer, and the states with no `[Install]` section (`static`,
+    /// `indirect`, `generated`, `alias`, `transient`) all land here: those
+    /// cannot be enabled, yet another unit may still pull them in, so neither
+    /// "enabled" nor "not enabled" is true of them. Never a pass.
+    ///
+    /// `not-found` lands here too (systemd 261 prints it on stdout, exiting
+    /// 4). A backend confirmed to be enforcing without the unit this project
+    /// names for it is being started by something else, and this probe cannot
+    /// say what that something does at boot.
+    Undeterminable,
+}
+
+/// Asks systemd whether `unit` is started at boot.
+///
+/// Root-free, like [`systemd_unit_active`]: `is-enabled` reads unit files and
+/// symlinks, so an unprivileged scan gets the same answer a privileged one
+/// does. One free function rather than a trait method, because every backend
+/// already states its unit through [`FirewallBackend::systemd_unit`] and none
+/// of them would answer this differently.
+async fn unit_boot_persistence(ctx: &Context, unit: &str) -> BootPersistence {
+    let Ok(output) = ctx
+        .executor()
+        .execute_command("systemctl", &["is-enabled", unit])
+        .await
+    else {
+        return BootPersistence::Undeterminable;
+    };
+
+    // systemd prints the state on its own line. An empty answer, which is what
+    // a unit systemd cannot find gives, is not an answer this can read.
+    match output.stdout.trim() {
+        "enabled" => BootPersistence::AtBoot,
+        state if NOT_AT_BOOT_STATES.contains(&state) => {
+            BootPersistence::NotAtBoot(state.to_string())
+        }
+        _ => BootPersistence::Undeterminable,
+    }
+}
+
+/// The stable id shared by the finding and by the unchecked entry that stands
+/// in for it, kept apart from the `{backend}-disabled` id those two already
+/// use: a firewall that is running is not disabled, and saying so would be
+/// false about the host in front of the operator.
+fn not_at_boot_id(backend: &dyn FirewallBackend) -> String {
+    format!("{}-not-enabled-at-boot", backend.backend_name())
+}
+
+/// How the operator is told which way the unit fails to start at boot, and
+/// what to do about it. Returns the clause naming the state and the steps that
+/// repair it.
+///
+/// Split by state because the states are not interchangeable: systemd refuses
+/// to start a masked unit at all, so unmasking has to come before enabling,
+/// and a runtime-only enablement reads as enabled right up until the reboot
+/// that discards it.
+fn boot_state_wording(unit: &str, state: &str) -> (String, Vec<String>) {
+    match state {
+        "masked" | "masked-runtime" => (
+            format!("the {unit} unit is masked ({state}), so systemd refuses to start it at all"),
+            vec![
+                format!("Run `systemctl unmask {unit}`"),
+                format!("Run `systemctl enable {unit}`"),
+            ],
+        ),
+        "enabled-runtime" => (
+            format!(
+                "the {unit} unit is enabled for this boot only ({state}), an enablement \
+                 held in /run and discarded at the next boot"
+            ),
+            vec![format!(
+                "Run `systemctl enable {unit}` to make the enablement permanent"
+            )],
+        ),
+        other => (
+            format!("the {unit} unit reads {other}, so nothing starts it at boot"),
+            vec![format!("Run `systemctl enable {unit}`")],
+        ),
+    }
+}
+
+/// The finding raised for a firewall that is enforcing now and will not be
+/// after a reboot.
+fn not_at_boot_finding(backend: &dyn FirewallBackend, state: &str) -> Finding {
+    let (clause, steps) = boot_state_wording(backend.systemd_unit(), state);
+    Finding {
+        finding_category: FindingCategory::Network,
+        finding_current_value: state.to_string(),
+        finding_description: format!(
+            "The {} firewall is active now, but {clause}, so this host has no firewall \
+             after a reboot",
+            backend.backend_name()
+        ),
+        finding_explanation:
+            "A firewall that is not started at boot protects the host only until it is \
+             next restarted"
+                .to_string(),
+        finding_id: not_at_boot_id(backend),
+        finding_impact: "System exposed to network attacks from the next reboot onwards"
+            .to_string(),
+        finding_recommended_value: "enabled".to_string(),
+        finding_remediation_steps: steps,
+        finding_severity: Severity::High,
+        finding_title: "Firewall does not start at boot".to_string(),
+        finding_compliance: get_firewall_compliance_mappings(),
+        finding_policy_exception: None,
+    }
+}
+
+/// The unchecked entry that stands in for [`not_at_boot_finding`] when systemd
+/// gave no answer this scan can read. An unanswered question is reported as
+/// unanswered, never as a pass.
+fn not_at_boot_unchecked(backend: &dyn FirewallBackend) -> UncheckedCheck {
+    UncheckedCheck {
+        unchecked_check_id: not_at_boot_id(backend),
+        unchecked_title: "Firewall starts at boot".to_string(),
+        unchecked_category: FindingCategory::Network,
+        unchecked_reason: format!(
+            "`systemctl is-enabled {}` gave no answer this scan can read",
+            backend.systemd_unit()
+        ),
+        // `is-enabled` needs no privilege, so a run with sudo would read
+        // exactly the same thing and offering one would be a false promise.
+        unchecked_needs_privilege: false,
+        unchecked_compliance: get_firewall_compliance_mappings(),
+    }
+}
+
+/// Asks systemd to want `backend`'s unit at boot, and reports what that took.
+///
+/// A unit already wanted at boot is recorded as a skipped no-op rather than as
+/// work done, which is what `docs/development/plugin-authoring.md` and
+/// `docs/reference/cli.md` promise of a setting already at its target.
+///
+/// An undeterminable answer runs the enable anyway: `systemctl enable` is
+/// idempotent, and doing the work is the safe direction when the state cannot
+/// be read, the same fallback the ufw and firewalld backends already take for
+/// the policy and the zone target they cannot read. A run that then fails is
+/// recorded as a failed change carrying systemd's own words, rather than a
+/// host quietly left to lose its firewall.
+async fn ensure_unit_wanted_at_boot(ctx: &Context, backend: &dyn FirewallBackend) -> Change {
+    let unit = backend.systemd_unit();
+    if matches!(
+        unit_boot_persistence(ctx, unit).await,
+        BootPersistence::AtBoot
+    ) {
+        return Change {
+            change_description: format!(
+                "The {unit} unit was already enabled to start the firewall at boot"
+            ),
+            change_type: ChangeType::Skipped,
+            change_success: true,
+            change_error: None,
+        };
+    }
+
+    let outcome = ctx
+        .executor()
+        .execute_command("systemctl", &["enable", unit])
+        .await;
+    let failure = match &outcome {
+        Ok(output) if output.success() => None,
+        Ok(output) => Some(output.stderr.trim().to_string()),
+        Err(e) => Some(e.to_string()),
+    };
+    match failure {
+        None => Change {
+            change_description: format!("Enabled the {unit} unit to start the firewall at boot"),
+            // A service state change rather than a rule, matching the enable
+            // this stands beside.
+            change_type: ChangeType::Service,
+            change_success: true,
+            change_error: None,
+        },
+        Some(reason) => Change {
+            change_description: format!(
+                "Failed to enable the {unit} unit to start the firewall at boot"
+            ),
+            change_type: ChangeType::Service,
+            change_success: false,
+            change_error: Some(reason),
+        },
+    }
+}
+
 /// Activity classification for one installed firewall backend.
 enum BackendActivity {
     /// The backend's own probe confirmed it is managing traffic.
@@ -593,7 +819,8 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         // installed order) name the entry. The red "disabled" finding is
         // warranted only once every installed backend's probe ran and
         // confirmed inactive.
-        let blocked = match find_winner(&classified).map(|index| &classified[index]) {
+        let winner = find_winner(&classified).map(|index| &classified[index]);
+        let blocked = match winner {
             Some((_, BackendActivity::Verified)) => None,
             Some((backend, _)) => Some(backend),
             None => classified
@@ -636,6 +863,25 @@ impl HardeningPlugin for FirewallHardeningPlugin {
                 finding_compliance: get_firewall_compliance_mappings(),
                 finding_policy_exception: None,
             });
+        }
+
+        // A firewall enforcing now is not a firewall that comes back after a
+        // reboot, and nothing above asks the second question: every backend's
+        // `is_enabled` means "running now". Asked only of a verified-active
+        // winner, because that is the one host state where the answer stands
+        // on its own. A backend nothing could confirm as running already has
+        // its unchecked entry, and one confirmed inactive is the disabled
+        // finding's business rather than this one's.
+        if let Some((backend, BackendActivity::Verified)) = winner {
+            match unit_boot_persistence(ctx, backend.systemd_unit()).await {
+                BootPersistence::AtBoot => {}
+                BootPersistence::NotAtBoot(state) => {
+                    findings.push(not_at_boot_finding(backend.as_ref(), &state));
+                }
+                BootPersistence::Undeterminable => {
+                    unchecked.push(not_at_boot_unchecked(backend.as_ref()));
+                }
+            }
         }
 
         let duration_us = start_time.elapsed().as_micros() as u64;
@@ -726,6 +972,17 @@ impl HardeningPlugin for FirewallHardeningPlugin {
                 change_error: None,
             }
         });
+
+        // The other half of "enabled", which the enable above cannot reach on
+        // this host: it is skipped entirely when the firewall is already
+        // running, so a host running a firewall whose unit is not wanted at
+        // boot was never repaired however often the tool was run. Where the
+        // enable did run, it asked systemd itself (ufw and firewalld both do),
+        // so asking again here would only repeat it.
+        if was_already_enabled {
+            let boot_change = ensure_unit_wanted_at_boot(ctx, backend.as_ref()).await;
+            apply_changes.push(boot_change);
+        }
 
         for rule in baseline_rules {
             let id = rule_id(&rule);
@@ -1118,6 +1375,19 @@ mod tests {
                     stderr: "ERROR: You need to be root to run this script".to_string(),
                     exit_code: 1,
                 },
+            )
+            // The winner's boot question, which is asked of every verified
+            // winner and is not what this test is about. Answered `enabled`
+            // so the host described here is one whose firewall does survive a
+            // reboot, leaving the silence this asserts about the ruleset.
+            .with_command(
+                "systemctl",
+                &["is-enabled", "nftables"],
+                CommandOutput {
+                    stdout: "enabled\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
             );
         let ctx = Context::with_executor(std::sync::Arc::new(mock));
         let result = FirewallHardeningPlugin::new()
@@ -1452,6 +1722,243 @@ mod tests {
             report.validation_report_estimated_changes,
             vec!["Apply 4 baseline firewall rules".to_string()],
             "a verified-active firewall reports only the rule estimate"
+        );
+    }
+
+    /// A host whose only installed backend is ufw, genuinely enforcing, with
+    /// `systemctl is-enabled ufw` answering `state` and exiting `exit_code`.
+    ///
+    /// Both are registered because systemd's word and its exit status disagree
+    /// by design: `enabled-runtime` and `static` exit 0 while neither starts the
+    /// unit at the next boot, and `disabled` exits non-zero while `systemctl
+    /// enable` fixes it. A fixture that set only one of the two would let a
+    /// probe reading the wrong one pass.
+    fn ufw_active_with_unit_state(state: &str, exit_code: i32) -> MockExecutor {
+        MockExecutor::new()
+            .with_command_exists("firewall-cmd", false)
+            .with_command_exists("ufw", true)
+            .with_command_exists("nft", false)
+            .with_command(
+                "ufw",
+                &["status"],
+                CommandOutput {
+                    stdout: "Status: active\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            )
+            .with_command(
+                "systemctl",
+                &["is-enabled", "ufw"],
+                CommandOutput {
+                    stdout: format!("{state}\n"),
+                    stderr: String::new(),
+                    exit_code,
+                },
+            )
+    }
+
+    async fn scan_with(mock: MockExecutor) -> ScanResult {
+        let ctx = Context::with_executor(std::sync::Arc::new(mock));
+        FirewallHardeningPlugin::new()
+            .scan(&ctx, &PluginConfig::default())
+            .await
+            .expect("the scan itself must not fail on an installed backend")
+    }
+
+    /// The arch container's state, measured 2026-07-30: `ufw status` reads
+    /// `Status: active` and `/etc/ufw/ufw.conf` reads `ENABLED=yes`, while
+    /// `/etc/systemd/system/multi-user.target.wants/ufw.service` does not exist
+    /// and `systemctl is-enabled ufw` reads `disabled`. The host has a firewall
+    /// now and will have none after a reboot, and every re-run of apply skips
+    /// `enable` because `is_enabled` says the firewall is up.
+    ///
+    /// The finding must not be the `{backend}-disabled` one: the firewall IS
+    /// running, and calling it disabled would be a false statement about the
+    /// host in front of the operator.
+    #[tokio::test]
+    async fn a_running_firewall_whose_unit_is_disabled_is_reported_as_lost_at_reboot() {
+        let result = scan_with(ufw_active_with_unit_state("disabled", 1)).await;
+
+        let ids: Vec<&str> = result
+            .scan_findings
+            .iter()
+            .map(|f| f.finding_id.as_str())
+            .collect();
+        assert!(
+            ids.contains(&"ufw-not-enabled-at-boot"),
+            "a firewall enforcing now whose unit is not wanted at boot loses the host \
+             its firewall at the next reboot, and nothing reported it: {ids:?}"
+        );
+        assert!(
+            !ids.contains(&"ufw-disabled"),
+            "the firewall is running, so calling it disabled is false: {ids:?}"
+        );
+        assert!(
+            result.scan_unchecked.is_empty(),
+            "systemd answered the question, so nothing is unverified: {:?}",
+            result.scan_unchecked
+        );
+        let finding = result
+            .scan_findings
+            .iter()
+            .find(|f| f.finding_id == "ufw-not-enabled-at-boot")
+            .expect("asserted present above");
+        assert_eq!(finding.finding_severity, Severity::High);
+        assert!(
+            finding.finding_description.contains("reboot"),
+            "the description has to say plainly that the firewall does not survive a \
+             reboot: {}",
+            finding.finding_description
+        );
+        assert!(
+            !finding.finding_compliance.is_empty(),
+            "a finding with no mappings can never be rendered by a framework report"
+        );
+    }
+
+    /// `enabled-runtime` is the trap the probe exists to avoid. It exits 0 and
+    /// its word starts with "enabled", yet it is a `/run/systemd/system` symlink
+    /// that the next boot discards: exactly the failure being fixed. Reading it
+    /// as enabled would reintroduce the defect through the probe itself.
+    #[tokio::test]
+    async fn a_runtime_only_enablement_is_lost_at_reboot_and_is_reported() {
+        let result = scan_with(ufw_active_with_unit_state("enabled-runtime", 0)).await;
+
+        let finding = result
+            .scan_findings
+            .iter()
+            .find(|f| f.finding_id == "ufw-not-enabled-at-boot")
+            .unwrap_or_else(|| {
+                panic!(
+                    "enabled-runtime is enablement for this boot only; treating it as \
+                     enabled is the defect: {:?}",
+                    result.scan_findings
+                )
+            });
+        assert!(
+            finding.finding_description.contains("enabled-runtime"),
+            "the operator is told which of the several ways of not starting at boot \
+             this host is in: {}",
+            finding.finding_description
+        );
+    }
+
+    /// A masked unit is worse than one merely not enabled: systemd refuses to
+    /// start it at all, so `systemctl enable` alone does not repair the host and
+    /// the wording has to say so.
+    #[tokio::test]
+    async fn a_masked_unit_is_reported_in_its_own_words() {
+        let result = scan_with(ufw_active_with_unit_state("masked", 1)).await;
+
+        let finding = result
+            .scan_findings
+            .iter()
+            .find(|f| f.finding_id == "ufw-not-enabled-at-boot")
+            .unwrap_or_else(|| {
+                panic!(
+                    "a masked unit will not start at boot either: {:?}",
+                    result.scan_findings
+                )
+            });
+        assert!(
+            finding.finding_description.contains("masked"),
+            "masked is not the same state as disabled and must not be described as \
+             it: {}",
+            finding.finding_description
+        );
+        assert!(
+            finding
+                .finding_remediation_steps
+                .iter()
+                .any(|step| step.contains("unmask")),
+            "enabling a masked unit fails until it is unmasked, so the steps must \
+             say so: {:?}",
+            finding.finding_remediation_steps
+        );
+    }
+
+    /// `systemctl` absent, or erroring: the question was not answered, and an
+    /// unanswered question is not a pass. It becomes an unchecked entry, the
+    /// same machinery the root-blocked ruleset probe already uses.
+    #[tokio::test]
+    async fn an_unanswerable_boot_question_is_unchecked_rather_than_passed() {
+        // `systemctl is-enabled ufw` deliberately unregistered, so the mock
+        // errors exactly as a host without systemctl would.
+        let mock = MockExecutor::new()
+            .with_command_exists("firewall-cmd", false)
+            .with_command_exists("ufw", true)
+            .with_command_exists("nft", false)
+            .with_command(
+                "ufw",
+                &["status"],
+                CommandOutput {
+                    stdout: "Status: active\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            );
+        let result = scan_with(mock).await;
+
+        assert!(
+            result.scan_findings.is_empty(),
+            "a question that was not answered is not evidence of a fault: {:?}",
+            result.scan_findings
+        );
+        let ids: Vec<&str> = result
+            .scan_unchecked
+            .iter()
+            .map(|u| u.unchecked_check_id.as_str())
+            .collect();
+        assert!(
+            ids.contains(&"ufw-not-enabled-at-boot"),
+            "an unanswered question must be reported as unchecked, never passed \
+             over in silence: {ids:?}"
+        );
+    }
+
+    /// `static` has no `[Install]` section, so it cannot be enabled, but it may
+    /// still be pulled in by another unit. Exit code 0 makes it look like a pass
+    /// to anything judging by status alone. It is neither a pass nor a fault:
+    /// the honest answer is that this scan does not know.
+    #[tokio::test]
+    async fn a_unit_with_no_install_section_is_unchecked_rather_than_enabled() {
+        let result = scan_with(ufw_active_with_unit_state("static", 0)).await;
+
+        assert!(
+            result.scan_findings.is_empty(),
+            "a static unit may well be pulled in by another unit, so claiming a \
+             fault would be a guess: {:?}",
+            result.scan_findings
+        );
+        let ids: Vec<&str> = result
+            .scan_unchecked
+            .iter()
+            .map(|u| u.unchecked_check_id.as_str())
+            .collect();
+        assert!(
+            ids.contains(&"ufw-not-enabled-at-boot"),
+            "static exits 0 but starts nothing at boot on its own, so it must not \
+             read as enabled: {ids:?}"
+        );
+    }
+
+    /// The positive control for all of the above. `enabled` is the one word
+    /// that means the unit is started at boot, and a host in that state must
+    /// hear nothing at all: no finding, no unchecked entry.
+    #[tokio::test]
+    async fn a_unit_enabled_at_boot_says_nothing() {
+        let result = scan_with(ufw_active_with_unit_state("enabled", 0)).await;
+
+        assert!(
+            result.scan_findings.is_empty(),
+            "a firewall that survives a reboot is not a fault: {:?}",
+            result.scan_findings
+        );
+        assert!(
+            result.scan_unchecked.is_empty(),
+            "systemd answered the question, so nothing is unverified: {:?}",
+            result.scan_unchecked
         );
     }
 
