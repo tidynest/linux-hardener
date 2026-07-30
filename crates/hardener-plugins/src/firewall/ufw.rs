@@ -159,25 +159,25 @@ impl FirewallBackend for UfwBackend {
             .map_err(|e| HardeningError::Plugin(e.to_string()))
     }
 
+    /// Whether ufw is actually enforcing, asked of ufw and of nothing else.
+    ///
+    /// **The systemd unit's state is deliberately not consulted here.** It
+    /// answers a different question, and this method taking it as proof left a
+    /// Debian host with no firewall while the tool reported one: Debian ships
+    /// `ENABLED=no` in `/etc/ufw/ufw.conf`, its `ufw` unit is a oneshot that
+    /// reports `active` having loaded no rules, and
+    /// [`super::backend_activity`] read this method's `Ok` as `Verified`. Apply
+    /// then skipped [`Self::enable`], `ufw allow` wrote ufw's own rule files and
+    /// succeeded, and three changes were reported against a kernel holding an
+    /// empty filter table and a default-ACCEPT policy. Measured 2026-07-30 by
+    /// the differential suite's firewall oracle, on its first run.
+    ///
+    /// The unit hint is not lost, it is applied where it belongs.
+    /// [`super::backend_activity`] already degrades a permission-denied probe to
+    /// `UnitActiveUnverified` by asking systemd there, which is the layer that
+    /// can express "the unit is up but the ruleset is unverifiable" without
+    /// claiming the backend's own probe confirmed anything.
     async fn is_enabled(&self, ctx: &Context) -> Result<()> {
-        // Try systemctl first - doesn't require root privileges.
-        // This prevents false positives when running as non-root user.
-        let systemctl_result = ctx
-            .executor()
-            .execute_command("systemctl", &["is-active", "ufw"])
-            .await;
-
-        if let Ok(output) = systemctl_result {
-            if output.stdout.trim() == "active" {
-                return Ok(());
-            }
-            // systemctl says inactive - firewall is genuinely disabled
-            if output.stdout.trim() == "inactive" {
-                return Err(HardeningError::Plugin("UFW is not enabled".to_string()));
-            }
-        }
-
-        // Fall back to ufw status (may fail without root).
         match self.execute_ufw(ctx, &["status"]).await {
             Ok(output) => {
                 if output.contains("Status: active") {

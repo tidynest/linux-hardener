@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Debian hosts hardened by any release up to and including 1.5.1 may have no
+  firewall at all, while the tool reported one was applied.** `apply --plugin
+  firewall-hardening` decided ufw was already enabled when `systemctl is-active
+  ufw` printed `active`, and skipped enabling it. Debian ships `ENABLED=no` in
+  `/etc/ufw/ufw.conf` and its `ufw` unit is a oneshot that reports active having
+  loaded no rules, so that check passed on a host with no firewall. The
+  subsequent `ufw allow` commands succeeded, because they write ufw's own rule
+  files rather than the kernel's tables, and the tool reported three applied
+  changes against a kernel holding an empty filter table and a default-ACCEPT
+  policy. Measured on the Debian test container: identical binary, identical
+  run, Arch ended with a 392-line ruleset and `-P INPUT DROP` while Debian ended
+  with nothing. **Check an affected host with `ufw status` (not `systemctl
+  is-active ufw`) and run `ufw --force enable` if it reports inactive.** The
+  activity probe now asks ufw rather than systemd; the unit hint is still used,
+  but only where it belongs, to mark a root-blocked probe as unverified rather
+  than as confirmed.
 - **openSUSE hosts hardened by 1.5.0 or earlier may be storing DES password
   hashes, and should have those passwords set again.** Those releases wrote a
   short `/etc/login.defs` on a distribution that keeps its copy under

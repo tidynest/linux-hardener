@@ -28,6 +28,69 @@ fn ufw_active_executor() -> MockExecutor {
         )
 }
 
+/// The Debian container's real state, measured 2026-07-30: the `ufw` systemd
+/// unit is active while ufw itself is not enforcing anything, because Debian
+/// ships `ENABLED=no` in `/etc/ufw/ufw.conf` and the unit is a oneshot that
+/// happily reports active having loaded no rules. `ufw status` is the only one
+/// of the two that answers the question the plugin is actually asking.
+fn ufw_unit_active_but_not_enforcing_executor() -> MockExecutor {
+    MockExecutor::new()
+        .with_command_exists("ufw", true)
+        .with_command_exists("firewall-cmd", false)
+        .with_command_exists("nft", false)
+        .with_command(
+            "systemctl",
+            &["is-active", "ufw"],
+            CommandOutput {
+                stdout: "active\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        // ufw's own answer, which is what is_enabled asks now. An active unit
+        // is not proof the rules are loaded: Debian's unit reports active with
+        // ENABLED=no and no ruleset at all.
+        .with_command(
+            "ufw",
+            &["status"],
+            CommandOutput {
+                stdout: "Status: active
+"
+                .to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "ufw",
+            &["status"],
+            CommandOutput {
+                stdout: "Status: inactive\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+}
+
+#[tokio::test]
+async fn an_active_unit_is_not_proof_the_firewall_is_enforcing() {
+    // The defect this pins was measured on the debian container: the plugin
+    // took `systemctl is-active ufw` as proof, skipped `ufw enable`, and then
+    // reported three applied rules while the kernel held an empty filter table
+    // and a default-ACCEPT policy. The unit being active and the rules being in
+    // force are different questions, and only ufw can answer the second.
+    let executor = ufw_unit_active_but_not_enforcing_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    use hardener_plugins::firewall::FirewallBackend;
+    let backend = hardener_plugins::firewall::ufw::UfwBackend::new();
+
+    assert!(
+        backend.is_enabled(&ctx).await.is_err(),
+        "a host whose ufw unit is active but whose ufw reports inactive is NOT \
+         enforcing, and reporting it as enabled makes apply skip the enable"
+    );
+}
+
 /// Creates a mock executor where UFW is installed but disabled.
 fn ufw_disabled_executor() -> MockExecutor {
     MockExecutor::new()
@@ -67,6 +130,20 @@ fn ufw_permission_denied_executor() -> MockExecutor {
             &["is-active", "ufw"],
             CommandOutput {
                 stdout: "active\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        // ufw's own answer, which is what is_enabled asks now. An active unit
+        // is not proof the rules are loaded: Debian's unit reports active with
+        // ENABLED=no and no ruleset at all.
+        .with_command(
+            "ufw",
+            &["status"],
+            CommandOutput {
+                stdout: "Status: active
+"
+                .to_string(),
                 stderr: String::new(),
                 exit_code: 0,
             },
@@ -270,12 +347,25 @@ fn ufw_apply_executor(ssh_port: &str) -> MockExecutor {
         .with_command_exists("ufw", true)
         .with_command_exists("firewall-cmd", false)
         .with_command_exists("nft", false)
-        // is_enabled: systemctl returns active → skip enable
         .with_command(
             "systemctl",
             &["is-active", "ufw"],
             CommandOutput {
                 stdout: "active\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        // ufw's own answer, which is what is_enabled asks now. An active unit
+        // is not proof the rules are loaded: Debian's unit reports active with
+        // ENABLED=no and no ruleset at all.
+        .with_command(
+            "ufw",
+            &["status"],
+            CommandOutput {
+                stdout: "Status: active
+"
+                .to_string(),
                 stderr: String::new(),
                 exit_code: 0,
             },
@@ -344,6 +434,20 @@ async fn test_firewall_apply_skips_exceptions() {
             &["is-active", "ufw"],
             CommandOutput {
                 stdout: "active\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        // ufw's own answer, which is what is_enabled asks now. An active unit
+        // is not proof the rules are loaded: Debian's unit reports active with
+        // ENABLED=no and no ruleset at all.
+        .with_command(
+            "ufw",
+            &["status"],
+            CommandOutput {
+                stdout: "Status: active
+"
+                .to_string(),
                 stderr: String::new(),
                 exit_code: 0,
             },
@@ -573,6 +677,19 @@ fn ufw_inactive_nftables_active_executor() -> MockExecutor {
                 exit_code: 3,
             },
         )
+        // What a genuinely inactive host answers. is_enabled asks ufw rather
+        // than systemd now, so a fixture answering only systemctl would stand
+        // for a host where `ufw status` cannot run at all, which is a third
+        // state and not the one these tests are about.
+        .with_command(
+            "ufw",
+            &["status"],
+            CommandOutput {
+                stdout: "Status: inactive\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
         .with_command(
             "nft",
             &["list", "ruleset"],
@@ -639,6 +756,20 @@ fn ufw_active_nftables_also_present_executor() -> MockExecutor {
                 exit_code: 0,
             },
         )
+        // ufw's own answer, which is what is_enabled asks now. An active unit
+        // is not proof the rules are loaded: Debian's unit reports active with
+        // ENABLED=no and no ruleset at all.
+        .with_command(
+            "ufw",
+            &["status"],
+            CommandOutput {
+                stdout: "Status: active
+"
+                .to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
         .with_command(
             "nft",
             &["list", "ruleset"],
@@ -665,8 +796,7 @@ async fn test_backend_selection_keeps_priority_order_when_ufw_active() {
     assert!(
         log.commands_executed
             .iter()
-            .any(|(cmd, args)| cmd == "systemctl"
-                && args == &["is-active".to_string(), "ufw".to_string()]),
+            .any(|(cmd, args)| cmd == "ufw" && args == &["status".to_string()]),
         "ufw should be probed first per the existing priority order"
     );
     assert!(
@@ -692,6 +822,19 @@ fn ufw_inactive_nftables_inactive_executor() -> MockExecutor {
                 stdout: "inactive\n".to_string(),
                 stderr: String::new(),
                 exit_code: 3,
+            },
+        )
+        // What a genuinely inactive host answers. is_enabled asks ufw rather
+        // than systemd now, so a fixture answering only systemctl would stand
+        // for a host where `ufw status` cannot run at all, which is a third
+        // state and not the one these tests are about.
+        .with_command(
+            "ufw",
+            &["status"],
+            CommandOutput {
+                stdout: "Status: inactive\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
             },
         )
         .with_command(
@@ -800,6 +943,19 @@ fn ufw_inactive_nftables_docker_table_only_executor() -> MockExecutor {
                 stdout: "inactive\n".to_string(),
                 stderr: String::new(),
                 exit_code: 3,
+            },
+        )
+        // What a genuinely inactive host answers. is_enabled asks ufw rather
+        // than systemd now, so a fixture answering only systemctl would stand
+        // for a host where `ufw status` cannot run at all, which is a third
+        // state and not the one these tests are about.
+        .with_command(
+            "ufw",
+            &["status"],
+            CommandOutput {
+                stdout: "Status: inactive\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
             },
         )
         .with_command(

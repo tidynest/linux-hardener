@@ -900,6 +900,19 @@ mod tests {
                     stderr: String::new(),
                     exit_code: 3,
                 },
+            )
+            // ufw's own probe, which is_enabled asks instead of systemd now.
+            // A fixture answering only systemctl stands for a host where
+            // `ufw status` cannot run at all, which classifies Unknown rather
+            // than Inactive and is not the state these tests are about.
+            .with_command(
+                "ufw",
+                &["status"],
+                CommandOutput {
+                    stdout: "Status: inactive\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
             );
         let ctx = Context::with_executor(std::sync::Arc::new(mock));
         let result = FirewallHardeningPlugin::new()
@@ -956,6 +969,19 @@ mod tests {
                     stderr: String::new(),
                     exit_code: 3,
                 },
+            )
+            // ufw's own probe, which is_enabled asks instead of systemd now.
+            // A fixture answering only systemctl stands for a host where
+            // `ufw status` cannot run at all, which classifies Unknown rather
+            // than Inactive and is not the state these tests are about.
+            .with_command(
+                "ufw",
+                &["status"],
+                CommandOutput {
+                    stdout: "Status: inactive\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
             );
         let ctx = Context::with_executor(std::sync::Arc::new(mock));
         let result = FirewallHardeningPlugin::new()
@@ -1000,6 +1026,19 @@ mod tests {
                     stdout: "inactive\n".to_string(),
                     stderr: String::new(),
                     exit_code: 3,
+                },
+            )
+            // ufw's own probe, which is_enabled asks instead of systemd now.
+            // A fixture answering only systemctl stands for a host where
+            // `ufw status` cannot run at all, which classifies Unknown rather
+            // than Inactive and is not the state these tests are about.
+            .with_command(
+                "ufw",
+                &["status"],
+                CommandOutput {
+                    stdout: "Status: inactive\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
                 },
             );
         let ctx = Context::with_executor(std::sync::Arc::new(mock));
@@ -1166,6 +1205,19 @@ mod tests {
                     stderr: String::new(),
                     exit_code: 3,
                 },
+            )
+            // ufw's own probe, which is_enabled asks instead of systemd now.
+            // A fixture answering only systemctl stands for a host where
+            // `ufw status` cannot run at all, which classifies Unknown rather
+            // than Inactive and is not the state these tests are about.
+            .with_command(
+                "ufw",
+                &["status"],
+                CommandOutput {
+                    stdout: "Status: inactive\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
             );
         let ctx = Context::with_executor(std::sync::Arc::new(mock));
         let report = FirewallHardeningPlugin::new()
@@ -1236,6 +1288,19 @@ mod tests {
                     stderr: String::new(),
                     exit_code: 3,
                 },
+            )
+            // ufw's own probe, which is_enabled asks instead of systemd now.
+            // A fixture answering only systemctl stands for a host where
+            // `ufw status` cannot run at all, which classifies Unknown rather
+            // than Inactive and is not the state these tests are about.
+            .with_command(
+                "ufw",
+                &["status"],
+                CommandOutput {
+                    stdout: "Status: inactive\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
             );
         let ctx = Context::with_executor(std::sync::Arc::new(mock));
         let report = FirewallHardeningPlugin::new()
@@ -1290,6 +1355,19 @@ mod tests {
                     stdout: "inactive\n".to_string(),
                     stderr: String::new(),
                     exit_code: 3,
+                },
+            )
+            // ufw's own probe, which is_enabled asks instead of systemd now.
+            // A fixture answering only systemctl stands for a host where
+            // `ufw status` cannot run at all, which classifies Unknown rather
+            // than Inactive and is not the state these tests are about.
+            .with_command(
+                "ufw",
+                &["status"],
+                CommandOutput {
+                    stdout: "Status: inactive\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
                 },
             );
         let ctx = Context::with_executor(std::sync::Arc::new(mock));
