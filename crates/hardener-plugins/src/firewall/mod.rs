@@ -430,14 +430,38 @@ fn find_winner(classified: &[(Box<dyn FirewallBackend>, BackendActivity)]) -> Op
 }
 
 /// Appends the "Apply N baseline firewall rules" estimate for `backend`,
-/// counting only rules not waived by a config exception. Shared by the
+/// counting only rules not waived by a config exception, and records each
+/// waived rule in `exceptions` as the documented deviation it is. Shared by the
 /// verified-active and genuinely-disabled arms of `validate`.
-fn push_rule_estimate(backend: &dyn FirewallBackend, config: &PluginConfig, out: &mut Vec<String>) {
-    let rule_count = backend
-        .get_default_rules()
-        .iter()
-        .filter(|r| config.has_valid_exception(&rule_id(r)).is_none())
-        .count();
+///
+/// One pass over the baseline, because the rule a count leaves out and the line
+/// that names it are two halves of the same decision. Computing them apart is
+/// how the count came to shrink with nothing anywhere saying why, and how it
+/// came to vanish entirely once every rule was waived.
+fn push_rule_estimate(
+    backend: &dyn FirewallBackend,
+    config: &PluginConfig,
+    out: &mut Vec<String>,
+    exceptions: &mut Vec<String>,
+) {
+    let mut rule_count = 0usize;
+    for rule in backend.get_default_rules() {
+        let id = rule_id(&rule);
+        match config.has_valid_exception(&id) {
+            // Named by the description apply prints when it skips this rule, so
+            // the preview and the run it previews identify the rule the same
+            // way. The config keys the exception on the id instead, which is a
+            // real gap between what an operator reads here and what they typed;
+            // closing it by naming the id here would only move the gap to
+            // between the preview and the apply, which is worse.
+            Some(exception) => exceptions.push(hardener_common::types::exception_preview_line(
+                &rule.rule_description,
+                "not applied",
+                &exception.reason,
+            )),
+            None => rule_count += 1,
+        }
+    }
     if rule_count > 0 {
         out.push(format!("Apply {rule_count} baseline firewall rules"));
     }
@@ -738,6 +762,12 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         let validation_plugin_id = PluginId::new("firewall-hardening");
         let mut issues = Vec::new();
         let mut estimated_changes = Vec::new();
+        // Excepted rules are recorded rather than dropped: a preview that omits
+        // them shows a documented deviation as nothing at all. Filled only
+        // where the baseline is assessed at all, so the arm that cannot read
+        // the live ruleset reports its own limitation instead and claims
+        // nothing about the baseline either way.
+        let mut exceptions: Vec<String> = Vec::new();
 
         // Classify every installed backend once, exactly as `scan` does, so
         // the dry-run preview cannot disagree with the scan about which
@@ -760,7 +790,12 @@ impl HardeningPlugin for FirewallHardeningPlugin {
                     // Confirmed active: no enable needed. Report the
                     // rule-level pending changes as before.
                     BackendActivity::Verified => {
-                        push_rule_estimate(winner.as_ref(), config, &mut estimated_changes);
+                        push_rule_estimate(
+                            winner.as_ref(),
+                            config,
+                            &mut estimated_changes,
+                            &mut exceptions,
+                        );
                     }
                     // Every installed backend's probe ran and reported
                     // inactive: the firewall is genuinely disabled, so
@@ -769,7 +804,12 @@ impl HardeningPlugin for FirewallHardeningPlugin {
                     BackendActivity::Inactive if all_inactive => {
                         estimated_changes
                             .push(format!("Enable {} firewall", winner.backend_name()));
-                        push_rule_estimate(winner.as_ref(), config, &mut estimated_changes);
+                        push_rule_estimate(
+                            winner.as_ref(),
+                            config,
+                            &mut estimated_changes,
+                            &mut exceptions,
+                        );
                     }
                     // Unverifiable without root (UnitActiveUnverified, an
                     // Unknown winner, or an inactive fallback shadowed by an
@@ -812,7 +852,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
             validation_report_issues: issues,
             validation_report_estimated_changes: estimated_changes,
             validation_report_compliant_count: 0,
-            validation_report_exceptions: vec![],
+            validation_report_exceptions: exceptions,
         })
     }
 }

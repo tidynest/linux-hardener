@@ -443,6 +443,99 @@ async fn test_firewall_validate_skips_exceptions() {
     );
 }
 
+#[tokio::test]
+async fn validate_reports_a_rule_left_alone_by_a_policy_exception() {
+    // The sibling above pins that an excepted rule leaves the count, and that
+    // is the whole of what it pinned: the count shrank from 4 to 3 and nothing
+    // anywhere said why. Apply names every skipped rule and its reason, so the
+    // preview described less than the run it previews.
+    let executor = ufw_active_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = FirewallHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "ssh".to_string(),
+        PolicyException {
+            value: "skip".to_string(),
+            allowed: true,
+            reason: "SSH managed externally".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let report = plugin.validate(&ctx, &config).await.unwrap();
+
+    // "Allow SSH to prevent lockout" is the string apply prints when it skips
+    // this rule. Pinning that rather than the "ssh" config key is what fails if
+    // the preview ever drifts to naming the id, because the preview and the run
+    // would then identify the same rule differently.
+    assert!(
+        report.validation_report_exceptions.iter().any(|e| {
+            e.contains("Allow SSH to prevent lockout") && e.contains("SSH managed externally")
+        }),
+        "an excepted rule must be reported by the description apply prints, \
+         naming its reason, got: {:?}",
+        report.validation_report_exceptions
+    );
+    // The other three baseline rules are still work this run intends to do, so
+    // a fix that reports every rule rather than every excepted one fails here.
+    assert_eq!(
+        report.validation_report_exceptions.len(),
+        1,
+        "only the excepted rule is a documented deviation, got: {:?}",
+        report.validation_report_exceptions
+    );
+}
+
+#[tokio::test]
+async fn validate_reports_every_rule_when_the_whole_baseline_is_excepted() {
+    // The sharp edge of the same defect. With every baseline rule excepted the
+    // count reaches zero, so `push_rule_estimate` emits no line at all and the
+    // preview became indistinguishable from a host whose firewall already
+    // matches the baseline, while apply would report four skipped rules.
+    let executor = ufw_active_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = FirewallHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    for id in ["loopback", "established", "ssh", "drop_default"] {
+        config.exceptions.insert(
+            id.to_string(),
+            PolicyException {
+                value: "skip".to_string(),
+                allowed: true,
+                reason: format!("{id} managed externally"),
+                approved_by: None,
+                approved_date: None,
+                ticket: None,
+                expires: None,
+            },
+        );
+    }
+
+    let report = plugin.validate(&ctx, &config).await.unwrap();
+
+    assert!(
+        !report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("baseline firewall rules")),
+        "no baseline rule is pending, so no rule estimate belongs in the \
+         preview, got: {:?}",
+        report.validation_report_estimated_changes
+    );
+    assert_eq!(
+        report.validation_report_exceptions.len(),
+        4,
+        "every excepted rule must be reported, got: {:?}",
+        report.validation_report_exceptions
+    );
+}
+
 #[test]
 fn test_zone_name_validation() {
     use hardener_plugins::firewall::firewalld::validate_zone_name;

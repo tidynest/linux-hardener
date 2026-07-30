@@ -26,6 +26,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`hardener apply --dry-run` no longer hides a firewall rule it is leaving
+  alone because a policy exception documents it.** An excepted rule was filtered
+  out of the "Apply N baseline firewall rules" count and recorded nowhere, so the
+  number shrank with nothing anywhere saying why, and once every baseline rule
+  was excepted the count reached zero and the line was not emitted at all. A
+  preview that would skip four rules, and that `apply` reports as four skipped
+  changes, rendered identically to a host whose firewall already matches the
+  baseline. The count and the line naming a waived rule are now computed in one
+  pass over the baseline, so a rule cannot leave the count without being
+  reported. No plugin returns an unconditionally empty exceptions list any more;
+  this was the second of the two the 1.5.1 sweep missed.
 - **`hardener apply --dry-run` no longer hides a permission path it is leaving
   alone because a policy exception documents it.** The preview honoured the
   exception and then recorded nothing about it, so a host whose only drift was
