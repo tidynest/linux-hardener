@@ -42,6 +42,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now runs `systemctl enable ufw` after turning the firewall on, and a unit
   that cannot be enabled fails the apply with systemd's own message, matching
   what the firewalld backend has always done.
+- **A firewall that is running but will not come back after a reboot is now
+  reported, and repaired.** The fix above only reaches a host whose firewall is
+  off when `apply` runs, because `enable` is called only when the firewall is
+  not already running. A host already running an unwanted unit, which is every
+  Arch host hardened by an earlier release, was skipped and no re-run could
+  repair it. Scan now asks systemd separately whether the backend's unit starts
+  at boot and reports a High finding when it does not, with its own id rather
+  than the existing `{backend}-disabled` one, because a running firewall is not
+  a disabled one. Apply enables the unit, and records a skipped no-op when it
+  was already wanted. Two answers that look like success are treated as the
+  faults they are: `enabled-runtime` is an enablement held in `/run` and
+  discarded at the next boot, and a unit with no `[Install]` section cannot be
+  enabled at all; both exit zero, so the state is judged on systemd's word and
+  never on its exit code. A question systemd cannot answer becomes an unchecked
+  entry rather than a silent pass. **On nftables this makes the unit start
+  without making this tool's rules come back**, because that backend writes into
+  the running kernel and never into `/etc/nftables.conf`; that gap is separate
+  and still open.
 - **openSUSE hosts hardened by 1.5.0 or earlier may be storing DES password
   hashes, and should have those passwords set again.** Those releases wrote a
   short `/etc/login.defs` on a distribution that keeps its copy under
