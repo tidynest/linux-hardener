@@ -242,10 +242,47 @@ consumer what is in force:
 | `PASS_MIN_DAYS`, `PASS_MAX_DAYS`, `PASS_WARN_AGE` | `useradd` then `chage -l` | `login.defs` supplies defaults for NEW accounts, so only a fresh account shows what the file means today |
 | `ENCRYPT_METHOD`, `HOME_MODE`, `UMASK` | a probe account: the scheme prefix `crypt` wrote into its shadow field, `stat -c %a` on its home, `su - probe -c umask` | These are settings the tool does **not** manage, and the file they come from is the one a masked `/etc` copy silences. Reading that file back would ask the masked copy what it says |
 | The nine paths in `PERMISSION_CHECKS` | `stat -c %a` | A mode has no parser to disagree with: the value the kernel reports **is** the value in force. What the oracle adds is the comparison, because two of the nine are allowed-bits masks where a stricter mode is compliant |
+| The two properties in `FIREWALL_CHECKS` | `nft list ruleset`, diffed against a pre-apply capture | `ufw status` and `firewall-cmd --list-all` are the tools' own frontends. Netfilter is what a packet meets. **Requires `--booted`** |
 
 Two assertions per directive, because both have failed in production: the system
 satisfies what this run requires of it, and `scan`'s verdict agrees with the
 system.
+
+**The firewall rows are one assertion each, not two**, because there is no
+per-rule tool verdict to compare against: the plugin's only scan finding is
+`{backend}-disabled`, which says nothing about an individual rule. Three things
+about that oracle were measured on real containers rather than reasoned about,
+and each would otherwise have produced a check that passes on broken code:
+
+- **`iptables -S` cannot see firewalld.** After a successful apply on Fedora it
+  prints three policy lines and nothing else, because every rule firewalld wrote
+  lives in `table inet firewalld`. An `iptables -S` oracle matches nothing on
+  three of five distributions, and matching nothing is this suite's pass
+  condition. Its policy lines are still read, because ufw expresses its default
+  disposition there and nowhere else.
+- **Presence is not evidence, because the baseline is not empty.** Fedora's
+  container starts with 344 lines of firewalld ruleset already loaded, including
+  `ct state {established, related} accept` and `iifname "lo" accept`. Arch starts
+  at 4. The same presence assertion would be honest on Arch and vacuous three
+  distributions over, so everything is compared against a pre-apply capture.
+- **A firewalld DROP zone target renders as a bare `drop`** replacing the zone
+  chain's trailing `reject with icmpx admin-prohibited`. A pattern written for
+  `policy drop` matches firewalld never. The self-test pins this: relaxing the
+  check to accept `reject` makes an unhardened Fedora container pass the oracle,
+  and four assertions fail when it is mutated that way.
+
+**`ssh-still-accepted` is a safety property, not proof the tool acted**, and the
+code says so. On firewalld that rule exists before the apply as well, because the
+default `public` zone allows the ssh service, so it would pass against a tool
+that did nothing. It earns its place because a firewall that drops inbound *and*
+drops ssh has locked the operator out, and no other check would notice.
+
+**The firewall plugin's pre-apply control is not the finding-count one** the
+other three get. Its only finding is `{backend}-disabled`, and firewalld is
+already active in three of the five containers, so a finding-count control would
+fail there against a tool behaving correctly. It asks the stronger question
+instead: was inbound traffic already dropped before the apply? If it was, the
+post-apply check proves nothing whatever it reports.
 
 **A reading satisfying a requirement is not always string equality**, which is
 why `requirement_satisfied` carries a direction. `/etc/shadow` and `/etc/gshadow`

@@ -50,7 +50,7 @@ resolve_binary
 
 # The plugins whose settings this suite compares. Applying only these keeps the
 # run to what is actually asserted.
-DIFF_PLUGINS=(ssh-hardening pam-hardening permissions-hardening)
+DIFF_PLUGINS=(ssh-hardening pam-hardening permissions-hardening firewall-hardening)
 
 # Every external command the full run depends on.
 #
@@ -1461,14 +1461,208 @@ run_permission_checks() {
 # tables, which is what keeps the two independent: the tables are what the run
 # iterates, and these are what it is measured against. Adding a directive means
 # changing the literal on purpose.
+
+# === Firewall rules actually in the kernel ===
+#
+# The oracle is netfilter, read through `nft list ruleset`, which is the only
+# consumer a firewall rule has. `ufw status` and `firewall-cmd --list-all` are
+# the tools' own frontends and would be family 2: a reader and a writer sharing
+# one mistake agree with each other and disagree with the kernel.
+#
+# Three things about this oracle were measured on real containers 2026-07-30 and
+# each would have produced a check that passes on broken code:
+#
+# 1. `iptables -S` cannot see firewalld. After a successful apply on fedora it
+#    prints three policy lines and nothing else, because every rule firewalld
+#    wrote lives in `table inet firewalld`. An `iptables -S` oracle matches
+#    nothing on three of five distributions, and matching nothing is this
+#    suite's pass condition. Its policy lines are still read below, because ufw
+#    expresses its default disposition there and nowhere else.
+#
+# 2. Presence is not evidence, because the baseline is not empty. fedora's
+#    container starts with 344 lines of firewalld ruleset already loaded,
+#    including `ct state {established, related} accept` and `iifname "lo"
+#    accept`. Asserting those exist passes against a tool that did nothing. arch
+#    starts at 4 lines, so the same assertion would be honest there and vacuous
+#    three distributions over. Everything below compares against a pre-apply
+#    capture rather than asking what exists.
+#
+# 3. `tcp dport 22 accept` is present BEFORE the apply on firewalld, because the
+#    default public zone allows the ssh service. It is checked below as a safety
+#    property (hardening must not lock the operator out) and is deliberately NOT
+#    treated as proof the tool acted. 4.1 item 13 in the handoff is the finding
+#    that came out of noticing it.
+FIREWALL_CHECKS=(
+    "default-inbound-drop"
+    "ssh-still-accepted"
+)
+
+# Counters and handles change between two snapshots of an UNCHANGED rule, so a
+# raw diff of two captures is mostly noise and the real delta is buried in it.
+firewall_ruleset_snapshot() {
+    {
+        nft list ruleset 2> /dev/null
+        # ufw expresses its default disposition as an iptables chain policy and
+        # nowhere in the nft output, so both views are needed. firewalld needs
+        # only the first.
+        echo "=== iptables policies ==="
+        iptables -S 2> /dev/null | grep '^-P'
+    } | sed -E 's/counter packets [0-9]+ bytes [0-9]+ ?//; s/ # handle [0-9]+//; s/[[:space:]]+$//'
+}
+
+# Which backend is in force, decided from the ruleset rather than from installed
+# packages: all five images ship both ufw/firewalld and nftables, so presence
+# proves nothing about which one the tool selected.
+firewall_backend_kind() {
+    local snapshot="$1"
+    if [[ "$snapshot" == *"table inet firewalld"* ]]; then
+        printf 'firewalld'
+    elif [[ "$snapshot" == *"ufw-before-input"* || "$snapshot" == *"ufw-user-input"* ]]; then
+        printf 'ufw'
+    else
+        printf 'none'
+    fi
+}
+
+# Is inbound traffic dropped by default in this snapshot?
+#
+# The two backends express the same property in unrelated syntax, and both
+# spellings were read off real containers rather than guessed. ufw sets an
+# iptables chain policy. firewalld renders a zone's DROP target by replacing the
+# zone chain's trailing `reject with icmpx admin-prohibited` with a bare `drop`,
+# which is the single most surprising thing in this file: a pattern written for
+# "policy drop" matches firewalld never.
+firewall_default_is_drop() {
+    local snapshot="$1"
+    case "$(firewall_backend_kind "$snapshot")" in
+        ufw) [[ "$snapshot" == *"-P INPUT DROP"* ]] ;;
+        firewalld)
+            # A bare `drop` on its own line inside the zone chains. The
+            # pre-apply capture holds `reject with icmpx admin-prohibited` in
+            # those positions instead, which is what makes this discriminating.
+            grep -qE '^[[:space:]]+drop$' <<< "$snapshot"
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+# Is tcp/22 still accepted? Asked of both backends the same way, because both
+# render it identically once the rule exists.
+firewall_ssh_accepted() {
+    grep -qE 'tcp dport (22|\{[^}]*22[^}]*\}) accept|--dport 22 -j ACCEPT' <<< "$1"
+}
+
+FIREWALL_BEFORE=""
+FIREWALL_AFTER=""
+
+# The capture that has to be taken while the container is still unhardened. It
+# is not a control over the checks below so much as half of what they compare:
+# taken after apply it would agree with itself.
+preapply_firewall_init() {
+    local out
+    if (( APPLY_GENERATION != 0 )); then
+        echo "FATAL: the pre-apply firewall capture was asked for at generation" \
+            "$APPLY_GENERATION, after apply had run." >&2
+        echo "  It is the value these checks compare against, so it has to be taken" >&2
+        echo "  while the container is still unhardened." >&2
+        return 1
+    fi
+    if ! out="$(firewall_ruleset_snapshot)"; then
+        return 1
+    fi
+    FIREWALL_BEFORE="$out"
+}
+
+firewall_oracle_init() {
+    local out
+    if (( APPLY_GENERATION == 0 )); then
+        echo "FATAL: the post-apply firewall capture was asked for before any apply." >&2
+        return 1
+    fi
+    if ! out="$(firewall_ruleset_snapshot)"; then
+        return 1
+    fi
+    FIREWALL_AFTER="$out"
+}
+
+# firewall's pre-apply positive control, and it is deliberately NOT the
+# finding-count control the other three plugins get.
+#
+# That control asks whether the tool reported a finding for each compared
+# directive before apply. firewall's only scan finding is `{backend}-disabled`,
+# and on fedora, rhel and openSUSE firewalld is ALREADY ACTIVE in the container,
+# so the tool correctly reports nothing and a finding-count control would fail
+# on three of five distributions against a tool behaving exactly as designed.
+#
+# The stronger question, and the one this asks: was the property we are about to
+# assert already true before the apply? If inbound was already dropped, the check
+# below proves nothing whatever it reports. Measured: arch has no `-P INPUT DROP`
+# before apply and firewalld's zone chains hold `reject with icmpx
+# admin-prohibited` rather than `drop`, so this control passes on both backends
+# for a real reason.
+run_firewall_preapply_control() {
+    local kind
+    kind="$(firewall_backend_kind "$FIREWALL_BEFORE")"
+    if [[ -z "$FIREWALL_BEFORE" ]]; then
+        record_fail "firewall-hardening: the pre-apply ruleset capture is empty, so nothing below can be shown to be a change rather than a pre-existing state"
+    elif [[ "$kind" == "none" ]]; then
+        # Not a failure, and an earlier version of this control wrongly made it
+        # one. On arch and debian ufw is installed but NOT enabled before the
+        # apply, so its chains do not exist yet and the capture is four lines of
+        # iptables policy. That is the strongest form of "the property is not
+        # already true" this control can see: nothing is enforcing anything.
+        record_pass "firewall-hardening: no backend ruleset was in force before apply, so nothing was dropping inbound and the check below is asking a real question"
+    elif firewall_default_is_drop "$FIREWALL_BEFORE"; then
+        record_fail "firewall-hardening: inbound traffic was ALREADY dropped by default before apply on the $kind backend, so the check below would pass without the tool having done anything"
+    else
+        record_pass "firewall-hardening: before apply the $kind backend did not drop inbound traffic by default, so the check below is asking a real question"
+    fi
+}
+
+run_firewall_checks() {
+    local key kind
+    kind="$(firewall_backend_kind "$FIREWALL_AFTER")"
+    for key in "${FIREWALL_CHECKS[@]}"; do
+        case "$key" in
+            default-inbound-drop)
+                if [[ -z "$FIREWALL_AFTER" ]]; then
+                    record_fail "firewall $key: the ruleset after apply could not be read"
+                elif firewall_default_is_drop "$FIREWALL_AFTER"; then
+                    record_pass "firewall $key: the $kind backend drops inbound traffic by default, and did not before apply"
+                else
+                    record_fail "firewall $key: the $kind backend does not drop inbound traffic by default after apply, so the hardening the tool reported is not what the kernel will enforce"
+                fi
+                ;;
+            ssh-still-accepted)
+                # A safety property rather than proof the tool acted: on
+                # firewalld this rule exists before the apply as well, so it
+                # would pass against a tool that did nothing. It is here because
+                # a firewall that drops inbound AND drops ssh has locked the
+                # operator out of the host, and no other check would notice.
+                if [[ -z "$FIREWALL_AFTER" ]]; then
+                    record_fail "firewall $key: the ruleset after apply could not be read"
+                elif firewall_ssh_accepted "$FIREWALL_AFTER"; then
+                    record_pass "firewall $key: tcp/22 is still accepted after hardening, so the apply has not locked the operator out"
+                else
+                    record_fail "firewall $key: tcp/22 is NOT accepted after hardening; combined with a default drop this locks the operator out of the host"
+                fi
+                ;;
+            *)
+                record_fail "firewall $key: no probe is defined for this key, so the table and the checks have come apart"
+                ;;
+        esac
+    done
+}
+
 SSH_CHECKS_EXPECTED=7
 SEEDED_SSH_CHECKS_EXPECTED=2
 LOGIN_DEFS_CHECKS_EXPECTED=3
 VENDOR_SURVIVAL_CHECKS_EXPECTED=3
 IDEMPOTENCE_CHECKS_EXPECTED=4
-DIFF_PLUGINS_EXPECTED=3
+DIFF_PLUGINS_EXPECTED=4
 PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED=2
 PERMISSION_CHECKS_EXPECTED=9
+FIREWALL_CHECKS_EXPECTED=2
 
 require_check_tables() {
     local entry name got want refused=0
@@ -1480,7 +1674,8 @@ require_check_tables() {
         "IDEMPOTENCE_CHECKS ${#IDEMPOTENCE_CHECKS[@]} $IDEMPOTENCE_CHECKS_EXPECTED" \
         "DIFF_PLUGINS ${#DIFF_PLUGINS[@]} $DIFF_PLUGINS_EXPECTED" \
         "PWQUALITY_ENFORCEMENT_CHECKS ${#PWQUALITY_ENFORCEMENT_CHECKS[@]} $PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED" \
-        "PERMISSION_CHECKS ${#PERMISSION_CHECKS[@]} $PERMISSION_CHECKS_EXPECTED"; do
+        "PERMISSION_CHECKS ${#PERMISSION_CHECKS[@]} $PERMISSION_CHECKS_EXPECTED" \
+        "FIREWALL_CHECKS ${#FIREWALL_CHECKS[@]} $FIREWALL_CHECKS_EXPECTED"; do
         read -r name got want <<<"$entry"
         if [[ "$got" != "$want" ]]; then
             echo "FATAL: $name holds $got, expected $want." >&2
@@ -1529,7 +1724,7 @@ expected_check_total() {
         + PERMISSION_CHECKS_EXPECTED) \
         + VENDOR_SURVIVAL_CHECKS_EXPECTED + IDEMPOTENCE_CHECKS_EXPECTED \
         + PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED + DIFF_PLUGINS_EXPECTED \
-        + SEEDED_SSH_CHECKS_EXPECTED ))"
+        + SEEDED_SSH_CHECKS_EXPECTED + FIREWALL_CHECKS_EXPECTED ))"
 }
 
 # The three plugins spell their finding ids differently, and a filter written for
@@ -2030,6 +2225,13 @@ compared_finding_ids() {
 run_preapply_control() {
     local plugin entry_plugin id count matched total unreadable
     for plugin in "${DIFF_PLUGINS[@]}"; do
+        # firewall has no per-directive finding ids to compare: its only scan
+        # finding is `{backend}-disabled`, and firewalld is already active in
+        # three of the five containers, so a finding-count control would fail
+        # there against a tool behaving correctly. Its control is
+        # run_firewall_preapply_control, which asks whether the property under
+        # test was already true before the apply.
+        [[ "$plugin" == "firewall-hardening" ]] && continue
         matched=0
         total=0
         unreadable=0
@@ -2780,12 +2982,12 @@ Number of days of warning before password expires	: 11"
     check_eq "${#IDEMPOTENCE_CHECKS[@]}" "4" "the idempotency table holds four readings"
     check_eq "${IDEMPOTENCE_CHECKS[0]}" "permission-modes" \
         "the permission reading is taken first, ahead of the probe account login-defs creates"
-    check_eq "${#DIFF_PLUGINS[@]}" "3" "three plugins are compared"
+    check_eq "${#DIFF_PLUGINS[@]}" "4" "four plugins are compared"
     check_eq "${#SEEDED_SSH_CHECKS[@]}" "2" "the seeded table holds two directives"
     check_eq "${#PERMISSION_CHECKS[@]}" "9" "the permissions table holds nine paths"
     local pinned_total
     pinned_total="$(expected_check_total)"
-    check_eq "$pinned_total" "52" \
+    check_eq "$pinned_total" "55" \
         "the run is sized at two checks per directive, one per unmanaged setting, one per idempotency reading, one per pwquality enforcement reading, one control per plugin, plus one pre-apply control per seeded directive"
     check_status 0 "require_check_tables accepts the tables as they stand" \
         require_check_tables
@@ -2937,6 +3139,14 @@ Number of days of warning before password expires	: 11"
       { "finding_id": "perm--boot", "finding_current_value": "755" }
     ],
     "unchecked": []
+  },
+  {
+    "plugin_id": "firewall-hardening",
+    "plugin_name": "Firewall Hardening",
+    "findings": [
+      { "finding_id": "ufw-disabled", "finding_current_value": "disabled" }
+    ],
+    "unchecked": []
   }
 ]'
 
@@ -3055,6 +3265,12 @@ Number of days of warning before password expires	: 11"
     "unchecked": [
       { "unchecked_check_id": "perm--boot", "unchecked_reason": "could not determine whether /boot exists" }
     ]
+  },
+  {
+    "plugin_id": "firewall-hardening",
+    "plugin_name": "Firewall Hardening",
+    "findings": [],
+    "unchecked": []
   }
 ]'
     scan_capture="$unchecked_fixture"
@@ -3691,6 +3907,158 @@ password required pam_unix.so"
     PERMISSION_MODES_GENERATION=""
     rm -rf "$vendor_fixture"
 
+    # --- firewall oracle ---
+    #
+    # Fixtures are trimmed from real `nft list ruleset` output taken on the arch
+    # and fedora containers 2026-07-30. The firewalld spelling in particular was
+    # measured rather than guessed: a zone's DROP target renders as a bare
+    # `drop` replacing the trailing `reject with icmpx admin-prohibited`, and a
+    # pattern written for "policy drop" matches firewalld never.
+    local fw_ufw_after='table ip filter {
+        chain ufw-before-input {
+                iifname "lo" accept
+                jump ufw-user-input
+        }
+
+        chain ufw-user-input {
+                tcp dport 22 accept
+        }
+}
+=== iptables policies ===
+-P INPUT DROP
+-P FORWARD DROP
+-P OUTPUT ACCEPT'
+
+    local fw_ufw_before='=== iptables policies ===
+-P INPUT ACCEPT
+-P FORWARD ACCEPT
+-P OUTPUT ACCEPT'
+
+    local fw_firewalld_before='table inet firewalld {
+        chain filter_INPUT {
+                ct state { established, related } accept
+                iifname "lo" accept
+                jump filter_INPUT_POLICIES
+                reject with icmpx admin-prohibited
+        }
+
+        chain filter_IN_public {
+                tcp dport 22 accept
+                reject with icmpx admin-prohibited
+        }
+}
+=== iptables policies ===
+-P INPUT ACCEPT'
+
+    local fw_firewalld_after='table inet firewalld {
+        chain filter_INPUT {
+                ct state { established, related } accept
+                iifname "lo" accept
+                jump filter_INPUT_POLICIES
+                drop
+        }
+
+        chain filter_IN_public {
+                tcp dport 22 accept
+                drop
+        }
+}
+=== iptables policies ===
+-P INPUT ACCEPT'
+
+    check_eq "$(firewall_backend_kind "$fw_ufw_after")" "ufw" \
+        "a ufw ruleset is recognised by its own chains"
+    check_eq "$(firewall_backend_kind "$fw_firewalld_after")" "firewalld" \
+        "a firewalld ruleset is recognised by its table"
+    check_eq "$(firewall_backend_kind "")" "none" \
+        "an empty ruleset names no backend rather than guessing one"
+
+    # The two spellings of one property. Each backend's AFTER must satisfy it
+    # and each backend's BEFORE must not, or the post-apply check would pass
+    # without the tool having done anything.
+    check_status 0 "ufw after apply drops inbound by default" \
+        firewall_default_is_drop "$fw_ufw_after"
+    check_status 1 "ufw before apply does not" \
+        firewall_default_is_drop "$fw_ufw_before"
+    check_status 0 "firewalld after apply drops inbound by default" \
+        firewall_default_is_drop "$fw_firewalld_after"
+    check_status 1 "firewalld before apply rejects rather than drops, which is not the target" \
+        firewall_default_is_drop "$fw_firewalld_before"
+
+    # The measured trap: firewalld's BEFORE holds every rule its AFTER holds
+    # except the target, so a check reading presence rather than the target
+    # cannot tell them apart. This pins that the discriminator is the target.
+    check_status 1 "a firewalld ruleset carrying ufw's policy line is still judged by its own target" \
+        firewall_default_is_drop "$fw_firewalld_before
+-P INPUT DROP"
+
+    check_status 0 "ssh stays accepted in a ufw ruleset" \
+        firewall_ssh_accepted "$fw_ufw_after"
+    check_status 0 "ssh stays accepted in a firewalld ruleset" \
+        firewall_ssh_accepted "$fw_firewalld_after"
+    check_status 1 "a ruleset with no ssh rule fails the lockout check" \
+        firewall_ssh_accepted "$fw_ufw_before"
+
+    local fw_saved_total=$CHECKS_TOTAL fw_saved_passed=$CHECKS_PASSED fw_saved_failed=$CHECKS_FAILED
+    local fw_saved_before="$FIREWALL_BEFORE" fw_saved_after="$FIREWALL_AFTER"
+
+    # The control has to fail when the property was already true, or every
+    # firewalld run would report a pass it did not earn.
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    FIREWALL_BEFORE="$fw_firewalld_after"
+    run_firewall_preapply_control > /dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/1" \
+        "a container already dropping inbound before apply fails the firewall control"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    FIREWALL_BEFORE="$fw_firewalld_before"
+    run_firewall_preapply_control > /dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "1/0" \
+        "a container not yet dropping inbound passes the firewall control"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    FIREWALL_BEFORE=""
+    run_firewall_preapply_control > /dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/1" \
+        "an empty pre-apply capture fails the control rather than passing quietly"
+
+    # The state arch and debian are actually in before the apply: ufw installed,
+    # not enabled, so its chains do not exist and only the iptables policies are
+    # readable. Measured on arch 2026-07-30, where an earlier version of this
+    # control called it an error and failed a correct run.
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    FIREWALL_BEFORE="$fw_ufw_before"
+    run_firewall_preapply_control > /dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "1/0" \
+        "a container whose backend is installed but not yet enabled passes the control"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    FIREWALL_AFTER="$fw_ufw_after"
+    run_firewall_checks > /dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "2/0" \
+        "a hardened ufw ruleset passes both firewall checks"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    FIREWALL_AFTER="$fw_firewalld_after"
+    run_firewall_checks > /dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "2/0" \
+        "a hardened firewalld ruleset passes both firewall checks"
+
+    # An unhardened ruleset must fail the drop check and still pass the lockout
+    # check, because ssh being reachable is not what the apply was for.
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    FIREWALL_AFTER="$fw_firewalld_before"
+    run_firewall_checks > /dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "1/1" \
+        "an unhardened firewalld ruleset fails the drop check and passes the lockout check"
+
+    CHECKS_TOTAL=$fw_saved_total
+    CHECKS_PASSED=$fw_saved_passed
+    CHECKS_FAILED=$fw_saved_failed
+    FIREWALL_BEFORE="$fw_saved_before"
+    FIREWALL_AFTER="$fw_saved_after"
+
+
     if (( failures > 0 )); then
         echo "self-test: $failures failure(s)"
         return 1
@@ -3736,6 +4104,7 @@ run_full_suite() {
     # reason: it is not a control over the checks below, it is half of what
     # they compare. Taken after apply it would agree with itself.
     preapply_vendor_survival_init || return 1
+    preapply_firewall_init || return 1
 
     apply_hardening
 
@@ -3760,8 +4129,10 @@ run_full_suite() {
     login_defs_oracle_init || return 1
     vendor_survival_oracle_init || return 1
     scan_oracle_init || return 1
+    firewall_oracle_init || return 1
 
     run_preapply_control
+    run_firewall_preapply_control
     run_seeded_checks
     run_ssh_checks
     run_login_defs_checks
@@ -3769,6 +4140,7 @@ run_full_suite() {
     run_vendor_survival_checks
     run_idempotence_checks
     run_pwquality_enforcement_checks
+    run_firewall_checks
     print_summary
 }
 
