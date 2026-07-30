@@ -4,7 +4,7 @@
 # =============================================================================
 # Runs full-test-suite.sh, or differential-suite.sh with --differential, across
 # all supported distributions using systemd-nspawn --pipe (non-interactive, no
-# boot/login needed).
+# boot/login needed), or with --booted under the container's own systemd.
 # Serial by default; --parallel tests multiple distros simultaneously with
 # background processes (~5x faster when testing all 5 distros).
 #
@@ -12,6 +12,8 @@
 #
 # Options:
 #   --apply           Enable destructive tests (apply + rollback)
+#   --booted          Boot under systemd rather than --pipe (services, audit,
+#                     firewall need PID 1 to be a service manager)
 #   --differential    Run differential-suite.sh instead of full-test-suite.sh
 #   --distro NAME     Run only one distro (arch|debian|fedora|rhel|opensuse)
 #   --gui             Run GUI tests (Playwright Web UI) after CLI tests
@@ -37,6 +39,7 @@ MUSL_BINARY="$TARGET_DIR/x86_64-unknown-linux-musl/release/hardener"
 
 # Options
 DO_APPLY=false
+DO_BOOTED=false
 DO_DIFFERENTIAL=false
 SINGLE_DISTRO=""
 DO_GUI=false
@@ -52,6 +55,10 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --apply)
             DO_APPLY=true
+            shift
+            ;;
+        --booted)
+            DO_BOOTED=true
             shift
             ;;
         --differential)
@@ -91,6 +98,10 @@ Usage: sudo $0 [OPTIONS]
 
 Options:
   --apply           Enable destructive tests (apply + rollback)
+  --booted          Boot the container under systemd instead of --pipe, so
+                    systemd is PID 1 and services/audit/firewall are testable.
+                    Leaves a machine running if interrupted: clear it with
+                    'machinectl terminate <container-name>'
   --differential    Run differential-suite.sh instead of full-test-suite.sh
   --distro NAME     Run only one distro (arch|debian|fedora|rhel|opensuse)
   --gui             Run GUI tests (Playwright Web UI) after CLI tests
@@ -183,14 +194,100 @@ elif [[ "$DO_APPLY" == "true" ]]; then
     INNER_ARGS=(--apply)
 fi
 
-# The nspawn invocation shared by both execution modes.
-nspawn_suite() {
+# The default execution mode: systemd never runs, so anything that asks the
+# service manager a question is untestable here.
+nspawn_suite_pipe() {
     local container_path="$1"
     systemd-nspawn -D "$container_path" \
         --bind="$PROJECT_DIR:/project" \
         "${TARGET_BIND[@]}" \
         --pipe \
         /bin/bash "$INNER_SUITE" "${INNER_ARGS[@]}"
+}
+
+# Boot the container under its own systemd and run the suite as a child of it.
+#
+# --private-network rather than --network-veth, measured on arch 2026-07-30
+# through `systemd-run --machine` (a real child of the container's systemd, not
+# nsenter, which keeps the host's capabilities and reports them instead). Both
+# give CapEff 00000000fdecbfff with CAP_NET_ADMIN set, a read-write
+# /proc/sys/net, and `iptables -L` rc=0. --network-veth additionally creates a
+# ve-* interface on the host and needs addressing at both ends, which this suite
+# has no use for: it needs the namespace, not connectivity.
+#
+# The private namespace is a safety requirement, not a preference. nspawn grants
+# CAP_NET_ADMIN only to a container that owns its network namespace, and that is
+# exactly what makes the sharing case harmless. Never hand
+# --capability=CAP_NET_ADMIN to a container on the host's namespace: this suite
+# runs `hardener apply --plugin firewall-hardening`, and those rules would land
+# in the host's own netfilter.
+#
+# /proc/sys stays read-only in both configurations, so the 7 fs.* and kernel.*
+# parameters remain out of reach and full-test-suite.sh's
+# `apply --plugin kernel-hardening` still cannot touch this workstation. Do not
+# mount it writable to "fix" a kernel oracle. The 11 net.ipv4.* parameters do
+# become writable, inside the container's namespace only (host tcp_fin_timeout
+# read 60 before and after a container write of 47), so the kernel apply now
+# half-succeeds here where it used to fail outright.
+nspawn_suite_booted() {
+    local container_path="$1"
+    local machine unit rc=0
+    machine="$(basename "$container_path")"
+    unit="hardener-suite-$machine"
+
+    # Idempotent: a machine left behind by an interrupted run would otherwise
+    # hold the container and make this look like a container-in-use failure.
+    machinectl terminate "$machine" > /dev/null 2>&1 || true
+    systemctl reset-failed "$unit" > /dev/null 2>&1 || true
+    sleep 1
+
+    if ! systemd-run --unit="$unit" \
+        systemd-nspawn --machine="$machine" --directory="$container_path" \
+        --bind="$PROJECT_DIR:/project" \
+        "${TARGET_BIND[@]}" \
+        --boot --private-network --console=passive > /dev/null; then
+        echo "FATAL: could not launch $machine"
+        return 1
+    fi
+
+    # Wait for the transport itself rather than for a proxy signal. Waiting on
+    # `machinectl status` looks equivalent and is not: it succeeds as soon as
+    # the machine registers, long before the container's bus is listening.
+    local ready=""
+    for _ in $(seq 1 60); do
+        if systemd-run --machine="$machine" --wait --pipe --quiet /bin/true > /dev/null 2>&1; then
+            ready=1
+            break
+        fi
+        sleep 1
+    done
+
+    if [[ -z "$ready" ]]; then
+        echo "FATAL: $machine booted but never accepted a command."
+        echo "  'systemd-run --machine' needs dbus INSIDE the container. Only"
+        echo "  debian installs it explicitly (create-container.sh); openSUSE"
+        echo "  installs systemd with --no-recommends and may not have it."
+        echo "  Reported as a failure rather than skipped, deliberately: an"
+        echo "  undeterminable result is a failure, never a skip."
+        journalctl -u "$unit" -n 20 --no-pager 2>&1 || true
+        machinectl terminate "$machine" > /dev/null 2>&1 || true
+        return 1
+    fi
+
+    systemd-run --machine="$machine" --wait --pipe --quiet \
+        /bin/bash "$INNER_SUITE" "${INNER_ARGS[@]}" || rc=$?
+
+    machinectl terminate "$machine" > /dev/null 2>&1 || true
+    return "$rc"
+}
+
+# The invocation shared by both execution modes.
+nspawn_suite() {
+    if [[ "$DO_BOOTED" == "true" ]]; then
+        nspawn_suite_booted "$1"
+    else
+        nspawn_suite_pipe "$1"
+    fi
 }
 
 # Parse pass/fail/skip/total counts from a log (strips ANSI escape codes);
@@ -247,7 +344,11 @@ run_single_distro() {
     if [[ "$PARALLEL" == "true" ]]; then
         echo -e "[$distro] ${CYAN}Starting...${NC}"
     else
-        echo -e "  ${CYAN}[RUN]${NC}  systemd-nspawn --pipe -> $(basename "$INNER_SUITE") ${INNER_ARGS[*]}"
+        if [[ "$DO_BOOTED" == "true" ]]; then
+            echo -e "  ${CYAN}[RUN]${NC}  systemd-nspawn --boot --private-network -> $(basename "$INNER_SUITE") ${INNER_ARGS[*]}"
+        else
+            echo -e "  ${CYAN}[RUN]${NC}  systemd-nspawn --pipe -> $(basename "$INNER_SUITE") ${INNER_ARGS[*]}"
+        fi
     fi
 
     nspawn_suite "$container_path" > "$logfile" 2>&1

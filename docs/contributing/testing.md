@@ -98,6 +98,78 @@ sudo machinectl stop hardener-test                   # tear down
 The batch tests are read-only against the fixture (scan/report scan; apply and
 rollback run as dry-runs). Without `SSH_TEST_HOST` they skip.
 
+### Booted suite containers (`--booted`)
+
+Under `--pipe` systemd never starts, so anything that asks the service manager a
+question is untestable. `--booted` runs the same suite as a child of the
+container's own systemd:
+
+```bash
+sudo ./scripts/test/run-cross-distro-tests.sh --distro arch --apply --booted
+```
+
+Measured on arch 2026-07-30 against the identical run under `--pipe`: of 138
+verdicts exactly one changes, `Apply ssh-hardening` from
+`(partial apply: expected in container)` to a clean pass, because the service
+restart now works. Inside the firewall apply, ten
+`iptables-restore: Permission denied` and fifteen
+`sysctl: permission denied on key "net.ipv4.*"` disappear.
+
+The container gets `--private-network`, not `--network-veth`, and the choice is
+load-bearing in both directions:
+
+- **It must own a network namespace.** nspawn grants `CAP_NET_ADMIN` only to a
+  container that does, which is exactly why `iptables-restore` fails under
+  `--pipe`. Never add `--capability=CAP_NET_ADMIN` to a container sharing the
+  host's namespace: these suites run
+  `hardener apply --plugin firewall-hardening`, and those rules would land in
+  the host's own netfilter.
+- **It does not need a veth pair.** `--private-network` and `--network-veth`
+  give an identical capability set (`CapEff 00000000fdecbfff`), the same
+  read-write `/proc/sys/net`, and the same working `iptables`. The veth variant
+  only adds a `ve-*` interface on the host and addressing at both ends, which
+  no suite uses.
+
+`/proc/sys` stays read-only either way, so the seven `fs.*` and `kernel.*`
+parameters remain unreachable and the in-container
+`apply --plugin kernel-hardening` cannot touch the host. **Do not mount it
+writable to enable a kernel oracle.** The eleven `net.ipv4.*` parameters do
+become writable, inside the container's namespace only.
+
+Take a container reading through `systemd-run --machine`, never `nsenter`.
+nsenter enters the namespaces but keeps the caller's capabilities, so it reports
+the host's `CapEff 000001ffffffffff` and makes a forbidden operation look
+permitted.
+
+**Host prerequisite: ufw's netfilter extensions must already be loaded.** A
+container cannot autoload a kernel module, because `CAP_SYS_MODULE` is cleared
+and must stay cleared, so the extensions ufw's baseline rules need have to be
+present on the host before the run. Without them the firewall apply fails with
+`Extension limit revision 0 not supported, missing kernel module?` followed by
+`RULE_APPEND failed (No such file or directory)`, which reads like a tool defect
+and is not one:
+
+```bash
+sudo modprobe -a xt_limit xt_LOG ipt_REJECT ip6t_REJECT ip6t_rt xt_hl xt_multiport xt_recent
+```
+
+Note `-a`. Without it `modprobe` loads the first module and treats the rest as
+*parameters* to it, which fails silently in the sense that it reports success
+having loaded one of eight.
+
+**With those loaded, `--booted` reaches 126/126 on arch** (2026-07-30, arch,
+`--apply`, container recreated first), against 125/126 under `--pipe` in the
+same run. Exactly two verdicts differ and nothing else moves:
+
+```
+- [FAIL] Apply firewall-hardening (the plugin reported no result at all)
++ [PASS] Apply firewall-hardening
+- [PASS] Apply ssh-hardening (partial apply: expected in container)
++ [PASS] Apply ssh-hardening
+```
+
+That was the last failing test in the container suites.
+
 ---
 
 ## Root Test Suites (Inside Containers)
