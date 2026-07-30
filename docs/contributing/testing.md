@@ -242,7 +242,7 @@ consumer what is in force:
 | `PASS_MIN_DAYS`, `PASS_MAX_DAYS`, `PASS_WARN_AGE` | `useradd` then `chage -l` | `login.defs` supplies defaults for NEW accounts, so only a fresh account shows what the file means today |
 | `ENCRYPT_METHOD`, `HOME_MODE`, `UMASK` | a probe account: the scheme prefix `crypt` wrote into its shadow field, `stat -c %a` on its home, `su - probe -c umask` | These are settings the tool does **not** manage, and the file they come from is the one a masked `/etc` copy silences. Reading that file back would ask the masked copy what it says |
 | The nine paths in `PERMISSION_CHECKS` | `stat -c %a` | A mode has no parser to disagree with: the value the kernel reports **is** the value in force. What the oracle adds is the comparison, because two of the nine are allowed-bits masks where a stricter mode is compliant |
-| The two properties in `FIREWALL_CHECKS` | `nft list ruleset`, diffed against a pre-apply capture | `ufw status` and `firewall-cmd --list-all` are the tools' own frontends. Netfilter is what a packet meets. **Requires `--booted`** |
+| The three properties in `FIREWALL_CHECKS` | `nft list ruleset` and `systemctl is-enabled`, each diffed against a pre-apply capture | `ufw status` and `firewall-cmd --list-all` are the tools' own frontends. Netfilter is what a packet meets, and systemd is what decides whether it still will after a reboot. **The two ruleset rows require `--booted`; `boot-persistence` does not** |
 | The 11 `net.ipv4.*` parameters in `KERNEL_CHECKS` | `sysctl -n` | The file under `/etc/sysctl.d` is what the tool wrote, not what the kernel runs, and a reader sharing one mistake with the writer agrees with it and disagrees with Linux. **Requires `--booted`** |
 
 Two assertions per directive, because both have failed in production: the system
@@ -251,7 +251,7 @@ system.
 
 **The firewall rows are one assertion each, not two**, because there is no
 per-rule tool verdict to compare against: the plugin's only scan finding is
-`{backend}-disabled`, which says nothing about an individual rule. Three things
+`{backend}-disabled`, which says nothing about an individual rule. Four things
 about that oracle were measured on real containers rather than reasoned about,
 and each would otherwise have produced a check that passes on broken code:
 
@@ -271,12 +271,36 @@ and each would otherwise have produced a check that passes on broken code:
   `policy drop` matches firewalld never. The self-test pins this: relaxing the
   check to accept `reject` makes an unhardened Fedora container pass the oracle,
   and four assertions fail when it is mutated that way.
+- **A ruleset carries nothing about the next boot.** A firewall started by hand
+  renders identically to one that comes back after a reboot, so both rules-based
+  rows stayed green against the Arch container whose `ufw` unit had no
+  `multi-user.target.wants` symlink at all. Measured, by comparing the run
+  before the repair existed against the run after it: all 68 assertion lines
+  are byte-identical on all five distributions, so nothing in the suite would
+  have caught the repair regressing. `boot-persistence` asks `systemctl is-enabled` instead, off
+  a capture taken either side of the apply like the ruleset, and judges on
+  systemd's word rather than its exit status: `enabled-runtime` and `static`
+  both exit zero and neither survives a reboot.
 
 **`ssh-still-accepted` is a safety property, not proof the tool acted**, and the
 code says so. On firewalld that rule exists before the apply as well, because the
 default `public` zone allows the ssh service, so it would pass against a tool
 that did nothing. It earns its place because a firewall that drops inbound *and*
 drops ssh has locked the operator out, and no other check would notice.
+
+**`boot-persistence` says in its own message whether its row is
+discriminating.** Only Arch is load-bearing there: Fedora, RHEL and openSUSE
+ship firewalld already enabled, and Debian's `ufw` package enables the unit at
+install, so four of the five would read `enabled` without the repair. The
+pass message therefore compares against the pre-apply reading and names which
+case it is, because a wording that read the same on all five would make one row
+of evidence look like five. It is deliberately **not** gated on `--booted`,
+unlike the kernel rows: whether `systemctl is-enabled` answers inside an
+unbooted `--pipe` container is unmeasured, so a run that cannot ask goes red
+rather than quiet. An answer that is neither `enabled` nor one of the six states
+the tool repairs is a failure, never a skip, and the failure carries the word
+systemd used, because a masked unit must be unmasked before enabling it can
+work.
 
 **The firewall plugin's pre-apply control is not the finding-count one** the
 other three get. Its only finding is `{backend}-disabled`, and firewalld is
@@ -491,7 +515,7 @@ defect this project keeps closing. The header prints
 version, so a reader meeting an old log can see which arithmetic applied to it.
 
 **The totals move with the mode, and both kernel tables are pinned.** A run
-records **55 checks when it is not booted and 68 when it is**, and
+records **56 checks when it is not booted and 69 when it is**, and
 `expected_check_total` carries an arm for each: the 11 kernel rows and the
 seeded row are checks the tables ask for only where they can be asked at all.
 The unaskable count runs the other way, **7 when booted and 19 when not**, the
@@ -589,7 +613,7 @@ Adding a directive therefore means changing four literals in
 `scripts/test/differential-suite.sh`, not one: the `*_EXPECTED` constant beside
 its table, that same length re-pinned in the self-test (`the ssh table holds
 seven directives`), the total the run is sized at, which `expected_check_total`
-computes at **55** unbooted and **68** booted, and the number of directives the
+computes at **56** unbooted and **69** booted, and the number of directives the
 pre-apply control covers (`19`). `VENDOR_SURVIVAL_CHECKS`, `IDEMPOTENCE_CHECKS` and
 `PWQUALITY_ENFORCEMENT_CHECKS` are sized the same way, and contribute one check
 each rather than two. Every one of them fails loudly, over two `--self-test` runs,
@@ -602,8 +626,11 @@ paths and a third plugin moved the total from 30 to 51, and the self-test refuse
 the run until both literals were raised on purpose. The `permission-modes`
 idempotency reading did it a fourth time, refusing the run at
 `got '51', want '52'`. The firewall oracle and then the kernel oracle did it
-again, and the per-distribution total now stands at **55** for a run that is not
-booted and **68** for one that is.
+again. `boot-persistence` did it a seventh time, and failed twice over as the
+firewall tables are meant to: with `FIREWALL_CHECKS_EXPECTED` left at 2 the
+self-test reads `got '55', want '56'` and `require_check_tables` refuses the
+three-entry table beside it. The per-distribution total now stands at **56** for
+a run that is not booted and **69** for one that is.
 
 ### What a failure means
 

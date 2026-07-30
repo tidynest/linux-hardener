@@ -1692,7 +1692,7 @@ run_permission_checks() {
 # the tools' own frontends and would be family 2: a reader and a writer sharing
 # one mistake agree with each other and disagree with the kernel.
 #
-# Three things about this oracle were measured on real containers 2026-07-30 and
+# Four things about this oracle were measured on real containers 2026-07-30 and
 # each would have produced a check that passes on broken code:
 #
 # 1. `iptables -S` cannot see firewalld. After a successful apply on fedora it
@@ -1715,9 +1715,19 @@ run_permission_checks() {
 #    property (hardening must not lock the operator out) and is deliberately NOT
 #    treated as proof the tool acted. 4.1 item 13 in the handoff is the finding
 #    that came out of noticing it.
+#
+# 4. A ruleset is what the kernel holds NOW and carries nothing about the next
+#    boot. A firewall started by hand renders identically to one that comes back
+#    after a reboot, so both assertions above stayed green against the arch
+#    container that had no multi-user.target.wants symlink for ufw at all.
+#    Measured, by comparing the run before 61a33f9 existed against the run
+#    after it: all 68 assertion lines are byte-identical on all five
+#    distributions, so nothing here would have caught the repair regressing.
+#    boot-persistence asks systemd instead, off the same two captures.
 FIREWALL_CHECKS=(
     "default-inbound-drop"
     "ssh-still-accepted"
+    "boot-persistence"
 )
 
 # Counters and handles change between two snapshots of an UNCHANGED rule, so a
@@ -1791,8 +1801,62 @@ firewall_ssh_accepted() {
     grep -qE 'tcp dport (22|\{[^}]*22[^}]*\}) accept|--dport 22 -j ACCEPT' <<< "$1"
 }
 
+# The six words systemd uses for a unit that will NOT be started at boot, copied
+# from NOT_AT_BOOT_STATES in crates/hardener-plugins/src/firewall/mod.rs:366
+# rather than restated in this file's own words: the oracle has to fail on
+# exactly the set the tool repairs, or the two disagree about what "hardened"
+# means. `enabled-runtime` and `masked-runtime` are the reason this is a word
+# list and not an exit status, both exit 0 and neither survives a reboot.
+firewall_not_at_boot() {
+    case "$1" in
+        disabled|enabled-runtime|linked|linked-runtime|masked|masked-runtime) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# What systemd says about the backend's unit being started at boot, as
+# `<unit>|<word>`.
+#
+# The unit name is taken from the backend kind and from nothing else, because
+# that is what the tool itself does: FirewallBackend::systemd_unit returns the
+# bare words `ufw` (crates/hardener-plugins/src/firewall/ufw.rs:162) and
+# `firewalld` (firewalld.rs:139), no `.service` suffix. A kind of `none` has no
+# unit to ask about and says so rather than guessing at one.
+#
+# The exit status is deliberately discarded and only the printed word kept.
+# `systemctl is-enabled` prints `disabled` on stdout while exiting 1, and prints
+# `enabled-runtime` while exiting 0, so a reading taken from the status would be
+# wrong in both directions. Going by the status is the defect 7fd250e repaired in
+# the plugin, and an oracle that reproduced it would agree with the bug.
+firewall_boot_reading() {
+    local unit word=""
+    unit="$(firewall_backend_kind "$1")"
+    if [[ "$unit" == "none" ]]; then
+        printf 'none|'
+        return 0
+    fi
+    word="$(systemctl is-enabled "$unit" 2>/dev/null)" || true
+    # Every whitespace character, not only the ends. An answer arriving over
+    # more than one line collapses into something that is not the word
+    # `enabled`, which fails, and failing toward "not verified" is the safe
+    # direction here as everywhere else in this file.
+    printf '%s|%s' "$unit" "${word//[[:space:]]/}"
+}
+
 FIREWALL_BEFORE=""
 FIREWALL_AFTER=""
+
+# The same pair for the one question a ruleset cannot answer. Captured beside
+# the rulesets rather than asked inside the check, exactly like them: a check
+# that shells out live cannot be driven by --self-test, and an assertion nothing
+# proves is not an oracle.
+#
+# Two fields rather than one word, because "no backend was in force, so no unit
+# was asked" and "the unit was asked and answered nothing" are different
+# outcomes, and one value standing for several outcomes is the sentinel
+# conflation this suite exists to find.
+FIREWALL_BOOT_BEFORE=""
+FIREWALL_BOOT_AFTER=""
 
 # The capture that has to be taken while the container is still unhardened. It
 # is not a control over the checks below so much as half of what they compare:
@@ -1810,6 +1874,13 @@ preapply_firewall_init() {
         return 1
     fi
     FIREWALL_BEFORE="$out"
+    # Taken here and not later, for the same reason as the ruleset above it: the
+    # apply is what enables the unit, so a boot reading taken afterwards would
+    # agree with itself. Measured: on arch and debian the pre-apply kind is
+    # `none` because ufw's chains do not exist yet, so this reading is "no
+    # backend, no unit asked" there rather than a word from systemd. That is
+    # still not `enabled`, which is all the check below asks of it.
+    FIREWALL_BOOT_BEFORE="$(firewall_boot_reading "$out")"
 }
 
 firewall_oracle_init() {
@@ -1822,6 +1893,7 @@ firewall_oracle_init() {
         return 1
     fi
     FIREWALL_AFTER="$out"
+    FIREWALL_BOOT_AFTER="$(firewall_boot_reading "$out")"
 }
 
 # firewall's pre-apply positive control, and it is deliberately NOT the
@@ -1859,7 +1931,7 @@ run_firewall_preapply_control() {
 }
 
 run_firewall_checks() {
-    local key kind
+    local key kind boot_unit boot_word before_unit before_word before_phrase
     kind="$(firewall_backend_kind "$FIREWALL_AFTER")"
     for key in "${FIREWALL_CHECKS[@]}"; do
         case "$key" in
@@ -1891,6 +1963,50 @@ run_firewall_checks() {
                     record_pass "firewall $key: tcp/22 is still accepted after hardening, so the apply has not locked the operator out"
                 else
                     record_fail "firewall $key: tcp/22 is NOT accepted after hardening; combined with a default drop this locks the operator out of the host"
+                fi
+                ;;
+            boot-persistence)
+                # Deliberately NOT gated on KERNEL_BOOTED, unlike the kernel
+                # rows. Whether `systemctl is-enabled` answers inside an
+                # unbooted --pipe container is unmeasured, so a gate written for
+                # it would be written on a guess. Ungated, an unbooted run that
+                # cannot ask goes red rather than quiet, which is the direction
+                # this file takes everywhere else. A red row here on the
+                # unbooted fixture is a real finding about that fixture and
+                # wants measuring, not silencing.
+                IFS='|' read -r boot_unit boot_word <<<"$FIREWALL_BOOT_AFTER"
+                IFS='|' read -r before_unit before_word <<<"$FIREWALL_BOOT_BEFORE"
+                # Which of the two things a pass may claim. Measured on the
+                # 2026-07-30 run: fedora, rhel and openSUSE ship firewalld
+                # already enabled and debian's ufw package enables the unit at
+                # install, so four of five distributions read `enabled` here
+                # with the repair reverted and only arch is load-bearing. One
+                # wording for all five would make a single row of evidence look
+                # like five rows of it.
+                if [[ -z "$before_unit" ]]; then
+                    before_phrase="no reading was taken before apply, so this row cannot say whether the apply is what did it"
+                elif [[ "$before_word" == "enabled" ]]; then
+                    before_phrase="the $before_unit unit already read 'enabled' before apply, so this row asserts agreement rather than proving the apply acted"
+                elif [[ "$before_unit" == "none" ]]; then
+                    before_phrase="no backend was in force before apply, so the apply is what put a unit at boot"
+                else
+                    before_phrase="the $before_unit unit read '$before_word' before apply, so the apply is what enabled it"
+                fi
+                if [[ -z "$boot_unit" ]]; then
+                    record_fail "firewall $key: no boot-persistence reading was taken after apply, so nothing here says whether the firewall survives a reboot"
+                elif [[ "$boot_unit" == "none" ]]; then
+                    record_fail "firewall $key: the apply reported success and no ufw or firewalld ruleset is in force, so there is no unit whose boot persistence could be asked about"
+                elif [[ "$boot_word" == "enabled" ]]; then
+                    record_pass "firewall $key: systemd starts the $boot_unit unit at boot ('enabled'); $before_phrase"
+                elif firewall_not_at_boot "$boot_word"; then
+                    # The word travels, because the several ways of not starting
+                    # at boot are not interchangeable: a masked unit has to be
+                    # unmasked before enabling it can work, and an
+                    # enabled-runtime one reads as enabled right up to the
+                    # reboot that discards it.
+                    record_fail "firewall $key: systemd says the $boot_unit unit is '$boot_word', so the firewall this run reports as hardened will not be there after a reboot"
+                else
+                    record_fail "firewall $key: systemd answered '${boot_word:-nothing at all}' about the $boot_unit unit, which is neither 'enabled' nor a state this can name, so whether the firewall survives a reboot was not established"
                 fi
                 ;;
             *)
@@ -2018,7 +2134,7 @@ IDEMPOTENCE_CHECKS_EXPECTED=4
 DIFF_PLUGINS_EXPECTED=5
 PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED=2
 PERMISSION_CHECKS_EXPECTED=9
-FIREWALL_CHECKS_EXPECTED=2
+FIREWALL_CHECKS_EXPECTED=3
 KERNEL_CHECKS_EXPECTED=11
 # Pinned for the same reason as every table above, and one more that is specific
 # to this pair: the failure mode here is a red row being "fixed" by moving it
@@ -3638,9 +3754,9 @@ Number of days of warning before password expires	: 11"
     # whatever mode the environment happened to ask for would make the
     # self-test go red on a maintainer who exported the runner's signal.
     pinned_total="$(KERNEL_BOOTED=0 expected_check_total)"
-    check_eq "$pinned_total" "55" \
+    check_eq "$pinned_total" "56" \
         "the run is sized at two checks per directive, one per unmanaged setting, one per idempotency reading, one per pwquality enforcement reading, one control per plugin, plus one pre-apply control per seeded directive"
-    check_eq "$(KERNEL_BOOTED=1 expected_check_total)" "68" \
+    check_eq "$(KERNEL_BOOTED=1 expected_check_total)" "69" \
         "a booted run is sized for eleven kernel rows, the seeded kernel row and the kernel plugin's own control on top of that, which is the only arithmetic difference the mode makes"
     check_status 0 "require_check_tables accepts the tables as they stand" \
         require_check_tables
@@ -4666,8 +4782,59 @@ password required pam_unix.so"
     check_status 1 "a ruleset with no ssh rule fails the lockout check" \
         firewall_ssh_accepted "$fw_ufw_before"
 
+    # The boot question, which no ruleset can answer. Driven through a stubbed
+    # systemctl, because the real one would answer about the maintainer's own
+    # host and give a different reading on every machine this is run on.
+    local fw_systemctl_word="disabled" fw_systemctl_rc=1
+    systemctl() {
+        printf '%s\n' "$fw_systemctl_word"
+        return "$fw_systemctl_rc"
+    }
+
+    # `is-enabled` prints `disabled` on stdout while exiting 1, so a reading
+    # taken from the status would throw the word away and report that nothing
+    # was read. That is the defect 7fd250e repaired in the plugin, and it would
+    # be worth nothing to repair it there and rebuild it here.
+    check_eq "$(firewall_boot_reading "$fw_ufw_after")" "ufw|disabled" \
+        "a non-zero is-enabled still yields the word it printed"
+
+    fw_systemctl_word="  enabled  "
+    fw_systemctl_rc=0
+    check_eq "$(firewall_boot_reading "$fw_firewalld_after")" "firewalld|enabled" \
+        "the unit asked about is the one the backend kind names, and padding round the answer is trimmed"
+
+    fw_systemctl_word=""
+    fw_systemctl_rc=4
+    check_eq "$(firewall_boot_reading "$fw_ufw_after")" "ufw|" \
+        "a systemctl answering nothing leaves the word empty rather than inventing one"
+
+    # The short-circuit, proved with the stub answering `enabled`: a capture
+    # holding no backend must not report a unit as enabled at boot, and without
+    # the short-circuit this reading would carry the stub's word.
+    fw_systemctl_word="enabled"
+    fw_systemctl_rc=0
+    check_eq "$(firewall_boot_reading "$fw_ufw_before")" "none|" \
+        "a capture holding no backend names no unit and does not ask systemd about one"
+    unset -f systemctl
+
+    check_status 0 "the six words for a unit that will not start at boot are refused" \
+        firewall_not_at_boot disabled
+    check_status 0 "including the one that exits zero" \
+        firewall_not_at_boot enabled-runtime
+    check_status 1 "and 'enabled' itself is not among them" \
+        firewall_not_at_boot enabled
+    check_status 1 "nor is a state with no [Install] section, which is undeterminable rather than a known failure" \
+        firewall_not_at_boot static
+
     local fw_saved_total=$CHECKS_TOTAL fw_saved_passed=$CHECKS_PASSED fw_saved_failed=$CHECKS_FAILED
     local fw_saved_before="$FIREWALL_BEFORE" fw_saved_after="$FIREWALL_AFTER"
+    local fw_saved_boot_before="$FIREWALL_BOOT_BEFORE" fw_saved_boot_after="$FIREWALL_BOOT_AFTER"
+    # Redirected to a file rather than captured with $(...): a command
+    # substitution is a subshell, so every counter run_firewall_checks
+    # increments would be discarded and the assertions below would read 0/0
+    # whatever happened. Each `>` truncates, so one file serves every block.
+    local fw_out
+    fw_out="$(mktemp)"
 
     # The control has to fail when the property was already true, or every
     # firewalld run would report a pass it did not earn.
@@ -4699,25 +4866,119 @@ password required pam_unix.so"
     check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "1/0" \
         "a container whose backend is installed but not yet enabled passes the control"
 
+    # arch, and the only load-bearing row of the five distributions: its ufw
+    # unit had no multi-user.target.wants symlink at all, and its pre-apply
+    # ruleset holds no backend because ufw's chains do not exist yet, so the
+    # before reading is "no backend" rather than a word from systemd.
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
     FIREWALL_AFTER="$fw_ufw_after"
-    run_firewall_checks > /dev/null
-    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "2/0" \
-        "a hardened ufw ruleset passes both firewall checks"
+    FIREWALL_BOOT_AFTER="ufw|enabled"
+    FIREWALL_BOOT_BEFORE="none|"
+    run_firewall_checks > "$fw_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "3/0" \
+        "a hardened ufw ruleset whose unit is enabled at boot passes all three firewall checks"
+    check_status 0 "and the boot row names the apply as what put the unit at boot" \
+        grep -q "no backend was in force before apply, so the apply is what put a unit at boot" "$fw_out"
 
+    # The other discriminating shape: systemd was asked before the apply and
+    # answered a word, and that word was not `enabled`.
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    FIREWALL_AFTER="$fw_ufw_after"
+    FIREWALL_BOOT_AFTER="ufw|enabled"
+    FIREWALL_BOOT_BEFORE="ufw|disabled"
+    run_firewall_checks > "$fw_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "3/0" \
+        "a unit that read 'disabled' before apply and 'enabled' after passes all three"
+    check_status 0 "and the boot row carries the word the unit read before apply" \
+        grep -q "the ufw unit read 'disabled' before apply, so the apply is what enabled it" "$fw_out"
+
+    # fedora, rhel and openSUSE: firewalld is already enabled at boot in the
+    # container, so this row can assert agreement and nothing more. Saying so is
+    # what keeps one row of evidence from reading as five.
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
     FIREWALL_AFTER="$fw_firewalld_after"
-    run_firewall_checks > /dev/null
-    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "2/0" \
-        "a hardened firewalld ruleset passes both firewall checks"
+    FIREWALL_BOOT_AFTER="firewalld|enabled"
+    FIREWALL_BOOT_BEFORE="firewalld|enabled"
+    run_firewall_checks > "$fw_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "3/0" \
+        "a hardened firewalld ruleset whose unit was already enabled at boot passes all three"
+    check_status 0 "and the boot row says it asserts agreement rather than claiming the apply acted" \
+        grep -q "asserts agreement rather than proving the apply acted" "$fw_out"
+
+    # A hardened ruleset whose unit will not come back. This is the state arch
+    # shipped in before 61a33f9, and the two rows above it pass against it,
+    # which is why this one exists.
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    FIREWALL_AFTER="$fw_ufw_after"
+    FIREWALL_BOOT_AFTER="ufw|disabled"
+    FIREWALL_BOOT_BEFORE="none|"
+    run_firewall_checks > "$fw_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "2/1" \
+        "a hardened ruleset whose unit will not start at boot fails the boot row alone"
+    check_status 0 "and the boot failure carries the word systemd answered with" \
+        grep -q "the ufw unit is 'disabled'" "$fw_out"
+
+    # The state this whole row exists for: `enabled-runtime` exits ZERO, so an
+    # oracle judging on the status reads it as a pass, and the enablement it
+    # describes is discarded by the next reboot.
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    FIREWALL_AFTER="$fw_firewalld_after"
+    FIREWALL_BOOT_AFTER="firewalld|enabled-runtime"
+    FIREWALL_BOOT_BEFORE="firewalld|disabled"
+    run_firewall_checks > "$fw_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "2/1" \
+        "a unit enabled for this boot only fails the boot row, though systemctl exits zero for it"
+    check_status 0 "and that failure names enabled-runtime rather than any other way of not starting at boot" \
+        grep -q "the firewalld unit is 'enabled-runtime'" "$fw_out"
+
+    # An undeterminable value discovered at runtime is a FAILURE, never a skip.
+    # record_unaskable is for unaskability declared in advance as a property of
+    # the fixture; "I asked and got nothing back" is a property of the run.
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    FIREWALL_AFTER="$fw_ufw_after"
+    FIREWALL_BOOT_AFTER="ufw|"
+    FIREWALL_BOOT_BEFORE="none|"
+    run_firewall_checks > "$fw_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "2/1" \
+        "a unit systemd answered nothing about fails the boot row rather than being skipped"
+    check_status 0 "and the failure says nothing was answered rather than naming a state" \
+        grep -q "systemd answered 'nothing at all' about the ufw unit" "$fw_out"
+
+    # A word that is neither `enabled` nor one of the six. `static` exits zero
+    # and cannot be enabled at all, so it is not a pass and not one of the
+    # failures the tool knows how to repair either.
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    FIREWALL_AFTER="$fw_ufw_after"
+    FIREWALL_BOOT_AFTER="ufw|static"
+    FIREWALL_BOOT_BEFORE="none|"
+    run_firewall_checks > "$fw_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "2/1" \
+        "a state with no [Install] section fails the boot row despite exiting zero"
+    check_status 0 "and that failure carries the word rather than a guess at what it meant" \
+        grep -q "systemd answered 'static' about the ufw unit" "$fw_out"
+
+    # A capture that was never taken. It must not borrow the message for a unit
+    # that was asked and answered nothing: those send a reader to different
+    # places, one to the harness and one to the host.
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    FIREWALL_AFTER="$fw_ufw_after"
+    FIREWALL_BOOT_AFTER=""
+    FIREWALL_BOOT_BEFORE=""
+    run_firewall_checks > "$fw_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "2/1" \
+        "a boot reading that was never taken fails the row rather than passing quietly"
+    check_status 0 "and says the reading is missing rather than naming a unit it never asked about" \
+        grep -q "no boot-persistence reading was taken after apply" "$fw_out"
 
     # An unhardened ruleset must fail the drop check and still pass the lockout
     # check, because ssh being reachable is not what the apply was for.
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
     FIREWALL_AFTER="$fw_firewalld_before"
+    FIREWALL_BOOT_AFTER="firewalld|enabled"
+    FIREWALL_BOOT_BEFORE="firewalld|enabled"
     run_firewall_checks > /dev/null
-    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "1/1" \
-        "an unhardened firewalld ruleset fails the drop check and passes the lockout check"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "2/1" \
+        "an unhardened firewalld ruleset fails the drop check and passes the lockout and boot checks"
 
     # A ruleset holding neither backend after a successful-looking apply, which
     # is what debian produced on the first real run. It must fail, and it must
@@ -4727,24 +4988,24 @@ password required pam_unix.so"
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
     FIREWALL_AFTER='=== iptables policies ===
 -P INPUT ACCEPT'
-    # Redirected to a file rather than captured with $(...): a command
-    # substitution is a subshell, so every counter this function increments
-    # would be discarded and the assertion below would read 0/0 whatever
-    # happened.
-    local fw_none_out
-    fw_none_out="$(mktemp)"
-    run_firewall_checks > "$fw_none_out"
-    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/2" \
-        "a ruleset holding no backend at all fails both firewall checks"
+    FIREWALL_BOOT_AFTER="none|"
+    FIREWALL_BOOT_BEFORE="none|"
+    run_firewall_checks > "$fw_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/3" \
+        "a ruleset holding no backend at all fails all three firewall checks"
     check_status 0 "and the no-backend failure carries the capture that produced it" \
-        grep -q "the kernel holds no ufw or firewalld ruleset at all" "$fw_none_out"
-    rm -f "$fw_none_out"
+        grep -q "the kernel holds no ufw or firewalld ruleset at all" "$fw_out"
+    check_status 0 "and the boot row refuses it in its own words rather than the ruleset row's" \
+        grep -q "there is no unit whose boot persistence could be asked about" "$fw_out"
+    rm -f "$fw_out"
 
     CHECKS_TOTAL=$fw_saved_total
     CHECKS_PASSED=$fw_saved_passed
     CHECKS_FAILED=$fw_saved_failed
     FIREWALL_BEFORE="$fw_saved_before"
     FIREWALL_AFTER="$fw_saved_after"
+    FIREWALL_BOOT_BEFORE="$fw_saved_boot_before"
+    FIREWALL_BOOT_AFTER="$fw_saved_boot_after"
 
 
     if (( failures > 0 )); then
