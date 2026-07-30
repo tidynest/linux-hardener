@@ -947,10 +947,12 @@ impl CheckpointManager {
         // the same way, and upgrading does not rewrite rows already stored. An
         // apply creates none of these paths but /etc/sysctl.d, which the kernel
         // plugin creates above its own checkpoint so that the capture records it
-        // present, so a row calling a path absent while the host actually has it
-        // is an untrustworthy row rather than an instruction to delete. A path
-        // that is genuinely still absent needs no action at all, and must not be
-        // reported as a failure.
+        // present, and /etc/security, which the pam plugin creates and no plugin
+        // captures, so no apply's own checkpoint holds a row for it. A row calling
+        // a path absent while the host actually has it is therefore an
+        // untrustworthy row rather than an instruction to delete. A path that is
+        // genuinely still absent needs no action at all, and must not be reported
+        // as a failure.
         if matches!(action, FileRestoreAction::Removed) {
             return remove_or_refuse(executor, path, path_str).await;
         }

@@ -4,7 +4,7 @@
 
 use hardener_common::types::{PluginId, Severity};
 use hardener_core::{
-    Change, Context, MockExecutor, PluginConfig, PolicyException, SystemExecutor,
+    Change, CommandOutput, Context, MockExecutor, PluginConfig, PolicyException, SystemExecutor,
     plugin::HardeningPlugin,
 };
 use hardener_plugins::PamHardeningPlugin;
@@ -108,13 +108,22 @@ fn with_backup_cp(mut executor: MockExecutor, path: &str) -> MockExecutor {
 /// `with_file` replaces rather than merges, so putting the modules there would
 /// have made those tests describe a host with no pwquality module by accident.
 fn with_pam_stack(executor: MockExecutor) -> MockExecutor {
-    executor.with_file(
-        "/etc/pam.d/password-auth",
-        "auth     required pam_faillock.so preauth silent\n\
+    executor
+        // Nearly every host ships the directories these config files live in.
+        // Apply creates a missing one before writing into it, so a fixture that
+        // left them unregistered would describe a host without the pam package
+        // and reach a mkdir instead of the write every assertion here means.
+        // The hosts that genuinely lack /etc/security have their own tests at
+        // the end of this file.
+        .with_directory("/etc")
+        .with_directory("/etc/security")
+        .with_file(
+            "/etc/pam.d/password-auth",
+            "auth     required pam_faillock.so preauth silent\n\
          password required pam_pwquality.so retry=3\n\
          password required pam_pwhistory.so\n\
          password required pam_unix.so sha512 shadow use_authtok\n",
-    )
+        )
 }
 
 /// Creates a mock executor with insecure PAM configuration.
@@ -141,8 +150,12 @@ PASS_WARN_AGE 7
 
 /// Creates a mock executor with missing PAM config files.
 fn missing_pam_config_executor() -> MockExecutor {
+    // No files - both configs will fail to read. The directories they belong
+    // in are still there, which is what a host missing only the files looks
+    // like.
     MockExecutor::new()
-    // No files - both configs will fail to read
+        .with_directory("/etc")
+        .with_directory("/etc/security")
 }
 
 /// Creates a mock executor with partial configuration.
@@ -3455,5 +3468,194 @@ async fn scan_reports_a_disabled_maxrepeat_rather_than_scoring_zero_as_strict() 
             .iter()
             .map(|f| &f.finding_id)
             .collect::<Vec<_>>()
+    );
+}
+
+// =============================================================================
+// The directory the config files live in
+// =============================================================================
+
+const SECURITY_DIR: &str = "/etc/security";
+const FAILLOCK_CONF: &str = "/etc/security/faillock.conf";
+
+/// How many times the apply asked for /etc/security to exist.
+fn security_mkdir_count(executor: &MockExecutor) -> usize {
+    executor
+        .log()
+        .commands_executed
+        .iter()
+        .filter(|(command, args)| {
+            command == "mkdir"
+                && args.contains(&"-p".to_string())
+                && args.contains(&SECURITY_DIR.to_string())
+        })
+        .count()
+}
+
+/// Whether the apply wrote the faillock configuration.
+fn wrote_faillock(executor: &MockExecutor) -> bool {
+    executor
+        .log()
+        .files_written
+        .iter()
+        .any(|(path, _)| path.to_str() == Some(FAILLOCK_CONF))
+}
+
+fn command_output(stderr: &str, exit_code: i32) -> CommandOutput {
+    CommandOutput {
+        stdout: String::new(),
+        stderr: stderr.to_string(),
+        exit_code,
+    }
+}
+
+/// A host whose /etc/security does not exist: the directory belongs to the pam
+/// package, so an install without it has no such directory. `write_file` lands
+/// its content through a temporary file in the target directory, so it cannot
+/// create a missing parent, and every config file this plugin creates there
+/// failed with an error naming only the file.
+#[tokio::test]
+async fn pam_apply_creates_the_security_directory_when_it_is_absent() {
+    let executor = Arc::new(
+        secure_pam_executor_base()
+            .with_path_exists(SECURITY_DIR, false)
+            .with_command("mkdir", &["-p", SECURITY_DIR], command_output("", 0)),
+    );
+    let mut ctx = Context::with_executor(executor.clone());
+
+    let result = PamHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("pam apply should not error");
+
+    assert_eq!(
+        security_mkdir_count(&executor),
+        1,
+        "an absent parent must be created, commands: {:?}",
+        executor.log().commands_executed
+    );
+    assert!(
+        wrote_faillock(&executor),
+        "the absent config must still be created, writes: {:?}",
+        executor.log().files_written
+    );
+    assert!(
+        result.apply_success,
+        "an apply that created the directory it needed succeeded, changes: {:?}",
+        result.apply_changes
+    );
+}
+
+/// A probe that cannot answer is not an answer. `path_exists` returns an error
+/// for a directory it could not determine, and reading that as "it is there"
+/// would skip the creation on exactly the host that needs it. `mkdir -p` on an
+/// existing directory does nothing, so attempting it costs nothing.
+#[tokio::test]
+async fn pam_apply_creates_the_security_directory_when_the_probe_cannot_answer() {
+    let executor = Arc::new(
+        secure_pam_executor_base()
+            .with_path_exists_error(SECURITY_DIR)
+            .with_command("mkdir", &["-p", SECURITY_DIR], command_output("", 0)),
+    );
+    let mut ctx = Context::with_executor(executor.clone());
+
+    PamHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("pam apply should not error");
+
+    assert_eq!(
+        security_mkdir_count(&executor),
+        1,
+        "a probe that failed must be treated as may-be-missing, commands: {:?}",
+        executor.log().commands_executed
+    );
+}
+
+/// `execute_command` returns Ok for a command that ran and failed, so an
+/// unchecked exit code would let a failed mkdir be followed by a write that
+/// cannot land. The failure must be reported as a failed change carrying the
+/// reason, because "Failed to write faillock.conf" alone tells the operator
+/// nothing about the directory.
+#[tokio::test]
+async fn pam_apply_reports_why_the_security_directory_could_not_be_created() {
+    let executor = Arc::new(
+        secure_pam_executor_base()
+            .with_path_exists(SECURITY_DIR, false)
+            .with_command(
+                "mkdir",
+                &["-p", SECURITY_DIR],
+                command_output(
+                    "mkdir: cannot create directory '/etc/security': Read-only file system\n",
+                    1,
+                ),
+            ),
+    );
+    let mut ctx = Context::with_executor(executor.clone());
+
+    let result = PamHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("pam apply should not error");
+
+    let failed = result
+        .apply_changes
+        .iter()
+        .find(|change| !change.change_success)
+        .expect("a failed mkdir must produce a failed change, not a silent success");
+    assert!(
+        failed
+            .change_error
+            .as_deref()
+            .is_some_and(|reason| reason.contains("Read-only file system")),
+        "the operator must be told why the directory could not be created, got: {:?}",
+        failed.change_error
+    );
+    assert!(
+        !wrote_faillock(&executor),
+        "a write into a directory that could not be created must not be attempted, \
+         writes: {:?}",
+        executor.log().files_written
+    );
+    assert!(
+        !result.apply_success,
+        "an apply that could not write a config file has not succeeded"
+    );
+}
+
+/// The creation runs only where it is needed. A file that is already there
+/// proves its directory is too, so the probe and the mkdir are pointless for a
+/// rewrite and must not run.
+///
+/// The fixture reports /etc/security absent deliberately, so that a guard which
+/// stopped consulting `creating` would issue a mkdir here and be caught. A
+/// fixture reporting the directory present cannot tell the two apart.
+#[tokio::test]
+async fn pam_apply_issues_no_mkdir_when_the_config_file_already_exists() {
+    let executor = Arc::new(
+        with_backup_cp(
+            secure_pam_executor_base().with_file(FAILLOCK_CONF, "deny = 10\n"),
+            FAILLOCK_CONF,
+        )
+        .with_path_exists(SECURITY_DIR, false)
+        .with_command("mkdir", &["-p", SECURITY_DIR], command_output("", 0)),
+    );
+    let mut ctx = Context::with_executor(executor.clone());
+
+    PamHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("pam apply should not error");
+
+    assert!(
+        wrote_faillock(&executor),
+        "this test is only meaningful on a run that rewrites the file, writes: {:?}",
+        executor.log().files_written
+    );
+    assert_eq!(
+        security_mkdir_count(&executor),
+        0,
+        "a file that is already there proves its directory is, commands: {:?}",
+        executor.log().commands_executed
     );
 }

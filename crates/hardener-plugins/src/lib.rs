@@ -130,6 +130,47 @@ pub fn checkpoint_change(checkpoint_id: &Option<String>) -> Option<hardener_core
     })
 }
 
+/// Creates `dir` if it may be missing, returning the reason it could not be
+/// created and `None` when it is there or was made.
+///
+/// `write_file` cannot create a missing parent: it lands its content through a
+/// temporary file in the target directory, so an absent directory fails the
+/// write with an error naming only the file. Distributions disagree about which
+/// package owns which of these directories, so a plugin writing into one that a
+/// minimal install may not have calls this first.
+///
+/// The mkdir runs wherever the probe does not positively confirm the directory
+/// is present: a probe that cannot answer is treated as "may be missing",
+/// because `mkdir -p` on an existing directory does nothing, while skipping the
+/// creation on the one host that needs it costs the write. The exit code is
+/// checked because `execute_command` returns `Ok` for a command that ran and
+/// failed, and an unchecked one would let a failed mkdir be followed by a write
+/// that cannot land.
+///
+/// Where the directory is itself captured by the calling plugin's checkpoint,
+/// the call has to run above that checkpoint: a checkpoint stores an absent
+/// path with a zero mode, which a rollback reads as "remove this", so a
+/// directory created after the capture turns a clean rollback into a refusal.
+/// The call site owns that decision; this helper does not.
+pub(crate) async fn ensure_directory(ctx: &hardener_core::Context, dir: &str) -> Option<String> {
+    if matches!(
+        ctx.executor().path_exists(std::path::Path::new(dir)).await,
+        Ok(true)
+    ) {
+        return None;
+    }
+
+    match ctx.executor().execute_command("mkdir", &["-p", dir]).await {
+        Ok(output) if output.success() => None,
+        Ok(output) => Some(format!(
+            "Failed to create {dir}: mkdir exited {} ({})",
+            output.exit_code,
+            output.stderr.trim(),
+        )),
+        Err(e) => Some(format!("Failed to create {dir}: {e}")),
+    }
+}
+
 pub use audit::AuditHardeningPlugin;
 pub use firewall::FirewallHardeningPlugin;
 

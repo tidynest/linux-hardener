@@ -2359,6 +2359,34 @@ async fn backup_and_write(
         }
     }
 
+    // A file being created needs the directory it goes in to exist, because
+    // `write_file` cannot make a missing parent. /etc/security belongs to the
+    // pam package, so a host without that package has no such directory, and
+    // the write failed there with an error naming only the file. Gated on
+    // `creating`: a file that is already there proves its directory is too, so
+    // the probe and the mkdir would both be wasted on a rewrite.
+    //
+    // No ordering treatment is needed, unlike the kernel plugin's identical
+    // guard. This apply's checkpoint captures the config files, never the bare
+    // directory, so no row is ever written for it and the creation is invisible
+    // to a rollback of this apply.
+    if creating
+        && let Some(dir) = Path::new(path).parent().and_then(Path::to_str)
+        && let Some(reason) = crate::ensure_directory(ctx, dir).await
+    {
+        warn!(
+            "Failed to create the directory holding {}: {}",
+            path, reason
+        );
+        changes.push(Change {
+            change_type: ChangeType::ConfigFile,
+            change_description: format!("Failed to create the directory holding {}", file_label),
+            change_success: false,
+            change_error: Some(reason),
+        });
+        return false;
+    }
+
     match ctx.executor().write_file(Path::new(path), content).await {
         Ok(_) => {
             info!("Successfully wrote {}", path);
