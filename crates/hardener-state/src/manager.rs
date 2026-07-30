@@ -945,9 +945,10 @@ impl CheckpointManager {
         // A mode-0 row means "absent at capture", but a checkpoint written by a
         // version that could not read a path's metadata records an existing file
         // the same way, and upgrading does not rewrite rows already stored. An
-        // apply creates none of these paths but /etc/sysctl.d, which the kernel
-        // plugin creates above its own checkpoint so that the capture records it
-        // present, and /etc/security, which the pam plugin creates and no plugin
+        // apply creates none of these paths but /etc/sysctl.d and
+        // /etc/audit/rules.d, which the kernel and audit plugins create above
+        // their own checkpoints so that each capture records its own as present,
+        // and /etc/security, which the pam plugin creates and no plugin
         // captures, so no apply's own checkpoint holds a row for it. A row calling
         // a path absent while the host actually has it is therefore an
         // untrustworthy row rather than an instruction to delete. A path that is

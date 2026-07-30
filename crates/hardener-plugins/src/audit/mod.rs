@@ -235,6 +235,9 @@ const AUDIT_RULES: &[AuditRuleDirective] = &[
 /// Path to custom audit rules file for hardening.
 const AUDIT_RULES_PATH: &str = "/etc/audit/rules.d/hardening.rules";
 
+/// The directory holding the rules file, which the audit package owns.
+const AUDIT_RULES_DIR: &str = "/etc/audit/rules.d";
+
 /// The mode the rules file is given, as a `chmod` argument.
 ///
 /// 0640, which is what STIG asks of `/etc/audit/rules.d/*.rules` and what the
@@ -313,6 +316,14 @@ async fn read_current_audit_rules(ctx: &Context) -> AuditRulesResult {
 /// Returns the backup path, or `None` when there was no existing file to back
 /// up. A failed backup aborts before the write: overwriting a file this tool
 /// could not copy destroys rules with no way back.
+///
+/// [`AUDIT_RULES_DIR`] must exist before this is called; it no longer creates
+/// it. `write_file` cannot make a missing parent, so the apply ensures the
+/// directory above its own checkpoint and reports a failure to create it at the
+/// call site. Creating it here instead is what made a later rollback of that
+/// apply fail: the checkpoint captures the directory, and one that came into
+/// existence after the capture is stored with a zero mode, which a rollback
+/// reads as "remove this".
 async fn write_audit_rules_file(ctx: &Context, content: &str) -> Result<Option<String>> {
     // Create backup with timestamp + random suffix to prevent symlink attacks
     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
@@ -349,23 +360,6 @@ async fn write_audit_rules_file(ctx: &Context, content: &str) -> Result<Option<S
         }
         Some(backup_path)
     };
-
-    // Ensure directory exists. Same rule: a failed mkdir must not be followed
-    // by a write that reports success.
-    if let Some(parent) = Path::new(AUDIT_RULES_PATH).parent() {
-        let parent_path = parent.to_str().unwrap_or("/etc/audit/rules.d");
-        let output = ctx
-            .executor()
-            .execute_command("mkdir", &["-p", parent_path])
-            .await?;
-        if !output.success() {
-            return Err(HardeningError::Plugin(format!(
-                "Failed to create {parent_path}: mkdir exited {} ({})",
-                output.exit_code,
-                output.stderr.trim(),
-            )));
-        }
-    }
 
     // Write new rules file
     ctx.executor()
@@ -971,18 +965,12 @@ impl HardeningPlugin for AuditHardeningPlugin {
     async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult> {
         let mut changes = Vec::new();
 
-        // Create checkpoint before changes
-        let audit_paths: Vec<&Path> = vec![
-            Path::new("/etc/audit/auditd.conf"),
-            Path::new("/etc/audit/rules.d"),
-        ];
-        let checkpoint_id =
-            crate::create_checkpoint_for_apply(ctx, "audit-hardening-pre-apply", &audit_paths)
-                .await?;
-
-        changes.extend(crate::checkpoint_change(&checkpoint_id));
-
-        // Check if auditd is installed
+        // Asked ahead of the checkpoint, unlike every other plugin, because the
+        // directory created just below belongs to the audit package: a host
+        // without that package must be left exactly as it was found, with
+        // neither a stray directory nor a checkpoint of a state nothing
+        // changed. It is a probe with no side effects, so nothing downstream
+        // sees a difference from it running first.
         if !is_auditd_installed(ctx).await.unwrap_or(false) {
             return Ok(ApplyResult {
                 apply_changes: vec![Change {
@@ -991,12 +979,41 @@ impl HardeningPlugin for AuditHardeningPlugin {
                     change_error: Some("auditd package not found".to_string()),
                     change_success: false,
                 }],
-                apply_checkpoint_id: checkpoint_id,
+                apply_checkpoint_id: None,
                 apply_error: Some("Auditd is not installed".to_string()),
                 apply_plugin_id: self.metadata().plugin_id,
                 apply_success: false,
             });
         }
+
+        // The audit package ships AUDIT_RULES_DIR on most distributions, but
+        // not on all of them, and `write_file` cannot create a missing parent:
+        // it lands its content through a temporary file in the target
+        // directory, so the rules file failed to write there with an error
+        // naming only the file.
+        //
+        // Ahead of the checkpoint rather than next to the write it exists for.
+        // The checkpoint captures AUDIT_RULES_DIR, and an absent path is stored
+        // with a zero mode, which a rollback reads as "remove this". A
+        // directory created after that capture would make a later rollback run
+        // `rm -f` on a directory, which `rm` refuses, so the apply's own
+        // rollback reported a failure. Created first, the capture records it
+        // present and the rollback restores it, leaving behind an empty
+        // standard directory. The reason travels to the write site, which is
+        // where a failure to create it is reported and where it stops the
+        // write.
+        let rules_dir_error = crate::ensure_directory(ctx, AUDIT_RULES_DIR).await;
+
+        // Create checkpoint before changes
+        let audit_paths: Vec<&Path> = vec![
+            Path::new("/etc/audit/auditd.conf"),
+            Path::new(AUDIT_RULES_DIR),
+        ];
+        let checkpoint_id =
+            crate::create_checkpoint_for_apply(ctx, "audit-hardening-pre-apply", &audit_paths)
+                .await?;
+
+        changes.extend(crate::checkpoint_change(&checkpoint_id));
 
         // Enable auditd if not enabled
         if !is_auditd_enabled(ctx).await.unwrap_or(false) {
@@ -1120,8 +1137,17 @@ impl HardeningPlugin for AuditHardeningPlugin {
                 change_success: true,
             });
         } else {
-            // Write rules file
-            match write_audit_rules_file(ctx, &rules_content).await {
+            // Write rules file. A parent that could not be created is reported
+            // with its own reason rather than left to surface as an
+            // unexplained write failure, and it stops the write: no content
+            // can land in a directory that is not there.
+            let write_outcome = match &rules_dir_error {
+                Some(reason) => Err(reason.clone()),
+                None => write_audit_rules_file(ctx, &rules_content)
+                    .await
+                    .map_err(|e| e.to_string()),
+            };
+            match write_outcome {
                 Ok(backup) => {
                     changes.push(Change {
                         change_type: ChangeType::ConfigFile,
@@ -1138,11 +1164,11 @@ impl HardeningPlugin for AuditHardeningPlugin {
                     });
                     changes.extend(set_audit_rules_mode(ctx).await);
                 }
-                Err(e) => {
+                Err(reason) => {
                     changes.push(Change {
                         change_type: ChangeType::ConfigFile,
                         change_description: "Failed to write audit rules".to_string(),
-                        change_error: Some(e.to_string()),
+                        change_error: Some(reason),
                         change_success: false,
                     });
                 }
@@ -1337,18 +1363,12 @@ mod tests {
         let executor = MockExecutor::new()
             .with_file(AUDIT_RULES_PATH, "-w /etc/passwd -p wa -k identity\n")
             .with_path_exists(AUDIT_RULES_PATH, true)
-            // mkdir must succeed, otherwise removing the cp check under test
-            // would still abort the write via an unregistered command and the
-            // test would pass without exercising anything.
-            .with_command_program("cp", backup_failed)
-            .with_command_program(
-                "mkdir",
-                CommandOutput {
-                    stdout: String::new(),
-                    stderr: String::new(),
-                    exit_code: 0,
-                },
-            );
+            // No mkdir is registered because this function no longer runs one:
+            // its caller ensures the directory above the checkpoint. Nothing
+            // else here can abort the write, so removing the cp check under
+            // test would let the write through and fail this test, which is
+            // what it is for.
+            .with_command_program("cp", backup_failed);
         let executor = Arc::new(executor);
         let ctx = Context::with_executor(executor.clone() as Arc<dyn SystemExecutor>);
 

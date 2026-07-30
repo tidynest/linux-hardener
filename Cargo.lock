@@ -2192,6 +2192,7 @@ dependencies = [
 name = "hardener-plugins"
 version = "1.5.1"
 dependencies = [
+ "anyhow",
  "async-trait",
  "chrono",
  "hardener-common",

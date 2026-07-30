@@ -4,11 +4,14 @@
 
 use hardener_common::types::{PluginId, Severity};
 use hardener_core::{
-    CommandOutput, Context, MockExecutor, PluginConfig, PolicyException, SystemExecutor,
-    plugin::HardeningPlugin,
+    CommandOutput, Context, FileMetadata, MockExecutor, PluginConfig, PolicyException,
+    SystemExecutor, plugin::HardeningPlugin,
 };
 use hardener_plugins::AuditHardeningPlugin;
-use std::sync::Arc;
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 /// Creates a mock executor with auditd fully configured and running.
 fn fully_configured_audit_executor() -> MockExecutor {
@@ -519,6 +522,13 @@ async fn test_audit_scan_permission_denied_should_not_report_missing_rules() {
 async fn test_audit_apply_skips_exceptions() {
     // Auditd installed, enabled, running: apply writes rules file.
     // Exception on "modules" category: those 3 rules should be absent.
+    //
+    // The rules directory is registered here and in every other apply fixture
+    // because the audit package ships it on nearly every host. Apply creates a
+    // missing one before writing into it, so a fixture that left it out would
+    // describe an unusual host and reach a mkdir instead of the write these
+    // assertions are about. The hosts that genuinely lack it have their own
+    // tests at the end of this file.
     let ok = CommandOutput {
         stdout: String::new(),
         stderr: String::new(),
@@ -545,7 +555,7 @@ async fn test_audit_apply_skips_exceptions() {
                 exit_code: 0,
             },
         )
-        .with_command("mkdir", &["-p", "/etc/audit/rules.d"], ok.clone())
+        .with_directory("/etc/audit/rules.d")
         .with_command(
             "chmod",
             &["0640", "/etc/audit/rules.d/hardening.rules"],
@@ -641,7 +651,7 @@ fn reload_fails_executor(auditctl_status: CommandOutput) -> MockExecutor {
                 exit_code: 0,
             },
         )
-        .with_command("mkdir", &["-p", "/etc/audit/rules.d"], ok.clone())
+        .with_directory("/etc/audit/rules.d")
         .with_command(
             "chmod",
             &["0640", "/etc/audit/rules.d/hardening.rules"],
@@ -819,7 +829,7 @@ async fn test_audit_apply_reload_success_unaffected() {
                 exit_code: 0,
             },
         )
-        .with_command("mkdir", &["-p", "/etc/audit/rules.d"], ok.clone())
+        .with_directory("/etc/audit/rules.d")
         .with_command(
             "chmod",
             &["0640", "/etc/audit/rules.d/hardening.rules"],
@@ -885,7 +895,7 @@ fn reload_retry_executor() -> MockExecutor {
                 exit_code: 0,
             },
         )
-        .with_command("mkdir", &["-p", "/etc/audit/rules.d"], ok.clone())
+        .with_directory("/etc/audit/rules.d")
         .with_command("chmod", &["0640", "/etc/audit/rules.d/hardening.rules"], ok)
 }
 
@@ -1161,7 +1171,7 @@ async fn test_audit_apply_is_idempotent_when_rules_file_already_matches() {
                 exit_code: 0,
             },
         )
-        .with_command("mkdir", &["-p", "/etc/audit/rules.d"], ok.clone())
+        .with_directory("/etc/audit/rules.d")
         .with_command(
             "chmod",
             &["0640", "/etc/audit/rules.d/hardening.rules"],
@@ -1266,7 +1276,7 @@ async fn test_audit_apply_rewrites_when_rules_file_read_fails() {
                 exit_code: 0,
             },
         )
-        .with_command("mkdir", &["-p", "/etc/audit/rules.d"], ok.clone())
+        .with_directory("/etc/audit/rules.d")
         .with_command(
             "chmod",
             &["0640", "/etc/audit/rules.d/hardening.rules"],
@@ -1385,7 +1395,7 @@ async fn test_audit_rules_file_is_not_world_readable() {
                 exit_code: 0,
             },
         )
-        .with_command("mkdir", &["-p", "/etc/audit/rules.d"], ok.clone())
+        .with_directory("/etc/audit/rules.d")
         .with_command(
             "chmod",
             &["0640", "/etc/audit/rules.d/hardening.rules"],
@@ -1446,7 +1456,7 @@ async fn test_audit_rules_mode_failure_is_recorded_not_fatal() {
                 exit_code: 0,
             },
         )
-        .with_command("mkdir", &["-p", "/etc/audit/rules.d"], ok.clone())
+        .with_directory("/etc/audit/rules.d")
         .with_command(
             "chmod",
             &["0640", "/etc/audit/rules.d/hardening.rules"],
@@ -1487,5 +1497,336 @@ async fn test_audit_rules_mode_failure_is_recorded_not_fatal() {
         }),
         "the rules still load: the mode is a lesser problem than an unhardened host; changes: {:?}",
         result.apply_changes
+    );
+}
+
+// =============================================================================
+// The directory the rules file lives in
+// =============================================================================
+
+const RULES_DIR: &str = "/etc/audit/rules.d";
+const RULES_FILE: &str = "/etc/audit/rules.d/hardening.rules";
+
+fn command_output(stderr: &str, exit_code: i32) -> CommandOutput {
+    CommandOutput {
+        stdout: String::new(),
+        stderr: stderr.to_string(),
+        exit_code,
+    }
+}
+
+/// A host with auditd installed, enabled and running, whose reload and chmod
+/// both succeed. Everything the apply needs except the rules directory, which
+/// each test below describes for itself.
+fn audit_apply_executor() -> MockExecutor {
+    MockExecutor::new()
+        .with_command_exists("auditd", true)
+        .with_command_exists("augenrules", true)
+        .with_command(
+            "systemctl",
+            &["is-enabled", "auditd"],
+            command_output("", 0),
+        )
+        .with_command("systemctl", &["is-active", "auditd"], command_output("", 0))
+        .with_command("chmod", &["0640", RULES_FILE], command_output("", 0))
+        .with_command("augenrules", &["--load"], command_output("", 0))
+}
+
+/// How many times the apply asked for the audit rules directory to exist.
+fn rules_mkdir_count(executor: &MockExecutor) -> usize {
+    executor
+        .log()
+        .commands_executed
+        .iter()
+        .filter(|(command, args)| {
+            command == "mkdir"
+                && args.contains(&"-p".to_string())
+                && args.contains(&RULES_DIR.to_string())
+        })
+        .count()
+}
+
+/// Whether the apply wrote the rules file.
+fn wrote_the_rules_file(executor: &MockExecutor) -> bool {
+    executor
+        .log()
+        .files_written
+        .iter()
+        .any(|(path, _)| path.to_str() == Some(RULES_FILE))
+}
+
+/// A mock whose successful `mkdir -p` actually creates the directory.
+///
+/// A plain `MockExecutor` answers `file_metadata` from a registry no command
+/// ever touches, so a checkpoint taken after the mkdir records the directory
+/// absent exactly as one taken before it would: the fixture cannot tell the two
+/// placements apart, and an ordering test written on it passes either way. Here
+/// the mkdir writes into the same virtual host the capture then reads, which is
+/// what the real `mkdir` does, so the stored checkpoint row answers the ordering
+/// question by itself.
+struct MkdirCreatesTheDirectory {
+    inner: Arc<MockExecutor>,
+}
+
+#[async_trait::async_trait]
+impl SystemExecutor for MkdirCreatesTheDirectory {
+    fn description(&self) -> String {
+        self.inner.description()
+    }
+
+    fn is_remote(&self) -> bool {
+        self.inner.is_remote()
+    }
+
+    async fn read_file(&self, path: &Path) -> anyhow::Result<String> {
+        self.inner.read_file(path).await
+    }
+
+    async fn read_file_optional(&self, path: &Path) -> anyhow::Result<Option<String>> {
+        self.inner.read_file_optional(path).await
+    }
+
+    async fn write_file(&self, path: &Path, content: &str) -> anyhow::Result<()> {
+        self.inner.write_file(path, content).await
+    }
+
+    async fn path_exists(&self, path: &Path) -> anyhow::Result<bool> {
+        self.inner.path_exists(path).await
+    }
+
+    /// Delegated rather than inherited, like the mock's own override: the
+    /// provided body shells out to `readlink`, which no fixture registers.
+    async fn read_link(&self, path: &Path) -> anyhow::Result<Option<String>> {
+        self.inner.read_link(path).await
+    }
+
+    async fn file_metadata(&self, path: &Path) -> anyhow::Result<FileMetadata> {
+        self.inner.file_metadata(path).await
+    }
+
+    async fn read_dir(&self, path: &Path) -> anyhow::Result<Vec<PathBuf>> {
+        self.inner.read_dir(path).await
+    }
+
+    /// Delegated for the same reason: the provided body probes through `sh`,
+    /// which the fixtures answer with `with_command_exists` instead.
+    async fn command_exists(&self, program: &str) -> anyhow::Result<bool> {
+        self.inner.command_exists(program).await
+    }
+
+    async fn execute_command(&self, program: &str, args: &[&str]) -> anyhow::Result<CommandOutput> {
+        let output = self.inner.execute_command(program, args).await?;
+
+        // A `mkdir -p` that exited 0 has created the directory, so the mock's
+        // filesystem has to show it from here on. A clone shares the registry
+        // with `inner`, so this registration lands on the same virtual host.
+        if program == "mkdir"
+            && output.success()
+            && let Some(dir) = args.iter().find(|arg| arg.starts_with('/'))
+        {
+            let _ = (*self.inner).clone().with_directory(dir);
+        }
+
+        Ok(output)
+    }
+}
+
+/// Builds a CheckpointManager backed by a temporary SQLite database and a
+/// freshly generated signing key: no root access or production paths needed.
+async fn test_checkpoint_manager() -> hardener_state::CheckpointManager {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db_path = dir.path().join("test_checkpoints.db");
+    let key_path = dir.path().join("test.key");
+
+    let db_pool = hardener_state::init_db(Some(&db_path))
+        .await
+        .expect("init_db");
+    let signer =
+        hardener_state::CheckpointSigner::new_with_path(&key_path).expect("CheckpointSigner");
+
+    // Keep the tempdir alive for the duration of the process.
+    std::mem::forget(dir);
+
+    hardener_state::CheckpointManager::new_with_signer(db_pool, signer).expect("CheckpointManager")
+}
+
+/// The directory has to exist before the checkpoint, not merely before the
+/// write.
+///
+/// This apply's checkpoint captures /etc/audit/rules.d, and `hardener-state`
+/// stores an absent path with a zero mode, which a rollback reads as "remove
+/// this". A directory created after that capture therefore turned a clean
+/// rollback into a failure: the removal ran `rm -f` on a directory, which `rm`
+/// refuses. Created before the capture, the row records it present and the
+/// rollback restores its mode instead.
+///
+/// The assertion is on the stored row rather than on the order of two logged
+/// calls, because the row is the thing the rollback later reads.
+#[tokio::test]
+async fn audit_apply_creates_the_rules_directory_before_the_checkpoint_captures_it() {
+    // No directory registered: this is a host whose auditd install never
+    // brought /etc/audit/rules.d with it.
+    let mock = Arc::new(audit_apply_executor().with_command(
+        "mkdir",
+        &["-p", RULES_DIR],
+        command_output("", 0),
+    ));
+    let executor = Arc::new(MkdirCreatesTheDirectory {
+        inner: mock.clone(),
+    });
+    let mut ctx = Context::with_executor_and_checkpoint(executor, test_checkpoint_manager().await);
+
+    let result = AuditHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("audit apply should not error");
+
+    assert_eq!(
+        rules_mkdir_count(&mock),
+        1,
+        "an absent rules directory must be created, commands: {:?}",
+        mock.log().commands_executed
+    );
+
+    let checkpoint_id = result
+        .apply_checkpoint_id
+        .clone()
+        .expect("the apply must take a checkpoint on a host with auditd");
+    let (_, captured) = ctx
+        .checkpoint_manager()
+        .expect("the context carries a checkpoint manager")
+        .get_checkpoint(&hardener_state::CheckpointId::new(checkpoint_id))
+        .await
+        .expect("the checkpoint just taken must be readable");
+    let directory_row = captured
+        .iter()
+        .find(|state| state.file_path == RULES_DIR)
+        .expect("the checkpoint captures the rules directory");
+
+    assert_ne!(
+        directory_row.file_permissions, 0,
+        "the checkpoint must record the directory as present; a zero mode is what a \
+         rollback reads as 'remove this', and removing a directory with `rm -f` fails. \
+         Captured: {captured:?}"
+    );
+    assert!(
+        wrote_the_rules_file(&mock),
+        "the rules must still reach the file, writes: {:?}",
+        mock.log().files_written
+    );
+    assert!(
+        result.apply_success,
+        "an apply that created the directory it needed succeeded, changes: {:?}",
+        result.apply_changes
+    );
+}
+
+/// A probe that cannot answer is not an answer. `path_exists` returns an error
+/// for a directory it could not determine, and reading that as "it is there"
+/// would skip the creation on exactly the host that needs it. `mkdir -p` on an
+/// existing directory does nothing, so attempting it costs nothing.
+#[tokio::test]
+async fn audit_apply_creates_the_rules_directory_when_the_probe_cannot_answer() {
+    let executor = Arc::new(
+        audit_apply_executor()
+            .with_path_exists_error(RULES_DIR)
+            .with_command("mkdir", &["-p", RULES_DIR], command_output("", 0)),
+    );
+    let mut ctx = Context::with_executor(executor.clone());
+
+    AuditHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("audit apply should not error");
+
+    assert_eq!(
+        rules_mkdir_count(&executor),
+        1,
+        "a probe that failed must be treated as may-be-missing, commands: {:?}",
+        executor.log().commands_executed
+    );
+}
+
+/// `execute_command` returns Ok for a command that ran and failed, so an
+/// unchecked exit code would let a failed mkdir be followed by a write that
+/// cannot land. The failure must be reported as a failed change carrying the
+/// reason, because "Failed to write audit rules" alone tells the operator
+/// nothing about the directory.
+#[tokio::test]
+async fn audit_apply_reports_why_the_rules_directory_could_not_be_created() {
+    let executor = Arc::new(audit_apply_executor().with_command(
+        "mkdir",
+        &["-p", RULES_DIR],
+        command_output(
+            "mkdir: cannot create directory '/etc/audit/rules.d': Read-only file system\n",
+            1,
+        ),
+    ));
+    let mut ctx = Context::with_executor(executor.clone());
+
+    let result = AuditHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("audit apply should not error");
+
+    let failed = result
+        .apply_changes
+        .iter()
+        .find(|change| !change.change_success)
+        .expect("a failed mkdir must produce a failed change, not a silent success");
+    assert!(
+        failed
+            .change_error
+            .as_deref()
+            .is_some_and(|reason| reason.contains("Read-only file system")),
+        "the operator must be told why the directory could not be created, got: {:?}",
+        failed.change_error
+    );
+    assert!(
+        !wrote_the_rules_file(&executor),
+        "a write into a directory that could not be created must not be attempted, \
+         writes: {:?}",
+        executor.log().files_written
+    );
+    assert!(
+        !result.apply_success,
+        "an apply whose rules never reached the disk has not succeeded"
+    );
+}
+
+/// A host without the auditd package must be left exactly as it was found.
+/// The directory belongs to that package, so creating it for a host that does
+/// not have auditd would leave a stray directory behind, and there is nothing
+/// to checkpoint either: the apply touches nothing.
+#[tokio::test]
+async fn audit_apply_touches_nothing_when_auditd_is_not_installed() {
+    let executor = Arc::new(no_auditd_executor().with_command(
+        "mkdir",
+        &["-p", RULES_DIR],
+        command_output("", 0),
+    ));
+    let mut ctx =
+        Context::with_executor_and_checkpoint(executor.clone(), test_checkpoint_manager().await);
+
+    let result = AuditHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("audit apply should not error");
+
+    assert_eq!(
+        rules_mkdir_count(&executor),
+        0,
+        "no directory may be created for a package that is not installed, commands: {:?}",
+        executor.log().commands_executed
+    );
+    assert!(
+        executor.log().files_written.is_empty(),
+        "nothing may be written on a host without auditd, writes: {:?}",
+        executor.log().files_written
+    );
+    assert!(
+        result.apply_checkpoint_id.is_none(),
+        "a host that is not touched is not checkpointed either, got: {:?}",
+        result.apply_checkpoint_id
     );
 }

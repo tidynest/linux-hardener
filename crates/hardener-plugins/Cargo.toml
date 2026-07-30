@@ -14,5 +14,6 @@ async-trait = { workspace = true }
 chrono = { workspace = true }
 
 [dev-dependencies]
+anyhow = { workspace = true }
 hardener-state = { path = "../hardener-state" }
 tempfile = { workspace = true }

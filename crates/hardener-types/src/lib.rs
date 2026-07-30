@@ -768,18 +768,19 @@ pub enum FileRestoreAction {
 /// behind the very file the operator asked to be rolled back. Where the source
 /// cannot settle the question, the path stays deletable.
 ///
-/// `/etc/sysctl.d` and `/etc/security` are the two entries an apply can create,
-/// and they carry their own reasoning. Neither can be recorded absent by the
-/// apply that creates it, for different reasons: the kernel plugin creates
-/// `/etc/sysctl.d` above its own checkpoint, which captures that directory, so
-/// the capture records it present; the pam plugin creates `/etc/security` from
-/// its shared file writer and needs no such ordering, because no plugin
-/// captures that directory at all, so no apply ever writes a row for it. Both
-/// entries stay as a backstop for a checkpoint that did record one absent,
-/// whether taken before that ordering existed or by `checkpoint create`, whose
-/// own path list holds both directories: the host has since gained the
-/// directory, and deleting one the distribution shares between packages would
-/// be far worse than leaving an empty one behind.
+/// `/etc/sysctl.d`, `/etc/security` and `/etc/audit/rules.d` are the three
+/// entries an apply can create, and they carry their own reasoning. None can be
+/// recorded absent by the apply that creates it, for two different reasons: the
+/// kernel and audit plugins create `/etc/sysctl.d` and `/etc/audit/rules.d`
+/// above their own checkpoints, which capture those directories, so each
+/// capture records its own as present; the pam plugin creates `/etc/security`
+/// from its shared file writer and needs no such ordering, because no plugin
+/// captures that directory at all, so no apply ever writes a row for it. All
+/// three entries stay as a backstop for a checkpoint that did record one
+/// absent, whether taken before that ordering existed or by `checkpoint
+/// create`, whose own path list holds all three directories: the host has since
+/// gained the directory, and deleting one the distribution shares between
+/// packages would be far worse than leaving an empty one behind.
 ///
 /// Exact matches only. `/etc/sudoers.d` the directory is protected; a drop-in
 /// file inside it that an apply created stays removable.
@@ -804,13 +805,14 @@ pub const UNDELETABLE_ROLLBACK_PATHS: &[&str] = &[
     "/etc/selinux/config",
     // Directories the plugins write files into, or capture and never touch.
     // `write_file` cannot create a missing parent, so a plugin whose target
-    // directory may be absent creates it first: the kernel apply runs `mkdir`
-    // for /etc/sysctl.d ahead of its checkpoint, the pam apply runs one for
-    // /etc/security before creating a file in it, and no other apply creates
-    // any of these.
+    // directory may be absent creates it first: the kernel and audit applies
+    // run `mkdir` for /etc/sysctl.d and /etc/audit/rules.d ahead of their
+    // checkpoints, the pam apply runs one for /etc/security before creating a
+    // file in it, and no other apply creates any of these.
     "/etc/sysctl.d",
     "/etc/pam.d",
     "/etc/security",
+    "/etc/audit/rules.d",
     "/etc/apparmor",
     "/etc/apparmor.d",
 ];
