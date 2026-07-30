@@ -50,7 +50,26 @@ resolve_binary
 
 # The plugins whose settings this suite compares. Applying only these keeps the
 # run to what is actually asserted.
-DIFF_PLUGINS=(ssh-hardening pam-hardening permissions-hardening firewall-hardening)
+DIFF_PLUGINS=(ssh-hardening pam-hardening permissions-hardening firewall-hardening kernel-hardening)
+
+# Whether this run is inside a BOOTED container with its own network namespace,
+# which is the only configuration where /proc/sys/net is writable and the kernel
+# oracle can ask anything at all.
+#
+# Declared by the runner, never inferred. Unset means not booted, which makes
+# the kernel rows unaskable rather than silently absent: failing toward "not
+# verified" is the safe direction, and a run started by hand inside a booted
+# container simply reports more unaskable rows than it needed to.
+#
+# Only the literal 1 turns it on, and the signal is reduced to 0 or 1 here
+# rather than carried through as whatever arrived. A value the runner never
+# meant as a signal, "true" or "yes" or an empty string, leaves the oracle off,
+# and the header below then reports 0 rather than reprinting a word that reads
+# as enabled beside arithmetic that is not.
+KERNEL_BOOTED=0
+if [[ "${HARDENER_DIFF_BOOTED:-}" == "1" ]]; then
+    KERNEL_BOOTED=1
+fi
 
 # Every external command the full run depends on.
 #
@@ -1835,12 +1854,77 @@ run_firewall_checks() {
     done
 }
 
+KERNEL_BEFORE=""
+
+# The pre-apply reading, which is half of what the checks below compare.
+preapply_kernel_init() {
+    local entry name
+    KERNEL_BEFORE=""
+    if [[ "$KERNEL_BOOTED" != "1" ]]; then
+        return 0
+    fi
+    for entry in "${KERNEL_CHECKS[@]}"; do
+        IFS='|' read -r name _ _ <<<"$entry"
+        KERNEL_BEFORE+="$name=$(kernel_reading "$name")"$'\n'
+    done
+}
+
+# Doing nothing must never exit 0. This asserts at least one managed parameter
+# was AWAY from its target before the apply, so the checks below cannot pass
+# against a host that was already compliant.
+run_kernel_preapply_control() {
+    local entry name target direction reading away=0
+    if [[ "$KERNEL_BOOTED" != "1" ]]; then
+        record_unaskable "kernel-hardening pre-apply control: this run is not booted, so /proc/sys/net is the host's and read-only"
+        return 0
+    fi
+    for entry in "${KERNEL_CHECKS[@]}"; do
+        IFS='|' read -r name target direction <<<"$entry"
+        reading="$(grep -m1 "^$name=" <<<"$KERNEL_BEFORE" | cut -d= -f2-)"
+        if ! kernel_satisfies "$reading" "$target" "$direction"; then
+            away=$((away + 1))
+        fi
+    done
+    if (( away == 0 )); then
+        record_fail "kernel-hardening: every managed parameter already met its target before apply, so the checks below would pass without the tool having done anything"
+        return 0
+    fi
+    record_pass "kernel-hardening: $away of the ${#KERNEL_CHECKS[@]} managed parameters were away from target before apply, so the checks below are asking a real question"
+}
+
+# One assertion per parameter: does the kernel enforce what the tool reported.
+run_kernel_checks() {
+    local entry name target direction reading reason
+    if [[ "$KERNEL_BOOTED" != "1" ]]; then
+        for entry in "${KERNEL_CHECKS[@]}"; do
+            IFS='|' read -r name _ _ <<<"$entry"
+            record_unaskable "kernel $name: this run is not booted, so /proc/sys/net is the host's and read-only"
+        done
+    else
+        for entry in "${KERNEL_CHECKS[@]}"; do
+            IFS='|' read -r name target direction <<<"$entry"
+            reading="$(kernel_reading "$name")"
+            if [[ "$reading" == "unreadable" ]]; then
+                record_fail "kernel $name: sysctl could not be read, so this parameter is unproven"
+            elif kernel_satisfies "$reading" "$target" "$direction"; then
+                record_pass "kernel $name: the kernel enforces '$reading', which meets the target '$target' by $direction"
+            else
+                record_fail "kernel $name: the kernel enforces '$reading', which does NOT meet the target '$target' by $direction, so the hardening the tool reported is not what the kernel will apply"
+            fi
+        done
+    fi
+    for entry in "${KERNEL_UNASKABLE[@]}"; do
+        IFS='|' read -r name reason <<<"$entry"
+        record_unaskable "kernel $name: $reason"
+    done
+}
+
 SSH_CHECKS_EXPECTED=7
 SEEDED_SSH_CHECKS_EXPECTED=2
 LOGIN_DEFS_CHECKS_EXPECTED=3
 VENDOR_SURVIVAL_CHECKS_EXPECTED=3
 IDEMPOTENCE_CHECKS_EXPECTED=4
-DIFF_PLUGINS_EXPECTED=4
+DIFF_PLUGINS_EXPECTED=5
 PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED=2
 PERMISSION_CHECKS_EXPECTED=9
 FIREWALL_CHECKS_EXPECTED=2
@@ -1909,11 +1993,23 @@ require_check_tables() {
 # print_summary would then accept the shorter run, which is the guard asking the
 # tables whether the tables are right.
 expected_check_total() {
+    if [[ "$KERNEL_BOOTED" != "1" ]]; then
+        # The 11 kernel rows are declared unaskable in this mode, so they are
+        # not checks the tables ask for either. The pre-apply control goes the
+        # same way, which is why DIFF_PLUGINS_EXPECTED is discounted too.
+        printf '%s' "$(( 2 * (SSH_CHECKS_EXPECTED + LOGIN_DEFS_CHECKS_EXPECTED \
+            + PERMISSION_CHECKS_EXPECTED) \
+            + VENDOR_SURVIVAL_CHECKS_EXPECTED + IDEMPOTENCE_CHECKS_EXPECTED \
+            + PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED + DIFF_PLUGINS_EXPECTED - 1 \
+            + SEEDED_SSH_CHECKS_EXPECTED + FIREWALL_CHECKS_EXPECTED ))"
+        return
+    fi
     printf '%s' "$(( 2 * (SSH_CHECKS_EXPECTED + LOGIN_DEFS_CHECKS_EXPECTED \
         + PERMISSION_CHECKS_EXPECTED) \
         + VENDOR_SURVIVAL_CHECKS_EXPECTED + IDEMPOTENCE_CHECKS_EXPECTED \
         + PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED + DIFF_PLUGINS_EXPECTED \
-        + SEEDED_SSH_CHECKS_EXPECTED + FIREWALL_CHECKS_EXPECTED ))"
+        + SEEDED_SSH_CHECKS_EXPECTED + FIREWALL_CHECKS_EXPECTED \
+        + KERNEL_CHECKS_EXPECTED ))"
 }
 
 # The three plugins spell their finding ids differently, and a filter written for
@@ -2433,13 +2529,19 @@ compared_finding_ids() {
 run_preapply_control() {
     local plugin entry_plugin id count matched total unreadable
     for plugin in "${DIFF_PLUGINS[@]}"; do
-        # firewall has no per-directive finding ids to compare: its only scan
-        # finding is `{backend}-disabled`, and firewalld is already active in
-        # three of the five containers, so a finding-count control would fail
-        # there against a tool behaving correctly. Its control is
-        # run_firewall_preapply_control, which asks whether the property under
-        # test was already true before the apply.
-        [[ "$plugin" == "firewall-hardening" ]] && continue
+        # firewall and kernel have no per-directive finding ids this suite
+        # compares, and each carries a control of its own instead. firewall's
+        # only scan finding is `{backend}-disabled`, and firewalld is already
+        # active in three of the five containers, so a finding-count control
+        # would fail there against a tool behaving correctly. The kernel rows
+        # are scored against sysctl rather than against a reported finding at
+        # all, so this loop would find nothing to count for them and read that
+        # emptiness as a broken filter. Their controls are
+        # run_firewall_preapply_control and run_kernel_preapply_control, which
+        # ask whether the property under test was already true before the apply.
+        case "$plugin" in
+            firewall-hardening|kernel-hardening) continue ;;
+        esac
         matched=0
         total=0
         unreadable=0
@@ -3213,7 +3315,7 @@ Number of days of warning before password expires	: 11"
     check_eq "${#IDEMPOTENCE_CHECKS[@]}" "4" "the idempotency table holds four readings"
     check_eq "${IDEMPOTENCE_CHECKS[0]}" "permission-modes" \
         "the permission reading is taken first, ahead of the probe account login-defs creates"
-    check_eq "${#DIFF_PLUGINS[@]}" "4" "four plugins are compared"
+    check_eq "${#DIFF_PLUGINS[@]}" "5" "five plugins are compared"
     check_eq "${#SEEDED_SSH_CHECKS[@]}" "2" "the seeded table holds two directives"
     check_eq "${#PERMISSION_CHECKS[@]}" "9" "the permissions table holds nine paths"
     check_eq "${#KERNEL_CHECKS[@]}" "11" \
@@ -3264,10 +3366,121 @@ Number of days of warning before password expires	: 11"
         "and a scalar arriving with surrounding whitespace is trimmed to the value itself"
     unset -f sysctl
 
+    # Not booted is not a failure and not a pass: the fixture cannot be asked.
+    before_unaskable=$CHECKS_UNASKABLE
+    before_total=$CHECKS_TOTAL
+    KERNEL_BOOTED=0 run_kernel_checks >/dev/null
+    check_eq "$((CHECKS_UNASKABLE - before_unaskable))" "18" \
+        "an unbooted run declares all 18 kernel parameters unaskable, the 11 for the mode and the 7 for the mount"
+    check_eq "$((CHECKS_TOTAL - before_total))" "0" \
+        "and records no checks at all, so the total the tables ask for still adds up"
+    CHECKS_UNASKABLE=$before_unaskable
+
+    # The booted branch, which is the entire oracle, driven here without root
+    # and without a container. Asserting that an unbooted run makes no claim is
+    # not the same as asserting a booted one makes the right one, and only the
+    # branch below is what a real run scores.
+    #
+    # sysctl is stubbed rather than kernel_reading, so the reader under test
+    # stays in the path and the `unreadable` token is produced by the failure it
+    # really comes from rather than injected past it.
+    #
+    # The reading is chosen from the row being asked, because no constant is
+    # compliant in every direction: an at-least row wants its target, an at-most
+    # row wants its target too but is violated upward, and rp_filter's ranked
+    # space is violated by 2, which is loose mode and ranks BELOW strict mode 1.
+    local kernel_stub_mode=compliant
+    sysctl() {
+        local wanted="${2:-}" entry name target direction
+        for entry in "${KERNEL_CHECKS[@]}"; do
+            IFS='|' read -r name target direction <<<"$entry"
+            [[ "$name" == "$wanted" ]] || continue
+            case "$kernel_stub_mode:$direction" in
+                unreadable:*) return 1 ;;
+                compliant:ranked:*) printf '1\n' ;;
+                violating:ranked:*) printf '2\n' ;;
+                compliant:*) printf '%s\n' "$target" ;;
+                violating:at-least) printf '%s\n' "$((target - 1))" ;;
+                violating:at-most) printf '%s\n' "$((target + 1))" ;;
+                *) return 1 ;;
+            esac
+            return 0
+        done
+        return 1
+    }
+
+    local kernel_saved_total=$CHECKS_TOTAL kernel_saved_passed=$CHECKS_PASSED
+    local kernel_saved_failed=$CHECKS_FAILED kernel_saved_unaskable=$CHECKS_UNASKABLE
+    local kernel_saved_before="$KERNEL_BEFORE"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    kernel_stub_mode=compliant
+    KERNEL_BOOTED=1 run_kernel_checks >/dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "11/0" \
+        "a booted run whose every parameter meets its target records one pass per askable row"
+    check_eq "$CHECKS_UNASKABLE" "7" \
+        "and still declares the 7 rows the mount puts out of reach, because being booted does not make /proc/sys writable"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    kernel_stub_mode=violating
+    KERNEL_BOOTED=1 run_kernel_checks >/dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/11" \
+        "a parameter the kernel enforces against its own direction fails, on every row"
+
+    # The undeterminable-is-a-failure rule, holding inside the oracle itself.
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    kernel_stub_mode=unreadable
+    local kernel_unreadable_out
+    kernel_unreadable_out="$(mktemp)"
+    KERNEL_BOOTED=1 run_kernel_checks > "$kernel_unreadable_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/11" \
+        "a parameter that cannot be read is a failure, never an unaskable row: unaskability is declared in advance and this was discovered at runtime"
+    check_status 0 "and it fails with its own message rather than the one about a value that disagrees" \
+        grep -q "sysctl could not be read" "$kernel_unreadable_out"
+    rm -f "$kernel_unreadable_out"
+
+    # The pre-apply control. Doing nothing must never exit 0, so a container
+    # that already met every target before the apply has to fail it.
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    kernel_stub_mode=compliant
+    KERNEL_BOOTED=1 preapply_kernel_init
+    check_eq "$(grep -c '=' <<<"$KERNEL_BEFORE")" "11" \
+        "the pre-apply capture holds one reading per askable parameter"
+    KERNEL_BOOTED=1 run_kernel_preapply_control >/dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/1" \
+        "a container already at every kernel target before apply fails the control, because the checks below would then pass without the tool having done anything"
+
+    # And one parameter away from target is enough to make the checks below a
+    # real question. One rather than all eleven, so the count in the message is
+    # proven to be counted rather than to be the table's length.
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    KERNEL_BEFORE="${KERNEL_BEFORE/net.ipv4.tcp_syncookies=1/net.ipv4.tcp_syncookies=0}"
+    local kernel_control_out
+    kernel_control_out="$(mktemp)"
+    KERNEL_BOOTED=1 run_kernel_preapply_control > "$kernel_control_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "1/0" \
+        "a container with one parameter away from target passes the control"
+    check_status 0 "and the pass names how many were away, so a control that counted nothing cannot read as one that counted something" \
+        grep -q "1 of the 11 managed parameters were away from target" "$kernel_control_out"
+    rm -f "$kernel_control_out"
+
+    unset -f sysctl
+    CHECKS_TOTAL=$kernel_saved_total
+    CHECKS_PASSED=$kernel_saved_passed
+    CHECKS_FAILED=$kernel_saved_failed
+    CHECKS_UNASKABLE=$kernel_saved_unaskable
+    KERNEL_BEFORE="$kernel_saved_before"
+
     local pinned_total
-    pinned_total="$(expected_check_total)"
+    # Asked in an explicit mode, both here and below: the totals these two
+    # assertions pin are properties of the tables, and reading them in
+    # whatever mode the environment happened to ask for would make the
+    # self-test go red on a maintainer who exported the runner's signal.
+    pinned_total="$(KERNEL_BOOTED=0 expected_check_total)"
     check_eq "$pinned_total" "55" \
         "the run is sized at two checks per directive, one per unmanaged setting, one per idempotency reading, one per pwquality enforcement reading, one control per plugin, plus one pre-apply control per seeded directive"
+    check_eq "$(KERNEL_BOOTED=1 expected_check_total)" "67" \
+        "a booted run is sized for eleven kernel rows and the kernel plugin's own control on top of that, which is the only arithmetic difference the mode makes"
     check_status 0 "require_check_tables accepts the tables as they stand" \
         require_check_tables
 
@@ -3287,7 +3500,7 @@ Number of days of warning before password expires	: 11"
     # Counted off ${#SSH_CHECKS[@]} it would, and print_summary would then accept
     # a run that skipped six directives as a complete one. Compared against the
     # value taken while the tables were whole, which the literal above pins.
-    check_eq "$(expected_check_total)" "$pinned_total" \
+    check_eq "$(KERNEL_BOOTED=0 expected_check_total)" "$pinned_total" \
         "the expected total does not move when a table is edited down"
     SSH_CHECKS=("${saved_ssh_checks[@]}")
     check_status 0 "require_check_tables accepts the table once it is restored" \
@@ -3426,6 +3639,14 @@ Number of days of warning before password expires	: 11"
       { "finding_id": "ufw-disabled", "finding_current_value": "disabled" }
     ],
     "unchecked": []
+  },
+  {
+    "plugin_id": "kernel-hardening",
+    "plugin_name": "Kernel Hardening",
+    "findings": [
+      { "finding_id": "kernel_net_ipv4_conf_all_rp_filter", "finding_current_value": "0" }
+    ],
+    "unchecked": []
   }
 ]'
 
@@ -3548,6 +3769,12 @@ Number of days of warning before password expires	: 11"
   {
     "plugin_id": "firewall-hardening",
     "plugin_name": "Firewall Hardening",
+    "findings": [],
+    "unchecked": []
+  },
+  {
+    "plugin_id": "kernel-hardening",
+    "plugin_name": "Kernel Hardening",
     "findings": [],
     "unchecked": []
   }
@@ -4395,6 +4622,9 @@ run_full_suite() {
     echo "Differential suite: $BINARY"
     echo "Binary version: $(binary_version "$BINARY")"
     echo "Plugins: ${DIFF_PLUGINS[*]}"
+    # Which arithmetic applied, printed where the reader of a log meets it. A
+    # 0 here is why 11 kernel rows below read as unaskable rather than missing.
+    echo "Booted (kernel oracle): $KERNEL_BOOTED"
     # Before every capture below, because all of them describe a container that
     # has to already be holding the seed.
     seed_stricter_than_baseline || return 1
@@ -4405,6 +4635,7 @@ run_full_suite() {
     # they compare. Taken after apply it would agree with itself.
     preapply_vendor_survival_init || return 1
     preapply_firewall_init || return 1
+    preapply_kernel_init || return 1
 
     apply_hardening
 
@@ -4433,6 +4664,7 @@ run_full_suite() {
 
     run_preapply_control
     run_firewall_preapply_control
+    run_kernel_preapply_control
     run_seeded_checks
     run_ssh_checks
     run_login_defs_checks
@@ -4441,6 +4673,7 @@ run_full_suite() {
     run_idempotence_checks
     run_pwquality_enforcement_checks
     run_firewall_checks
+    run_kernel_checks
     print_summary
 }
 

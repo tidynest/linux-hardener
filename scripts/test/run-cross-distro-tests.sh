@@ -274,7 +274,19 @@ nspawn_suite_booted() {
         return 1
     fi
 
+    # The mode signal the differential suite reads, and the only place it is
+    # ever set. It says "this run owns its network namespace, so /proc/sys/net
+    # is writable and the kernel oracle can ask a question"; the --pipe branch
+    # above deliberately does not set it, and the suite treats anything but the
+    # literal 1 as not booted, so the 11 net.ipv4 rows there are declared
+    # unaskable rather than measured against the host's own kernel.
+    #
+    # Set here rather than on the --setenv of the nspawn line above, because it
+    # is THIS process that becomes the suite. The container's PID 1 is a
+    # different process, and reaching the suite from its environment would
+    # depend on the manager passing it down to a transient unit.
     systemd-run --machine="$machine" --wait --pipe --quiet \
+        --setenv=HARDENER_DIFF_BOOTED=1 \
         /bin/bash "$INNER_SUITE" "${INNER_ARGS[@]}" || rc=$?
 
     machinectl terminate "$machine" > /dev/null 2>&1 || true
