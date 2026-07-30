@@ -8,6 +8,17 @@ use hardener_common::error::{HardeningError, Result};
 use hardener_core::{Change, ChangeType, context::Context};
 use tracing::{info, warn};
 
+/// The baseline rule that maps to ufw's default-policy switch rather than to
+/// an `ufw allow`-style rule.
+const DEFAULT_INBOUND_RULE: &str = "Drop all other inbound traffic by default";
+
+/// What ufw prints, while exiting 0, when asked to add a rule it already has.
+///
+/// The exit status is the same either way, so this string is the only thing
+/// that distinguishes an addition from a no-op, and reading it is what lets
+/// apply report an already-hardened host as needing no changes.
+const RULE_ALREADY_PRESENT: &str = "Skipping adding existing rule";
+
 /// UFW firewall backend for Ubuntu/Debian systems.
 pub struct UfwBackend;
 
@@ -84,6 +95,40 @@ impl UfwBackend {
         })
     }
 
+    /// Whether ufw's default incoming policy is already `deny`.
+    ///
+    /// This one rule has to be asked about beforehand, unlike the others.
+    /// `ufw default deny incoming` prints "Default incoming policy changed to
+    /// 'deny'" whether or not the policy moved, so its output cannot say
+    /// whether it changed anything. `ufw status verbose` states the policy in
+    /// one line: `Default: deny (incoming), allow (outgoing), disabled
+    /// (routed)`.
+    ///
+    /// A line that is absent, unparseable or unreadable all yield `false`, so
+    /// the policy is set and reported rather than skipped on a host whose
+    /// state cannot be seen. Doing the work is the safe direction here, and it
+    /// is the same fallback the firewalld and nftables backends take.
+    async fn default_incoming_is_deny(&self, ctx: &Context) -> bool {
+        match self.execute_ufw(ctx, &["status", "verbose"]).await {
+            Ok(output) => output
+                .lines()
+                .find_map(|line| line.trim().strip_prefix("Default:"))
+                .and_then(|policies| {
+                    policies
+                        .split(',')
+                        .find(|policy| policy.contains("(incoming)"))
+                })
+                .is_some_and(|policy| policy.trim().starts_with("deny")),
+            Err(e) => {
+                warn!(
+                    "Could not read ufw's default policies ({e}); treating the \
+                     incoming policy as not deny so the apply sets it"
+                );
+                false
+            }
+        }
+    }
+
     /// Build UFW command arguments from a Rule.
     ///
     /// Converts backend-agnostic Rule into UFW command syntax:
@@ -93,7 +138,7 @@ impl UfwBackend {
     /// `ufw add`-style rule; ufw's own default-policy switch is
     /// `ufw default deny incoming`.
     fn build_ufw_rule_args(&self, rule: &Rule) -> Vec<String> {
-        if rule.rule_description == "Drop all other inbound traffic by default" {
+        if rule.rule_description == DEFAULT_INBOUND_RULE {
             return vec![
                 "default".to_string(),
                 "deny".to_string(),
@@ -242,6 +287,14 @@ impl FirewallBackend for UfwBackend {
     async fn apply_rules(&self, ctx: &Context, rules: &[Rule]) -> Result<Vec<Change>> {
         let mut changes = Vec::new();
 
+        // Read the default incoming policy once, before writing anything.
+        // Every other rule reports its own outcome (see `RULE_ALREADY_PRESENT`)
+        // and this one does not, so it is the only state this backend has to
+        // ask for. Measured on the debian container 2026-07-30: a second apply
+        // printed the same three changes as the first, on a host the first had
+        // already hardened.
+        let default_already_deny = self.default_incoming_is_deny(ctx).await;
+
         for rule in rules {
             // ufw is stateful by default: it tracks connection state
             // implicitly, so there is no ufw command for "allow established
@@ -265,10 +318,39 @@ impl FirewallBackend for UfwBackend {
                 continue;
             }
 
+            // The default-policy switch is the one rule whose own output
+            // cannot say whether it changed anything, so it is asked about
+            // beforehand. See `default_incoming_is_deny`.
+            if rule.rule_description == DEFAULT_INBOUND_RULE && default_already_deny {
+                info!("ufw's default incoming policy is already deny");
+                changes.push(Change {
+                    change_description: format!(
+                        "{}: already in force (ufw's default incoming policy is deny)",
+                        rule.rule_description
+                    ),
+                    change_type: ChangeType::Skipped,
+                    change_success: true,
+                    change_error: None,
+                });
+                continue;
+            }
+
             let ufw_args = self.build_ufw_rule_args(rule);
 
             let args_refs: Vec<&str> = ufw_args.iter().map(|s| s.as_str()).collect();
             match self.execute_ufw(ctx, &args_refs).await {
+                Ok(output) if output.contains(RULE_ALREADY_PRESENT) => {
+                    info!("ufw rule already present: {}", rule.rule_description);
+                    changes.push(Change {
+                        change_description: format!(
+                            "Firewall rule already present: {}",
+                            rule.rule_description
+                        ),
+                        change_type: ChangeType::Skipped,
+                        change_success: true,
+                        change_error: None,
+                    });
+                }
                 Ok(_) => {
                     info!("Applied UFW rule: {}", rule.rule_description);
                     changes.push(Change {

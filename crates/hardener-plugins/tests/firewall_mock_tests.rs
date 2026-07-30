@@ -322,6 +322,23 @@ fn ufw_apply_executor(ssh_port: &str) -> MockExecutor {
         .with_command_exists("ufw", true)
         .with_command_exists("firewall-cmd", false)
         .with_command_exists("nft", false)
+        // This host's default incoming policy is still allow, so the
+        // baseline's default-deny rule has real work to do. Registering it
+        // matters: without an answer the probe fails, and the rule would then
+        // be applied for want of a reading rather than because the host needs
+        // it, which is a test passing through the fallback path instead of the
+        // one it means to exercise.
+        .with_command(
+            "ufw",
+            &["status", "verbose"],
+            CommandOutput {
+                stdout: "Status: active\nDefault: allow (incoming), allow (outgoing), \
+                         disabled (routed)\n"
+                    .to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
         .with_command(
             "systemctl",
             &["is-active", "ufw"],
@@ -1516,6 +1533,97 @@ async fn firewalld_records_a_no_op_for_a_port_and_a_target_already_in_force() {
         applied, 0,
         "an already-hardened firewalld zone needs no changes at all, and a count \
          above zero is what the renderer prints as 'N change(s) applied': {:?}",
+        changes
+    );
+}
+
+/// The debian container on a second apply, measured 2026-07-30 from
+/// `test-results/debian.log`: every baseline rule is already in force because
+/// the run before it put them there. ufw reports that itself, printing
+/// "Skipping adding existing rule" and exiting 0, and the default incoming
+/// policy is already deny, which `ufw status verbose` states in its Default
+/// line. The tool reported "3 change(s) applied" all the same.
+fn ufw_already_hardened_executor() -> MockExecutor {
+    let already_there = CommandOutput {
+        stdout: "Skipping adding existing rule\nSkipping adding existing rule (v6)\n".to_string(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    MockExecutor::new()
+        .with_command_exists("ufw", true)
+        .with_command_exists("firewall-cmd", false)
+        .with_command_exists("nft", false)
+        .with_command(
+            "ufw",
+            &["status", "verbose"],
+            CommandOutput {
+                stdout: "Status: active\nLogging: on (low)\nDefault: deny (incoming), \
+                         allow (outgoing), disabled (routed)\nNew profiles: skip\n\n\
+                         To                         Action      From\n\
+                         --                         ------      ----\n\
+                         22/tcp                     ALLOW IN    Anywhere\n"
+                    .to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "ufw",
+            &["allow", "from", "127.0.0.1/8"],
+            already_there.clone(),
+        )
+        .with_command(
+            "ufw",
+            &["allow", "to", "any", "port", "22", "proto", "tcp"],
+            already_there,
+        )
+        // Registered so a backend that still runs it produces a clean applied
+        // change rather than a spawn error: the defect is that it is reported,
+        // not that it fails. ufw prints this whether or not the policy moved.
+        .with_command(
+            "ufw",
+            &["default", "deny", "incoming"],
+            CommandOutput {
+                stdout: "Default incoming policy changed to 'deny'\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+}
+
+#[tokio::test]
+async fn ufw_records_a_no_op_for_rules_and_a_policy_already_in_force() {
+    use hardener_plugins::firewall::{FirewallBackend, ufw::UfwBackend};
+
+    let ctx = Context::with_executor(Arc::new(ufw_already_hardened_executor()));
+    let changes = UfwBackend::new()
+        .apply_rules(&ctx, &hardener_plugins::firewall::get_baseline_rules())
+        .await
+        .expect("apply_rules must not fail on an already-hardened host");
+
+    let claimed_rule = changes
+        .iter()
+        .any(|c| c.change_description.starts_with("Added firewall rule") && !c.is_skipped());
+    assert!(
+        !claimed_rule,
+        "ufw reported every baseline rule as already present, so nothing was added: {:?}",
+        changes
+    );
+
+    let claimed_policy = changes
+        .iter()
+        .any(|c| c.change_description.contains("Drop all other inbound") && !c.is_skipped());
+    assert!(
+        !claimed_policy,
+        "the default incoming policy was already deny, so nothing set it: {:?}",
+        changes
+    );
+
+    let applied = changes.iter().filter(|c| !c.is_skipped()).count();
+    assert_eq!(
+        applied, 0,
+        "an already-hardened ufw host needs no changes at all, and a count above \
+         zero is what the renderer prints as 'N change(s) applied': {:?}",
         changes
     );
 }

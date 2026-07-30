@@ -42,6 +42,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`hardener apply --plugin firewall-hardening` no longer reports adding ufw
+  rules that were already in force.** The ufw backend read nothing before
+  running `ufw allow`, and ufw exits 0 for a rule it already has, so every
+  apply recorded every baseline rule as newly added. On the Debian test
+  container the second apply printed the same "3 change(s) applied" as the
+  first, on a host the first had already hardened, while SSH, PAM and file
+  permissions in the same run all correctly reported needing no changes.
+  ufw was in fact saying so all along, printing "Skipping adding existing
+  rule" in output the backend discarded, and that is now read and recorded as
+  a skipped no-op. The default incoming policy is the one rule that cannot
+  report its own outcome, because `ufw default deny incoming` prints the same
+  line whether or not the policy moved, so it is read from `ufw status
+  verbose` before the run instead. Together with the firewalld fix below, all
+  three firewall backends now behave as the documented state-aware apply
+  describes; nftables already did. Nothing about which traffic is permitted
+  has changed. A host whose state cannot be read is treated as unhardened, so
+  its rules are applied and reported rather than skipped.
 - **`hardener apply --plugin firewall-hardening` no longer reports adding a
   firewalld port or setting a zone target that was already in place.** On
   Fedora, RHEL and openSUSE the backend ran `firewall-cmd --add-port` and
