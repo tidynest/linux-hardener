@@ -945,10 +945,12 @@ impl CheckpointManager {
         // A mode-0 row means "absent at capture", but a checkpoint written by a
         // version that could not read a path's metadata records an existing file
         // the same way, and upgrading does not rewrite rows already stored. An
-        // apply never creates any of these paths, so a row calling one absent
-        // while the host actually has it is an untrustworthy row rather than an
-        // instruction to delete. A path that is genuinely still absent needs no
-        // action at all, and must not be reported as a failure.
+        // apply creates none of these paths but /etc/sysctl.d, which the kernel
+        // plugin creates above its own checkpoint so that the capture records it
+        // present, so a row calling a path absent while the host actually has it
+        // is an untrustworthy row rather than an instruction to delete. A path
+        // that is genuinely still absent needs no action at all, and must not be
+        // reported as a failure.
         if matches!(action, FileRestoreAction::Removed) {
             return remove_or_refuse(executor, path, path_str).await;
         }

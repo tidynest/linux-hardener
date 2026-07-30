@@ -4,8 +4,8 @@
 
 use hardener_common::types::{PluginId, Severity};
 use hardener_core::{
-    Context, FileMetadata, MockExecutor, PluginConfig, PolicyException, SystemExecutor,
-    plugin::HardeningPlugin,
+    CommandOutput, Context, FileMetadata, MockExecutor, PluginConfig, PolicyException,
+    SystemExecutor, plugin::HardeningPlugin,
 };
 use hardener_plugins::KernelHardeningPlugin;
 use std::sync::Arc;
@@ -13,6 +13,9 @@ use std::sync::Arc;
 /// Creates a mock executor with secure kernel parameters.
 fn secure_kernel_executor() -> MockExecutor {
     MockExecutor::new()
+        // Nearly every host ships the sysctl drop-in directory; the ones that
+        // do not are covered by their own tests further down.
+        .with_directory("/etc/sysctl.d")
         // All parameters set to secure values
         .with_file("/proc/sys/kernel/randomize_va_space", "2")
         .with_file("/proc/sys/kernel/kptr_restrict", "2")
@@ -44,6 +47,7 @@ fn fully_secure_kernel_executor() -> MockExecutor {
 /// Creates a mock executor with insecure kernel parameters.
 fn insecure_kernel_executor() -> MockExecutor {
     MockExecutor::new()
+        .with_directory("/etc/sysctl.d")
         // ASLR disabled
         .with_file("/proc/sys/kernel/randomize_va_space", "0")
         // Kernel pointers exposed
@@ -70,6 +74,7 @@ fn insecure_kernel_executor() -> MockExecutor {
 /// Creates a mock executor with partial/mixed settings.
 fn partial_kernel_executor() -> MockExecutor {
     MockExecutor::new()
+        .with_directory("/etc/sysctl.d")
         // Some secure
         .with_file("/proc/sys/kernel/randomize_va_space", "2")
         .with_file("/proc/sys/kernel/dmesg_restrict", "1")
@@ -1129,5 +1134,238 @@ async fn kernel_scan_flags_loose_mode_reverse_path_filtering() {
             .iter()
             .map(|f| f.finding_id.as_str())
             .collect::<Vec<_>>()
+    );
+}
+
+// =============================================================================
+// The drop-in directory the persistent file needs
+// =============================================================================
+
+const SYSCTL_DIR: &str = "/etc/sysctl.d";
+const HARDENER_CONF: &str = "/etc/sysctl.d/99-hardener.conf";
+
+/// How many times the apply asked for the sysctl drop-in directory to exist.
+fn sysctl_mkdir_count(executor: &MockExecutor) -> usize {
+    executor
+        .log()
+        .commands_executed
+        .iter()
+        .filter(|(command, args)| {
+            command == "mkdir"
+                && args.contains(&"-p".to_string())
+                && args.contains(&SYSCTL_DIR.to_string())
+        })
+        .count()
+}
+
+/// Whether the apply wrote the file that carries the settings across a reboot.
+fn persisted_the_config(executor: &MockExecutor) -> bool {
+    executor
+        .log()
+        .files_written
+        .iter()
+        .any(|(path, _)| path.to_str() == Some(HARDENER_CONF))
+}
+
+fn command_output(stderr: &str, exit_code: i32) -> CommandOutput {
+    CommandOutput {
+        stdout: String::new(),
+        stderr: stderr.to_string(),
+        exit_code,
+    }
+}
+
+/// A host whose /etc/sysctl.d does not exist: on the RHEL family the directory
+/// belongs to systemd-udev, and a minimal install that never pulled that package
+/// in has no such directory. `write_file` lands its content through a temporary
+/// file in the target directory, so it cannot create a missing parent, and the
+/// persistence half of the apply failed on every run there.
+#[tokio::test]
+async fn kernel_apply_creates_the_sysctl_directory_when_it_is_absent() {
+    let executor = Arc::new(
+        fully_secure_kernel_executor()
+            .with_path_exists(SYSCTL_DIR, false)
+            .with_command("mkdir", &["-p", SYSCTL_DIR], command_output("", 0)),
+    );
+    let mut ctx = Context::with_executor(executor.clone());
+
+    let result = KernelHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("kernel apply should not error");
+
+    assert_eq!(
+        sysctl_mkdir_count(&executor),
+        1,
+        "an absent parent must be created, commands: {:?}",
+        executor.log().commands_executed
+    );
+    assert!(
+        persisted_the_config(&executor),
+        "the settings must still reach the persistent file, writes: {:?}",
+        executor.log().files_written
+    );
+    assert!(
+        result.apply_success,
+        "an apply that created the directory it needed succeeded, changes: {:?}",
+        result.apply_changes
+    );
+}
+
+/// A probe that cannot answer is not an answer. `path_exists` returns an error
+/// for a directory it could not determine, and reading that as "it is there"
+/// would skip the creation on exactly the host that needs it. `mkdir -p` on an
+/// existing directory does nothing, so attempting it costs nothing.
+#[tokio::test]
+async fn kernel_apply_creates_the_sysctl_directory_when_the_probe_cannot_answer() {
+    let executor = Arc::new(
+        fully_secure_kernel_executor()
+            .with_path_exists_error(SYSCTL_DIR)
+            .with_command("mkdir", &["-p", SYSCTL_DIR], command_output("", 0)),
+    );
+    let mut ctx = Context::with_executor(executor.clone());
+
+    KernelHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("kernel apply should not error");
+
+    assert_eq!(
+        sysctl_mkdir_count(&executor),
+        1,
+        "a probe that failed must be treated as may-be-missing, commands: {:?}",
+        executor.log().commands_executed
+    );
+}
+
+/// `execute_command` returns Ok for a command that ran and failed, so an
+/// unchecked exit code would let a failed mkdir be followed by a write that
+/// cannot land. The failure must be reported as a failed change carrying the
+/// reason, because "Failed to write file X" alone tells the operator nothing
+/// about the directory.
+#[tokio::test]
+async fn kernel_apply_reports_why_the_sysctl_directory_could_not_be_created() {
+    let executor = Arc::new(
+        fully_secure_kernel_executor()
+            .with_path_exists(SYSCTL_DIR, false)
+            .with_command(
+                "mkdir",
+                &["-p", SYSCTL_DIR],
+                command_output(
+                    "mkdir: cannot create directory '/etc/sysctl.d': Read-only file system\n",
+                    1,
+                ),
+            ),
+    );
+    let mut ctx = Context::with_executor(executor.clone());
+
+    let result = KernelHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("kernel apply should not error");
+
+    let failed = result
+        .apply_changes
+        .iter()
+        .find(|change| !change.change_success)
+        .expect("a failed mkdir must produce a failed change, not a silent success");
+    assert!(
+        failed
+            .change_error
+            .as_deref()
+            .is_some_and(|reason| reason.contains("Read-only file system")),
+        "the operator must be told why the directory could not be created, got: {:?}",
+        failed.change_error
+    );
+    assert!(
+        !result
+            .apply_changes
+            .iter()
+            .any(|change| change.change_success
+                && change
+                    .change_description
+                    .contains("persistent sysctl config")),
+        "no change may report the persistent config as created, changes: {:?}",
+        result.apply_changes
+    );
+    assert!(
+        !result.apply_success,
+        "an apply whose settings cannot survive a reboot has not succeeded"
+    );
+}
+
+/// The directory has to exist before the checkpoint, not merely before the
+/// write.
+///
+/// The checkpoint captures /etc/sysctl.d, and `hardener-state` stores an absent
+/// path with a zero mode, which a rollback reads as "remove this". A directory
+/// created after that capture therefore turns a clean rollback into a refusal:
+/// the path sits in `UNDELETABLE_ROLLBACK_PATHS`, whose branch refuses a path
+/// the checkpoint called absent and the host now has. Created before the
+/// capture, it is recorded present and the rollback restores it.
+///
+/// A run that writes nothing is the case that separates the two placements: a
+/// creation hung off the write cannot happen here, and one that runs ahead of
+/// the checkpoint still does.
+#[tokio::test]
+async fn kernel_apply_creates_the_sysctl_directory_even_when_it_writes_nothing() {
+    let executor = Arc::new(
+        fully_secure_kernel_executor()
+            .with_path_exists_error(SYSCTL_DIR)
+            .with_command("mkdir", &["-p", SYSCTL_DIR], command_output("", 0)),
+    );
+    let mut ctx = Context::with_executor(executor.clone());
+    let plugin = KernelHardeningPlugin::new();
+
+    // The first apply leaves the persistent file holding exactly what the
+    // second would write, so the second has nothing to write.
+    plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("the first apply should not error");
+    executor.clear_log();
+
+    let result = plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("the second apply should not error");
+
+    assert!(
+        result.apply_changes.iter().any(|change| change.is_skipped()
+            && change.change_description.contains("already up to date")),
+        "this test is only meaningful on a run that writes nothing, changes: {:?}",
+        result.apply_changes
+    );
+    assert_eq!(
+        sysctl_mkdir_count(&executor),
+        1,
+        "the directory must be ensured before the checkpoint, not before the write, \
+         commands: {:?}",
+        executor.log().commands_executed
+    );
+}
+
+/// The creation runs only where it is needed: an ordinary host, which ships the
+/// directory, must not gain a command it does not need.
+#[tokio::test]
+async fn kernel_apply_issues_no_mkdir_when_the_sysctl_directory_is_there() {
+    let executor = Arc::new(fully_secure_kernel_executor().with_directory(SYSCTL_DIR));
+    let mut ctx = Context::with_executor(executor.clone());
+
+    KernelHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("kernel apply should not error");
+
+    assert_eq!(
+        sysctl_mkdir_count(&executor),
+        0,
+        "a directory that is already there needs no creation, commands: {:?}",
+        executor.log().commands_executed
+    );
+    assert!(
+        persisted_the_config(&executor),
+        "the persistent file must still be written, writes: {:?}",
+        executor.log().files_written
     );
 }

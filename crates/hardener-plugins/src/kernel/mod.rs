@@ -52,7 +52,54 @@ impl KernelHardeningPlugin {
         let content = ctx.executor().read_file(Path::new(&path)).await?;
         Ok(content.trim().to_string())
     }
+
+    /// Creates the directory the persistent sysctl file lives in, returning the
+    /// reason the creation failed when it did.
+    ///
+    /// `write_file` cannot create a missing parent: it lands its content through
+    /// a temporary file in the target directory, so an absent directory fails
+    /// the write and says nothing about the cause. Nearly every distribution
+    /// ships /etc/sysctl.d, but on the RHEL family it belongs to systemd-udev,
+    /// and a minimal install that never pulled that package in has no such
+    /// directory, which cost those hosts the persistence half of every apply.
+    /// The creation runs only where the probe does not positively confirm the
+    /// directory is present; a probe that cannot answer is treated as "may be
+    /// missing", because `mkdir -p` on an existing directory does nothing.
+    ///
+    /// Called before the apply takes its checkpoint, not next to the write this
+    /// exists for: a directory created after the capture is recorded absent and
+    /// a rollback then refuses it. The call site carries the full reasoning.
+    async fn ensure_sysctl_dir(&self, ctx: &Context) -> Option<String> {
+        if matches!(
+            ctx.executor()
+                .path_exists(Path::new(SYSCTL_DROPIN_DIR))
+                .await,
+            Ok(true)
+        ) {
+            return None;
+        }
+
+        // `execute_command` returns Ok for a command that ran and failed, so an
+        // unchecked exit code would let a failed mkdir be followed by a write
+        // that cannot land.
+        match ctx
+            .executor()
+            .execute_command("mkdir", &["-p", SYSCTL_DROPIN_DIR])
+            .await
+        {
+            Ok(output) if output.success() => None,
+            Ok(output) => Some(format!(
+                "Failed to create {SYSCTL_DROPIN_DIR}: mkdir exited {} ({})",
+                output.exit_code,
+                output.stderr.trim(),
+            )),
+            Err(e) => Some(format!("Failed to create {SYSCTL_DROPIN_DIR}: {e}")),
+        }
+    }
 }
+
+/// The directory holding the persistent sysctl file this tool manages.
+const SYSCTL_DROPIN_DIR: &str = "/etc/sysctl.d";
 
 /// The strictness order of `fs.suid_dumpable`, weakest first. 1 dumps core
 /// from every setuid process, 2 dumps a core only root can read, and 0 refuses
@@ -867,11 +914,21 @@ impl HardeningPlugin for KernelHardeningPlugin {
         let mut apply_changes = Vec::new();
         let hardener_sysctl_path = Path::new("/etc/sysctl.d/99-hardener.conf");
 
+        // Ahead of the checkpoint rather than next to the write it exists for.
+        // The checkpoint captures SYSCTL_DROPIN_DIR, and an absent path is
+        // stored with a zero mode, which a rollback reads as "remove this". A
+        // directory created after that capture would turn a clean rollback into
+        // a refusal. Created first, the checkpoint records it present and a
+        // rollback restores it, leaving behind an empty standard directory.
+        // The reason travels to the write site, which is where a failure to
+        // create it is reported and where it stops the write.
+        let sysctl_dir_error = self.ensure_sysctl_dir(ctx).await;
+
         // Create checkpoint to capture sysctl config files before changes.
         // Include our hardener file if it exists.
         let sysctl_paths: Vec<&Path> = vec![
             Path::new("/etc/sysctl.conf"),
-            Path::new("/etc/sysctl.d"),
+            Path::new(SYSCTL_DROPIN_DIR),
             hardener_sysctl_path,
         ];
         let checkpoint_id =
@@ -996,12 +1053,19 @@ impl HardeningPlugin for KernelHardeningPlugin {
         // the desired settings.
         let existing_config = ctx.executor().read_file(hardener_sysctl_path).await.ok();
         if runtime_changed || existing_config.as_deref() != Some(sysctl_config_content.as_str()) {
-            match ctx
-                .executor()
-                .write_file(hardener_sysctl_path, &sysctl_config_content)
-                .await
-            {
-                Ok(_) => {
+            // A parent that could not be created is reported with its own
+            // reason rather than left to surface as an unexplained write
+            // failure.
+            let write_outcome = match sysctl_dir_error {
+                Some(reason) => Err(reason),
+                None => ctx
+                    .executor()
+                    .write_file(hardener_sysctl_path, &sysctl_config_content)
+                    .await
+                    .map_err(|e| e.to_string()),
+            };
+            match write_outcome {
+                Ok(()) => {
                     apply_changes.push(Change {
                         change_description: "Created persistent sysctl config".to_string(),
                         change_type: ChangeType::ConfigFile,
@@ -1015,7 +1079,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
                         change_description: "Failed to create persistent sysctl config".to_string(),
                         change_type: ChangeType::ConfigFile,
                         change_success: false,
-                        change_error: Some(e.to_string()),
+                        change_error: Some(e.clone()),
                     });
                     warn!("Failed to create {}: {}", hardener_sysctl_path.display(), e);
                 }

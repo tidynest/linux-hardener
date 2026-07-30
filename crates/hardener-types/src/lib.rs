@@ -768,6 +768,14 @@ pub enum FileRestoreAction {
 /// behind the very file the operator asked to be rolled back. Where the source
 /// cannot settle the question, the path stays deletable.
 ///
+/// `/etc/sysctl.d` is the one entry an apply can create, and it carries its own
+/// reasoning: the kernel plugin creates it above its own checkpoint, so the
+/// capture records it present and no mode-0 row is ever written for it. The
+/// entry stays as a backstop for checkpoints taken before that ordering
+/// existed, where the host has since gained the directory and deleting one the
+/// distribution shares between packages would be far worse than leaving an
+/// empty one behind.
+///
 /// Exact matches only. `/etc/sudoers.d` the directory is protected; a drop-in
 /// file inside it that an apply created stays removable.
 pub const UNDELETABLE_ROLLBACK_PATHS: &[&str] = &[
@@ -790,8 +798,10 @@ pub const UNDELETABLE_ROLLBACK_PATHS: &[&str] = &[
     "/etc/nftables.conf",
     "/etc/selinux/config",
     // Directories the plugins write files into, or capture and never touch.
-    // Writes go through `write_file`, which cannot create a missing parent, and
-    // no apply runs `mkdir` for any of these.
+    // `write_file` cannot create a missing parent, so a plugin whose target
+    // directory may be absent creates it first: the kernel apply runs `mkdir`
+    // for /etc/sysctl.d, ahead of its checkpoint, and no other apply creates
+    // any of these.
     "/etc/sysctl.d",
     "/etc/pam.d",
     "/etc/security",
