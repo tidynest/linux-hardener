@@ -370,7 +370,6 @@ pub trait FirewallBackend: Send + Sync {
     async fn detect(&self, ctx: &Context) -> Result<bool>;
     async fn is_enabled(&self, ctx: &Context) -> Result<()>;
     async fn enable(&self, ctx: &Context) -> Result<()>;
-    async fn list_rules(&self, ctx: &Context) -> Result<Vec<Rule>>;
     async fn apply_rules(&self, ctx: &Context, rules: &[Rule]) -> Result<Vec<Change>>;
     fn get_default_rules(&self) -> Vec<Rule>;
 }

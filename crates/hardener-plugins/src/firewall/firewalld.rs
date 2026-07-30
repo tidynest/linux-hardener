@@ -78,9 +78,9 @@ impl FirewalldBackend {
     ///
     /// The permanent layer is the one [`FirewalldBackend::apply_rules`] writes
     /// into, so it is the only layer that can say whether an `--add-port`
-    /// would change anything. Reading the runtime layer instead, which
-    /// [`FirewalldBackend::list_rules`] does, would disagree with it for as
-    /// long as a permanent change is pending a reload.
+    /// would change anything. Omitting `--permanent` here would read the
+    /// runtime layer instead, which disagrees with the permanent one for as
+    /// long as a change is pending a reload.
     ///
     /// A read that fails is treated as an empty list, so the port is added and
     /// reported rather than skipped. Doing the work is the safe direction when
@@ -194,46 +194,6 @@ impl FirewallBackend for FirewalldBackend {
 
         info!("Firewalld enabled successfully");
         Ok(())
-    }
-
-    async fn list_rules(&self, ctx: &Context) -> Result<Vec<Rule>> {
-        let zone = self.get_default_zone(ctx).await?;
-        let mut rules = Vec::new();
-
-        // List services allowed in the zone
-        let service_output = self
-            .execute_firewall_cmd(ctx, &["--zone", &zone, "--list-services"])
-            .await?;
-
-        for service in service_output.split_whitespace() {
-            rules.push(Rule {
-                rule_description: format!("Allow {} service", service),
-                rule_protocol: "tcp".to_string(), // Services typically use TCP
-                rule_port: service.to_string(),
-                rule_source: "any".to_string(),
-                rule_action: "accept".to_string(),
-            });
-        }
-
-        // List ports allowed in the zone
-        let ports_output = self
-            .execute_firewall_cmd(ctx, &["--zone", &zone, "--list-ports"])
-            .await?;
-
-        for port in ports_output.split_whitespace() {
-            let parts: Vec<&str> = port.split('/').collect();
-            if parts.len() == 2 {
-                rules.push(Rule {
-                    rule_description: format!("Allow port {}", port,),
-                    rule_protocol: parts[1].to_string(),
-                    rule_port: parts[0].to_string(),
-                    rule_source: "any".to_string(),
-                    rule_action: "accept".to_string(),
-                });
-            }
-        }
-
-        Ok(rules)
     }
 
     async fn apply_rules(&self, ctx: &Context, rules: &[Rule]) -> Result<Vec<Change>> {

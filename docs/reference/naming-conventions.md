@@ -1,7 +1,7 @@
 # Naming Conventions Reference
 
 **Author**: Eric Jingryd
-**Last Updated**: 2026-07-27
+**Last Updated**: 2026-07-30
 **Purpose**: Complete and authoritative naming standards for all identifiers in the project
 
 ---
@@ -586,7 +586,6 @@ fn verify_signature(data: &[u8], signature: &[u8]) -> bool { }
 // ✅ GOOD (Domain-specific helpers):
 fn execute_firewall_cmd(args: &[&str]) -> Result<String> { }
 fn execute_apt_command(args: &[&str]) -> Result<String> { }
-fn parse_nft_rule_line(line: &str) -> Option<Rule> { }
 fn build_nft_rule_args(rule: &Rule) -> Vec<String> { }
 fn parse_ssh_directive(content: &str, directive_name: &str) -> Option<String> { }
 fn get_default_zone() -> Result<String> { }
@@ -1255,7 +1254,6 @@ impl FirewallBackend for FirewalldBackend {
     fn detect(&self) -> Result<bool> { }
     fn is_enabled(&self) -> Result<()> { }
     fn enable(&self) -> Result<()> { }
-    fn list_rules(&self) -> Result<Vec<Rule>> { }
     fn apply_rules(&self, rules: &[Rule]) -> Result<Vec<Change>> { }
     fn get_default_rules(&self) -> Vec<Rule> { }
 }
@@ -1263,7 +1261,6 @@ impl FirewallBackend for FirewalldBackend {
 // Helper functions:
 fn execute_firewall_cmd(args: &[&str]) -> Result<String> { }
 fn get_default_zone() -> Result<String> { }
-fn parse_nft_rule_line(line: &str) -> Option<Rule> { }
 fn build_nft_rule_args(rule: &Rule) -> Vec<String> { }
 fn get_baseline_rules() -> Vec<Rule> { }
 ```
@@ -1625,7 +1622,7 @@ When naming any identifier in this project, verify:
 
 ---
 
-**Last Updated**: 2026-07-27
+**Last Updated**: 2026-07-30
 
 ### 2025-12-05 (GUI Styling)
 

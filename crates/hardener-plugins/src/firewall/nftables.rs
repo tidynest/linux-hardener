@@ -49,58 +49,6 @@ impl NftablesBackend {
         Ok(output.stdout)
     }
 
-    /// Parses a single nftables rule line into a Rule.
-    ///
-    /// Example formats:
-    /// - "tcp dport 22 accept"
-    /// - "ip addr 192.168.1.0/24 tcp dport 80 accept"
-    /// - "ct state established,related accept"
-    fn parse_nft_rule_line(&self, line: &str) -> Option<Rule> {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-
-        if parts.is_empty() {
-            return None;
-        }
-
-        let mut protocol = "all".to_string();
-        let mut port = "any".to_string();
-        let mut source = "any".to_string();
-        let mut action = "drop".to_string();
-
-        // Parse action (last element is usually accept/drop/reject)
-        if let Some(last) = parts.last() {
-            action = match *last {
-                "accept" => "accept".to_string(),
-                "drop" => "drop".to_string(),
-                "reject" => "reject".to_string(),
-                _ => action,
-            };
-        }
-
-        // Parse protocol and port
-        for i in 0..parts.len() {
-            if parts[i] == "tcp" || parts[i] == "udp" {
-                protocol = parts[i].to_string();
-            }
-
-            if parts[i] == "dport" && i + 1 < parts.len() {
-                port = parts[i + 1].to_string();
-            }
-
-            if parts[i] == "saddr" && i + 1 < parts.len() {
-                source = parts[i + 1].to_string();
-            }
-        }
-
-        Some(Rule {
-            rule_description: format!("{} {} from {}", action, port, source),
-            rule_protocol: protocol,
-            rule_port: port,
-            rule_source: source,
-            rule_action: action,
-        })
-    }
-
     /// Build nftables command arguments from a Rule.
     ///
     /// Converts backend-agnostic Rule into nft command syntax:
@@ -331,40 +279,6 @@ impl FirewallBackend for NftablesBackend {
 
         info!("Nftables firewall enabled successfully");
         Ok(())
-    }
-
-    async fn list_rules(&self, ctx: &Context) -> Result<Vec<Rule>> {
-        let output = self.execute_nft(ctx, &["list", "ruleset"]).await?;
-        let mut rules = Vec::new();
-
-        // Parse nftables output format:
-        // table inet filter {
-        //     chain input {
-        //         tcp dport 22 accept
-        //         ip addr 192.168.1.0/24 tcp dport 80 accept
-        //     }
-        // }
-        for line in output.lines() {
-            let trimmed = line.trim();
-
-            // Skip empty lines, comments, and structural lines
-            if trimmed.is_empty()
-                || trimmed.starts_with('#')
-                || trimmed.starts_with("table")
-                || trimmed.starts_with("chain")
-                || trimmed.starts_with('{')
-                || trimmed.starts_with('}')
-            {
-                continue;
-            }
-
-            // Parse rule line (simplified parsing for common cases)
-            if let Some(rule) = self.parse_nft_rule_line(trimmed) {
-                rules.push(rule);
-            }
-        }
-
-        Ok(rules)
     }
 
     async fn apply_rules(&self, ctx: &Context, rules: &[Rule]) -> Result<Vec<Change>> {

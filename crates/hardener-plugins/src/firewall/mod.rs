@@ -62,11 +62,6 @@ pub trait FirewallBackend: Send + Sync {
     /// Enables and starts the firewall service.
     async fn enable(&self, ctx: &Context) -> Result<()>;
 
-    /// Lists current firewall rules in a backend-agnostic format.
-    ///
-    /// This converts the backend's rule format into the unified Rule structure.
-    async fn list_rules(&self, ctx: &Context) -> Result<Vec<Rule>>;
-
     /// Applies a set of firewall rules.
     ///
     /// # Arguments

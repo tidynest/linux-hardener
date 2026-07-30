@@ -52,49 +52,6 @@ impl UfwBackend {
         Ok(output.stdout)
     }
 
-    /// Parses a single UFW status line into a Rule.
-    ///
-    /// UFW format: "22/tcp     Allow     Anywhere"
-    fn parse_ufw_rule_line(&self, line: &str) -> Option<Rule> {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-
-        if parts.len() < 3 {
-            return None;
-        }
-
-        // First part is port/protocol (e.g., "22/tcp" or "80").
-        let (port, protocol) = if parts[0].contains('/') {
-            let split: Vec<&str> = parts[0].split('/').collect();
-            (split[0].to_string(), split[1].to_string())
-        } else {
-            (parts[0].to_string(), "any".to_string())
-        };
-
-        // Second part is action (ALLOW, DENY, REJECT).
-        let action = match parts[1].to_uppercase().as_str() {
-            "ALLOW" => "accept",
-            "DENY" => "drop",
-            "REJECT" => "reject",
-            _ => "drop",
-        }
-        .to_string();
-
-        // Third part is source (Anywhere = any).
-        let source = if parts[2] == "Anywhere" {
-            "any".to_string()
-        } else {
-            parts[2].to_string()
-        };
-
-        Some(Rule {
-            rule_description: format!("{} {} from {}", action, port, source,),
-            rule_protocol: protocol,
-            rule_port: port,
-            rule_source: source,
-            rule_action: action,
-        })
-    }
-
     /// Whether ufw's default incoming policy is already `deny`.
     ///
     /// This one rule has to be asked about beforehand, unlike the others.
@@ -255,33 +212,6 @@ impl FirewallBackend for UfwBackend {
                 "Failed to enable UFW firewall".to_string(),
             ))
         }
-    }
-
-    async fn list_rules(&self, ctx: &Context) -> Result<Vec<Rule>> {
-        let output = self.execute_ufw(ctx, &["status"]).await?;
-        let mut rules = Vec::new();
-
-        // Skip header, parse rule line.
-        let mut in_rules_section = false;
-
-        for line in output.lines() {
-            // Rules start after the "---" separator line.
-            if line.starts_with("--") {
-                in_rules_section = true;
-                continue;
-            }
-
-            if !in_rules_section || line.trim().is_empty() {
-                continue;
-            }
-
-            // Parse rule line: "22/tcp     Allow     Anywhere"
-            if let Some(rule) = self.parse_ufw_rule_line(line) {
-                rules.push(rule);
-            }
-        }
-
-        Ok(rules)
     }
 
     async fn apply_rules(&self, ctx: &Context, rules: &[Rule]) -> Result<Vec<Change>> {
