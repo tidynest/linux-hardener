@@ -529,9 +529,34 @@ require_absent_probe_user() {
 # Remove the probe user and confirm it is gone. userdel's own status is not
 # enough: it reports 12 when the account went but the home directory stayed.
 # A survivor is fatal, because every later run then aborts at the guard above.
+#
+# The logind session has to go first, and only a BOOTED container has one. The
+# umask probe runs `su - probe`, which under a running systemd opens a login
+# session and starts `user@UID.service`; userdel then refuses to remove an
+# account that still owns processes, and every later run aborts at the guard.
+# Measured 2026-07-30: this killed the differential suite on debian, fedora,
+# rhel and openSUSE the first time it ran under --booted, before a single check
+# had executed. Both calls are best-effort because neither binary exists in an
+# unbooted container, where there is no session to end and userdel simply works.
 remove_probe_user() {
-    userdel -r "$DIFF_PROBE_USER" >/dev/null 2>&1 || true
-    if id "$DIFF_PROBE_USER" >/dev/null 2>&1; then
+    if command -v loginctl > /dev/null 2>&1; then
+        loginctl terminate-user "$DIFF_PROBE_USER" > /dev/null 2>&1 || true
+        # logind tears the session down asynchronously, so a userdel issued in
+        # the same breath still races it.
+        local waited=0
+        while (( waited < 10 )) && pgrep -u "$DIFF_PROBE_USER" > /dev/null 2>&1; do
+            sleep 1
+            waited=$((waited + 1))
+        done
+    fi
+    userdel -r "$DIFF_PROBE_USER" > /dev/null 2>&1 || true
+    if id "$DIFF_PROBE_USER" > /dev/null 2>&1; then
+        # -f removes an account that still owns processes. Reached only when the
+        # wait above timed out, and safe here in a way it would not be on a real
+        # host: the container is recreated before every measurement.
+        userdel -f -r "$DIFF_PROBE_USER" > /dev/null 2>&1 || true
+    fi
+    if id "$DIFF_PROBE_USER" > /dev/null 2>&1; then
         echo "FATAL: probe user '$DIFF_PROBE_USER' survived cleanup; remove it by hand" >&2
         return 1
     fi
