@@ -1253,6 +1253,69 @@ run_pwquality_enforcement_checks() {
     fi
 }
 
+# === Kernel parameters the running kernel enforces ===
+#
+# The kernel parameters this suite can ask about, and the direction each
+# comparison has.
+#
+# Read `sysctl -n`, which is the parameter's real consumer, never the file the
+# tool wrote: a reader and a writer sharing one mistake agree with each other
+# and disagree with Linux.
+#
+# The direction is not decoration. Every row mirrors the Strictness the plugin
+# declares in crates/hardener-plugins/src/kernel/mod.rs, and an equality
+# comparison would report a false failure on any host already stricter than the
+# target: tcp_syncookies 2 sends cookies unconditionally rather than under
+# pressure, and a host at 2 is ahead of the target of 1, not broken.
+#
+# rp_filter is the sharp case, and it is sharp in the opposite direction to the
+# arithmetic. 0 is off, 2 is loose mode, which accepts a packet whose source is
+# reachable through any interface, and 1 is strict mode, which requires the
+# interface it arrived on. The larger number is therefore the weaker setting and
+# no numeric direction can express that at all, which is why the row carries the
+# value space itself. The order below is RP_FILTER_ORDER from the plugin,
+# copied rather than restated.
+#
+#   at-least  the reading must be at least the target
+#   at-most   the reading must be at most the target
+#   ranked    a listed value space, weakest first, compared by position
+KERNEL_CHECKS=(
+    "net.ipv4.conf.all.rp_filter|1|ranked:0,2,1"
+    "net.ipv4.conf.default.rp_filter|1|ranked:0,2,1"
+    "net.ipv4.tcp_syncookies|1|at-least"
+    "net.ipv4.conf.all.log_martians|1|at-least"
+    "net.ipv4.conf.default.log_martians|1|at-least"
+    "net.ipv4.conf.all.accept_source_route|0|at-most"
+    "net.ipv4.conf.default.accept_source_route|0|at-most"
+    "net.ipv4.conf.all.accept_redirects|0|at-most"
+    "net.ipv4.conf.default.accept_redirects|0|at-most"
+    "net.ipv4.conf.all.secure_redirects|0|at-most"
+    "net.ipv4.conf.default.secure_redirects|0|at-most"
+)
+
+# The parameters this fixture cannot be asked about, with the reason each is
+# out of reach. Declared, never inferred: see record_unaskable.
+#
+# Measured 2026-07-29 and 2026-07-30, under --pipe AND under --boot: nspawn
+# mounts /proc/sys read-only and it is the HOST's, so these read the host's
+# values and a write is refused with
+# `sysctl: permission denied on key "kernel.kptr_restrict"`. Only /proc/sys/net
+# is remounted read-write, and only for a container holding its own network
+# namespace, which is why the table above is entirely net.ipv4.
+#
+# The two tables together are the plugin's whole KERNEL_PARAMS list: the 11 rows
+# above plus the 7 below are the 18 parameters kernel/mod.rs manages, and both
+# sizes are pinned so neither can shrink without the other being noticed.
+KERNEL_UNASKABLE=(
+    "kernel.randomize_va_space|/proc/sys is the host's and read-only in a container"
+    "kernel.kptr_restrict|/proc/sys is the host's and read-only in a container"
+    "kernel.dmesg_restrict|/proc/sys is the host's and read-only in a container"
+    "kernel.yama.ptrace_scope|/proc/sys is the host's and read-only in a container"
+    "fs.suid_dumpable|/proc/sys is the host's and read-only in a container"
+    "fs.protected_hardlinks|/proc/sys is the host's and read-only in a container"
+    "fs.protected_symlinks|/proc/sys is the host's and read-only in a container"
+)
+
 # === Permission modes actually on disk ===
 #
 # The oracle is the filesystem, asked through `stat -c %a`, which is the only
@@ -1711,6 +1774,12 @@ DIFF_PLUGINS_EXPECTED=4
 PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED=2
 PERMISSION_CHECKS_EXPECTED=9
 FIREWALL_CHECKS_EXPECTED=2
+KERNEL_CHECKS_EXPECTED=11
+# Pinned for the same reason as every table above, and one more that is specific
+# to this pair: the failure mode here is a red row being "fixed" by moving it
+# from KERNEL_CHECKS into KERNEL_UNASKABLE. Both sizes are pinned, so that move
+# fails the guard twice rather than passing quietly.
+KERNEL_UNASKABLE_EXPECTED=7
 
 require_check_tables() {
     local entry name got want refused=0
@@ -1723,7 +1792,9 @@ require_check_tables() {
         "DIFF_PLUGINS ${#DIFF_PLUGINS[@]} $DIFF_PLUGINS_EXPECTED" \
         "PWQUALITY_ENFORCEMENT_CHECKS ${#PWQUALITY_ENFORCEMENT_CHECKS[@]} $PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED" \
         "PERMISSION_CHECKS ${#PERMISSION_CHECKS[@]} $PERMISSION_CHECKS_EXPECTED" \
-        "FIREWALL_CHECKS ${#FIREWALL_CHECKS[@]} $FIREWALL_CHECKS_EXPECTED"; do
+        "FIREWALL_CHECKS ${#FIREWALL_CHECKS[@]} $FIREWALL_CHECKS_EXPECTED" \
+        "KERNEL_CHECKS ${#KERNEL_CHECKS[@]} $KERNEL_CHECKS_EXPECTED" \
+        "KERNEL_UNASKABLE ${#KERNEL_UNASKABLE[@]} $KERNEL_UNASKABLE_EXPECTED"; do
         read -r name got want <<<"$entry"
         if [[ "$got" != "$want" ]]; then
             echo "FATAL: $name holds $got, expected $want." >&2
@@ -3075,6 +3146,14 @@ Number of days of warning before password expires	: 11"
     check_eq "${#DIFF_PLUGINS[@]}" "4" "four plugins are compared"
     check_eq "${#SEEDED_SSH_CHECKS[@]}" "2" "the seeded table holds two directives"
     check_eq "${#PERMISSION_CHECKS[@]}" "9" "the permissions table holds nine paths"
+    check_eq "${#KERNEL_CHECKS[@]}" "11" \
+        "the kernel table holds every net.ipv4 parameter the plugin manages"
+    check_eq "${#KERNEL_UNASKABLE[@]}" "7" \
+        "and names every parameter a container cannot be asked about"
+    check_eq "$(printf '%s\n' "${KERNEL_CHECKS[@]}" | grep -c '^net\.ipv4\.')" "11" \
+        "every askable kernel row is a net.ipv4 parameter, which is the only family a container namespace exposes"
+    check_eq "$(printf '%s\n' "${KERNEL_UNASKABLE[@]}" | grep -cE '^(kernel|fs)\.')" "7" \
+        "and every unaskable row is a kernel. or fs. parameter"
     local pinned_total
     pinned_total="$(expected_check_total)"
     check_eq "$pinned_total" "55" \
