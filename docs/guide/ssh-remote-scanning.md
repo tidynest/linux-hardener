@@ -43,28 +43,25 @@ hardener --ssh admin@192.168.1.100 --ssh-key ~/.ssh/id_ed25519 scan
 
 # Generate a compliance report from remote host
 hardener --ssh root@server.example.com report --framework cis --report-format pdf
+```
 
-CLI Reference
+## CLI Reference
 
-SSH Connection Options
+### SSH Connection Options
 
 | FLAG               | DESCRIPTION                                        | DEFAULT |
 |--------------------|----------------------------------------------------|---------|
 | --ssh HOST         | Remote host to connect to (user@host or just host) |    -    |
-|--------------------|----------------------------------------------------|---------|
 | --port PORT        | SSH port number                                    |   22    |
-|--------------------|----------------------------------------------------|---------|
 | --ssh-key FILE     | Path to SSH private key                            |    -    |
-|--------------------|----------------------------------------------------|---------| 
 | --ssh-timeout SECS | Connection timeout in seconds                      |   30    |
-|--------------------|----------------------------------------------------|---------|
 | --ssh-no-verify    | Skip host key verification (insecure)              |  false  |
-|--------------------|----------------------------------------------------|---------|
 
-Host Format
+### Host Format
 
 The --ssh flag accepts these formats:
 
+```bash
 # With username
 --ssh admin@server.example.com
 
@@ -73,13 +70,15 @@ The --ssh flag accepts these formats:
 
 # With IP address
 --ssh root@192.168.1.100
+```
 
-Authentication Methods
+## Authentication Methods
 
-SSH Agent (Recommended)
+### SSH Agent (Recommended)
 
 The most convenient method. Add your key to the agent:
 
+```bash
 # Start agent if needed
 eval $(ssh-agent)
 
@@ -88,28 +87,35 @@ ssh-add ~/.ssh/id_ed25519
 
 # Now scan without specifying key
 hardener --ssh user@host scan
+```
 
-Key File
+### Key File
 
 Specify the private key directly:
 
+```bash
 hardener --ssh user@host --ssh-key ~/.ssh/id_ed25519 scan
+```
 
-SSH Config Integration
+### SSH Config Integration
 
 The tool respects your ~/.ssh/config. If you have:
 
+```
 Host myserver
     HostName server.example.com
     User admin
     IdentityFile ~/.ssh/server_key
     Port 2222
+```
 
 You can simply use:
 
+```bash
 hardener --ssh myserver scan
+```
 
-Password Authentication
+### Password Authentication
 
 Warning: Password authentication is less secure. Use key-based authentication when
 possible.
@@ -118,20 +124,25 @@ possible.
 > key-based and SSH agent authentication only. The `HARDENER_SSH_PASSWORD` environment
 > variable is reserved for future use but has no effect at this time.
 
+```bash
 HARDENER_SSH_PASSWORD=secret hardener --ssh user@host scan
+```
 
-Common Use Cases
+## Common Use Cases
 
-Scan a Single Host
+### Scan a Single Host
 
+```bash
 # Full scan with all plugins
 hardener --ssh root@webserver scan
 
 # Scan specific plugins only (short names or full IDs work)
 hardener --ssh root@webserver scan --plugin kernel --plugin ssh --plugin firewall
+```
 
-Generate Compliance Report
+### Generate Compliance Report
 
+```bash
 # CIS Benchmark report in PDF format
 hardener --ssh root@server report --framework cis --report-format pdf --output server-cis.pdf
 
@@ -140,9 +151,11 @@ hardener --ssh root@server report --framework nist --report-format json --output
 
 # Multiple frameworks
 hardener --ssh root@server report --framework cis,stig --report-format html
+```
 
-Apply Hardening Remotely
+### Apply Hardening Remotely
 
+```bash
 # Apply all recommended hardening
 hardener --ssh root@server apply --all
 
@@ -151,6 +164,7 @@ hardener --ssh root@server apply --plugin kernel --plugin ssh
 
 # Dry-run to see what would change
 hardener --ssh root@server apply --all --dry-run
+```
 
 The privilege gate probes the *executor* session (`id -u` / `sudo -n`), not the
 local process, so `--ssh root@host apply` works when the remote session is
@@ -161,15 +175,17 @@ is only tightened to `prohibit-password` (key-based root login still works, so t
 session is not severed). The scan keeps recommending `no`, so a rescan honestly
 reports the residual gap - reaching `no` is a deliberate console step.
 
-Rollback Changes
+### Rollback Changes
 
+```bash
 # List available checkpoints
 hardener --ssh root@server checkpoint list
 
 # Rollback to a specific checkpoint
 hardener --ssh root@server rollback abc123
+```
 
-Batch Scanning Multiple Hosts
+## Batch Scanning Multiple Hosts
 
 The `hardener batch scan` command scans many hosts in a single run, connecting to
 them concurrently and printing a per-host section (each under a coloured host
@@ -177,18 +193,21 @@ header) followed by a fleet rollup. This replaces the older shell-loop pattern
 with bounded parallelism and CI-friendly exit codes. A `--output FILE` copy is
 written colour-free (ANSI escapes stripped).
 
-Host Inventory
+### Host Inventory
 
 Hosts are read from the inventory file:
 
+```
 ~/.config/linux-hardener/hosts.toml
+```
 
 This file is shared with the desktop GUI: hosts you add through the GUI's host
 list appear here, and entries you hand-edit appear in the GUI. You can also scan
 ad-hoc hosts that are not in the inventory with the --ssh flag.
 
-Selecting Hosts
+### Selecting Hosts
 
+```bash
 # Scan every host in the inventory
 hardener batch scan --all
 
@@ -207,11 +226,12 @@ hardener --format json batch scan --all
 
 # Raise the parallelism (default is 8 concurrent hosts)
 hardener batch scan --all --concurrency 16
+```
 
 The --all and --host flags are mutually exclusive. Output honours the global
 --format (text or json) and --quiet flags.
 
-Exit Codes
+### Exit Codes
 
 `batch scan` returns a tiered exit code so it can gate CI pipelines:
 
@@ -222,14 +242,14 @@ Exit Codes
 |  2   | At least one host errored/was unreachable, or a usage error    |
 |      | (no hosts selected, unknown --host name)                       |
 
-Planned Follow-ups
+### Planned Follow-ups
 
 The current release covers concurrent fleet scanning with history persistence,
 per-host trend tracking, regression alerts, a read-only desktop Hosts scan view with
 compliance-score columns, and a Fleet Apply page for applying/rolling back
 hardening across saved hosts over SSH.
 
-Desktop Hosts Screen
+## Desktop Hosts Screen
 
 The desktop application's **Hosts** screen (under the Fleet group in the left
 sidebar, routed at `/fleet`) lets you scan multiple saved inventory hosts (and
@@ -267,7 +287,9 @@ from it. Mutating fleet operations live on the separate Fleet **Apply** page.
 
 Fleet scanning reads saved hosts from the shared inventory file:
 
+```
 ~/.config/linux-hardener/hosts.toml
+```
 
 Hosts added via the Hosts screen's **Add Host** form appear in fleet selections
 immediately. Ad-hoc hosts that are not in the inventory can be entered directly in
@@ -281,11 +303,13 @@ space or comma in the hostname, a leading dash) are rejected at entry.
   scores inline per host but does not generate a report file
 - Machine-readable JSON, `--output FILE` export, and `--concurrency` tuning
 
-Troubleshooting
+## Troubleshooting
 
-Connection Refused
+### Connection Refused
 
+```
 Error: Connection refused (os error 111)
+```
 
 Causes:
 - SSH server not running on remote host
@@ -297,9 +321,11 @@ Solutions:
 - Check firewall rules on remote host
 - Use --port if SSH runs on non-standard port
 
-Permission Denied
+### Permission Denied
 
+```
 Error: Permission denied (publickey,password)
+```
 
 Causes:
 - Wrong username
@@ -311,9 +337,11 @@ Solutions:
 - Add public key to remote ~/.ssh/authorized_keys
 - Run ssh-add to load your key
 
-Host Key Verification Failed
+### Host Key Verification Failed
 
+```
 Error: Host key verification failed
+```
 
 Causes:
 - First connection to this host
@@ -324,9 +352,11 @@ Solutions:
 - If key legitimately changed: remove old key from ~/.ssh/known_hosts
 - For testing only: --ssh-no-verify (not recommended for production)
 
-Command Not Found on Remote
+### Command Not Found on Remote
 
+```
 Error: systemctl: command not found
+```
 
 Causes:
 - Remote host missing required utilities
@@ -336,9 +366,11 @@ Solutions:
 - Install missing packages on remote host
 - Ensure remote user has proper PATH
 
-Timeout Issues
+### Timeout Issues
 
+```
 Error: Connection timed out
+```
 
 Causes:
 - Network connectivity issues
@@ -350,41 +382,50 @@ Solutions:
 - Increase timeout: --ssh-timeout 60
 - Check intermediate firewalls
 
-Security Considerations
+## Security Considerations
 
-Always Use Key-Based Authentication
+### Always Use Key-Based Authentication
 
 Password authentication is vulnerable to brute-force attacks. Use Ed25519 or RSA
 keys:
 
+```bash
 # Generate a secure key
 ssh-keygen -t ed25519 -C "hardener@$(hostname)"
+```
 
-Host Key Verification
+### Host Key Verification
 
 Never use --ssh-no-verify in production. This flag disables host key checking,
 making you vulnerable to man-in-the-middle attacks.
 
 If you must use it for initial testing:
+
+```bash
 # Only for testing new infrastructure!
 hardener --ssh root@newhost --ssh-no-verify scan
+```
 
-Sudo Configuration
+### Sudo Configuration
 
 For apply/rollback operations, the remote user needs sudo access. Configure
 passwordless sudo for specific commands if desired:
 
+```
 # /etc/sudoers.d/hardener
 admin ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /usr/bin/tee, /usr/sbin/sysctl
+```
 
-Audit Trail
+### Audit Trail
 
 All remote operations are logged locally. Check the audit log for a record of what
 was changed:
 
+```bash
 hardener history list
+```
 
-Limitations
+## Limitations
 
 Current limitations of SSH remote scanning:
 
@@ -392,15 +433,29 @@ Current limitations of SSH remote scanning:
 |---------------------------------|--------------------------------------------------------------|
 | No jump host support            | Cannot use bastion/jump hosts (yet)                          |
 | Local checkpoints               | Checkpoint data stored on local machine                      |
+| Vendor-layer permissions        | On a layering host, scan reports permission findings apply cannot fix |
+
+The last one needs explaining, because a run looks inconsistent with itself.
+Where a remote host keeps its packaged configuration under `/usr/etc` (openSUSE,
+and Fedora is moving the same way), a critical file can be absent from `/etc`
+while the copy in force sits in the vendor layer. The scan assesses that copy and
+reports a violating mode, naming the vendor file, but this tool never writes a
+package-owned file, because the next package update on the remote host would
+revert it. So `apply` makes no change for that path and `apply --dry-run`
+previews none either, which is by design rather than a failure to connect or a
+privilege problem. The finding carries an `install` command that copies the file
+into `/etc` at the required mode, and it has to be run on the remote host; the
+[troubleshooting guide](troubleshooting.md#scan-reports-a-permissions-finding-under-usretc-and-apply-changes-nothing) shows the
+worked example.
 
 Parallel multi-host scanning is available via `hardener batch scan` (CLI) and
 the desktop **Hosts** screen, see *Batch Scanning Multiple Hosts* and
 *Desktop Hosts Screen* above.
 
-Future Enhancements
+## Future Enhancements
 
 Planned for future releases:
 - Jump host / bastion support
 - Remote checkpoint storage option
 
-**Last Updated**: 2026-07-24
+**Last Updated**: 2026-07-30
