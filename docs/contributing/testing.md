@@ -277,10 +277,10 @@ and each would otherwise have produced a check that passes on broken code:
   `multi-user.target.wants` symlink at all. Measured, by comparing the run
   before the repair existed against the run after it: all 68 assertion lines
   are byte-identical on all five distributions, so nothing in the suite would
-  have caught the repair regressing. `boot-persistence` asks `systemctl is-enabled` instead, off
-  a capture taken either side of the apply like the ruleset, and judges on
-  systemd's word rather than its exit status: `enabled-runtime` and `static`
-  both exit zero and neither survives a reboot.
+  have caught the repair regressing. `boot-persistence` asks `systemctl
+  is-enabled` instead, either side of the apply, and judges on systemd's word
+  rather than its exit status: `enabled-runtime` and `static` both exit zero and
+  neither survives a reboot.
 
 **`ssh-still-accepted` is a safety property, not proof the tool acted**, and the
 code says so. On firewalld that rule exists before the apply as well, because the
@@ -294,7 +294,28 @@ ship firewalld already enabled, and Debian's `ufw` package enables the unit at
 install, so four of the five would read `enabled` without the repair. The
 pass message therefore compares against the pre-apply reading and names which
 case it is, because a wording that read the same on all five would make one row
-of evidence look like five. It is deliberately **not** gated on `--booted`,
+of evidence look like five.
+
+**That pre-apply reading asks every candidate unit, and not the one the
+pre-apply ruleset names.** Deriving it from the ruleset was a defect of exactly
+the kind this row exists to prevent. On Arch and Debian `ufw` is installed but
+not enabled before the apply, so its chains do not exist, the pre-apply backend
+reads as none, and systemd was never asked at all. The row then filled that gap
+by crediting the apply, which is true on Arch and almost certainly false on
+Debian, whose firewall survived a reboot before the repair existed and whose
+`ufw` package enables the unit at install. `FIREWALL_UNIT_CANDIDATES` therefore
+holds both units, both are asked before the apply and recorded as
+`<unit>|<word>` pairs, and the row looks up the unit its own post-apply reading
+names. A before state that could not be read, or that systemd worded in a way
+the suite cannot name, leaves the row passing on its after reading while saying
+it cannot tell whether the apply is what did it: filling that gap with a claim
+is the whole defect, and making it in a different branch would be worth nothing.
+The candidate list and `firewall_backend_kind` have to name the same backends
+and nothing in the run path makes them, so the self-test reads the kinds back
+out of that function's own body, and the row says so in its own message if the
+two come apart during a run.
+
+The row is deliberately **not** gated on `--booted`,
 unlike the kernel rows: whether `systemctl is-enabled` answers inside an
 unbooted `--pipe` container is unmeasured, so a run that cannot ask goes red
 rather than quiet. An answer that is neither `enabled` nor one of the six states
