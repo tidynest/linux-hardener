@@ -1343,12 +1343,19 @@ impl HardeningPlugin for SshHardeningPlugin {
         // contain any algorithm outside the strong allow-list (i.e. a weak/legacy
         // cipher, KEX or MAC is enabled).
         for crypto in SSH_CRYPTO_DIRECTIVES {
-            let current_value = parse_config_value(
-                global_scope(&config_content),
-                crypto.crypto_directive_name,
-                ConfigFormat::SpaceSeparated,
-                false,
-            );
+            // From the resolved configuration, exactly as the loop above reads
+            // its own directives. This read the main file alone until an
+            // openSUSE, Fedora or RHEL host made the cost plain: crypto-policies
+            // supplies Ciphers, MACs and KexAlgorithms from
+            // /etc/ssh/sshd_config.d, the Include sits above everything this
+            // tool writes, and sshd takes the first value it obtains. The strong
+            // list this tool put in the main file was read back and reported
+            // while sshd negotiated the drop-in's, and since these three
+            // directives are in `coverage()`, the absent finding rendered their
+            // controls as Pass. The mirror was just as wrong: a drop-in already
+            // holding a strong list read as "not set" and was reported.
+            let effective = resolved.effective(crypto.crypto_directive_name);
+            let current_value = effective.as_ref().map(|e| e.value.clone());
 
             if !crypto_value_is_secure(current_value.as_deref(), crypto.crypto_desired) {
                 let current_display = current_value.unwrap_or_else(|| "not set".to_string());
@@ -1359,10 +1366,24 @@ impl HardeningPlugin for SshHardeningPlugin {
                     finding_category: FindingCategory::Network,
                     finding_current_value: current_display.clone(),
                     finding_description: crypto.crypto_description.to_string(),
-                    finding_explanation: format!(
-                        "The SSH directive '{}' is unset or permits weak algorithms. {}",
-                        crypto.crypto_directive_name, crypto.crypto_description,
-                    ),
+                    finding_explanation: match effective.as_ref() {
+                        // Naming the file matters for the same reason it does
+                        // above: editing sshd_config would not change what sshd
+                        // negotiates, because the drop-in is read first.
+                        Some(e) if e.source != main.path => format!(
+                            "The SSH directive '{}' is unset or permits weak algorithms. {} \
+                             The value in force comes from {}, which sshd reads before \
+                             {}, so it overrides anything set there.",
+                            crypto.crypto_directive_name,
+                            crypto.crypto_description,
+                            e.source,
+                            main.path,
+                        ),
+                        _ => format!(
+                            "The SSH directive '{}' is unset or permits weak algorithms. {}",
+                            crypto.crypto_directive_name, crypto.crypto_description,
+                        ),
+                    },
                     finding_id: format!("ssh-{}", crypto.crypto_directive_name.to_lowercase()),
                     finding_impact:
                         "Weak SSH cryptography can allow session decryption or downgrade attacks"

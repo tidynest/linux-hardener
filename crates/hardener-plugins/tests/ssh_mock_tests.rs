@@ -1974,6 +1974,86 @@ async fn ssh_scan_accepts_a_drop_in_that_holds_the_secure_value() {
     );
 }
 
+/// The crypto directives are read from the same resolved configuration as
+/// every other directive, because sshd reads them from the same place.
+///
+/// The layout below is what RHEL, Fedora and openSUSE ship: crypto-policies
+/// supplies Ciphers, MACs and KexAlgorithms from a drop-in, and the Include
+/// sits above everything this tool writes, so sshd takes the drop-in's value.
+/// Reading only the main file reported the strong list this tool put there
+/// while sshd negotiated the drop-in's, and because the crypto directives are
+/// in `coverage()`, the absence of a finding rendered those controls as Pass.
+#[tokio::test]
+async fn ssh_scan_reports_the_ciphers_a_drop_in_forces_not_the_main_file_s() {
+    let executor = MockExecutor::new()
+        .with_file(
+            "/etc/ssh/sshd_config",
+            &format!("{SHIPPED_LAYOUT}Ciphers chacha20-poly1305@openssh.com\n"),
+        )
+        .with_directory("/etc/ssh/sshd_config.d")
+        .with_file(
+            "/etc/ssh/sshd_config.d/50-redhat.conf",
+            "Ciphers 3des-cbc\n",
+        );
+    let ctx = Context::with_executor(Arc::new(executor) as Arc<dyn SystemExecutor>);
+
+    let result = SshHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "ssh-ciphers")
+        .expect("the drop-in forces a weak cipher, so this must be a finding");
+    assert_eq!(
+        finding.finding_current_value, "3des-cbc",
+        "the reported value must be the one sshd negotiates, not the one in the main file"
+    );
+    assert!(
+        finding
+            .finding_explanation
+            .contains("/etc/ssh/sshd_config.d/50-redhat.conf"),
+        "the finding must name the file that actually governs it: {}",
+        finding.finding_explanation
+    );
+}
+
+/// The mirror image, and the direction a main-file read gets wrong the other
+/// way: a drop-in supplying a strong list leaves the host compliant, and
+/// reporting it because the main file is silent would send an operator to edit
+/// a file that decides nothing.
+#[tokio::test]
+async fn ssh_scan_accepts_ciphers_a_drop_in_holds_at_a_strong_value() {
+    let executor = MockExecutor::new()
+        .with_file("/etc/ssh/sshd_config", SHIPPED_LAYOUT)
+        .with_directory("/etc/ssh/sshd_config.d")
+        .with_file(
+            "/etc/ssh/sshd_config.d/10-crypto.conf",
+            "Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com\n",
+        );
+    let ctx = Context::with_executor(Arc::new(executor) as Arc<dyn SystemExecutor>);
+
+    let result = SshHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(
+        !result
+            .scan_findings
+            .iter()
+            .any(|f| f.finding_id == "ssh-ciphers"),
+        "a drop-in already holding a strong cipher list is compliant, findings: {:?}",
+        result
+            .scan_findings
+            .iter()
+            .map(|f| (&f.finding_id, &f.finding_current_value))
+            .collect::<Vec<_>>()
+    );
+}
+
 #[tokio::test]
 async fn ssh_apply_beats_a_drop_in_that_would_otherwise_override_the_write() {
     // 23ee0c1 made this case honest: writing sshd_config cannot change a
