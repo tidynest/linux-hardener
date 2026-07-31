@@ -2292,6 +2292,12 @@ require_check_tables() {
 # three readings, because the tool claims nothing about what a second run of
 # itself would do.
 #
+# The preview-agreement oracle adds one row per compared plugin and one control
+# over both of the parses those rows are read through, taking the unbooted total
+# from 56 to 62 and the booted one from 69 to 75. It is the one block the mode
+# makes no difference to: the dry run and the apply both happen whether or not
+# the fixture is booted, so the same six are asked either way.
+#
 # Counted off the pinned lengths above, never off the tables themselves. Read
 # from ${#SSH_CHECKS[@]} the expectation would follow the table it exists to
 # police: emptying that table would drop the number from 28 to 14 and
@@ -2307,7 +2313,8 @@ expected_check_total() {
             + PERMISSION_CHECKS_EXPECTED) \
             + VENDOR_SURVIVAL_CHECKS_EXPECTED + IDEMPOTENCE_CHECKS_EXPECTED \
             + PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED + DIFF_PLUGINS_EXPECTED - 1 \
-            + SEEDED_SSH_CHECKS_EXPECTED + FIREWALL_CHECKS_EXPECTED ))"
+            + SEEDED_SSH_CHECKS_EXPECTED + FIREWALL_CHECKS_EXPECTED \
+            + DIFF_PLUGINS_EXPECTED + 1 ))"
         return
     fi
     printf '%s' "$(( 2 * (SSH_CHECKS_EXPECTED + LOGIN_DEFS_CHECKS_EXPECTED \
@@ -2315,7 +2322,8 @@ expected_check_total() {
         + VENDOR_SURVIVAL_CHECKS_EXPECTED + IDEMPOTENCE_CHECKS_EXPECTED \
         + PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED + DIFF_PLUGINS_EXPECTED \
         + SEEDED_SSH_CHECKS_EXPECTED + FIREWALL_CHECKS_EXPECTED \
-        + KERNEL_CHECKS_EXPECTED + SEEDED_KERNEL_CHECKS_EXPECTED ))"
+        + KERNEL_CHECKS_EXPECTED + SEEDED_KERNEL_CHECKS_EXPECTED \
+        + DIFF_PLUGINS_EXPECTED + 1 ))"
 }
 
 # The three plugins spell their finding ids differently, and a filter written for
@@ -2975,6 +2983,232 @@ run_idempotence_checks() {
     done
 }
 
+# The preview an operator approves, and the apply that follows it.
+#
+# Uniquely in this file the subject is the tool's own output, on both sides,
+# and that is not the shortcut it looks like. Everywhere else reading the tool
+# back is the defect this suite exists to catch: the reader and the writer
+# agree with each other and disagree with Linux. Here the property IS that the
+# tool's two accounts of itself agree, and no reading of the host can supply
+# it, because a preview describes a future and leaves nothing behind to
+# measure. 420a52b fixed exactly this shape of defect, a firewall dry run that
+# did not preview the boot enable its apply then made, and only the mock tests
+# noticed: no container run asked the question at all.
+PRE_APPLY_DRY_RUN_JSON=""
+
+# The display names the apply's own output names plugins by. `apply` renders
+# its per-plugin line from metadata.plugin_name and never from the plugin id
+# (apply_results in crates/hardener-cli/src/output.rs), so the two have to be
+# joined somewhere. Asked of the tool rather than written out by hand here: a
+# hand-written pair that drifted from what the tool prints would take the join
+# with it, and a join that matches nothing is this suite's pass condition.
+DIFF_PLUGIN_NAMES=""
+
+# The output of the FIRST apply, which is the only one the preview above
+# describes. run_full_suite applies twice; the second runs on a host the first
+# has already hardened and reports applying almost nothing, so a global that
+# followed the latest apply would leave every row below passing for free.
+FIRST_APPLY_OUTPUT=""
+
+# That choice is a function of its own rather than three lines inside
+# apply_hardening, which shells out and so cannot be driven by --self-test.
+# Keeping the first apply's output rather than the latest is the difference
+# between this oracle asking a question and asking none, which is not a
+# property to leave unasserted.
+retain_first_apply_output() {
+    if (( APPLY_GENERATION == 1 )); then
+        FIRST_APPLY_OUTPUT="$1"
+    fi
+}
+
+# Both halves of the join, captured while the container is still unhardened.
+#
+# The dry run has to be taken before the apply for the same reason as every
+# other pre-apply capture: taken afterwards it would preview a host that is
+# already hardened and agree with itself.
+#
+# Its exit status is deliberately not a refusal, unlike capture_scan_json's.
+# Measured against this tree's binary at 420a52b: `--format json apply
+# --dry-run` over the five compared plugins exits 1 on an ordinary host,
+# because the pam plugin reports a blocking validation issue, and the document
+# is printed all the same (output::validation_reports runs ahead of the bail).
+# A capture that refused on non-zero would refuse most runs.
+preapply_preview_init() {
+    local args=() plugin out status=0
+    if (( APPLY_GENERATION != 0 )); then
+        echo "FATAL: the pre-apply dry run was asked for at generation" \
+            "$APPLY_GENERATION, after apply had run." >&2
+        echo "  It is the preview the checks below hold the apply to, so it has to be" >&2
+        echo "  taken while the container is still unhardened." >&2
+        return 1
+    fi
+    if ! out="$("$BINARY" --format json plugins)"; then
+        echo "FATAL: plugins --format json failed, so the apply's output cannot be joined" >&2
+        return 1
+    fi
+    if ! DIFF_PLUGIN_NAMES="$(jq -r '.[] | "\(.plugin_id)|\(.plugin_name)"' <<<"$out")"; then
+        echo "FATAL: the tool's plugin listing could not be read as JSON" >&2
+        return 1
+    fi
+    for plugin in "${DIFF_PLUGINS[@]}"; do
+        # Refused here rather than left to the control below, because the two
+        # faults send a reader to different files: a name the tool never
+        # supplied is a listing that has changed, while a name that supplied no
+        # line is an apply that did not run the plugin.
+        if ! apply_plugin_display_name "$plugin" >/dev/null; then
+            echo "FATAL: the tool's plugin listing does not name '$plugin'." >&2
+            echo "  Its apply output is read by that name, and a name nothing supplies" >&2
+            echo "  matches no line, which is this suite's pass condition." >&2
+            return 1
+        fi
+        # The same --plugin list apply_hardening builds, so the preview and the
+        # run cover the same set by construction rather than by two lists
+        # agreeing.
+        args+=(--plugin "$plugin")
+    done
+    out="$("$BINARY" --format json apply --dry-run "${args[@]}")" || status=$?
+    echo "dry run exit status $status (non-zero is expected when a plugin reports a blocking validation issue)"
+    PRE_APPLY_DRY_RUN_JSON="$out"
+}
+
+# What the preview said about one plugin: "<estimated changes>|<issues>".
+# Non-zero when the document holds no report this can read for it.
+#
+# The two counts stay apart rather than summed. A plugin that previewed a
+# limitation instead of a change has spoken, and the row below must not call
+# that silence: measured against this tree's binary at 420a52b, the firewall
+# plugin's dry run on an ordinary host reports 0 estimated changes and 1 issue.
+#
+# Both keys are required to be arrays rather than defaulted, for the reason
+# every filter in this file is: `length` counts an absent or retyped key as 0,
+# "0|0" is this file's word for a preview that said nothing, and a preview that
+# said nothing is what every row below passes on.
+dry_run_preview_reading() {
+    local plugin="$1" out
+    if ! out="$(jq -r --arg p "$plugin" \
+        '[.[] | select(.validation_report_plugin_id == $p)
+              | select((.validation_report_estimated_changes | type) == "array"
+                       and (.validation_report_issues | type) == "array")
+              | "\(.validation_report_estimated_changes | length)|\(.validation_report_issues | length)"]
+         | first // empty' <<<"$PRE_APPLY_DRY_RUN_JSON")"; then
+        return 1
+    fi
+    [[ -n "$out" ]] || return 1
+    printf '%s' "$out"
+}
+
+# The name the apply's output names one plugin by, non-zero when the tool's own
+# listing does not cover it. Non-zero rather than an empty name for the reason
+# firewall_boot_word_before is: an empty name would match the space in every
+# line of the output.
+apply_plugin_display_name() {
+    local plugin="$1" pair
+    while IFS= read -r pair; do
+        if [[ "${pair%%|*}" == "$plugin" ]]; then
+            printf '%s' "${pair#*|}"
+            return 0
+        fi
+    done <<<"$DIFF_PLUGIN_NAMES"
+    return 1
+}
+
+# How many changes the apply reported APPLYING for one plugin. Non-zero when no
+# count could be read at all, which covers an output holding no result line for
+# the plugin and a line carrying an error message where the summary would be.
+#
+# Fail-closed on that second shape rather than reading it as 0: output.rs
+# prints `{icon} {name} - {err}` for a plugin whose ApplyResult carries an
+# apply_error, and that branch prints no count whatever, so the changes it did
+# apply are simply not in the text. Calling it 0 would guess in the one
+# direction that passes the row below.
+apply_applied_count() {
+    local plugin="$1" name line summary
+    name="$(apply_plugin_display_name "$plugin")" || return 1
+    # Matched inside the line rather than from its start. The icon ahead of the
+    # name is what this would have to anchor on, and the icon is colour-escaped
+    # whenever the `colored` crate decides it is writing to a terminal, which
+    # is a property of the process rather than of this file.
+    line="$(grep -m1 -F -- " $name - " <<<"$FIRST_APPLY_OUTPUT")" || return 1
+    summary="${line#*" $name - "}"
+    case "$summary" in
+        "no changes needed"*)
+            printf '0'
+            ;;
+        # Both counting wordings apply_summary builds: "N change(s) applied[, M
+        # skipped]" and "N of M change(s) applied, K failed[, M skipped]". The
+        # leading number counts successes alone in both, which is what makes one
+        # pattern enough for the pair.
+        [0-9]*" change(s) applied"*)
+            printf '%s' "${summary%%" "*}"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+# One row per compared plugin: did the apply apply changes the preview never
+# mentioned?
+#
+# Only that direction. The reverse, a preview naming work the apply then did
+# not do, is not a failure here: a plugin can fail partway on a container and
+# several do, so making that red would fail correct runs. The direction kept is
+# the one with no confound and the one that costs an operator something. The
+# preview is what they approve, and a run longer than its preview applied
+# something nobody was shown.
+#
+# Silence is "no estimated changes AND no issues". A plugin that previewed a
+# limitation rather than a change has told the operator something, so what it
+# then applies is not unannounced.
+run_preview_agreement_checks() {
+    local plugin reading changes issues applied
+    for plugin in "${DIFF_PLUGINS[@]}"; do
+        if ! reading="$(dry_run_preview_reading "$plugin")"; then
+            record_fail "preview agreement $plugin: the dry run's document holds no report this can read for the plugin, so there is no preview to hold its apply to"
+            continue
+        fi
+        IFS='|' read -r changes issues <<<"$reading"
+        if ! applied="$(apply_applied_count "$plugin")"; then
+            record_fail "preview agreement $plugin: the apply's output yields no applied-change count for the plugin, so what it did cannot be compared with what was previewed"
+            continue
+        fi
+        if (( changes > 0 || issues > 0 )); then
+            record_pass "preview agreement $plugin: the preview named $changes estimated change(s) and $issues issue(s), so the apply's $applied applied change(s) followed something the operator was shown"
+        elif (( applied == 0 )); then
+            record_pass "preview agreement $plugin: the preview was silent and the apply applied nothing, so nothing here was approved unseen"
+        else
+            record_fail "preview agreement $plugin: the preview named no estimated change and no issue, and the apply then reported $applied applied change(s); the operator approved a preview shorter than the run"
+        fi
+    done
+}
+
+# The control over both parses, and it is not optional.
+#
+# Every row above passes when the preview said nothing to contradict, and a
+# filter that matches nothing says nothing: a mistyped key, a renamed plugin
+# id, a display name the apply prints differently, each of them produces five
+# quiet passes over a tool nobody checked. So both sides are required to have
+# answered for EVERY compared plugin rather than for at least one, and the
+# refusal names the plugin and the side it was missing from, because a reading
+# the preview never carried and a reading the apply never printed are fixed in
+# different places.
+run_preview_agreement_control() {
+    local plugin gaps=""
+    for plugin in "${DIFF_PLUGINS[@]}"; do
+        dry_run_preview_reading "$plugin" >/dev/null \
+            || gaps+="${gaps:+, }$plugin is missing from the dry run's document"
+    done
+    for plugin in "${DIFF_PLUGINS[@]}"; do
+        apply_applied_count "$plugin" >/dev/null \
+            || gaps+="${gaps:+, }$plugin is missing from the apply's output"
+    done
+    if [[ -n "$gaps" ]]; then
+        record_fail "preview agreement control: the two readings do not cover all ${#DIFF_PLUGINS[@]} compared plugins, so a row above can pass on a parse that matched nothing: $gaps"
+        return 0
+    fi
+    record_pass "preview agreement control: the dry run's document and the apply's output both answered for all ${#DIFF_PLUGINS[@]} compared plugins, so no row above passed on an empty reading"
+}
+
 # Apply the plugins this suite compares, then record that an apply happened.
 # Every oracle refuses to answer until this has run, and refuses any capture
 # taken above it.
@@ -2990,6 +3224,10 @@ apply_hardening() {
     done
     out="$("$BINARY" apply "${args[@]}" 2>&1)" || status=$?
     bump_apply_generation
+    # Kept for the preview comparison above, and only from the first apply: the
+    # preview it is held against was taken before this one, and the second runs
+    # on a host this one has already hardened.
+    retain_first_apply_output "$out"
     echo "apply exit status $status (non-zero is expected when a plugin reports a manual action)"
     # Prefixed, so no line of the tool's own output can be mistaken for one of
     # this suite's summary counters by whatever parses the log.
@@ -3850,9 +4088,9 @@ Number of days of warning before password expires	: 11"
     # whatever mode the environment happened to ask for would make the
     # self-test go red on a maintainer who exported the runner's signal.
     pinned_total="$(KERNEL_BOOTED=0 expected_check_total)"
-    check_eq "$pinned_total" "56" \
-        "the run is sized at two checks per directive, one per unmanaged setting, one per idempotency reading, one per pwquality enforcement reading, one control per plugin, plus one pre-apply control per seeded directive"
-    check_eq "$(KERNEL_BOOTED=1 expected_check_total)" "69" \
+    check_eq "$pinned_total" "62" \
+        "the run is sized at two checks per directive, one per unmanaged setting, one per idempotency reading, one per pwquality enforcement reading, one control per plugin, one preview-agreement row per plugin and its own control, plus one pre-apply control per seeded directive"
+    check_eq "$(KERNEL_BOOTED=1 expected_check_total)" "75" \
         "a booted run is sized for eleven kernel rows, the seeded kernel row and the kernel plugin's own control on top of that, which is the only arithmetic difference the mode makes"
     check_status 0 "require_check_tables accepts the tables as they stand" \
         require_check_tables
@@ -5193,6 +5431,165 @@ password required pam_unix.so"
     FIREWALL_BOOT_BEFORE="$fw_saved_boot_before"
     FIREWALL_BOOT_AFTER="$fw_saved_boot_after"
 
+    # The preview an operator approves, held against the apply that followed.
+    # Both sides are injected here exactly as the firewall boot readings are: a
+    # check that shells out live cannot be driven, and an assertion nothing
+    # proves is not an oracle.
+    local pa_saved_dry="$PRE_APPLY_DRY_RUN_JSON" pa_saved_names="$DIFF_PLUGIN_NAMES"
+    local pa_saved_apply="$FIRST_APPLY_OUTPUT" pa_saved_generation=$APPLY_GENERATION
+    local pa_saved_total=$CHECKS_TOTAL pa_saved_passed=$CHECKS_PASSED pa_saved_failed=$CHECKS_FAILED
+
+    # The tool's own glyphs, written as escapes so this file stays ASCII. The
+    # renderer prints one ahead of every plugin name and the ESC run is what
+    # `colored` adds around it, so a fixture without them would not exercise the
+    # one thing the parse has to tolerate.
+    local pa_tick=$'\u2713' pa_cross=$'\u2717' pa_arrow=$'\u2192'
+    local pa_green=$'\033[32m' pa_plain=$'\033[0m'
+
+    DIFF_PLUGIN_NAMES="ssh-hardening|SSH Hardening
+pam-hardening|PAM Authentication Hardening
+permissions-hardening|File Permissions Hardening
+firewall-hardening|Firewall Hardening
+kernel-hardening|Kernel Hardening"
+
+    # The shape `--format json apply --dry-run` prints, reduced to the keys the
+    # rows read. Taken from a live run of this tree's binary at 420a52b, where
+    # ssh and kernel previewed nothing at all and pam previewed issues and no
+    # change.
+    local pa_dry_fixture pa_apply_fixture pa_out
+    pa_dry_fixture='[
+  {"validation_report_plugin_id":"ssh-hardening","validation_report_issues":[],"validation_report_estimated_changes":[]},
+  {"validation_report_plugin_id":"pam-hardening","validation_report_issues":[{"validation_issue_severity":"High"}],"validation_report_estimated_changes":[]},
+  {"validation_report_plugin_id":"permissions-hardening","validation_report_issues":[],"validation_report_estimated_changes":["chmod 0600 /etc/shadow"]},
+  {"validation_report_plugin_id":"firewall-hardening","validation_report_issues":[],"validation_report_estimated_changes":[]},
+  {"validation_report_plugin_id":"kernel-hardening","validation_report_issues":[],"validation_report_estimated_changes":[]}
+]'
+    # And the shape apply_results prints, with every summary wording in it. The
+    # firewall line carries the colour escapes, so the assertions below run over
+    # the one line whose icon this parse could not have anchored on.
+    pa_apply_fixture="$pa_arrow Applying: SSH Hardening
+$pa_arrow Applying: Firewall Hardening
+$pa_tick SSH Hardening - no changes needed
+$pa_cross PAM Authentication Hardening - 1 of 3 change(s) applied, 2 failed
+$pa_tick File Permissions Hardening - 2 change(s) applied, 1 skipped
+$pa_green$pa_tick$pa_plain Firewall Hardening - 3 change(s) applied
+$pa_tick Kernel Hardening - no changes needed"
+
+    pa_out="$(mktemp)"
+    PRE_APPLY_DRY_RUN_JSON="$pa_dry_fixture"
+    FIRST_APPLY_OUTPUT="$pa_apply_fixture"
+
+    check_eq "$(dry_run_preview_reading pam-hardening)" "0|1" \
+        "a preview reading keeps its changes and its issues apart, so a plugin that previewed a limitation is not read as silent"
+    check_status 1 "a plugin the document does not cover is refused rather than answered as silent" \
+        dry_run_preview_reading audit-hardening
+
+    check_eq "$(apply_plugin_display_name permissions-hardening)" "File Permissions Hardening" \
+        "the apply's output is joined to a plugin id by the name the tool itself prints"
+    check_status 1 "and an id the tool's listing does not name is refused, because an empty name would match the space in every line" \
+        apply_plugin_display_name no-such-plugin
+
+    check_eq "$(apply_applied_count firewall-hardening)" "3" \
+        "the applied count comes off the plugin's own result line, colour escapes and all"
+    check_eq "$(apply_applied_count ssh-hardening)" "0" \
+        "a plugin that needed nothing reads 0 rather than nothing at all"
+    check_eq "$(apply_applied_count pam-hardening)" "1" \
+        "a partly failed apply reads its successes alone, which is the number before 'change(s) applied' in both wordings"
+    check_eq "$(apply_applied_count permissions-hardening)" "2" \
+        "and a skipped tail does not move the count"
+
+    FIRST_APPLY_OUTPUT="$pa_cross Firewall Hardening - No firewall backend: nothing installed"
+    check_status 1 "a result line carrying an error where the summary would be is refused: that branch prints no count, so reading it as 0 would guess in the direction that passes" \
+        apply_applied_count firewall-hardening
+    FIRST_APPLY_OUTPUT="$(grep -v "Firewall Hardening - " <<<"$pa_apply_fixture")"
+    check_status 1 "and a plugin the output holds no result line for is refused" \
+        apply_applied_count firewall-hardening
+
+    # Redirected to a file rather than captured with $(...), for the reason the
+    # firewall block above gives: a command substitution is a subshell, so every
+    # counter these functions increment would be discarded.
+    FIRST_APPLY_OUTPUT="$pa_apply_fixture"
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    run_preview_agreement_checks > "$pa_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "4/1" \
+        "the one plugin the preview was silent about and the apply then applied changes for is the one row that fails"
+    check_status 0 "and the failure carries both numbers, so a reader is not sent back to the tool to find out how far apart they were" \
+        grep -q "preview agreement firewall-hardening: the preview named no estimated change and no issue, and the apply then reported 3 applied change(s)" "$pa_out"
+    check_status 0 "a plugin silent on both sides passes, which is the whole reason the control below has to exist" \
+        grep -q "preview agreement ssh-hardening: the preview was silent and the apply applied nothing" "$pa_out"
+    check_status 0 "and a plugin that previewed an issue rather than a change has spoken, so the changes it then applied were not unannounced" \
+        grep -q "preview agreement pam-hardening: the preview named 0 estimated change(s) and 1 issue(s)" "$pa_out"
+
+    # The direction this deliberately does not fail. Every preview now names a
+    # change and two of the five applies report none, which is what a plugin
+    # that failed partway on a container looks like from here.
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    PRE_APPLY_DRY_RUN_JSON="$(jq 'map(.validation_report_estimated_changes = ["a change the apply may not reach"])' <<<"$pa_dry_fixture")"
+    run_preview_agreement_checks > /dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "5/0" \
+        "a preview that named work the apply then did not do passes, because plugins fail partway on containers and making that red would fail correct runs"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    PRE_APPLY_DRY_RUN_JSON="$pa_dry_fixture"
+    run_preview_agreement_control > "$pa_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "1/0" \
+        "the control passes when both readings answered for every compared plugin"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    PRE_APPLY_DRY_RUN_JSON="$(jq 'map(select(.validation_report_plugin_id != "kernel-hardening"))' <<<"$pa_dry_fixture")"
+    run_preview_agreement_control > "$pa_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/1" \
+        "a plugin the dry run never reported on fails the control, rather than leaving the other four to pass and the run to look complete"
+    check_status 0 "and the control names that plugin and the side it was missing from" \
+        grep -q "kernel-hardening is missing from the dry run's document" "$pa_out"
+
+    # The vacuity a key rename produces, which is the likeliest of the three and
+    # the only one that leaves the document looking entirely healthy.
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    PRE_APPLY_DRY_RUN_JSON="$(jq 'map(.estimated_changes = .validation_report_estimated_changes | del(.validation_report_estimated_changes))' <<<"$pa_dry_fixture")"
+    run_preview_agreement_control > /dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/1" \
+        "a renamed estimated-changes key fails the control, because jq counts an absent key as nothing and nothing is exactly what a silent preview reads as"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    PRE_APPLY_DRY_RUN_JSON="$pa_dry_fixture"
+    FIRST_APPLY_OUTPUT="$(grep -v "Firewall Hardening - " <<<"$pa_apply_fixture")"
+    run_preview_agreement_control > "$pa_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/1" \
+        "an apply output holding no result line for a compared plugin fails the control too, on the other side of the same join"
+    check_status 0 "and names that plugin against the apply's side of it" \
+        grep -q "firewall-hardening is missing from the apply's output" "$pa_out"
+
+    # Which apply the comparison is held to, and the one property here that
+    # decides whether it asks anything at all: run_full_suite applies twice, and
+    # the second runs on a host the first has already hardened.
+    APPLY_GENERATION=1
+    FIRST_APPLY_OUTPUT=""
+    retain_first_apply_output "the first apply's output"
+    APPLY_GENERATION=2
+    retain_first_apply_output "the second apply's output"
+    check_eq "$FIRST_APPLY_OUTPUT" "the first apply's output" \
+        "a later apply's output does not replace the first one's, which is the only one the preview was taken ahead of"
+
+    # Status and refusal together in one assertion, deliberately. Asked for the
+    # status alone this could not be shown to discriminate: with the guard
+    # removed the function falls through to a binary that is absent under
+    # --self-test and returns non-zero anyway, so it would stay green over a
+    # capture that no longer refuses anything.
+    local pa_status=0
+    APPLY_GENERATION=1
+    preapply_preview_init 2>"$pa_out" >/dev/null || pa_status=$?
+    check_eq "$pa_status/$(grep -c 'the pre-apply dry run was asked for at generation 1' "$pa_out")" "1/1" \
+        "the preview capture refuses to be taken once apply has run, and says so before it reaches the binary, because a preview of an already hardened host agrees with itself"
+
+    rm -f "$pa_out"
+    APPLY_GENERATION=$pa_saved_generation
+    PRE_APPLY_DRY_RUN_JSON="$pa_saved_dry"
+    DIFF_PLUGIN_NAMES="$pa_saved_names"
+    FIRST_APPLY_OUTPUT="$pa_saved_apply"
+    CHECKS_TOTAL=$pa_saved_total
+    CHECKS_PASSED=$pa_saved_passed
+    CHECKS_FAILED=$pa_saved_failed
 
     if (( failures > 0 )); then
         echo "self-test: $failures failure(s)"
@@ -5249,6 +5646,10 @@ run_full_suite() {
     preapply_vendor_survival_init || return 1
     preapply_firewall_init || return 1
     preapply_kernel_init || return 1
+    # Last of the pre-apply captures, deliberately. It previews the host the
+    # apply below is about to meet, so every seed written above has to be in
+    # place first or the preview and the run describe different hosts.
+    preapply_preview_init || return 1
 
     apply_hardening
 
@@ -5288,6 +5689,11 @@ run_full_suite() {
     run_firewall_checks
     run_kernel_checks
     run_seeded_kernel_check
+    # Its control sits here beside its rows rather than up with the three
+    # pre-apply controls, because what it guards is not a property the container
+    # held before the apply but the two parses these rows are read through.
+    run_preview_agreement_control
+    run_preview_agreement_checks
     print_summary
 }
 
