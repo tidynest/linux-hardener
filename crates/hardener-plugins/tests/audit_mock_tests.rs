@@ -1814,3 +1814,62 @@ async fn audit_apply_touches_nothing_when_auditd_is_not_installed() {
         result.apply_checkpoint_id
     );
 }
+
+/// The rules file the apply creates has to be named in the checkpoint, not
+/// merely covered by the directory that holds it.
+///
+/// Capturing a directory emits a row for the directory and one per child that
+/// is there at capture time, and on a host that never had this file there is no
+/// such child, so nothing carried it. A rollback walks only the rows the
+/// checkpoint holds, which left the hardening in place after an operator had
+/// asked for it to be undone. Naming the path makes the capture store it absent
+/// with a zero mode, which the restore reads as "remove this".
+///
+/// The assertion is on the stored row, because the row is what a later rollback
+/// reads. It does not prove the removal itself: that belongs to the restore
+/// side, which is exercised in `hardener-state`.
+#[tokio::test]
+async fn audit_apply_checkpoints_the_rules_file_it_is_about_to_create() {
+    // The directory is there, courtesy of the auditd package, but the file is
+    // not: this is the first apply this host has seen.
+    let executor = Arc::new(audit_apply_executor().with_directory(RULES_DIR));
+    let mut ctx =
+        Context::with_executor_and_checkpoint(executor.clone(), test_checkpoint_manager().await);
+
+    let result = AuditHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("audit apply should not error");
+
+    assert!(
+        wrote_the_rules_file(&executor),
+        "the apply under test must have created the file, writes: {:?}",
+        executor.log().files_written
+    );
+
+    let checkpoint_id = result
+        .apply_checkpoint_id
+        .clone()
+        .expect("the apply must take a checkpoint on a host with auditd");
+    let (_, captured) = ctx
+        .checkpoint_manager()
+        .expect("the context carries a checkpoint manager")
+        .get_checkpoint(&hardener_state::CheckpointId::new(checkpoint_id))
+        .await
+        .expect("the checkpoint just taken must be readable");
+
+    let rules_row = captured
+        .iter()
+        .find(|state| state.file_path == RULES_FILE)
+        .unwrap_or_else(|| {
+            panic!(
+                "the checkpoint must carry a row for the rules file the apply creates, \
+                 otherwise a rollback has no way to remove it. Captured: {captured:?}"
+            )
+        });
+    assert_eq!(
+        rules_row.file_permissions, 0,
+        "a file that was absent at capture must be stored with a zero mode, which is what \
+         the restore reads as 'remove this'. Captured: {captured:?}"
+    );
+}

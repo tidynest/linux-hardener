@@ -1004,10 +1004,28 @@ impl HardeningPlugin for AuditHardeningPlugin {
         // write.
         let rules_dir_error = crate::ensure_directory(ctx, AUDIT_RULES_DIR).await;
 
-        // Create checkpoint before changes
+        // Create checkpoint before changes.
+        //
+        // AUDIT_RULES_PATH is named alongside the directory that holds it, and
+        // not left to the recursion. Capturing a directory emits a row for it
+        // and one per child that is there at capture time, so on a host that
+        // never had the rules file nothing carried it, and a rollback, which
+        // walks only the rows the checkpoint holds, left the hardening in place
+        // after the operator had asked for it to be undone. Declared, the path
+        // is stored absent with a zero mode, which the restore reads as "remove
+        // this".
+        //
+        // Unconditionally, unlike the services plugin, which narrows its mask
+        // paths to units the host has installed. That one writes into
+        // /etc/systemd/system, an administrator override slot, where declaring
+        // a path this tool may never create would put somebody else's file on a
+        // rollback's removal list. `hardening.rules` is our own filename that
+        // nothing else writes, so it is safe to declare unseen, exactly as the
+        // kernel and ssh plugins declare their drop-ins.
         let audit_paths: Vec<&Path> = vec![
             Path::new("/etc/audit/auditd.conf"),
             Path::new(AUDIT_RULES_DIR),
+            Path::new(AUDIT_RULES_PATH),
         ];
         let checkpoint_id =
             crate::create_checkpoint_for_apply(ctx, "audit-hardening-pre-apply", &audit_paths)
