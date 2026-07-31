@@ -13,13 +13,13 @@
 use crate::strictness::Strictness;
 use async_trait::async_trait;
 use hardener_common::{
-    error::Result,
+    error::{Result, message_indicates_permission_denied},
     types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
     Change, ChangeType, Checkpoint, PluginConfig, ValidationIssue, ValidationReport,
     context::Context,
-    plugin::{ApplyResult, Finding, HardeningPlugin, PluginMetadata, ScanResult},
+    plugin::{ApplyResult, Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedCheck},
 };
 use std::{path::Path, time::Instant};
 use tracing::{info, warn};
@@ -471,6 +471,31 @@ pub fn coverage() -> Vec<ComplianceMapping> {
         .collect()
 }
 
+/// A parameter whose runtime value this scan could not read.
+///
+/// Carries [`get_compliance_mappings`] for that parameter alone, which is what
+/// `ReportGenerator` reads to hold its controls at ManualReview instead of
+/// passing them on an absent finding. `unchecked_persistence` in the sibling
+/// module carries the whole plugin's [`coverage`] instead, and the difference is
+/// deliberate: a `sysctl.d` file that cannot be read says nothing about any
+/// parameter, while an unreadable `/proc/sys` entry says nothing about one.
+///
+/// Whether a privileged re-run would reach it is derived from the failure
+/// rather than asserted. A read an LSM or DAC refused is exactly what root
+/// fixes; a parameter this kernel does not carry is not, and telling an
+/// operator to try again with sudo would send them after a fix that cannot
+/// work.
+fn unchecked_parameter(param_name: &str, reason: String, needs_privilege: bool) -> UncheckedCheck {
+    UncheckedCheck {
+        unchecked_check_id: format!("kernel_{}", param_name.replace('.', "_")),
+        unchecked_title: format!("Kernel parameter {param_name}"),
+        unchecked_category: FindingCategory::Kernel,
+        unchecked_reason: reason,
+        unchecked_needs_privilege: needs_privilege,
+        unchecked_compliance: get_compliance_mappings(param_name),
+    }
+}
+
 /// Returns compliance mappings for a given kernel parameter.
 ///
 /// CIS entries are the project's existing benchmark mappings. STIG/NIST/PCI-DSS
@@ -889,6 +914,11 @@ impl HardeningPlugin for KernelHardeningPlugin {
     async fn scan(&self, ctx: &Context, config: &PluginConfig) -> Result<ScanResult> {
         let start_time = Instant::now();
         let mut findings = Vec::new();
+        // Declared beside the findings rather than taken from the persistence
+        // pass below, because a parameter this loop could not read has to reach
+        // the same list: the report treats an unchecked control and a control
+        // with no finding as opposite outcomes.
+        let mut unchecked: Vec<UncheckedCheck> = Vec::new();
 
         for parameter in KERNEL_PARAMS {
             let param_name = parameter.kernel_parameter_name;
@@ -937,8 +967,37 @@ impl HardeningPlugin for KernelHardeningPlugin {
                     }
                 }
                 Err(e) => {
-                    // Parameter doesn't exist on this kernel - log but don't fail
+                    // A value that was not read is not a value that was found
+                    // compliant. This arm used to warn and move on, under a
+                    // comment asserting the one cause it could not establish:
+                    // `read_sysctl` is a `read_file` of /proc/sys, which fails
+                    // for a kernel that does not carry the parameter, for a
+                    // read an LSM refuses, for a /proc mounted `subset=pid` or
+                    // not at all, and over SSH for any failed command or
+                    // dropped channel. The parameter then left no finding and
+                    // no unchecked entry, and `coverage()` below declares all
+                    // eighteen assessed, so `ReportGenerator` passed the
+                    // control on the absence of a finding. Its own comment
+                    // states the invariant that broke: only a control the
+                    // engine both assesses and could evaluate this run may
+                    // pass on an absent finding.
+                    //
+                    // The entry carries this parameter's own mappings rather
+                    // than the plugin's whole coverage, so one unreadable
+                    // parameter moves its own controls to ManualReview and
+                    // leaves the seventeen that were read alone. The sibling
+                    // module does the same for a file it cannot read, with the
+                    // whole coverage set, because a failure there is a failure
+                    // for every parameter at once.
                     warn!("Cannot read {}: {}", param_name, e);
+                    unchecked.push(unchecked_parameter(
+                        param_name,
+                        format!(
+                            "could not read /proc/sys/{}: {e}",
+                            persistence::procfs_key(param_name)
+                        ),
+                        message_indicates_permission_denied(&e.to_string()),
+                    ));
                 }
             }
         }
@@ -950,8 +1009,9 @@ impl HardeningPlugin for KernelHardeningPlugin {
         // holds `log_martians = 1` and the running kernel reads 0, because ufw
         // applies /etc/ufw/sysctl.conf from a unit ordered after
         // systemd-sysctl.service. Report-only, for the reason the module gives.
-        let (overridden, unchecked) = persistence::boot_persistence(ctx, config).await;
+        let (overridden, boot_unchecked) = persistence::boot_persistence(ctx, config).await;
         findings.extend(overridden);
+        unchecked.extend(boot_unchecked);
 
         Ok(ScanResult {
             scan_plugin_id: self.metadata().plugin_id,
