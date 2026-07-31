@@ -1907,9 +1907,22 @@ impl HardeningPlugin for SshHardeningPlugin {
                 config_path,
                 Utc::now().format("%Y%m%d_%H%M%S")
             );
+            // `-p` was here from the start and `--no-dereference` was not, the
+            // reverse of the audit plugin's copy; the two flags answer separate
+            // questions and a backup needs both. `-p` preserves mode, ownership
+            // and timestamps, so a restored copy is the file rather than one
+            // wearing the umask's mode. `--no-dereference` copies a symlink as
+            // a symlink, which matters here more than at the other two sites: a
+            // host whose sshd_config is a link into a configuration-management
+            // checkout would otherwise have its managed file copied and the
+            // object this apply is about to overwrite left with no backup at
+            // all. `cp -p` exits non-zero when it cannot preserve ownership, as
+            // an unprivileged copy of a root-owned file cannot; that is caught
+            // by the failure arms below, which is the right direction, and
+            // apply runs as root so it should not arise.
             match ctx
                 .executor()
-                .execute_command("cp", &["-p", config_path, &backup_path])
+                .execute_command("cp", &["-p", "--no-dereference", config_path, &backup_path])
                 .await
             {
                 Ok(output) if output.success() => {

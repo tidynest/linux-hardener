@@ -354,12 +354,29 @@ async fn write_audit_rules_file(ctx: &Context, content: &str) -> Result<Option<S
     let backup = if matches!(existing, Ok(false)) {
         None
     } else {
+        // `--no-dereference` was here from the start and `-p` was not, the
+        // reverse of the ssh plugin's copy; the two flags answer separate
+        // questions and a backup needs both. `--no-dereference` copies a
+        // symlink as a symlink, so the object about to be overwritten is what
+        // gets copied rather than whatever it points at. `-p` preserves mode,
+        // ownership and timestamps, which this file needs more than most: the
+        // apply insists on 0640 precisely because the rules name every path and
+        // syscall the host watches, and a copy restored at the umask's mode
+        // hands that map to anyone who can read the directory. `cp -p` exits
+        // non-zero when it cannot preserve ownership, as an unprivileged copy
+        // of a root-owned file cannot; the check below turns that into an
+        // abort, which is the right direction, and apply runs as root so it
+        // should not arise.
+        //
         // `execute_command` returns Ok for a command that ran and failed, so
         // `?` alone only catches a spawn failure. An unchecked exit code let a
         // failed cp report success and the write proceed over an unsaved file.
         let output = ctx
             .executor()
-            .execute_command("cp", &["--no-dereference", AUDIT_RULES_PATH, &backup_path])
+            .execute_command(
+                "cp",
+                &["-p", "--no-dereference", AUDIT_RULES_PATH, &backup_path],
+            )
             .await?;
         if !output.success() {
             return Err(HardeningError::Plugin(format!(
@@ -1485,6 +1502,62 @@ mod tests {
             executor.log().files_written.is_empty(),
             "the rules file must not be written when its backup failed, but these writes happened: {:?}",
             executor.log().files_written
+        );
+    }
+
+    /// A backup is only worth taking if it is a copy of the thing about to be
+    /// replaced, at the mode that thing carries.
+    ///
+    /// This file is the one the plugin insists on holding at 0640, because the
+    /// rules name every path and syscall the host watches; a backup restored
+    /// without `-p` lands at whatever the umask gives it and hands that map to
+    /// anyone. `--no-dereference` copies a symlink as a symlink, so a rules
+    /// file that is a link elsewhere is backed up as the object about to be
+    /// overwritten rather than as its target.
+    ///
+    /// Asserted on the recorded argv rather than on the run succeeding, and
+    /// against a mock that answers any `cp` by program name. A test that leaned
+    /// on an exact-argument registration missing would fail with "command not
+    /// registered", which is a different failure wearing this one's clothes.
+    #[tokio::test]
+    async fn the_backup_copy_keeps_the_mode_and_does_not_follow_a_symlink() {
+        let ok = CommandOutput {
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: 0,
+        };
+        let executor = Arc::new(
+            MockExecutor::new()
+                .with_file(AUDIT_RULES_PATH, "-w /etc/passwd -p wa -k identity\n")
+                .with_path_exists(AUDIT_RULES_PATH, true)
+                .with_command_program("cp", ok),
+        );
+        let ctx = Context::with_executor(executor.clone() as Arc<dyn SystemExecutor>);
+
+        let backup = write_audit_rules_file(&ctx, "-w /etc/new -p wa -k new")
+            .await
+            .expect("a mock that answers any cp must let the write through")
+            .expect("an existing rules file must be backed up");
+
+        let log = executor.log();
+        let (_, args) = log
+            .commands_executed
+            .iter()
+            .find(|(program, _)| program == "cp")
+            .expect("the backup must be taken with cp");
+        for flag in ["-p", "--no-dereference"] {
+            assert!(
+                args.iter().any(|argument| argument == flag),
+                "the backup cp must pass {flag}, got: {args:?}"
+            );
+        }
+        // Checked separately from the flags because "the flag is present" and
+        // "the flag is a flag" are different claims: an argument added after
+        // the source would be read by cp as another file to copy.
+        assert_eq!(
+            &args[args.len() - 2..],
+            &[AUDIT_RULES_PATH.to_string(), backup],
+            "source and destination must stay the last two arguments, got: {args:?}"
         );
     }
 

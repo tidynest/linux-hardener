@@ -2,16 +2,19 @@
 """
 Holds every file-creating call site in the plugins tree to two written answers:
 why its parent directory exists, and whether the path it creates is declared to
-its own plugin's pre-apply checkpoint.
+its own plugin's pre-apply checkpoint. Then asserts, of the `cp` sites alone,
+the one thing that needs no answer because it has only one: that a backup copy
+preserves its source's mode and does not follow a symlink.
 
 Usage:
     ./scripts/validate/validate_write_sites.py
 
 Exit codes:
-    0: Every file-creating call site is classified on both questions
+    0: Every file-creating call site is classified on both questions, and
+       every `cp` passes both backup flags
     1: A site is unclassified on either question, an entry is stale or
-       malformed, a cited ensure or checkpoint declaration is gone, or the
-       pinned count moved
+       malformed, a cited ensure or checkpoint declaration is gone, a `cp` is
+       missing a backup flag, or the pinned count moved
 
 One defect was fixed three times. `460f037` (kernel), `202bb6a` (pam) and
 `6ce1799` (audit) each say the same thing: a file is written into a directory
@@ -53,6 +56,47 @@ the reason a second column exists rather than a second one-off fix:
     AUDIT_RULES_DIR were declared, so the rules file a first apply created
     survived that apply's own rollback. `60e9b12`.
 
+THE THIRD QUESTION, WHICH IS AN ASSERTION RATHER THAN A COLUMN
+
+Three plugins copy a configuration file before rewriting it, and all three asked
+`cp` the same question with three different answers: pam passed no flags, ssh
+passed `-p`, audit passed `--no-dereference`. Each was therefore losing what the
+other two kept. A copy made without `-p` records none of the source's mode,
+ownership or timestamps, so an operator who restores it gets the file at
+whatever the umask hands them, which on the audit rules file is the map of every
+path and syscall the host watches. A copy made without `--no-dereference`
+follows a symlink and copies its target, so a config that is a link elsewhere is
+backed up as some other file and the object about to be overwritten has no
+backup at all.
+
+That is the same shape as the two stories above, one defect standing in three
+places, but it is asked differently here. The other two questions have answers
+that legitimately differ per site, which is why they are registry columns: a
+kernel pseudo-file and a scratch copy in /tmp are exempt for genuinely
+unrelated reasons, and a check cannot tell a deliberate asymmetry from an
+overlooked path. This one has a single correct answer everywhere. There is
+nothing for an entry to decide, so a fourth column would only offer a place to
+write "exempt" in prose, which is how a check becomes a form. It is asserted
+instead: every call whose argv[0] literal is `cp` passes both flags, or the
+run fails.
+
+What it cannot see is the same blind spot the whole file has, and it is worth
+saying twice because this assertion looks stricter than it is. It reads the
+argument text of calls whose argv[0] is the literal string "cp". A `cp` invoked
+through a variable, through `sh -c`, or by any wrapper is not a site here and is
+not checked. A copy made by other means, `install`, `dd`, a `tee` from a read,
+or a `write_file` of content read a moment earlier, is a backup in every sense
+that matters and this says nothing about it. And it reads text: a site passing
+a `&[flag, path, dest]` built above the call is invisible to it, though none
+exists today. It also asks presence and not position: a site passing the flags
+after the source and destination satisfies it, and `cp` accepts that, but an
+argument added after the source is one `cp` would read as another file to copy.
+The three plugins' own tests are what pin the order, by asserting the source and
+destination are still the last two arguments; this was measured by moving the
+flags to the end, which the tests caught and this did not. What it does
+guarantee is that the three literal `cp` backups in the tree cannot drift apart
+again without failing.
+
 IT CANNOT SEE THE MASK LINK, WHICH IS THE DEFECT THAT PROMPTED IT
 
 Said first because it is the limit most likely to be misread. The tuple below
@@ -92,10 +136,11 @@ written answers and against a cleverer analysis.
 WHAT THIS PROVES, AND IT IS NARROW
 
 That no file-creating call site under `crates/hardener-plugins/src` is
-unclassified on either question. A new one cannot be added without someone
-deciding, in writing, why its parent directory is there and whether a rollback
-reaches what it creates. That is the property whose absence let one defect
-become three commits and a second one two.
+unclassified on either question, and that no literal `cp` among them copies
+without both backup flags. A new one cannot be added without someone deciding,
+in writing, why its parent directory is there and whether a rollback reaches
+what it creates. That is the property whose absence let one defect become three
+commits and a second one two.
 
 It is a registry check, not a static analysis. Said plainly, because a check
 that overstates itself is worse than no check:
@@ -168,6 +213,17 @@ EXPECTED_SITE_COUNT = 10
 # `cp` is the one used today, three times, always for a backup; the others are
 # listed so that reaching for one is a decision rather than an omission.
 FILE_CREATING_COMMANDS = ("cp", "mv", "ln", "tee", "touch", "install", "dd")
+
+# Both flags a backup copy has to carry, asserted rather than registered because
+# the answer is the same at every site. `-p` preserves the source's mode,
+# ownership and timestamps, so a restored copy is the file rather than one
+# wearing the umask's mode; `--no-dereference` copies a symlink as a symlink, so
+# what is backed up is the object about to be overwritten rather than whatever
+# it points at. Matched as quoted literals, so `-pr` does not satisfy `-p` and a
+# flag reaching the call through a variable is reported as missing rather than
+# guessed at. Only the copy is held to this: `mv`, `ln` and the rest are listed
+# above so that using one is a decision, and none of them takes these flags.
+BACKUP_CP_FLAGS = ("-p", "--no-dereference")
 
 # Where a plugin declares the paths its pre-apply checkpoint captures. Two
 # shapes carry them today and both are matched: the arguments of a
@@ -473,8 +529,16 @@ def well_formed(answers) -> bool:
     return rollback_kind == "exempt" and isinstance(rollback_detail, str)
 
 
-def sites_in(path: Path, relative: str) -> list[tuple[str, str, int]]:
-    """Every file-creating call site in `path` as (relative, key, line)."""
+def sites_in(path: Path, relative: str) -> list[tuple[str, str, int, str, str]]:
+    """Every file-creating call site as (relative, key, line, program, args).
+
+    `program` is the literal argv[0] for an `execute_command` site and "" for a
+    `write_file` one; `args` is the call's whole argument text, read by the same
+    bracket-depth scan that reads the first argument, so a call split across
+    lines yields what one written on a single line would. Both are carried
+    because the flag assertion needs to see the arguments of a `cp` and the two
+    registry columns need only the key.
+    """
     text = path.read_text()
     found = []
     for match in CALL.finditer(text):
@@ -488,7 +552,8 @@ def sites_in(path: Path, relative: str) -> list[tuple[str, str, int]]:
         if method == "execute_command" and literal not in FILE_CREATING_COMMANDS:
             continue
         line = text.count("\n", 0, match.start()) + 1
-        found.append((relative, f"{method}({argument}", line))
+        arguments = span(text, match.end(), ")")
+        found.append((relative, f"{method}({argument}", line, literal or "", arguments))
     return found
 
 
@@ -559,6 +624,18 @@ def main():
         if token not in declarations.get(relative.split("/")[0], "")
     ]
 
+    # The third question, and the only one asked of the code rather than of the
+    # registry. A site is reported once per flag it is missing, because the two
+    # flags fail differently and telling someone only about the first would send
+    # them back for the second.
+    flagless = [
+        (relative, key, line, flag)
+        for relative, key, line, program, arguments in sites
+        if program == "cp"
+        for flag in BACKUP_CP_FLAGS
+        if f'"{flag}"' not in arguments
+    ]
+
     print(f"Scanned {GREEN}{len(sources)}{NC} plugin source files")
     print(f"Found {GREEN}{len(sites)}{NC} file-creating call site(s)\n")
 
@@ -567,7 +644,7 @@ def main():
     if unregistered:
         problems = True
         print(f"{RED}{len(unregistered)} call site(s) with no registry entry:{NC}\n")
-        for relative, key, line in unregistered:
+        for relative, key, line, _, _ in unregistered:
             print(f"  {RED}{PLUGIN_SRC}/{relative}:{line}{NC}")
             print(f"    {key}...) creates a file and nothing says why its")
             print("    parent directory exists, nor whether a rollback reaches")
@@ -629,6 +706,24 @@ def main():
             print("    or reclassify the site and say why nothing of ours")
             print("    outlives the rollback\n")
 
+    if flagless:
+        problems = True
+        print(f"{RED}{len(flagless)} backup copy(ies) missing a cp flag:{NC}\n")
+        for relative, key, line, flag in flagless:
+            print(f"  {RED}{PLUGIN_SRC}/{relative}:{line}{NC}")
+            print(f"    {key}...) copies a file without {flag}")
+            if flag == "-p":
+                print("    without it the copy carries none of the source's")
+                print("    mode, ownership or timestamps, so restoring it hands")
+                print("    the operator the file at whatever the umask gives")
+            else:
+                print("    without it the copy follows a symlink and records")
+                print("    the target, so a config that is a link is backed up")
+                print("    as some other file and the one about to be")
+                print("    overwritten has no backup at all")
+            print("    pass both flags, in the order -p --no-dereference,")
+            print("    before the source and destination\n")
+
     if len(sites) != EXPECTED_SITE_COUNT:
         problems = True
         print(f"{RED}Site count is {len(sites)}, expected {EXPECTED_SITE_COUNT}{NC}")
@@ -654,6 +749,7 @@ def main():
 
     ensured = sum(1 for (kind, _), _ in REGISTRY.values() if kind == "ensured")
     declared = sum(1 for _, (kind, _) in REGISTRY.values() if kind == "declared")
+    copies = sum(1 for _, _, _, program, _ in sites if program == "cp")
     print(
         f"{GREEN}All {len(sites)} file-creating call sites are classified{NC} "
         f"on both questions"
@@ -666,9 +762,18 @@ def main():
         f"{len(REGISTRY) - declared} exempt"
     )
     print(
+        f"  backup flags:     {copies} cp site(s), all passing "
+        f"{' and '.join(BACKUP_CP_FLAGS)}"
+    )
+    print(
         f"{YELLOW}This proves no site is unclassified. It does not prove any"
         f" ensure is correct, nor that any declaration reaches the right path"
         f" or runs before the write.{NC}"
+    )
+    print(
+        f"{YELLOW}The flag assertion reads only calls whose argv[0] is the"
+        f" literal \"cp\": a copy made through a variable, a shell, or any"
+        f" other program is not held to it.{NC}"
     )
     print(
         f"{YELLOW}It does not see the `systemctl mask` link at all: that file"

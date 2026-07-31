@@ -820,7 +820,7 @@ fn apply_ready_executor(config: &str) -> MockExecutor {
         let backup = format!("/etc/ssh/sshd_config.backup.{stamp}");
         executor = executor.with_command(
             "cp",
-            &["-p", "/etc/ssh/sshd_config", &backup],
+            &["-p", "--no-dereference", "/etc/ssh/sshd_config", &backup],
             ok_output(""),
         );
     }
@@ -1373,6 +1373,68 @@ async fn ssh_apply_still_writes_and_restarts_when_config_drifts() {
     assert!(
         restarted_sshd(&executor),
         "a drifting apply must restart sshd"
+    );
+}
+
+/// As [`apply_ready_executor`] but answering any `cp` by program name rather
+/// than pinning its arguments.
+///
+/// The test below is about what those arguments are, so it must not be the
+/// thing that decides them: with an exact registration a wrong argv fails as
+/// "command not registered", which reads as a broken fixture rather than as the
+/// missing flag it is.
+fn apply_ready_executor_any_backup(config: &str) -> MockExecutor {
+    let temp = sshd_validate_temp_path();
+    MockExecutor::new()
+        .with_file("/etc/ssh/sshd_config", config)
+        .with_command("sshd", &["-t", "-f", &temp], ok_output(""))
+        .with_command("systemctl", &["restart", "sshd"], ok_output(""))
+        .with_command_program("cp", ok_output(""))
+}
+
+/// A backup is only worth taking if it is a copy of the thing about to be
+/// replaced, at the mode that thing carries.
+///
+/// `-p` keeps mode, ownership and timestamps, so an operator who copies the
+/// backup back gets sshd_config as it was rather than one wearing whatever the
+/// umask handed it. `--no-dereference` copies a symlink as a symlink, which
+/// matters here more than anywhere else in the tree: a host whose
+/// /etc/ssh/sshd_config is a link into a configuration-management checkout
+/// would otherwise be backed up as the managed file, and the object this apply
+/// is about to overwrite would have no copy at all.
+#[tokio::test]
+async fn ssh_backup_copy_keeps_the_mode_and_does_not_follow_a_symlink() {
+    let executor = apply_ready_executor_any_backup("# minimal config\n");
+
+    let result = run_ssh_apply(&executor).await;
+
+    assert!(
+        result.apply_success,
+        "a drifting apply must succeed: {result:?}"
+    );
+    let log = executor.log();
+    let (_, args) = log
+        .commands_executed
+        .iter()
+        .find(|(program, _)| program == "cp")
+        .expect("a drifting apply must back up the config with cp");
+    for flag in ["-p", "--no-dereference"] {
+        assert!(
+            args.iter().any(|argument| argument == flag),
+            "the backup cp must pass {flag}, got: {args:?}"
+        );
+    }
+    // Checked separately from the flags because "the flag is present" and "the
+    // flag is a flag" are different claims: an argument added after the source
+    // would be read by cp as another file to copy.
+    assert_eq!(
+        args[args.len() - 2],
+        "/etc/ssh/sshd_config",
+        "the source must stay the second-to-last argument, got: {args:?}"
+    );
+    assert!(
+        args[args.len() - 1].starts_with("/etc/ssh/sshd_config.backup."),
+        "the destination must stay the last argument, got: {args:?}"
     );
 }
 

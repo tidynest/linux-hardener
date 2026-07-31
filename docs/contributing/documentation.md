@@ -128,7 +128,8 @@ python3 scripts/validate/validate_write_sites.py
 ```
 
 Holds every file-creating call site under `crates/hardener-plugins/src` to two
-written answers, one per defect the tree has repeated.
+written answers, one per defect the tree has repeated, then asserts a third
+thing of the `cp` sites alone.
 
 The first is why the write can land at all, classifying each site as `ensured`
 (a `crate::ensure_directory` for that parent, named by the entry) or `exempt`
@@ -151,8 +152,24 @@ right: a declared path that is absent at capture is stored with a zero mode,
 which the restore reads as "remove this". That defect has been found twice, in
 the `systemctl mask` link and in the audit rules file.
 
-Fix a report by deciding both classifications for the new site and adding its
-entry as a pair of pairs, then moving `EXPECTED_SITE_COUNT` to match. The count
+The third is not a classification but an assertion, and applies only to the
+sites whose argv[0] is the literal `cp`: every one of them must pass both `-p`
+and `--no-dereference` before the source and destination. Three plugins take a
+backup copy and all three answered that differently, pam passing neither flag,
+ssh only `-p` and audit only `--no-dereference`, so each lost what the others
+kept. A copy without `-p` records none of the source's mode, ownership or
+timestamps, so restoring it hands the operator the file at whatever the umask
+gives; a copy without `--no-dereference` follows a symlink and records the
+target, so a config that is a link is backed up as some other file and the one
+about to be overwritten has no backup at all. It is asserted rather than
+registered because, unlike the other two questions, it has a single correct
+answer at every site: there is nothing for an entry to decide, and a column
+would only offer somewhere to write "exempt".
+
+Fix a report on either of the first two questions by deciding both
+classifications for the new site and adding its entry as a pair of pairs, then
+moving `EXPECTED_SITE_COUNT` to match. A report on the third is fixed by
+passing the flag. The count
 is pinned as a literal on purpose: a registry that counts its own size cannot
 fail when a site is added, which is the one thing this check exists to do. The
 second question needs no pin of its own, because an entry that does not answer
@@ -160,11 +177,14 @@ it is rejected as malformed and the registry's length is already held to the
 pin.
 
 What it proves is narrow, and the script's own docstring says so at length. It
-proves no site is unclassified on either question. It does not prove any ensure
+proves no site is unclassified on either question and that no literal `cp`
+copies without both flags. It does not prove any ensure
 is correct, covers the right parent, or runs before the write; it does not prove
 any declaration reaches the right path or is captured before the write; and it
 cannot see a file created by shell redirection, by a program named through a
-variable, or by a direct `std::fs` call. Most sharply, it cannot see the
+variable, or by a direct `std::fs` call. The flag assertion inherits that last
+blind spot exactly: a copy made through a variable, a shell, or any program
+other than a literal `cp` is not held to it. Most sharply, it cannot see the
 `systemctl mask` link that prompted the second question at all, because that
 file is created through `execute_command("systemctl", ...)` and admitting
 `systemctl` would admit every `start`, `stop` and `daemon-reload` beside it. The
