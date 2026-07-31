@@ -247,13 +247,27 @@ generate_host_keys() {
 
 # Enables the services the suites test.
 #
-# These calls decide whether sshd and auditd exist in the finished container,
-# and every bootstrap installs both packages a few lines above its own call, so
-# a failure means the bootstrap did not do what it just reported doing rather
-# than that a unit is legitimately absent. Written `2>/dev/null || true`, it
-# produced a container that built cleanly and tested nothing: a service that
-# was never enabled reads, several layers later, exactly like a service the
-# tool correctly left alone.
+# These calls decide whether sshd, auditd and bluetooth exist in the finished
+# container, and every bootstrap installs those packages a few lines above its
+# own call, so a failure means the bootstrap did not do what it just reported
+# doing rather than that a unit is legitimately absent. Written
+# `2>/dev/null || true`, it produced a container that built cleanly and tested
+# nothing: a service that was never enabled reads, several layers later,
+# exactly like a service the tool correctly left alone.
+#
+# bluetooth is here for a reason of its own. The service-minimisation plugin
+# assesses five units and every image shipped with none of them, so the plugin
+# had no subject matter and an oracle over it could only read the same
+# "nothing to report" on all five distributions. bluez is installed everywhere
+# to supply that subject matter, and enabling it is what makes installing it
+# count: the plugin raises a finding only for a unit that is enabled or active,
+# so an installed but disabled bluetooth.service would leave the fixture with
+# nothing to find. Leaving that to the packaging would not do either, because
+# Debian enables a daemon on install where Arch does not, and the five images
+# would then disagree with each other. The enable is also the backstop for the
+# openSUSE install below, which warns and continues rather than failing: a
+# bluez that did not install there cannot reach the end of creation unnoticed,
+# because enabling an absent unit fails and this function is called bare.
 #
 # Called bare for the same reason `generate_host_keys` is, and the error text
 # is kept for the same reason too.
@@ -315,8 +329,9 @@ podman_export_rootfs() {
 bootstrap_arch() {
     # Bootstrap minimal Arch system
     mkdir -p "$CONTAINER_PATH"
+    # bluez gives service-minimisation a unit to assess; see enable_test_services.
     pacstrap -c "$CONTAINER_PATH" base base-devel \
-        openssh audit ufw iptables nftables \
+        openssh audit bluez ufw iptables nftables \
         sudo polkit jq --noconfirm
 
     # Set up container
@@ -336,7 +351,7 @@ bootstrap_arch() {
     generate_host_keys
 
     # Enable services that hardener tests
-    enable_test_services chroot "$CONTAINER_PATH" systemctl enable sshd auditd
+    enable_test_services chroot "$CONTAINER_PATH" systemctl enable sshd auditd bluetooth
 }
 
 bootstrap_debian() {
@@ -362,9 +377,11 @@ bootstrap_debian() {
     # Install required packages for hardener testing
     log_info "Installing test dependencies..."
     chroot "$CONTAINER_PATH" apt-get update
+    # bluez gives service-minimisation a unit to assess; see enable_test_services.
     chroot "$CONTAINER_PATH" apt-get install -y \
         openssh-server \
         auditd \
+        bluez \
         ufw \
         iptables \
         nftables \
@@ -382,7 +399,7 @@ bootstrap_debian() {
     generate_host_keys
 
     # Enable services that hardener tests
-    enable_test_services chroot "$CONTAINER_PATH" systemctl enable ssh auditd
+    enable_test_services chroot "$CONTAINER_PATH" systemctl enable ssh auditd bluetooth
 
     # Clean up apt cache to save space
     chroot "$CONTAINER_PATH" apt-get clean
@@ -435,11 +452,15 @@ bootstrap_dnf_family() {
     # one distribution's reading incomparable with the other's. Installing it
     # is not the suite being made to pass: the differential check that found
     # this reports the refusal and names the missing dictionary either way.
+    #
+    # bluez is here for the neighbouring reason: it gives service-minimisation
+    # a unit to assess. See enable_test_services for why it is also enabled.
     log_info "Installing test dependencies..."
     systemd-nspawn --quiet --directory="$CONTAINER_PATH" \
         dnf -y install \
         openssh-server \
         audit \
+        bluez \
         cracklib-dicts \
         firewalld \
         nftables \
@@ -458,7 +479,7 @@ bootstrap_dnf_family() {
     generate_host_keys
 
     # Enable services that hardener tests
-    enable_test_services chroot "$CONTAINER_PATH" systemctl enable sshd auditd
+    enable_test_services chroot "$CONTAINER_PATH" systemctl enable sshd auditd bluetooth
 
     # Clean up dnf cache to save space
     systemd-nspawn --quiet --directory="$CONTAINER_PATH" dnf clean all 2>/dev/null || true
@@ -529,10 +550,12 @@ bootstrap_opensuse() {
 
     # Install required packages for hardener testing
     log_info "Installing test dependencies..."
+    # bluez gives service-minimisation a unit to assess; see enable_test_services.
     systemd-nspawn --quiet --directory="$CONTAINER_PATH" \
         zypper --gpg-auto-import-keys --non-interactive install \
         openssh-server \
         audit \
+        bluez \
         firewalld \
         nftables \
         iptables \
@@ -551,7 +574,7 @@ bootstrap_opensuse() {
 
     # Enable services that hardener tests
     enable_test_services systemd-nspawn --quiet --directory="$CONTAINER_PATH" \
-        systemctl enable sshd auditd
+        systemctl enable sshd auditd bluetooth
 
     # Clean up zypper cache to save space
     systemd-nspawn --quiet --directory="$CONTAINER_PATH" \
