@@ -2238,6 +2238,12 @@ KERNEL_CHECKS_EXPECTED=11
 # fails the guard twice rather than passing quietly.
 KERNEL_UNASKABLE_EXPECTED=7
 SEEDED_KERNEL_CHECKS_EXPECTED=1
+# Pinned for a reason of its own, and it is the KERNEL_UNASKABLE one inverted.
+# No total below is counted off this table's length. What pinning it buys is
+# that a red introduced-finding row cannot be quieted by appending an entry:
+# doing so fails this guard until the number beside the table moves as well, and
+# that number is what a reviewer meets in the diff.
+INTRODUCED_FINDING_ALLOWANCES_EXPECTED=2
 
 require_check_tables() {
     local entry name got want refused=0
@@ -2253,7 +2259,8 @@ require_check_tables() {
         "FIREWALL_CHECKS ${#FIREWALL_CHECKS[@]} $FIREWALL_CHECKS_EXPECTED" \
         "KERNEL_CHECKS ${#KERNEL_CHECKS[@]} $KERNEL_CHECKS_EXPECTED" \
         "KERNEL_UNASKABLE ${#KERNEL_UNASKABLE[@]} $KERNEL_UNASKABLE_EXPECTED" \
-        "SEEDED_KERNEL_CHECKS ${#SEEDED_KERNEL_CHECKS[@]} $SEEDED_KERNEL_CHECKS_EXPECTED"; do
+        "SEEDED_KERNEL_CHECKS ${#SEEDED_KERNEL_CHECKS[@]} $SEEDED_KERNEL_CHECKS_EXPECTED" \
+        "INTRODUCED_FINDING_ALLOWANCES ${#INTRODUCED_FINDING_ALLOWANCES[@]} $INTRODUCED_FINDING_ALLOWANCES_EXPECTED"; do
         read -r name got want <<<"$entry"
         if [[ "$got" != "$want" ]]; then
             echo "FATAL: $name holds $got, expected $want." >&2
@@ -2298,6 +2305,13 @@ require_check_tables() {
 # makes no difference to: the dry run and the apply both happen whether or not
 # the fixture is booted, so the same six are asked either way.
 #
+# The introduced-finding registry is shaped the same and sized the same, one row
+# per compared plugin and one control over the two documents those rows are read
+# through, taking the unbooted total from 62 to 68 and the booted one from 75 to
+# 81. The mode makes no difference to it either: both scan documents are
+# captured whether or not the fixture is booted, and the finding ids in them are
+# the tool's own report rather than a reading off /proc/sys.
+#
 # Counted off the pinned lengths above, never off the tables themselves. Read
 # from ${#SSH_CHECKS[@]} the expectation would follow the table it exists to
 # police: emptying that table would drop the number from 28 to 14 and
@@ -2314,6 +2328,7 @@ expected_check_total() {
             + VENDOR_SURVIVAL_CHECKS_EXPECTED + IDEMPOTENCE_CHECKS_EXPECTED \
             + PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED + DIFF_PLUGINS_EXPECTED - 1 \
             + SEEDED_SSH_CHECKS_EXPECTED + FIREWALL_CHECKS_EXPECTED \
+            + DIFF_PLUGINS_EXPECTED + 1 \
             + DIFF_PLUGINS_EXPECTED + 1 ))"
         return
     fi
@@ -2323,6 +2338,7 @@ expected_check_total() {
         + PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED + DIFF_PLUGINS_EXPECTED \
         + SEEDED_SSH_CHECKS_EXPECTED + FIREWALL_CHECKS_EXPECTED \
         + KERNEL_CHECKS_EXPECTED + SEEDED_KERNEL_CHECKS_EXPECTED \
+        + DIFF_PLUGINS_EXPECTED + 1 \
         + DIFF_PLUGINS_EXPECTED + 1 ))"
 }
 
@@ -2878,6 +2894,208 @@ run_preapply_control() {
             record_fail "$plugin: before apply the tool reported no finding for any of the $total compared directives, on a container nothing had been applied to; either the filter matches nothing or this plugin's scan produced nothing, and the JSON cannot tell those apart"
         fi
     done
+}
+
+# Findings the hardening is EXPECTED to introduce, and the reason each one is
+# correct: "<plugin id>|<finding id>|<why it is right>".
+#
+# The obvious rule, "hardening introduces no new finding", is false, and a check
+# asserting it would fail a tool behaving exactly as designed. Measured
+# 2026-07-31 against the arch and debian containers this suite had just
+# hardened: the firewall plugin runs first and enables ufw, ufw applies its own
+# sysctl file when its unit starts, that unit is ordered AFTER systemd-sysctl,
+# and the file sets log_martians to 0 against the tool's target of 1. So the
+# parameter genuinely stops surviving a reboot and the tool is right to report
+# it, only after the apply. The three firewalld distributions reported none of
+# this.
+#
+# Which makes this a registry rather than a prohibition. An introduced finding
+# passes when it is declared here with a written reason and fails naming itself
+# when it is not, so the decision gets forced at the moment the finding first
+# appears rather than the day it misleads someone. Same shape, and the same
+# reason, as scripts/validate/validate_write_sites.py.
+#
+# Matched on the whole id, never on a prefix. `kernel_boot_override_` reads as
+# one mechanism but covers every parameter that mechanism ever reaches,
+# including ones nobody has looked at, and a bare `kernel_` would cover the
+# plugin. What is being declared is a decision about one finding, and a pattern
+# written before the decision cannot carry it.
+INTRODUCED_FINDING_ALLOWANCES=(
+    "kernel-hardening|kernel_boot_override_net_ipv4_conf_all_log_martians|ufw's sysctl file sets this to 0 and ufw.service is ordered after systemd-sysctl, so once the firewall plugin enables ufw the parameter stops surviving a reboot; measured 2026-07-31 on arch and debian, current 0 against a want of 1"
+    "kernel-hardening|kernel_boot_override_net_ipv4_conf_default_log_martians|the default scope of the same ufw file, introduced by the same enable and measured beside it on the same two containers"
+)
+
+# Every finding id one plugin reported in one of the two scan documents, sorted
+# and one per line.
+#
+# Prints nothing for a plugin that reported no finding, which is what a hardened
+# host looks like, and returns non-zero when the document holds no readable
+# findings array for it at all. Both print nothing and only one of them is a
+# reading: an absent plugin object would otherwise contribute an empty set, an
+# empty set introduces nothing, and nothing introduced is the pass condition of
+# every row below.
+#
+# has_scan_array is what draws that line, and it is reused rather than restated:
+# it already requires exactly one object for the plugin and a findings key that
+# is genuinely an array.
+#
+# An entry whose finding_id is not a string is dropped rather than printed as
+# jq's `null`. A renamed key then empties BOTH sides at once, which introduces
+# nothing and resolves nothing, and the control below is what turns that into a
+# red row.
+scan_finding_ids() {
+    local document="$1" plugin="$2"
+    has_scan_array "$document" "$plugin" findings || return 1
+    jq -r --arg p "$plugin" \
+        '.[] | select(.plugin_id == $p) | .findings[]
+             | select((.finding_id | type) == "string") | .finding_id' \
+        <<<"$document" | sort -u
+}
+
+# The ids in $2 that $1 does not hold, one per line. One function for both
+# directions: introduced is "after minus before" and resolved is "before minus
+# after", and writing the difference twice is how the two come to disagree.
+#
+# Both arguments arrive as the lists scan_finding_ids prints, where an empty
+# list means an empty set. A here-string built from an empty variable still
+# carries one blank line, so both loops skip blanks rather than treating that
+# line as an id.
+ids_absent_from() {
+    local held="$1" candidates="$2" id
+    local -A seen=()
+    while IFS= read -r id; do
+        if [[ -n "$id" ]]; then
+            seen["$id"]=1
+        fi
+    done <<<"$held"
+    while IFS= read -r id; do
+        if [[ -n "$id" && -z "${seen[$id]:-}" ]]; then
+            printf '%s\n' "$id"
+        fi
+    done <<<"$candidates"
+}
+
+# The declared reason for one introduced finding, non-zero when no entry
+# declares it. Keyed on the plugin AND the id together, so an id declared under
+# one plugin does not excuse the same id appearing under another.
+introduced_finding_reason() {
+    local plugin="$1" id="$2" entry entry_plugin entry_id reason
+    for entry in "${INTRODUCED_FINDING_ALLOWANCES[@]}"; do
+        IFS='|' read -r entry_plugin entry_id reason <<<"$entry"
+        if [[ "$entry_plugin" == "$plugin" && "$entry_id" == "$id" ]]; then
+            printf '%s' "$reason"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# One row per compared plugin: is every finding the apply introduced declared?
+#
+# Both documents are captured on every run and, until this existed, only parts
+# of each were ever interrogated: the finding-id comparisons cover ssh, pam and
+# permissions directives, and nothing asked either document anything about
+# firewall or kernel ids. 373dd7c added a kernel finding that appears only after
+# apply, a full run passed 75/75, and the run said nothing whatever about the
+# commit it was run for.
+#
+# The freshness of both documents is not re-checked here. Every ssh, pam and
+# permissions row above reads SCAN_JSON through require_fresh_capture and
+# run_preapply_control reads PRE_APPLY_SCAN_JSON through
+# require_preapply_capture, so a stale stamp on either has already gone red
+# nineteen times over before this block runs.
+#
+# One thing a reader meeting a red permissions row should check first, and it is
+# unmeasured rather than expected: scan_oracle_init runs BELOW the two inits that
+# create and remove the probe account, so the post-apply document describes
+# /etc/passwd and /etc/shadow as useradd and userdel left them. That ordering is
+# deliberate and permissions_oracle_init is taken above them for exactly this
+# reason, but nothing has yet measured whether it can introduce a finding of its
+# own. If it can, the honest repair is the capture order, not an entry here.
+run_introduced_finding_checks() {
+    local plugin before after id reason declared undeclared
+    for plugin in "${DIFF_PLUGINS[@]}"; do
+        if ! before="$(scan_finding_ids "$PRE_APPLY_SCAN_JSON" "$plugin")"; then
+            record_fail "introduced findings $plugin: the pre-apply scan document holds no readable findings array for the plugin, so nothing here can say which of its findings are new"
+            continue
+        fi
+        if ! after="$(scan_finding_ids "$SCAN_JSON" "$plugin")"; then
+            record_fail "introduced findings $plugin: the post-apply scan document holds no readable findings array for the plugin, so nothing here can say which of its findings are new"
+            continue
+        fi
+        declared=""
+        undeclared=""
+        while IFS= read -r id; do
+            [[ -n "$id" ]] || continue
+            if reason="$(introduced_finding_reason "$plugin" "$id")"; then
+                declared+="${declared:+; }$id ($reason)"
+            else
+                undeclared+="${undeclared:+, }$id"
+            fi
+        done < <(ids_absent_from "$before" "$after")
+        if [[ -n "$undeclared" ]]; then
+            record_fail "introduced findings $plugin: the apply introduced finding(s) no INTRODUCED_FINDING_ALLOWANCES entry declares: $undeclared. Hardening a host can correctly introduce a finding, so this is a decision and not yet a defect: measure what the tool is reporting, then either fix the tool or declare the id beside the reason it is right."
+        elif [[ -n "$declared" ]]; then
+            record_pass "introduced findings $plugin: every finding the apply introduced is declared: $declared"
+        else
+            record_pass "introduced findings $plugin: the apply introduced no finding the plugin was not already reporting"
+        fi
+    done
+}
+
+# The control over the comparison those rows are read through, and it is the
+# half that discriminates on every distribution.
+#
+# Each row above passes when nothing was introduced, and nothing is what an
+# empty set introduces: a renamed finding_id key, a plugin_id the document no
+# longer carries, and a capture that never happened all produce five quiet
+# passes. So this asks the opposite question. At least one finding the tool
+# reported BEFORE the apply must be absent AFTER it, because hardening fixes
+# things on all five containers. Nothing resolved means the two documents are
+# the same one, or the extraction reads nothing, or the apply did nothing, and
+# all three have to be red.
+#
+# Coverage is reported alongside, naming the side a plugin was missing from: a
+# document that never carried the plugin and one whose capture failed are fixed
+# in different places. Both sides are asked of every plugin before the skip, so
+# a plugin missing from both is named twice rather than once.
+#
+# One pass over the plugins rather than a coverage loop and a counting loop.
+# Read twice, the second loop's assignments would be safe only because the first
+# had already returned, and under `set -euo pipefail` a reader that failed there
+# would end the run with no summary at all instead of recording a red row.
+run_introduced_finding_control() {
+    local plugin gaps="" before after id names resolved="" total=0 readable
+    for plugin in "${DIFF_PLUGINS[@]}"; do
+        readable=1
+        if ! before="$(scan_finding_ids "$PRE_APPLY_SCAN_JSON" "$plugin")"; then
+            gaps+="${gaps:+, }$plugin is missing from the pre-apply scan document"
+            readable=0
+        fi
+        if ! after="$(scan_finding_ids "$SCAN_JSON" "$plugin")"; then
+            gaps+="${gaps:+, }$plugin is missing from the post-apply scan document"
+            readable=0
+        fi
+        (( readable == 1 )) || continue
+        names=""
+        while IFS= read -r id; do
+            [[ -n "$id" ]] || continue
+            total=$((total + 1))
+            names+="${names:+, }$id"
+        done < <(ids_absent_from "$after" "$before")
+        if [[ -n "$names" ]]; then
+            resolved+="${resolved:+; }$plugin resolved $names"
+        fi
+    done
+    if [[ -n "$gaps" ]]; then
+        record_fail "introduced findings control: the two documents do not cover all ${#DIFF_PLUGINS[@]} compared plugins, so a row above can pass on a set that was empty because nothing was read: $gaps"
+        return 0
+    fi
+    if (( total == 0 )); then
+        record_fail "introduced findings control: not one finding the tool reported before apply is absent after it, on a container this run has hardened twice; either the two documents are the same one, or the id extraction reads nothing, or the apply did nothing, and every row above passes on all three"
+        return 0
+    fi
+    record_pass "introduced findings control: the apply resolved $total finding(s), so the comparison the rows above are read through is live: $resolved"
 }
 
 # The positive control for the seeded pair, and the only thing that separates
@@ -4088,9 +4306,9 @@ Number of days of warning before password expires	: 11"
     # whatever mode the environment happened to ask for would make the
     # self-test go red on a maintainer who exported the runner's signal.
     pinned_total="$(KERNEL_BOOTED=0 expected_check_total)"
-    check_eq "$pinned_total" "62" \
-        "the run is sized at two checks per directive, one per unmanaged setting, one per idempotency reading, one per pwquality enforcement reading, one control per plugin, one preview-agreement row per plugin and its own control, plus one pre-apply control per seeded directive"
-    check_eq "$(KERNEL_BOOTED=1 expected_check_total)" "75" \
+    check_eq "$pinned_total" "68" \
+        "the run is sized at two checks per directive, one per unmanaged setting, one per idempotency reading, one per pwquality enforcement reading, one control per plugin, one preview-agreement row per plugin and its own control, one introduced-finding row per plugin and its own control, plus one pre-apply control per seeded directive"
+    check_eq "$(KERNEL_BOOTED=1 expected_check_total)" "81" \
         "a booted run is sized for eleven kernel rows, the seeded kernel row and the kernel plugin's own control on top of that, which is the only arithmetic difference the mode makes"
     check_status 0 "require_check_tables accepts the tables as they stand" \
         require_check_tables
@@ -4116,6 +4334,23 @@ Number of days of warning before password expires	: 11"
     SSH_CHECKS=("${saved_ssh_checks[@]}")
     check_status 0 "require_check_tables accepts the table once it is restored" \
         require_check_tables
+
+    # The introduced-finding registry, and it is the one table here whose length
+    # no total is counted off, so nothing else in this file would notice it
+    # moving.
+    local saved_allowances=("${INTRODUCED_FINDING_ALLOWANCES[@]}")
+    INTRODUCED_FINDING_ALLOWANCES=("${saved_allowances[0]}")
+    check_status 1 "require_check_tables refuses the introduced-finding registry edited down" \
+        require_check_tables
+    # The direction that matters more in this table than in any other: appending
+    # an entry is how a red introduced-finding row gets quieted, and doing so
+    # fails this guard until the number beside the table moves as well, which is
+    # what puts the decision in front of a reviewer.
+    INTRODUCED_FINDING_ALLOWANCES=("${saved_allowances[@]}" "kernel-hardening|kernel_invented|declared with no measurement behind it")
+    check_status 1 "and refuses it grown, which is the direction that would quiet a red row" \
+        require_check_tables
+    INTRODUCED_FINDING_ALLOWANCES=("${saved_allowances[@]}")
+    check_status 0 "and accepts the registry once it is restored" require_check_tables
 
     # The seeded pair. Its failure mode is the quiet one: if the seed never
     # lands, the post-apply reading is the tool's own target, the tool put it
@@ -5591,6 +5826,146 @@ $pa_tick Kernel Hardening - no changes needed"
     CHECKS_PASSED=$pa_saved_passed
     CHECKS_FAILED=$pa_saved_failed
 
+    # The two scan documents held against each other. Both are injected here
+    # rather than captured, exactly as the firewall boot readings and the dry
+    # run are: a check that shells out cannot be driven, and an assertion
+    # nothing proves is not an oracle.
+    local if_saved_scan="$SCAN_JSON" if_saved_pre="$PRE_APPLY_SCAN_JSON"
+    local if_saved_total=$CHECKS_TOTAL if_saved_passed=$CHECKS_PASSED if_saved_failed=$CHECKS_FAILED
+    local if_saved_allowances=("${INTRODUCED_FINDING_ALLOWANCES[@]}")
+    local if_out if_before if_after
+    if_out="$(mktemp)"
+
+    # What a hardened host produces, derived from the same fixture so that what
+    # is being tested is visible as the mutation. Four plugins resolve the one
+    # finding they reported; the kernel plugin resolves its own and reports the
+    # two boot-override ids measured on arch and debian on 2026-07-31, which
+    # appear only after the firewall plugin has enabled ufw.
+    if_before="$scan_fixture"
+    if_after="$(jq 'map(.findings = (if .plugin_id == "kernel-hardening" then
+            [{"finding_id": "kernel_boot_override_net_ipv4_conf_all_log_martians"},
+             {"finding_id": "kernel_boot_override_net_ipv4_conf_default_log_martians"}]
+          else [] end))' <<<"$scan_fixture")"
+    PRE_APPLY_SCAN_JSON="$if_before"
+    SCAN_JSON="$if_after"
+
+    check_eq "$(scan_finding_ids "$if_before" kernel-hardening)" "kernel_net_ipv4_conf_all_rp_filter" \
+        "the id extraction reads a plugin's findings by the key the tool emits them under"
+    # Status and value in one assertion: asked for the value alone this could
+    # not discriminate, because a refusal prints nothing as well and nothing is
+    # what a compliant plugin correctly reads as.
+    check_eq "$(scan_finding_ids "$if_after" ssh-hardening || echo REFUSED)" "" \
+        "a plugin that reported no finding reads as an empty set rather than as a refusal, because that is what a hardened host looks like"
+    check_status 1 "and a plugin the document holds no object for is refused, because an empty set introduces nothing and nothing introduced is the pass condition below" \
+        scan_finding_ids "$if_before" audit-hardening
+    check_eq "$(scan_finding_ids "$(jq 'map(.findings = (.findings | map({id: .finding_id})))' <<<"$if_before")" ssh-hardening || echo REFUSED)" "" \
+        "an entry carrying no string finding_id contributes no id rather than jq's 'null', which the registry could then be made to declare"
+
+    check_eq "$(ids_absent_from "kept" "$(printf 'kept\nnew')")" "new" \
+        "the difference names what the second set holds and the first does not"
+    check_eq "$(ids_absent_from "kept" "" | wc -l)" "0" \
+        "and an empty candidate list is an empty set rather than one blank id, which a here-string built from an empty variable would otherwise supply"
+
+    check_status 1 "an id no entry declares is refused by the registry" \
+        introduced_finding_reason kernel-hardening kernel_boot_override_net_ipv4_conf_all_rp_filter
+    check_status 1 "and an id declared under one plugin does not excuse the same id under another, because the registry is keyed on the pair" \
+        introduced_finding_reason firewall-hardening kernel_boot_override_net_ipv4_conf_all_log_martians
+
+    # Redirected to a file rather than captured with $(...), for the reason the
+    # two blocks above give: a command substitution is a subshell, so every
+    # counter these functions increment would be discarded.
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    run_introduced_finding_checks > "$if_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "5/0" \
+        "every row passes when the only findings the apply introduced are declared ones"
+    check_status 0 "and the declared row carries the reason the entry gives, so a reader meets it in the log rather than being sent to the table" \
+        grep -q "introduced findings kernel-hardening: every finding the apply introduced is declared: kernel_boot_override_net_ipv4_conf_all_log_martians (ufw's sysctl file sets this to 0" "$if_out"
+    check_status 0 "a plugin that introduced nothing says so, rather than saying nothing" \
+        grep -q "introduced findings ssh-hardening: the apply introduced no finding the plugin was not already reporting" "$if_out"
+
+    # The registry doing the thing it exists for. With the second entry removed,
+    # the second boot-override finding is exactly what 373dd7c's new finding was
+    # on the run that reported 75/75 and said nothing about it.
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    INTRODUCED_FINDING_ALLOWANCES=("${if_saved_allowances[0]}")
+    run_introduced_finding_checks > "$if_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "4/1" \
+        "an introduced finding no entry declares fails its plugin's row, and only that plugin's"
+    check_status 0 "and the row names the id, because the maintainer's next move is to decide what that one finding is" \
+        grep -q "no INTRODUCED_FINDING_ALLOWANCES entry declares: kernel_boot_override_net_ipv4_conf_default_log_martians" "$if_out"
+    INTRODUCED_FINDING_ALLOWANCES=("${if_saved_allowances[@]}")
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    SCAN_JSON="$(jq 'map(select(.plugin_id != "firewall-hardening"))' <<<"$if_after")"
+    run_introduced_finding_checks > "$if_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "4/1" \
+        "a plugin the post-apply document never covered fails its own row rather than reading as one that introduced nothing"
+    check_status 0 "named against the document it was missing from" \
+        grep -q "introduced findings firewall-hardening: the post-apply scan document holds no readable findings array" "$if_out"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    SCAN_JSON="$if_after"
+    PRE_APPLY_SCAN_JSON="$(jq 'map(select(.plugin_id != "pam-hardening"))' <<<"$if_before")"
+    run_introduced_finding_checks > "$if_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "4/1" \
+        "and a plugin the pre-apply document never covered fails too, on the other side of the same comparison"
+    check_status 0 "named against that side, because the two absences are fixed in different places" \
+        grep -q "introduced findings pam-hardening: the pre-apply scan document holds no readable findings array" "$if_out"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    PRE_APPLY_SCAN_JSON="$if_before"
+    run_introduced_finding_control > "$if_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "1/0" \
+        "the control passes when the apply resolved at least one finding"
+    check_status 0 "and names which plugin resolved what, so the log shows the comparison ran rather than asserting that it did" \
+        grep -q "introduced findings control: the apply resolved 5 finding(s)" "$if_out"
+    check_status 0 "including the plugin that resolved one finding and introduced two in the same apply" \
+        grep -q "kernel-hardening resolved kernel_net_ipv4_conf_all_rp_filter" "$if_out"
+
+    # The vacuity every row above passes on, and the reason this control is not
+    # optional: nothing introduced is the pass condition, and a document nobody
+    # can read introduces nothing.
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    SCAN_JSON="$if_before"
+    run_introduced_finding_control > "$if_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/1" \
+        "two identical documents fail the control, because an apply that resolved nothing leaves the rows above nothing to be read off"
+    check_status 0 "and the refusal names all three things that produce it, rather than one" \
+        grep -q "either the two documents are the same one, or the id extraction reads nothing, or the apply did nothing" "$if_out"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    PRE_APPLY_SCAN_JSON="$(jq 'map(.findings = (.findings | map({id: .finding_id})))' <<<"$if_before")"
+    SCAN_JSON="$(jq 'map(.findings = (.findings | map({id: .finding_id})))' <<<"$if_after")"
+    run_introduced_finding_control > /dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/1" \
+        "a renamed finding_id key fails the control, because it empties both sides at once and validate_scan_document does not require that key the way it requires unchecked_check_id"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    PRE_APPLY_SCAN_JSON="$if_before"
+    SCAN_JSON="$(jq 'map(select(.plugin_id != "kernel-hardening"))' <<<"$if_after")"
+    run_introduced_finding_control > "$if_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/1" \
+        "a plugin missing from the post-apply document fails the control even though the other four resolved findings, so coverage is not bought off by resolution"
+    check_status 0 "and the control names that plugin and the side it was missing from" \
+        grep -q "kernel-hardening is missing from the post-apply scan document" "$if_out"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    SCAN_JSON="$if_after"
+    PRE_APPLY_SCAN_JSON="$(jq 'map(select(.plugin_id != "ssh-hardening"))' <<<"$if_before")"
+    run_introduced_finding_control > "$if_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/1" \
+        "and one missing from the pre-apply document fails it on the other side"
+    check_status 0 "named against that side" \
+        grep -q "ssh-hardening is missing from the pre-apply scan document" "$if_out"
+
+    rm -f "$if_out"
+    SCAN_JSON="$if_saved_scan"
+    PRE_APPLY_SCAN_JSON="$if_saved_pre"
+    INTRODUCED_FINDING_ALLOWANCES=("${if_saved_allowances[@]}")
+    CHECKS_TOTAL=$if_saved_total
+    CHECKS_PASSED=$if_saved_passed
+    CHECKS_FAILED=$if_saved_failed
+
     if (( failures > 0 )); then
         echo "self-test: $failures failure(s)"
         return 1
@@ -5694,6 +6069,11 @@ run_full_suite() {
     # held before the apply but the two parses these rows are read through.
     run_preview_agreement_control
     run_preview_agreement_checks
+    # Beside its own rows for the same reason, and last because it is the only
+    # block that holds the two scan documents against each other: everything
+    # above interrogates one of them at a time.
+    run_introduced_finding_control
+    run_introduced_finding_checks
     print_summary
 }
 
