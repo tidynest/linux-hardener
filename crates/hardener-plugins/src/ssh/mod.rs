@@ -1822,6 +1822,66 @@ impl HardeningPlugin for SshHardeningPlugin {
             }
 
             let target_value = selected.join(",");
+
+            // Where this directive belongs, by the same question the directive
+            // loop above asks: what would win if this tool's own fragment were
+            // not there. Writing the main file cannot change what sshd
+            // negotiates when a file it reads first answers the keyword, and on
+            // RHEL, Fedora and openSUSE that file is crypto-policies'
+            // 50-redhat.conf, which answers all three of these. The apply
+            // reported "Ciphers: x -> y" and sshd went on using the drop-in's
+            // list. The maintainer's decision is that this tool overrides that
+            // fragment rather than deferring to it, so an overridden directive
+            // is routed to the fragment this tool owns, which sorts first.
+            //
+            // Routed rather than written here, deliberately: a directive in
+            // `to_dropin` goes through `verify_dropin_precedence`, which reads
+            // the configuration back and reports a failed change naming the
+            // file still answering the keyword. That 00- sorts before 50- is a
+            // claim about filenames nobody controls, and it is checked rather
+            // than assumed for these directives exactly as for the others.
+            let overridden = resolved
+                .effective_without(crypto.crypto_directive_name, dropin::DROPIN_PATH)
+                .filter(|effective| effective.source != config_path);
+            if let Some(effective) = overridden {
+                // Secure rather than equal to the target: a file underneath
+                // offering a subset of the allow-list leaves the host with no
+                // weak algorithm on offer, which is the same question scan
+                // asks, so the two agree about that host and no fragment is
+                // needed. Asking for equality would leave a fragment restating
+                // a list the host already obeys.
+                if crypto_value_is_secure(Some(&effective.value), crypto.crypto_desired) {
+                    changes.push(Change {
+                        change_description: format!(
+                            "{}: already strong via {}, which sshd reads before {}",
+                            crypto.crypto_directive_name, effective.source, config_path,
+                        ),
+                        change_type: ChangeType::Skipped,
+                        change_success: true,
+                        change_error: None,
+                    });
+                    continue;
+                }
+                to_dropin.push(dropin::Directive {
+                    keyword: crypto.crypto_directive_name,
+                    value: target_value,
+                    note: "",
+                });
+                continue;
+            }
+
+            // The vendor file is never edited, so on a host keeping its
+            // sshd_config under /usr/etc every managed directive goes to the
+            // fragment, crypto included.
+            if !writing_main {
+                to_dropin.push(dropin::Directive {
+                    keyword: crypto.crypto_directive_name,
+                    value: target_value,
+                    note: "",
+                });
+                continue;
+            }
+
             let original_value = parse_config_value(
                 global_scope(&config_content),
                 crypto.crypto_directive_name,

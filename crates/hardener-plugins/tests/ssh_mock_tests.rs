@@ -2324,6 +2324,93 @@ async fn apply_writes_a_winning_dropin_when_one_overrides_the_main_file() {
     );
 }
 
+/// A crypto directive a drop-in overrides is routed to the fragment that beats
+/// it, exactly as every other overridden directive already is.
+///
+/// This is the half the scan fix deliberately left open. RHEL, Fedora and
+/// openSUSE let crypto-policies supply Ciphers, MACs and KexAlgorithms from
+/// /etc/ssh/sshd_config.d, which sshd reads before the main file, so writing
+/// the strong list into sshd_config reported a change sshd never obeyed. The
+/// maintainer's decision is that this tool overrides that fragment rather than
+/// deferring to it.
+///
+/// `ssh -Q cipher` is registered because the target is the intersection of this
+/// tool's allow-list with what the host supports: without it the intersection is
+/// empty and the whole directive is skipped, which would make this test pass by
+/// asserting nothing.
+#[tokio::test]
+async fn apply_writes_a_winning_dropin_for_a_crypto_directive_a_dropin_overrides() {
+    let executor = dropin_apply_commands(
+        MockExecutor::new()
+            .with_file(
+                "/etc/ssh/sshd_config",
+                "Include /etc/ssh/sshd_config.d/*.conf\nCiphers aes256-gcm@openssh.com\n",
+            )
+            .with_directory("/etc/ssh/sshd_config.d")
+            .with_file("/etc/ssh/sshd_config.d/50-redhat.conf", "Ciphers 3des-cbc\n"),
+    )
+    .with_command(
+        "ssh",
+        &["-Q", "cipher"],
+        ok_output("chacha20-poly1305@openssh.com\naes256-gcm@openssh.com\naes128-gcm@openssh.com\n3des-cbc\n"),
+    );
+
+    let result = run_ssh_apply(&executor).await;
+
+    let dropin = dropin_written(&executor).unwrap_or_else(|| {
+        panic!(
+            "a drop-in must be written to beat 50-redhat.conf's cipher list, wrote: {:?}",
+            executor.log().files_written
+        )
+    });
+    assert!(
+        dropin.contains("Ciphers "),
+        "the drop-in must carry the overridden crypto directive, got: {dropin}"
+    );
+    assert!(
+        !dropin.contains("3des-cbc"),
+        "the drop-in must not carry the weak algorithm it exists to beat, got: {dropin}"
+    );
+    assert!(
+        result.apply_success,
+        "the directive is genuinely applied, so apply succeeds: {:?}",
+        result.apply_changes
+    );
+}
+
+/// The mirror: a drop-in already holding a strong list needs no fragment, and
+/// writing one anyway would restate a value the host already obeys.
+#[tokio::test]
+async fn apply_writes_no_crypto_dropin_when_the_overriding_file_is_already_strong() {
+    let executor = dropin_apply_commands(
+        MockExecutor::new()
+            .with_file(
+                "/etc/ssh/sshd_config",
+                "Include /etc/ssh/sshd_config.d/*.conf\n",
+            )
+            .with_directory("/etc/ssh/sshd_config.d")
+            .with_file(
+                "/etc/ssh/sshd_config.d/50-redhat.conf",
+                "Ciphers chacha20-poly1305@openssh.com\n",
+            ),
+    )
+    .with_command(
+        "ssh",
+        &["-Q", "cipher"],
+        ok_output(
+            "chacha20-poly1305@openssh.com\naes256-gcm@openssh.com\naes128-gcm@openssh.com\n",
+        ),
+    );
+
+    let _ = run_ssh_apply(&executor).await;
+
+    let dropin = dropin_written(&executor).unwrap_or_default();
+    assert!(
+        !dropin.contains("Ciphers"),
+        "a file underneath already holding a strong list needs no fragment, got: {dropin}"
+    );
+}
+
 #[tokio::test]
 async fn apply_writes_no_dropin_when_nothing_overrides_the_main_file() {
     // Arch and Debian pass today. The drop-in is written only where needed, so
