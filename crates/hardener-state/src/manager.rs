@@ -10,11 +10,6 @@ use hardener_types::UNDELETABLE_ROLLBACK_PATHS;
 use sqlx::{Row, SqlitePool};
 use std::path::Path;
 
-/// Default rollback path prefixes for production use.
-///
-/// Paths match via `starts_with`, so `/etc/ssh` covers both
-/// `/etc/ssh` itself and any file beneath it (e.g. `/etc/ssh/sshd_config`).
-/// Trailing slashes are intentionally omitted for this reason.
 /// The mode every symlink on Linux has: the link type bit and 0777.
 ///
 /// Stored in place of the captured mode, which `file_metadata` reads through the
@@ -22,6 +17,31 @@ use std::path::Path;
 /// zero mode as "this path was absent, remove it on rollback".
 const SYMLINK_MODE: u32 = 0o120777;
 
+/// The `st_mode` file-type field, and the value it holds for a directory.
+///
+/// `file_permissions` stores the whole mode, type bit included, so this is how
+/// a captured directory is told from a captured file without a second column.
+/// The distinction is load bearing on restore: a row with no content is not
+/// therefore a directory. It may equally be a file captured metadata-only, as
+/// the permissions plugin captures the account databases so their contents never
+/// enter the database, or one whose content a best-effort capture could not
+/// read. `mkdir -p` over either would put a directory where a file belongs, and
+/// the chmod and chown that follow would succeed on it, so the rollback would
+/// report the path restored.
+///
+/// ponytail: a checkpoint written before capture recorded the type bit stores a
+/// directory as bare permission bits, so its directories read as files here and
+/// are not recreated. Such a row cannot be told from a file's by any means the
+/// rollback has, the path itself being gone; the upgrade path is a fresh
+/// checkpoint, which every apply since takes.
+const FILE_TYPE_MASK: u32 = 0o170000;
+const DIRECTORY_TYPE_BITS: u32 = 0o040000;
+
+/// Default rollback path prefixes for production use.
+///
+/// Paths match via `starts_with`, so `/etc/ssh` covers both
+/// `/etc/ssh` itself and any file beneath it (e.g. `/etc/ssh/sshd_config`).
+/// Trailing slashes are intentionally omitted for this reason.
 const DEFAULT_ROLLBACK_PREFIXES: &[&str] = &[
     "/etc/ssh",
     "/etc/sysctl",
@@ -917,6 +937,30 @@ impl CheckpointManager {
         // able to overwrite a packaged unit file. `ln -sfn` creates the link, or
         // replaces whatever stands in its place.
         if let Some(target) = &file_state.file_link_target {
+            // `ln` does not create the directory its link goes in, and
+            // `systemctl disable` removes a `*.target.wants` directory as soon
+            // as the enablement symlink it held was its last, so the directory
+            // is routinely gone exactly when this row is what has to come back.
+            // Done here rather than left to the directory's own row: that row
+            // is restored first only because the file-state query orders by
+            // path, and a checkpoint naming the link alone carries no such row.
+            // `parent` is `None` only for the filesystem root, which is always
+            // there and needs no creation. It is not re-checked against the
+            // allowlist: the parent of an allow-listed path either carries the
+            // same prefix or is the prefix's own parent, a system directory the
+            // probe finds present, and `mkdir -p` over a directory that is
+            // there does nothing at all.
+            let parent_refusal = match path.parent() {
+                Some(parent) => ensure_directory(executor, parent).await,
+                None => None,
+            };
+            if let Some(refusal) = parent_refusal {
+                return (
+                    FileRestoreAction::Restored,
+                    Err(HardeningError::Executor(refusal)),
+                );
+            }
+
             let result = match restore_command_refusal(
                 executor,
                 "ln",
@@ -956,6 +1000,21 @@ impl CheckpointManager {
         // as a failure.
         if matches!(action, FileRestoreAction::Removed) {
             return remove_or_refuse(executor, path, path_str).await;
+        }
+
+        // A captured directory may have been removed since, and nothing else
+        // here puts it back: the chmod and chown below are all a directory row
+        // consists of, and both fail on a path that is not there. `systemctl
+        // disable` deletes a `*.target.wants` directory the moment its last
+        // enablement symlink goes, which is the ordinary case for a service
+        // that is the only thing wanting its target. Failing to create it is
+        // returned rather than folded in with the metadata warnings, because
+        // the chmod that follows could then only fail for the same reason and
+        // one cause should not be reported twice.
+        if file_state.file_permissions & FILE_TYPE_MASK == DIRECTORY_TYPE_BITS
+            && let Some(refusal) = ensure_directory(executor, path).await
+        {
+            return (action, Err(HardeningError::Executor(refusal)));
         }
 
         // Restore file content.
@@ -1179,6 +1238,35 @@ async fn restore_command_refusal(
         Err(e) => e.to_string(),
     };
     Some(format!("{program} {path_str}: {detail}"))
+}
+
+/// Creates `dir` if it may be missing, describing why it could not be created
+/// and `None` when it is there or was made.
+///
+/// A rollback restores one recorded path at a time and creates nothing else on
+/// the way, so a directory that went away after the checkpoint has to be put
+/// back explicitly: `chmod` cannot be applied to a path that is not there, and
+/// `ln` will not create the directory its link belongs in. Both sites call
+/// here, rather than one relying on the other having run first.
+///
+/// The mkdir runs wherever the probe does not positively confirm the directory
+/// is present: a probe that cannot answer is treated as "may be missing",
+/// because `mkdir -p` on an existing directory does nothing, while skipping the
+/// creation on the one host that needs it costs the restore. Going through
+/// [`restore_command_refusal`] is what checks the exit code, `execute_command`
+/// returning `Ok` for a command that ran and failed.
+///
+/// Deliberately a twin of `hardener_plugins::ensure_directory` rather than a
+/// call to it: that one is `pub(crate)` in another crate and takes a
+/// `hardener_core::Context`, and this crate depends on `hardener-common`, not
+/// on core or plugins.
+async fn ensure_directory(executor: &dyn SystemExecutor, dir: &Path) -> Option<String> {
+    if matches!(executor.path_exists(dir).await, Ok(true)) {
+        return None;
+    }
+
+    let dir_str = dir.to_string_lossy();
+    restore_command_refusal(executor, "mkdir", &["-p", &dir_str], &dir_str).await
 }
 
 /// Handles a checkpoint row whose action is [`FileRestoreAction::Removed`]:
@@ -2121,6 +2209,12 @@ mod tests {
         let link = "/etc/x/autovt.service";
         let target = "/usr/lib/systemd/system/getty.service";
         let exec = MockExecutor::new()
+            // The link's own directory. A host cannot hold a link whose
+            // directory is absent, and a restore probes that directory before
+            // recreating the link, so a fixture omitting it describes a host
+            // that could not exist and sends the restore down the branch that
+            // creates the directory instead of the one under test here.
+            .with_directory("/etc/x")
             // Content is what the mock returns for a read, exactly as a real
             // read through the link would return the target's bytes.
             .with_file(link, "[Unit]\nDescription=Getty\n")

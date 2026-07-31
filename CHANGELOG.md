@@ -204,6 +204,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   signature digest includes the target only when one is present, so a checkpoint
   signed before this release still verifies.
 
+- **`hardener rollback` now recreates a directory that was removed after the
+  checkpoint, which is what `systemctl disable` leaves behind.** Recording a
+  symlink, above, made the enablement link storable; placing one whose directory
+  had gone was still impossible. `systemctl disable` removes the enablement
+  symlink and then the `*.target.wants` directory it emptied, which is the
+  ordinary case for a service that is the only thing wanting its target, and a
+  rollback restored one recorded path at a time without creating anything on the
+  way. Measured on all five test distributions: rollback of a
+  `service-minimisation-pre-apply` checkpoint exited 1 with exactly two failures
+  per host, `chmod: cannot access
+  '/etc/systemd/system/bluetooth.target.wants'` and `ln: failed to create
+  symbolic link ...: No such file or directory`, while a sibling link in the
+  surviving `/etc/systemd/system` came back in the same run. Both sites now
+  create the directory they need first, independently of each other: the
+  directory's own row and the link's parent, each probed before any `mkdir -p`
+  so a directory already present is never written to. A row is treated as a
+  directory by the file-type bit in its recorded mode, never by the absence of
+  content: the permissions plugin checkpoints `/etc/passwd`, `/etc/shadow`,
+  `/etc/gshadow` and `/etc/sudoers` metadata-only, deliberately, so that no
+  password file's contents reach the checkpoint database, and those rows are
+  content-less too. Restoring one whose file had since been removed must not put
+  a directory named `/etc/shadow` in its place; it reports that it could not
+  restore the path, which is the honest answer for a checkpoint holding nothing
+  to rebuild the file from. Checkpoints written before capture recorded the type
+  bit store a directory as bare permission bits and are unaffected, restoring
+  exactly as before.
+
 - **`hardener rollback` no longer refuses to restore anything because one file
   in the checkpoint cannot be restored.** Measured on the five test
   distributions: four of them failed rollback outright, restoring nothing, with

@@ -1,6 +1,12 @@
 mod common;
 
 use common::{DiskExecutor, TestFixture};
+use std::path::Path;
+
+/// The packaged unit an enablement symlink points at. Outside every rollback
+/// allowlist and deliberately not created here: a restore recreates the link,
+/// it never follows it, so a target that is not there must make no difference.
+const PACKAGED_UNIT: &str = "/usr/lib/systemd/system/bluetooth.service";
 
 /// Tests basic checkpoint creation and retrieval.
 ///
@@ -303,5 +309,227 @@ async fn test_metadata_only_checkpoint() {
     assert_eq!(
         restored_mode, 0o755,
         "Metadata-only rollback should restore permissions"
+    );
+}
+
+/// Locates one path's entry in a rollback result, panicking with the path if it
+/// is absent. Shared by the two tests below so each can assert per entry rather
+/// than on the aggregate, which reports only that something went wrong.
+fn restore_entry<'a>(
+    result: &'a hardener_state::checkpoint::RollbackResult,
+    path: &Path,
+) -> &'a hardener_state::checkpoint::FileRestoreResult {
+    result
+        .rollback_files
+        .iter()
+        .find(|f| f.restore_path == path.to_string_lossy())
+        .unwrap_or_else(|| panic!("{} missing from the rollback result", path.display()))
+}
+
+/// `systemctl disable` removes the enablement symlink and, once that empties the
+/// `*.target.wants` directory, the directory with it. A rollback has to put both
+/// back and could put back neither: `chmod` on an absent directory fails, and
+/// `ln` will not create the directory its link belongs in.
+///
+/// Measured on all five test distributions: `hardener rollback` of a
+/// `service-minimisation-pre-apply` checkpoint exited 1 with exactly these two
+/// failures per host, while a sibling symlink in the surviving
+/// `/etc/systemd/system` came back in the same run.
+///
+/// [`DiskExecutor`] rather than a `MockExecutor`: the defect is that `chmod` and
+/// `ln` fail on a path whose directory is gone, and the mock answers a
+/// registered command from its registry without consulting its virtual
+/// filesystem, so a mock fixture reports success either way and cannot fail
+/// before the fix.
+#[tokio::test]
+async fn rollback_recreates_a_wants_directory_and_symlink_that_vanished_together() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let fixture = TestFixture::new().await;
+
+    let wants_dir = fixture.create_test_dir_with_permissions("bluetooth.target.wants", 0o755);
+    let link = wants_dir.join("bluetooth.service");
+    // Where a real enablement symlink points: at the packaged unit, outside
+    // anything this tool may write. Restoring recreates the link rather than
+    // writing through it, so the target is never touched and need not exist.
+    std::os::unix::fs::symlink(PACKAGED_UNIT, &link).expect("Failed to create enablement symlink");
+
+    let checkpoint_id = fixture
+        .fixture_checkpoint_manager
+        .create_checkpoint(
+            &DiskExecutor,
+            "service-minimisation-pre-apply",
+            &[&wants_dir],
+        )
+        .await
+        .expect("Failed to create checkpoint");
+
+    // What `systemctl disable bluetooth` leaves behind.
+    std::fs::remove_file(&link).expect("Failed to remove symlink");
+    std::fs::remove_dir(&wants_dir).expect("Failed to remove wants directory");
+
+    let result = fixture
+        .fixture_checkpoint_manager
+        .rollback(&DiskExecutor, &checkpoint_id)
+        .await
+        .expect("Failed to rollback");
+
+    // The symlink is asserted first so that a regression in the directory half
+    // cannot hide whether this half was reached at all.
+    let link_entry = restore_entry(&result, &link);
+    assert!(
+        link_entry.restore_success,
+        "the enablement symlink must be recreated, got: {:?}",
+        link_entry.restore_error
+    );
+    let dir_entry = restore_entry(&result, &wants_dir);
+    assert!(
+        dir_entry.restore_success,
+        "the emptied wants directory must be recreated before its mode is restored, got: {:?}",
+        dir_entry.restore_error
+    );
+    assert!(
+        result.rollback_success,
+        "a rollback that restored every path is a successful one, got: {:?}",
+        result.rollback_files
+    );
+
+    // Reported success is not the claim; both paths are back on disk, the
+    // directory with the mode the checkpoint recorded and the link pointing
+    // where it pointed.
+    let restored_mode = std::fs::metadata(&wants_dir)
+        .expect("the wants directory must exist again")
+        .permissions()
+        .mode();
+    assert_eq!(restored_mode & 0o777, 0o755, "directory mode not restored");
+    assert_eq!(
+        std::fs::read_link(&link).expect("the symlink must exist again"),
+        Path::new(PACKAGED_UNIT)
+    );
+}
+
+/// A row carrying no content is not therefore a directory, and the rows that are
+/// not must never have a directory made in their place.
+///
+/// `create_checkpoint_metadata_only` stores mode and ownership and no content at
+/// all, which is how the permissions plugin checkpoints `/etc/passwd`,
+/// `/etc/shadow`, `/etc/gshadow` and `/etc/sudoers`: deliberately, so that no
+/// password file's contents are ever written to the checkpoint database. A
+/// best-effort capture of an unreadable file found by recursing into a declared
+/// directory produces the same shape. Either is indistinguishable from a
+/// captured directory's row but for the file-type bit in the recorded mode.
+/// Were that bit not consulted, restoring such a row whose file had since been
+/// removed would run `mkdir -p` over it and leave a *directory* named
+/// `/etc/shadow` behind, with the chmod and chown that follow both succeeding on
+/// it, so the rollback would report the path restored.
+///
+/// The honest outcome asserted here is that the row cannot be restored: a
+/// metadata-only checkpoint holds nothing to recreate the file from, so the
+/// rollback reports the failure and leaves the path alone. That is a real
+/// failure, unlike the mode-0 case, because this row recorded the path as
+/// present.
+#[tokio::test]
+async fn a_metadata_only_row_for_a_vanished_file_is_never_restored_as_a_directory() {
+    let fixture = TestFixture::new().await;
+
+    // A regular file, captured the way an account database is captured.
+    let account_file = fixture.create_test_file_with_permissions("shadow", "root:!:20000\n", 0o600);
+
+    let checkpoint_id = fixture
+        .fixture_checkpoint_manager
+        .create_checkpoint_metadata_only(
+            &DiskExecutor,
+            "permissions-hardening-pre-apply",
+            &[&account_file],
+        )
+        .await
+        .expect("Failed to create checkpoint");
+
+    std::fs::remove_file(&account_file).expect("Failed to remove the account file");
+
+    let result = fixture
+        .fixture_checkpoint_manager
+        .rollback(&DiskExecutor, &checkpoint_id)
+        .await
+        .expect("Failed to rollback");
+
+    // Asserted first, and on disk, because this is the harm: everything below
+    // is a consequence of it.
+    assert!(
+        !account_file.is_dir(),
+        "a metadata-only row for a file must never be restored as a directory"
+    );
+    assert!(
+        !account_file.exists(),
+        "a metadata-only checkpoint holds no content, so nothing can recreate \
+         the file and nothing may be put in its place"
+    );
+
+    let entry = restore_entry(&result, &account_file);
+    assert!(
+        !entry.restore_success,
+        "a recorded path that cannot be restored must say so, not report success"
+    );
+    assert!(
+        entry
+            .restore_error
+            .as_deref()
+            .unwrap_or_default()
+            .contains(&account_file.to_string_lossy().into_owned()),
+        "the failure must name the path it could not restore, got: {:?}",
+        entry.restore_error
+    );
+    assert!(
+        !result.rollback_success,
+        "a rollback that could not restore a recorded path is not a successful one"
+    );
+}
+
+/// The directory a restored symlink needs is created for that symlink's sake,
+/// not as a side effect of some other row.
+///
+/// In the measured case the checkpoint also held a row for the wants directory,
+/// and that row happens to be restored first, because the file-state query
+/// orders by path and a parent's path is a prefix of its children's. A
+/// checkpoint naming the link alone carries no such row, and nothing in the
+/// rollback promises one: an ordering no code asserts is not a fix.
+#[tokio::test]
+async fn rollback_recreates_the_directory_a_restored_symlink_needs() {
+    let fixture = TestFixture::new().await;
+
+    let wants_dir = fixture.create_test_dir_with_permissions("sockets.target.wants", 0o755);
+    let link = wants_dir.join("dbus.socket");
+    std::os::unix::fs::symlink(PACKAGED_UNIT, &link).expect("Failed to create enablement symlink");
+
+    // The link alone, so no row for its directory can restore it first.
+    let checkpoint_id = fixture
+        .fixture_checkpoint_manager
+        .create_checkpoint(&DiskExecutor, "link-only-pre-apply", &[&link])
+        .await
+        .expect("Failed to create checkpoint");
+
+    std::fs::remove_file(&link).expect("Failed to remove symlink");
+    std::fs::remove_dir(&wants_dir).expect("Failed to remove wants directory");
+
+    let result = fixture
+        .fixture_checkpoint_manager
+        .rollback(&DiskExecutor, &checkpoint_id)
+        .await
+        .expect("Failed to rollback");
+
+    let link_entry = restore_entry(&result, &link);
+    assert!(
+        link_entry.restore_success,
+        "the symlink must be recreated even with no row for its directory, got: {:?}",
+        link_entry.restore_error
+    );
+    assert!(
+        result.rollback_success,
+        "a rollback that restored every path is a successful one, got: {:?}",
+        result.rollback_files
+    );
+    assert_eq!(
+        std::fs::read_link(&link).expect("the symlink must exist again"),
+        Path::new(PACKAGED_UNIT)
     );
 }
