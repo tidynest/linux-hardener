@@ -238,6 +238,16 @@ const AUDIT_RULES_PATH: &str = "/etc/audit/rules.d/hardening.rules";
 /// The directory holding the rules file, which the audit package owns.
 const AUDIT_RULES_DIR: &str = "/etc/audit/rules.d";
 
+/// The compiled rule set `augenrules` produces from [`AUDIT_RULES_DIR`], and the
+/// file auditd loads at boot. Written by the reload this apply performs rather
+/// than by this apply directly, which is why it is easy to miss.
+const AUDIT_COMPILED_RULES: &str = "/etc/audit/audit.rules";
+
+/// Where `augenrules` saves whatever [`AUDIT_COMPILED_RULES`] held before it
+/// ran. Not every distribution's `augenrules` writes one, so it is the path most
+/// likely to be absent when the checkpoint is captured.
+const AUDIT_COMPILED_RULES_PREV: &str = "/etc/audit/audit.rules.prev";
+
 /// The mode the rules file is given, as a `chmod` argument.
 ///
 /// 0640, which is what STIG asks of `/etc/audit/rules.d/*.rules` and what the
@@ -1022,10 +1032,56 @@ impl HardeningPlugin for AuditHardeningPlugin {
         // rollback's removal list. `hardening.rules` is our own filename that
         // nothing else writes, so it is safe to declare unseen, exactly as the
         // kernel and ssh plugins declare their drop-ins.
+        //
+        // The two paths below are what `augenrules --load` writes, and they are
+        // named for the same reason the rules file is: the reload runs as part
+        // of this apply, so the state it leaves is this apply's to undo.
+        // `augenrules` compiles every *.rules file in AUDIT_RULES_DIR into
+        // AUDIT_COMPILED_RULES and saves the previous compiled copy as
+        // AUDIT_COMPILED_RULES_PREV. Both sit in /etc/audit itself rather than
+        // in the rules directory, so capturing AUDIT_RULES_DIR recursively
+        // never reached either: measured on five distributions, the compiled
+        // file went from five or six lines to thirty during the apply and read
+        // exactly the same after a rollback that reported success, and the
+        // .prev the apply created outlived that rollback everywhere augenrules
+        // writes one.
+        //
+        // The two exercise different halves of the same mechanism, which is why
+        // both are named rather than one standing for the pair. The compiled
+        // file exists before the apply on every host measured, so it is
+        // captured with its content and the restore writes those bytes back;
+        // .prev usually does not, so it is stored absent with a zero mode and
+        // the restore removes it. Where an administrator's own earlier
+        // `augenrules` run left a .prev, it is captured and restored instead,
+        // which is the same bargain either way round.
+        //
+        // Re-running `augenrules` after the restore was the alternative, and it
+        // was rejected: it would load rules as a side effect of an undo, it
+        // fails in exactly the environments where the apply already fails (a
+        // container can start no auditd, and both `augenrules --load` and
+        // `systemctl restart` fail there), and it does nothing about .prev.
+        //
+        // The ceiling, which is worth saying rather than hiding: restoring the
+        // file returns the persistent state only. Rules already loaded into the
+        // running kernel stay loaded until a reload or a reboot. That is the
+        // same shape as the kernel plugin's rollback, which deletes its drop-in
+        // without reverting the runtime sysctl values, and it is a known limit
+        // of this tool rather than something this declaration introduces.
+        //
+        // One consequence of declaring rather than recursing: a declared path
+        // is captured strictly, so an existing but unreadable
+        // AUDIT_COMPILED_RULES now aborts the capture instead of being
+        // tolerated as an incidental child would be. The apply runs as root and
+        // the file is root-owned, so it should never fire, and it is the bargain
+        // every declared path makes: without the content there is nothing to
+        // restore, so continuing would leave the operator believing in a
+        // recovery that does not exist.
         let audit_paths: Vec<&Path> = vec![
             Path::new("/etc/audit/auditd.conf"),
             Path::new(AUDIT_RULES_DIR),
             Path::new(AUDIT_RULES_PATH),
+            Path::new(AUDIT_COMPILED_RULES),
+            Path::new(AUDIT_COMPILED_RULES_PREV),
         ];
         let checkpoint_id =
             crate::create_checkpoint_for_apply(ctx, "audit-hardening-pre-apply", &audit_paths)

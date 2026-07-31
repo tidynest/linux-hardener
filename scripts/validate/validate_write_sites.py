@@ -64,12 +64,16 @@ which the mask is one. So the services defect that prompted this column sits
 outside the column's reach, and so does every sibling of it: `systemctl enable`
 writes a `.wants` symlink under /etc/systemd/system for the firewall and audit
 plugins, neither of whose checkpoints declares anything there; `augenrules
---load` merges /etc/audit/rules.d into /etc/audit/audit.rules, which no
-checkpoint declares; and `firewall-cmd --permanent` and `ufw` write their
-persistence through their own tooling, into /etc/firewalld and /etc/ufw, which
-the firewall checkpoint does declare. That last one is the reminder that unseen
-and undeclared are different failures: this check finds neither, and only one of
-them is a defect.
+--load` merges /etc/audit/rules.d into /etc/audit/audit.rules and saves the
+previous compiled copy as /etc/audit/audit.rules.prev, both of which the audit
+checkpoint now declares, having been measured on five distributions surviving
+the rollback that was supposed to undo them; and `firewall-cmd --permanent` and
+`ufw` write their persistence through their own tooling, into /etc/firewalld and
+/etc/ufw, which the firewall checkpoint does declare. The last two are the
+reminder that unseen and undeclared are different failures: this check finds
+neither, and only one of them is a defect. The augenrules pair is also the
+reminder that unseen is not harmless, because that one was both, and nothing
+here reported it: it was found by reading the files on a host after a rollback.
 
 Those are the reviewer's questions, and this file answers none of them. Nor
 would answering them be mechanical if it could see them. The same sweep that

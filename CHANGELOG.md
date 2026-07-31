@@ -253,6 +253,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   after this guard, and a protected path recorded as absent is still probed and
   still never removed.
 
+- **Rolling back an audit apply now restores the compiled rule set auditd
+  actually loads, instead of leaving the hardening in force at the next boot.**
+  `apply --plugin audit-rules` writes `/etc/audit/rules.d/hardening.rules` and
+  then runs `augenrules --load`, which compiles everything in `rules.d` into
+  `/etc/audit/audit.rules` and saves the previous compiled copy as
+  `/etc/audit/audit.rules.prev`. Neither of those two lives in `rules.d`, so the
+  recursive capture of that directory never reached them, and the pre-apply
+  checkpoint named neither. Measured on all five test distributions:
+  `/etc/audit/audit.rules` went from 5 lines to 30 on Arch and from 6 to 31 on
+  Debian, Fedora, RHEL and openSUSE during the apply, and read **exactly the
+  same after a rollback that reported success**, so the rollback removed the
+  source file and left the compiled output auditd reads at start-up. The `.prev`
+  file was created by the apply and survived the rollback on Arch, Debian,
+  Fedora and RHEL; openSUSE's `augenrules` writes no `.prev`, and the gap was
+  present there too. Both paths are now declared to the checkpoint alongside the
+  three that were already there, which handles the two cases separately:
+  `audit.rules` exists before the apply on every host measured, so it is
+  captured with its content and restored to its pre-apply bytes, while `.prev`
+  usually does not exist, so it is stored absent and removed, and an
+  administrator's own earlier copy is captured and restored instead.
+  Re-running `augenrules` after the restore was considered and rejected: it
+  would load rules as a side effect of an undo, it fails in exactly the
+  environments where the apply already fails, and it does nothing about `.prev`.
+  **The rollback returns the persistent state only.** Rules already loaded into
+  the running kernel stay loaded until a reload or a reboot, which is the same
+  limit the kernel plugin's rollback has always had with runtime sysctl values.
+
 - **`hardener rollback` no longer refuses to restore anything because one file
   in the checkpoint cannot be restored.** Measured on the five test
   distributions: four of them failed rollback outright, restoring nothing, with
