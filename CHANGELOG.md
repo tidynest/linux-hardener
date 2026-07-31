@@ -526,6 +526,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   previously asked this, so a masking regression could have reappeared with
   every existing check green. The per-distribution total moves from 22 checks
   to 25, and the five-distribution total from 110 to 125.
+- **The full test suite asks whether a rollback undid anything.** Its per-plugin
+  lifecycle section applied a plugin and rolled it back, and its only rollback
+  assertion was that the command exited 0, so it reported a pass for a rollback
+  that restored nothing. That is the defect family this project keeps finding in
+  its own product, and two instances of it were fixed in the audit plugin alone
+  while the suite read the same 126 of 126 on five distributions before and
+  after. New section 12A applies audit hardening, rolls it back and then reads
+  the filesystem: the rules file must be gone, `/etc/audit` must list exactly
+  the paths it listed beforehand, and the compiled rule set must be back at its
+  pre-apply line count. It runs first inside the apply block by necessity, since
+  a rollback can only be seen to *remove* a created file on a host that does not
+  have it yet, and it refuses to report at all on a container an earlier
+  `--apply` run has already hardened, because a reading taken there would answer
+  a different question. The per-distribution total moves from 126 tests to 133.
+  A services arm is owed and deliberately absent: reading the equivalent mask
+  defect needs a unit the plugin manages, and no container image installs one.
 
 ### Removed
 - `custom_directives`, the per-plugin config table that was accepted, merged

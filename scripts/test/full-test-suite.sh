@@ -430,6 +430,228 @@ test_systemd_commands() {
     fi
 }
 
+# =============================================================================
+# Section 12A: Rollback Undoes The Audit Apply (gated behind --apply)
+# =============================================================================
+
+# How many lines a file holds, or why that question could not be answered.
+#
+# Three outcomes, deliberately kept apart. The probe this section is ported from
+# first wrote `wc -l < "$f" || echo absent`, and a smoke test against a real host
+# caught it calling a file that exists at mode 0640 `absent`: the unprivileged
+# read failed and the fallback swallowed the reason. Cannot-read rendered
+# identically to does-not-exist, which is the sentinel conflation this project
+# keeps finding in its own product, one value standing for several outcomes, and
+# it would only ever have lied when run without privilege, which is the case
+# nobody thinks to test. The suite runs as root, so `unreadable` should never
+# come back here; where it does, the caller treats the reading as void rather
+# than as a count, because a number nobody could obtain is not a number.
+line_count() {
+    local file="$1"
+    [[ -e "$file" ]] || { echo absent; return; }
+    [[ -r "$file" ]] || { echo unreadable; return; }
+    wc -l < "$file"
+}
+
+# Asserts on the filesystem that rolling back an audit apply puts the host back.
+#
+# Section 23 already applies a plugin and then rolls it back, and its only
+# rollback assertion is that the command exited 0. It never asks whether
+# anything was undone, so it reports a pass for a rollback that restored
+# nothing, which is exactly the defect family this project keeps finding in its
+# own product: an undo that reports success and leaves the hardening in place.
+# Two of them were fixed in the audit plugin alone, the rules file the apply
+# creates and the compiled output `augenrules` writes, and this suite read the
+# same 126 of 126 on five distributions before and after both fixes. A suite
+# that cannot tell a repaired tool from a broken one is not measuring the tool,
+# so this section reads the filesystem and not the exit status.
+#
+# The audit plugin was chosen because its whole write surface is now declared to
+# its own checkpoint: /etc/audit/rules.d/hardening.rules, which the apply
+# writes, and /etc/audit/audit.rules plus /etc/audit/audit.rules.prev, which the
+# reload writes on its behalf. All three should therefore be removed or restored
+# by a rollback, and all three sit under one directory, so a single `find` can
+# say whether anything else moved with them.
+#
+# A services arm is owed and is not here. The services plugin's equivalent
+# defect is the mask symlink its apply creates, and reading it needs a unit the
+# plugin actually manages: `bluetooth.service`, which none of the five container
+# images installs. The fixture that installs bluez lives on a branch that is not
+# merged, so an arm written today would either fail for want of the unit or skip
+# itself, and a silently skipped check reads in a log exactly like coverage.
+# Add the arm once that fixture lands, in the same shape as this one.
+test_audit_rollback_restores() {
+    log_header "12A. ROLLBACK UNDOES THE AUDIT APPLY"
+
+    local audit_tree="/etc/audit"
+    local rules_file="$audit_tree/rules.d/hardening.rules"
+    local compiled="$audit_tree/audit.rules"
+    local work="$REPORT_DIR/audit-rollback"
+    mkdir -p "$work"
+
+    # ------------------------------------------------------------------------
+    # The precondition, which is what makes the reading mean anything
+    # ------------------------------------------------------------------------
+    #
+    # "A rollback REMOVES the file the apply created" can only be asked on a
+    # host where that file does not exist yet. Where it already does, the
+    # checkpoint captures it with content and the restore correctly writes those
+    # bytes back, so the removal path is never exercised and a pass says nothing
+    # about it. That is a void reading rather than a good one, and it is
+    # reported as a failure: an undeterminable result is a failure, never a
+    # skip, which is the same rule the cross-distro runner applies to a
+    # container that boots but never answers.
+    log_test "Audit rollback: the host is in the state this reading needs"
+
+    if [[ ! -d "$audit_tree" ]]; then
+        log_fail "Audit rollback: $audit_tree is absent, so no audit package is installed here"
+        log_info "  create-container.sh installs it on all five images, so a missing tree is a broken image"
+        log_info "  and not a host this check does not apply to"
+        return
+    fi
+
+    if [[ -e "$rules_file" ]]; then
+        log_fail "Audit rollback: $rules_file exists before the apply, so this reading is void"
+        log_info "  its line count reads $(line_count "$rules_file"), and it was left by an earlier run"
+        log_info "  --apply hardens every container it touches and nothing here undoes the audit apply"
+        log_info "  section 15 performs, so a second --apply run in the same container cannot ask this"
+        log_info "  recreate it first: sudo ./scripts/containers/create-container.sh <distro>"
+        return
+    fi
+
+    log_pass "Audit rollback: the host is in the state this reading needs"
+
+    # ------------------------------------------------------------------------
+    # What the host looks like before anything touches it
+    # ------------------------------------------------------------------------
+
+    local compiled_before
+    compiled_before="$(line_count "$compiled")"
+    find "$audit_tree" | sort > "$work/tree-preapply"
+    log_info "Before the apply: $compiled holds $compiled_before lines, $audit_tree holds $(wc -l < "$work/tree-preapply") paths"
+
+    # ------------------------------------------------------------------------
+    # The apply, whose exit status is deliberately not the question
+    # ------------------------------------------------------------------------
+    #
+    # This apply fails in a container and that is ordinary: there is no auditd to
+    # reload, so `augenrules --load` and `systemctl restart auditd` both fail and
+    # the plugin reports the run unsuccessful having already written its rules
+    # file. Asserting exit 0 here would assert something false about the host.
+    # The positive control below is the file existing instead, which is the thing
+    # the rollback has to undo and the only thing that makes the rest of this
+    # section capable of failing.
+    local apply_json="$REPORT_DIR/audit-rollback-apply.json"
+    local apply_err="$REPORT_DIR/audit-rollback-apply.err"
+    local apply_status=0
+    "$BINARY" apply --plugin audit-hardening --format json \
+        > "$apply_json" 2>"$apply_err" || apply_status=$?
+    log_info "The apply exited $apply_status (non-zero is expected in a container)"
+
+    # ------------------------------------------------------------------------
+    # The positive control: doing nothing must never pass
+    # ------------------------------------------------------------------------
+    #
+    # A rollback of an apply that wrote nothing satisfies every assertion below
+    # by having nothing to undo, and that shape of green run is precisely what
+    # this project has been caught by before. Read off the filesystem rather
+    # than off the tool's own summary, because the summary is the thing under
+    # test.
+    log_test "Audit rollback: the apply wrote the rules file"
+    if [[ ! -e "$rules_file" ]]; then
+        log_fail "Audit rollback: the apply wrote no $rules_file, so nothing below could be undone"
+        surface_tool_error "$apply_err"
+        return
+    fi
+    log_pass "Audit rollback: the apply wrote the rules file ($(line_count "$rules_file") lines)"
+    log_info "After the apply: $compiled holds $(line_count "$compiled") lines"
+
+    # ------------------------------------------------------------------------
+    # Choosing the checkpoint, which is the step that has been got wrong most
+    # ------------------------------------------------------------------------
+    #
+    # By name and then by age, with the count asserted rather than the position
+    # trusted. `checkpoint list` is ORDER BY timestamp DESC, so the newest match
+    # is first and the oldest is last. Both filters earn their place: every
+    # rollback writes its own "Before rollback to '...'" snapshot carrying the
+    # target's name as a substring, so a name filter alone can select the state
+    # AFTER the change, which is the state being rolled out of. Selecting by
+    # recency produced three wrong readings in one evening. Section 23's
+    # `head -1` is that mistake and is deliberately not copied.
+    #
+    # `--all` defeats the 20-row cap the renderer applies by default, so a busy
+    # checkpoint table cannot hide the oldest match and turn a real one-match
+    # host into a zero-match failure.
+    log_test "Audit rollback: exactly one checkpoint carries the apply's name"
+    local matches=()
+    mapfile -t matches < <("$BINARY" checkpoint list --all 2>&1 \
+        | grep -v 'Before rollback to' \
+        | grep 'audit-hardening-pre-apply' \
+        | grep -oE 'cp_[0-9]+_[a-f0-9]+')
+
+    if [[ ${#matches[@]} -ne 1 ]]; then
+        log_fail "Audit rollback: wanted one checkpoint named audit-hardening-pre-apply, found ${#matches[@]}"
+        return
+    fi
+    log_pass "Audit rollback: exactly one checkpoint carries the apply's name"
+
+    # Written as the last element rather than the only one, because the rule
+    # this encodes is "take the oldest match" and it should still read that way
+    # on the day somebody relaxes the count above.
+    local checkpoint_id="${matches[-1]}"
+    log_info "Rolling back to $checkpoint_id"
+
+    # ------------------------------------------------------------------------
+    # The rollback and what must be true afterwards
+    # ------------------------------------------------------------------------
+
+    run_test "Audit rollback: the rollback exits 0" "\"$BINARY\" rollback \"$checkpoint_id\"" || true
+
+    find "$audit_tree" | sort > "$work/tree-postrollback"
+
+    log_test "Audit rollback: the rules file is gone"
+    if [[ -e "$rules_file" ]]; then
+        log_fail "Audit rollback: $rules_file survived the rollback"
+    else
+        log_pass "Audit rollback: $rules_file was removed by the rollback"
+    fi
+
+    # The paths are declared unconditionally rather than narrowed to what a host
+    # happens to have, so this is where an over-broad removal would show: a
+    # rollback that took somebody else's file with it leaves the tree short, and
+    # one that left its own behind leaves it long.
+    log_test "Audit rollback: the audit tree is back where it started"
+    if diff -u "$work/tree-preapply" "$work/tree-postrollback" > "$work/tree-diff" 2>&1; then
+        log_pass "Audit rollback: $audit_tree is identical to its pre-apply state"
+    else
+        log_fail "Audit rollback: $audit_tree differs from its pre-apply state"
+        surface_tool_output "$(cat "$work/tree-diff")"
+    fi
+
+    # Judged on the line count and not on a text search. An earlier version of
+    # this reading grepped the compiled file for "hardening" and reported that
+    # it did not mention this tool's rules on all five hosts while the counts
+    # said the file had grown from five lines to thirty and stayed there:
+    # `augenrules` strips the comment header, so the compiled output holds bare
+    # rule lines and the word can never appear. A control whose search term
+    # cannot match is a control that can only return the reassuring answer. The
+    # count cannot fail that way, being the same measurement twice.
+    #
+    # `unreadable` is separated from a count rather than compared with one. Two
+    # unreadable readings are equal as strings and would otherwise report a pass
+    # for a file nobody managed to look at.
+    local compiled_after
+    compiled_after="$(line_count "$compiled")"
+    log_test "Audit rollback: the compiled rule set is back where it started"
+    if [[ "$compiled_before" == unreadable ]] || [[ "$compiled_after" == unreadable ]]; then
+        log_fail "Audit rollback: $compiled could not be read (before=$compiled_before after=$compiled_after), so this reading is void"
+    elif [[ "$compiled_before" == "$compiled_after" ]]; then
+        log_pass "Audit rollback: $compiled is back at $compiled_after lines"
+    else
+        log_fail "Audit rollback: $compiled went $compiled_before to $compiled_after and did not come back"
+    fi
+}
+
 test_apply_kernel() {
     log_header "13. APPLY - KERNEL HARDENING"
 
@@ -976,6 +1198,36 @@ self_test() {
     check_contains "printed nothing" "a tool that said nothing is reported as silent" \
         surface_tool_output ""
 
+    # `line_count` is the one piece of section 12A that can be driven without a
+    # container, and it is the piece that was wrong first: its ancestor answered
+    # `absent` for a file that exists but could not be read, so a measurement
+    # nobody was able to take reported as a measurement of nothing. These pin
+    # the three outcomes apart, and the empty-file case is here because zero
+    # lines and no file are the pair most easily conflated back together.
+    printf 'one\ntwo\nthree\n' > "$workdir/three-lines"
+    : > "$workdir/no-lines"
+
+    check_contains "3" "a readable file is reported as its line count" \
+        line_count "$workdir/three-lines"
+    check_contains "0" "an empty file is reported as zero lines and not as absent" \
+        line_count "$workdir/no-lines"
+    check_contains "absent" "a file that is not there is reported absent" \
+        line_count "$workdir/missing"
+
+    # The unreadable branch needs an unprivileged reader: root's read succeeds
+    # whatever the mode says, so under sudo the case cannot be posed at all.
+    # Said out loud rather than quietly dropped, because a check that silently
+    # did not run reads in a log exactly like one that passed, which is the
+    # whole complaint this self-test exists to answer.
+    printf 'secret\n' > "$workdir/unreadable"
+    chmod 000 "$workdir/unreadable"
+    if [[ $EUID -eq 0 ]]; then
+        echo "  n/a  an unreadable file is reported unreadable (root reads it regardless)"
+    else
+        check_contains "unreadable" "an unreadable file is not reported as absent" \
+            line_count "$workdir/unreadable"
+    fi
+
     rm -rf "$workdir"
 
     if (( failures > 0 )); then
@@ -1009,8 +1261,12 @@ Options:
   --apply    Enable destructive tests (apply, rollback, lifecycle)
   --help     Show this help
 
-Without --apply: Sections 13-16 (apply/rollback) and 23 (lifecycle) are skipped.
+Without --apply: Sections 12A-16 (apply/rollback) and 23 (lifecycle) are skipped.
 With --apply:    All sections run including destructive operations.
+
+Section 12A needs a container no --apply run has touched yet: it asks whether a
+rollback removes a file an apply created, which cannot be asked where the file
+already exists. Recreate the container before each --apply run.
 EOF
             exit 0
             ;;
@@ -1055,12 +1311,23 @@ main() {
     test_systemd_commands
 
     if [[ "$DO_APPLY" == "true" ]]; then
+        # FIRST, and it has to stay first. This section asks whether a rollback
+        # REMOVES the file an apply created, and that question can only be put
+        # to a host where the file does not exist yet. `test_apply_all` below
+        # applies every plugin including audit, so from that point on
+        # /etc/audit/rules.d/hardening.rules exists, its checkpoint captures it
+        # with content, and a rollback correctly restores it rather than
+        # removing it. Moved after any of the three applies below, this section
+        # does not fail: it refuses to read at all, reporting its precondition
+        # broken. Add new apply sections after it, never before it.
+        test_audit_rollback_restores
+
         test_apply_kernel
         test_apply_other_plugins
         test_apply_all
         test_rollback
     else
-        log_header "13-16. APPLY & ROLLBACK (SKIPPED - use --apply)"
+        log_header "12A-16. APPLY & ROLLBACK (SKIPPED - use --apply)"
         log_skip "Apply/rollback tests require --apply flag"
     fi
 

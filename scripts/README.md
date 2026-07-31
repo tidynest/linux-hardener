@@ -1111,7 +1111,7 @@ sudo ./scripts/test/full-test-suite.sh
 sudo ./scripts/test/full-test-suite.sh --apply
 ```
 
-**What It Tests** (26 test sections, 126 individual tests):
+**What It Tests** (27 test sections, 133 individual tests):
 
 | Section | Tests |
 |---------|-------|
@@ -1127,6 +1127,7 @@ sudo ./scripts/test/full-test-suite.sh --apply
 | 10. Daemon Commands | status, run-once |
 | 11. History Commands | list, show, export |
 | 12. Systemd Commands | generate, install, status, uninstall |
+| 12A. Rollback Undoes The Audit Apply | Apply audit hardening, roll it back, and assert on the filesystem that the rules file is gone, that `/etc/audit` lists exactly the paths it listed beforehand, and that the compiled rule set is back at its pre-apply line count (--apply only). Runs FIRST inside the apply block by necessity: it asks whether a rollback *removes* a created file, which cannot be asked once section 15 has already created it. Needs a container no `--apply` run has touched, and reports its reading void rather than passing where it finds one. |
 | 13. Apply Kernel | Apply kernel hardening + verify changes |
 | 14. Apply Other Plugins | Apply 5 remaining plugins (ssh, permissions, pam, firewall, service-minimisation); audit and mac are skipped in containers. Kernel is handled in section 13. |
 | 15. Apply --all | Apply all plugins at once |
@@ -1149,7 +1150,11 @@ sudo ./scripts/test/full-test-suite.sh --apply
 
 **Test Modes**:
 
-The `--apply` flag gates destructive tests (sections 13-16, 19, 23). Without it, those sections are skipped. Container-mode auto-detection automatically skips 6 environment-dependent tests when running inside `systemd-nspawn` containers.
+The `--apply` flag gates destructive tests (sections 12A-16, 19, 23). Without it, those sections are skipped. Container-mode auto-detection automatically skips 6 environment-dependent tests when running inside `systemd-nspawn` containers.
+
+`--apply` hardens every container it touches, and nothing in the suite undoes the audit apply section 15 performs. Recreate the container before each `--apply` run (`sudo ./scripts/containers/create-container.sh <distro>`), or section 12A will report its precondition broken and the run will end red. The total is dynamic and pinned nowhere, so an aborted section 12A also lowers the reported total rather than showing as failures against 133.
+
+The suite's own decision logic can be driven without root or a container: `./scripts/test/full-test-suite.sh --self-test` exercises the apply classification and the three-way file reading (`count` / `absent` / `unreadable`) section 12A depends on.
 
 **Exit Codes**:
 - `0`: All tests passed
