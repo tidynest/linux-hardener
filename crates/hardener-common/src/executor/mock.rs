@@ -124,6 +124,13 @@ impl MockExecutor {
     }
 
     /// Adds a file to the virtual filesystem.
+    ///
+    /// The recorded mode carries the `S_IFREG` type bit, because that is what
+    /// both real executors report: `LocalExecutor` returns the raw `st_mode`
+    /// and `SshExecutor` reconstructs it. A fixture holding bare permission
+    /// bits would describe a host that cannot exist, and callers that
+    /// discriminate a file from a directory by the type bit would take the
+    /// wrong branch under the mock alone.
     pub fn with_file(self, path: &str, content: &str) -> Self {
         let path_buf = PathBuf::from(path);
         self.files
@@ -140,7 +147,7 @@ impl MockExecutor {
                     exists: true,
                     is_file: true,
                     is_dir: false,
-                    mode: 0o644,
+                    mode: 0o100644,
                     size: content.len() as u64,
                     uid: 0,
                     gid: 0,
@@ -184,6 +191,12 @@ impl MockExecutor {
     }
 
     /// Adds a directory (no content, just metadata).
+    ///
+    /// The recorded mode carries the `S_IFDIR` type bit for the same reason
+    /// [`with_file`](Self::with_file) carries `S_IFREG`: a capture that reads
+    /// the type bit back out, as the checkpoint manager does to tell a saved
+    /// directory from a saved file, must see under the mock what it would see
+    /// on a real host.
     pub fn with_directory(self, path: &str) -> Self {
         let path_buf = PathBuf::from(path);
         self.file_metadata
@@ -195,7 +208,7 @@ impl MockExecutor {
                     exists: true,
                     is_file: false,
                     is_dir: true,
-                    mode: 0o755,
+                    mode: 0o040755,
                     size: 0,
                     uid: 0,
                     gid: 0,
@@ -428,7 +441,7 @@ impl SystemExecutor for MockExecutor {
                     exists: true,
                     is_file: true,
                     is_dir: false,
-                    mode: 0o644,
+                    mode: 0o100644,
                     size: content.len() as u64,
                     uid: 0,
                     gid: 0,
