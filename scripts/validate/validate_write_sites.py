@@ -82,9 +82,12 @@ which creates such a symlink that no checkpoint declares, and the answer there
 is that leaving it is deliberate: removing it would disable the firewall at boot
 on a host whose operator asked only to undo a hardening run. `925263a` wrote
 that reasoning onto the function. audit's `systemctl enable auditd` is the same
-shape and carries no such note. A check cannot tell a deliberate asymmetry from
-an overlooked path, which is the argument for a registry of written answers and
-against a cleverer analysis.
+shape and now carries its own note, reached by the same rule and deliberately
+not a copy: firewall's argument rests partly on its own rollback re-enabling the
+firewall unconditionally, and audit's rollback says nothing about enablement, so
+only the shared rule carries the audit case. A check cannot tell a deliberate
+asymmetry from an overlooked path, which is the argument for a registry of
+written answers and against a cleverer analysis.
 
 WHAT THIS PROVES, AND IT IS NARROW
 

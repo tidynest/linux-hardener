@@ -1089,7 +1089,39 @@ impl HardeningPlugin for AuditHardeningPlugin {
 
         changes.extend(crate::checkpoint_change(&checkpoint_id));
 
-        // Enable auditd if not enabled
+        // Enable auditd if not enabled.
+        //
+        // This writes a `.wants` symlink under /etc/systemd/system, and the
+        // checkpoint declared just above covers nothing there, so a rollback
+        // leaves auditd wanted at boot. That is the decision rather than an
+        // oversight, and it is written here because the question reaches this
+        // site by a route that makes it look like one: sweeping the tree for
+        // "which apply creates a path its own checkpoint does not declare"
+        // found two genuine defects, the `systemctl mask` link and the audit
+        // rules file, and then found this, which is not one.
+        //
+        // Undoing it would mean removing the symlink, which is to say leaving
+        // the host with no audit daemon at its next boot, on a host whose
+        // operator asked only to undo a hardening run. That contradicts the
+        // settled rule that a hardening run never leaves a host less secure
+        // than it found it, and the asymmetry it buys is one this plugin
+        // already has: it enables auditd and never disables one.
+        //
+        // The firewall plugin reached the same answer at
+        // `ensure_unit_wanted_at_boot`, and its reasoning is NOT identical,
+        // which is worth saying because copying it blind would overstate this
+        // case. Firewall's rests on two legs: the rule above, plus its own
+        // `rollback` re-enabling the firewall unconditionally, so that removing
+        // the symlink would leave a rollback which turns the firewall on for
+        // this boot and off at the next. This plugin's `rollback` restores
+        // files and reloads rules and says nothing about enablement at all, so
+        // there is no such incoherence to avoid and the first leg carries the
+        // decision on its own.
+        //
+        // What the operator is left with, said rather than hidden: a host that
+        // had auditd disabled before the run has it enabled after the rollback,
+        // and one `systemctl disable auditd` undoes that. A rollback removing
+        // it for them cannot be undone by anything as cheap.
         if !is_auditd_enabled(ctx).await.unwrap_or(false) {
             let result = ctx
                 .executor()
