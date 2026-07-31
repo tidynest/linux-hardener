@@ -1658,3 +1658,417 @@ async fn kernel_validate_predicts_the_block_an_excepted_parameter_gets() {
         report.validation_report_estimated_changes
     );
 }
+
+// =============================================================================
+// Whether the values this plugin writes survive the next boot
+// =============================================================================
+
+/// ufw's enablement flag. `ufw-init-functions` sources this file and
+/// `ufw_start` applies the sysctl file only inside `[ "$ENABLED" = "yes" ]`
+/// (ufw 0.36.2, `/usr/lib/ufw/ufw-init-functions:111` and `:387`).
+const UFW_CONF: &str = "/etc/ufw/ufw.conf";
+/// Where ufw names the sysctl file it applies, in `IPT_SYSCTL`.
+const UFW_DEFAULTS: &str = "/etc/default/ufw";
+/// The file ufw ships there. Read on the arch host 2026-07-31: it spells its
+/// keys as procfs paths, `net/ipv4/conf/all/log_martians=0`, where this tool
+/// and `sysctl.d` spell them `net.ipv4.conf.all.log_martians = 1`.
+const UFW_SYSCTL: &str = "/etc/ufw/sysctl.conf";
+
+/// The body ufw ships on arch and debian, trimmed to the lines that touch a
+/// managed parameter. `log_martians` is the reported defect; the rp_filter and
+/// accept_source_route lines are at or stricter than this tool's targets and
+/// are the six false findings a direction-blind comparison would emit.
+const UFW_SHIPPED_SYSCTL: &str = "\
+# ufw's own comment\n\
+net/ipv4/conf/default/rp_filter=1\n\
+net/ipv4/conf/all/rp_filter=1\n\
+net/ipv4/conf/default/accept_source_route=0\n\
+net/ipv4/conf/all/accept_source_route=0\n\
+net/ipv4/conf/default/log_martians=0\n\
+net/ipv4/conf/all/log_martians=0\n";
+
+/// A host whose ufw is enabled and whose `IPT_SYSCTL` names `body`.
+fn ufw_enabled(executor: MockExecutor, body: &str) -> MockExecutor {
+    executor
+        .with_file(UFW_CONF, "# /etc/ufw/ufw.conf\nENABLED=yes\nLOGLEVEL=low\n")
+        .with_file(
+            UFW_DEFAULTS,
+            "IPV6=yes\nIPT_SYSCTL=/etc/ufw/sysctl.conf\nIPT_MODULES=\"\"\n",
+        )
+        .with_file(UFW_SYSCTL, body)
+}
+
+/// The findings that say a managed parameter will not survive the next boot,
+/// picked out by their id prefix rather than by their wording.
+fn boot_findings(
+    result: &hardener_core::plugin::ScanResult,
+) -> Vec<&hardener_core::plugin::Finding> {
+    result
+        .scan_findings
+        .iter()
+        .filter(|f| f.finding_id.starts_with("kernel_boot_override_"))
+        .collect()
+}
+
+/// A one-line summary of each boot finding, for assertion messages.
+fn boot_summary(result: &hardener_core::plugin::ScanResult) -> Vec<String> {
+    boot_findings(result)
+        .iter()
+        .map(|f| format!("{}: {}", f.finding_id, f.finding_title))
+        .collect()
+}
+
+async fn scan_host(executor: MockExecutor) -> hardener_core::plugin::ScanResult {
+    KernelHardeningPlugin::new()
+        .scan(
+            &Context::with_executor(Arc::new(executor)),
+            &PluginConfig::default(),
+        )
+        .await
+        .expect("kernel scan should not error")
+}
+
+/// The reported defect. Measured on the debian container 2026-07-31:
+/// `/etc/sysctl.d/99-hardener.conf` holds `log_martians = 1` and the running
+/// kernel reads 0, because `ufw.service` is `After=systemd-sysctl.service` and
+/// its start applies `/etc/ufw/sysctl.conf` over everything `sysctl.d` set.
+#[tokio::test]
+async fn a_ufw_sysctl_file_that_loosens_a_managed_parameter_is_reported() {
+    let result = scan_host(ufw_enabled(
+        fully_secure_kernel_executor(),
+        UFW_SHIPPED_SYSCTL,
+    ))
+    .await;
+
+    let findings = boot_findings(&result);
+    assert_eq!(
+        findings.len(),
+        2,
+        "both log_martians parameters are undone at the next boot and neither \
+         of the four rp_filter/accept_source_route lines is looser, got: {:?}",
+        boot_summary(&result)
+    );
+
+    let all = findings
+        .iter()
+        .find(|f| f.finding_id.ends_with("net_ipv4_conf_all_log_martians"))
+        .unwrap_or_else(|| {
+            panic!(
+                "the all-interfaces parameter must be named, got: {:?}",
+                boot_summary(&result)
+            )
+        });
+    let named = format!(
+        "{} {} {:?}",
+        all.finding_title, all.finding_explanation, all.finding_remediation_steps
+    );
+    assert!(
+        named.contains(UFW_SYSCTL),
+        "the finding must name the file that undoes the setting, got: {named}"
+    );
+    assert!(
+        named.contains("net.ipv4.conf.all.log_martians"),
+        "the finding must name the parameter, got: {named}"
+    );
+    assert_eq!(
+        all.finding_current_value, "0",
+        "the finding must carry the value that file sets"
+    );
+    assert_eq!(
+        all.finding_recommended_value, "1",
+        "the finding must carry the target it undercuts"
+    );
+}
+
+/// The six-false-findings guard, twice over.
+///
+/// The first six lines are what ufw really ships for parameters this tool
+/// manages: two `rp_filter`, two ipv4 `accept_source_route` and two
+/// `accept_redirects`, every one of them at exactly this tool's target. A check
+/// that reported a managed parameter merely for APPEARING in ufw's file emits
+/// all six on every arch and debian host.
+///
+/// The seventh line ships in no ufw file and is here deliberately: because
+/// those six are exactly equal to their targets, they cannot tell a
+/// direction-aware comparison from an equality one. `ptrace_scope = 3` forbids
+/// ptrace outright and is stricter than the target of 2, so only a comparison
+/// that knows which way strictness runs leaves it alone.
+#[tokio::test]
+async fn ufw_values_at_or_stricter_than_the_target_are_not_reported() {
+    let body = "\
+net/ipv4/conf/default/rp_filter=1\n\
+net/ipv4/conf/all/rp_filter=1\n\
+net/ipv4/conf/default/accept_source_route=0\n\
+net/ipv4/conf/all/accept_source_route=0\n\
+net/ipv4/conf/all/accept_redirects=0\n\
+net/ipv4/conf/default/accept_redirects=0\n\
+kernel/yama/ptrace_scope=3\n";
+    let result = scan_host(ufw_enabled(fully_secure_kernel_executor(), body)).await;
+
+    assert!(
+        boot_findings(&result).is_empty(),
+        "a file agreeing with this tool, or stricter than it, undoes nothing, \
+         got: {:?}",
+        boot_summary(&result)
+    );
+}
+
+/// The Debian 13 guard, and the single most important test here. Debian 13
+/// ships `/usr/lib/sysctl.d/50-default.conf` from `linux-sysctl-defaults`
+/// setting `rp_filter = 2`, which is LOOSER than this tool's target of 1
+/// (`0, 2, 1` weakest first). systemd-sysctl sorts drop-ins by filename and the
+/// lexicographically last name wins (`sysctl.d(5)`, CONFIGURATION DIRECTORIES
+/// AND PRECEDENCE), so `99-hardener.conf` beats `50-default.conf` and there is
+/// nothing to report.
+#[tokio::test]
+async fn a_dropin_sorting_before_the_hardener_file_is_not_reported() {
+    let executor = fully_secure_kernel_executor().with_file(
+        "/usr/lib/sysctl.d/50-default.conf",
+        "kernel.sysrq = 16\nnet.ipv4.conf.default.rp_filter = 2\nnet.ipv4.conf.all.rp_filter = 2\n",
+    );
+    let result = scan_host(executor).await;
+
+    assert!(
+        boot_findings(&result).is_empty(),
+        "99-hardener.conf sorts after 50-default.conf and therefore wins, so \
+         reporting this would be a false finding on every Debian 13 host, got: \
+         {:?}",
+        boot_summary(&result)
+    );
+}
+
+/// The other half of the pair above: without this, a reader that never looked
+/// at a drop-in at all would satisfy the Debian 13 guard, and the two only mean
+/// something together.
+#[tokio::test]
+async fn a_dropin_sorting_after_the_hardener_file_is_reported() {
+    let executor = fully_secure_kernel_executor().with_file(
+        "/etc/sysctl.d/zz-local-overrides.conf",
+        "net.ipv4.conf.all.rp_filter = 2\n",
+    );
+    let result = scan_host(executor).await;
+
+    let findings = boot_findings(&result);
+    let [finding] = findings.as_slice() else {
+        panic!(
+            "a drop-in sorting after 99-hardener.conf decides the value the host \
+             runs, got: {:?}",
+            boot_summary(&result)
+        )
+    };
+    let named = format!(
+        "{} {} {:?}",
+        finding.finding_title, finding.finding_explanation, finding.finding_remediation_steps
+    );
+    assert!(
+        named.contains("/etc/sysctl.d/zz-local-overrides.conf"),
+        "the finding must name the file, got: {named}"
+    );
+    assert_eq!(finding.finding_current_value, "2");
+    assert_eq!(finding.finding_recommended_value, "1");
+}
+
+/// Nothing applies the file when ufw does not name one.
+#[tokio::test]
+async fn a_commented_out_ipt_sysctl_is_not_reported() {
+    let executor = fully_secure_kernel_executor()
+        .with_file(UFW_CONF, "ENABLED=yes\n")
+        .with_file(UFW_DEFAULTS, "IPV6=yes\n#IPT_SYSCTL=/etc/ufw/sysctl.conf\n")
+        .with_file(UFW_SYSCTL, UFW_SHIPPED_SYSCTL);
+    let result = scan_host(executor).await;
+
+    assert!(
+        boot_findings(&result).is_empty(),
+        "ufw applies IPT_SYSCTL only when it is set, so a commented-out line \
+         undoes nothing, got: {:?}",
+        boot_summary(&result)
+    );
+}
+
+/// Measured on the arch host 2026-07-31: ufw is installed, `IPT_SYSCTL` is
+/// active and `/etc/ufw/sysctl.conf` sets `log_martians=0`, yet
+/// `/etc/ufw/ufw.conf` says `ENABLED=no` and `ufw_start` skips everything
+/// inside its enablement test. A check that ignored that flag would emit a
+/// false finding on every host with ufw merely installed.
+#[tokio::test]
+async fn a_disabled_ufw_is_not_reported() {
+    let executor = fully_secure_kernel_executor()
+        .with_file(UFW_CONF, "ENABLED=no\nLOGLEVEL=low\n")
+        .with_file(UFW_DEFAULTS, "IPT_SYSCTL=/etc/ufw/sysctl.conf\n")
+        .with_file(UFW_SYSCTL, UFW_SHIPPED_SYSCTL);
+    let result = scan_host(executor).await;
+
+    assert!(
+        boot_findings(&result).is_empty(),
+        "ufw that is not enabled never runs its start script, so its sysctl \
+         file is never applied, got: {:?}",
+        boot_summary(&result)
+    );
+}
+
+/// A file that cannot be read is not a silence.
+#[tokio::test]
+async fn an_unreadable_ufw_defaults_file_is_unchecked_rather_than_a_pass() {
+    let executor = fully_secure_kernel_executor()
+        .with_file(UFW_CONF, "ENABLED=yes\n")
+        .with_read_permission_denied(UFW_DEFAULTS);
+    let result = scan_host(executor).await;
+
+    assert!(
+        boot_findings(&result).is_empty(),
+        "nothing was read, so nothing can be asserted about a parameter"
+    );
+    let [unchecked] = result.scan_unchecked.as_slice() else {
+        panic!(
+            "a file this scan could not read must be reported as unchecked, got: {:?}",
+            result.scan_unchecked
+        )
+    };
+    assert!(
+        unchecked.unchecked_reason.contains(UFW_DEFAULTS),
+        "the unchecked entry must name the file, got: {}",
+        unchecked.unchecked_reason
+    );
+    assert!(
+        unchecked.unchecked_needs_privilege,
+        "a read refused for permission is exactly what a privileged run would fix"
+    );
+    assert!(
+        !unchecked.unchecked_compliance.is_empty(),
+        "an unanswerable question must stop its controls auto-passing"
+    );
+}
+
+/// The same for the file `IPT_SYSCTL` names.
+#[tokio::test]
+async fn an_unreadable_ipt_sysctl_target_is_unchecked_rather_than_a_pass() {
+    let executor = ufw_enabled(fully_secure_kernel_executor(), UFW_SHIPPED_SYSCTL)
+        .with_read_permission_denied(UFW_SYSCTL);
+    let result = scan_host(executor).await;
+
+    assert!(
+        boot_findings(&result).is_empty(),
+        "the file was never read, so no value can be held against a target"
+    );
+    assert!(
+        result
+            .scan_unchecked
+            .iter()
+            .any(|u| u.unchecked_reason.contains(UFW_SYSCTL)),
+        "the file ufw would apply could not be read and must be reported as \
+         unchecked, got: {:?}",
+        result.scan_unchecked
+    );
+}
+
+/// This is report-only work: the scan says so and the apply does nothing new
+/// about it. Asserted against the same apply on a host without any of it,
+/// rather than assumed.
+#[tokio::test]
+async fn the_apply_writes_nothing_new_for_a_parameter_another_package_overrides() {
+    let plain = Arc::new(fully_secure_kernel_executor());
+    let overridden = Arc::new(
+        ufw_enabled(fully_secure_kernel_executor(), UFW_SHIPPED_SYSCTL).with_file(
+            "/etc/sysctl.d/zz-local-overrides.conf",
+            "net.ipv4.conf.all.rp_filter = 2\n",
+        ),
+    );
+
+    let mut plain_ctx = Context::with_executor(plain.clone());
+    let plain_apply = KernelHardeningPlugin::new()
+        .apply(&mut plain_ctx, &PluginConfig::default())
+        .await
+        .expect("kernel apply should not error");
+    let mut overridden_ctx = Context::with_executor(overridden.clone());
+    let overridden_apply = KernelHardeningPlugin::new()
+        .apply(&mut overridden_ctx, &PluginConfig::default())
+        .await
+        .expect("kernel apply should not error");
+
+    let descriptions = |result: &hardener_core::plugin::ApplyResult| -> Vec<String> {
+        result
+            .apply_changes
+            .iter()
+            .map(|c| c.change_description.clone())
+            .collect()
+    };
+    assert_eq!(
+        descriptions(&overridden_apply),
+        descriptions(&plain_apply),
+        "the apply must not grow a change for something it has decided not to fix"
+    );
+
+    let written = |executor: &MockExecutor| -> Vec<String> {
+        executor
+            .log()
+            .files_written
+            .iter()
+            .map(|(path, _)| path.to_string_lossy().into_owned())
+            .collect()
+    };
+    assert_eq!(
+        written(&overridden),
+        written(&plain),
+        "this tool does not edit another package's configuration file, so the \
+         apply writes exactly what it always wrote"
+    );
+    // Named, not just compared. A write this apply performs on every host
+    // would grow both lists together and the comparison above would not see it.
+    assert!(
+        written(&overridden)
+            .iter()
+            .all(|path| path == HARDENER_CONF || path.starts_with("/proc/sys/")),
+        "the only files this plugin writes are its own drop-in and /proc/sys, \
+         got: {:?}",
+        written(&overridden)
+    );
+}
+
+/// A drop-in that assigns through a glob pattern is not resolved here, and a
+/// pattern this reader walked past in silence would read exactly like a file
+/// that agrees with the tool.
+#[tokio::test]
+async fn a_later_dropin_using_glob_patterns_is_unchecked_rather_than_a_pass() {
+    let executor = fully_secure_kernel_executor().with_file(
+        "/etc/sysctl.d/zz-patterns.conf",
+        "net.ipv4.conf.*.rp_filter = 2\n",
+    );
+    let result = scan_host(executor).await;
+
+    assert!(
+        boot_findings(&result).is_empty(),
+        "no pattern was resolved, so no value can be held against a target"
+    );
+    assert!(
+        result.scan_unchecked.iter().any(|u| u
+            .unchecked_reason
+            .contains("/etc/sysctl.d/zz-patterns.conf")),
+        "a file this scan could not fully read must be reported as unchecked, \
+         got: {:?}",
+        result.scan_unchecked
+    );
+}
+
+/// ufw runs from a unit ordered after systemd-sysctl, so it lands after every
+/// drop-in whatever those are called. A parameter a late drop-in loosens and
+/// ufw then sets back is a value the host never runs, and reporting it would be
+/// a finding about a state that does not exist.
+#[tokio::test]
+async fn the_last_writer_decides_and_ufw_writes_after_every_dropin() {
+    let executor = ufw_enabled(
+        fully_secure_kernel_executor(),
+        "net/ipv4/conf/all/rp_filter=1\n",
+    )
+    .with_file(
+        "/etc/sysctl.d/zz-local-overrides.conf",
+        "net.ipv4.conf.all.rp_filter = 2\n",
+    );
+    let result = scan_host(executor).await;
+
+    assert!(
+        boot_findings(&result).is_empty(),
+        "ufw applies its file after every sysctl.d drop-in, so the value the \
+         host runs is ufw's, got: {:?}",
+        boot_summary(&result)
+    );
+}

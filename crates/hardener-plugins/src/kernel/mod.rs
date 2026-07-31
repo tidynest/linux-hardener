@@ -24,6 +24,8 @@ use hardener_core::{
 use std::{path::Path, time::Instant};
 use tracing::{info, warn};
 
+mod persistence;
+
 /// Kernel hardening plugin implementing sysctl parameter management.
 pub struct KernelHardeningPlugin;
 
@@ -48,7 +50,7 @@ impl KernelHardeningPlugin {
     /// # Returns
     /// The parameter values as a string, or an error if reading fails.
     async fn read_sysctl(&self, param: &str, ctx: &Context) -> Result<String> {
-        let path = format!("/proc/sys/{}", param.replace('.', "/"));
+        let path = format!("/proc/sys/{}", persistence::procfs_key(param));
         let content = ctx.executor().read_file(Path::new(&path)).await?;
         Ok(content.trim().to_string())
     }
@@ -941,11 +943,21 @@ impl HardeningPlugin for KernelHardeningPlugin {
             }
         }
 
+        // A value read out of /proc/sys says what the host runs now, not what
+        // it will run after the next restart, and this plugin's whole claim to
+        // persistence is one file that another package's can land on top of.
+        // Measured on the debian container 2026-07-31: SYSCTL_HARDENER_CONF
+        // holds `log_martians = 1` and the running kernel reads 0, because ufw
+        // applies /etc/ufw/sysctl.conf from a unit ordered after
+        // systemd-sysctl.service. Report-only, for the reason the module gives.
+        let (overridden, unchecked) = persistence::boot_persistence(ctx, config).await;
+        findings.extend(overridden);
+
         Ok(ScanResult {
             scan_plugin_id: self.metadata().plugin_id,
             scan_success: true,
             scan_findings: findings,
-            scan_unchecked: vec![],
+            scan_unchecked: unchecked,
             scan_duration_us: start_time.elapsed().as_micros() as u64,
             scan_error: None,
         })
@@ -1031,7 +1043,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
                 PlannedParameter::Setting { target_value } => target_value,
             };
 
-            let path = format!("/proc/sys/{}", param_name.replace('.', "/"));
+            let path = format!("/proc/sys/{}", persistence::procfs_key(param_name));
 
             // Already at least as strict as the target: no runtime write.
             if !parameter
@@ -1242,7 +1254,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
                 PlannedParameter::Setting { target_value } => target_value,
             };
 
-            let path = format!("/proc/sys/{}", param_name.replace('.', "/"));
+            let path = format!("/proc/sys/{}", persistence::procfs_key(param_name));
 
             // Check if parameter exists, is writable, and differs from target
             match ctx.executor().file_metadata(Path::new(&path)).await {
