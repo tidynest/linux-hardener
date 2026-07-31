@@ -765,6 +765,25 @@ impl HardeningPlugin for PamHardeningPlugin {
         // plugin already refuses to edit /etc/pam.d itself, so the remaining
         // step is the operator's and a run that hardened nothing has not
         // earned a clean result.
+        // `Indeterminate` continues here alongside `InStack`, and that is a
+        // decision rather than the two being conflated by accident. It has two
+        // flavours and neither is reachable in an apply on any distribution this
+        // project supports. A candidate that could not be read cannot get this
+        // far: /etc/pam.d is in `pam_paths` above and
+        // `create_checkpoint_for_apply` propagates a capture failure with `?`,
+        // so the apply has already aborted. A distribution whose stack this
+        // table does not name is not one of the five: the candidates cover
+        // system-auth and password-auth for the RHEL family, and
+        // common-password and common-auth for the Debian family and openSUSE.
+        //
+        // What remains is latent rather than live, and it is worth naming
+        // because a sweep for "which apply outcomes are silent" lands here and
+        // cannot otherwise tell this from an oversight. Were a sixth
+        // distribution added whose stack sits outside the table, this loop would
+        // say nothing while the apply reported success for files nothing reads.
+        // Scan is not blind to that case, which is why nothing is changed here
+        // today: it reports the same reading as unchecked, and an unchecked
+        // control renders as ManualReview rather than as a pass.
         for (path, presence) in module_presence_by_file(ctx).await {
             let ModulePresence::NotInStack { module } = presence else {
                 continue;
