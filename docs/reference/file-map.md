@@ -145,6 +145,7 @@ pub trait HardeningPlugin: Send + Sync {
 | `src/ssh/dropin.rs` | Network | Writes SSH hardening to `/etc/ssh/sshd_config.d/00-hardener.conf`, which sorts before the fragments distributions ship, so sshd takes this file's values first. Precedence is verified after writing by re-resolving, never assumed from the filename, and an empty directive set removes the file rather than leaving an empty one | `DROPIN_PATH`, `Directive`, `render()`, `write_dropin()` |
 | `src/ssh/include.rs` | Network | Resolves `Include` directives in sshd's own order, so scan reports the value sshd will actually use and names the file supplying it. sshd takes the **first** value it obtains and distributions put the Include above everything this tool writes, so a drop-in silently won while the tool reported its own write |
 | `src/kernel/mod.rs` | Kernel | ASLR, kptr_restrict, dmesg_restrict, ptrace_scope, suid_dumpable, rp_filter, tcp_syncookies |
+| `src/kernel/persistence.rs` | Kernel | Reports a managed parameter that a file applied after `99-hardener.conf` sets looser than its target, so hardening that will not survive the next reboot is named rather than assumed to hold. Report-only; the apply writes nothing for it | `procfs_key()`, `boot_persistence()` |
 | `src/firewall/mod.rs` | Network | Firewall enabled, baseline rules |
 | `src/firewall/nftables.rs` | Network | nftables backend |
 | `src/firewall/firewalld.rs` | Network | firewalld backend |
