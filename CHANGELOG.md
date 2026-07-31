@@ -231,6 +231,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bit store a directory as bare permission bits and are unaffected, restoring
   exactly as before.
 
+- **`hardener rollback` now removes the `/dev/null` symlink `systemctl mask`
+  leaves behind, rather than refusing it.** The services plugin declares each
+  masked unit's path to its pre-apply checkpoint, and a path absent at capture is
+  stored with a zero mode meaning "remove on restore", so the row that undoes a
+  mask was present and correct. The restore refused it: the guard that stops a
+  rollback writing captured content *through* a symlink asks what the path
+  resolves to now, and at rollback time the path is the mask link, which resolves
+  to `/dev/null`, outside every allowlist. Measured in a container:
+  `[skipped] /etc/systemd/system/bluetooth.service`, "Rollback symlink
+  /etc/systemd/system/bluetooth.service resolves outside allowed directories",
+  and the mask outlived the rollback meant to undo it. A row recorded absent is
+  restored by `rm -f` on the path, which unlinks the entry itself and follows
+  nothing, so it now carries the same exemption a recorded symlink already had,
+  for the same reason: the write lands on that path and nowhere else. The
+  exemption is deliberately narrow, keyed on what the row records rather than on
+  what stands at the path. A row carrying content is still refused when its path
+  is now a link out of bounds, because that write would go through the link, and
+  so is a directory row, whose `chmod` and `chown` follow one just as readily.
+  The paths a rollback may never delete are unaffected: that rule is enforced
+  after this guard, and a protected path recorded as absent is still probed and
+  still never removed.
+
 - **`hardener rollback` no longer refuses to restore anything because one file
   in the checkpoint cannot be restored.** Measured on the five test
   distributions: four of them failed rollback outright, restoring nothing, with

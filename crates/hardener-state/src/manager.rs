@@ -894,6 +894,20 @@ impl CheckpointManager {
             return None;
         }
 
+        // A row recorded absent is answered by `rm -f`, which unlinks the entry
+        // itself and does not follow it, so that restore lands on `path` and
+        // nowhere else for the same reason the exemption above does. `systemctl
+        // mask` is the case that needs it: the apply leaves a symlink to
+        // /dev/null where the checkpoint recorded nothing, resolving it here
+        // refused the removal, and the mask outlived the rollback meant to undo
+        // it. Narrow deliberately, a row recorded absent and not symlinks in
+        // general: a row carrying content is written through whatever stands at
+        // the path, and a directory row's chmod and chown follow a link just as
+        // readily, so both still answer to the check below.
+        if recorded_absent(file_state) {
+            return None;
+        }
+
         if path.is_symlink() {
             return match path.canonicalize() {
                 Ok(resolved) if within(&resolved.to_string_lossy()) => None,
@@ -975,15 +989,14 @@ impl CheckpointManager {
             return (FileRestoreAction::Restored, result);
         }
 
-        // Determine the required action. `file_permissions` holds the full
-        // st_mode (type bit included), so any path that existed at capture (a
-        // directory, or a file that was unreadable, even one with 0000 perms)
-        // has a non-zero mode and gets its permissions/owner re-applied. Only a
-        // path absent at checkpoint time is stored as 0, meaning "remove on restore".
+        // Determine the required action. A row that is not recorded absent and
+        // carries no content is a path that existed at capture (a directory, or
+        // a file that was unreadable, even one with 0000 perms) and gets its
+        // permissions and owner re-applied.
         let action = match &file_state.file_content {
             Some(_) => FileRestoreAction::Restored,
-            None if file_state.file_permissions != 0 => FileRestoreAction::PermissionsRestored,
-            None => FileRestoreAction::Removed,
+            None if recorded_absent(file_state) => FileRestoreAction::Removed,
+            None => FileRestoreAction::PermissionsRestored,
         };
 
         // A mode-0 row means "absent at capture", but a checkpoint written by a
@@ -1267,6 +1280,21 @@ async fn ensure_directory(executor: &dyn SystemExecutor, dir: &Path) -> Option<S
 
     let dir_str = dir.to_string_lossy();
     restore_command_refusal(executor, "mkdir", &["-p", &dir_str], &dir_str).await
+}
+
+/// Whether a checkpoint row says nothing stood at its path when it was taken.
+///
+/// `file_permissions` holds the full st_mode, type bit included, so every path
+/// that existed at capture has a non-zero mode and only a confirmed absence is
+/// stored as 0; the content check keeps the answer honest for a row that
+/// carries bytes. Named once because two separate decisions turn on it and they
+/// have to agree: the action such a row restores to (a removal, not a write),
+/// and whether the symlink guard applies to it (it does not, because a removal
+/// unlinks the path itself). Written twice they would be free to drift, and a
+/// guard that disagreed with the action it is guarding is how a masked unit
+/// survived its own rollback.
+fn recorded_absent(file_state: &FileState) -> bool {
+    file_state.file_content.is_none() && file_state.file_permissions == 0
 }
 
 /// Handles a checkpoint row whose action is [`FileRestoreAction::Removed`]:

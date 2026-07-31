@@ -1,12 +1,19 @@
 mod common;
 
 use common::{DiskExecutor, TestFixture};
+use hardener_state::FileRestoreAction;
 use std::path::Path;
 
 /// The packaged unit an enablement symlink points at. Outside every rollback
 /// allowlist and deliberately not created here: a restore recreates the link,
 /// it never follows it, so a target that is not there must make no difference.
 const PACKAGED_UNIT: &str = "/usr/lib/systemd/system/bluetooth.service";
+
+/// Where `systemctl mask` points the link it leaves behind. Outside every
+/// rollback allowlist too, and that is the whole difficulty: the guard that
+/// stops a rollback writing content through a link resolves this one and
+/// refuses the removal that undoes the mask.
+const MASK_TARGET: &str = "/dev/null";
 
 /// Tests basic checkpoint creation and retrieval.
 ///
@@ -531,5 +538,82 @@ async fn rollback_recreates_the_directory_a_restored_symlink_needs() {
     assert_eq!(
         std::fs::read_link(&link).expect("the symlink must exist again"),
         Path::new(PACKAGED_UNIT)
+    );
+}
+
+/// `systemctl mask` leaves a symlink to `/dev/null` where the unit file would
+/// stand, and undoing the mask means unlinking that symlink.
+///
+/// The services plugin declares the masked unit's path to its pre-apply
+/// checkpoint, so a row for it exists, and the path being absent before the
+/// apply, that row records mode 0: remove on restore. Measured in a container,
+/// the rollback refused it instead, with "Rollback symlink
+/// /etc/systemd/system/bluetooth.service resolves outside allowed
+/// directories", and the mask outlived the rollback meant to undo it. That
+/// guard is against writing captured content *through* a link into a directory
+/// the allowlist excludes; a removal runs `rm -f` on the entry itself, follows
+/// nothing, and so lands on the path and nowhere else.
+///
+/// The untouched sibling is there so the run has something it may restore.
+/// With the mask row alone every path is refused, the rollback aborts, and
+/// that is a different symptom from the measured one, where the rest of the
+/// checkpoint came back and only the mask was skipped.
+///
+/// [`DiskExecutor`] rather than a `MockExecutor`, and unavoidably so: the guard
+/// asks the local filesystem whether the path is a symlink and what it resolves
+/// to, without going through the executor at all, so a mock's virtual
+/// filesystem cannot express the condition under test.
+#[tokio::test]
+async fn rollback_removes_the_mask_symlink_an_apply_created() {
+    let fixture = TestFixture::new().await;
+
+    // Absent at capture, which is what makes its row a removal instruction.
+    let masked_unit = fixture.fixture_temp_dir.path().join("bluetooth.service");
+    let untouched = fixture.create_test_file("avahi-daemon.service", "[Unit]\n");
+
+    let checkpoint_id = fixture
+        .fixture_checkpoint_manager
+        .create_checkpoint(
+            &DiskExecutor,
+            "service-minimisation-pre-apply",
+            &[&masked_unit, &untouched],
+        )
+        .await
+        .expect("Failed to create checkpoint");
+
+    // What `systemctl mask bluetooth` leaves behind.
+    std::os::unix::fs::symlink(MASK_TARGET, &masked_unit).expect("Failed to create mask symlink");
+
+    let result = fixture
+        .fixture_checkpoint_manager
+        .rollback(&DiskExecutor, &checkpoint_id)
+        .await
+        .expect("Failed to rollback");
+
+    // On disk first: the surviving mask is the harm, and a reported action is
+    // only a claim about it. The entry is looked up before the assertion rather
+    // than after so that a failure here names the reason the rollback gave.
+    let entry = restore_entry(&result, &masked_unit);
+    assert!(
+        std::fs::symlink_metadata(&masked_unit).is_err(),
+        "the mask symlink must be gone after a rollback to a checkpoint that recorded nothing \
+         there, but the rollback reported: {entry:?}"
+    );
+
+    assert_eq!(
+        entry.restore_action,
+        FileRestoreAction::Removed,
+        "a row recorded absent is undone by removing the path, got: {:?}",
+        entry.restore_error
+    );
+    assert!(
+        entry.restore_success,
+        "removing a path the apply created is an ordinary success, got: {:?}",
+        entry.restore_error
+    );
+    assert!(
+        result.rollback_success,
+        "a rollback that restored every path is a successful one, got: {:?}",
+        result.rollback_files
     );
 }
