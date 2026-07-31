@@ -1766,6 +1766,146 @@ async fn validate_honours_a_directive_override_that_tightens() {
     );
 }
 
+/// The dry run previews the apply it precedes, so it has to read the same
+/// configuration that apply reads.
+///
+/// `validate` parsed the main file alone while scan and apply both resolve the
+/// Include first. On the layout RHEL, Fedora and openSUSE ship, a drop-in
+/// answers the keyword before the main file, so a main file already holding the
+/// target previewed no change at all while the apply went on to write a
+/// fragment. That is the preview being short of the run in the direction the
+/// operator approves, which is the defect 420a52b and 5aa31cf each fixed
+/// elsewhere.
+#[tokio::test]
+async fn validate_previews_the_change_a_drop_in_forces_even_when_the_main_file_is_compliant() {
+    let executor = MockExecutor::new()
+        .with_file(
+            "/etc/ssh/sshd_config",
+            "Include /etc/ssh/sshd_config.d/*.conf\nX11Forwarding no\n",
+        )
+        .with_directory("/etc/ssh/sshd_config.d")
+        .with_file(
+            "/etc/ssh/sshd_config.d/50-redhat.conf",
+            "X11Forwarding yes\n",
+        );
+    let ctx = Context::with_executor(Arc::new(executor) as Arc<dyn SystemExecutor>);
+
+    let report = SshHardeningPlugin::new()
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(
+        report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("X11Forwarding")),
+        "the apply will write a fragment for this directive, so the preview must \
+         say so, got: {:?}",
+        report.validation_report_estimated_changes
+    );
+    // The file itself, named once. A preview listing settings while staying
+    // silent about a new file appearing in /etc is the defect 5aa31cf fixed in
+    // the kernel plugin, and this apply writes exactly such a file.
+    assert!(
+        report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("/etc/ssh/sshd_config.d/00-hardener.conf")),
+        "the preview must name the file the apply will create, got: {:?}",
+        report.validation_report_estimated_changes
+    );
+}
+
+/// The crypto directives were previewed by nothing at all: `validate` had no
+/// loop over them, so an apply that writes three cryptographic lists announced
+/// none of them beforehand.
+#[tokio::test]
+async fn validate_previews_the_crypto_directives_the_apply_would_write() {
+    let executor = MockExecutor::new()
+        .with_file(
+            "/etc/ssh/sshd_config",
+            "Include /etc/ssh/sshd_config.d/*.conf\n",
+        )
+        .with_directory("/etc/ssh/sshd_config.d")
+        .with_file(
+            "/etc/ssh/sshd_config.d/50-redhat.conf",
+            "Ciphers 3des-cbc\n",
+        )
+        .with_command(
+            "ssh",
+            &["-Q", "cipher"],
+            ok_output("chacha20-poly1305@openssh.com\naes256-gcm@openssh.com\n3des-cbc\n"),
+        );
+    let ctx = Context::with_executor(Arc::new(executor) as Arc<dyn SystemExecutor>);
+
+    let report = SshHardeningPlugin::new()
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(
+        report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("Ciphers")),
+        "the apply writes a strong cipher list over the drop-in's, so the preview \
+         must name it, got: {:?}",
+        report.validation_report_estimated_changes
+    );
+    assert!(
+        !report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("3des-cbc") && c.contains("→ 3des-cbc")),
+        "the preview must not promise the weak list it is replacing, got: {:?}",
+        report.validation_report_estimated_changes
+    );
+}
+
+/// The mirror, and it exists because its absence was measured: removing the
+/// already-strong check from the crypto preview left every test green.
+///
+/// `ssh -Q cipher` is registered deliberately. Without it the intersection is
+/// empty and the preview omits the directive for a completely different reason,
+/// so the test would pass whether or not the check it guards is there. A test
+/// that cannot fail for the reason it exists is not a test.
+#[tokio::test]
+async fn validate_previews_no_crypto_change_when_the_host_is_already_strong() {
+    let executor = MockExecutor::new()
+        .with_file(
+            "/etc/ssh/sshd_config",
+            "Include /etc/ssh/sshd_config.d/*.conf\n",
+        )
+        .with_directory("/etc/ssh/sshd_config.d")
+        .with_file(
+            "/etc/ssh/sshd_config.d/50-redhat.conf",
+            "Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com\n",
+        )
+        .with_command(
+            "ssh",
+            &["-Q", "cipher"],
+            ok_output(
+                "chacha20-poly1305@openssh.com\naes256-gcm@openssh.com\naes128-gcm@openssh.com\n",
+            ),
+        );
+    let ctx = Context::with_executor(Arc::new(executor) as Arc<dyn SystemExecutor>);
+
+    let report = SshHardeningPlugin::new()
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(
+        !report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("Ciphers")),
+        "a host already offering only strong ciphers has nothing to preview, got: {:?}",
+        report.validation_report_estimated_changes
+    );
+}
+
 #[tokio::test]
 async fn validate_clamps_a_directive_override_that_would_loosen() {
     let executor = insecure_ssh_executor();
