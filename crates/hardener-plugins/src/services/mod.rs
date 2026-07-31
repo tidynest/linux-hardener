@@ -534,6 +534,36 @@ async fn is_service_exists(ctx: &Context, service_name: &str) -> Result<bool> {
 }
 
 /// Checks if a service is enabled to start at boot.
+///
+/// Judged on the exit status, which is the opposite of what the audit plugin's
+/// `is_auditd_enabled` does, and the difference is deliberate rather than a
+/// site that sweep missed.
+///
+/// `systemctl is-enabled` exits 0 for more states than `enabled`, and this
+/// plugin already writes them down: [`ENABLED_STATES`] is the same seven states
+/// spelled out for the scan path, which reads `list-unit-files` in one batch
+/// rather than spawning per service. The two paths therefore agree, and this
+/// one is the shorter spelling of the same rule. Measured on a live host:
+/// `static` and `indirect` each print their own word and exit 0, while
+/// `disabled` and `masked` exit 1. Audit asks whether the unit will be started
+/// at the next boot, so for it those extra states are a false yes and it reads
+/// the word instead.
+///
+/// This plugin asks a different question. It wants the unit not to run at all,
+/// and its caller reads this answer as "is there anything here to undo",
+/// skipping the directive entirely when the unit is neither enabled nor active
+/// and masking it unconditionally otherwise. A `static` unit is inactive and
+/// cannot be enabled, but another unit may still pull it in, and it reaches
+/// that mask only because this exits 0. Reading the word would step over it and
+/// leave a startable unit unmasked, which is the loosening direction and
+/// contradicts the rule that a hardening run never leaves a host less secure
+/// than it found it.
+///
+/// The cost of answering broadly is borne where it is cheap: a `disable` of a
+/// unit with no `[Install]` section removes no symlink, and the mask that
+/// follows is what actually stops it. So the two plugins ask `systemctl` the
+/// same question and want different answers, and the safe direction is opposite
+/// in each.
 async fn is_service_enabled(ctx: &Context, service_name: &str) -> Result<bool> {
     let output = ctx
         .executor()

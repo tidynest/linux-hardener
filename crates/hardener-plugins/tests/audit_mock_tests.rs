@@ -1510,10 +1510,28 @@ async fn test_audit_rules_mode_failure_is_recorded_not_fatal() {
 const RULES_DIR: &str = "/etc/audit/rules.d";
 const RULES_FILE: &str = "/etc/audit/rules.d/hardening.rules";
 
+/// A command that said its piece on **stderr**, which is what the name does not
+/// say and what cost a reader minutes: the first argument is the error stream,
+/// not the output one. Use [`spoken`] for a command whose answer is read.
 fn command_output(stderr: &str, exit_code: i32) -> CommandOutput {
     CommandOutput {
         stdout: String::new(),
         stderr: stderr.to_string(),
+        exit_code,
+    }
+}
+
+/// A command that answered on stdout, for the probes that read the word rather
+/// than the exit status.
+///
+/// The newline is added here because systemd prints one and every caller would
+/// otherwise have to remember it. `is-enabled` is judged on its word, so a
+/// fixture that answers with an empty stdout represents a host that cannot
+/// exist.
+fn spoken(stdout: &str, exit_code: i32) -> CommandOutput {
+    CommandOutput {
+        stdout: format!("{stdout}\n"),
+        stderr: String::new(),
         exit_code,
     }
 }
@@ -1525,12 +1543,14 @@ fn audit_apply_executor() -> MockExecutor {
     MockExecutor::new()
         .with_command_exists("auditd", true)
         .with_command_exists("augenrules", true)
-        .with_command(
-            "systemctl",
-            &["is-enabled", "auditd"],
-            command_output("", 0),
-        )
-        .with_command("systemctl", &["is-active", "auditd"], command_output("", 0))
+        // Both answers carry the word systemd actually prints. They said
+        // nothing but exit 0 until `is_auditd_enabled` began reading the word,
+        // at which point a fixture representing "enabled" was answering with a
+        // state no systemd emits, and these two tests failed on an enable the
+        // fixture had never been asked to permit. A fixture that cannot occur
+        // on a real host proves nothing about one.
+        .with_command("systemctl", &["is-enabled", "auditd"], spoken("enabled", 0))
+        .with_command("systemctl", &["is-active", "auditd"], spoken("active", 0))
         .with_command("chmod", &["0640", RULES_FILE], command_output("", 0))
         .with_command("augenrules", &["--load"], command_output("", 0))
 }

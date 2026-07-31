@@ -267,12 +267,35 @@ async fn is_auditd_installed(ctx: &Context) -> Result<bool> {
 }
 
 /// Checks if auditd service is enabled to start at boot.
+///
+/// Judged on the word systemd prints and never on its exit status, because the
+/// two disagree by design. Measured on a live host rather than read out of the
+/// manual: `static` and `indirect` each print their own word and exit **0**,
+/// alongside `enabled-runtime`, which systemd documents the same way and which
+/// is the one that matters most here. A runtime enablement lives in
+/// `/run/systemd/system` and the next boot discards it, so a host in that state
+/// has no audit daemon after a reboot while `is-enabled` exits 0 to say it has.
+///
+/// Reading the status let all three answer "enabled at boot". The consequence
+/// ran through every caller in the same direction: scan reported a compliance
+/// the host did not have, `validate` previewed no change, and apply skipped the
+/// `systemctl enable` that would have repaired it. One boolean stood for
+/// "enabled" and for "enabled until the next reboot".
+///
+/// Only the exact word `enabled` is a permanent enablement. Everything else is
+/// read as not enabled, which is the safe direction: the worst it costs is an
+/// enable attempt on a unit that cannot be enabled, recorded honestly as a
+/// failed change, where the other direction costs an operator their audit trail
+/// silently. The firewall plugin needs the fuller answer, because it tells the
+/// operator WHICH way the unit fails to start; see `NOT_AT_BOOT_STATES` and
+/// `unit_boot_persistence` there. This plugin only decides whether to enable,
+/// so it asks the narrower question.
 async fn is_auditd_enabled(ctx: &Context) -> Result<bool> {
     let output = ctx
         .executor()
         .execute_command("systemctl", &["is-enabled", "auditd"])
         .await?;
-    Ok(output.success())
+    Ok(output.stdout.trim() == "enabled")
 }
 
 /// Checks if auditd service is currently running.
@@ -1503,6 +1526,53 @@ mod tests {
             "the rules file must not be written when its backup failed, but these writes happened: {:?}",
             executor.log().files_written
         );
+    }
+
+    /// `systemctl is-enabled` is judged on its word and never on its exit
+    /// status, because the two disagree by design.
+    ///
+    /// Measured on a live systemd host rather than taken from the manual:
+    /// `static` and `indirect` each print their own word and exit **0**, while
+    /// `disabled` and `masked` print theirs and exit 1. `enabled-runtime` is
+    /// documented by systemd as exiting 0 and is the case this plugin most
+    /// needs to get right, because it is enablement made in
+    /// `/run/systemd/system`, which the next boot discards.
+    ///
+    /// Reading the exit status therefore reports auditd as enabled at boot on
+    /// a host where nothing will start it, and the apply skips the enable that
+    /// would have repaired it. Both directions are asserted so that a helper
+    /// which simply always answered "not enabled" would fail here too.
+    #[tokio::test]
+    async fn boot_enablement_is_read_from_the_word_and_not_the_exit_status() {
+        for (state, exit_code, wanted) in [
+            ("enabled", 0, true),
+            ("enabled-runtime", 0, false),
+            ("static", 0, false),
+            ("indirect", 0, false),
+            ("disabled", 1, false),
+            ("masked", 1, false),
+        ] {
+            let executor = Arc::new(MockExecutor::new().with_command(
+                "systemctl",
+                &["is-enabled", "auditd"],
+                CommandOutput {
+                    stdout: format!("{state}\n"),
+                    stderr: String::new(),
+                    exit_code,
+                },
+            ));
+            let ctx = Context::with_executor(executor as Arc<dyn SystemExecutor>);
+
+            let enabled = is_auditd_enabled(&ctx)
+                .await
+                .expect("a registered systemctl answer must not error");
+
+            assert_eq!(
+                enabled, wanted,
+                "systemctl is-enabled auditd answering '{state}' with exit \
+                 {exit_code} must read as enabled={wanted}"
+            );
+        }
     }
 
     /// A backup is only worth taking if it is a copy of the thing about to be
