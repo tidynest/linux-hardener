@@ -173,11 +173,12 @@ WEBKIT_DISABLE_COMPOSITING_MODE=1 cargo tauri dev
 | Last Updated Dates | `validate_last_updated.py` | Dates current with git |
 | Doc Comment Attachment | `validate_doc_attachment.py` | No `///` block silently reassigned to the following item |
 | File Creation Sites | `validate_write_sites.py` | Every file-creating plugin call site carries a written reason its parent directory exists, and a written answer to whether a rollback reaches what it creates; every literal `cp` copies with both `-p` and `--no-dereference` |
+| Unit State Reads | `validate_unit_state_reads.py` | Every `systemctl is-enabled` call site says whether it judges systemd's word or its exit status, and why, with the answer cross-checked against the code |
 | CLI Documentation | `validate_cli_docs.py` | CLI commands documented |
 | Compliance Frameworks | `validate_compliance_docs.py` | Framework list matches enum |
 
 **Modes**:
-- Default: Runs all 9 validators
+- Default: Runs all 10 validators
 - `--quick`: Skips CLI and Compliance validators (faster)
 - `--fix`: Passes `--fix` to validators that support it
 

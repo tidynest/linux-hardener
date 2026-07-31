@@ -191,6 +191,47 @@ file is created through `execute_command("systemctl", ...)` and admitting
 same blind spot covers `systemctl enable`, `augenrules --load`, and the firewall
 backends writing their persistence through `firewall-cmd --permanent` and `ufw`.
 
+### Unit state reads
+
+```bash
+python3 scripts/validate/validate_unit_state_reads.py
+```
+
+Holds every `systemctl is-enabled` call site to a written answer: does it judge
+systemd's word, or systemd's exit status, and why is that right there.
+
+The two are different questions. Measured on a live host: `static` and
+`indirect` each print their own word and exit 0, while `disabled` and `masked`
+exit 1, and `enabled-runtime` exits 0 although the next boot discards it. So
+"the command succeeded" does not mean "this unit starts at the next boot".
+
+A rule banning the exit status would be wrong, which is why this is a registry
+rather than a ban. Firewall reads the word and keeps a three-way answer, because
+it tells the operator which way the unit fails to start. Audit reads the word
+and reduces it to a boolean, because it only decides whether to enable; it
+judged the exit status until an `enabled-runtime` host read as compliant with
+nothing to start auditd after a reboot. Services judges the exit status
+deliberately, because a `static` unit reaches its unconditional mask only
+because of it, and reading the word there would leave a unit another unit can
+pull in unmasked.
+
+What makes it more than a form is that the answer is cross-checked against the
+code: a site answering `word` must not read `output.success()` in the function
+holding it, and a site answering `exit-status` must. Flipping an implementation
+without touching its entry fails here. The cross-check is deliberately crude, as
+the script's docstring says at length, along with what it cannot see: a probe
+built through `format!`, a variable or a shell; `is-active` and the other
+subcommands, held out because their status and their word answer the same
+question; anything below the first `#[cfg(test)]` in a file, production or not;
+and whether the answer a site gives is the right one for its plugin.
+
+Fix a report by adding an entry that names the file and enclosing function,
+answers `word` or `exit-status`, and says why, then moving
+`EXPECTED_SITE_COUNT`. The count is pinned as a literal for the same reason the
+file-creation registry pins its own: a check that counts its own expected size
+cannot fail when a site is added, and it is the guard against this script
+quietly matching nothing at all.
+
 ### CLI documentation (slower)
 
 ```bash
