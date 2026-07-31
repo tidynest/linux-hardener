@@ -1316,8 +1316,36 @@ impl HardeningPlugin for KernelHardeningPlugin {
 
             let path = format!("/proc/sys/{}", persistence::procfs_key(param_name));
 
-            // Check if parameter exists, is writable, and differs from target
+            // Check if parameter exists, is writable, and differs from target.
+            //
+            // The three answers were wired to the wrong two messages. A
+            // positively confirmed absence arrives as `Ok(exists: false)` with a
+            // zero mode, and a zero mode has no write bit, so it fell into the
+            // read-only arm and a parameter this kernel does not carry was
+            // announced "is read-only" at High, which blocks the dry run.
+            // Meanwhile `Err`, which the trait contract defines as "could not be
+            // determined" and explicitly forbids reading as absence, announced
+            // "does not exist on this kernel" at Low, which does not block. The
+            // missing parameter failed the run for the wrong reason and the
+            // unreadable one passed it.
+            //
+            // Absence is therefore answered first, before the mode is consulted
+            // at all.
             match ctx.executor().file_metadata(Path::new(&path)).await {
+                Ok(metadata) if !metadata.exists => {
+                    issues.push(ValidationIssue {
+                        validation_issue_severity: Severity::Low,
+                        validation_issue_message: format!(
+                            "{} does not exist on this kernel",
+                            param_name
+                        ),
+                        validation_issue_config_key: Some(param_name.to_string()),
+                    });
+                }
+                // Reachable now only for a parameter that is present and whose
+                // inode carries no write bit. It still cannot see a read-only
+                // MOUNT, which is 4.1 item 3: every file under /proc/sys is 0644
+                // whether or not the mount allows writing.
                 Ok(metadata) if metadata.mode & 0o200 == 0 => {
                     issues.push(ValidationIssue {
                         validation_issue_severity: Severity::High,
@@ -1343,12 +1371,16 @@ impl HardeningPlugin for KernelHardeningPlugin {
                         None => format!("{param_name} will be set to {target_value}"),
                     });
                 }
-                Err(_) => {
+                Err(e) => {
+                    // Fail closed, as the contract requires: the probe said
+                    // nothing either way, so this preview cannot describe what
+                    // the apply would do here, and High is what
+                    // `has_blocking_issue` counts.
                     issues.push(ValidationIssue {
-                        validation_issue_severity: Severity::Low,
+                        validation_issue_severity: Severity::High,
                         validation_issue_message: format!(
-                            "{} does not exist on this kernel",
-                            param_name
+                            "{param_name}: could not determine whether the parameter exists \
+                             ({e}), so this preview cannot say what apply would do to it"
                         ),
                         validation_issue_config_key: Some(param_name.to_string()),
                     });

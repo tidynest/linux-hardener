@@ -81,12 +81,7 @@ fn fully_secure_kernel_executor() -> MockExecutor {
 /// which is what a kernel built without the parameter looks like: the Yama
 /// scope is the real case, absent on any kernel without that LSM.
 fn fully_secure_kernel_executor_without(path: &str) -> MockExecutor {
-    let values: Vec<(&str, &str)> = SECURE_PARAMETER_VALUES
-        .iter()
-        .filter(|(registered, _)| *registered != path)
-        .copied()
-        .collect();
-    kernel_executor_holding(&values)
+    fully_secure_kernel_executor().without_file(path)
 }
 
 /// Creates a mock executor with insecure kernel parameters.
@@ -613,9 +608,13 @@ async fn test_kernel_validate_readonly_params() {
 
 #[tokio::test]
 async fn test_kernel_validate_missing_params() {
-    // MockExecutor returns Ok(FileMetadata { exists: false, mode: 0 }) for missing files
-    // The kernel plugin sees mode=0, which means "read-only" (no write bit)
-    // So missing params are treated as High severity "read-only" issues
+    // This test used to assert the defect. Its own comment explained the
+    // mechanism and then called the result correct: a missing file returns
+    // Ok(exists: false, mode: 0), the zero mode has no write bit, so every
+    // absent parameter was reported "is read-only" at High and failed the dry
+    // run. The message was wrong, the severity was wrong, and the test was
+    // pinning both, which is why the swap survived. A test that encodes a defect
+    // as an expectation is the reason nobody finds it.
     let executor = MockExecutor::new(); // Empty - no params
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = KernelHardeningPlugin::new();
@@ -623,23 +622,28 @@ async fn test_kernel_validate_missing_params() {
 
     let result = plugin.validate(&ctx, &config).await.unwrap();
 
-    // With MockExecutor, missing files return mode=0, which triggers "read-only" check
-    // This results in High severity issues, making validation fail
-    assert!(
-        !result.validation_report_is_valid,
-        "missing params (mode=0) should make validation invalid"
-    );
     assert!(
         !result.validation_report_issues.is_empty(),
-        "missing params should produce validation issues"
+        "a kernel carrying none of the managed parameters has something to say"
     );
-
-    // All issues should be about read-only (mode=0)
+    // Absence is a fact about the host, not a blocker: apply cannot set a
+    // parameter this kernel does not have, and there is nothing for an operator
+    // to fix, so the preview says so and still runs.
+    assert!(
+        result.validation_report_is_valid,
+        "an absent parameter is not a reason to refuse the dry run, got: {:?}",
+        result.validation_report_issues
+    );
     for issue in &result.validation_report_issues {
-        assert_eq!(issue.validation_issue_severity, Severity::High);
+        assert_eq!(issue.validation_issue_severity, Severity::Low);
         assert!(
-            issue.validation_issue_message.contains("read-only"),
-            "issue should mention read-only, got: {}",
+            issue.validation_issue_message.contains("does not exist"),
+            "an absent parameter must be described as absent, got: {}",
+            issue.validation_issue_message
+        );
+        assert!(
+            !issue.validation_issue_message.contains("read-only"),
+            "a parameter this kernel does not carry is not a read-only one: {}",
             issue.validation_issue_message
         );
     }
@@ -2115,6 +2119,88 @@ async fn the_last_writer_decides_and_ufw_writes_after_every_dropin() {
         "ufw applies its file after every sysctl.d drop-in, so the value the \
          host runs is ufw's, got: {:?}",
         boot_summary(&result)
+    );
+}
+
+/// The dry run said the opposite of the truth in both directions.
+///
+/// `file_metadata` reports a positively confirmed absence as
+/// `Ok(exists: false, mode: 0)` and reserves `Err` for "could not determine",
+/// and its trait contract says callers must never read `Err` as absence. Kernel
+/// validate did exactly that: the `Err` arm announced "does not exist on this
+/// kernel" at Low, while a real absence, whose zero mode carries no write bit,
+/// fell into the read-only arm and was announced "is read-only" at High, which
+/// blocks the dry run.
+///
+/// So the parameter that was missing blocked the run under the wrong reason, and
+/// the parameter nobody could read passed it under the other wrong reason. Both
+/// directions are asserted, because a fix that merely reworded one arm would
+/// leave the other saying something it never established.
+#[tokio::test]
+async fn an_absent_parameter_is_reported_absent_rather_than_read_only() {
+    const YAMA: &str = "/proc/sys/kernel/yama/ptrace_scope";
+    let executor = fully_secure_kernel_executor_without(YAMA);
+    let ctx = Context::with_executor(Arc::new(executor) as Arc<dyn SystemExecutor>);
+
+    let report = KernelHardeningPlugin::new()
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .expect("kernel validate should not error");
+
+    let issue = report
+        .validation_report_issues
+        .iter()
+        .find(|i| i.validation_issue_config_key.as_deref() == Some("kernel.yama.ptrace_scope"))
+        .unwrap_or_else(|| {
+            panic!(
+                "an absent parameter must be reported, got: {:?}",
+                report.validation_report_issues
+            )
+        });
+    assert!(
+        !issue.validation_issue_message.contains("read-only"),
+        "a parameter this kernel does not carry is not a read-only one: {}",
+        issue.validation_issue_message
+    );
+    assert!(
+        issue.validation_issue_message.contains("does not exist"),
+        "the message must say what was actually established: {}",
+        issue.validation_issue_message
+    );
+}
+
+/// The other direction: a parameter whose metadata could not be read must not be
+/// announced as absent, and must fail the dry run rather than passing it.
+#[tokio::test]
+async fn an_unreadable_parameter_is_not_reported_as_absent() {
+    const ASLR: &str = "/proc/sys/kernel/randomize_va_space";
+    let executor = fully_secure_kernel_executor().with_metadata_error(ASLR);
+    let ctx = Context::with_executor(Arc::new(executor) as Arc<dyn SystemExecutor>);
+
+    let report = KernelHardeningPlugin::new()
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .expect("kernel validate should not error");
+
+    let issue = report
+        .validation_report_issues
+        .iter()
+        .find(|i| i.validation_issue_config_key.as_deref() == Some("kernel.randomize_va_space"))
+        .unwrap_or_else(|| {
+            panic!(
+                "a parameter the run could not examine must be reported, got: {:?}",
+                report.validation_report_issues
+            )
+        });
+    assert!(
+        !issue.validation_issue_message.contains("does not exist"),
+        "the probe failed; absence was never established: {}",
+        issue.validation_issue_message
+    );
+    assert_eq!(
+        issue.validation_issue_severity,
+        Severity::High,
+        "a preview that could not examine a managed parameter must not read as clean"
     );
 }
 
