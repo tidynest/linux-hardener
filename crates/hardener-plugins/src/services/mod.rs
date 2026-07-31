@@ -17,6 +17,7 @@ use hardener_core::{
     context::Context,
     plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedCheck},
 };
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 use tracing::{info, warn};
 
@@ -357,6 +358,47 @@ const UNNECESSARY_SERVICES: &[ServiceDirective] = &[
     },
 ];
 
+/// The unit directory systemd.unit(5) reserves for units created by the
+/// administrator, and the only one this plugin's changes reach: `systemctl
+/// disable` removes wants/ symlinks here, and `systemctl mask` adds a symlink
+/// to /dev/null here.
+const ADMIN_UNIT_DIR: &str = "/etc/systemd/system";
+
+/// The unit `systemctl` resolves a bare service name to, and therefore the
+/// basename a mask link takes under [`ADMIN_UNIT_DIR`].
+///
+/// One function rather than the `format!` repeated at each site, because the
+/// suffix is a rule about how systemd reads a name, not a detail of any one
+/// probe: `list-unit-files` matches patterns literally and needs the suffix
+/// spelled out (an unsuffixed pattern matches nothing, which once made every
+/// service look absent), and the mask link's basename has to agree with what
+/// was probed or the checkpoint would declare a path nothing ever creates.
+fn unit_name(service_name: &str) -> String {
+    format!("{service_name}.service")
+}
+
+/// Paths a `systemctl mask` of each of `directives` would create, one apiece.
+///
+/// Deliberately derived from a caller-supplied slice rather than from
+/// [`UNNECESSARY_SERVICES`] wholesale. A path a plugin declares to its
+/// checkpoint and which is absent at capture time is stored with a zero mode,
+/// which a rollback reads as "remove this" and acts on unconditionally, and
+/// [`ADMIN_UNIT_DIR`] is a legitimate administrator override slot rather than a
+/// hardener-owned filename like the drop-ins the kernel and ssh plugins
+/// declare. Handing in only the units the host actually has installed keeps a
+/// rollback from deleting an override for a service this tool never touched.
+///
+/// It narrows the window rather than closing it: a unit can be installed, then
+/// skipped by a policy exception or by being neither enabled nor active, and
+/// its path is declared all the same. Closing that would mean checkpointing
+/// after the decision to act, which is after the mask link already exists.
+fn mask_link_paths(directives: &[&ServiceDirective]) -> Vec<PathBuf> {
+    directives
+        .iter()
+        .map(|directive| Path::new(ADMIN_UNIT_DIR).join(unit_name(directive.service_name)))
+        .collect()
+}
+
 /// Unit-file states `systemctl is-enabled` reports success for.
 const ENABLED_STATES: &[&str] = &[
     "enabled",
@@ -391,7 +433,7 @@ impl ServiceStates {
     async fn load(ctx: &Context) -> Result<Self> {
         let units: Vec<String> = UNNECESSARY_SERVICES
             .iter()
-            .map(|directive| Self::unit(directive.service_name))
+            .map(|directive| unit_name(directive.service_name))
             .collect();
 
         let mut unit_file_args = vec!["list-unit-files", "--type=service", "--no-legend"];
@@ -443,25 +485,21 @@ impl ServiceStates {
         })
     }
 
-    fn unit(service_name: &str) -> String {
-        format!("{service_name}.service")
-    }
-
     fn exists(&self, service_name: &str) -> bool {
-        self.unit_files.contains_key(&Self::unit(service_name))
+        self.unit_files.contains_key(&unit_name(service_name))
     }
 
     /// Mirrors the exit-code semantics of `systemctl is-enabled`.
     fn enabled(&self, service_name: &str) -> bool {
         self.unit_files
-            .get(&Self::unit(service_name))
+            .get(&unit_name(service_name))
             .is_some_and(|state| ENABLED_STATES.contains(&state.as_str()))
     }
 
     /// Mirrors the exit-code semantics of `systemctl is-active`.
     fn active(&self, service_name: &str) -> bool {
         self.active_units
-            .get(&Self::unit(service_name))
+            .get(&unit_name(service_name))
             .is_some_and(|state| state == "active" || state == "reloading")
     }
 }
@@ -483,9 +521,10 @@ fn parse_unit_column(stdout: &str, column: usize) -> std::collections::HashMap<S
 ///
 /// The pattern needs the `.service` suffix; `list-unit-files` does not
 /// mangle bare names the way `is-enabled`/`is-active` do, so an unsuffixed
-/// pattern matches nothing and every service looked absent.
+/// pattern matches nothing and every service looked absent. See [`unit_name`],
+/// which is where that suffix rule is now stated once.
 async fn is_service_exists(ctx: &Context, service_name: &str) -> Result<bool> {
-    let unit = format!("{service_name}.service");
+    let unit = unit_name(service_name);
     let output = ctx
         .executor()
         .execute_command("systemctl", &["list-unit-files", &unit])
@@ -661,9 +700,22 @@ impl HardeningPlugin for ServicesHardeningPlugin {
     }
 
     async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult> {
-        use std::path::Path;
-
         let mut changes = Vec::new();
+
+        // Asked once, up front, rather than inside the processing loop below,
+        // because the checkpoint has to name the mask link of every unit this
+        // apply might mask and the checkpoint is taken before any of them
+        // exists. The loop then walks this narrowed list, so the number of
+        // `systemctl list-unit-files` spawns is exactly what it always was.
+        let mut installed = Vec::new();
+        for directive in UNNECESSARY_SERVICES {
+            if is_service_exists(ctx, directive.service_name)
+                .await
+                .unwrap_or(false)
+            {
+                installed.push(directive);
+            }
+        }
 
         // Checkpoint where this plugin's changes actually land. `systemctl
         // disable` removes wants/ symlinks here and `systemctl mask` adds a
@@ -675,7 +727,27 @@ impl HardeningPlugin for ServicesHardeningPlugin {
         // normal host, none of which this plugin can change, and because it sits
         // outside the rollback allowlist its presence made rollback abort in
         // Phase 1 before restoring anything at all.
-        let service_paths: Vec<&Path> = vec![Path::new("/etc/systemd/system")];
+        //
+        // The directory alone was not enough. Capturing it emits a row for the
+        // directory and one per child that is there at capture time, and a mask
+        // link is by definition not there yet, so nothing carried it and the
+        // rollback, which walks only the rows the checkpoint holds, had no way
+        // to remove it: `systemctl mask` was simply not undoable. Naming each
+        // link explicitly is the convention the kernel and ssh plugins already
+        // follow for the files their applies create, and it costs a second row
+        // for any of these paths that does happen to exist already, since the
+        // recursion captures it too. `file_states` carries no uniqueness
+        // constraint and a restore is idempotent, so that is waste, not
+        // breakage. One narrower change in behaviour comes with it: an
+        // explicitly declared path is captured under the strict content policy
+        // where a recursed child is captured best-effort, so an existing but
+        // unreadable override at one of these paths now aborts the capture
+        // instead of being tolerated. That is the same bargain every declared
+        // path already makes, and the reasoning is in `ContentPolicy`: a
+        // checkpoint holding no content for a path offers no recovery for it.
+        let mask_links = mask_link_paths(&installed);
+        let mut service_paths: Vec<&Path> = vec![Path::new(ADMIN_UNIT_DIR)];
+        service_paths.extend(mask_links.iter().map(PathBuf::as_path));
         // Name follows the `{plugin_id}-pre-apply` convention so `hardener batch
         // rollback` (which derives the name from the plugin id) can select it.
         let checkpoint_id = crate::create_checkpoint_for_apply(
@@ -688,15 +760,7 @@ impl HardeningPlugin for ServicesHardeningPlugin {
         changes.extend(crate::checkpoint_change(&checkpoint_id));
 
         // Process each service
-        for directive in UNNECESSARY_SERVICES {
-            // Skip if service does not exist
-            if !is_service_exists(ctx, directive.service_name)
-                .await
-                .unwrap_or(false)
-            {
-                continue;
-            }
-
+        for directive in installed {
             // Check for a valid exception: skip this service if exempted
             if let Some(exception) = config.has_valid_exception(directive.service_name) {
                 info!(
@@ -920,6 +984,35 @@ impl HardeningPlugin for ServicesHardeningPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The mask link's path is the administrator unit directory plus the unit
+    /// name, and it is derived for the units handed in and no others.
+    ///
+    /// The narrowing is the load-bearing half. A declared path that is absent
+    /// when the checkpoint is taken is deleted on rollback without further
+    /// question, and `/etc/systemd/system` is also where an administrator's own
+    /// unit overrides live, so deriving a path for a unit this host never had
+    /// would put an unrelated override on the rollback's removal list. Kept
+    /// pure and tested here rather than through the apply, because the probe
+    /// that decides which units are installed is I/O and would prove nothing
+    /// about the derivation itself.
+    #[test]
+    fn a_mask_link_path_is_derived_for_the_handed_in_units_only() {
+        let bluetooth = UNNECESSARY_SERVICES
+            .iter()
+            .find(|directive| directive.service_name == "bluetooth")
+            .expect("bluetooth is one of the assessed directives");
+
+        assert_eq!(
+            mask_link_paths(&[bluetooth]),
+            vec![PathBuf::from("/etc/systemd/system/bluetooth.service")],
+            "the mask link takes the unit name, suffix included, under the admin unit directory"
+        );
+        assert!(
+            mask_link_paths(&[]).is_empty(),
+            "a host with none of these units installed declares no override slot at all"
+        );
+    }
 
     /// Confirms a representative service finding (xinetd) now carries a NIST
     /// mapping (`CM-7`, from the SSG `package_xinetd_removed` rule) alongside
