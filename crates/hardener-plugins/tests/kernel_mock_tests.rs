@@ -4,7 +4,7 @@
 
 use hardener_common::types::{PluginId, Severity};
 use hardener_core::{
-    CommandOutput, Context, FileMetadata, MockExecutor, PluginConfig, PolicyException,
+    ChangeType, CommandOutput, Context, FileMetadata, MockExecutor, PluginConfig, PolicyException,
     SystemExecutor, plugin::HardeningPlugin,
 };
 use hardener_plugins::KernelHardeningPlugin;
@@ -314,6 +314,13 @@ async fn test_kernel_validate_writable_params() {
 /// changes; every checked parameter is tallied in
 /// `validation_report_compliant_count` instead, so the admin can see they were
 /// checked without the estimated-change count being inflated.
+///
+/// This asserted an empty list until the preview learned to name the
+/// persistent file it was about to write, which on this fixture is absent. The
+/// list is therefore one line long here, and the claim narrows to the one this
+/// test was always about: no PARAMETER inflates it. What that remaining line
+/// is belongs to
+/// `kernel_validate_previews_the_persistent_file_when_it_is_absent`.
 #[tokio::test]
 async fn kernel_validate_all_compliant_lists_no_pending_changes() {
     let executor = fully_secure_kernel_executor();
@@ -337,9 +344,10 @@ async fn kernel_validate_all_compliant_lists_no_pending_changes() {
         "no parameter should be listed as pending on a compliant host, got: {:?}",
         report.validation_report_estimated_changes
     );
-    assert!(
-        report.validation_report_estimated_changes.is_empty(),
-        "a fully compliant host has no pending changes, got: {:?}",
+    assert_eq!(
+        report.validation_report_estimated_changes.len(),
+        1,
+        "a fully compliant host has only the persistent file pending, got: {:?}",
         report.validation_report_estimated_changes
     );
     assert_eq!(
@@ -379,11 +387,17 @@ async fn kernel_validate_one_drifted_lists_exactly_that_parameter() {
         "pending line must show current and target, got: {}",
         pending[0]
     );
+    // The drifted parameter and the persistent file the apply writes for it,
+    // in that order: apply walks the parameters and writes the file afterwards,
+    // and an operator comparing a dry run against the run it previews reads the
+    // two lists in order.
     assert_eq!(
-        report.validation_report_estimated_changes.len(),
-        1,
-        "only the drifted parameter is pending, got: {:?}",
-        report.validation_report_estimated_changes
+        report.validation_report_estimated_changes,
+        vec![
+            "kernel.kptr_restrict will change: 0 -> 2".to_string(),
+            CREATE_PERSISTENT_CONFIG.to_string(),
+        ],
+        "only the drifted parameter and the persistent file are pending"
     );
     assert_eq!(
         report.validation_report_compliant_count, 17,
@@ -1367,5 +1381,280 @@ async fn kernel_apply_issues_no_mkdir_when_the_sysctl_directory_is_there() {
         persisted_the_config(&executor),
         "the persistent file must still be written, writes: {:?}",
         executor.log().files_written
+    );
+}
+
+// =============================================================================
+// The preview must name the persistent file the apply is about to write
+// =============================================================================
+
+/// The sentence the preview uses for the persistent file. Apply prints
+/// `"Created persistent sysctl config"`; this is that same sentence in the
+/// tense a preview uses, which is what 420a52b established for the firewall's
+/// boot line and what lets the two halves be read against each other.
+const CREATE_PERSISTENT_CONFIG: &str = "Create persistent sysctl config";
+
+/// The subject both halves name, spelled the way each of them spells it.
+const PERSISTENT_CONFIG_SUBJECT: &str = "persistent sysctl config";
+
+/// What a change line names, which is everything after its leading verb.
+///
+/// Returns `None` rather than an empty string when there is no verb to strip,
+/// so a rewording on either side surfaces as a missing subject instead of as
+/// two silences that happen to compare equal.
+fn change_subject(line: &str) -> Option<&str> {
+    line.split_once(' ').map(|(_verb, subject)| subject)
+}
+
+/// The content the apply writes to the persistent file, taken from the run
+/// itself.
+///
+/// Spelling that content out here would be a second copy of the builder under
+/// test, and a preview's job is to predict what the apply writes rather than
+/// what a test says it writes. The executor is left holding the file, so a
+/// `validate` on the same one afterwards sees the host a second apply would.
+async fn config_the_apply_writes(executor: &Arc<MockExecutor>, config: &PluginConfig) -> String {
+    let mut ctx = Context::with_executor(executor.clone());
+    KernelHardeningPlugin::new()
+        .apply(&mut ctx, config)
+        .await
+        .expect("kernel apply should not error");
+    executor
+        .log()
+        .files_written
+        .iter()
+        .find(|(path, _)| path.to_str() == Some(HARDENER_CONF))
+        .map(|(_, content)| content.clone())
+        .expect("apply must persist the settings it manages")
+}
+
+/// The defect the container run of 2026-07-31 found on rhel, and on rhel alone
+/// because it is the only fixture where every parameter arrives compliant.
+/// `validate` had nothing per-parameter to report and returned an empty
+/// preview; the apply then created /etc/sysctl.d/99-hardener.conf and reported
+/// one applied change. The operator approved a preview shorter than the run.
+#[tokio::test]
+async fn kernel_validate_previews_the_persistent_file_when_it_is_absent() {
+    let ctx = Context::with_executor(Arc::new(fully_secure_kernel_executor()));
+
+    let report = KernelHardeningPlugin::new()
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .expect("kernel validate should not error");
+
+    assert_eq!(
+        report.validation_report_estimated_changes,
+        vec![CREATE_PERSISTENT_CONFIG.to_string()],
+        "every parameter on this host is compliant and the persistent file is \
+         absent, so the file is the whole of what the apply will do, and a \
+         preview silent about it is shorter than the run it previews"
+    );
+}
+
+/// The opposite defect, and just as wrong: a preview that claims a pending
+/// write on every host. The file is seeded by running the apply, so what it
+/// holds is what the run itself writes.
+///
+/// This passed against the unfixed plugin, which named the file on no host at
+/// all, so it is a guard rather than evidence of a live defect and was proved
+/// by mutation: pushing the line unconditionally fails exactly this test and
+/// the stricter-host one below.
+#[tokio::test]
+async fn kernel_validate_previews_nothing_when_the_persistent_file_already_matches() {
+    let executor = Arc::new(fully_secure_kernel_executor());
+    let config = PluginConfig::default();
+    let written = config_the_apply_writes(&executor, &config).await;
+    assert!(
+        written.contains("kernel.kptr_restrict = 2"),
+        "the seed must be the settings file the apply writes, got:\n{written}"
+    );
+
+    let ctx = Context::with_executor(executor.clone());
+    let report = KernelHardeningPlugin::new()
+        .validate(&ctx, &config)
+        .await
+        .expect("kernel validate should not error");
+
+    assert!(
+        report.validation_report_estimated_changes.is_empty(),
+        "the file on this host is already exactly what the run would write, and \
+         apply reports that as a skipped no-op, so a preview naming it queues a \
+         write that will not happen, got: {:?}",
+        report.validation_report_estimated_changes
+    );
+}
+
+/// The file is present but holds something else, which is the arm of apply's
+/// condition that fires on content rather than on a runtime change.
+#[tokio::test]
+async fn kernel_validate_previews_the_persistent_file_when_its_content_differs() {
+    let executor = fully_secure_kernel_executor().with_file(
+        HARDENER_CONF,
+        "# left by an older release of this tool\nkernel.kptr_restrict = 1\n",
+    );
+    let ctx = Context::with_executor(Arc::new(executor));
+
+    let report = KernelHardeningPlugin::new()
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .expect("kernel validate should not error");
+
+    assert_eq!(
+        report.validation_report_estimated_changes,
+        vec![CREATE_PERSISTENT_CONFIG.to_string()],
+        "a file whose content differs from what this run would write is rewritten \
+         by the apply, so the preview must name it"
+    );
+}
+
+/// The preview predicts the file's content, and the content is written with the
+/// host's own value wherever that is stricter than the baseline. A preview that
+/// predicted the unclamped baseline would compute different content on exactly
+/// this host and report a pending write that never arrives.
+///
+/// This is the assertion that proves the clamp is shared with the apply rather
+/// than spelled a second time in the preview, and like the test above it
+/// passed against the unfixed plugin and was proved by mutation. Re-spelling
+/// the target in `validate` alone, without the clamp, fails exactly this test
+/// and nothing else in the file.
+#[tokio::test]
+async fn kernel_validate_predicts_the_stricter_value_a_stricter_host_keeps() {
+    let config = PluginConfig::default();
+    let hardened = Arc::new(stricter_than_baseline_kernel_executor());
+    let written = config_the_apply_writes(&hardened, &config).await;
+    assert!(
+        written.contains("kernel.yama.ptrace_scope = 3"),
+        "the fixture must be the stricter host, whose persistent file keeps its \
+         own value rather than the baseline's, got:\n{written}"
+    );
+
+    // The same host, already carrying exactly the file the apply writes for it.
+    let ctx = Context::with_executor(Arc::new(
+        stricter_than_baseline_kernel_executor().with_file(HARDENER_CONF, &written),
+    ));
+    let report = KernelHardeningPlugin::new()
+        .validate(&ctx, &config)
+        .await
+        .expect("kernel validate should not error");
+
+    assert!(
+        report.validation_report_estimated_changes.is_empty(),
+        "the preview computed content the apply would not write: this host keeps \
+         ptrace_scope 3 and tcp_syncookies 2, so a preview predicting the \
+         baseline's 2 and 1 reports a rewrite that never happens, got: {:?}",
+        report.validation_report_estimated_changes
+    );
+}
+
+/// Both halves against ONE host, which is the shape b981ef2 established: two
+/// fixtures would prove that two similar hosts agree rather than that one host
+/// is described consistently by the dry run and by the apply.
+///
+/// The preview is taken first for the reason the differential suite takes its
+/// dry run first: afterwards the apply has written the file and the preview
+/// would agree with a host the run had already changed.
+#[tokio::test]
+async fn kernel_preview_and_apply_agree_the_persistent_file_is_pending() {
+    let executor = Arc::new(fully_secure_kernel_executor());
+    let config = PluginConfig::default();
+
+    let previewed = KernelHardeningPlugin::new()
+        .validate(&Context::with_executor(executor.clone()), &config)
+        .await
+        .expect("kernel validate should not error");
+    let mut apply_ctx = Context::with_executor(executor.clone());
+    let applied = KernelHardeningPlugin::new()
+        .apply(&mut apply_ctx, &config)
+        .await
+        .expect("kernel apply should not error");
+
+    assert_eq!(
+        applied.applied_change_count(),
+        1,
+        "this is rhel's shape and the apply must have something to do on it, or \
+         the comparison below holds two silences against each other, changes: {:?}",
+        applied.apply_changes
+    );
+
+    // Found by its type rather than by its wording, so this is not looking for
+    // the string it is about to assert.
+    let apply_line = applied
+        .apply_changes
+        .iter()
+        .find(|change| change.change_type == ChangeType::ConfigFile && change.change_success)
+        .map(|change| change.change_description.as_str())
+        .expect("apply must record the persistent file it wrote");
+    let [preview_line] = previewed.validation_report_estimated_changes.as_slice() else {
+        panic!(
+            "the preview must name exactly the one change this apply makes, got: {:?}",
+            previewed.validation_report_estimated_changes
+        )
+    };
+
+    let apply_subject = change_subject(apply_line).expect("apply's change must name a subject");
+    let preview_subject =
+        change_subject(preview_line).expect("the preview's line must name a subject");
+    assert_eq!(
+        apply_subject, preview_subject,
+        "the preview and the run must name the same change the same way, or an \
+         operator reading the dry run cannot match it to what the apply reports.\n  \
+         apply:    {apply_line}\n  preview:  {preview_line}"
+    );
+    // Without this the assertion above passes on two subjects that are both
+    // wrong in the same way, which a reword moving both halves together would
+    // produce.
+    assert_eq!(
+        apply_subject, PERSISTENT_CONFIG_SUBJECT,
+        "both sides must name the persistent sysctl config, got: {apply_line}"
+    );
+}
+
+/// The builder's other arm, on the same host both halves would see. An excepted
+/// parameter is written into the persistent file as a comment rather than as a
+/// setting, so a preview omitting that block computes content the file can
+/// never match and reports a rewrite on every run for as long as the exception
+/// stands.
+///
+/// Reached by none of the tests above, all of which use hosts with no
+/// exception, and this is the arm most easily lost: moving validate's
+/// `push_config_section` call past the excepted arm leaves all of them green.
+#[tokio::test]
+async fn kernel_validate_predicts_the_block_an_excepted_parameter_gets() {
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "kernel.yama.ptrace_scope".to_string(),
+        PolicyException {
+            value: "1".to_string(),
+            allowed: true,
+            reason: "Debugger required on this build host".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+    let executor = Arc::new(
+        fully_secure_kernel_executor().with_file("/proc/sys/kernel/yama/ptrace_scope", "1"),
+    );
+
+    let written = config_the_apply_writes(&executor, &config).await;
+    assert!(
+        written.contains("# kernel.yama.ptrace_scope: SKIPPED"),
+        "the file must record the excepted parameter as skipped rather than \
+         re-impose the baseline on it at the next boot, got:\n{written}"
+    );
+
+    let ctx = Context::with_executor(executor.clone());
+    let report = KernelHardeningPlugin::new()
+        .validate(&ctx, &config)
+        .await
+        .expect("kernel validate should not error");
+
+    assert!(
+        report.validation_report_estimated_changes.is_empty(),
+        "the file on this host is already exactly what the run would write, so a \
+         preview naming it queues a rewrite that will never stop being pending, \
+         got: {:?}",
+        report.validation_report_estimated_changes
     );
 }

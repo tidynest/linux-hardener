@@ -57,6 +57,16 @@ impl KernelHardeningPlugin {
 /// The directory holding the persistent sysctl file this tool manages.
 const SYSCTL_DROPIN_DIR: &str = "/etc/sysctl.d";
 
+/// The persistent file this tool writes, which is what carries the settings
+/// across a reboot. Named once because the apply writes it and the preview
+/// predicts it, and a path spelled twice is a path that can come to mean two
+/// files.
+const SYSCTL_HARDENER_CONF: &str = "/etc/sysctl.d/99-hardener.conf";
+
+/// The opening of [`SYSCTL_HARDENER_CONF`], ahead of the per-parameter blocks.
+const SYSCTL_CONFIG_HEADER: &str = "# Kernel hardening settings applied by Linux Hardener\n\
+     # This file is managed automatically - manual edits will be overwritten\n\n";
+
 /// The strictness order of `fs.suid_dumpable`, weakest first. 1 dumps core
 /// from every setuid process, 2 dumps a core only root can read, and 0 refuses
 /// outright, so the safest value is the smallest and the middle one is neither
@@ -239,6 +249,91 @@ fn resolved_target(parameter: &KernelParameter, config: &PluginConfig) -> String
         parameter.kernel_parameter_name,
         parameter.kernel_secure_value,
     )
+}
+
+/// What a run intends for one parameter, decided once from the value the host
+/// was observed to hold.
+///
+/// The runtime write and the persistent file are two halves of the same
+/// decision, and the preview has to reach the same one. Apply gates its write
+/// to [`SYSCTL_HARDENER_CONF`] on the file's content differing from what it is
+/// about to write, so a preview that cannot compute that content cannot say
+/// whether the write is pending. That is the gap the container run of
+/// 2026-07-31 found on rhel, the one fixture where every parameter arrives
+/// compliant: the preview was empty and the apply still created the file.
+enum PlannedParameter<'a> {
+    /// A documented exception covers the value the host actually holds, so the
+    /// parameter is left alone and recorded rather than hardened.
+    Excepted {
+        /// The value the exception documents, which is the one observed.
+        observed: &'a str,
+        /// Why the deviation is accepted.
+        reason: &'a str,
+    },
+    /// The value this run writes: into the persistent file always, and into
+    /// /proc/sys where the host is weaker than it.
+    Setting {
+        /// The resolved target, already clamped against the host's own value.
+        target_value: String,
+    },
+}
+
+/// What this run intends for `parameter` on a host observed to hold `observed`.
+///
+/// Both halves of a run decide here: the apply so that its runtime write and
+/// its persistent file agree, and the preview so that it predicts the file the
+/// apply will write. The no-loosen clamp is spelled once, in this function,
+/// because the file carries the clamped value; a preview computing the
+/// unclamped one would predict different content on every host already
+/// stricter than the baseline and report a rewrite that never arrives.
+fn plan_parameter<'a>(
+    parameter: &KernelParameter,
+    config: &'a PluginConfig,
+    observed: Option<&'a str>,
+) -> PlannedParameter<'a> {
+    // The exception is honoured only when it documents the value the host
+    // actually has. An unreadable value cannot confirm one, so it is not
+    // honoured and the parameter is hardened (fail closed).
+    if let Some(value) = observed
+        && let Some(exception) = config.matching_exception(parameter.kernel_parameter_name, value)
+    {
+        return PlannedParameter::Excepted {
+            observed: value,
+            reason: &exception.reason,
+        };
+    }
+
+    // Never loosen: the value written is the stricter of this tool's target and
+    // what the host already runs. The persistent file is written for every
+    // parameter whatever the runtime gate decides, so clamping only the runtime
+    // write would still hand a stricter host the baseline back at its next boot.
+    PlannedParameter::Setting {
+        target_value: parameter
+            .kernel_compare
+            .clamp_target(&resolved_target(parameter, config), observed),
+    }
+}
+
+impl PlannedParameter<'_> {
+    /// Appends this parameter's block to the persistent file's content.
+    ///
+    /// An excepted parameter is written as a comment rather than as a setting,
+    /// so the file does not re-impose at the next boot what the run
+    /// deliberately left alone. Apply builds the file it writes through here
+    /// and validate builds the file it predicts through here, which is what
+    /// stops the two computing different content for the same host.
+    fn push_config_section(&self, parameter: &KernelParameter, content: &mut String) {
+        let name = parameter.kernel_parameter_name;
+        match self {
+            PlannedParameter::Excepted { reason, .. } => {
+                content.push_str(&format!("# {name}: SKIPPED (exception: {reason})\n\n"));
+            }
+            PlannedParameter::Setting { target_value } => content.push_str(&format!(
+                "# {}\n{name} = {target_value}\n\n",
+                parameter.kernel_description
+            )),
+        }
+    }
 }
 
 /// Builds a NIST 800-53 Rev 5 mapping. Title/section follow the project's
@@ -868,7 +963,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
     /// * `config` - Plugin configuration with directive overrides and policy exceptions
     async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult> {
         let mut apply_changes = Vec::new();
-        let hardener_sysctl_path = Path::new("/etc/sysctl.d/99-hardener.conf");
+        let hardener_sysctl_path = Path::new(SYSCTL_HARDENER_CONF);
 
         // Nearly every distribution ships /etc/sysctl.d, but on the RHEL family
         // it belongs to systemd-udev, and a minimal install that never pulled
@@ -899,10 +994,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
         apply_changes.extend(crate::checkpoint_change(&checkpoint_id));
 
         // Build sysctl.d config file content for persistence.
-        let mut sysctl_config_content = String::from(
-            "# Kernel hardening settings applied by Linux Hardener\n\
-             # This file is managed automatically - manual edits will be overwritten\n\n",
-        );
+        let mut sysctl_config_content = String::from(SYSCTL_CONFIG_HEADER);
 
         // Apply each parameter to runtime AND build config file content.
         // State-aware: a parameter already at its target is left untouched
@@ -913,48 +1005,33 @@ impl HardeningPlugin for KernelHardeningPlugin {
         for parameter in KERNEL_PARAMS {
             let param_name = parameter.kernel_parameter_name;
             let param_description = parameter.kernel_description;
-            // The exception is honoured only when it documents the value the
-            // host actually has. Read before deciding: an unreadable value
-            // cannot confirm the exception, so it is not honoured and the
-            // parameter is hardened (fail closed).
+            // Read once, decide once. The exception check, the clamp, the block
+            // written into the persistent file and the runtime write all rest
+            // on this single observation, because two reads of the same
+            // parameter can disagree and the file would then be built from a
+            // different reading than the one this run acted on.
             let observed = self.read_sysctl(param_name, ctx).await.ok();
-            if let Some(exception) = observed
-                .as_deref()
-                .and_then(|value| config.matching_exception(param_name, value))
-            {
-                info!("Skipping {} (exception: {})", param_name, exception.reason);
-                sysctl_config_content.push_str(&format!(
-                    "# {}: SKIPPED (exception: {})\n\n",
-                    param_name, exception.reason
-                ));
-                apply_changes.push(Change {
-                    change_description: format!(
-                        "{}: skipped (exception: {})",
-                        param_description, exception.reason
-                    ),
-                    change_type: ChangeType::Skipped,
-                    change_success: true,
-                    change_error: None,
-                });
-                continue;
-            }
+            let planned = plan_parameter(parameter, config, observed.as_deref());
+            planned.push_config_section(parameter, &mut sysctl_config_content);
 
-            // Never loosen: the value written is the stricter of this tool's
-            // target and what the host already runs. The persistent file below
-            // is written for every parameter whatever the runtime gate decides,
-            // so clamping only the runtime write would still hand a stricter
-            // host the baseline back at its next boot.
-            let target_value = parameter
-                .kernel_compare
-                .clamp_target(&resolved_target(parameter, config), observed.as_deref());
+            let target_value = match planned {
+                PlannedParameter::Excepted { reason, .. } => {
+                    info!("Skipping {} (exception: {})", param_name, reason);
+                    apply_changes.push(Change {
+                        change_description: format!(
+                            "{}: skipped (exception: {})",
+                            param_description, reason
+                        ),
+                        change_type: ChangeType::Skipped,
+                        change_success: true,
+                        change_error: None,
+                    });
+                    continue;
+                }
+                PlannedParameter::Setting { target_value } => target_value,
+            };
 
             let path = format!("/proc/sys/{}", param_name.replace('.', "/"));
-
-            // Add to persistent config file.
-            sysctl_config_content.push_str(&format!(
-                "# {}\n{} = {}\n\n",
-                param_description, param_name, target_value
-            ));
 
             // Already at least as strict as the target: no runtime write.
             if !parameter
@@ -1121,7 +1198,13 @@ impl HardeningPlugin for KernelHardeningPlugin {
     /// differs from the target are listed as pending; parameters already at
     /// their target are tallied in `validation_report_compliant_count` rather
     /// than listed, so the estimated-change list holds only real pending
-    /// changes and a compliant host reports zero.
+    /// changes and a host needing nothing reports zero.
+    ///
+    /// The persistent file is the other half of what apply does, and it is
+    /// previewed on the same condition apply writes it on. A host with every
+    /// parameter compliant is not therefore a host with nothing pending: if
+    /// the file is absent or holds something else, writing it is the whole of
+    /// what the run will do.
     ///
     /// # Arguments
     /// * `config` - Plugin configuration with directive overrides and policy exceptions
@@ -1132,30 +1215,32 @@ impl HardeningPlugin for KernelHardeningPlugin {
         // omits them shows a documented deviation as nothing at all.
         let mut exceptions: Vec<String> = Vec::new();
         let mut compliant_count = 0usize;
+        // The persistent file as this run would write it, built through the
+        // same planner the apply builds it with, so the two cannot compute
+        // different content for the same host.
+        let mut desired_config = String::from(SYSCTL_CONFIG_HEADER);
+        let mut runtime_will_change = false;
 
         for parameter in KERNEL_PARAMS {
             let param_name = parameter.kernel_parameter_name;
-            // Honour an exception only when it documents the value the host
-            // actually has; an unreadable value is not a match (fail closed).
             let observed = self.read_sysctl(param_name, ctx).await.ok();
-            if let Some(value) = observed.as_deref()
-                && let Some(exception) = config.matching_exception(param_name, value)
-            {
-                exceptions.push(hardener_common::types::exception_preview_line(
-                    param_name,
-                    value,
-                    &exception.reason,
-                ));
-                continue;
-            }
+            let planned = plan_parameter(parameter, config, observed.as_deref());
+            // Ahead of every branch below, because apply writes a block for
+            // every parameter and consults none of the metadata this reads.
+            planned.push_config_section(parameter, &mut desired_config);
 
-            // The override-clamped target, exactly as scan judges the host
-            // against it. Apply additionally clamps against the host's own
-            // value, which this preview deliberately does not repeat: the
-            // comparison below already reports a stricter host as compliant,
-            // so the extra clamp could only ever return the same target, and a
-            // second spelling of a rule is how two of them come to disagree.
-            let target_value = resolved_target(parameter, config);
+            let target_value = match planned {
+                PlannedParameter::Excepted {
+                    observed: value,
+                    reason,
+                } => {
+                    exceptions.push(hardener_common::types::exception_preview_line(
+                        param_name, value, reason,
+                    ));
+                    continue;
+                }
+                PlannedParameter::Setting { target_value } => target_value,
+            };
 
             let path = format!("/proc/sys/{}", param_name.replace('.', "/"));
 
@@ -1168,21 +1253,24 @@ impl HardeningPlugin for KernelHardeningPlugin {
                         validation_issue_config_key: Some(param_name.to_string()),
                     });
                 }
-                Ok(_) => match observed.as_deref() {
-                    Some(current)
-                        if !parameter
-                            .kernel_compare
-                            .violated_by(&target_value, Some(current)) =>
-                    {
-                        compliant_count += 1
-                    }
-                    Some(current) => estimated_changes.push(format!(
-                        "{} will change: {} -> {}",
-                        param_name, current, target_value
-                    )),
-                    None => estimated_changes
-                        .push(format!("{} will be set to {}", param_name, target_value)),
-                },
+                // Unset never reaches here: a value the comparison cannot read
+                // counts as violating, which is the arm below.
+                Ok(_)
+                    if !parameter
+                        .kernel_compare
+                        .violated_by(&target_value, observed.as_deref()) =>
+                {
+                    compliant_count += 1
+                }
+                Ok(_) => {
+                    runtime_will_change = true;
+                    estimated_changes.push(match observed.as_deref() {
+                        Some(current) => {
+                            format!("{param_name} will change: {current} -> {target_value}")
+                        }
+                        None => format!("{param_name} will be set to {target_value}"),
+                    });
+                }
                 Err(_) => {
                     issues.push(ValidationIssue {
                         validation_issue_severity: Severity::Low,
@@ -1194,6 +1282,25 @@ impl HardeningPlugin for KernelHardeningPlugin {
                     });
                 }
             }
+        }
+
+        // Apply writes the persistent file when a parameter changed at runtime
+        // OR when the file does not already hold what this run would write, so
+        // the preview has to answer the same question or it is a line short of
+        // the run it previews. rhel's containers reach the second half alone:
+        // every parameter arrives compliant, nothing changes at runtime, and
+        // the file is absent, which is how the write went unpreviewed until the
+        // differential suite gained its preview/apply oracle.
+        let existing_config = ctx
+            .executor()
+            .read_file(Path::new(SYSCTL_HARDENER_CONF))
+            .await
+            .ok();
+        if runtime_will_change || existing_config.as_deref() != Some(desired_config.as_str()) {
+            // The sentence apply prints, in the tense a preview uses. Apply
+            // names creating the file and updating it alike, so neither does
+            // this draw a distinction it does not make.
+            estimated_changes.push("Create persistent sysctl config".to_string());
         }
 
         Ok(ValidationReport {
