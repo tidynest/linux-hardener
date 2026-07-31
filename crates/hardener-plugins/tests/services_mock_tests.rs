@@ -2,6 +2,9 @@
 //!
 //! These tests verify plugin behavior without touching real systemd services.
 
+mod common;
+
+use common::test_checkpoint_manager;
 use hardener_common::types::{PluginId, Severity};
 use hardener_core::{
     CommandOutput, Context, MockExecutor, PluginConfig, PolicyException, SystemExecutor,
@@ -847,25 +850,6 @@ async fn scan_treats_no_installed_units_as_a_clean_host_not_a_failure() {
 /// Where `systemctl mask` records itself, and the only unit directory this
 /// plugin's changes reach.
 const ADMIN_UNIT_DIR: &str = "/etc/systemd/system";
-
-/// Builds a CheckpointManager backed by a temporary SQLite database and a
-/// freshly generated signing key: no root access or production paths needed.
-async fn test_checkpoint_manager() -> hardener_state::CheckpointManager {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let db_path = dir.path().join("test_checkpoints.db");
-    let key_path = dir.path().join("test.key");
-
-    let db_pool = hardener_state::init_db(Some(&db_path))
-        .await
-        .expect("init_db");
-    let signer =
-        hardener_state::CheckpointSigner::new_with_path(&key_path).expect("CheckpointSigner");
-
-    // Keep the tempdir alive for the duration of the process.
-    std::mem::forget(dir);
-
-    hardener_state::CheckpointManager::new_with_signer(db_pool, signer).expect("CheckpointManager")
-}
 
 /// A host on which bluetooth is the one unit installed, and on which nothing
 /// has yet written a `/etc/systemd/system/bluetooth.service`.

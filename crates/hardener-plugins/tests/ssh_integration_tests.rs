@@ -36,6 +36,9 @@
 //!     cargo test -p hardener-plugins --test ssh_integration_tests -- --ignored
 //! ```
 
+mod common;
+
+use common::test_checkpoint_manager;
 use hardener_core::{
     Context, PluginConfig, SystemExecutor,
     executor::ssh::{SshConfig, SshExecutor},
@@ -311,25 +314,6 @@ async fn test_ssh_connection_wrong_port() {
 // =============================================================================
 // CHECKPOINT / ROLLBACK INTEGRATION
 // =============================================================================
-
-/// Builds a CheckpointManager backed by a temporary SQLite database and a
-/// freshly generated signing key: no root access or production paths needed.
-async fn test_checkpoint_manager() -> hardener_state::CheckpointManager {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let db_path = dir.path().join("test_checkpoints.db");
-    let key_path = dir.path().join("test.key");
-
-    let db_pool = hardener_state::init_db(Some(&db_path))
-        .await
-        .expect("init_db");
-    let signer =
-        hardener_state::CheckpointSigner::new_with_path(&key_path).expect("CheckpointSigner");
-
-    // Keep the tempdir alive for the duration of the process.
-    std::mem::forget(dir);
-
-    hardener_state::CheckpointManager::new_with_signer(db_pool, signer).expect("CheckpointManager")
-}
 
 /// Verifies that a remote `apply` captures a checkpoint through the SSH executor
 /// and that `rollback` restores the original remote file byte-for-byte.
