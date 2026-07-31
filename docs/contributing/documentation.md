@@ -127,27 +127,49 @@ functions.
 python3 scripts/validate/validate_write_sites.py
 ```
 
-Holds every file-creating call site under `crates/hardener-plugins/src` to a
-written reason why its parent directory exists, classifying each as `ensured`
-(a `crate::ensure_directory` for that parent, named by the entry) or `exempt`
-(the parent is guaranteed by something else, and the entry says what).
+Holds every file-creating call site under `crates/hardener-plugins/src` to two
+written answers, one per defect the tree has repeated.
 
-The same defect was fixed three times in three commits before this existed: a
-file written into a directory nothing ensures, which `write_file` cannot create
+The first is why the write can land at all, classifying each site as `ensured`
+(a `crate::ensure_directory` for that parent, named by the entry) or `exempt`
+(the parent is guaranteed by something else, and the entry says what). The same
+defect was fixed three times in three commits before this existed: a file
+written into a directory nothing ensures, which `write_file` cannot create
 because it lands its content through a temporary file in the target directory.
 All three were findable the moment the first was understood, but nothing swept
 for them, so they arrived one at a time across a day.
 
-Fix a report by deciding which classification the new site has and adding its
-entry, then moving `EXPECTED_SITE_COUNT` to match. The count is pinned as a
-literal on purpose: a registry that counts its own size cannot fail when a site
-is added, which is the one thing this check exists to do.
+The second is whether a rollback reaches what the write created, classifying
+each site as `declared` (the path is named to this plugin's pre-apply
+checkpoint, and the entry names the tokens the path list has to contain) or
+`exempt` (nothing declares it, and the entry says why no state of ours outlives
+the rollback). A checkpoint captures a declared directory recursively, so it
+records only the children present when it runs, and a rollback walks only the
+rows it holds. A file the apply is about to create therefore has no row and
+survives the rollback meant to undo it, unless its path is declared in its own
+right: a declared path that is absent at capture is stored with a zero mode,
+which the restore reads as "remove this". That defect has been found twice, in
+the `systemctl mask` link and in the audit rules file.
+
+Fix a report by deciding both classifications for the new site and adding its
+entry as a pair of pairs, then moving `EXPECTED_SITE_COUNT` to match. The count
+is pinned as a literal on purpose: a registry that counts its own size cannot
+fail when a site is added, which is the one thing this check exists to do. The
+second question needs no pin of its own, because an entry that does not answer
+it is rejected as malformed and the registry's length is already held to the
+pin.
 
 What it proves is narrow, and the script's own docstring says so at length. It
-proves no site is unclassified. It does not prove any ensure is correct, covers
-the right parent, or runs before the write, and it cannot see a file created by
-shell redirection, by a program named through a variable, or by a direct
-`std::fs` call.
+proves no site is unclassified on either question. It does not prove any ensure
+is correct, covers the right parent, or runs before the write; it does not prove
+any declaration reaches the right path or is captured before the write; and it
+cannot see a file created by shell redirection, by a program named through a
+variable, or by a direct `std::fs` call. Most sharply, it cannot see the
+`systemctl mask` link that prompted the second question at all, because that
+file is created through `execute_command("systemctl", ...)` and admitting
+`systemctl` would admit every `start`, `stop` and `daemon-reload` beside it. The
+same blind spot covers `systemctl enable`, `augenrules --load`, and the firewall
+backends writing their persistence through `firewall-cmd --permanent` and `ufw`.
 
 ### CLI documentation (slower)
 

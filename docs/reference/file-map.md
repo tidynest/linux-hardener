@@ -693,7 +693,7 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 | `scripts/validate/validate_last_updated.py` | Last Updated timestamp validator |
 | `scripts/validate/validate_plugin_docs.py` | Plugin documentation validator |
 | `scripts/validate/validate_tauri_docs.py` | Tauri integration documentation validator |
-| `scripts/validate/validate_write_sites.py` | File-creation site registry: every plugin call site that creates a file is classified ensured or exempt with a written reason |
+| `scripts/validate/validate_write_sites.py` | File-creation site registry: every plugin call site that creates a file is classified on two questions, `ensured` or `exempt` for its parent directory and `declared` or `exempt` for its plugin's pre-apply checkpoint, each with a written reason |
 | `scripts/validate/update_all_docs.py` | Batch documentation updater |
 | `scripts/release/release.sh` | Automated version bumping and release |
 | `scripts/dev/tauri-dev.sh` | Tauri development launcher |

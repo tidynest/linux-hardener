@@ -172,7 +172,7 @@ WEBKIT_DISABLE_COMPOSITING_MODE=1 cargo tauri dev
 | Tauri Commands | `validate_tauri_docs.py` | Tauri commands documented |
 | Last Updated Dates | `validate_last_updated.py` | Dates current with git |
 | Doc Comment Attachment | `validate_doc_attachment.py` | No `///` block silently reassigned to the following item |
-| File Creation Sites | `validate_write_sites.py` | Every file-creating plugin call site carries a written reason its parent directory exists |
+| File Creation Sites | `validate_write_sites.py` | Every file-creating plugin call site carries a written reason its parent directory exists, and a written answer to whether a rollback reaches what it creates |
 | CLI Documentation | `validate_cli_docs.py` | CLI commands documented |
 | Compliance Frameworks | `validate_compliance_docs.py` | Framework list matches enum |
 
