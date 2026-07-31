@@ -121,6 +121,34 @@ script's own docstring records the threshold, what the rule cannot see, and the
 sharper rule that was measured and rejected for reporting eighty-one innocent
 functions.
 
+### File creation sites
+
+```bash
+python3 scripts/validate/validate_write_sites.py
+```
+
+Holds every file-creating call site under `crates/hardener-plugins/src` to a
+written reason why its parent directory exists, classifying each as `ensured`
+(a `crate::ensure_directory` for that parent, named by the entry) or `exempt`
+(the parent is guaranteed by something else, and the entry says what).
+
+The same defect was fixed three times in three commits before this existed: a
+file written into a directory nothing ensures, which `write_file` cannot create
+because it lands its content through a temporary file in the target directory.
+All three were findable the moment the first was understood, but nothing swept
+for them, so they arrived one at a time across a day.
+
+Fix a report by deciding which classification the new site has and adding its
+entry, then moving `EXPECTED_SITE_COUNT` to match. The count is pinned as a
+literal on purpose: a registry that counts its own size cannot fail when a site
+is added, which is the one thing this check exists to do.
+
+What it proves is narrow, and the script's own docstring says so at length. It
+proves no site is unclassified. It does not prove any ensure is correct, covers
+the right parent, or runs before the write, and it cannot see a file created by
+shell redirection, by a program named through a variable, or by a direct
+`std::fs` call.
+
 ### CLI documentation (slower)
 
 ```bash
@@ -145,4 +173,4 @@ Checks that every framework defined in the `ComplianceFramework` enum (`crates/h
 
 Checks that the version in `Cargo.toml` matches `tauri.conf.json` and all documentation references. Also invoked by `validate_all.py`.
 
-**Last Updated**: 2026-07-29
+**Last Updated**: 2026-07-31

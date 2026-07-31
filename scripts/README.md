@@ -1,6 +1,6 @@
 # Project Scripts
 
-**Last Updated**: 2026-07-30
+**Last Updated**: 2026-07-31
 
 This directory contains utility scripts for the Linux Hardening Tool project.
 
@@ -172,11 +172,12 @@ WEBKIT_DISABLE_COMPOSITING_MODE=1 cargo tauri dev
 | Tauri Commands | `validate_tauri_docs.py` | Tauri commands documented |
 | Last Updated Dates | `validate_last_updated.py` | Dates current with git |
 | Doc Comment Attachment | `validate_doc_attachment.py` | No `///` block silently reassigned to the following item |
+| File Creation Sites | `validate_write_sites.py` | Every file-creating plugin call site carries a written reason its parent directory exists |
 | CLI Documentation | `validate_cli_docs.py` | CLI commands documented |
 | Compliance Frameworks | `validate_compliance_docs.py` | Framework list matches enum |
 
 **Modes**:
-- Default: Runs all 8 validators
+- Default: Runs all 9 validators
 - `--quick`: Skips CLI and Compliance validators (faster)
 - `--fix`: Passes `--fix` to validators that support it
 
