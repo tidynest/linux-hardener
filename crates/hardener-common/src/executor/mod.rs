@@ -111,6 +111,21 @@ pub trait SystemExecutor: Send + Sync {
     /// Known limitation: over SSH, absence is confirmed with `test -e`, which is
     /// also false when a parent directory cannot be traversed. Such a path reads
     /// as absent rather than unverifiable.
+    ///
+    /// **`mode` carries the file-type bits, not the permission bits alone.**
+    /// That is the fourth clause of the same contract and it is load-bearing for
+    /// the same reason: checkpoint capture stores an absent path as mode 0 and
+    /// rollback removes anything it recorded that way, so an existing path whose
+    /// mode read as 0 would be deleted. A regular file with 0000 permissions is
+    /// exactly that path, and `/etc/shadow` is 0000 on Arch, so this is not a
+    /// hypothetical. Returning the full `st_mode` makes it unreachable, because
+    /// every existing path has a type bit set: `0o100000` for a regular file,
+    /// `0o040000` for a directory.
+    ///
+    /// It was reachable once. `0b96045` fixed both shipped implementations,
+    /// which had masked with `& 0o777` locally and used `stat %a` remotely, and
+    /// on a host with a 0000-perm account file a rollback deleted it. Callers
+    /// that want permission bits alone mask for themselves.
     async fn file_metadata(&self, path: &Path) -> Result<FileMetadata>;
 
     /// Lists the immediate children of a directory (non-recursive),

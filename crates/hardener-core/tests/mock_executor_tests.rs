@@ -2,7 +2,8 @@
 //!
 //! These tests verify the MockExecutor correctly simulates file and command operations.
 
-use hardener_core::{CommandOutput, FileMetadata, MockExecutor, SystemExecutor};
+use hardener_core::{CommandOutput, FileMetadata, LocalExecutor, MockExecutor, SystemExecutor};
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 #[tokio::test]
@@ -346,4 +347,56 @@ async fn test_mock_executor_clone_shares_state() {
     // Original sees the change (they share Arc<Mutex<...>>)
     let content = executor.read_file(Path::new("/etc/test")).await.unwrap();
     assert_eq!(content, "modified");
+}
+
+/// The `mode` clause of the `file_metadata` contract, asserted against every
+/// implementation in one place rather than once per implementation.
+///
+/// An existing path must report a mode with its file-type bits set, because
+/// checkpoint capture stores an absent path as mode 0 and rollback removes
+/// anything recorded that way. An implementation returning permission bits
+/// alone makes a 0000-perm file, such as `/etc/shadow` on Arch, indistinguishable
+/// from a path that was never there. `0b96045` fixed exactly that in both
+/// shipped implementations, and the three regression tests it left behind each
+/// sit beside the implementation they cover, so nothing stated the rule itself.
+/// A fourth implementation could honour every documented outcome and still
+/// reintroduce the defect.
+async fn assert_existing_path_carries_a_type_bit(
+    executor: &dyn SystemExecutor,
+    path: &Path,
+    label: &str,
+) {
+    let meta = executor
+        .file_metadata(path)
+        .await
+        .unwrap_or_else(|e| panic!("{label}: metadata for an existing path must be readable: {e}"));
+    assert!(meta.exists, "{label}: the fixture path must exist");
+    assert_ne!(
+        meta.mode & 0o170000,
+        0,
+        "{label}: an existing path reported mode {:#o}, which carries no file-type \
+         bits. Checkpoint rollback removes any path it recorded with mode 0, so this \
+         makes an existing file deletable. Return the full st_mode.",
+        meta.mode
+    );
+}
+
+#[tokio::test]
+async fn every_executor_reports_an_existing_path_with_its_type_bits() {
+    // The mock, whose fixtures are what most of this workspace's tests see.
+    let mock = MockExecutor::new()
+        .with_file("/etc/zero-perm", "")
+        .with_directory("/etc/somewhere");
+    assert_existing_path_carries_a_type_bit(&mock, Path::new("/etc/zero-perm"), "mock file").await;
+    assert_existing_path_carries_a_type_bit(&mock, Path::new("/etc/somewhere"), "mock dir").await;
+
+    // The local executor, against a real 0000-perm file, which is the exact
+    // shape that was being deleted before `0b96045`.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let file = dir.path().join("zero-perm");
+    std::fs::write(&file, b"").expect("write");
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o000)).expect("chmod");
+    assert_existing_path_carries_a_type_bit(&LocalExecutor::new(), &file, "local 0000-perm file")
+        .await;
+    assert_existing_path_carries_a_type_bit(&LocalExecutor::new(), dir.path(), "local dir").await;
 }
