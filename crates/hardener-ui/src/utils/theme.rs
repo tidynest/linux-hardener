@@ -49,30 +49,4 @@ pub fn store_theme(theme: &str) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::THEMES;
-
-    #[test]
-    fn theme_ids_are_unique() {
-        let mut ids: Vec<&str> = THEMES.iter().map(|(id, _)| *id).collect();
-        ids.sort_unstable();
-        let count = ids.len();
-        ids.dedup();
-        assert_eq!(ids.len(), count, "theme ids must be unique");
-    }
-
-    #[test]
-    fn every_theme_has_a_name() {
-        for (id, name) in THEMES {
-            assert!(!name.is_empty(), "theme {id} has an empty display name");
-        }
-    }
-
-    #[test]
-    fn default_theme_is_present() {
-        assert!(
-            THEMES.iter().any(|(id, _)| *id == "default"),
-            "the default theme must be listed"
-        );
-    }
-}
+mod tests;

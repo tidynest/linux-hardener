@@ -119,35 +119,4 @@ pub fn AdhocHostInput(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn target_error_mirrors_backend_guard() {
-        assert!(target_error("", &[]).is_some(), "empty rejected");
-        assert!(
-            target_error("-oProxyCommand=x", &[]).is_some(),
-            "leading dash rejected"
-        );
-        assert!(
-            target_error("admin@", &[]).is_some(),
-            "empty hostname rejected"
-        );
-        assert!(
-            target_error("admin@web-01:2222", &[]).is_none(),
-            "valid target accepted"
-        );
-        assert!(
-            target_error("root@10.242.117.2", &[]).is_none(),
-            "bare IP target accepted"
-        );
-        assert!(
-            target_error("root@10.242.117.2, scan:22", &[]).is_some(),
-            "comma/space in hostname rejected (the live typo)"
-        );
-        assert!(
-            target_error("web", &["web".to_string()]).is_some(),
-            "duplicate rejected"
-        );
-    }
-}
+mod tests;

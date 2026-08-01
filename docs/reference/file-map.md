@@ -494,6 +494,8 @@ pub struct ScanRunner {
 | `src/utils/mod.rs` | Utils module exports and preview/apply helpers | `annotate_preview()`, `PreviewDecision`, `apply_change_summary()`, `is_auth_cancelled()`, `parse_rate_limit_wait_secs()`, `unchecked_honesty_line()`; `mock_data` mod, `theme` mod |
 | `src/utils/mock_data.rs` | Development mocks | Mock data generators |
 | `src/utils/theme.rs` | Shared theme metadata plus the single apply/persist side effects; the only writer of `<html data-theme>` and the `theme` localStorage key | `THEMES` (7 themes), `apply_theme()`, `get_stored_theme()`, `store_theme()` |
+| `src/utils/tests.rs` | Unit tests for `src/utils/mod.rs` | Test-only; that file *is* the module `utils`, so its tests go in the directory it already owns |
+| `src/utils/theme/tests.rs` | Unit tests for `src/utils/theme.rs` | Test-only; `super` resolves to `crate::utils::theme` |
 | `src/pages/mod.rs` | Pages module exports | `DashboardPage`, `AnalysisPage`, `HardeningPage`, `HostsPage`, `SchedulerPage`, `SettingsPage`, `FleetApplyPage` |
 | `src/components/mod.rs` | Components module exports | All component re-exports, `Card`, `CardVariant`, `HeadingLevel` |
 
@@ -506,6 +508,7 @@ pub struct ScanRunner {
 | `src/pages/hardening_page.rs` | Sectioned interface for configuration and history | `HardeningPage` |
 | `src/pages/hosts_page.rs` | Hosts page: the merged inventory - bulk read-only scan across selected hosts plus the single-host connect session, both surfaced through one expandable row per host (replaces the former Remote and Fleet pages) | `HostsPage` |
 | `src/pages/fleet_apply_page.rs` | Mutating multi-host **Fleet Apply** page: apply/roll back across saved hosts by shelling out to the audited `batch apply/rollback` CLI; mode toggle, host+plugin select, mandatory dry-run + confirm modal | `FleetApplyPage` |
+| `src/pages/fleet_apply_page/tests.rs` | Unit tests for `src/pages/fleet_apply_page.rs` | Test-only; `super` resolves to `crate::pages::fleet_apply_page` |
 | `src/pages/scheduler_page.rs` | Scheduler and notification configuration | `SchedulerPage` |
 | `src/pages/settings_page.rs` | Settings page: Appearance theme swatch grid plus a static About block | `SettingsPage` |
 
@@ -520,6 +523,7 @@ pub struct ScanRunner {
 | `src/components/findings_tab.rs` | Findings tab wrapper for Analysis page | `FindingsTab` |
 | `src/components/compliance_tab.rs` | Compliance framework selection and reports with status feedback | `ComplianceTab` |
 | `src/components/configure_section.rs` | Profile selection and plugin toggles | `ConfigureSection` |
+| `src/components/configure_section/tests.rs` | Unit tests for `src/components/configure_section.rs` | Test-only; `super` resolves to `crate::components::configure_section` |
 | `src/components/segmented_control.rs` | Reusable WAI-ARIA segmented control (roving-tabindex radiogroup); shared by the Fleet Apply mode toggle and the Hardening protection-level control | `SegmentedControl` |
 | `src/components/history_section.rs` | Apply results and checkpoint management with refresh button | `HistorySection` |
 | `src/components/modal.rs` | Shared modal shell used by every dialog: backdrop, Escape and backdrop-click dismissal, dialog ARIA, and focus-on-mount. Swallows Escape so dismissing a dialog cannot also advance the global `keyboard.rs` priority chain and discard a pending apply review | `Modal` |
@@ -541,6 +545,7 @@ pub struct ScanRunner {
 | `src/components/form_helpers.rs` | Shared JsCast event extraction helpers | `input_value()`, `checkbox_checked()`, `select_value()` |
 | `src/components/fleet_outcome_row.rs` | One host's Fleet Apply/rollback outcome row, rendered from a pre-computed `OutcomeView` (`utils::fleet_apply_cells` / `fleet_rollback_cells`) | `FleetOutcomeRow` |
 | `src/components/adhoc_host_input.rs` | Ad-hoc SSH target entry for fleet scans (host:user@addr rows, add/remove) | `AdhocHostInput` |
+| `src/components/adhoc_host_input/tests.rs` | Unit tests for `src/components/adhoc_host_input.rs` | Test-only; `super` resolves to `crate::components::adhoc_host_input` |
 
 **Note**: This crate depends only on `hardener-types` for shared types to ensure WASM compatibility. External dependencies include Leptos (WASM framework), wasm-bindgen, and web-sys for browser APIs.
 
