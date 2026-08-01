@@ -165,6 +165,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A rollback no longer reports success for a file whose bytes it never
+  restored.** A checkpoint that could not read a file's content stored a row
+  identical to one captured metadata-only on purpose: no content, a real mode,
+  no link target. Restore re-applied permissions to both and reported success,
+  so an operator who asked for a file's contents back was told the rollback
+  worked while the contents were whatever the apply had left there. The only
+  trace was a warning at capture time that the checkpoint did not keep.
+
+  `FileState` records why a row carries no content, and a rollback of a row
+  whose bytes could not be read now restores the permissions and owner, says
+  what it could not restore, and exits non-zero. A row with no bytes by design,
+  a directory or an account database captured metadata-only so its contents
+  never enter the checkpoint database, is unaffected and still a plain success.
+
+  Reached only through a declared directory: a declared file is captured
+  strictly and a read failure refuses the capture outright. So the paths at risk
+  were the recursed ones, `/etc/pam.d`, `/etc/sysctl.d`, `/etc/audit/rules.d`,
+  `/etc/systemd/system` and their kin.
+
+  **Existing checkpoints are unaffected and keep verifying.** The new column is
+  added by an idempotent migration, an older row reads as "not recorded" rather
+  than as either answer, and the field is hashed into the signature only when
+  present, so a checkpoint signed before it existed hashes to what it hashed
+  then. `hardener checkpoint show --format json` gains a field.
+
 - **A dry run now warns before PAM hardening can lock every password change on
   the host.** libpwquality's `dictcheck` defaults on and fails closed: with
   `pam_pwquality` in the stack and no cracklib dictionary installed, every

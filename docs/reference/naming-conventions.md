@@ -1241,6 +1241,13 @@ pub struct FileState {
     pub file_owner_uid: u32,
     pub file_owner_gid: u32,
     pub file_link_target: Option<String>,
+    pub file_content_absence: Option<ContentAbsence>,
+}
+
+pub enum ContentAbsence {
+    ByDesign,   // no bytes stored on purpose: a directory, or an account
+                // database captured metadata-only
+    ReadFailed, // bytes were wanted and could not be read
 }
 
 // Methods:

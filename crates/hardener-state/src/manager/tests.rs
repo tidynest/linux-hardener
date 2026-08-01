@@ -1350,3 +1350,311 @@ async fn rollback_leaves_no_snapshot_when_validation_rejects() {
         "a rollback rejected by validation must not persist a pre-rollback checkpoint"
     );
 }
+
+/// Registers the `chmod` and `chown` a metadata restore issues for `path`, so a
+/// rollback test is measuring the thing it names rather than an unregistered
+/// command. The mode is what `restore_file_state_tracked` formats: the
+/// permission bits alone, octal, with no type bits.
+fn with_metadata_restore(executor: MockExecutor, path: &str, mode_octal: &str) -> MockExecutor {
+    executor
+        .with_command("chmod", &[mode_octal, path], ok_output())
+        .with_command("chown", &["0:0", path], ok_output())
+}
+
+/// Issue #60: a rollback that could not put the bytes back stops calling itself
+/// a success.
+///
+/// A best-effort capture whose read failed produced a row identical to one
+/// captured metadata-only on purpose: no content, a real mode, no link target.
+/// Restore re-applied permissions to both and reported success, so an operator
+/// who asked for a file's contents back was told the rollback worked while the
+/// contents were whatever the apply had left there.
+///
+/// The two fixtures differ only in whether the file can be read at capture.
+#[tokio::test]
+async fn a_rollback_that_could_not_restore_the_bytes_says_so() {
+    use hardener_common::executor::FileMetadata;
+
+    let present = |mode: u32| FileMetadata {
+        exists: true,
+        is_file: true,
+        is_dir: false,
+        mode,
+        size: 0,
+        uid: 0,
+        gid: 0,
+    };
+    let dir = "/etc/sysctl.d";
+    let path = "/etc/sysctl.d/99-hardener.conf";
+
+    // A declared FILE is captured under `ContentPolicy::Required`, which refuses
+    // outright when the content cannot be read. Only recursion into a declared
+    // DIRECTORY uses `BestEffort`, so that is the only way to reach the row this
+    // test is about, and the fixture has to be shaped that way to reach it.
+    let fixture = |readable: bool| {
+        let executor = MockExecutor::new()
+            .with_directory(dir)
+            .with_file(path, "kernel.kptr_restrict = 2\n")
+            .with_file_metadata(path, "kernel.kptr_restrict = 2\n", present(0o100644));
+        let executor = match readable {
+            true => executor,
+            false => executor.with_read_permission_denied(path),
+        };
+        with_metadata_restore(with_metadata_restore(executor, path, "644"), dir, "755")
+    };
+
+    // Readable at capture: the bytes are stored and the rollback restores them.
+    let manager = test_manager().await;
+    let readable = fixture(true);
+    let id = manager
+        .create_checkpoint(&readable, "readable", &[Path::new(dir)])
+        .await
+        .expect("capture");
+    let restored = manager.rollback(&readable, &id).await.expect("rollback");
+    assert!(
+        restored.rollback_success,
+        "a checkpoint holding the bytes restores them: {:?}",
+        restored.rollback_files
+    );
+
+    // Unreadable at capture: the row is what could be salvaged, and the rollback
+    // must not claim to have restored what it never held.
+    let manager = test_manager().await;
+    let unreadable = fixture(false);
+    let id = manager
+        .create_checkpoint(&unreadable, "unreadable", &[Path::new(dir)])
+        .await
+        .expect("a best-effort capture salvages what it can rather than refusing");
+    let result = manager.rollback(&unreadable, &id).await.expect("rollback");
+
+    assert!(
+        !result.rollback_success,
+        "a rollback that restored no bytes must not report success: {:?}",
+        result.rollback_files
+    );
+    let reported = result
+        .rollback_files
+        .iter()
+        .find(|f| f.restore_path == path)
+        .expect("the file must appear in the per-file results");
+    assert!(
+        !reported.restore_success,
+        "the file itself must be the one reported, not some other row"
+    );
+    let reason = reported
+        .restore_error
+        .as_deref()
+        .expect("a shortfall must carry its reason");
+    assert!(
+        reason.contains("content was not") && reason.contains("could not read it"),
+        "the reason must say what was and was not restored, got: {reason}"
+    );
+}
+
+/// The other half of the same distinction: a capture that stored no bytes on
+/// purpose has nothing missing, so its rollback is a plain success.
+///
+/// This is what stops the fix above from being "report every contentless row as
+/// a shortfall", which would fail every permissions rollback, since the account
+/// databases are captured metadata-only precisely so their contents never enter
+/// the checkpoint database.
+#[tokio::test]
+async fn a_deliberately_metadata_only_rollback_is_still_a_success() {
+    use hardener_common::executor::FileMetadata;
+
+    let manager = test_manager().await;
+    let path = "/etc/shadow";
+    let executor = with_metadata_restore(
+        MockExecutor::new().with_file_metadata(
+            path,
+            "",
+            FileMetadata {
+                exists: true,
+                is_file: true,
+                is_dir: false,
+                mode: 0o100000,
+                size: 0,
+                uid: 0,
+                gid: 0,
+            },
+        ),
+        path,
+        "0",
+    );
+
+    let id = manager
+        .create_checkpoint_metadata_only(&executor, "accounts", &[Path::new(path)])
+        .await
+        .expect("metadata-only capture");
+    let result = manager.rollback(&executor, &id).await.expect("rollback");
+
+    assert!(
+        result.rollback_success,
+        "a row with no bytes by design has nothing missing: {:?}",
+        result.rollback_files
+    );
+}
+
+/// A checkpoint written before `content_absence` existed still verifies.
+///
+/// The digest hashes the field only when it is present, emitting nothing at all
+/// otherwise: no tag byte, no length prefix. That is what lets a row written by
+/// an earlier release, which has no such column and reads back as `None`, hash
+/// to exactly what it hashed then. Any unconditional byte for the field would
+/// silently invalidate every checkpoint already on disk, and the failure would
+/// surface as a signature refusal on a database nobody had touched.
+///
+/// The old database is produced rather than described: the column is dropped,
+/// which is the state `init_db` migrates from, and reopening it runs the same
+/// idempotent `ALTER TABLE` a real upgrade runs.
+#[tokio::test]
+async fn a_checkpoint_written_before_the_column_existed_still_verifies() {
+    use hardener_common::executor::FileMetadata;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db_path = dir.path().join("legacy.db");
+    let key_path = dir.path().join("legacy.key");
+    let path = "/etc/sysctl.d/99-hardener.conf";
+
+    let executor = MockExecutor::new()
+        .with_file(path, "kernel.kptr_restrict = 2\n")
+        .with_file_metadata(
+            path,
+            "kernel.kptr_restrict = 2\n",
+            FileMetadata {
+                exists: true,
+                is_file: true,
+                is_dir: false,
+                mode: 0o100644,
+                size: 0,
+                uid: 0,
+                gid: 0,
+            },
+        );
+
+    let id = {
+        let pool = crate::db::init_db(Some(&db_path)).await.expect("init_db");
+        let signer = CheckpointSigner::new_with_path(&key_path).expect("signer");
+        let manager = CheckpointManager::new_with_signer(pool, signer).expect("manager");
+        manager
+            .create_checkpoint(&executor, "before-the-column", &[Path::new(path)])
+            .await
+            .expect("capture")
+    };
+
+    // Make it a pre-migration database. The signature was computed over a row
+    // whose absence is `None`, which contributes nothing, so removing the column
+    // must leave the digest identical rather than merely close.
+    {
+        let pool = crate::db::init_db(Some(&db_path)).await.expect("reopen");
+        sqlx::query("ALTER TABLE file_states DROP COLUMN content_absence")
+            .execute(&pool)
+            .await
+            .expect("drop the column to produce a pre-migration database");
+        let remaining: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM pragma_table_info('file_states') WHERE name = 'content_absence'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("count");
+        assert_eq!(remaining, 0, "the fixture must actually lack the column");
+        pool.close().await;
+    }
+
+    // Reopening runs the migration, exactly as an upgrade would.
+    let pool = crate::db::init_db(Some(&db_path)).await.expect("migrate");
+    let restored: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM pragma_table_info('file_states') WHERE name = 'content_absence'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("count");
+    assert_eq!(restored, 1, "init_db must add the column back");
+
+    let signer = CheckpointSigner::new_with_path(&key_path).expect("signer");
+    let manager = CheckpointManager::new_with_signer(pool, signer).expect("manager");
+    manager.verify_checkpoint(&id).await.expect(
+        "a checkpoint written before the column existed must still verify after \
+         the migration, or upgrading refuses every checkpoint already on disk",
+    );
+}
+
+/// The digest a row with no recorded absence produces is byte-for-byte the one
+/// the algorithm produced before the field existed.
+///
+/// The round-trip test above cannot see this, and that is worth stating rather
+/// than leaving as a gap: it writes and verifies with the same build, so a field
+/// hashed unconditionally would be hashed unconditionally on both sides and
+/// agree with itself. Hashing `None` as a tag byte instead of as nothing passes
+/// that test and silently refuses every checkpoint already on disk.
+///
+/// So the old algorithm is reimplemented here as an oracle, in the order the
+/// real one uses, and the two are compared. It is a second copy on purpose:
+/// its whole value is being written independently of the code it checks.
+#[test]
+fn a_row_with_no_recorded_absence_hashes_exactly_as_it_did_before_the_field() {
+    use ring::digest::{Context as DigestContext, SHA256};
+
+    let id = CheckpointId::new("cp-1".to_string());
+    let state = |absence: Option<ContentAbsence>| FileState {
+        file_path: "/etc/sysctl.d/99-hardener.conf".to_string(),
+        file_content: Some(b"kernel.kptr_restrict = 2\n".to_vec()),
+        file_permissions: 0o100644,
+        file_owner_uid: 0,
+        file_owner_gid: 0,
+        file_link_target: None,
+        file_content_absence: absence,
+    };
+
+    // The pre-field algorithm, verbatim: no branch for the absence at all.
+    let mut oracle = DigestContext::new(&SHA256);
+    oracle.update(id.as_str().as_bytes());
+    oracle.update(b"legacy");
+    oracle.update(&7i64.to_be_bytes());
+    oracle.update(b"root");
+    let row = state(None);
+    oracle.update(row.file_path.as_bytes());
+    oracle.update(row.file_content.as_ref().expect("content"));
+    oracle.update(&row.file_permissions.to_be_bytes());
+    oracle.update(&row.file_owner_uid.to_be_bytes());
+    oracle.update(&row.file_owner_gid.to_be_bytes());
+    let expected = oracle.finish().as_ref().to_vec();
+
+    assert_eq!(
+        CheckpointManager::generate_digest(&id, "legacy", 7, "root", &[state(None)]),
+        expected,
+        "a row that records no absence must contribute nothing to the digest, or \
+         every checkpoint signed before the field existed stops verifying"
+    );
+
+    // And the field must still be capable of changing the digest, or recording
+    // it would be decoration.
+    assert_ne!(
+        CheckpointManager::generate_digest(
+            &id,
+            "legacy",
+            7,
+            "root",
+            &[state(Some(ContentAbsence::ReadFailed))]
+        ),
+        expected,
+        "a recorded absence must reach the signature"
+    );
+    assert_ne!(
+        CheckpointManager::generate_digest(
+            &id,
+            "legacy",
+            7,
+            "root",
+            &[state(Some(ContentAbsence::ByDesign))]
+        ),
+        CheckpointManager::generate_digest(
+            &id,
+            "legacy",
+            7,
+            "root",
+            &[state(Some(ContentAbsence::ReadFailed))]
+        ),
+        "the two absences must be distinguishable to the signature as well"
+    );
+}

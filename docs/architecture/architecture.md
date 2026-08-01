@@ -514,6 +514,12 @@ CREATE TABLE file_states (
     -- Set when the entry is a symlink, in which case content is NULL: storing
     -- a link's followed bytes would restore another file through the link.
     link_target TEXT,
+    -- Why this row carries no content, when it carries none and the path was
+    -- there: 'by_design' for a metadata-only capture, 'read_failed' when the
+    -- bytes were wanted and could not be read. NULL on a row that carries
+    -- bytes, and on any row written before this column existed, which must be
+    -- read as "not recorded" rather than as either answer.
+    content_absence TEXT,
     FOREIGN KEY(checkpoint_id) REFERENCES checkpoints(id)
 );
 

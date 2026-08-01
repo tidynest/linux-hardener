@@ -31,6 +31,7 @@ const SCHEMA: &str = r#"
         owner_uid INTEGER,
         owner_gid INTEGER,
         link_target TEXT,
+        content_absence TEXT,
         FOREIGN KEY(checkpoint_id) REFERENCES checkpoints(id)
     );
 
@@ -166,6 +167,25 @@ pub async fn init_db(db_path: Option<&Path>) -> Result<SqlitePool> {
         > 0;
     if !has_link_target {
         sqlx::query("ALTER TABLE file_states ADD COLUMN link_target TEXT")
+            .execute(&pool)
+            .await
+            .map_err(|e| HardeningError::Database(e.to_string()))?;
+    }
+
+    // Migrate pre-content_absence file_states tables in place (idempotent). A
+    // checkpoint taken before this column existed leaves it NULL, which reads
+    // back as "not recorded" rather than as either answer, because such a row
+    // genuinely cannot say whether its missing content was deliberate or the
+    // result of a read it could not make.
+    let has_content_absence: bool = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM pragma_table_info('file_states') WHERE name = 'content_absence'",
+    )
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| HardeningError::Database(e.to_string()))?
+        > 0;
+    if !has_content_absence {
+        sqlx::query("ALTER TABLE file_states ADD COLUMN content_absence TEXT")
             .execute(&pool)
             .await
             .map_err(|e| HardeningError::Database(e.to_string()))?;

@@ -344,6 +344,15 @@ a checkpoint or a skip is never counted as a hardening change.
 │    file_owner_gid: 0,                                        │
 │    file_link_target: None   // Some(target) for a symlink,   │
 │                             // whose content is never stored │
+│    file_content_absence: None // why there are no bytes,     │
+│                             // when there are none and the   │
+│                             // path was there: ByDesign for  │
+│                             // a metadata-only capture,      │
+│                             // ReadFailed when the read      │
+│                             // could not be made. None on a  │
+│                             // row that carries bytes, and   │
+│                             // on any row written before     │
+│                             // this field existed            │
 │  }                                                           │
 └────────┬─────────────────────────────────────────────────────┘
          │
@@ -427,6 +436,10 @@ a checkpoint or a skip is never counted as a hardening change.
 │  ├─ If file_link_target is Some: recreate the LINK           │
 │  │   └─ mkdir -p on the parent, then `ln -sfn target path`;  │
 │  │      never write, chmod or chown through a symlink        │
+│  ├─ If file_content_absence is ReadFailed: the permissions   │
+│  │   are restored and the shortfall is REPORTED, so the      │
+│  │   rollback does not call itself a success for bytes it    │
+│  │   never held                                              │
 │  ├─ If file_content is None AND permissions == 0:            │
 │  │   └─ "Absent at capture", so remove the path, EXCEPT for  │
 │  │      UNDELETABLE_ROLLBACK_PATHS (account databases,       │

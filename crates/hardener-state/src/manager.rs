@@ -1,7 +1,7 @@
 //! Checkpoint manager for creating and managing system state snapshots.
 
 use crate::checkpoint::{
-    CheckpointId, FileRestoreAction, FileRestoreResult, FileState, RollbackResult,
+    CheckpointId, ContentAbsence, FileRestoreAction, FileRestoreResult, FileState, RollbackResult,
 };
 use crate::{Checkpoint, CheckpointSigner};
 use hardener_common::error::{HardeningError, Result};
@@ -199,6 +199,9 @@ impl CheckpointManager {
                 file_owner_uid: 0,
                 file_owner_gid: 0,
                 file_link_target: None,
+                // A confirmed absence has no content to account for: the zero
+                // mode is the whole record.
+                file_content_absence: None,
             });
         }
 
@@ -214,11 +217,18 @@ impl CheckpointManager {
                 file_owner_uid: meta.uid,
                 file_owner_gid: meta.gid,
                 file_link_target: Some(target),
+                // The link target is what a restore writes, so there is no
+                // missing content to account for.
+                file_content_absence: None,
             });
         }
 
-        let file_content = match executor.read_file(file_path).await {
-            Ok(content) => Some(content.into_bytes()),
+        // The absence is recorded beside the content because this is the one
+        // place that knows why there is none. A row salvaged from a failed read
+        // is otherwise identical to one captured metadata-only on purpose, and
+        // restore reported success for both.
+        let (file_content, file_content_absence) = match executor.read_file(file_path).await {
+            Ok(content) => (Some(content.into_bytes()), None),
             Err(e) => match policy {
                 ContentPolicy::Required => {
                     return Err(HardeningError::Executor(format!(
@@ -233,7 +243,7 @@ impl CheckpointManager {
                         "Checkpoint for {} will not hold its content: {e}",
                         file_path.display(),
                     );
-                    None
+                    (None, Some(ContentAbsence::ReadFailed))
                 }
             },
         };
@@ -245,6 +255,7 @@ impl CheckpointManager {
             file_owner_uid: meta.uid,
             file_owner_gid: meta.gid,
             file_link_target: None,
+            file_content_absence,
         })
     }
 
@@ -271,6 +282,9 @@ impl CheckpointManager {
                 file_owner_uid: 0,
                 file_owner_gid: 0,
                 file_link_target: None,
+                // A confirmed absence has no content to account for: the zero
+                // mode is the whole record.
+                file_content_absence: None,
             });
         }
 
@@ -283,6 +297,11 @@ impl CheckpointManager {
             file_owner_uid: meta.uid,
             file_owner_gid: meta.gid,
             file_link_target: Self::link_target_of(executor, dir_path).await?,
+            // This capture never reads bytes. That is the guarantee the
+            // permissions plugin relies on for the account databases, whose
+            // contents must never enter the checkpoint database, so it is a
+            // deliberate absence rather than a shortfall.
+            file_content_absence: Some(ContentAbsence::ByDesign),
         })
     }
 
@@ -308,6 +327,9 @@ impl CheckpointManager {
                 file_owner_uid: 0,
                 file_owner_gid: 0,
                 file_link_target: None,
+                // A confirmed absence has no content to account for: the zero
+                // mode is the whole record.
+                file_content_absence: None,
             }]);
         }
 
@@ -323,6 +345,9 @@ impl CheckpointManager {
                 file_owner_uid: meta.uid,
                 file_owner_gid: meta.gid,
                 file_link_target: Some(target),
+                // The link target is what a restore writes, so there is no
+                // missing content to account for.
+                file_content_absence: None,
             }]);
         }
 
@@ -406,6 +431,13 @@ impl CheckpointManager {
             // hashes to what it hashed then, so its signature still verifies.
             if let Some(target) = &file_state.file_link_target {
                 hash_context.update(target.as_bytes());
+            }
+            // The same conditional shape, for the same reason and with the same
+            // constraint: the absent arm must emit nothing at all, no tag byte
+            // and no length prefix, or every checkpoint signed before this field
+            // existed stops verifying.
+            if let Some(absence) = file_state.file_content_absence {
+                hash_context.update(absence.digest_tag());
             }
         }
 
@@ -533,6 +565,9 @@ impl CheckpointManager {
                         file_owner_uid: meta.uid,
                         file_owner_gid: meta.gid,
                         file_link_target: link_target,
+                        // The read above is strict, so reaching here means the
+                        // bytes were obtained. A link carries none by design.
+                        file_content_absence: None,
                     });
                 } else {
                     file_states.push(self.capture_directory_entry(executor, path).await?);
@@ -632,9 +667,10 @@ impl CheckpointManager {
                 permissions,
                 owner_uid,
                 owner_gid,
-                link_target
+                link_target,
+                content_absence
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)",
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             )
             .bind(header.id.as_str())
             .bind(&file_state.file_path)
@@ -643,6 +679,7 @@ impl CheckpointManager {
             .bind(file_state.file_owner_uid as i64)
             .bind(file_state.file_owner_gid as i64)
             .bind(&file_state.file_link_target)
+            .bind(file_state.file_content_absence.map(|a| a.as_column()))
             .execute(&mut *tx)
             .await
             .map_err(|e| HardeningError::Database(e.to_string()))?;
@@ -699,7 +736,8 @@ impl CheckpointManager {
                 permissions,
                 owner_uid,
                 owner_gid,
-                link_target
+                link_target,
+                content_absence
             FROM
                 file_states WHERE checkpoint_id = ?
             ORDER BY file_path",
@@ -718,6 +756,11 @@ impl CheckpointManager {
                 file_owner_uid: row.get::<i64, _>("owner_uid") as u32,
                 file_owner_gid: row.get::<i64, _>("owner_gid") as u32,
                 file_link_target: row.get("link_target"),
+                // A legacy NULL, and anything this build does not recognise,
+                // reads as "not recorded". A checkpoint taken before the column
+                // existed cannot say which of two opposite meanings applied, and
+                // guessing would either invent a failure or hide one.
+                file_content_absence: ContentAbsence::from_column(row.get("content_absence")),
             });
         }
 
@@ -1070,6 +1113,30 @@ impl CheckpointManager {
             (Some(w), _) | (None, Some(w)) => Err(HardeningError::Executor(w)),
             (None, None) => Ok(()),
         };
+
+        // A row whose bytes the capture could not read has just had its
+        // permissions and owner put back, and nothing else. That is everything
+        // this row allows, and reporting it as a plain success is what made the
+        // shortfall invisible: the operator asked for the file's contents back
+        // and was told the rollback worked. Reported rather than fixed, which is
+        // the settled rule that a rollback restores what it can and says what it
+        // could not, so `rollback_success` is false and the exit code non-zero.
+        //
+        // Only `ReadFailed`. A directory and a deliberately metadata-only
+        // account database have no bytes to be missing, and a row from before
+        // this field existed says nothing either way, so neither is reported.
+        if meta_result.is_ok()
+            && file_state.file_content_absence == Some(ContentAbsence::ReadFailed)
+        {
+            return (
+                action,
+                Err(HardeningError::Executor(format!(
+                    "{path_str}: permissions and owner were restored, but its content was \
+                     not, because the checkpoint could not read it when it was taken. The \
+                     file's contents are whatever the apply left there."
+                ))),
+            );
+        }
 
         (action, meta_result)
     }
