@@ -682,6 +682,57 @@ async fn test_mac_validate_skips_exceptions() {
     );
 }
 
+/// The preview line for an excepted setting may not present the exception's
+/// `value` as something read from the host.
+///
+/// For `[mac]`, `[services]`, `[audit]` and `[firewall]` the exception key
+/// already names the deviating item and `value` is advisory only: nothing
+/// compares it against the system, which `configuration.md` states outright.
+/// The middle slot of `exception_preview_line` is documented as the value the
+/// host keeps, so filling it with an unchecked field prints an operator's own
+/// text as a reading taken from their machine. The fixture is a Permissive
+/// host carrying an exception that claims `Enforcing`, so an implementation
+/// echoing `value` states the opposite of the truth.
+#[tokio::test]
+async fn an_advisory_exception_value_is_not_reported_as_the_host_state() {
+    let executor = selinux_permissive_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = MacHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "selinux-enforcing".to_string(),
+        PolicyException {
+            value: "Enforcing".to_string(),
+            allowed: true,
+            reason: "development host, tracked in JIRA-4417".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let report = plugin.validate(&ctx, &config).await.unwrap();
+    let line = report
+        .validation_report_exceptions
+        .iter()
+        .find(|l| l.contains("selinux-enforcing"))
+        .expect("an excepted setting must still be previewed");
+
+    // Positive control first: a finding that quietly stopped being emitted
+    // would satisfy the absence assertion below perfectly.
+    assert!(
+        line.contains("development host, tracked in JIRA-4417"),
+        "the preview line must carry the documented reason: {line}"
+    );
+    assert!(
+        !line.contains("Enforcing"),
+        "the advisory value was never compared against the host, so the preview \
+         may not present it as the host's state: {line}"
+    );
+}
+
 #[tokio::test]
 async fn test_mac_apply_no_mac_system_is_graceful_skip() {
     // A host with neither SELinux nor AppArmor is a normal configuration

@@ -975,7 +975,7 @@ impl HardeningPlugin for ServicesHardeningPlugin {
                     if let Some(exception) = config.has_valid_exception(directive.service_name) {
                         exceptions.push(hardener_common::types::exception_preview_line(
                             directive.service_name,
-                            &exception.value,
+                            hardener_common::types::EXCEPTION_OBSERVED_UNCHANGED,
                             &exception.reason,
                         ));
                         continue;

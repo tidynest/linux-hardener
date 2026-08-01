@@ -942,7 +942,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                 if let Some(exception) = config.has_valid_exception("selinux-enforcing") {
                     exceptions.push(hardener_common::types::exception_preview_line(
                         "selinux-enforcing",
-                        &exception.value,
+                        hardener_common::types::EXCEPTION_OBSERVED_UNCHANGED,
                         &exception.reason,
                     ));
                 } else {
@@ -972,7 +972,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                 if let Some(exception) = config.has_valid_exception("apparmor-enforce") {
                     exceptions.push(hardener_common::types::exception_preview_line(
                         "apparmor-enforce",
-                        &exception.value,
+                        hardener_common::types::EXCEPTION_OBSERVED_UNCHANGED,
                         &exception.reason,
                     ));
                 }

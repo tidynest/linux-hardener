@@ -1126,6 +1126,23 @@ async fn test_audit_validate_skips_exceptions() {
     let count_without = get_count(&report_no_exception.validation_report_estimated_changes);
 
     assert!(
+        report
+            .validation_report_exceptions
+            .iter()
+            .any(|l| l.contains("modules")),
+        "an excepted category must still be previewed"
+    );
+    assert!(
+        !report
+            .validation_report_exceptions
+            .iter()
+            .any(|l| l.contains("skip")),
+        "the advisory value was never compared against the host, so the preview \
+         may not present it as the category's state: {:?}",
+        report.validation_report_exceptions
+    );
+
+    assert!(
         count_with.is_some(),
         "should have audit-rules change with exception"
     );

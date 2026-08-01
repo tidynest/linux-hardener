@@ -759,6 +759,52 @@ async fn test_services_validate_skips_exceptions() {
     );
 }
 
+/// The preview line for an excepted service may not present the exception's
+/// `value` as something read from the host.
+///
+/// A service exception is keyed on the service name and `value` is advisory
+/// only, so nothing checks it. Echoing it into the slot documented as the
+/// value the host keeps prints an operator's own text as a reading.
+#[tokio::test]
+async fn an_advisory_exception_value_is_not_reported_as_the_service_state() {
+    let executor = insecure_services_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = ServicesHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "bluetooth".to_string(),
+        PolicyException {
+            value: "runtime-only".to_string(),
+            allowed: true,
+            reason: "desktop workstation needs the radio".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let report = plugin.validate(&ctx, &config).await.unwrap();
+    let line = report
+        .validation_report_exceptions
+        .iter()
+        .find(|l| l.contains("bluetooth"))
+        .expect("an excepted service must still be previewed");
+
+    // Positive control first: a line that stopped being emitted at all would
+    // satisfy the absence assertion below.
+    assert!(
+        line.contains("desktop workstation needs the radio"),
+        "the preview line must carry the documented reason: {line}"
+    );
+    assert!(
+        !line.contains("runtime-only"),
+        "the advisory value was never compared against the host, so the preview \
+         may not present it as the service's state: {line}"
+    );
+}
+
 /// `list-unit-files` stub that fails the way a broken systemd does: a non-zero
 /// exit that also writes to stderr.
 fn with_unit_files_failing(executor: MockExecutor) -> MockExecutor {

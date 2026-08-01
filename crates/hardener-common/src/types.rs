@@ -5,6 +5,7 @@
 
 // Re-export all types from hardener-types
 pub use hardener_types::{
-    ComplianceFramework, ComplianceMapping, ComplianceProfile, ControlStatus, FindingCategory,
-    FindingPolicyException, PluginId, Severity, UNDELETABLE_ROLLBACK_PATHS, exception_preview_line,
+    ComplianceFramework, ComplianceMapping, ComplianceProfile, ControlStatus,
+    EXCEPTION_OBSERVED_UNCHANGED, FindingCategory, FindingPolicyException, PluginId, Severity,
+    UNDELETABLE_ROLLBACK_PATHS, exception_preview_line,
 };

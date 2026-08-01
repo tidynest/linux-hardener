@@ -565,6 +565,22 @@ pub struct Finding {
 /// excepted findings reports a deviation as compliance.
 pub const POLICY_EXCEPTION_LABEL: &str = "POLICY EXCEPTION";
 
+/// What stands in the observed slot of [`exception_preview_line`] where the
+/// plugin has no host reading to put there.
+///
+/// For `[services]`, `[mac]`, `[audit]` and `[firewall]` the exception key
+/// already names the deviating item and there is no single system value to
+/// compare, so the exception's own `value` field is advisory: recorded in the
+/// audit trail and never matched against anything. Echoing that field into a
+/// slot documented as the value the host keeps prints an operator's own text
+/// as a reading taken from their machine, which is false exactly when the
+/// declaration is stale. Naming what the run did to the setting claims
+/// nothing the plugin cannot vouch for.
+///
+/// `[firewall]` spells its own stand-in at the site, because a rule that was
+/// not applied is a different statement from a state left alone.
+pub const EXCEPTION_OBSERVED_UNCHANGED: &str = "unchanged";
+
 /// One line for `validation_report_exceptions`, naming the setting, the value
 /// the host keeps, and why.
 ///

@@ -1478,7 +1478,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
                         {
                             exceptions.push(hardener_common::types::exception_preview_line(
                                 rule.audit_rule_category,
-                                &exception.value,
+                                hardener_common::types::EXCEPTION_OBSERVED_UNCHANGED,
                                 &exception.reason,
                             ));
                         }

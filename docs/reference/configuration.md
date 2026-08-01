@@ -457,6 +457,14 @@ not apply on any path, including `apply`: the key itself names the deviating
 item and there is no single system value to compare, so `value` is advisory
 only; it is recorded in the audit trail but never matched.
 
+Because it is never matched, `apply --dry-run` does not print it either. The
+preview line for one of those four reads `left at 'unchanged'`, which claims
+only that the run left the setting alone. Printing the advisory field there
+would present text the operator wrote as a reading taken from the host, and it
+would be wrong exactly when the declaration has gone stale. `[firewall]` says
+`not applied` instead, because a rule that was never added is a different
+statement from a state left as it was found.
+
 The exception key is check-specific: an sshd directive name for `[ssh]`, a
 sysctl name for `[kernel]`, a PAM directive name for `[pam]` (for example
 `minlen`), an absolute path for `[permissions]` (for example `/etc/shadow`), a
