@@ -76,29 +76,55 @@ async fn test_ssh_scan_reads_configuration() {
 }
 
 #[tokio::test]
-async fn test_ssh_validate_checks_config_file() {
+async fn ssh_validate_on_this_host_smoke_test() {
     let plugin = SshHardeningPlugin::new();
     let ctx = Context::new();
     let config = PluginConfig::default();
 
-    let result = plugin.validate(&ctx, &config).await;
+    // A declared environment smoke test, and named so nobody grows it back:
+    // it validates whatever `/etc/ssh` the host executing it happens to have,
+    // so the only things it may assert are the ones true on every host. What a
+    // report says about a known configuration is settled deterministically in
+    // `ssh_mock_tests.rs`, where the executor is a fixture instead of a machine.
+    //
+    // It used to `match` the result with an `Err(_) => {}` arm excused by a
+    // comment about a machine with no `sshd_config`. That arm asserted nothing
+    // and could never run anyway: `validate` reports an absent or unreadable
+    // config as a Critical issue inside an `Ok` report and has no `Err` path
+    // left, exactly as the scan above stopped reporting an incomplete run as
+    // `Err`. The surviving assertion in the `Ok` arm then sat behind
+    // `if validation_report_is_valid`, so on any host carrying a single
+    // validation issue the whole test asserted one plugin id and exited 0.
+    let report = plugin
+        .validate(&ctx, &config)
+        .await
+        .expect("ssh validate reports an unusable config through ValidationReport, never as Err");
 
-    match result {
-        Ok(validation_report) => {
-            assert_eq!(
-                validation_report.validation_report_plugin_id,
-                PluginId::new("ssh-hardening")
-            );
+    assert_eq!(
+        report.validation_report_plugin_id,
+        PluginId::new("ssh-hardening")
+    );
 
-            // If config file exists and is readable, validation should pass
-            if validation_report.validation_report_is_valid {
-                assert!(validation_report.validation_report_issues.is_empty());
-            }
-        }
-        Err(_) => {
-            // Validation may fail if sshd_config doesn't exist in test environment.
-        }
-    }
+    // The property the conditional was reaching for, stated so that it runs on
+    // every host rather than only on a clean one: validity is defined as having
+    // no issues, so the two must never disagree in either direction. A report
+    // calling itself valid while listing issues is the failure an operator acts
+    // on, and it is the one the old `if` could not see.
+    //
+    // Its ceiling, declared here rather than left to be discovered from a green
+    // log: it RUNS everywhere but can only FAIL on a host whose ssh
+    // configuration produces at least one issue. On a clean host both sides read
+    // true and the comparison holds no matter what `validate` decided, which was
+    // measured rather than reasoned: replacing the whole computation with
+    // `let valid = true;` left this test green on this machine. The version that
+    // discriminates needs a fixture that forces an issue, and that is
+    // `ssh_mock_tests.rs`'s `test_ssh_validate_file_missing`.
+    assert_eq!(
+        report.validation_report_is_valid,
+        report.validation_report_issues.is_empty(),
+        "a valid report lists no issues and an invalid one must say what they are, got: {:?}",
+        report.validation_report_issues
+    );
 }
 
 #[tokio::test]

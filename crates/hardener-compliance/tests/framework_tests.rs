@@ -20,6 +20,10 @@ fn test_cis_controls_not_empty() {
 #[test]
 fn test_cis_controls_have_required_fields() {
     let controls = frameworks::cis::get_controls();
+    // Assert the catalogue is populated before looping over it. Without this
+    // line the whole test is inside the loop, so a catalogue that returned
+    // nothing would satisfy every assertion by never reaching one.
+    assert!(!controls.is_empty(), "CIS controls should not be empty");
 
     for control in &controls {
         assert!(

@@ -316,31 +316,6 @@ async fn test_permissions_scan_sudoers_severity() {
 }
 
 #[tokio::test]
-async fn test_permissions_scan_logs_operations() {
-    let executor = MockExecutor::new().with_file_metadata(
-        "/root",
-        "",
-        FileMetadata {
-            exists: true,
-            is_file: false,
-            is_dir: true,
-            mode: 0o700,
-            size: 0,
-            uid: 0,
-            gid: 0,
-        },
-    );
-
-    let ctx = Context::with_executor(Arc::new(executor.clone()));
-    let plugin = PermissionsHardeningPlugin::new();
-
-    let _ = plugin.scan(&ctx, &PluginConfig::default()).await;
-
-    // Note: path_exists uses file_metadata internally in MockExecutor
-    // So we can't directly check files_read, but we can verify the scan completed
-}
-
-#[tokio::test]
 async fn test_permissions_scan_duration_recorded() {
     let executor = secure_permissions_executor();
     let ctx = Context::with_executor(Arc::new(executor));

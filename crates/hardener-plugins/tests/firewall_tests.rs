@@ -1,16 +1,20 @@
 //! Integration tests for the Firewall Hardening Plugin.
 //!
-//! These tests verify that the firewall plugin correctly detects firewall
-//! backends, scans firewall status, and applies security configurations.
-//!
 //! Tests are organised into:
-//! - Basic plugin functionality (metadata, dependencies)
-//! - Backend detection (firewalld, UFW, nftables)
-//! - Integration tests (requires root, marked with #[ignore])
+//! - Pure tests over metadata and the baseline rule set, which read no host
+//! - Host smoke tests, which run against whatever machine executes them
+//! - Tests needing root or a named backend, all `#[ignore]`d
+//!
+//! The deterministic coverage lives in `firewall_mock_tests.rs`, where a
+//! `MockExecutor` supplies the host state. Nothing in this file may assert on
+//! host state: an assertion that passes or fails according to the developer's
+//! box reports the box rather than the code, and one guarded by `if` reports
+//! nothing at all on the hosts that skip it.
 
 use hardener_common::types::FindingCategory;
 use hardener_core::{PluginConfig, context::Context, plugin::HardeningPlugin};
 use hardener_plugins::FirewallHardeningPlugin;
+use hardener_plugins::firewall::FirewallBackend;
 
 #[test]
 fn test_firewall_plugin_metadata() {
@@ -32,43 +36,48 @@ fn test_firewall_plugin_has_no_dependencies() {
     assert_eq!(deps.len(), 0, "Firewall plugin should have no dependencies");
 }
 
+/// Runs the real scan against whichever host executes the suite, so it may
+/// assert only what holds on every host: the call came back, it named its own
+/// plugin, and it timed itself. Whether a backend is installed, whether it is
+/// enforcing, and what the no-backend error says are all host state, pinned
+/// deterministically in `firewall_mock_tests.rs`.
 #[tokio::test]
-async fn test_firewall_scan_detects_backend() {
+async fn firewall_scan_on_the_host_smoke_test() {
     let plugin = FirewallHardeningPlugin::new();
     let ctx = Context::new();
 
-    let result = plugin.scan(&ctx, &PluginConfig::default()).await;
+    let scan_result = plugin
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan must return Ok whether or not the host has a backend");
 
-    // The scan should succeed (even if no backend is found, it returns success: false)
-    assert!(result.is_ok(), "Scan should return Ok result");
-
-    let scan_result = result.unwrap();
     assert_eq!(scan_result.scan_plugin_id.as_str(), "firewall-hardening");
-
-    // If UFW is available, scan should succeed
-    // If not available, scan should fail gracefully.
-    if !scan_result.scan_success {
-        assert!(scan_result.scan_error.is_some());
-    }
+    assert!(
+        scan_result.scan_duration_us > 0,
+        "the scan must record how long it took"
+    );
 }
 
+/// The dry-run preview against the executing host, held to the same limit as
+/// the scan smoke test above. Validity is deliberately not asserted: a host
+/// with no backend at all earns a Critical issue and an invalid report, which
+/// is correct behaviour rather than a regression. The valid and invalid
+/// verdicts are both driven from mocks in `firewall_mock_tests.rs`.
 #[tokio::test]
-async fn test_firewall_validate_checks_backend() {
+async fn firewall_validate_on_the_host_smoke_test() {
     let plugin = FirewallHardeningPlugin::new();
     let ctx = Context::new();
     let config = PluginConfig::default();
 
-    let result = plugin.validate(&ctx, &config).await;
+    let validation_report = plugin
+        .validate(&ctx, &config)
+        .await
+        .expect("validate must return Ok whether or not the host has a backend");
 
-    // Validate should always return Ok (stub implementation currently)
-    assert!(result.is_ok(), "Validate should return Ok result");
-
-    let validation_report = result.unwrap();
     assert_eq!(
         validation_report.validation_report_plugin_id.as_str(),
         "firewall-hardening"
     );
-    assert!(validation_report.validation_report_is_valid);
 }
 
 #[tokio::test]
@@ -83,53 +92,30 @@ async fn test_firewall_apply_requires_root() {
 
     let result = plugin.apply(&mut ctx, &config).await;
 
-    assert!(result.is_ok(), "Apply should return Ok result");
+    match result {
+        Ok(apply_result) => {
+            assert_eq!(apply_result.apply_plugin_id.as_str(), "firewall-hardening");
 
-    let apply_result = result.unwrap();
-    assert_eq!(apply_result.apply_plugin_id.as_str(), "firewall-hardening");
+            // Asserted flatly, not behind `if apply_result.apply_success`: a
+            // privileged run that failed to harden the firewall is the single
+            // outcome this test exists to catch, and guarding the checks on
+            // success let exactly that outcome exit green.
+            assert!(
+                apply_result.apply_success,
+                "all changes should succeed with root privileges"
+            );
+            assert!(
+                apply_result.apply_error.is_none(),
+                "should not have overall error"
+            );
 
-    if apply_result.apply_success {
-        // Verify scan now shows firewall as enabled
-        let scan_result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
-        assert!(scan_result.scan_success, "Scan should succeed after apply");
-    }
-}
-
-// ============================================================================
-// Backend-Specific Tests
-// ============================================================================
-
-#[tokio::test]
-async fn test_backend_detection_order() {
-    // This test verifies that backend detection follows the correct priority:
-    // 1. Firewalld (RHEL/Fedora/CentOS)
-    // 2. UFW (Ubuntu/Debian)
-    // 3. Nftables (modern systems)
-
-    let plugin = FirewallHardeningPlugin::new();
-    let ctx = Context::new();
-
-    let result = plugin.scan(&ctx, &PluginConfig::default()).await;
-    assert!(
-        result.is_ok(),
-        "Scan should return Ok even if no backend found"
-    );
-
-    let scan_result = result.unwrap();
-
-    if !scan_result.scan_success {
-        assert!(
-            scan_result.scan_error.is_some(),
-            "Should have error message when no backend found"
-        );
-
-        let error_msg = scan_result.scan_error.unwrap();
-        assert!(
-            error_msg.contains("firewalld")
-                && error_msg.contains("ufw")
-                && error_msg.contains("nftables"),
-            "Error message should mention all three backends: firewalld, ufw, nftables"
-        );
+            let scan_result = plugin
+                .scan(&ctx, &PluginConfig::default())
+                .await
+                .expect("scan after apply must return Ok");
+            assert!(scan_result.scan_success, "scan should succeed after apply");
+        }
+        Err(e) => panic!("Apply failed: {e}"),
     }
 }
 
@@ -198,77 +184,73 @@ fn test_rule_structure_fields() {
 // Integration Tests (Require Specific Backends Installed)
 // ============================================================================
 
+/// The host-free half of the three backend smoke tests below, which differ
+/// only in the backend under test. Both checks are pure: a backend knows its
+/// own name and carries a baseline rule set without being asked anything about
+/// the machine.
+///
+/// Whether the backend is installed, and whether it is enforcing, are host
+/// state and are asserted nowhere in this file. `firewall_mock_tests.rs`
+/// drives both from a mock.
+fn backend_names_itself_and_offers_rules(backend: &dyn FirewallBackend, expected_name: &str) {
+    assert_eq!(backend.backend_name(), expected_name);
+    assert!(
+        !backend.get_default_rules().is_empty(),
+        "{expected_name} should return default rules"
+    );
+}
+
 #[tokio::test]
 #[ignore] // Only run on systems with firewalld installed
-async fn test_firewalld_backend_detection() {
-    // Test firewalld-specific detection
-    // Run with: cargo test --package hardener-plugins test_firewalld_backend_detection -- --ignored --nocapture
+async fn firewalld_backend_detection_smoke_test() {
+    // Run with: cargo test --package hardener-plugins firewalld_backend_detection_smoke_test -- --ignored --nocapture
 
-    use hardener_plugins::firewall::FirewallBackend;
     use hardener_plugins::firewall::firewalld::FirewalldBackend;
 
-    let ctx = hardener_core::context::Context::new();
     let backend = FirewalldBackend::new();
-    let detected = backend.detect(&ctx).await;
 
-    assert!(detected.is_ok(), "Firewalld detection should not error");
+    // The assertion is on the probe, not on its answer: every host can be
+    // asked whether firewalld is present, and only some say yes. Asserting
+    // the answer would measure the machine, and asserting it behind an `if`
+    // would let the hosts that say no reach no assertion at all.
+    assert!(
+        backend.detect(&Context::new()).await.is_ok(),
+        "firewalld detection should not error"
+    );
 
-    if detected.unwrap() {
-        assert_eq!(backend.backend_name(), "firewalld");
-
-        let _enabled = backend.is_enabled(&ctx).await;
-
-        let rules = backend.get_default_rules();
-        assert!(!rules.is_empty(), "Should return default rules");
-    }
+    backend_names_itself_and_offers_rules(&backend, "firewalld");
 }
 
 #[tokio::test]
 #[ignore] // Only run on systems with UFW installed
-async fn test_ufw_backend_detection() {
-    // Test UFW-specific detection
-    // Run with: cargo test --package hardener-plugins test_ufw_backend_detection -- --ignored --nocapture
+async fn ufw_backend_detection_smoke_test() {
+    // Run with: cargo test --package hardener-plugins ufw_backend_detection_smoke_test -- --ignored --nocapture
 
-    use hardener_plugins::firewall::FirewallBackend;
     use hardener_plugins::firewall::ufw::UfwBackend;
 
-    let ctx = hardener_core::context::Context::new();
     let backend = UfwBackend::new();
-    let detected = backend.detect(&ctx).await;
 
-    assert!(detected.is_ok(), "UFW detection should not error");
+    assert!(
+        backend.detect(&Context::new()).await.is_ok(),
+        "UFW detection should not error"
+    );
 
-    if detected.unwrap() {
-        assert_eq!(backend.backend_name(), "ufw");
-
-        let _enabled = backend.is_enabled(&ctx).await;
-
-        let rules = backend.get_default_rules();
-        assert!(!rules.is_empty(), "Should return default rules");
-    }
+    backend_names_itself_and_offers_rules(&backend, "ufw");
 }
 
 #[tokio::test]
 #[ignore] // Only run on systems with nftables installed
-async fn test_nftables_backend_detection() {
-    // Test nftables-specific detection
-    // Run with: cargo test --package hardener-plugins test_nftables_backend_detection -- --ignored --nocapture
+async fn nftables_backend_detection_smoke_test() {
+    // Run with: cargo test --package hardener-plugins nftables_backend_detection_smoke_test -- --ignored --nocapture
 
-    use hardener_plugins::firewall::FirewallBackend;
     use hardener_plugins::firewall::nftables::NftablesBackend;
 
-    let ctx = hardener_core::context::Context::new();
     let backend = NftablesBackend::new();
-    let detected = backend.detect(&ctx).await;
 
-    assert!(detected.is_ok(), "Nftables detection should not error");
+    assert!(
+        backend.detect(&Context::new()).await.is_ok(),
+        "nftables detection should not error"
+    );
 
-    if detected.unwrap() {
-        assert_eq!(backend.backend_name(), "nftables");
-
-        let _enabled = backend.is_enabled(&ctx).await;
-
-        let rules = backend.get_default_rules();
-        assert!(!rules.is_empty(), "Should return default rules");
-    }
+    backend_names_itself_and_offers_rules(&backend, "nftables");
 }

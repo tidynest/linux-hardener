@@ -286,6 +286,38 @@ a list is a second thing to drift. That import is also why the script sets
 at one-second granularity, so a same-length edit landing within the same second
 is served from cache and the check reports on a file that no longer exists.
 
+### Test assertions
+
+```bash
+python3 scripts/validate/validate_test_assertions.py
+```
+
+Checks that every test reaches an assertion on every path through its body.
+
+A test whose only assertions sit inside an `if` with no `else`, or inside a loop
+over a collection that might be empty, does not assert when the condition does
+not hold. It still exits 0 and it still counts towards the suite total, which is
+the number everyone reads. Issue #46 is the family: seven plugin tests ran
+against whatever machine the suite was on and wrapped their real assertions in a
+conditional, so a host with no `sshd_config`, or no firewall, or nothing to
+flag, made them assert one string equality and pass.
+
+Constructs that cover all their own paths satisfy the check: a `match`, which
+Rust makes exhaustive, provided every arm asserts or panics; an `if`/`else`
+chain ending in a bare `else` with every branch asserting; and a `for` over an
+array literal written at the site, which is the good form of the table-driven
+test rather than the bad one.
+
+Where the assertions genuinely live in a helper the test calls, write
+
+```rust
+// assertions-in-helper: <reason>
+```
+
+above the test attribute. It is a comment rather than a naming convention so
+that the reason travels with the exemption, and so a single grep lists every
+exemption in the tree with its justification attached.
+
 ### Badges
 
 ```bash

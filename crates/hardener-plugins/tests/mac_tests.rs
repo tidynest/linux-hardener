@@ -27,73 +27,69 @@ fn test_mac_plugin_has_no_dependencies() {
     );
 }
 
+/// Declared environment smoke test: `Context::new()` is wired to the local
+/// executor, so this runs against whatever host executes the suite and may
+/// therefore assert only what holds on every host. That is the call returning
+/// `Ok`, the result naming its own plugin, and a duration having been recorded.
+/// The old name promised detection, which it never checked.
+///
+/// Whether a MAC system is present, and what a finding about it says, is a
+/// property of the machine, so the deterministic coverage lives in
+/// `mac_mock_tests.rs`, which pins SELinux enforcing, permissive and disabled,
+/// AppArmor enforcing and complain, and the no-MAC host. The per-finding checks
+/// that used to sit inside a `for` over `scan_findings` are gone because that
+/// loop asserts nothing whatsoever on a host that returns no findings.
 #[tokio::test]
-async fn test_mac_scan_detects_system() {
+async fn mac_scan_runs_against_the_host_smoke_test() {
     let plugin = MacHardeningPlugin::new();
     let context = Context::new();
 
-    // Run scan
-    let result = plugin.scan(&context, &PluginConfig::default()).await;
+    let scan_result = plugin
+        .scan(&context, &PluginConfig::default())
+        .await
+        .expect("scan over the local executor should succeed");
 
-    // Should succeed
-    assert!(result.is_ok(), "Scan should succeed: {:?}", result.err());
-
-    let scan_result = result.unwrap();
-    assert!(
-        scan_result.scan_success,
-        "Scan should be marked as successful"
-    );
     assert_eq!(scan_result.scan_plugin_id.to_string(), "mac-hardening");
-
-    // Verify timing is captured
     assert!(
         scan_result.scan_duration_us > 0,
         "Scan duration should be captured"
     );
-
-    // If findings exist, verify their structure
-    for finding in &scan_result.scan_findings {
-        assert!(
-            !finding.finding_id.is_empty(),
-            "Finding ID should not be empty"
-        );
-        assert!(
-            !finding.finding_title.is_empty(),
-            "Finding title should not be empty"
-        );
-        assert!(
-            !finding.finding_description.is_empty(),
-            "Finding description should not be empty"
-        );
-        assert!(
-            !finding.finding_remediation_steps.is_empty(),
-            "Should have remediation steps"
-        );
-    }
 }
 
+/// Declared environment smoke test, and a deliberately thin one: it exists only
+/// to prove that `validate` survives a round trip over the real local executor,
+/// which no mock can show, since a `MockExecutor` never spawns `sestatus` or
+/// `aa-status`. A `ValidationReport` carries no duration, so `Ok` and the plugin
+/// id are the whole of what is host-invariant here.
+///
+/// It says nothing about validation itself on purpose. What validate decides is
+/// pinned against fixed executors in `mac_mock_tests.rs`, for a host with
+/// SELinux, a host with no MAC system at all, and a host whose detection
+/// failed.
 #[tokio::test]
-async fn test_mac_validate() {
+async fn mac_validate_runs_against_the_host_smoke_test() {
     let plugin = MacHardeningPlugin::new();
     let context = Context::new();
     let config = PluginConfig::default();
 
-    // Run validation
-    let result = plugin.validate(&context, &config).await;
+    let validation_report = plugin
+        .validate(&context, &config)
+        .await
+        .expect("validation over the local executor should succeed");
 
-    assert!(
-        result.is_ok(),
-        "Validation should succeed: {:?}",
-        result.err()
-    );
-
-    let validation_report = result.unwrap();
     assert_eq!(
         validation_report.validation_report_plugin_id.to_string(),
         "mac-hardening"
     );
 }
 
+/// Ignored, so it runs only when a maintainer deliberately runs it as root.
+/// That is exactly why the failure arm panics: a test nobody watches must not
+/// be able to report success for having done nothing, and the empty `Err(_)`
+/// arm that used to sit here made "apply blew up" and "apply worked"
+/// indistinguishable. The per-change assertions that used to hide inside a
+/// `for` over `apply_changes` are in `mac_mock_tests.rs`, where the changes are
+/// guaranteed to exist.
 #[tokio::test]
 #[ignore = "Requires root privileges and modifies MAC system configuration"]
 async fn test_mac_apply_requires_root() {
@@ -101,23 +97,14 @@ async fn test_mac_apply_requires_root() {
     let mut context = Context::new();
     let config = PluginConfig::default();
 
-    // This will fail without root, or succeed with root
     let result = plugin.apply(&mut context, &config).await;
 
     match result {
         Ok(apply_result) => {
             assert_eq!(apply_result.apply_plugin_id.to_string(), "mac-hardening");
-
-            // Verify change structure if any changes were made
-            for change in &apply_result.apply_changes {
-                assert!(
-                    !change.change_description.is_empty(),
-                    "Change description should not be empty"
-                );
-            }
         }
-        Err(_) => {
-            // This is expected if not running as root
+        Err(e) => {
+            panic!("Apply failed: {e}");
         }
     }
 }

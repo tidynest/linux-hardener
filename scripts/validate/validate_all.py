@@ -80,6 +80,7 @@ def main():
         ("Unit State Reads", "validate_unit_state_reads.py", []),
         ("Doc Sync Targets", "validate_doc_targets.py", []),
         ("Badges", "validate_badges.py", []),
+        ("Test Assertions", "validate_test_assertions.py", []),
     ]
 
     # Add slower validators unless in quick mode

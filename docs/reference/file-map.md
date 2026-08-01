@@ -780,6 +780,7 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 | `scripts/validate/validate_tauri_docs.py` | Tauri integration documentation validator |
 | `scripts/validate/validate_write_sites.py` | File-creation site registry: every plugin call site that creates a file is classified on two questions, `ensured` or `exempt` for its parent directory and `declared` or `exempt` for its plugin's pre-apply checkpoint, each with a written reason; the `cp` sites are additionally asserted to copy with both `-p` and `--no-dereference` |
 | `scripts/validate/validate_unit_state_reads.py` | Unit state read registry: every `systemctl is-enabled` call site declares whether it judges systemd's word or its exit status and why, with the declared answer cross-checked against whether the enclosing function reads `output.success()` |
+| `scripts/validate/validate_test_assertions.py` | Test assertion reachability: every test function must reach an assertion on every path through its body, so a test cannot exit 0 having asserted nothing while still counting towards the suite total. A `match` with every arm asserting, an `if`/`else` chain ending in a bare `else`, and a `for` over an array literal all satisfy it; an `if` with no `else` and a loop over a computed collection do not |
 | `scripts/validate/update_all_docs.py` | Batch documentation updater |
 | `scripts/release/release.sh` | Automated version bumping and release |
 | `scripts/dev/tauri-dev.sh` | Tauri development launcher |

@@ -26,86 +26,74 @@ fn test_permissions_plugin_has_no_dependencies() {
     );
 }
 
+/// Declared environment smoke test: `Context::new()` is wired to the local
+/// executor, so this runs against whatever host executes the suite and may
+/// therefore assert only what holds on every host. That is the call returning
+/// `Ok`, the result naming its own plugin, and a duration having been recorded.
+///
+/// Everything about the findings themselves is a property of the permissions
+/// the running machine happens to carry, so the deterministic coverage lives in
+/// `permissions_mock_tests.rs`, where a `MockExecutor` decides what `/etc` looks
+/// like. The per-finding checks that used to sit inside a `for` over
+/// `scan_findings` are gone because that loop asserts nothing at all on a host
+/// with no violations, which is the "passing by skipping" shape this suite is
+/// not allowed to have.
 #[tokio::test]
-async fn test_permissions_scan_checks_paths() {
+async fn permissions_scan_runs_against_the_host_smoke_test() {
     let plugin = PermissionsHardeningPlugin::new();
     let context = Context::new();
 
-    // Run scan
-    let result = plugin.scan(&context, &PluginConfig::default()).await;
+    let scan_result = plugin
+        .scan(&context, &PluginConfig::default())
+        .await
+        .expect("scan over the local executor should succeed");
 
-    // Should succeed
-    assert!(result.is_ok(), "Scan should succeed: {:?}", result.err());
-
-    let scan_result = result.unwrap();
-    assert!(
-        scan_result.scan_success,
-        "Scan should be marked as successful"
-    );
     assert_eq!(
         scan_result.scan_plugin_id.to_string(),
         "permissions-hardening"
     );
-
-    // Verify timing is captured
     assert!(
         scan_result.scan_duration_us > 0,
         "Scan duration should be captured"
     );
-
-    // If findings exist, verify their structure
-    for finding in &scan_result.scan_findings {
-        assert!(
-            !finding.finding_id.is_empty(),
-            "Finding ID should not be empty"
-        );
-        assert!(
-            !finding.finding_title.is_empty(),
-            "Finding title should not be empty"
-        );
-        assert!(
-            !finding.finding_description.is_empty(),
-            "Finding description should not be empty"
-        );
-        assert!(
-            !finding.finding_remediation_steps.is_empty(),
-            "Should have remediation steps"
-        );
-    }
 }
 
+/// Declared environment smoke test under the same limits as the scan above: it
+/// runs against the executing host, so `Ok` and the plugin id are the only
+/// host-invariants available to it. A `ValidationReport` carries no duration.
+///
+/// The removed assertions claimed the report is always valid with no issues
+/// "because the permissions plugin doesn't have config dependencies". Validity
+/// has nothing to do with config here: `validate` raises a High issue for any
+/// critical path whose existence the executor could not determine, and
+/// `validation_report_is_valid` is precisely "no High issue". Those two
+/// assertions were therefore asserting that the developer's `/etc` was entirely
+/// stat-able. Both outcomes are pinned against a mock executor in
+/// `permissions_mock_tests.rs`.
 #[tokio::test]
-async fn test_permissions_validate() {
+async fn permissions_validate_runs_against_the_host_smoke_test() {
     let plugin = PermissionsHardeningPlugin::new();
     let context = Context::new();
     let config = PluginConfig::default();
 
-    // Run validation
-    let result = plugin.validate(&context, &config).await;
+    let validation_report = plugin
+        .validate(&context, &config)
+        .await
+        .expect("validation over the local executor should succeed");
 
-    assert!(
-        result.is_ok(),
-        "Validation should succeed: {:?}",
-        result.err()
-    );
-
-    let validation_report = result.unwrap();
     assert_eq!(
         validation_report.validation_report_plugin_id.to_string(),
         "permissions-hardening"
     );
-
-    // Validation should succeed (permissions plugin doesn't have config dependencies)
-    assert!(
-        validation_report.validation_report_is_valid,
-        "Validation should be valid"
-    );
-    assert!(
-        validation_report.validation_report_issues.is_empty(),
-        "Valid validation should have no issues"
-    );
 }
 
+/// Ignored, so it runs only when a maintainer deliberately runs it as root.
+/// That is exactly why the failure arm panics: a test nobody watches must not
+/// be able to report success for having done nothing, and the empty `Err(_)`
+/// arm that used to sit here made "apply blew up" and "apply worked"
+/// indistinguishable. The per-change assertions that used to hide inside a
+/// `for` over `apply_changes` are in `permissions_mock_tests.rs`, where the
+/// changes are guaranteed to exist.
 #[tokio::test]
 #[ignore = "Requires root privileges and modifies system file permissions"]
 async fn test_permissions_apply_requires_root() {
@@ -113,7 +101,6 @@ async fn test_permissions_apply_requires_root() {
     let mut context = Context::new();
     let config = PluginConfig::default();
 
-    // This will fail without root, or succeed with root
     let result = plugin.apply(&mut context, &config).await;
 
     match result {
@@ -122,17 +109,9 @@ async fn test_permissions_apply_requires_root() {
                 apply_result.apply_plugin_id.to_string(),
                 "permissions-hardening"
             );
-
-            // Verify change structure if any changes were made
-            for change in &apply_result.apply_changes {
-                assert!(
-                    !change.change_description.is_empty(),
-                    "Change description should not be empty"
-                );
-            }
         }
-        Err(_) => {
-            // This is expected if not running as root
+        Err(e) => {
+            panic!("Apply failed: {e}");
         }
     }
 }

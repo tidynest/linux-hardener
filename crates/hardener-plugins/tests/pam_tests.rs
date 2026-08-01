@@ -27,28 +27,35 @@ fn test_pam_plugin_has_no_dependencies() {
 }
 
 #[tokio::test]
-async fn test_pam_scan_reads_configuration() {
+async fn pam_scan_on_this_host_smoke_test() {
     let plugin = PamHardeningPlugin::new();
     let context = Context::new();
 
-    // Run scan
-    let result = plugin.scan(&context, &PluginConfig::default()).await;
+    // A declared environment smoke test, and named so nobody grows it back: it
+    // scans whatever `/etc/pam.d` and `/etc/security` the host executing it
+    // happens to have, so the only things it may assert are the ones true on
+    // every host. What the scan finds in a known configuration is settled
+    // deterministically in `pam_mock_tests.rs`, where the executor is a fixture
+    // instead of a machine. An unprivileged run here finds seven findings on an
+    // Arch host that loads neither pam_pwquality nor pam_pwhistory, and none on
+    // a host configured otherwise, which is precisely why no count belongs here.
+    let scan_result = plugin
+        .scan(&context, &PluginConfig::default())
+        .await
+        .expect("the pam scan reports an incomplete run through ScanResult, never as Err");
 
-    // Should succeed even if files don't exist (graceful degradation)
-    assert!(result.is_ok(), "Scan should succeed: {:?}", result.err());
-
-    let scan_result = result.unwrap();
-    assert!(
-        scan_result.scan_success,
-        "Scan should be marked as successful"
-    );
     assert_eq!(scan_result.scan_plugin_id.to_string(), "pam-hardening");
-
-    // Verify timing is captured
     assert!(
         scan_result.scan_duration_us > 0,
-        "Scan duration should be captured"
+        "scan duration should be captured"
     );
+
+    // Deliberately NOT asserted here: that `scan_success` and `scan_error` stay
+    // distinguishable. `pam/mod.rs` builds its one and only `ScanResult` with
+    // both written as literals, `scan_success: true` beside `scan_error: None`,
+    // so that comparison is `true == true` on every host there will ever be. It
+    // reads like an invariant and is a check that cannot fail, which is the same
+    // fault as the conditional assertions this test was rewritten to remove.
 }
 
 #[tokio::test]
@@ -90,7 +97,10 @@ async fn test_pam_apply_requires_root() {
     let mut context = Context::new();
     let config = PluginConfig::default();
 
-    // This will fail without root, or succeed with root
+    // Run only under `--ignored` as root, so a failure here is a real failure
+    // rather than a missing privilege. The `Err` arm used to swallow it with a
+    // note about not running as root, which made the one run that is supposed
+    // to exercise apply exit 0 having asserted nothing at all.
     let result = plugin.apply(&mut context, &config).await;
 
     match result {
@@ -101,8 +111,8 @@ async fn test_pam_apply_requires_root() {
                 "Should have made changes"
             );
         }
-        Err(_) => {
-            // This is expected if not running as root
+        Err(e) => {
+            panic!("PAM apply failed: {e}");
         }
     }
 }

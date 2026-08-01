@@ -202,6 +202,14 @@ async fn test_multiple_plugins_sequential_over_ssh() {
         Box::new(KernelHardeningPlugin::new()),
         Box::new(ServicesHardeningPlugin::new()),
     ];
+    // The count is asserted rather than assumed: every assertion below lives
+    // inside the loop, so a list that lost an entry would still pass, and the
+    // point of this test is that BOTH plugins survive one shared connection.
+    assert_eq!(
+        plugins.len(),
+        2,
+        "both plugins must run over the one context"
+    );
 
     for plugin in &plugins {
         let metadata = plugin.metadata();
