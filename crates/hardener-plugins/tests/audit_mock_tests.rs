@@ -2117,3 +2117,98 @@ async fn an_absent_auditctl_is_not_reported_as_a_refusal() {
         refused.unchecked_reason
     );
 }
+
+/// A subsystem-level exception for one of auditd's three states.
+fn audit_exception_config(key: &str) -> PluginConfig {
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        key.to_string(),
+        PolicyException {
+            value: "absent".to_string(),
+            allowed: true,
+            reason: "auditing is collected off-host by the agent, JIRA-7731".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+    config
+}
+
+/// Auditd's three states take three keys rather than one, because accepting a
+/// host where auditd is not installed is a different decision from accepting
+/// one where it is installed and merely stopped.
+#[tokio::test]
+async fn scan_honours_an_exception_for_a_host_without_auditd_installed() {
+    let ctx = Context::with_executor(Arc::new(no_auditd_executor()));
+    let plugin = AuditHardeningPlugin::new();
+
+    let plain = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
+    let plain_finding = plain
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "audit_not_installed")
+        .expect("a host without auditd raises the finding at all");
+    assert!(
+        plain_finding.finding_policy_exception.is_none(),
+        "with nothing declared the finding must stay a live violation"
+    );
+
+    let excepted = plugin
+        .scan(&ctx, &audit_exception_config("auditd-present"))
+        .await
+        .unwrap();
+    assert!(
+        excepted
+            .scan_findings
+            .iter()
+            .find(|f| f.finding_id == "audit_not_installed")
+            .expect("an approved deviation is still reported, annotated rather than dropped")
+            .finding_policy_exception
+            .is_some(),
+        "the declared exception must reach the finding, or report fails the control"
+    );
+}
+
+#[tokio::test]
+async fn scan_honours_separate_exceptions_for_auditd_at_boot_and_running() {
+    let ctx = Context::with_executor(Arc::new(auditd_disabled_executor()));
+    let plugin = AuditHardeningPlugin::new();
+
+    let plain = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
+    for id in ["audit_not_enabled", "auditd_not_running"] {
+        let finding = plain
+            .scan_findings
+            .iter()
+            .find(|f| f.finding_id == id)
+            .unwrap_or_else(|| panic!("{id} is raised at all on this host"));
+        assert!(
+            finding.finding_policy_exception.is_none(),
+            "{id} must stay a live violation when nothing excuses it"
+        );
+    }
+
+    // Declaring one must not silence the other: they are separate decisions.
+    let at_boot_only = plugin
+        .scan(&ctx, &audit_exception_config("auditd-at-boot"))
+        .await
+        .unwrap();
+    let excepted = |id: &str| {
+        at_boot_only
+            .scan_findings
+            .iter()
+            .find(|f| f.finding_id == id)
+            .map(|f| f.finding_policy_exception.is_some())
+    };
+    assert_eq!(
+        excepted("audit_not_enabled"),
+        Some(true),
+        "the boot key must reach the boot finding"
+    );
+    assert_eq!(
+        excepted("auditd_not_running"),
+        Some(false),
+        "approving a unit that does not start at boot does not approve one that is stopped"
+    );
+}

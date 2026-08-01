@@ -1061,3 +1061,59 @@ async fn mac_validate_raises_an_issue_when_detection_failed() {
         .expect("the failure must be raised as an issue");
     assert_eq!(issue.validation_issue_severity, Severity::High);
 }
+
+/// A subsystem-level exception, keyed the way this plugin already keys
+/// `selinux-enforcing` and `apparmor-enforce`.
+fn mac_exception_config(key: &str) -> PluginConfig {
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        key.to_string(),
+        PolicyException {
+            value: "none".to_string(),
+            allowed: true,
+            reason: "container host, MAC enforced by the hypervisor, JIRA-9107".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+    config
+}
+
+/// The plugin keys an exception for SELinux not enforcing and for AppArmor not
+/// enforcing, and had none for the case where neither is installed, so a host
+/// an operator had approved to run without a MAC system still failed every
+/// control the finding maps to.
+#[tokio::test]
+async fn scan_honours_an_exception_for_a_host_with_no_mac_system() {
+    let ctx = Context::with_executor(Arc::new(no_mac_executor()));
+    let plugin = MacHardeningPlugin::new();
+
+    // Positive control: the finding exists and is live when nothing excuses it.
+    let plain = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
+    let plain_finding = plain
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "no-mac-system")
+        .expect("a host with no MAC system raises the finding at all");
+    assert!(
+        plain_finding.finding_policy_exception.is_none(),
+        "with nothing declared the finding must stay a live violation"
+    );
+
+    let excepted = plugin
+        .scan(&ctx, &mac_exception_config("mac-present"))
+        .await
+        .unwrap();
+    let finding = excepted
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "no-mac-system")
+        .expect("an approved deviation is still reported, annotated rather than dropped");
+
+    assert!(
+        finding.finding_policy_exception.is_some(),
+        "the declared exception must reach the finding, or report fails the control"
+    );
+}

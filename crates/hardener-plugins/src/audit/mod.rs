@@ -235,6 +235,17 @@ const AUDIT_RULES: &[AuditRuleDirective] = &[
 ];
 
 /// Path to custom audit rules file for hardening.
+/// The exception keys for auditd's three subsystem states.
+///
+/// Three keys rather than one, because they are three decisions. An operator
+/// who has accepted that this host collects its auditing elsewhere and never
+/// installs auditd has not thereby accepted a host where auditd is installed,
+/// wanted at boot, and simply stopped. The plugin's per-rule exceptions key on
+/// an audit rule category and none of those can name the daemon itself.
+const AUDITD_PRESENT_EXCEPTION: &str = "auditd-present";
+const AUDITD_AT_BOOT_EXCEPTION: &str = "auditd-at-boot";
+const AUDITD_RUNNING_EXCEPTION: &str = "auditd-running";
+
 const AUDIT_RULES_PATH: &str = "/etc/audit/rules.d/hardening.rules";
 
 /// The directory holding the rules file, which the audit package owns.
@@ -902,7 +913,9 @@ impl HardeningPlugin for AuditHardeningPlugin {
                 finding_severity: Severity::Critical,
                 finding_title: "Audit daemon is not installed".to_string(),
                 finding_compliance: get_audit_compliance_mappings("not_installed"),
-                finding_policy_exception: None,
+                finding_policy_exception: config
+                    .has_valid_exception(AUDITD_PRESENT_EXCEPTION)
+                    .map(|exception| exception.to_finding_exception()),
             });
 
             // If not installed, no point checking further
@@ -932,7 +945,9 @@ impl HardeningPlugin for AuditHardeningPlugin {
                 finding_severity: Severity::High,
                 finding_title: "Audit daemon not enabled".to_string(),
                 finding_compliance: get_audit_compliance_mappings("not_enabled"),
-                finding_policy_exception: None,
+                finding_policy_exception: config
+                    .has_valid_exception(AUDITD_AT_BOOT_EXCEPTION)
+                    .map(|exception| exception.to_finding_exception()),
             });
         }
 
@@ -950,7 +965,9 @@ impl HardeningPlugin for AuditHardeningPlugin {
                 finding_severity: Severity::High,
                 finding_title: "Audit daemon not running".to_string(),
                 finding_compliance: get_audit_compliance_mappings("not_running"),
-                finding_policy_exception: None,
+                finding_policy_exception: config
+                    .has_valid_exception(AUDITD_RUNNING_EXCEPTION)
+                    .map(|exception| exception.to_finding_exception()),
             });
         }
 

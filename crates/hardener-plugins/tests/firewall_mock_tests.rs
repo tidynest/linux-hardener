@@ -2727,3 +2727,125 @@ async fn a_rule_failure_keeps_the_changes_already_recorded() {
         "and the failure itself must be in the list, not only in apply_error"
     );
 }
+
+/// An exception naming a whole-firewall state rather than a baseline rule.
+///
+/// `rule_id` maps a rule description to `loopback`, `established`, `ssh` or
+/// `drop_default`, and none of those describes a host with no firewall at all:
+/// a rule never applied is a different statement from a firewall never
+/// enabled. The key therefore names the subsystem state, the way `[mac]`
+/// already keys `selinux-enforcing`.
+fn whole_firewall_exception_config(key: &str) -> PluginConfig {
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        key.to_string(),
+        PolicyException {
+            value: "disabled".to_string(),
+            allowed: true,
+            reason: "perimeter firewall covers this host, tracked in JIRA-8812".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+    config
+}
+
+/// The finding an operator has approved must still be reported, carrying the
+/// exception, because `ReportGenerator` fails a control on any finding whose
+/// `finding_policy_exception` is `None`. Scan is the only site that can attach
+/// it, so a scan that ignores the config makes the deviation unexcusable
+/// however the operator writes it down.
+#[tokio::test]
+async fn scan_honours_an_exception_for_a_host_with_no_firewall_enabled() {
+    let ctx = Context::with_executor(Arc::new(ufw_disabled_executor()));
+    let plugin = FirewallHardeningPlugin::new();
+
+    // Positive control. The assertion below is an absence claim about
+    // `is_none`, and a finding that quietly stopped being emitted would
+    // satisfy it perfectly, so pin the finding first and pin that it is a
+    // live violation when nothing excuses it.
+    let plain = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
+    let plain_finding = plain
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_title == "Firewall disabled")
+        .expect("a disabled firewall raises the finding at all");
+    assert!(
+        plain_finding.finding_policy_exception.is_none(),
+        "with nothing declared the finding must stay a live violation"
+    );
+
+    let excepted = plugin
+        .scan(&ctx, &whole_firewall_exception_config("firewall-enabled"))
+        .await
+        .unwrap();
+    let finding = excepted
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_title == "Firewall disabled")
+        .expect("an approved deviation is still reported, annotated rather than dropped");
+
+    let exception = finding
+        .finding_policy_exception
+        .as_ref()
+        .expect("the declared exception must reach the finding, or report fails the control");
+    assert!(
+        exception.exception_reason.contains("JIRA-8812"),
+        "the operator's own reason travels with the finding, got {:?}",
+        exception.exception_reason
+    );
+}
+
+/// The second of the plugin's two findings, keyed separately because accepting
+/// a host with no firewall is a different decision from accepting one whose
+/// firewall is enforcing now and gone after a reboot.
+///
+/// A scan fixture, not the apply one above it: the boot question is asked only
+/// of a backend the scan has verified as enforcing, so this host answers `ufw
+/// status` as active and `systemctl is-enabled` as `disabled`.
+fn ufw_active_but_not_wanted_at_boot_executor() -> MockExecutor {
+    ufw_active_executor().with_command(
+        "systemctl",
+        &["is-enabled", "ufw"],
+        CommandOutput {
+            stdout: "disabled\n".to_string(),
+            stderr: String::new(),
+            exit_code: 1,
+        },
+    )
+}
+
+#[tokio::test]
+async fn scan_honours_an_exception_for_a_firewall_that_does_not_start_at_boot() {
+    let ctx = Context::with_executor(Arc::new(ufw_active_but_not_wanted_at_boot_executor()));
+    let plugin = FirewallHardeningPlugin::new();
+
+    let plain = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
+    let plain_finding = plain
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_title == "Firewall does not start at boot")
+        .expect("a unit not wanted at boot raises the finding at all");
+    assert!(
+        plain_finding.finding_policy_exception.is_none(),
+        "with nothing declared the finding must stay a live violation"
+    );
+
+    let excepted = plugin
+        .scan(&ctx, &whole_firewall_exception_config("firewall-at-boot"))
+        .await
+        .unwrap();
+    let finding = excepted
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_title == "Firewall does not start at boot")
+        .expect("an approved deviation is still reported, annotated rather than dropped");
+
+    assert!(
+        finding.finding_policy_exception.is_some(),
+        "the boot-persistence finding takes its own key, so an exception for the \
+         disabled state must not silence it and its own key must reach it"
+    );
+}

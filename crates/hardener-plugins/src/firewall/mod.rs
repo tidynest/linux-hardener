@@ -365,6 +365,26 @@ async fn systemd_unit_active(ctx: &Context, unit: &str) -> bool {
 /// failure this probe exists to catch, so reading its "enabled" prefix as
 /// enabled would reintroduce the defect through the probe. `linked` units are
 /// not enabled either, and `masked` ones cannot be started at all.
+/// The exception key naming a host an operator has approved to run with no
+/// firewall enforcing at all.
+///
+/// Named for the subsystem state rather than for a rule or for the finding's
+/// own id, the way `[mac]` keys `selinux-enforcing`. `rule_id` covers the
+/// baseline rules and none of its keys can say "there is no firewall": a rule
+/// never applied is a different statement from a firewall never enabled. The
+/// finding id would key it too, but the id carries the detected backend, so an
+/// exception written on a ufw host would stop matching on a firewalld one, and
+/// an approved deviation that silently stops being honoured is the defect this
+/// key exists to close.
+const FIREWALL_ENABLED_EXCEPTION: &str = "firewall-enabled";
+
+/// The exception key for a firewall that enforces now and is gone after a
+/// reboot. Kept apart from [`FIREWALL_ENABLED_EXCEPTION`] because accepting a
+/// host with no firewall is a different decision from accepting one whose
+/// firewall does not survive a restart, and an operator who approved the
+/// second has not thereby approved the first.
+const FIREWALL_AT_BOOT_EXCEPTION: &str = "firewall-at-boot";
+
 const NOT_AT_BOOT_STATES: [&str; 6] = [
     "disabled",
     "enabled-runtime",
@@ -474,7 +494,11 @@ fn boot_state_wording(unit: &str, state: &str) -> (String, Vec<String>) {
 
 /// The finding raised for a firewall that is enforcing now and will not be
 /// after a reboot.
-fn not_at_boot_finding(backend: &dyn FirewallBackend, state: &str) -> Finding {
+fn not_at_boot_finding(
+    backend: &dyn FirewallBackend,
+    state: &str,
+    config: &PluginConfig,
+) -> Finding {
     let (clause, steps) = boot_state_wording(backend.systemd_unit(), state);
     Finding {
         finding_category: FindingCategory::Network,
@@ -496,7 +520,9 @@ fn not_at_boot_finding(backend: &dyn FirewallBackend, state: &str) -> Finding {
         finding_severity: Severity::High,
         finding_title: "Firewall does not start at boot".to_string(),
         finding_compliance: get_firewall_compliance_mappings(),
-        finding_policy_exception: None,
+        finding_policy_exception: config
+            .has_valid_exception(FIREWALL_AT_BOOT_EXCEPTION)
+            .map(|exception| exception.to_finding_exception()),
     }
 }
 
@@ -795,7 +821,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         vec![]
     }
 
-    async fn scan(&self, ctx: &Context, _config: &PluginConfig) -> Result<ScanResult> {
+    async fn scan(&self, ctx: &Context, config: &PluginConfig) -> Result<ScanResult> {
         let start_time = Instant::now();
         let plugin_id = PluginId::new("firewall-hardening");
 
@@ -885,7 +911,9 @@ impl HardeningPlugin for FirewallHardeningPlugin {
                 finding_severity: Severity::High,
                 finding_title: "Firewall disabled".to_string(),
                 finding_compliance: get_firewall_compliance_mappings(),
-                finding_policy_exception: None,
+                finding_policy_exception: config
+                    .has_valid_exception(FIREWALL_ENABLED_EXCEPTION)
+                    .map(|exception| exception.to_finding_exception()),
             });
         }
 
@@ -900,7 +928,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
             match unit_boot_persistence(ctx, backend.systemd_unit()).await {
                 BootPersistence::AtBoot => {}
                 BootPersistence::NotAtBoot(state) => {
-                    findings.push(not_at_boot_finding(backend.as_ref(), &state));
+                    findings.push(not_at_boot_finding(backend.as_ref(), &state, config));
                 }
                 BootPersistence::Undeterminable => {
                     unchecked.push(not_at_boot_unchecked(backend.as_ref()));

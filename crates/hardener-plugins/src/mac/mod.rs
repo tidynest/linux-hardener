@@ -49,6 +49,15 @@ enum MacDetection {
 /// Where SELinux records the mode it boots into.
 const SELINUX_CONFIG_PATH: &str = "/etc/selinux/config";
 
+/// The exception key for a host an operator has approved to run with no
+/// mandatory access control system at all.
+///
+/// The plugin's other two keys, `selinux-enforcing` and `apparmor-enforce`,
+/// are written inline at the findings they excuse. This one is a constant
+/// because the state it names has no second reading: a host either has a MAC
+/// system or it does not.
+const MAC_PRESENT_EXCEPTION: &str = "mac-present";
+
 /// What the restored SELinux configuration asks the running system to be.
 ///
 /// Three outcomes, because a rollback that cannot tell them apart acts on a
@@ -770,7 +779,13 @@ impl HardeningPlugin for MacHardeningPlugin {
                     finding_severity: Severity::Medium,
                     finding_title: "No MAC System Found".to_string(),
                     finding_compliance: get_mac_compliance_mappings("no-mac-system"),
-                    finding_policy_exception: None,
+                    // The third subsystem key, beside `selinux-enforcing` and
+                    // `apparmor-enforce`: those two accept a MAC system that
+                    // is present and not enforcing, and neither can speak for
+                    // a host that has no MAC system to enforce anything.
+                    finding_policy_exception: config
+                        .has_valid_exception(MAC_PRESENT_EXCEPTION)
+                        .map(|exception| exception.to_finding_exception()),
                 });
             }
         }
