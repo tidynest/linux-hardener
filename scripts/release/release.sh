@@ -281,42 +281,68 @@ if [[ -f "src-tauri/tauri.conf.json" ]]; then
     fi
 fi
 
-# Step 3c: Update test count in README.md
-echo -e "\n${BLUE}Step 3c: Updating test count in README.md...${NC}"
-if $DRY_RUN; then
-    echo "Would update test count to ${TEST_COUNT}+ in README.md"
-else
-    if [[ "$TEST_COUNT" =~ ^[0-9]+$ ]]; then
-        # Asserts on the match count rather than trusting the substitution.
-        # This step used to `sed` for a "Total Tests:" line that README.md
-        # stopped having in ea1a0c4, so it matched nothing, exited 0 and
-        # printed a success it had not achieved. The count silently fell 86
-        # tests behind across several releases. A rewrite that finds nothing
-        # is now a failure, which is the whole point of running it.
-        python3 - "$TEST_COUNT" <<'PYEOF' || exit 1
+# Step 3c: Update the test count and the badges that track a released number
+echo -e "\n${BLUE}Step 3c: Updating test count and version badges...${NC}"
+if $DRY_RUN || [[ "$TEST_COUNT" =~ ^[0-9]+$ ]]; then
+    # Asserts on the match count rather than trusting the substitution.
+    # This step used to `sed` for a "Total Tests:" line that README.md
+    # stopped having in ea1a0c4, so it matched nothing, exited 0 and
+    # printed a success it had not achieved. The count silently fell 86
+    # tests behind across several releases. A rewrite that finds nothing
+    # is now a failure, which is the whole point of running it.
+    #
+    # The dry run asserts the same targets and writes nothing, because the
+    # step that can abort a release was the one step a rehearsal never
+    # reached. 9b49fe1 made the README badge status-only, voiding a target
+    # this step still required, and no dry run could report it: the failure
+    # would first have appeared in a real run, after four files had already
+    # been rewritten.
+    RELEASE_MODE="write"
+    $DRY_RUN && RELEASE_MODE="check"
+    python3 - "$TEST_COUNT" "$RELEASE_MODE" "$NEW_VERSION" <<'PYEOF' || exit 1
 import re, sys
 from pathlib import Path
 
-count = sys.argv[1]
+count, mode, version = sys.argv[1], sys.argv[2], sys.argv[3]
+# `scripts/badges/generate.js` is the source `validate_badges.py` compares the
+# committed SVG against, so the declaration and the rendering move together or
+# the next validation run fails on a badge this step just desynchronised. The
+# `version` badge is cross-checked against `Cargo.toml`, which step 3 has just
+# bumped, so leaving it alone is what desynchronises it.
+#
+# The `aur` badge deliberately stays put: it tracks the version actually
+# published, which is `packaging/PKGBUILD`, and that is bumped by hand. A
+# validation failure between this step and that bump is the AUR step still
+# being owed, which is worth saying out loud.
+#
+# ponytail: the SVG text is rewritten in place rather than regenerated, because
+# `scripts/badges/node_modules` is gitignored and a release must not need the
+# network. The ceiling is that `width` and `textLength` stay as generated, so a
+# version string of a different length renders slightly off; regenerate with
+# `npm --prefix scripts/badges install && npm --prefix scripts/badges run build`
+# when that day comes.
 targets = [
-    (Path("README.md"), r'(alt=")\d+\+ tests \(\d+ passing', rf'\g<1>{count}+ tests ({count} passing'),
     (Path("README.md"), r'(Rust workspace:\s+)\d+( passed)', rf'\g<1>{count}\g<2>'),
     (Path("docs/assets/badges/tests.svg"), r'\d+\+', f'{count}+'),
+    (Path("scripts/badges/generate.js"), r"(file: 'tests'.*?message: ')\d+\+", rf"\g<1>{count}+"),
+    (Path("scripts/badges/generate.js"), r"(file: 'version'.*?message: ')[^']+", rf"\g<1>{version}"),
+    (Path("docs/assets/badges/version.svg"), r'\d+\.\d+\.\d+', version),
 ]
 total = 0
 for path, pattern, replacement in targets:
     text = path.read_text()
     text, hits = re.subn(pattern, replacement, text)
     if hits == 0:
-        sys.exit(f"  {path}: no test-count reference matched /{pattern}/; update release.sh")
-    path.write_text(text)
+        sys.exit(f"  {path}: no release marker matched /{pattern}/; update release.sh")
+    if mode == "write":
+        path.write_text(text)
     total += hits
-print(f"  Updated {total} test-count reference(s) to {count}")
+verb = "Would update" if mode == "check" else "Updated"
+print(f"  {verb} {total} release marker(s): tests to {count}, version to {version}")
 PYEOF
-    else
-        echo -e "  ${RED}Error: could not determine test count from the suite output${NC}"
-        exit 1
-    fi
+else
+    echo -e "  ${RED}Error: could not determine test count from the suite output${NC}"
+    exit 1
 fi
 
 # Step 4: Update CHANGELOG.md
