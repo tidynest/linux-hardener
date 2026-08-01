@@ -269,8 +269,10 @@ quietly matching nothing at all.
 python3 scripts/validate/validate_doc_targets.py
 ```
 
-Holds every target `update_all_docs.py` declares to actually resolving: the file
-it names exists, and its pattern matches something in that file.
+Holds the updater's declared targets and the tree to agreeing in both
+directions. Forward: every target it declares resolves, the file it names exists
+and its pattern matches something in that file. Inverse: no markdown file
+outside an archive carries a version line without being a declared target.
 
 The updater walks two lists and skips, in silence, any target whose file is
 missing or whose pattern matches nothing. A skipped target produces no update
@@ -279,6 +281,28 @@ attempted. Five of the compliance framework files it named were deleted in
 `4039ed1`, and for six weeks afterwards the control counts in
 `architecture.md` described files that no longer existed while every run of the
 updater said there was nothing to do.
+
+The inverse direction is issue #54, and it exists because a list of files to
+rewrite cannot notice a file that should be on it. `data-flow.md` carried a
+version line for months without being declared, drifted to 1.4.0 while the
+release was 1.5.1, and was corrected by hand. Adding it to the list fixed that
+file and left the next one in exactly the same position, so the check now asks
+the question the list cannot ask of itself.
+
+The version-line pattern is deliberately loose about where the colon sits.
+`architecture.md` writes `**Version:**` and `README.md` writes `**Version**:`,
+and that one character is what hid the first of them from the updater for
+months.
+
+Anything under an `archive` directory is exempt. An archived audit is supposed
+to name the version it was written for, and rewriting it would be the wrong kind
+of correct.
+
+Rewriting the updater to discover version lines rather than being told where
+they are was the other option and was rejected. A script that silently rewrites
+every version-shaped string it finds will eventually rewrite one meant to stay,
+such as a minimum-supported-version statement, and a wrong rewrite is worse than
+a stale line something complains about.
 
 It imports the target lists rather than restating them, because a second copy of
 a list is a second thing to drift. That import is also why the script sets

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Validates that every doc-sync target update_all_docs.py declares can be reached.
+Validates that update_all_docs.py's declared targets and the tree agree, in
+both directions.
 
 The updater walks two lists of targets and skips, silently, any whose file is
 missing or whose pattern matches nothing. A skipped target produces no update
@@ -17,12 +18,26 @@ the updater said there was nothing to do.
 This check imports the target lists rather than restating them, because a second
 copy of a list is a second thing to drift.
 
+The version references need the inverse check as well, and issue #54 is why. A
+list of files to rewrite cannot notice a file that should be on it. data-flow.md
+carried a version line for months, was not declared, and drifted to 1.4.0 while
+the release was 1.5.1; adding it fixed that file and left the next one in exactly
+the same position. So every markdown file carrying a version-line shape must be a
+declared target, and one that is not fails this check by name.
+
+Rewriting the updater to discover version lines instead was considered and
+rejected. A script that silently rewrites every version-shaped string it finds
+will eventually rewrite one meant to stay, such as a minimum-supported-version
+statement or a historical note, and a wrong rewrite is worse than a stale line
+that something complains about.
+
 Usage:
     ./scripts/validate/validate_doc_targets.py
 
 Exit codes:
-    0: every declared target resolves
-    1: at least one target names a missing file or matches nothing
+    0: every declared target resolves, and nothing that should be declared is not
+    1: a target names a missing file, matches nothing, or a file carries an
+       undeclared version line
 """
 
 import re
@@ -94,11 +109,53 @@ def check_version_references(root: Path) -> list[str]:
     return failures
 
 
+# The shape of a version line as this documentation writes it. Deliberately
+# loose about where the colon sits, because that is exactly the difference that
+# hid architecture.md from the updater for months: it writes `**Version:**` and
+# README.md writes `**Version**:`.
+VERSION_LINE = re.compile(r"^\s*\*\*Version:?\*\*:?\s*\d+\.\d+\.\d+", re.MULTILINE)
+
+# Directories whose contents are not maintained against the current release.
+# An archived audit or a shipped dependency is supposed to name the version it
+# was written for, and rewriting it would be the wrong kind of correct.
+UNMAINTAINED = ("archive", "node_modules", "target", ".git", "superpowers")
+
+
+def check_undeclared_version_lines(root: Path) -> list[str]:
+    """Every markdown file with a version line must be a declared target.
+
+    The forward check asks whether each declared target can be reached. This
+    asks the question a list cannot ask of itself: whether anything that should
+    be on it is missing. A file in that position is silently never updated, and
+    the updater reports success without it, which is how data-flow.md came to
+    sit at 1.4.0 through two releases.
+    """
+    declared = {rel_path for rel_path, _ in VERSION_REFERENCE_TARGETS}
+    failures = []
+    for path in sorted(root.rglob("*.md")):
+        relative = path.relative_to(root)
+        if any(part in UNMAINTAINED for part in relative.parts):
+            continue
+        if str(relative) in declared:
+            continue
+        if VERSION_LINE.search(path.read_text(encoding="utf-8")):
+            failures.append(
+                f"{relative} carries a version line and is not in "
+                f"VERSION_REFERENCE_TARGETS, so no release will ever update it "
+                f"and update_all_docs.py will not say so"
+            )
+    return failures
+
+
 def main() -> int:
     print(f"{BLUE}Validating documentation sync targets...{NC}\n")
     root = find_project_root()
 
-    failures = check_compliance_sources(root) + check_version_references(root)
+    failures = (
+        check_compliance_sources(root)
+        + check_version_references(root)
+        + check_undeclared_version_lines(root)
+    )
 
     declared = len(COMPLIANCE_SOURCE_FILES) + len(VERSION_REFERENCE_TARGETS)
     if failures:
@@ -106,12 +163,13 @@ def main() -> int:
         for failure in failures:
             print(f"    {RED}x{NC} {failure}")
         print(
-            f"\n{RED}{len(failures)} of {declared} declared targets cannot be "
-            f"reached. update_all_docs.py reports success without them.{NC}"
+            f"\n{RED}{len(failures)} problem(s) against {declared} declared "
+            f"targets. update_all_docs.py reports success without them.{NC}"
         )
         return 1
 
     print(f"  {GREEN}v{NC} All {declared} declared doc-sync targets resolve")
+    print(f"  {GREEN}v{NC} No undeclared version line anywhere in the documentation")
     print(f"\n{GREEN}Documentation sync target validation passed{NC}")
     return 0
 
